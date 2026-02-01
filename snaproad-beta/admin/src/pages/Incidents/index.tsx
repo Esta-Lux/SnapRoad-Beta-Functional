@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Eye, Check, X, Flag, AlertTriangle } from 'lucide-react'
+import { Eye, Check, X, Flag, AlertTriangle } from 'lucide-react'
 
 // Mock data
 const mockIncidents = [
