@@ -13,6 +13,8 @@ import Rewards from './pages/Rewards'
 import Partners from './pages/Partners'
 import PartnerDetail from './pages/Partners/PartnerDetail'
 import Settings from './pages/Settings'
+import UserDashboard from './pages/UserDashboard'
+import BusinessDashboard from './pages/BusinessDashboard'
 
 // Protected route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -31,7 +33,13 @@ function App() {
       {/* Public routes */}
       <Route path="/login" element={<Login />} />
       
-      {/* Protected routes */}
+      {/* User Dashboard (Driver) - Public for demo */}
+      <Route path="/driver" element={<UserDashboard />} />
+      
+      {/* Business Partner Dashboard - Public for demo */}
+      <Route path="/business" element={<BusinessDashboard />} />
+      
+      {/* Protected Admin routes */}
       <Route path="/" element={
         <ProtectedRoute>
           <Layout />
@@ -52,7 +60,7 @@ function App() {
       </Route>
       
       {/* Catch all */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   )
 }
