@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Filter, MoreVertical, Eye, Ban, Mail } from 'lucide-react'
+import { Search, Eye, Ban, Mail } from 'lucide-react'
 
 // Mock data
 const mockUsers = [
