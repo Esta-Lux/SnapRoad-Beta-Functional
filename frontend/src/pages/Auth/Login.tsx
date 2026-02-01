@@ -138,6 +138,31 @@ export default function Login() {
             <p className="text-xs text-slate-300">Email: admin@snaproad.co</p>
             <p className="text-xs text-slate-300">Password: admin123</p>
           </div>
+
+          {/* Quick Access to Other Dashboards */}
+          <div className="mt-4 pt-4 border-t border-slate-700">
+            <p className="text-xs text-slate-400 mb-3 text-center">Or preview other dashboards:</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/driver')}
+                className="bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white text-sm font-medium py-3 px-4 rounded-lg transition-all flex flex-col items-center gap-1"
+                data-testid="driver-dashboard-btn"
+              >
+                <span className="text-lg">🚗</span>
+                <span>Driver Dashboard</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/business')}
+                className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white text-sm font-medium py-3 px-4 rounded-lg transition-all flex flex-col items-center gap-1"
+                data-testid="business-dashboard-btn"
+              >
+                <span className="text-lg">🏪</span>
+                <span>Business Portal</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <p className="text-center text-slate-500 text-sm mt-6">
