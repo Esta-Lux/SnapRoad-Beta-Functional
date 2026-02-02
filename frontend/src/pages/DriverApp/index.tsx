@@ -715,7 +715,7 @@ export default function DriverApp() {
       {/* Moveable Gems Widget */}
       {widgets.gems.visible && (
         <div 
-          className="absolute bg-slate-900/95 backdrop-blur rounded-xl transition-all cursor-move select-none"
+          className="absolute bg-slate-900/95 backdrop-blur rounded-xl transition-all cursor-move select-none z-[5]"
           style={{ left: widgets.gems.position.x, top: widgets.gems.position.y, width: widgets.gems.collapsed ? 100 : 110 }}
           data-testid="widget-gems"
         >
