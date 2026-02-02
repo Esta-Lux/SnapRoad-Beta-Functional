@@ -1,19 +1,19 @@
 # SnapRoad Phase 1 Lean Beta - PRD
 
 ## Original Problem Statement
-Build the structure and essentials for SnapRoad Phase 1 Lean Beta - a privacy-first navigation app with gamified safety rewards for Ohio pilot launch. 
+Build the structure and essentials for SnapRoad Phase 1 Lean Beta - a privacy-first navigation app with gamified safety rewards for Ohio pilot launch.
 
 **Key Requirements:**
 - Create Flutter project structure with placeholder files
 - Create React Admin Panel with clean dashboard matching website design
 - Create PostgreSQL schema files for Supabase setup
-- No API connections implemented yet - structure only
+- Driver mobile app with full UI flow optimized for iPhone 16
 
 ## Architecture
 
 ### Tech Stack
 - **Mobile**: Flutter 3.16+ with Riverpod, GoRouter
-- **Admin**: React 18 + TypeScript + Vite + Tailwind CSS + Zustand
+- **Admin/Preview**: React 18 + TypeScript + Vite + Tailwind CSS + Zustand
 - **API**: Node.js 20 + Express + TypeScript
 - **Database**: PostgreSQL 15 with PostGIS (via Supabase)
 - **Maps**: Mapbox Navigation SDK
@@ -33,96 +33,189 @@ snaproad-beta/
 
 ## What's Been Implemented (as of Feb 2, 2025)
 
-### ✅ Completed Features
+### ✅ Complete Driver App Flow (iPhone 16 Optimized)
 
-#### Driver Dashboard (Mobile Preview)
-- **Map Tab**: Interactive map view with score/ECO widgets, favorites, offers nearby, quick locations (Home/Work), map markers, hazard markers, voice/navigation controls
-- **Offers Tab**: Category filters (All/Gas/Cafe), potential savings card, wallet display, offer cards with trending badges
-- **Engagement Tab**: Badge collection with filters (Safety/Distance/Community), mastery level progress, achievement tracking
-- **Car Skin Showcase** ("Skins" tab): 
-  - Premium Car Studio with "Coming Soon" banner
-  - 3D-style car preview with rotation controls (drag to rotate)
-  - Layer inspector for skin structure visualization
-  - Skin properties (Body Finish, Under-glow, Accent Color, Pattern)
-  - Available skins selector with owned/equipped status
-  - Gradient buttons for purchase/equip actions
-- **Live Tab**: Community placeholder (Coming Soon)
-- **Profile Tab**: User avatar, rank badge, stats grid (Gems, Level, Reports, Miles), settings navigation
+#### Authentication & Onboarding
+- **Welcome Screen**: SnapRoad branding, value props, Get Started/Login CTAs
+- **Login Screen**: Email/password, show/hide toggle, forgot password, social login (Google/Apple)
+- **Signup Screen**: Name, email, password with strength meter, confirm password, T&C checkbox
+- **Forgot Password**: Email input, verification code entry (6-digit), reset flow
+- **Auth Context**: User state management, login/signup/logout functions
 
-#### Business Partner Portal
-- Stats dashboard (Redemptions, Active Offers, Views, Platform Fees)
-- Offer management with status badges (active/paused)
-- Recent redemptions tracking
-- Create offer modal
-- Subscription plan display
+#### Map Tab (Main Navigation)
+- Interactive map view with grid pattern background
+- Search bar with "Where to?" placeholder
+- Menu, notifications (with badge count), quick actions
+- Home/Work shortcuts for quick navigation
+- Safety Score widget (circular progress, 0-100)
+- Gems counter with daily earnings
+- Map markers for gas stations, cafes, hazards
+- Voice command button, camera for reports, navigation button
+- Current location marker with pulse animation
 
-#### Admin Dashboard
-- Overview stats (Users, Trips, Incidents, Gems)
-- Recent activity feed
-- Quick actions panel
-- System status indicators
+#### Offers Tab
+- Header with "Offers Nearby" count
+- Category filters: All, Gas, Cafe
+- Potential Savings card ($127.50 display)
+- Wallet showing gem balance
+- Offer cards with:
+  - Brand icon (fuel/coffee)
+  - Name + trending badge
+  - Discount value (10¢/gal off, 20% off, etc.)
+  - Distance + expiration time
+  - Favorite heart button
+- Offer detail modal with QR code redemption
 
-### 🆕 New Components Created
-- `/src/lib/utils.ts` - Tailwind merge utility (cn function)
-- `/src/contexts/ThemeContext.tsx` - Theme provider for dark/light mode
-- `/src/components/ui/GradientButton.tsx` - Custom gradient button component
-- `/src/components/ui/Badge.tsx` - Status badge component
-- `/src/components/features/CarSkinShowcase.tsx` - Full car skin customization feature
+#### Engagement Tab (4 Sub-tabs)
+**Badges Tab:**
+- Collection card (11/160 badges, progress bar)
+- Filter buttons: All, Earned, Locked
+- Badge grid with progress bars
+- Badge detail modal with description, progress, gem reward
 
-### 📦 New Dependencies Added
-- `motion` (framer-motion) - For animations
-- `clsx` - Class name utility
-- `tailwind-merge` - Merge Tailwind classes
-- `class-variance-authority` - For variant components
+**Skins Tab:**
+- Car Studio hero card
+- Skin collection grid with rarities
+- Equipped skin indicator
+- Purchase/equip functionality
 
-## UI/UX Design System
+**Progress Tab:**
+- Level progress card (Level 42, XP bar)
+- Weekly challenges with progress
+- Streak counter (14 days)
 
-### Color Palette
-- Primary Accent: `#00DFA2` (Emerald)
-- Secondary Accent: `#0084FF` (Electric Blue)
-- Background (Dark): `#0a0a0f`
-- Surface (Dark): `#12121a`
-- Text Primary: `#ffffff`
-- Text Secondary: `#9ca3af`
+**My Reports Tab:**
+- Total reports + gems earned stats
+- Report new hazard button
+- Reports list with status (verified/active/resolved)
+- Upvote counts
 
-### Component Library
-- GradientButton (primary/secondary/tertiary variants)
-- Badge (default/success/warning/danger/premium variants)
-- CircularProgress widget
-- Theme-aware styling with CSS variables
+#### Live Tab (Family Tracking)
+- "Live Locations" header with online count
+- Family member cards showing:
+  - Avatar + name
+  - Status (driving/parked/offline)
+  - Speed indicator (65 mph)
+  - Current location
+  - Battery level with low warning
+  - Distance away
+- Member detail modal with call/navigate actions
+- Family Plan upsell for non-subscribers
+
+#### Profile Tab (4 Sub-tabs)
+**Overview:**
+- Profile header with avatar, name, level, PRO badge
+- Stats grid: Gems, Rank, Trips, Miles
+- Quick links: Achievements, Leaderboard, Trip History, Gem History
+
+**Score Tab:**
+- Large circular safety score display
+- Category breakdown (Speed, Braking, Acceleration, Phone Use)
+
+**Fuel Tab (Premium):**
+- Weekly usage stats (gallons, cost, MPG)
+- Log fill-up button
+- Premium upsell for non-subscribers
+
+**Settings Tab:**
+- Account, Subscription, My Vehicles
+- Notifications, Privacy, Help & Support
+- Log Out button
+
+### UI/UX Features
+- iPhone 16 frame (390x844px viewport)
+- Notch with status bar (time, 5G, battery)
+- Home indicator bar
+- Rounded corners (44px frame, 36px content)
+- Smooth animations (slide-up modals, fade-in)
+- Toast notifications via react-hot-toast
+- Dark theme optimized for driving
+
+### Modals & Interactions
+- Search modal with recent destinations
+- Notifications panel
+- Offer detail with redemption
+- Badge detail with progress
+- Family member detail with actions
+- Incident report type selector
 
 ## Data Models
 
-### Users
-- id, email, full_name, subscription_tier, stripe_customer_id
+### User
+```typescript
+{
+  id: string
+  name: string
+  email: string
+  avatar: string
+  isPremium: boolean
+  isFamilyPlan: boolean
+  gems: number
+  level: number
+  safetyScore: number
+  streak: number
+  totalMiles: number
+  totalTrips: number
+  badges: number
+  rank: number
+}
+```
 
-### Trips
-- id, user_id, start_time, end_time, distance_km, driving_score
+### Offer
+```typescript
+{
+  id: number
+  name: string
+  type: 'gas' | 'cafe'
+  gems: number
+  discount: string
+  distance: string
+  trending: boolean
+  expires: string
+}
+```
 
-### Incidents
-- id, user_id, incident_type, location, status
+### Badge
+```typescript
+{
+  id: number
+  name: string
+  desc: string
+  progress: number
+  earned: boolean
+  gems: number
+  category: 'distance' | 'safety' | 'community' | 'eco'
+}
+```
 
-### Rewards
-- id, user_id, gems_balance, season
-
-### Business Partners
-- id, business_name, contact_email, status
-
-### Offers
-- id, partner_id, title, gems_required, location
+### Family Member
+```typescript
+{
+  id: number
+  name: string
+  avatar: string
+  status: 'driving' | 'parked' | 'offline'
+  location: string
+  battery: number
+  distance: string
+  speed: number
+  lastSeen?: string
+}
+```
 
 ## Prioritized Backlog
 
 ### P0 - Critical
+- [x] Complete Driver UI flow (all tabs functional)
 - [ ] Backend API implementation (Node.js/Express)
 - [ ] Supabase integration for auth and database
 - [ ] Real trip tracking functionality
 
 ### P1 - High Priority
-- [ ] Mapbox integration for navigation
-- [ ] Incident reporting with camera
-- [ ] Gems earning/spending logic
-- [ ] Stripe subscriptions
+- [ ] Mapbox integration for actual navigation
+- [ ] Incident photo upload with auto-blur
+- [ ] Gems earning/spending logic (backend)
+- [ ] Stripe subscriptions for Premium/Family
 
 ### P2 - Medium Priority
 - [ ] Leaderboard with Redis caching
@@ -132,24 +225,16 @@ snaproad-beta/
 
 ### P3 - Future/Backlog
 - [ ] Flutter mobile app implementation
-- [ ] Family tracking/monitoring (Phase 2)
-- [ ] AI coaching features (Phase 2)
-- [ ] Multi-region support (Phase 3)
-
-## Next Tasks List
-
-1. **Supabase Setup**: Create project, run schema.sql
-2. **Auth Implementation**: Integrate Supabase Auth in API and mobile
-3. **Mapbox Integration**: Add navigation SDK to Flutter app
-4. **Trip Tracking**: Implement start/end trip with GPS
-5. **Testing**: End-to-end testing of auth and trip flows
+- [ ] Family tracking with real GPS
+- [ ] AI coaching features
+- [ ] Multi-region support
 
 ## Access URLs
 
-- **Driver Dashboard**: `/driver`
+- **Driver App**: `/driver` (iPhone 16 preview)
+- **Driver Auth**: `/driver/auth` (Standalone auth flow)
 - **Business Portal**: `/business`
-- **Admin Dashboard**: `/dashboard` (after login)
-- **Login**: `/login`
+- **Admin Dashboard**: `/dashboard` (after login at `/login`)
 
 ### Test Credentials (Admin)
 - Email: `admin@snaproad.co`
@@ -162,6 +247,20 @@ snaproad-beta/
 - 200+ incident reports
 - 5+ local business partners
 - 99%+ uptime, <200ms API response times
+
+## Files Reference
+
+### Driver App Files
+- `/app/frontend/src/pages/DriverApp/index.tsx` - Main driver app (700+ lines)
+- `/app/frontend/src/pages/Auth/AuthFlow.tsx` - Auth screens
+- `/app/frontend/src/contexts/AuthContext.tsx` - Auth state management
+
+### Admin Panel Files
+- `/app/frontend/src/pages/Dashboard/index.tsx` - Admin dashboard
+- `/app/frontend/src/pages/BusinessDashboard/index.tsx` - Partner portal
+
+### Styling
+- `/app/frontend/src/index.css` - Global styles with animations
 
 ## Contact
 PM: Riyan Ahmed - teams@snaproad.co
