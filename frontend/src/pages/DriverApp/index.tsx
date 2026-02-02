@@ -113,6 +113,12 @@ export default function DriverApp() {
   const [showReportModal, setShowReportModal] = useState(false)
   const [draggingWidget, setDraggingWidget] = useState<string | null>(null)
   
+  // New modal states
+  const [showFriendsHub, setShowFriendsHub] = useState(false)
+  const [showLeaderboard, setShowLeaderboard] = useState(false)
+  const [showCarShowroom, setShowCarShowroom] = useState(false)
+  const [showBadgesGrid, setShowBadgesGrid] = useState(false)
+  
   // Data states
   const [locations, setLocations] = useState<SavedLocation[]>([])
   const [routes, setRoutes] = useState<SavedRoute[]>([])
@@ -121,10 +127,11 @@ export default function DriverApp() {
   const [skins, setSkins] = useState<any[]>([])
   const [family, setFamily] = useState<any[]>([])
   const [userData, setUserData] = useState<any>({
+    id: '123456',
     name: user?.name || 'Sarah Johnson',
     gems: 12400, level: 42, safety_score: 87, streak: 14,
-    total_miles: 2847, total_trips: 156, badges_earned: 11, rank: 42,
-    is_premium: true, member_since: 'Jan 2025'
+    total_miles: 2847, total_trips: 156, badges_earned_count: 11, rank: 42,
+    is_premium: true, member_since: 'Jan 2025', friends_count: 2, state: 'TX'
   })
   
   // Widget states - positioned below location panel (which ends around y=280)
