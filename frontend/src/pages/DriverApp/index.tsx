@@ -19,7 +19,7 @@ const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BA
 type TabType = 'map' | 'offers' | 'routes' | 'engagement' | 'profile'
 type EngagementTab = 'badges' | 'skins' | 'challenges' | 'reports'
 type ProfileTab = 'overview' | 'score' | 'fuel' | 'settings'
-type LocationCategory = 'home' | 'work' | 'favorites'
+type LocationCategory = 'favorites' | 'nearby'
 
 interface SavedLocation {
   id: number
