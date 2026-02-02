@@ -10,8 +10,12 @@ import {
   Trash2, Timer, RefreshCw, EyeOff, School, ShoppingCart, Dumbbell, 
   Building, Compass, Layers, GripVertical, Minimize2, Maximize2,
   Phone, MessageCircle, Battery, ChevronLeft, Shield, Zap, TrendingUp,
-  History, Download, BarChart3, HelpCircle, Lock, Edit2
+  History, Download, BarChart3, HelpCircle, Lock, Edit2, UserPlus
 } from 'lucide-react'
+import FriendsHub from './components/FriendsHub'
+import Leaderboard from './components/Leaderboard'
+import CarShowroom from './components/CarShowroom'
+import BadgesGrid from './components/BadgesGrid'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
