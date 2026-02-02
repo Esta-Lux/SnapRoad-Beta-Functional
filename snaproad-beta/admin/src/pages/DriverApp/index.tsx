@@ -19,7 +19,7 @@ const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BA
 type TabType = 'map' | 'offers' | 'routes' | 'engagement' | 'profile'
 type EngagementTab = 'badges' | 'skins' | 'challenges' | 'reports'
 type ProfileTab = 'overview' | 'score' | 'fuel' | 'settings'
-type LocationCategory = 'home' | 'work' | 'favorites'
+type LocationCategory = 'favorites' | 'nearby'
 
 interface SavedLocation {
   id: number
@@ -95,7 +95,7 @@ export default function DriverApp() {
   const [activeTab, setActiveTab] = useState<TabType>('map')
   const [engagementTab, setEngagementTab] = useState<EngagementTab>('badges')
   const [profileTab, setProfileTab] = useState<ProfileTab>('overview')
-  const [locationCategory, setLocationCategory] = useState<LocationCategory>('home')
+  const [locationCategory, setLocationCategory] = useState<LocationCategory>('favorites')
   
   // UI states
   const [showMenu, setShowMenu] = useState(false)
@@ -484,13 +484,6 @@ export default function DriverApp() {
     }
   }
 
-  // Get filtered locations by category
-  const getFilteredLocations = () => {
-    if (locationCategory === 'home') return locations.filter(l => l.category === 'home')
-    if (locationCategory === 'work') return locations.filter(l => l.category === 'work')
-    return locations.filter(l => !['home', 'work'].includes(l.category))
-  }
-
   // ==================== RENDER FUNCTIONS ====================
 
   // Hamburger Menu
@@ -577,7 +570,12 @@ export default function DriverApp() {
     </div>
   )
 
-  // Clean Map Tab
+  // Get home location
+  const getHomeLocation = () => locations.find(l => l.category === 'home')
+  const getWorkLocation = () => locations.find(l => l.category === 'work')
+  const getFavoriteLocations = () => locations.filter(l => !['home', 'work'].includes(l.category))
+
+  // Clean Map Tab - Google Maps Style
   const renderMap = () => (
     <div id="map-container" className="flex-1 relative bg-slate-800 overflow-hidden"
       onMouseMove={draggingWidget ? handleWidgetDrag : undefined}
@@ -592,81 +590,137 @@ export default function DriverApp() {
         }} />
       </div>
 
-      {/* Top Bar - Simplified */}
+      {/* Top Bar - Google Maps Style */}
       <div className="absolute top-3 left-3 right-3 z-10">
-        <div className="flex gap-2">
-          <button onClick={() => setShowMenu(true)} data-testid="menu-btn" className="w-10 h-10 bg-slate-900/90 backdrop-blur rounded-xl flex items-center justify-center">
-            <Menu className="text-white" size={18} />
+        {/* Search Bar */}
+        <button onClick={() => setShowSearch(true)} data-testid="search-btn" 
+          className="w-full bg-slate-900/95 backdrop-blur rounded-full px-4 h-12 flex items-center gap-3 shadow-lg">
+          <Menu className="text-slate-400" size={20} onClick={(e) => { e.stopPropagation(); setShowMenu(true) }} />
+          <span className="flex-1 text-slate-400 text-sm text-left">{isNavigating ? 'Navigating...' : 'Search here'}</span>
+          <Mic className="text-slate-400" size={20} onClick={(e) => { e.stopPropagation(); handleVoiceCommand() }} />
+        </button>
+
+        {/* Quick Action Pills - Google Maps Style */}
+        <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+          {/* Favorites Tab */}
+          <button onClick={() => setLocationCategory('favorites')} data-testid="tab-favorites"
+            className={`flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 transition-all ${
+              locationCategory === 'favorites' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-slate-900/90 text-white backdrop-blur'
+            }`}>
+            <Star size={16} className={locationCategory === 'favorites' ? 'text-white' : 'text-yellow-400'} />
+            <span className="text-sm font-medium">Favorites</span>
           </button>
-          <button onClick={() => setShowSearch(true)} data-testid="search-btn" className="flex-1 bg-slate-900/90 backdrop-blur rounded-xl px-3 h-10 flex items-center gap-2">
-            <Search className="text-slate-400" size={16} />
-            <span className="text-slate-400 text-sm">{isNavigating ? 'Navigating...' : 'Where to?'}</span>
-          </button>
-          <button onClick={() => setShowNotifications(true)} data-testid="notifications-btn" className="w-10 h-10 bg-slate-900/90 backdrop-blur rounded-xl flex items-center justify-center relative">
-            <Bell className="text-white" size={18} />
-            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center">3</span>
+
+          {/* Nearby Tab */}
+          <button onClick={() => setLocationCategory('nearby')} data-testid="tab-nearby"
+            className={`flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 transition-all ${
+              locationCategory === 'nearby' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-slate-900/90 text-white backdrop-blur'
+            }`}>
+            <MapPin size={16} />
+            <span className="text-sm font-medium">Nearby</span>
           </button>
         </div>
 
-        {/* Swipeable Location Categories */}
-        <div 
-          ref={swipeRef}
-          className="mt-2 bg-slate-900/90 backdrop-blur rounded-xl p-3"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          {/* Category Tabs */}
-          <div className="flex gap-1 mb-2">
-            {(['home', 'work', 'favorites'] as const).map(cat => (
-              <button key={cat} onClick={() => setLocationCategory(cat)} data-testid={`location-tab-${cat}`}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${locationCategory === cat ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-white'}`}>
-                {cat === 'home' ? '🏠 Home' : cat === 'work' ? '💼 Work' : '⭐ Favorites'}
+        {/* Favorites Content - Shows when Favorites is selected */}
+        {locationCategory === 'favorites' && (
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {/* Home Button */}
+            {getHomeLocation() ? (
+              <button onClick={() => handleStartNavigation(getHomeLocation()!.name)} data-testid="quick-home"
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                  <Home size={16} className="text-slate-300" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-sm font-medium">Home</p>
+                  <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{getHomeLocation()!.address}</p>
+                </div>
+              </button>
+            ) : (
+              <button onClick={() => { setNewLocation({ ...newLocation, category: 'home' }); setShowAddLocation(true) }} data-testid="add-home"
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                  <Home size={16} className="text-slate-300" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-sm font-medium">Home</p>
+                  <p className="text-blue-400 text-[11px]">Set location</p>
+                </div>
+              </button>
+            )}
+
+            {/* Work Button */}
+            {getWorkLocation() ? (
+              <button onClick={() => handleStartNavigation(getWorkLocation()!.name)} data-testid="quick-work"
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                  <Briefcase size={16} className="text-slate-300" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-sm font-medium">Work</p>
+                  <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{getWorkLocation()!.address}</p>
+                </div>
+              </button>
+            ) : (
+              <button onClick={() => { setNewLocation({ ...newLocation, category: 'work' }); setShowAddLocation(true) }} data-testid="add-work"
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                  <Briefcase size={16} className="text-slate-300" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-sm font-medium">Work</p>
+                  <p className="text-blue-400 text-[11px]">Set location</p>
+                </div>
+              </button>
+            )}
+
+            {/* Other Favorites */}
+            {getFavoriteLocations().map(loc => (
+              <button key={loc.id} onClick={() => handleStartNavigation(loc.name)} data-testid={`fav-${loc.id}`}
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                  <Star size={16} className="text-yellow-400" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-sm font-medium truncate max-w-[60px]">{loc.name}</p>
+                  <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{loc.address}</p>
+                </div>
+              </button>
+            ))}
+
+            {/* More / Add Button */}
+            <button onClick={() => setShowAddLocation(true)} data-testid="add-favorite"
+              className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full px-4 py-2 flex items-center gap-2">
+              <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                <Plus size={16} className="text-slate-300" />
+              </div>
+              <span className="text-white text-sm font-medium">More</span>
+            </button>
+          </div>
+        )}
+
+        {/* Nearby Content - Shows when Nearby is selected */}
+        {locationCategory === 'nearby' && (
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {[
+              { icon: Fuel, label: 'Gas', color: 'blue' },
+              { icon: Coffee, label: 'Coffee', color: 'orange' },
+              { icon: ShoppingCart, label: 'Shopping', color: 'pink' },
+              { icon: Dumbbell, label: 'Gym', color: 'purple' },
+            ].map((item, i) => (
+              <button key={i} onClick={() => { setActiveTab('offers'); setOfferFilter(item.label.toLowerCase() === 'gas' ? 'gas' : item.label.toLowerCase() === 'coffee' ? 'cafe' : 'all') }}
+                data-testid={`nearby-${item.label.toLowerCase()}`}
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full px-4 py-2 flex items-center gap-2">
+                <item.icon size={16} className={`text-${item.color}-400`} />
+                <span className="text-white text-sm">{item.label}</span>
               </button>
             ))}
           </div>
-
-          {/* Location Content */}
-          <div className="overflow-hidden" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.3s' : 'none' }}>
-            {getFilteredLocations().length > 0 ? (
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {getFilteredLocations().map(loc => {
-                  const iconInfo = categoryIcons[loc.category] || categoryIcons.favorite
-                  const IconComp = iconInfo.icon
-                  return (
-                    <button key={loc.id} onClick={() => handleStartNavigation(loc.name)} data-testid={`location-${loc.id}`}
-                      className="flex-shrink-0 bg-slate-800 rounded-lg px-3 py-2 flex items-center gap-2 min-w-[140px] hover:bg-slate-700">
-                      <div className={`w-8 h-8 rounded-lg bg-${iconInfo.color}-500/20 flex items-center justify-center`}>
-                        <IconComp className={`text-${iconInfo.color}-400`} size={14} />
-                      </div>
-                      <div className="text-left flex-1">
-                        <p className="text-white text-xs font-medium truncate">{loc.name}</p>
-                        <p className="text-slate-400 text-[10px] truncate">{loc.address}</p>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-2">
-                <p className="text-slate-500 text-xs">No {locationCategory} locations yet</p>
-              </div>
-            )}
-          </div>
-
-          {/* Add Location Button */}
-          <button onClick={() => setShowAddLocation(true)} data-testid="add-location-btn"
-            className="w-full mt-2 py-1.5 border border-dashed border-slate-600 rounded-lg text-slate-400 text-xs flex items-center justify-center gap-1 hover:border-blue-500 hover:text-blue-400">
-            <Plus size={12} /> Add {locationCategory === 'favorites' ? 'Favorite' : locationCategory}
-          </button>
-
-          {/* Swipe Indicator */}
-          <div className="flex justify-center gap-1 mt-2">
-            {['home', 'work', 'favorites'].map((cat, i) => (
-              <div key={i} className={`w-1.5 h-1.5 rounded-full ${locationCategory === cat ? 'bg-blue-500' : 'bg-slate-600'}`} />
-            ))}
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Moveable Score Widget */}
@@ -676,7 +730,6 @@ export default function DriverApp() {
           style={{ left: widgets.score.position.x, top: widgets.score.position.y, width: widgets.score.collapsed ? 100 : 110 }}
           data-testid="widget-score"
         >
-          {/* Widget Header */}
           <div 
             className="flex items-center justify-between px-2 py-1.5 border-b border-slate-700/50"
             onMouseDown={(e) => handleWidgetDragStart('score', e)}
@@ -689,7 +742,6 @@ export default function DriverApp() {
             </button>
           </div>
           
-          {/* Widget Content */}
           {!widgets.score.collapsed && (
             <div className="p-2">
               <div className="relative w-14 h-14 mx-auto mb-1">
@@ -753,18 +805,10 @@ export default function DriverApp() {
         <div className="absolute inset-0 w-4 h-4 bg-blue-500/30 rounded-full animate-ping" />
       </div>
 
-      {/* Clean Action Buttons - Only Essential */}
+      {/* Action Buttons - Right Side */}
       <div className="absolute right-3 bottom-20 flex flex-col gap-2">
-        <button onClick={handleVoiceCommand} data-testid="voice-btn"
-          className="w-11 h-11 bg-blue-500 rounded-full flex items-center justify-center shadow-lg hover:bg-blue-600">
-          <Mic className="text-white" size={18} />
-        </button>
-        <button onClick={handleToggleVoice} data-testid="mute-btn"
-          className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg ${isMuted ? 'bg-slate-700' : 'bg-slate-800'}`}>
-          <Volume2 className={isMuted ? 'text-slate-400' : 'text-white'} size={18} />
-        </button>
         <button onClick={() => setShowReportModal(true)} data-testid="report-btn"
-          className="w-11 h-11 bg-red-500/80 rounded-full flex items-center justify-center hover:bg-red-500">
+          className="w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
           <Camera className="text-white" size={18} />
         </button>
         {isNavigating ? (
@@ -774,23 +818,27 @@ export default function DriverApp() {
           </button>
         ) : (
           <button onClick={() => handleStartNavigation()} data-testid="start-nav-btn"
-            className="w-11 h-11 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg hover:bg-emerald-600">
+            className="w-11 h-11 bg-blue-500 rounded-full flex items-center justify-center shadow-lg hover:bg-blue-600">
             <Navigation className="text-white" size={18} />
           </button>
         )}
       </div>
 
-      {/* Map Controls - Minimal */}
+      {/* Map Controls - Left Side */}
       <div className="absolute left-3 bottom-20 flex flex-col gap-2">
         <button onClick={() => toast('Centering map')} data-testid="center-map-btn"
-          className="w-10 h-10 bg-slate-900/90 backdrop-blur rounded-xl flex items-center justify-center">
+          className="w-10 h-10 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
           <Compass className="text-white" size={16} />
+        </button>
+        <button onClick={() => setShowWidgetSettings(true)} data-testid="layers-btn"
+          className="w-10 h-10 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
+          <Layers className="text-white" size={16} />
         </button>
       </div>
 
       {/* Speed Display (when navigating) */}
       {isNavigating && (
-        <div className="absolute left-3 bottom-36 bg-slate-900/95 backdrop-blur rounded-xl p-3 text-center">
+        <div className="absolute left-3 bottom-40 bg-slate-900/95 backdrop-blur rounded-xl p-3 text-center">
           <p className="text-2xl font-bold text-white">{currentSpeed}</p>
           <p className="text-[10px] text-slate-400">MPH</p>
           <div className="flex items-center justify-center gap-1 mt-1">
