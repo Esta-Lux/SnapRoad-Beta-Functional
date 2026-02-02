@@ -10,8 +10,12 @@ import {
   Trash2, Timer, RefreshCw, EyeOff, School, ShoppingCart, Dumbbell, 
   Building, Compass, Layers, GripVertical, Minimize2, Maximize2,
   Phone, MessageCircle, Battery, ChevronLeft, Shield, Zap, TrendingUp,
-  History, Download, BarChart3, HelpCircle, Lock, Edit2
+  History, Download, BarChart3, HelpCircle, Lock, Edit2, UserPlus
 } from 'lucide-react'
+import FriendsHub from './components/FriendsHub'
+import Leaderboard from './components/Leaderboard'
+import CarShowroom from './components/CarShowroom'
+import BadgesGrid from './components/BadgesGrid'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
@@ -109,6 +113,12 @@ export default function DriverApp() {
   const [showReportModal, setShowReportModal] = useState(false)
   const [draggingWidget, setDraggingWidget] = useState<string | null>(null)
   
+  // New modal states
+  const [showFriendsHub, setShowFriendsHub] = useState(false)
+  const [showLeaderboard, setShowLeaderboard] = useState(false)
+  const [showCarShowroom, setShowCarShowroom] = useState(false)
+  const [showBadgesGrid, setShowBadgesGrid] = useState(false)
+  
   // Data states
   const [locations, setLocations] = useState<SavedLocation[]>([])
   const [routes, setRoutes] = useState<SavedRoute[]>([])
@@ -117,10 +127,11 @@ export default function DriverApp() {
   const [skins, setSkins] = useState<any[]>([])
   const [family, setFamily] = useState<any[]>([])
   const [userData, setUserData] = useState<any>({
+    id: '123456',
     name: user?.name || 'Sarah Johnson',
     gems: 12400, level: 42, safety_score: 87, streak: 14,
-    total_miles: 2847, total_trips: 156, badges_earned: 11, rank: 42,
-    is_premium: true, member_since: 'Jan 2025'
+    total_miles: 2847, total_trips: 156, badges_earned_count: 11, rank: 42,
+    is_premium: true, member_since: 'Jan 2025', friends_count: 2, state: 'TX'
   })
   
   // Widget states - positioned below location panel (which ends around y=280)
@@ -500,6 +511,21 @@ export default function DriverApp() {
               <p className="text-blue-200 text-xs">Level {userData.level} • {userData.is_premium ? '⚡ PRO' : 'Free'}</p>
             </div>
           </div>
+          
+          {/* User ID Card */}
+          <div className="mt-3 bg-white/10 rounded-xl px-3 py-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-blue-200 text-[10px]">Your ID</p>
+                <p className="text-white font-bold text-lg tracking-wider">{userData.id || '123456'}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-blue-200 text-[10px]">Friends</p>
+                <p className="text-white font-bold">{userData.friends_count || 0}</p>
+              </div>
+            </div>
+          </div>
+          
           <div className="flex gap-4 mt-3">
             <div className="text-center">
               <p className="text-white font-bold text-sm">{(userData.gems/1000).toFixed(1)}K</p>
@@ -516,8 +542,21 @@ export default function DriverApp() {
           </div>
         </div>
 
-        <div className="p-2 overflow-auto" style={{ maxHeight: 'calc(100% - 180px)' }}>
-          <p className="text-slate-500 text-[10px] font-medium px-3 py-2">NAVIGATION</p>
+        <div className="p-2 overflow-auto" style={{ maxHeight: 'calc(100% - 240px)' }}>
+          <p className="text-slate-500 text-[10px] font-medium px-3 py-2">SOCIAL</p>
+          {[
+            { icon: Users, label: 'Friends Hub', badge: userData.friends_count, action: () => { setShowFriendsHub(true); setShowMenu(false) } },
+            { icon: BarChart3, label: 'Leaderboard', action: () => { setShowLeaderboard(true); setShowMenu(false) } },
+          ].map((item, i) => (
+            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
+              <item.icon size={16} />
+              <span className="flex-1 text-left text-sm">{item.label}</span>
+              {item.badge !== undefined && <span className="text-xs bg-slate-700 px-2 py-0.5 rounded-full">{item.badge}</span>}
+            </button>
+          ))}
+
+          <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">NAVIGATION</p>
           {[
             { icon: MapPin, label: 'Map', action: () => { setActiveTab('map'); setShowMenu(false) } },
             { icon: Route, label: 'My Routes', badge: `${routes.length}/20`, action: () => { setActiveTab('routes'); setShowMenu(false) } },
@@ -535,10 +574,10 @@ export default function DriverApp() {
           <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">REWARDS</p>
           {[
             { icon: Gift, label: 'Offers', badge: offers.length, action: () => { setActiveTab('offers'); setShowMenu(false) } },
-            { icon: Trophy, label: 'Achievements', action: () => { setActiveTab('engagement'); setEngagementTab('badges'); setShowMenu(false) } },
-            { icon: BarChart3, label: 'Leaderboard', action: () => toast('Opening leaderboard...') },
+            { icon: Award, label: 'All Badges', badge: `${userData.badges_earned_count}/160`, action: () => { setShowBadgesGrid(true); setShowMenu(false) } },
+            { icon: Car, label: 'Car Studio', action: () => { setShowCarShowroom(true); setShowMenu(false) } },
           ].map((item, i) => (
-            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase()}`}
+            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
               <item.icon size={16} />
               <span className="flex-1 text-left text-sm">{item.label}</span>
@@ -592,13 +631,19 @@ export default function DriverApp() {
 
       {/* Top Bar - Google Maps Style */}
       <div className="absolute top-3 left-3 right-3 z-10">
-        {/* Search Bar */}
-        <button onClick={() => setShowSearch(true)} data-testid="search-btn" 
-          className="w-full bg-slate-900/95 backdrop-blur rounded-full px-4 h-12 flex items-center gap-3 shadow-lg">
-          <Menu className="text-slate-400" size={20} onClick={(e) => { e.stopPropagation(); setShowMenu(true) }} />
-          <span className="flex-1 text-slate-400 text-sm text-left">{isNavigating ? 'Navigating...' : 'Search here'}</span>
-          <Mic className="text-slate-400" size={20} onClick={(e) => { e.stopPropagation(); handleVoiceCommand() }} />
-        </button>
+        {/* Search Bar with Menu */}
+        <div className="flex gap-2">
+          <button onClick={() => setShowMenu(true)} data-testid="menu-btn"
+            className="w-12 h-12 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
+            <Menu className="text-white" size={20} />
+          </button>
+          <button onClick={() => setShowSearch(true)} data-testid="search-btn" 
+            className="flex-1 bg-slate-900/95 backdrop-blur rounded-full px-4 h-12 flex items-center gap-3 shadow-lg">
+            <Search className="text-slate-400" size={18} />
+            <span className="flex-1 text-slate-400 text-sm text-left">{isNavigating ? 'Navigating...' : 'Search here'}</span>
+            <Mic className="text-slate-400" size={18} onClick={(e) => { e.stopPropagation(); handleVoiceCommand() }} />
+          </button>
+        </div>
 
         {/* Quick Action Pills - Google Maps Style */}
         <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
@@ -1654,6 +1699,29 @@ export default function DriverApp() {
       {renderOfferDetailModal()}
       {renderReportModal()}
       {renderFamilyMemberModal()}
+      
+      {/* New Feature Modals */}
+      <FriendsHub 
+        isOpen={showFriendsHub} 
+        onClose={() => setShowFriendsHub(false)} 
+        userId={userData.id || '123456'}
+        friendsCount={userData.friends_count || 0}
+      />
+      <Leaderboard 
+        isOpen={showLeaderboard} 
+        onClose={() => setShowLeaderboard(false)}
+        userId={userData.id || '123456'}
+      />
+      <CarShowroom 
+        isOpen={showCarShowroom} 
+        onClose={() => setShowCarShowroom(false)}
+        userGems={userData.gems}
+        onGemsUpdate={(newGems) => setUserData((prev: any) => ({ ...prev, gems: newGems }))}
+      />
+      <BadgesGrid 
+        isOpen={showBadgesGrid} 
+        onClose={() => setShowBadgesGrid(false)}
+      />
     </div>
   )
 }
