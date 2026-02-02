@@ -631,13 +631,19 @@ export default function DriverApp() {
 
       {/* Top Bar - Google Maps Style */}
       <div className="absolute top-3 left-3 right-3 z-10">
-        {/* Search Bar */}
-        <button onClick={() => setShowSearch(true)} data-testid="search-btn" 
-          className="w-full bg-slate-900/95 backdrop-blur rounded-full px-4 h-12 flex items-center gap-3 shadow-lg">
-          <Menu className="text-slate-400" size={20} onClick={(e) => { e.stopPropagation(); setShowMenu(true) }} />
-          <span className="flex-1 text-slate-400 text-sm text-left">{isNavigating ? 'Navigating...' : 'Search here'}</span>
-          <Mic className="text-slate-400" size={20} onClick={(e) => { e.stopPropagation(); handleVoiceCommand() }} />
-        </button>
+        {/* Search Bar with Menu */}
+        <div className="flex gap-2">
+          <button onClick={() => setShowMenu(true)} data-testid="menu-btn"
+            className="w-12 h-12 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
+            <Menu className="text-white" size={20} />
+          </button>
+          <button onClick={() => setShowSearch(true)} data-testid="search-btn" 
+            className="flex-1 bg-slate-900/95 backdrop-blur rounded-full px-4 h-12 flex items-center gap-3 shadow-lg">
+            <Search className="text-slate-400" size={18} />
+            <span className="flex-1 text-slate-400 text-sm text-left">{isNavigating ? 'Navigating...' : 'Search here'}</span>
+            <Mic className="text-slate-400" size={18} onClick={(e) => { e.stopPropagation(); handleVoiceCommand() }} />
+          </button>
+        </div>
 
         {/* Quick Action Pills - Google Maps Style */}
         <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
