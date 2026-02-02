@@ -672,7 +672,7 @@ export default function DriverApp() {
       {/* Moveable Score Widget */}
       {widgets.score.visible && (
         <div 
-          className="absolute bg-slate-900/95 backdrop-blur rounded-xl transition-all cursor-move select-none"
+          className="absolute bg-slate-900/95 backdrop-blur rounded-xl transition-all cursor-move select-none z-[5]"
           style={{ left: widgets.score.position.x, top: widgets.score.position.y, width: widgets.score.collapsed ? 100 : 110 }}
           data-testid="widget-score"
         >
