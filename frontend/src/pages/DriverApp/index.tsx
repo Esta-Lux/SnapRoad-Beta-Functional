@@ -845,8 +845,8 @@ export default function DriverApp() {
       {/* Offers List */}
       <div className="p-4 space-y-2">
         {offers.filter(o => offerFilter === 'all' || o.type === offerFilter).map(offer => (
-          <button key={offer.id} onClick={() => setShowOfferDetail(offer)} data-testid={`offer-${offer.id}`}
-            className="w-full bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow">
+          <div key={offer.id} onClick={() => setShowOfferDetail(offer)} data-testid={`offer-${offer.id}`}
+            className="w-full bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${offer.type === 'gas' ? 'bg-blue-500' : 'bg-orange-500'}`}>
               {offer.type === 'gas' ? <Fuel className="text-white" size={20} /> : <Coffee className="text-white" size={20} />}
             </div>
@@ -871,7 +871,7 @@ export default function DriverApp() {
                 <Heart className={favorites.includes(offer.id) ? 'text-red-500 fill-red-500' : 'text-slate-400'} size={14} />
               </button>
             </div>
-          </button>
+          </div>
         ))}
       </div>
     </div>
