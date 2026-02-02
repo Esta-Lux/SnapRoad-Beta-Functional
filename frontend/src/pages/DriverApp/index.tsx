@@ -511,6 +511,21 @@ export default function DriverApp() {
               <p className="text-blue-200 text-xs">Level {userData.level} • {userData.is_premium ? '⚡ PRO' : 'Free'}</p>
             </div>
           </div>
+          
+          {/* User ID Card */}
+          <div className="mt-3 bg-white/10 rounded-xl px-3 py-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-blue-200 text-[10px]">Your ID</p>
+                <p className="text-white font-bold text-lg tracking-wider">{userData.id || '123456'}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-blue-200 text-[10px]">Friends</p>
+                <p className="text-white font-bold">{userData.friends_count || 0}</p>
+              </div>
+            </div>
+          </div>
+          
           <div className="flex gap-4 mt-3">
             <div className="text-center">
               <p className="text-white font-bold text-sm">{(userData.gems/1000).toFixed(1)}K</p>
@@ -527,8 +542,21 @@ export default function DriverApp() {
           </div>
         </div>
 
-        <div className="p-2 overflow-auto" style={{ maxHeight: 'calc(100% - 180px)' }}>
-          <p className="text-slate-500 text-[10px] font-medium px-3 py-2">NAVIGATION</p>
+        <div className="p-2 overflow-auto" style={{ maxHeight: 'calc(100% - 240px)' }}>
+          <p className="text-slate-500 text-[10px] font-medium px-3 py-2">SOCIAL</p>
+          {[
+            { icon: Users, label: 'Friends Hub', badge: userData.friends_count, action: () => { setShowFriendsHub(true); setShowMenu(false) } },
+            { icon: BarChart3, label: 'Leaderboard', action: () => { setShowLeaderboard(true); setShowMenu(false) } },
+          ].map((item, i) => (
+            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
+              <item.icon size={16} />
+              <span className="flex-1 text-left text-sm">{item.label}</span>
+              {item.badge !== undefined && <span className="text-xs bg-slate-700 px-2 py-0.5 rounded-full">{item.badge}</span>}
+            </button>
+          ))}
+
+          <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">NAVIGATION</p>
           {[
             { icon: MapPin, label: 'Map', action: () => { setActiveTab('map'); setShowMenu(false) } },
             { icon: Route, label: 'My Routes', badge: `${routes.length}/20`, action: () => { setActiveTab('routes'); setShowMenu(false) } },
@@ -546,10 +574,10 @@ export default function DriverApp() {
           <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">REWARDS</p>
           {[
             { icon: Gift, label: 'Offers', badge: offers.length, action: () => { setActiveTab('offers'); setShowMenu(false) } },
-            { icon: Trophy, label: 'Achievements', action: () => { setActiveTab('engagement'); setEngagementTab('badges'); setShowMenu(false) } },
-            { icon: BarChart3, label: 'Leaderboard', action: () => toast('Opening leaderboard...') },
+            { icon: Award, label: 'All Badges', badge: `${userData.badges_earned_count}/160`, action: () => { setShowBadgesGrid(true); setShowMenu(false) } },
+            { icon: Car, label: 'Car Studio', action: () => { setShowCarShowroom(true); setShowMenu(false) } },
           ].map((item, i) => (
-            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase()}`}
+            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
               <item.icon size={16} />
               <span className="flex-1 text-left text-sm">{item.label}</span>
