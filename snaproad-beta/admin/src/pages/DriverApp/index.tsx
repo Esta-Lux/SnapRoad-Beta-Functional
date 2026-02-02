@@ -123,10 +123,10 @@ export default function DriverApp() {
     is_premium: true, member_since: 'Jan 2025'
   })
   
-  // Widget states
+  // Widget states - positioned below location panel (which ends around y=280)
   const [widgets, setWidgets] = useState<Record<string, WidgetState>>({
-    score: { visible: true, collapsed: false, position: { x: 12, y: 130 } },
-    gems: { visible: true, collapsed: false, position: { x: 260, y: 130 } },
+    score: { visible: true, collapsed: false, position: { x: 12, y: 290 } },
+    gems: { visible: true, collapsed: false, position: { x: 260, y: 290 } },
   })
   
   // Navigation & settings states
@@ -672,7 +672,7 @@ export default function DriverApp() {
       {/* Moveable Score Widget */}
       {widgets.score.visible && (
         <div 
-          className="absolute bg-slate-900/95 backdrop-blur rounded-xl transition-all cursor-move select-none"
+          className="absolute bg-slate-900/95 backdrop-blur rounded-xl transition-all cursor-move select-none z-[5]"
           style={{ left: widgets.score.position.x, top: widgets.score.position.y, width: widgets.score.collapsed ? 100 : 110 }}
           data-testid="widget-score"
         >
@@ -715,7 +715,7 @@ export default function DriverApp() {
       {/* Moveable Gems Widget */}
       {widgets.gems.visible && (
         <div 
-          className="absolute bg-slate-900/95 backdrop-blur rounded-xl transition-all cursor-move select-none"
+          className="absolute bg-slate-900/95 backdrop-blur rounded-xl transition-all cursor-move select-none z-[5]"
           style={{ left: widgets.gems.position.x, top: widgets.gems.position.y, width: widgets.gems.collapsed ? 100 : 110 }}
           data-testid="widget-gems"
         >
@@ -845,8 +845,8 @@ export default function DriverApp() {
       {/* Offers List */}
       <div className="p-4 space-y-2">
         {offers.filter(o => offerFilter === 'all' || o.type === offerFilter).map(offer => (
-          <button key={offer.id} onClick={() => setShowOfferDetail(offer)} data-testid={`offer-${offer.id}`}
-            className="w-full bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow">
+          <div key={offer.id} onClick={() => setShowOfferDetail(offer)} data-testid={`offer-${offer.id}`}
+            className="w-full bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${offer.type === 'gas' ? 'bg-blue-500' : 'bg-orange-500'}`}>
               {offer.type === 'gas' ? <Fuel className="text-white" size={20} /> : <Coffee className="text-white" size={20} />}
             </div>
@@ -871,7 +871,7 @@ export default function DriverApp() {
                 <Heart className={favorites.includes(offer.id) ? 'text-red-500 fill-red-500' : 'text-slate-400'} size={14} />
               </button>
             </div>
-          </button>
+          </div>
         ))}
       </div>
     </div>
