@@ -95,7 +95,7 @@ export default function DriverApp() {
   const [activeTab, setActiveTab] = useState<TabType>('map')
   const [engagementTab, setEngagementTab] = useState<EngagementTab>('badges')
   const [profileTab, setProfileTab] = useState<ProfileTab>('overview')
-  const [locationCategory, setLocationCategory] = useState<LocationCategory>('home')
+  const [locationCategory, setLocationCategory] = useState<LocationCategory>('favorites')
   
   // UI states
   const [showMenu, setShowMenu] = useState(false)
