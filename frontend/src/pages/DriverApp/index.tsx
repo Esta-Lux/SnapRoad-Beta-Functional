@@ -123,10 +123,10 @@ export default function DriverApp() {
     is_premium: true, member_since: 'Jan 2025'
   })
   
-  // Widget states
+  // Widget states - positioned below location panel (which ends around y=280)
   const [widgets, setWidgets] = useState<Record<string, WidgetState>>({
-    score: { visible: true, collapsed: false, position: { x: 12, y: 130 } },
-    gems: { visible: true, collapsed: false, position: { x: 260, y: 130 } },
+    score: { visible: true, collapsed: false, position: { x: 12, y: 290 } },
+    gems: { visible: true, collapsed: false, position: { x: 260, y: 290 } },
   })
   
   // Navigation & settings states
