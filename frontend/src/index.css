@@ -11,6 +11,14 @@
   --surface-light: #334155;
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
+  
+  /* Theme variables */
+  --bg-primary: #0a0a0f;
+  --bg-surface: #12121a;
+  --bg-elevated: #1a1a24;
+  --bg-border: #2a2a3a;
+  --accent: #00DFA2;
+  --accent-blue: #0084FF;
 }
 
 body {
