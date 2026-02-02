@@ -484,13 +484,6 @@ export default function DriverApp() {
     }
   }
 
-  // Get filtered locations by category
-  const getFilteredLocations = () => {
-    if (locationCategory === 'home') return locations.filter(l => l.category === 'home')
-    if (locationCategory === 'work') return locations.filter(l => l.category === 'work')
-    return locations.filter(l => !['home', 'work'].includes(l.category))
-  }
-
   // ==================== RENDER FUNCTIONS ====================
 
   // Hamburger Menu
