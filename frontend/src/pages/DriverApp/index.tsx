@@ -1693,6 +1693,29 @@ export default function DriverApp() {
       {renderOfferDetailModal()}
       {renderReportModal()}
       {renderFamilyMemberModal()}
+      
+      {/* New Feature Modals */}
+      <FriendsHub 
+        isOpen={showFriendsHub} 
+        onClose={() => setShowFriendsHub(false)} 
+        userId={userData.id || '123456'}
+        friendsCount={userData.friends_count || 0}
+      />
+      <Leaderboard 
+        isOpen={showLeaderboard} 
+        onClose={() => setShowLeaderboard(false)}
+        userId={userData.id || '123456'}
+      />
+      <CarShowroom 
+        isOpen={showCarShowroom} 
+        onClose={() => setShowCarShowroom(false)}
+        userGems={userData.gems}
+        onGemsUpdate={(newGems) => setUserData((prev: any) => ({ ...prev, gems: newGems }))}
+      />
+      <BadgesGrid 
+        isOpen={showBadgesGrid} 
+        onClose={() => setShowBadgesGrid(false)}
+      />
     </div>
   )
 }
