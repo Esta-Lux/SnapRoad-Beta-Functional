@@ -13,7 +13,7 @@ import {
   History, Download, BarChart3, HelpCircle, Lock, Edit2
 } from 'lucide-react'
 
-const API_URL = process.env.REACT_APP_BACKEND_URL || ''
+const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 // Types
 type TabType = 'map' | 'offers' | 'routes' | 'engagement' | 'profile'
