@@ -519,6 +519,12 @@ export default function DriverApp() {
     }
   }
 
+  // Handle direct offer redemption (opens compact popup)
+  const handleDirectRedemption = (offer: any) => {
+    setSelectedOfferForRedemption(offer)
+    setShowRedemptionPopup(true)
+  }
+
   // Old share trip function for backwards compatibility
   const handleShareTripLegacy = async () => {
     try {
