@@ -11,30 +11,43 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 ## App Routes
 - `/` - Welcome/Landing page with auth modal
 - `/driver` - Driver mobile app experience
-- `/partner` - Partner business dashboard
-- `/admin` - Admin console with full control
+- `/partner` - Partner business dashboard (Premium UI)
+- `/admin` - Admin console with full control (Premium UI)
 
 ## Completed Features
 
-### Welcome Page & Auth System ✅ NEW
-- ✅ Beautiful landing page with city background
-- ✅ "Safe journeys, smart rewards" tagline
-- ✅ Feature strip: Safety Score, Earn Gems, Leaderboards, Premium Perks
-- ✅ Glassmorphism auth modal with role selector (Driver/Partner/Admin)
-- ✅ Email/password form with visibility toggle
-- ✅ Sign in/Sign up mode toggle
+### Session Management & User State Reset ✅ NEW (Dec 2025)
+- ✅ `/api/auth/login?role=driver` resets driver state for fresh testing experience
+- ✅ `/api/session/reset` endpoint for manual state reset
+- ✅ Driver login automatically clears gems, XP, level, redeemed offers
+- ✅ Fresh user starts with 0 gems, Level 1, 0 XP, no redeemed offers
+- ✅ Onboarding flow triggers correctly for new users
 
-### Partner Dashboard (Web) ✅ NEW
-- ✅ Sidebar navigation with SnapRoad Partner Portal branding
-- ✅ Overview: Total Redemptions, Views, New Customers, Revenue
+### Premium Partner Dashboard ✅ NEW (Dec 2025)
+- ✅ Glassmorphism UI with ambient background effects
+- ✅ Premium gradient cards with hover glow effects
+- ✅ **Onboarding Walkthrough** (4 steps with Skip/Continue)
+  - Welcome to Partner Portal
+  - Create Compelling Offers
+  - Track Your Performance
+  - Reach Premium Drivers
+- ✅ Overview: Total Redemptions, Views, New Customers, Revenue with trends
 - ✅ My Offers: Create, edit, pause, delete offers
 - ✅ Analytics placeholder for performance tracking
-- ✅ Recent redemptions list with timestamps
+- ✅ Recent redemptions list with timestamps and gem rewards
+- ✅ Help & Tour button to re-trigger onboarding
+- ✅ Business card with partner stats
 
-### Admin Dashboard (Web) ✅ NEW
-- ✅ Full control console with purple/pink branding
-- ✅ **Stats**: Total Users, Partners, Avg Safety Score
-- ✅ **User Management**: View, edit, suspend users
+### Premium Admin Dashboard ✅ NEW (Dec 2025)
+- ✅ Purple/pink gradient branding with glassmorphism
+- ✅ Premium ambient background effects
+- ✅ **Onboarding Walkthrough** (4 steps with Skip/Continue)
+  - Welcome, Administrator
+  - User Management
+  - Partner Oversight
+  - Create Platform Events
+- ✅ **Stats**: Total Users, Partners, Avg Safety Score with trends
+- ✅ **User Management**: View, edit, suspend users with filters
 - ✅ **Partner Management**: Approve, view, manage partners
 - ✅ **Events System**: Create daily/weekly/special events
   - Gems multiplier and XP bonus settings
@@ -42,144 +55,47 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
   - Active/scheduled/ended status
 - ✅ **Quick Actions**: Create Event, View Reports, Send Broadcast, Export Data
 - ✅ **Platform Health**: API, Database, Payment, Push status
+- ✅ Help & Tour button to re-trigger onboarding
+- ✅ Super Admin card with full access indicator
 
-### Orion Offer Alerts (During Drives) ✅ NEW
+### Welcome Page & Auth System ✅
+- ✅ Beautiful landing page with city background
+- ✅ "Safe journeys, smart rewards" tagline
+- ✅ Feature strip: Safety Score, Earn Gems, Leaderboards, Premium Perks
+- ✅ Glassmorphism auth modal with role selector (Driver/Partner/Admin)
+- ✅ Email/password form with visibility toggle
+- ✅ Sign in/Sign up mode toggle
+- ✅ **Auto-resets driver state** on login for fresh experience
+
+### Orion Offer Alerts (During Drives) ✅
 - ✅ Pushes 2 offers during active navigation
 - ✅ Voice announcement: "Hey! There's a [business] nearby..."
 - ✅ Shows distance, discount, and gems reward
 - ✅ Mute/unmute button
 - ✅ "View Offer" button opens redemption popup
 - ✅ Auto-dismiss after 15 seconds
-- ✅ Doesn't repeat same offer twice per session
 
-### Phase 2C: Tiered Offers & Share Trip (Feb 8, 2025) ✅ NEW
-
-#### Tiered Offers System
+### Phase 2C: Tiered Offers & Share Trip ✅
 - ✅ Tiered discounts: Basic (6%) vs Premium (18%)
 - ✅ Admin offers give 18% to all users
-- ✅ 5 seed offers: Shell Gas Station, Starbucks, Quick Shine Car Wash, SnapRoad Partner Deal (admin), BP Gas Station
-- ✅ OffersModal with full offer details and redemption
-- ✅ Offer redemption with gems and XP rewards
-- ✅ "Upgrade for 18%" upsell for Basic users
-- ✅ Redeemed offers marked with checkmark
+- ✅ 5 seed offers with redemption tracking
+- ✅ Glowing gem markers on map for nearby offers
+- ✅ Enhanced Leaderboard with state filtering
+- ✅ Challenge Friend system with gems at stake
+- ✅ Challenge History & Badges modal
+- ✅ Geofenced QR Code system with screenshot blocking
+- ✅ Weekly Recap (Premium feature)
+- ✅ Driving Score & Orion Tips (Premium feature)
 
-#### Glowing Gem Markers on Map ✅ NEW
-- ✅ Interactive glowing gem markers for nearby offers
-- ✅ Pulsing emerald glow effect animation
-- ✅ Discount percentage badge on each marker
-- ✅ Business name tooltip on hover
-- ✅ Click marker → Opens OffersModal with offer auto-selected
-- ✅ Markers positioned based on offer lat/lng relative to user
+### Phase 2A-B: Core Features ✅
+- ✅ XP/Leveling system (Levels 1-99)
+- ✅ Road Reports with upvotes
+- ✅ Community Badges (20 total)
+- ✅ Orion Voice Assistant
+- ✅ Quick Photo Report with safety guardrails
+- ✅ Road Status Overlay
 
-#### Enhanced Leaderboard ✅ NEW
-- ✅ State-based filtering with Ohio (OH) as default focus state
-- ✅ Time filters: All Time, This Week, This Month
-- ✅ User's ranking card shows position within selected state
-- ✅ Gems displayed alongside Safety Score
-- ✅ Premium user badges (⚡ indicator)
-- ✅ Color-coded Safety Scores (green 90+, amber 70-89, red <70)
-- ✅ Crown/Medal icons for top 3 positions
-- ✅ "You" indicator for current user's entry
-- ✅ **Challenge Friend buttons (⚔️)** on each non-user entry
-
-#### Challenge Friend System ✅ NEW
-- ✅ Head-to-head safe driving competitions
-- ✅ Challenge duration options: 24 Hours, 3 Days, 1 Week
-- ✅ Gems at stake options: 50 (Low), 100 (Med), 250 (High), 500 (Extreme)
-- ✅ Stake options disabled when user lacks sufficient gems
-- ✅ Challenge rules display: Safety Score wins, winner takes all
-- ✅ Both drivers earn bonus XP regardless of outcome
-- ✅ Backend endpoints: POST /api/challenges, GET /api/challenges
-
-#### Challenge History & Badges ✅ NEW
-- ✅ Challenge History modal with win/loss/draw stats
-- ✅ Net gems earned from challenges displayed
-- ✅ Win rate percentage calculation
-- ✅ Current and best win streak tracking
-- ✅ History tab: Past battles with scores, opponents, and gem results
-- ✅ Badges tab: 8 challenge achievement badges with progress bars
-  - First Victory, Hot Streak (3), On Fire (5), Champion (10 wins)
-  - Legend (25 wins), Gem Collector (1K gems), Perfect Driver, Comeback King
-- ✅ Backend endpoint: GET /api/challenges/history
-
-#### Compact Offer Redemption Popup ✅ IMPROVED
-- ✅ Standalone popup (doesn't cover the whole page)
-- ✅ Inline header with icon, name, description, and close button
-- ✅ Compact gems and discount display side by side
-- ✅ Simple premium upsell message
-- ✅ Click outside to dismiss
-
-#### Geofenced QR Code System ✅ NEW
-- ✅ QR codes generated upon redemption with unique format: `SR-{offerId}-{timestamp}-{random}`
-- ✅ **1-mile geofence**: QR code only visible when user is within range
-- ✅ Out-of-range users see blurred QR with lock icon and distance indicator
-- ✅ **Screenshot blocking**: Detects PrintScreen, Cmd+Shift+3/4/5, visibility change
-- ✅ Warning overlay appears when screenshot attempt detected
-- ✅ "Protected QR Code" security notice with instructions
-- ✅ "Valid for 24 hours" timer notice
-- ✅ Premium feel with gradients and smooth animations
-
-#### Weekly Recap (Premium) ✅ NEW
-- ✅ 5-slide presentation with weekly stats
-  - Overview: Trips, Miles, Gems, XP
-  - Safety Score with progress ring and week-over-week change
-  - Challenge Results: Wins, Losses, Streak
-  - Weekly Highlights: Best score, longest trip, driver impact
-  - Community Impact: Reports posted, offers redeemed, drive time
-- ✅ Beautiful gradient backgrounds for each slide
-- ✅ Premium upsell for Basic users
-- ✅ Navigation dots and Next/Back buttons
-- ✅ Backend endpoint: GET /api/weekly-recap
-
-#### Driving Score & Orion Tips (Premium) ✅ NEW
-- ✅ Premium feature with upsell modal for Basic users
-- ✅ 6 driving metrics: Speed Compliance, Smooth Braking, Smooth Acceleration, Following Distance, Turn Signals, Focus Time
-- ✅ Each metric shows score, trend (up/down/stable), and description
-- ✅ Orion tips generated based on lowest scoring metrics
-- ✅ Priority order: High, Medium, Low with color-coded borders
-- ✅ Voice coaching via Web Speech API (TTS speak buttons)
-- ✅ Overall score displayed in circular progress indicator
-
-#### Share Trip Score
-- ✅ Shareable trip summary card with SnapRoad branding
-- ✅ Safety Score display with circular progress
-- ✅ Trip stats: distance, duration, gems earned, XP earned
-- ✅ "Safe Drive!" badge for scores >= 90
-- ✅ Share buttons: Twitter, Instagram, Copy Text, Save as Image
-- ✅ Share Trip button in Profile overview
-
-### Phase 2B+: Orion Voice & Quick Reporting (Feb 8, 2025) ✅
-
-#### Orion Voice Assistant
-- ✅ Voice-activated reporting: "cop on my left", "hazard ahead"
-- ✅ Web Speech API with fallback to quick action buttons
-- ✅ Quick action buttons: Hazard, Accident, Construction, Police, Weather
-- ✅ Direction support: left, right, ahead, behind
-- ✅ Auto-submits report with location after voice command
-
-#### Quick Photo Report (Safety-First)
-- ✅ One-tap photo posting - no typing required
-- ✅ **Safety guardrails:**
-  - Can't use camera while car in motion (>10 mph)
-  - Orion voice warning: "Using phone while driving isn't safe"
-  - Passenger Mode toggle for passengers
-  - Gallery/camera roll always allowed
-- ✅ Auto-location tracking from photo
-- ✅ Report type selection after photo taken
-
-#### Road Status Overlay
-- ✅ Mock traffic data for Columbus, OH area
-- ✅ Color-coded markers: Black (closed), Yellow (moderate), Red (heavy)
-- ✅ Tap marker for details (road name, reason, delay)
-
-### Phase 2A: XP/Leveling & Road Reports (Feb 8, 2025) ✅
-- ✅ Levels 1-99 with XP progression
-- ✅ XP rewards: Photo report (+500), Safe drive (+1000), Offer redemption (+700)
-- ✅ Road Reports with upvotes (10 gems per upvote)
-- ✅ Community Badges (20 total, no progress bars)
-- ✅ Trip completion with safety metrics
-
-### Phase 1: Plan Selection System (Feb 8, 2025) ✅
+### Phase 1: Plan Selection System ✅
 - ✅ Basic ($0/mo, 1× gems) and Premium ($10.99/mo, 2× gems)
 - ✅ Admin pricing control with founders toggle
 - ✅ Onboarding flow: Plan Selection → Car Color Selection → Main App
@@ -196,6 +112,10 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 
 ## API Endpoints
 
+### Session Management (NEW)
+- `POST /api/auth/login?role=driver` - Mock login with state reset for drivers
+- `POST /api/session/reset` - Manual state reset
+
 ### Offers System
 - `GET /api/offers` - Get all offers with tiered discounts
 - `POST /api/offers` - Create new offer (business/admin)
@@ -207,34 +127,33 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 
 ### Road Reports
 - `GET /api/reports`, `POST /api/reports`, `POST /api/reports/{id}/upvote`
-- `GET /api/reports/my`, `DELETE /api/reports/{id}`
-
-### Community Badges
-- `GET /api/badges/community`
 
 ### Pricing & Plans
 - `GET /api/pricing`, `PUT /api/admin/pricing`
 - `POST /api/user/plan`, `GET /api/user/plan`
 
 ## Testing Status
-- **Latest Report:** `/app/test_reports/iteration_10.json`
-- **Backend:** 100% pass rate (21/21 tests)
-- **Frontend:** 100% pass rate (all UI features verified)
+- **Latest Report:** `/app/test_reports/iteration_14.json`
+- **Backend:** 100% pass rate (all session reset tests pass)
+- **Frontend:** 100% pass rate (Skip Tour button fixed)
 
 ## ⚠️ MOCKED DATA
-- All backend data is in-memory
-- 5 seed offers in offers_db
-- Road status uses `MOCK_ROAD_SEGMENTS` constant
-- User location mock: Columbus, OH (39.9612, -82.9988)
+- All backend data is in-memory (users_db, offers_db, etc.)
+- Session resets are instant but don't persist across server restarts
+- Road status uses mock Columbus, OH area data
 
 ## Upcoming Tasks
 
-### P3 - Full Button Audit
+### P2 - Full Button Audit
 - Ensure all interactive elements are wired to backend endpoints
+- Wire up Settings, Notifications buttons on dashboards
+
+### P3 - Orion Proactive Offer Alerts
+- Push offers during drives even without destination set
 
 ## Future/Backlog
 - Native iOS App Migration (Swift/SwiftUI)
 - Live Mapbox Integration (placeholder for API key)
 - Real Orion Voice with native iOS libs
-- Business & Admin Web Dashboards
 - Stripe payments integration
+- Real authentication (Firebase/Auth0)
