@@ -55,6 +55,21 @@ class NavigationRequest(BaseModel):
 class FriendRequest(BaseModel):
     user_id: str
 
+class PlanUpdate(BaseModel):
+    plan: str  # 'basic' or 'premium'
+
+class PricingUpdate(BaseModel):
+    founders_price: Optional[float] = None
+    public_price: Optional[float] = None
+    is_founders_active: Optional[bool] = None
+
+# ==================== PRICING CONFIGURATION ====================
+pricing_config = {
+    "founders_price": 10.99,
+    "public_price": 16.99,
+    "is_founders_active": True,
+}
+
 # ==================== USER ID COUNTER ====================
 next_user_id = 123457  # First user is 123456
 
