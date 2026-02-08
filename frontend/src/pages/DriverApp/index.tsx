@@ -617,7 +617,7 @@ export default function DriverApp() {
 
           <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">REWARDS</p>
           {[
-            { icon: Gift, label: 'Offers', badge: offers.length, action: () => { setActiveTab('offers'); setShowMenu(false) } },
+            { icon: Gift, label: 'Offers', badge: offers.length, action: () => { setActiveTab('rewards'); setRewardsTab('offers'); setShowMenu(false) } },
             { icon: Award, label: 'All Badges', badge: `${userData.badges_earned_count}/160`, action: () => { setShowBadgesGrid(true); setShowMenu(false) } },
             { icon: Car, label: 'Car Studio', action: () => { setShowCarShowroom(true); setShowMenu(false) } },
           ].map((item, i) => (
@@ -633,7 +633,7 @@ export default function DriverApp() {
           {[
             { icon: Volume2, label: isMuted ? 'Unmute' : 'Mute', action: handleToggleVoice },
             { icon: Settings, label: 'Settings', action: () => { setActiveTab('profile'); setProfileTab('settings'); setShowMenu(false) } },
-            { icon: HelpCircle, label: 'Help', action: () => toast('Opening help...') },
+            { icon: HelpCircle, label: 'Help', action: () => { setShowHelpSupport(true); setShowMenu(false) } },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase()}`}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
@@ -801,7 +801,7 @@ export default function DriverApp() {
               { icon: ShoppingCart, label: 'Shopping', color: 'pink' },
               { icon: Dumbbell, label: 'Gym', color: 'purple' },
             ].map((item, i) => (
-              <button key={i} onClick={() => { setActiveTab('offers'); setOfferFilter(item.label.toLowerCase() === 'gas' ? 'gas' : item.label.toLowerCase() === 'coffee' ? 'cafe' : 'all') }}
+              <button key={i} onClick={() => { setActiveTab('rewards'); setRewardsTab('offers'); setOfferFilter(item.label.toLowerCase() === 'gas' ? 'gas' : item.label.toLowerCase() === 'coffee' ? 'cafe' : 'all') }}
                 data-testid={`nearby-${item.label.toLowerCase()}`}
                 className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full px-4 py-2 flex items-center gap-2">
                 <item.icon size={16} className={`text-${item.color}-400`} />
@@ -879,7 +879,7 @@ export default function DriverApp() {
                 <span className="text-white font-bold">{(userData.gems / 1000).toFixed(1)}K</span>
               </div>
               <p className="text-[10px] text-emerald-400">+2,450 this month</p>
-              <button onClick={() => setActiveTab('offers')} data-testid="earn-gems-btn"
+              <button onClick={() => setActiveTab('rewards')} data-testid="earn-gems-btn"
                 className="w-full mt-1 bg-emerald-500/20 text-emerald-400 text-[10px] py-1 rounded-lg hover:bg-emerald-500/30">
                 Earn More
               </button>
