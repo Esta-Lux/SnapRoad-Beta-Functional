@@ -38,6 +38,25 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 - ✅ Color-coded Safety Scores (green 90+, amber 70-89, red <70)
 - ✅ Crown/Medal icons for top 3 positions
 - ✅ "You" indicator for current user's entry
+- ✅ **Challenge Friend buttons (⚔️)** on each non-user entry
+
+#### Challenge Friend System ✅ NEW
+- ✅ Head-to-head safe driving competitions
+- ✅ Challenge duration options: 24 Hours, 3 Days, 1 Week
+- ✅ Gems at stake options: 50 (Low), 100 (Med), 250 (High), 500 (Extreme)
+- ✅ Stake options disabled when user lacks sufficient gems
+- ✅ Challenge rules display: Safety Score wins, winner takes all
+- ✅ Both drivers earn bonus XP regardless of outcome
+- ✅ Backend endpoints: POST /api/challenges, GET /api/challenges
+
+#### Driving Score & Orion Tips (Premium) ✅ NEW
+- ✅ Premium feature with upsell modal for Basic users
+- ✅ 6 driving metrics: Speed Compliance, Smooth Braking, Smooth Acceleration, Following Distance, Turn Signals, Focus Time
+- ✅ Each metric shows score, trend (up/down/stable), and description
+- ✅ Orion tips generated based on lowest scoring metrics
+- ✅ Priority order: High, Medium, Low with color-coded borders
+- ✅ Voice coaching via Web Speech API (TTS speak buttons)
+- ✅ Overall score displayed in circular progress indicator
 
 #### Share Trip Score
 - ✅ Shareable trip summary card with SnapRoad branding
