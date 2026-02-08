@@ -118,11 +118,6 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 
 ## Upcoming Tasks
 
-### P1 - Enhanced Leaderboard
-- Weekly/monthly filtering
-- State-based ranking (Ohio focus)
-- Rank by Safety Score, show gems
-
 ### P2 - Driving Score & Orion Tips
 - UI section for Premium users to view driving score breakdown
 - Contextual tips from Orion to improve score
