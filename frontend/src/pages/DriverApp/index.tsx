@@ -21,6 +21,9 @@ import GemHistory from './components/GemHistory'
 import NotificationSettings from './components/NotificationSettings'
 import HelpSupport from './components/HelpSupport'
 import FuelTracker from './components/FuelTracker'
+import CarOnboarding from './components/CarOnboarding'
+import CarStudio from './components/CarStudioNew'
+import { NavMarker, ProfileCar, CAR_COLORS } from './components/Car3D'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
