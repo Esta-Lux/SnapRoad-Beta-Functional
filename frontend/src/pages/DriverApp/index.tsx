@@ -166,10 +166,11 @@ export default function DriverApp() {
   const [userData, setUserData] = useState<any>({
     id: '123456',
     name: user?.name || 'Sarah Johnson',
-    gems: 12400, level: 42, safety_score: 87, streak: 14,
+    gems: 12400, level: 42, xp: 512500, safety_score: 87, streak: 14,
     total_miles: 2847, total_trips: 156, badges_earned_count: 11, rank: 42,
     is_premium: true, member_since: 'Jan 2025', friends_count: 2, state: 'OH',
-    plan: 'premium', gem_multiplier: 2
+    plan: 'premium', gem_multiplier: 2, safe_drive_streak: 3,
+    reports_posted: 12, reports_upvotes_received: 47
   })
   
   // Widget states - positioned below location panel (which ends around y=280)
