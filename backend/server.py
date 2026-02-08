@@ -2194,3 +2194,39 @@ def get_challenge_history():
             "badges": badges,
         }
     }
+
+# ==================== WEEKLY RECAP (PREMIUM) ====================
+@app.get("/api/weekly-recap")
+def get_weekly_recap():
+    """Get weekly stats summary for premium users."""
+    user = users_db.get(current_user_id, {})
+    
+    # Calculate weekly stats (mock data based on user profile)
+    base_trips = random.randint(8, 15)
+    base_miles = base_trips * random.uniform(10, 25)
+    
+    stats = {
+        "total_trips": base_trips,
+        "total_miles": round(base_miles, 1),
+        "total_time_minutes": int(base_miles * 2.5),  # ~2.5 min per mile avg
+        "gems_earned": random.randint(1500, 3500),
+        "xp_earned": random.randint(10000, 20000),
+        "safety_score_avg": user.get("safety_score", 85),
+        "safety_score_change": random.randint(-2, 5),
+        "challenges_won": random.randint(0, 3),
+        "challenges_lost": random.randint(0, 2),
+        "offers_redeemed": random.randint(2, 6),
+        "reports_posted": user.get("reports_posted", 0),
+        "streak_days": user.get("safe_drive_streak", 0),
+        "rank_change": random.randint(0, 12),
+        "highlights": [
+            f"Best safety score: {min(100, user.get('safety_score', 85) + random.randint(2, 8))} on Wednesday",
+            f"Longest trip: {random.randint(25, 60)} miles on Saturday",
+            f"Helped {random.randint(10, 50)} drivers with your reports",
+        ]
+    }
+    
+    return {
+        "success": True,
+        "data": stats
+    }
