@@ -1379,7 +1379,7 @@ def update_user_plan(plan_update: PlanUpdate):
     users_db[current_user_id]["plan"] = plan
     users_db[current_user_id]["is_premium"] = plan == "premium"
     users_db[current_user_id]["gem_multiplier"] = 2 if plan == "premium" else 1
-    users_db[current_user_id]["onboarding_complete"] = True
+    users_db[current_user_id]["plan_selected"] = True
     
     return {
         "success": True,
@@ -1399,10 +1399,11 @@ def get_user_plan():
     return {
         "success": True,
         "data": {
-            "plan": user.get("plan", "basic"),
+            "plan": user.get("plan"),
             "is_premium": user.get("is_premium", False),
             "gem_multiplier": user.get("gem_multiplier", 1),
             "onboarding_complete": user.get("onboarding_complete", False),
+            "plan_selected": user.get("plan_selected", False),
         }
     }
 
@@ -1410,12 +1411,16 @@ def get_user_plan():
 def get_onboarding_status():
     """Get user's onboarding completion status"""
     user = users_db.get(current_user_id, {})
+    plan_selected = user.get("plan_selected", False) or user.get("plan") is not None
+    car_selected = user.get("car_selected", False)
+    onboarding_complete = plan_selected and car_selected
+    
     return {
         "success": True,
         "data": {
-            "onboarding_complete": user.get("onboarding_complete", False),
-            "plan_selected": user.get("plan") is not None,
-            "car_selected": user.get("car_onboarding_complete", False),
+            "onboarding_complete": onboarding_complete,
+            "plan_selected": plan_selected,
+            "car_selected": car_selected,
         }
     }
 
