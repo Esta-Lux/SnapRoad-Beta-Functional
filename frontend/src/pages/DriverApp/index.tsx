@@ -2111,6 +2111,23 @@ export default function DriverApp() {
         onClose={() => setShowLevelProgress(false)}
       />
       
+      {/* Orion Voice & Quick Photo */}
+      <OrionVoice
+        isOpen={showOrionVoice}
+        onClose={() => setShowOrionVoice(false)}
+        onReportCreated={handleOrionReport}
+        isNavigating={isNavigating}
+        currentLocation={userLocation}
+      />
+      <QuickPhotoReport
+        isOpen={showQuickPhotoReport}
+        onClose={() => setShowQuickPhotoReport(false)}
+        onSubmit={handleQuickPhotoReport}
+        currentLocation={userLocation}
+        isMoving={isNavigating}
+        currentSpeed={currentSpeed}
+      />
+      
       {/* Onboarding Modals */}
       {showPlanSelection && (
         <PlanSelection
