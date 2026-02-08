@@ -718,7 +718,13 @@ def update_user_car(car: CarCustomization):
         users_db[current_user_id]["car_category"] = car.category
         users_db[current_user_id]["car_variant"] = car.variant
         users_db[current_user_id]["car_color"] = car.color
-        users_db[current_user_id]["car_onboarding_complete"] = True
+        users_db[current_user_id]["car_selected"] = True
+        
+        # Check if onboarding is now complete
+        plan_selected = users_db[current_user_id].get("plan_selected", False)
+        if plan_selected:
+            users_db[current_user_id]["onboarding_complete"] = True
+        
         return {
             "success": True,
             "message": "Car updated!",
@@ -726,6 +732,7 @@ def update_user_car(car: CarCustomization):
                 "category": car.category,
                 "variant": car.variant,
                 "color": car.color,
+                "onboarding_complete": users_db[current_user_id].get("onboarding_complete", False),
             }
         }
     return {"success": False, "message": "User not found"}
