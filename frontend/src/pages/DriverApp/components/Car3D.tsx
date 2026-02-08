@@ -684,10 +684,9 @@ export default function Car3D({
           {/* Side Mirror - Premium */}
           <g>
             <ellipse cx={carData.mirrorX} cy={carData.mirrorY} rx="2.5" ry="1.5" fill={colorData.hex} />
-            <ellipse cx={carData.mirrorX} cy={carData.mirrorY} rx="2.5" ry="1.5" fill="url(#hood-highlight-${color})" opacity="0.5" />
+            <ellipse cx={carData.mirrorX} cy={carData.mirrorY} rx="2.5" ry="1.5" fill={`url(#hood-highlight-${color})`} opacity="0.5" />
             <ellipse cx={carData.mirrorX + 0.5} cy={carData.mirrorY} rx="1.5" ry="0.8" fill="#1a2530" opacity="0.8" />
           </g>
-          <ellipse cx={carData.mirrorX} cy={carData.mirrorY} rx="2" ry="1.2" fill={colorData.hex} stroke="rgba(0,0,0,0.2)" strokeWidth="0.2" />
         </svg>
       </div>
 
@@ -696,12 +695,12 @@ export default function Car3D({
         <div 
           className="absolute bottom-0 left-0 right-0"
           style={{
-            height: height * 0.3,
-            transform: 'scaleY(-0.4) translateY(20px)',
-            opacity: 0.15,
+            height: height * 0.35,
+            transform: 'scaleY(-0.5) translateY(10px)',
+            opacity: 0.2,
             maskImage: 'linear-gradient(to top, transparent 0%, black 100%)',
             WebkitMaskImage: 'linear-gradient(to top, transparent 0%, black 100%)',
-            filter: 'blur(2px)',
+            filter: 'blur(3px)',
           }}
         >
           <svg viewBox="0 0 100 80" className="w-full h-full">
