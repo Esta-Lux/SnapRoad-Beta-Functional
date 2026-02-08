@@ -1804,6 +1804,41 @@ export default function DriverApp() {
             </div>
           </button>
 
+          {/* Weekly Recap Card (Premium) */}
+          <button 
+            onClick={() => setShowWeeklyRecap(true)}
+            className={`w-full rounded-xl p-4 flex items-center gap-4 shadow-lg ${
+              userPlan === 'premium' 
+                ? 'bg-gradient-to-r from-purple-500 to-pink-500' 
+                : 'bg-gradient-to-r from-slate-600 to-slate-700'
+            }`}
+            data-testid="profile-weekly-recap"
+          >
+            <div className={`w-14 h-14 rounded-full flex flex-col items-center justify-center ${
+              userPlan === 'premium' ? 'bg-white/20' : 'bg-amber-500/30'
+            }`}>
+              <Trophy className="text-yellow-300" size={24} />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="flex items-center gap-2">
+                <p className="text-white font-semibold">Weekly Recap</p>
+                {userPlan !== 'premium' && (
+                  <span className="bg-amber-500 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    PREMIUM
+                  </span>
+                )}
+              </div>
+              <p className={`text-xs ${userPlan === 'premium' ? 'text-purple-200' : 'text-slate-400'}`}>
+                {userPlan === 'premium' ? 'View your week in review' : 'Unlock with Premium'}
+              </p>
+            </div>
+            <div className="text-right">
+              <span className={`text-xs ${userPlan === 'premium' ? 'text-purple-200' : 'text-amber-400'}`}>
+                {userPlan === 'premium' ? 'View →' : 'Upgrade →'}
+              </span>
+            </div>
+          </button>
+
           {/* My Car Card */}
           <button 
             onClick={() => setShowCarStudio(true)}
