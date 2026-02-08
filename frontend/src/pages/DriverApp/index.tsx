@@ -159,6 +159,9 @@ export default function DriverApp() {
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
   const [showDrivingScore, setShowDrivingScore] = useState(false)
   const [showChallengeHistory, setShowChallengeHistory] = useState(false)
+  const [showRedemptionPopup, setShowRedemptionPopup] = useState(false)
+  const [selectedOfferForRedemption, setSelectedOfferForRedemption] = useState<any>(null)
+  const [showWeeklyRecap, setShowWeeklyRecap] = useState(false)
   
   // User location (mock - Columbus, OH)
   const [userLocation, setUserLocation] = useState({ lat: 39.9612, lng: -82.9988 })
