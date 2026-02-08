@@ -280,43 +280,54 @@ CAR_SKINS = [
 
 # ==================== USERS DATABASE ====================
 users_db = {
-    "123456": {
-        "id": "123456",
-        "name": "Sarah Johnson",
-        "email": "sarah@example.com",
-        "gems": 12400,
-        "level": 42,
-        "xp": 512500,  # Correct XP for level 42 + some progress
-        "xp_to_next_level": 23000,  # XP needed for level 43 (2500 + 41*500)
-        "safety_score": 87,
-        "streak": 14,
-        "safe_drive_streak": 3,
-        "total_miles": 2847,
-        "total_trips": 156,
-        "badges_earned": [1, 2, 3, 4, 5, 21, 22, 51, 81, 82, 101],
-        "community_badges": [1, 2, 3],
-        "rank": 42,
-        "state": "OH",
-        "is_premium": True,
-        "plan": "premium",
-        "gem_multiplier": 2,
-        "member_since": "Jan 2025",
-        "friends": ["123457", "123458"],
+# ==================== DEFAULT NEW USER ====================
+def create_new_user(user_id: str, name: str = "New Driver", email: str = "") -> dict:
+    """Create a fresh user with default values for new signups"""
+    return {
+        "id": user_id,
+        "name": name,
+        "email": email,
+        "gems": 0,
+        "level": 1,
+        "xp": 0,
+        "xp_to_next_level": 2500,
+        "safety_score": 100,  # Start perfect
+        "streak": 0,
+        "safe_drive_streak": 0,
+        "total_miles": 0,
+        "total_trips": 0,
+        "badges_earned": [],
+        "community_badges": [],
+        "rank": 0,
+        "state": "OH",  # Default to Ohio
+        "is_premium": False,
+        "plan": None,  # Not selected yet
+        "gem_multiplier": 1,
+        "member_since": datetime.now().strftime("%b %Y"),
+        "friends": [],
         "friend_requests": [],
         "owned_cars": [1],
         "equipped_car": 1,
-        "owned_skins": [1, 2],
+        "owned_skins": [1],
         "equipped_skin": 1,
         "onboarding_complete": False,
-        "reports_posted": 12,
-        "reports_upvotes_received": 47,
+        "plan_selected": False,
+        "car_selected": False,
+        "reports_posted": 0,
+        "reports_upvotes_received": 0,
+        "redeemed_offers": [],
     }
+
+# Current user - starts as new user
+users_db = {
+    "123456": create_new_user("123456", "Driver", "driver@snaproad.com")
 }
 
 # Generate sample users for leaderboard - MORE Ohio users for focus
 STATES = ["OH", "OH", "OH", "OH", "CA", "TX", "FL", "NY", "PA", "IL", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN"]
 FIRST_NAMES = ["James", "Emma", "Liam", "Olivia", "Noah", "Ava", "Oliver", "Isabella", "Elijah", "Sophia", "Lucas", "Mia", "Mason", "Charlotte", "Ethan", "Amelia", "Aiden", "Harper", "Jacob", "Evelyn"]
 LAST_NAMES = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Anderson", "Taylor", "Thomas", "Moore", "Jackson", "Martin", "Lee", "Thompson", "White", "Harris"]
+
 
 def calculate_xp_for_level(level: int) -> int:
     """Calculate total XP needed to reach a level. Level 1→2 = 2500, +500 per level."""
