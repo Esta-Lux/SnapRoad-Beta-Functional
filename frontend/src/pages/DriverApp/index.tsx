@@ -1591,6 +1591,36 @@ export default function DriverApp() {
 
       {profileTab === 'settings' && (
         <div className="p-4 space-y-2">
+          {/* Plan Management Card */}
+          <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-4 mb-2">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-white font-semibold text-sm">Your Plan</p>
+                <div className="flex items-center gap-2 mt-1">
+                  {userData.is_premium ? (
+                    <span className="text-xs bg-gradient-to-r from-amber-400 to-orange-400 text-amber-900 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                      <Zap size={10} /> PREMIUM
+                    </span>
+                  ) : (
+                    <span className="text-xs bg-slate-600 text-slate-300 px-2 py-0.5 rounded-full font-medium">
+                      BASIC
+                    </span>
+                  )}
+                  <span className="text-slate-400 text-xs">
+                    {userData.is_premium ? '2× gems' : '1× gems'}
+                  </span>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowPlanSelection(true)}
+                data-testid="change-plan-btn"
+                className="bg-blue-500 hover:bg-blue-400 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+              >
+                {userData.is_premium ? 'Manage' : 'Upgrade'}
+              </button>
+            </div>
+          </div>
+          
           {[
             { icon: Bell, label: 'Notifications', id: 'notifications', desc: 'Manage alerts', action: () => setShowNotificationSettings(true) },
             { icon: Volume2, label: 'Voice Settings', id: 'voice', desc: isMuted ? 'Muted' : 'Active', action: handleToggleVoice },
