@@ -432,6 +432,29 @@ export default function DriverApp() {
     }
   }
 
+  // Redeem offer handler
+  const handleRedeemOffer = async (offerId: number) => {
+    try {
+      const res = await api.post(`/api/offers/${offerId}/redeem`)
+      if (res.success) {
+        toast.success(res.message)
+        // Update gems
+        setUserData((prev: any) => ({ 
+          ...prev, 
+          gems: prev.gems + (res.data?.gems_earned || 0),
+          xp: prev.xp + (res.data?.xp_earned || 700)
+        }))
+        loadData()
+      } else {
+        toast.error(res.message)
+      }
+      return res
+    } catch (e) {
+      toast.error('Could not redeem offer')
+      return { success: false }
+    }
+  }
+
   // Claim challenge reward
   const handleClaimChallenge = async (challengeId: number) => {
     try {
@@ -450,8 +473,44 @@ export default function DriverApp() {
     }
   }
 
-  // Share trip score
+  // Share trip score - opens the share modal with trip data
   const handleShareTrip = async () => {
+    // Create sample trip data (in real app, this would come from completed trip)
+    const tripData = {
+      distance: 12.5,
+      duration: 25,
+      safety_score: userData.safety_score,
+      gems_earned: 5 * userData.gem_multiplier,
+      xp_earned: 1000,
+      origin: 'Current Location',
+      destination: 'Destination',
+      date: new Date().toLocaleDateString(),
+      is_safe_drive: true
+    }
+    setLastTripData(tripData)
+    setShowShareTrip(true)
+  }
+
+  // Open share modal after trip completion
+  const handleTripComplete = (tripResult: any) => {
+    if (tripResult) {
+      setLastTripData({
+        distance: tripResult.distance || 10,
+        duration: tripResult.duration || 20,
+        safety_score: tripResult.safety_score?.new || userData.safety_score,
+        gems_earned: tripResult.gems?.earned || 5,
+        xp_earned: tripResult.xp?.total_earned || 1000,
+        origin: 'Start',
+        destination: 'End',
+        date: new Date().toLocaleDateString(),
+        is_safe_drive: tripResult.is_safe_drive || false
+      })
+      setShowShareTrip(true)
+    }
+  }
+
+  // Old share trip function for backwards compatibility
+  const handleShareTripLegacy = async () => {
     try {
       const res = await api.post('/api/trips/1/share')
       if (res.success) {
