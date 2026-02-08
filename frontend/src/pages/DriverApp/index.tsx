@@ -149,12 +149,15 @@ export default function DriverApp() {
   const [showOrionVoice, setShowOrionVoice] = useState(false)
   const [showQuickPhotoReport, setShowQuickPhotoReport] = useState(false)
   const [selectedRoadStatus, setSelectedRoadStatus] = useState<any>(null)
+  const [showOffersModal, setShowOffersModal] = useState(false)
+  const [showShareTrip, setShowShareTrip] = useState(false)
+  const [lastTripData, setLastTripData] = useState<any>(null)
   
   // User location (mock - Columbus, OH)
   const [userLocation, setUserLocation] = useState({ lat: 39.9612, lng: -82.9988 })
   
   // User plan state
-  const [userPlan, setUserPlan] = useState<'basic' | 'premium'>('basic')
+  const [userPlan, setUserPlan] = useState<'basic' | 'premium' | null>(null)
   const [gemMultiplier, setGemMultiplier] = useState(1)
   
   // Car customization state
@@ -174,10 +177,12 @@ export default function DriverApp() {
   const [badges, setBadges] = useState<any[]>([])
   const [skins, setSkins] = useState<any[]>([])
   const [family, setFamily] = useState<any[]>([])
+  
+  // Fresh user state - starts empty
   const [userData, setUserData] = useState<any>({
     id: '123456',
-    name: user?.name || 'Sarah Johnson',
-    gems: 12400, level: 42, xp: 512500, safety_score: 87, streak: 14,
+    name: user?.name || 'Driver',
+    gems: 0, level: 1, xp: 0, safety_score: 100, streak: 0,
     total_miles: 2847, total_trips: 156, badges_earned_count: 11, rank: 42,
     is_premium: true, member_since: 'Jan 2025', friends_count: 2, state: 'OH',
     plan: 'premium', gem_multiplier: 2, safe_drive_streak: 3,
