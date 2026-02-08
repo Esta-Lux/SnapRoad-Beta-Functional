@@ -417,6 +417,47 @@ widget_settings = {
     "gems": {"visible": True, "collapsed": False, "position": {"x": 260, "y": 290}},
 }
 
+# ==================== SESSION MANAGEMENT ====================
+def reset_default_user():
+    """Reset the default user (123456) to fresh state for clean testing"""
+    global users_db
+    users_db["123456"] = create_new_user("123456", "Driver", "driver@snaproad.com")
+    return users_db["123456"]
+
+@app.post("/api/session/reset")
+def reset_session():
+    """Reset the current user's state to fresh for clean testing"""
+    user = reset_default_user()
+    return {
+        "success": True,
+        "message": "User state reset to fresh",
+        "data": {
+            "id": user["id"],
+            "gems": user["gems"],
+            "level": user["level"],
+            "xp": user["xp"],
+            "redeemed_offers": user.get("redeemed_offers", []),
+            "onboarding_complete": user.get("onboarding_complete", False),
+        }
+    }
+
+@app.post("/api/auth/login")
+def mock_login(role: str = "driver"):
+    """Mock login - resets driver state for clean testing experience"""
+    # Always reset driver user for fresh experience
+    if role == "driver":
+        reset_default_user()
+    
+    return {
+        "success": True,
+        "message": f"Logged in as {role}",
+        "data": {
+            "role": role,
+            "user_id": current_user_id if role == "driver" else f"{role}_user",
+            "fresh_state": role == "driver"
+        }
+    }
+
 # ==================== HEALTH ====================
 @app.get("/api/health")
 def health():
