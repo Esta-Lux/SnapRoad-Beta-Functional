@@ -118,11 +118,6 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 
 ## Upcoming Tasks
 
-### P0 - Glowing Gem Markers on Map
-- Display offers as interactive gem markers on the map
-- Show discount % on hover
-- Tap to open offer detail
-
 ### P1 - Enhanced Leaderboard
 - Weekly/monthly filtering
 - State-based ranking (Ohio focus)
