@@ -2327,6 +2327,17 @@ export default function DriverApp() {
         userName={userData.name || 'Driver'}
         userLevel={userData.level || 1}
       />
+      
+      {/* Driving Score Modal (Premium Feature) */}
+      <DrivingScore
+        isOpen={showDrivingScore}
+        onClose={() => setShowDrivingScore(false)}
+        isPremium={userPlan === 'premium'}
+        onUpgrade={() => {
+          setShowDrivingScore(false)
+          setShowPlanSelection(true)
+        }}
+      />
     </div>
   )
 }
