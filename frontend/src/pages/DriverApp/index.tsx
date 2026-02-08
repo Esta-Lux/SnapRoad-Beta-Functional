@@ -1375,8 +1375,8 @@ export default function DriverApp() {
               </div>
             ) : (
               offers.slice(0, 4).map(offer => (
-                <div key={offer.id} onClick={() => setShowOffersModal(true)} data-testid={`offer-${offer.id}`}
-                  className="bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm cursor-pointer hover:shadow-md transition-shadow">
+                <div key={offer.id} data-testid={`offer-${offer.id}`}
+                  className="bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                     offer.business_type === 'gas' ? 'bg-blue-500' : 
                     offer.business_type === 'cafe' ? 'bg-orange-500' :
@@ -1391,12 +1391,23 @@ export default function DriverApp() {
                     <p className="text-slate-900 font-medium text-sm">{offer.business_name || offer.name}</p>
                     <p className="text-emerald-600 text-xs">{offer.discount_percent || offer.discount}% off</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-emerald-500 font-bold text-sm">+{offer.gems_reward || offer.gems}💎</p>
-                    {offer.redeemed && (
-                      <span className="text-emerald-400 text-[10px] flex items-center gap-0.5">
-                        <Check size={10} /> Redeemed
-                      </span>
+                  <div className="text-right flex items-center gap-2">
+                    <div>
+                      <p className="text-emerald-500 font-bold text-sm">+{offer.gems_reward || offer.gems}💎</p>
+                      {offer.redeemed && (
+                        <span className="text-emerald-400 text-[10px] flex items-center gap-0.5">
+                          <Check size={10} /> Redeemed
+                        </span>
+                      )}
+                    </div>
+                    {!offer.redeemed && (
+                      <button
+                        onClick={() => handleDirectRedemption(offer)}
+                        className="px-3 py-1.5 bg-emerald-500 text-white text-xs font-medium rounded-lg hover:bg-emerald-600"
+                        data-testid={`redeem-${offer.id}`}
+                      >
+                        Redeem
+                      </button>
                     )}
                   </div>
                 </div>
