@@ -189,14 +189,15 @@ export default function DriverApp() {
   // Load all data from API
   const loadData = async () => {
     try {
-      const [locRes, routeRes, offerRes, badgeRes, skinRes, famRes, userRes] = await Promise.all([
+      const [locRes, routeRes, offerRes, badgeRes, skinRes, famRes, userRes, challengeRes] = await Promise.all([
         api.get('/api/locations'),
         api.get('/api/routes'),
         api.get('/api/offers'),
         api.get('/api/badges'),
         api.get('/api/skins'),
         api.get('/api/family/members'),
-        api.get('/api/user/profile')
+        api.get('/api/user/profile'),
+        api.get('/api/challenges')
       ])
       if (locRes.success) setLocations(locRes.data)
       if (routeRes.success) setRoutes(routeRes.data)
@@ -205,8 +206,40 @@ export default function DriverApp() {
       if (skinRes.success) setSkins(skinRes.data)
       if (famRes.success) setFamily(famRes.data)
       if (userRes.success) setUserData(userRes.data)
+      if (challengeRes.success) setChallenges(challengeRes.data)
     } catch (e) {
       console.log('Using mock data')
+    }
+  }
+
+  // Claim challenge reward
+  const handleClaimChallenge = async (challengeId: number) => {
+    try {
+      const res = await api.post(`/api/challenges/${challengeId}/claim`)
+      if (res.success) {
+        toast.success(res.message)
+        // Update local state
+        setChallenges(challenges.map(c => c.id === challengeId ? { ...c, claimed: true } : c))
+        // Update gems
+        setUserData((prev: any) => ({ ...prev, gems: prev.gems + res.gems_earned }))
+      } else {
+        toast.error(res.message)
+      }
+    } catch (e) {
+      toast.error('Could not claim reward')
+    }
+  }
+
+  // Share trip score
+  const handleShareTrip = async () => {
+    try {
+      const res = await api.post('/api/trips/1/share')
+      if (res.success) {
+        toast.success('Share content generated! Copy to clipboard.')
+        // In a real app, this would open native share sheet
+      }
+    } catch (e) {
+      toast.success('🚗 Just completed a trip with 92 safety score! #SnapRoad')
     }
   }
 
