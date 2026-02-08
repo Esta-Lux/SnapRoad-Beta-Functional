@@ -61,11 +61,33 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 - ✅ Backend endpoint: GET /api/challenges/history
 
 #### Compact Offer Redemption Popup ✅ IMPROVED
-- ✅ Smaller, cleaner popup that doesn't cover the whole page
+- ✅ Standalone popup (doesn't cover the whole page)
 - ✅ Inline header with icon, name, description, and close button
 - ✅ Compact gems and discount display side by side
 - ✅ Simple premium upsell message
 - ✅ Click outside to dismiss
+
+#### Geofenced QR Code System ✅ NEW
+- ✅ QR codes generated upon redemption with unique format: `SR-{offerId}-{timestamp}-{random}`
+- ✅ **1-mile geofence**: QR code only visible when user is within range
+- ✅ Out-of-range users see blurred QR with lock icon and distance indicator
+- ✅ **Screenshot blocking**: Detects PrintScreen, Cmd+Shift+3/4/5, visibility change
+- ✅ Warning overlay appears when screenshot attempt detected
+- ✅ "Protected QR Code" security notice with instructions
+- ✅ "Valid for 24 hours" timer notice
+- ✅ Premium feel with gradients and smooth animations
+
+#### Weekly Recap (Premium) ✅ NEW
+- ✅ 5-slide presentation with weekly stats
+  - Overview: Trips, Miles, Gems, XP
+  - Safety Score with progress ring and week-over-week change
+  - Challenge Results: Wins, Losses, Streak
+  - Weekly Highlights: Best score, longest trip, driver impact
+  - Community Impact: Reports posted, offers redeemed, drive time
+- ✅ Beautiful gradient backgrounds for each slide
+- ✅ Premium upsell for Basic users
+- ✅ Navigation dots and Next/Back buttons
+- ✅ Backend endpoint: GET /api/weekly-recap
 
 #### Driving Score & Orion Tips (Premium) ✅ NEW
 - ✅ Premium feature with upsell modal for Basic users
