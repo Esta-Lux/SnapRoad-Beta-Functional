@@ -1925,6 +1925,13 @@ export default function DriverApp() {
         isPremium={userData.is_premium}
       />
       
+      {/* Onboarding Modals */}
+      {showPlanSelection && (
+        <PlanSelection
+          onSelectPlan={handlePlanSelect}
+        />
+      )}
+      
       {/* Car Customization Modals */}
       {showCarOnboarding && (
         <CarOnboarding
