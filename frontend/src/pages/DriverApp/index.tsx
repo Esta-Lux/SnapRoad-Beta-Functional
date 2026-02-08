@@ -960,10 +960,31 @@ export default function DriverApp() {
         </div>
       )}
 
-      {/* Current Location Marker */}
+      {/* Current Location Marker - User's Car */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-        <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg" />
-        <div className="absolute inset-0 w-4 h-4 bg-blue-500/30 rounded-full animate-ping" />
+        {isNavigating ? (
+          <NavMarker 
+            category={userCar.category as any}
+            color={userCar.color as any}
+            heading={carHeading}
+            size={36}
+            isMoving={true}
+          />
+        ) : (
+          <div className="relative">
+            <NavMarker 
+              category={userCar.category as any}
+              color={userCar.color as any}
+              heading={0}
+              size={32}
+              isMoving={false}
+            />
+            {/* Pulse ring when stationary */}
+            <div className="absolute inset-0 -m-2">
+              <div className="w-full h-full bg-blue-500/20 rounded-full animate-ping" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action Buttons - Right Side */}
