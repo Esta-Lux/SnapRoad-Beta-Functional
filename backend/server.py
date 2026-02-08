@@ -589,6 +589,95 @@ def equip_skin(skin_id: int):
         return {"success": True, "message": "Skin equipped!"}
     return {"success": False, "message": "Skin not owned"}
 
+# ==================== CAR CUSTOMIZATION ====================
+# Premium car colors with prices
+PREMIUM_COLORS = {
+    "carbon-fiber": 2500,
+    "neon-cyan": 1500,
+    "neon-pink": 1500,
+    "neon-lime": 1500,
+    "galaxy-purple": 2000,
+    "inferno": 2000,
+}
+
+class CarCustomization(BaseModel):
+    category: str
+    variant: str
+    color: str
+
+@app.get("/api/user/car")
+def get_user_car():
+    """Get user's current car configuration"""
+    user = users_db.get(current_user_id, {})
+    return {
+        "success": True,
+        "data": {
+            "category": user.get("car_category", "sedan"),
+            "variant": user.get("car_variant", "sedan-classic"),
+            "color": user.get("car_color", "midnight-black"),
+            "owned_colors": user.get("owned_colors", []),
+            "has_completed_onboarding": user.get("car_onboarding_complete", False),
+        }
+    }
+
+@app.post("/api/user/car")
+def update_user_car(car: CarCustomization):
+    """Update user's car configuration"""
+    if current_user_id in users_db:
+        users_db[current_user_id]["car_category"] = car.category
+        users_db[current_user_id]["car_variant"] = car.variant
+        users_db[current_user_id]["car_color"] = car.color
+        users_db[current_user_id]["car_onboarding_complete"] = True
+        return {
+            "success": True,
+            "message": "Car updated!",
+            "data": {
+                "category": car.category,
+                "variant": car.variant,
+                "color": car.color,
+            }
+        }
+    return {"success": False, "message": "User not found"}
+
+@app.post("/api/user/car/color/{color_key}/purchase")
+def purchase_car_color(color_key: str):
+    """Purchase a premium car color"""
+    user = users_db.get(current_user_id, {})
+    
+    if color_key not in PREMIUM_COLORS:
+        return {"success": False, "message": "Color not found or not premium"}
+    
+    owned_colors = user.get("owned_colors", [])
+    if color_key in owned_colors:
+        return {"success": False, "message": "Already owned"}
+    
+    price = PREMIUM_COLORS[color_key]
+    if user.get("gems", 0) < price:
+        return {"success": False, "message": f"Need {price - user.get('gems', 0)} more gems"}
+    
+    users_db[current_user_id]["gems"] -= price
+    if "owned_colors" not in users_db[current_user_id]:
+        users_db[current_user_id]["owned_colors"] = []
+    users_db[current_user_id]["owned_colors"].append(color_key)
+    
+    return {
+        "success": True,
+        "message": f"Purchased color for {price} gems!",
+        "new_gems": users_db[current_user_id]["gems"],
+        "owned_colors": users_db[current_user_id]["owned_colors"]
+    }
+
+@app.get("/api/user/car/colors")
+def get_owned_colors():
+    """Get list of user's owned premium colors"""
+    user = users_db.get(current_user_id, {})
+    return {
+        "success": True,
+        "data": user.get("owned_colors", []),
+        "available": list(PREMIUM_COLORS.keys()),
+        "prices": PREMIUM_COLORS
+    }
+
 # ==================== LOCATIONS ====================
 @app.get("/api/locations")
 def get_locations(category: Optional[str] = None):
