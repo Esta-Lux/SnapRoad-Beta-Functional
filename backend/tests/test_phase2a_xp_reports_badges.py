@@ -96,17 +96,17 @@ class TestXPSystem:
         assert data["data"]["xp_gained"] == 700
         print(f"Offer redemption XP: +{data['data']['xp_gained']}")
     
-    def test_add_xp_consistent_driving(self):
-        """POST /api/xp/add - Add XP for consistent_driving event"""
+    def test_add_xp_consistent_bonus(self):
+        """POST /api/xp/add - Add XP for consistent_bonus event (3 safe drives streak)"""
         response = requests.post(f"{BASE_URL}/api/xp/add", json={
-            "event_type": "consistent_driving"
+            "event_type": "consistent_bonus"
         })
         assert response.status_code == 200
         
         data = response.json()
         assert data["success"] == True
         assert data["data"]["xp_gained"] == 500
-        print(f"Consistent driving XP: +{data['data']['xp_gained']}")
+        print(f"Consistent bonus XP: +{data['data']['xp_gained']}")
     
     def test_add_xp_safety_penalty(self):
         """POST /api/xp/add - Add XP penalty for safety_penalty event"""
@@ -307,16 +307,18 @@ class TestTripCompletionWithSafety:
         
         result = data["data"]
         assert result["is_safe_drive"] == True
-        assert "xp_changes" in result
-        assert "gems_earned" in result
+        assert "xp" in result
+        assert "gems" in result
         
         # Verify safe drive XP (1000)
-        xp_changes = result["xp_changes"]
+        xp_data = result["xp"]
+        assert "changes" in xp_data
+        xp_changes = xp_data["changes"]
         safe_drive_xp = next((x for x in xp_changes if x["type"] == "safe_drive"), None)
         assert safe_drive_xp is not None
         assert safe_drive_xp["xp"] == 1000
         
-        print(f"Safe trip completed: XP changes={xp_changes}, gems={result['gems_earned']}")
+        print(f"Safe trip completed: XP changes={xp_changes}, gems={result['gems']['earned']}")
     
     def test_complete_unsafe_trip(self):
         """POST /api/trips/complete-with-safety - Complete trip with unsafe driving"""
@@ -337,8 +339,11 @@ class TestTripCompletionWithSafety:
         result = data["data"]
         assert result["is_safe_drive"] == False
         
-        # Verify safety penalty XP (-500)
-        xp_changes = result["xp_changes"]
+        # Verify XP structure
+        assert "xp" in result
+        xp_data = result["xp"]
+        xp_changes = xp_data.get("changes", [])
+        
         if len(xp_changes) > 0:
             penalty = next((x for x in xp_changes if x["type"] == "safety_penalty"), None)
             if penalty:
@@ -363,7 +368,8 @@ class TestTripCompletionWithSafety:
             assert response.status_code == 200
             
             data = response.json()
-            xp_changes = data["data"]["xp_changes"]
+            xp_data = data["data"]["xp"]
+            xp_changes = xp_data.get("changes", [])
             
             # Check for consistent bonus on 3rd trip
             consistent_bonus = next((x for x in xp_changes if x["type"] == "consistent_bonus"), None)
