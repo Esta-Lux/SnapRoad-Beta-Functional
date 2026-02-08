@@ -6,6 +6,17 @@ import {
   MapPin, Trophy, Zap
 } from 'lucide-react'
 
+const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+
+// Reset user state for fresh experience
+const resetUserSession = async (role: string) => {
+  try {
+    await fetch(`${API_URL}/api/auth/login?role=${role}`, { method: 'POST' })
+  } catch (e) {
+    console.log('Session reset skipped')
+  }
+}
+
 type UserRole = 'driver' | 'partner' | 'admin'
 
 interface AuthModalProps {
