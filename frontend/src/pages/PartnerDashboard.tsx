@@ -76,7 +76,8 @@ function OnboardingWalkthrough({ onComplete, onSkip }: { onComplete: () => void;
           {/* Skip button */}
           <button 
             onClick={onSkip}
-            className="absolute top-4 right-4 text-slate-400 hover:text-white text-sm font-medium"
+            data-testid="skip-tour-btn"
+            className="absolute top-4 right-4 z-10 text-slate-400 hover:text-white text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
           >
             Skip Tour
           </button>
