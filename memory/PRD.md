@@ -1,14 +1,34 @@
 # SnapRoad - Privacy-First Navigation App
 
 ## Product Overview
-SnapRoad is a privacy-first navigation app with gamified safety rewards. Features an iPhone 16-optimized driver interface inspired by Google Maps' clean design.
+SnapRoad is a privacy-first navigation app with gamified safety rewards. Features an iPhone 16-optimized driver interface inspired by Google Maps' clean design with Forza-style car customization.
 
 ## Tech Stack
 - **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS
 - **Backend:** FastAPI (Python) with in-memory mock data
 - **Database Schema:** PostgreSQL (documented, not connected)
 
-## Completed Features (Feb 2, 2025)
+## Completed Features (Feb 8, 2025)
+
+### 🚗 Premium Car Customization System (NEW!)
+- ✅ **3D CSS Car Renders** with transforms, shadows, gradients
+- ✅ **7 Car Categories** each with 3 style variants:
+  - Sedan (Classic, Sport, Executive)
+  - SUV (Compact, Midsize, Full-Size)
+  - Sports Car (Coupe, Convertible, Supercar)
+  - Truck (Standard, Crew Cab, Off-Road)
+  - Hatchback (City, Hot Hatch, Sport Wagon)
+  - Luxury (Sedan, Grand Tourer, Executive)
+  - Electric (Sedan, Crossover, Sports)
+- ✅ **24 Color Options** organized by type:
+  - Standard (8): Midnight Black, Arctic White, Racing Red, Ocean Blue, Forest Green, Sunset Orange, Royal Purple, Canary Yellow
+  - Metallic (6): Pearl White, Gunmetal, Chrome Silver, Copper Bronze, Rose Gold, Champagne
+  - Matte (4): Matte Black, Matte Grey, Matte Army, Matte Navy
+  - Premium (6): Carbon Fiber, Neon Cyan, Neon Pink, Neon Lime, Galaxy Purple, Inferno (require gems)
+- ✅ **Car Selection Onboarding** - mandatory on first login with 3-step flow
+- ✅ **Car Studio** - Forza-style showroom with dark background, spotlight, rotation controls
+- ✅ **3D Car as Navigation Marker** - user's car shows on map instead of blue dot
+- ✅ **Profile Car Display** - car shown in profile header and My Car card
 
 ### User ID & Social System
 - ✅ **6-digit user IDs** starting from 123456
@@ -37,13 +57,16 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 - ✅ Category filters and search
 - ✅ Badge detail modal with description and gem rewards
 
-### Car Studio
-- ✅ **8 car models** with different types (sedan, sports, SUV, luxury, etc.)
-- ✅ **16 car skins** with rarity levels (common to legendary)
-- ✅ **360° car rotation** with drag and arrow buttons
-- ✅ Locked cars show gem price
-- ✅ Purchase and equip functionality
-- ✅ Skins render on car preview in real-time
+### Profile Detail Screens
+- ✅ **Trip History** - all trips with stats, filtering by month
+- ✅ **Gem History** - transaction log of gems earned/spent
+- ✅ **Notification Settings** - push and email notification toggles
+- ✅ **Help & Support** - FAQ with expandable sections
+- ✅ **Fuel Tracker** - log fill-ups with stats
+
+### 4-Tab Navigation
+- ✅ Map, Routes, Rewards, Profile
+- ✅ Rewards tab combines: Offers, Challenges, Badges, Skins
 
 ### Map UI (Google Maps Style)
 - ✅ Clean search bar with separate hamburger menu button
@@ -51,13 +74,13 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 - ✅ Moveable and collapsible widgets
 
 ### Backend API (100% Working)
-- 70+ API endpoints for all features
+- 80+ API endpoints for all features
 - User, Friends, Leaderboard, Badges, Cars, Skins, Navigation, etc.
 
 ## Testing Status
-- **Backend:** 100% (22/22 tests)
+- **Backend:** 100%
 - **Frontend:** 100% (all features working)
-- **Test Report:** `/app/test_reports/iteration_3.json`
+- **Latest Test Report:** `/app/test_reports/iteration_5.json`
 
 ## ⚠️ MOCKED DATA
 All data is in-memory mock data. No database or external services connected.
@@ -66,9 +89,13 @@ All data is in-memory mock data. No database or external services connected.
 1. 🔴 P0: Connect PostgreSQL database
 2. 🔴 P0: Integrate real map (Mapbox)
 3. 🟡 P1: Add authentication (Supabase)
+4. 🟡 P1: Implement "Share Trip Score" feature
+5. 🟢 P2: Add rims, spoilers, decals to car customization
 
 ## Future/Backlog
 - Build Flutter mobile app from React prototype
 - Integrate Stripe for gem purchases
-- Phase 2: Family tracking, AI coaching
-- Phase 3: Multi-region support, analytics
+- Add engine sound feedback for car types
+- Post-trip "garage" animation with score overlay
+- Family tracking, AI coaching
+- Multi-region support, analytics
