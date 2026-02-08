@@ -2475,6 +2475,15 @@ export default function DriverApp() {
         onClose={() => setShowWeeklyRecap(false)}
         isPremium={userPlan === 'premium'}
       />
+      
+      {/* Orion Offer Alerts (during navigation) */}
+      <OrionOfferAlerts
+        isNavigating={isNavigating}
+        userLocation={userLocation}
+        offers={offers}
+        onOfferSelect={handleDirectRedemption}
+        isPremium={userPlan === 'premium'}
+      />
     </div>
   )
 }
