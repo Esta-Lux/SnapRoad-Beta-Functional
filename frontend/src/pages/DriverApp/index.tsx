@@ -1422,8 +1422,21 @@ export default function DriverApp() {
             <h1 className="text-lg font-bold text-white">{userData.name}</h1>
             <div className="flex items-center gap-2">
               <span className="text-xs text-blue-200">Level {userData.level}</span>
-              {userData.is_premium && <span className="text-[10px] bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded-full font-medium">⚡ PRO</span>}
+              {userData.is_premium ? (
+                <span className="text-[10px] bg-gradient-to-r from-amber-400 to-orange-400 text-amber-900 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                  <Zap size={10} /> PREMIUM
+                </span>
+              ) : (
+                <span className="text-[10px] bg-slate-600 text-slate-300 px-2 py-0.5 rounded-full font-medium">
+                  BASIC
+                </span>
+              )}
             </div>
+            {userData.is_premium && (
+              <p className="text-amber-300 text-[10px] mt-0.5 flex items-center gap-1">
+                <Gem size={10} /> 2× gem multiplier active
+              </p>
+            )}
           </div>
         </div>
         
