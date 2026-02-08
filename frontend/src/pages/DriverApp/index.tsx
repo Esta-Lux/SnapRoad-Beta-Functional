@@ -1510,6 +1510,27 @@ export default function DriverApp() {
 
       {profileTab === 'overview' && (
         <div className="p-4 space-y-2">
+          {/* Level/XP Card */}
+          <button 
+            onClick={() => setShowLevelProgress(true)}
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 flex items-center gap-4 shadow-lg"
+            data-testid="profile-level"
+          >
+            <div className="w-14 h-14 rounded-full bg-white/20 flex flex-col items-center justify-center">
+              <span className="text-white text-xs font-medium">LVL</span>
+              <span className="text-white text-xl font-bold">{userData.level}</span>
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-white font-semibold">Level {userData.level}</p>
+              <p className="text-blue-200 text-xs">
+                {userData.xp?.toLocaleString() || 0} XP total
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-blue-200 text-xs">View Progress →</span>
+            </div>
+          </button>
+
           {/* My Car Card */}
           <button 
             onClick={() => setShowCarStudio(true)}
@@ -1535,16 +1556,18 @@ export default function DriverApp() {
           </button>
 
           {[
-            { icon: Trophy, label: 'Achievements', value: `${userData.badges_earned_count || 11}/160 badges`, action: () => setShowBadgesGrid(true) },
-            { icon: Route, label: 'My Routes', value: `${routes.length} saved`, action: () => setActiveTab('routes') },
-            { icon: History, label: 'Trip History', value: `${userData.total_trips} trips`, action: () => setShowTripHistory(true) },
-            { icon: Gem, label: 'Gem History', value: '+2,450 this month', action: () => setShowGemHistory(true) },
-            { icon: Users, label: 'Friends', value: `${userData.friends_count || 0} friends`, action: () => setShowFriendsHub(true) },
+            { icon: Trophy, label: 'Achievements', value: `${userData.badges_earned_count || 11}/160 badges`, action: () => setShowBadgesGrid(true), color: 'bg-amber-100', iconColor: 'text-amber-500' },
+            { icon: Award, label: 'Community Badges', value: 'Help other drivers', action: () => setShowCommunityBadges(true), color: 'bg-purple-100', iconColor: 'text-purple-500' },
+            { icon: AlertTriangle, label: 'Road Reports', value: 'Report hazards', action: () => setShowRoadReports(true), color: 'bg-orange-100', iconColor: 'text-orange-500' },
+            { icon: Route, label: 'My Routes', value: `${routes.length} saved`, action: () => setActiveTab('routes'), color: 'bg-blue-100', iconColor: 'text-blue-500' },
+            { icon: History, label: 'Trip History', value: `${userData.total_trips} trips`, action: () => setShowTripHistory(true), color: 'bg-slate-100', iconColor: 'text-slate-500' },
+            { icon: Gem, label: 'Gem History', value: '+2,450 this month', action: () => setShowGemHistory(true), color: 'bg-cyan-100', iconColor: 'text-cyan-500' },
+            { icon: Users, label: 'Friends', value: `${userData.friends_count || 0} friends`, action: () => setShowFriendsHub(true), color: 'bg-green-100', iconColor: 'text-green-500' },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`profile-${item.label.toLowerCase().replace(' ', '-')}`}
               className="w-full bg-white rounded-xl p-4 flex items-center gap-3 shadow-sm hover:shadow-md">
-              <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                <item.icon className="text-blue-500" size={18} />
+              <div className={`w-10 h-10 ${item.color} rounded-xl flex items-center justify-center`}>
+                <item.icon className={item.iconColor} size={18} />
               </div>
               <div className="flex-1 text-left">
                 <p className="text-sm font-medium text-slate-900">{item.label}</p>
