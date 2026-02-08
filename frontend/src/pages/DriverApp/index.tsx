@@ -2408,6 +2408,26 @@ export default function DriverApp() {
         isOpen={showChallengeHistory}
         onClose={() => setShowChallengeHistory(false)}
       />
+      
+      {/* Redemption Popup with Geofenced QR */}
+      <RedemptionPopup
+        isOpen={showRedemptionPopup}
+        onClose={() => {
+          setShowRedemptionPopup(false)
+          setSelectedOfferForRedemption(null)
+        }}
+        offer={selectedOfferForRedemption}
+        userPlan={userPlan}
+        userLocation={userLocation}
+        onRedeem={handleRedeemOffer}
+      />
+      
+      {/* Weekly Recap (Premium) */}
+      <WeeklyRecap
+        isOpen={showWeeklyRecap}
+        onClose={() => setShowWeeklyRecap(false)}
+        isPremium={userPlan === 'premium'}
+      />
     </div>
   )
 }
