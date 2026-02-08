@@ -294,8 +294,10 @@ users_db = {
         "total_trips": 156,
         "badges_earned": [1, 2, 3, 4, 5, 21, 22, 51, 81, 82, 101],
         "rank": 42,
-        "state": "TX",
+        "state": "OH",  # Changed to Ohio as focus state
         "is_premium": True,
+        "plan": "premium",  # NEW: User's subscription plan
+        "gem_multiplier": 2,  # NEW: Premium gets 2x
         "member_since": "Jan 2025",
         "friends": ["123457", "123458"],
         "friend_requests": [],
@@ -303,6 +305,7 @@ users_db = {
         "equipped_car": 1,
         "owned_skins": [1, 2],
         "equipped_skin": 1,
+        "onboarding_complete": False,  # NEW: Track onboarding status
     }
 }
 
