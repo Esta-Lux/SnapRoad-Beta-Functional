@@ -279,7 +279,6 @@ CAR_SKINS = [
 ]
 
 # ==================== USERS DATABASE ====================
-users_db = {
 # ==================== DEFAULT NEW USER ====================
 def create_new_user(user_id: str, name: str = "New Driver", email: str = "") -> dict:
     """Create a fresh user with default values for new signups"""
