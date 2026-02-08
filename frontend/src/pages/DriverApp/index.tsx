@@ -1014,6 +1014,212 @@ export default function DriverApp() {
     </div>
   )
 
+  // NEW: Rewards Tab - Combines Offers, Challenges, Badges
+  const renderRewards = () => (
+    <div className="flex-1 bg-slate-100 overflow-auto">
+      {/* Header with Gems */}
+      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-4 pt-3 pb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h1 className="text-white text-lg font-bold">Rewards</h1>
+          <button onClick={() => setShowGemHistory(true)} data-testid="gem-balance-btn"
+            className="bg-white/20 rounded-full px-3 py-1.5 flex items-center gap-1.5">
+            <Gem className="text-white" size={16} />
+            <span className="text-white font-bold">{(userData.gems / 1000).toFixed(1)}K</span>
+          </button>
+        </div>
+        
+        {/* Rewards Sub-tabs */}
+        <div className="flex gap-1 bg-white/10 rounded-xl p-1">
+          {(['offers', 'challenges', 'badges', 'skins'] as const).map(tab => (
+            <button key={tab} onClick={() => setRewardsTab(tab)} data-testid={`rewards-tab-${tab}`}
+              className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize ${rewardsTab === tab ? 'bg-white text-emerald-600' : 'text-white'}`}>
+              {tab}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Offers Sub-tab */}
+      {rewardsTab === 'offers' && (
+        <div className="p-4">
+          {/* Leaderboard Preview */}
+          <button onClick={() => setShowLeaderboard(true)} data-testid="leaderboard-preview"
+            className="w-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl p-4 mb-4 text-left">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/80 text-xs">Your Rank</p>
+                <p className="text-white text-2xl font-bold">#{userData.rank || 42}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Trophy className="text-yellow-300" size={24} />
+                <ChevronRight className="text-white" size={20} />
+              </div>
+            </div>
+          </button>
+
+          {/* Offers */}
+          <h3 className="text-slate-900 font-semibold mb-3 flex items-center gap-2">
+            <Gift size={16} className="text-emerald-500" /> Nearby Offers
+          </h3>
+          <div className="space-y-2">
+            {offers.slice(0, 4).map(offer => (
+              <div key={offer.id} onClick={() => setShowOfferDetail(offer)} data-testid={`offer-${offer.id}`}
+                className="bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm cursor-pointer">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${offer.type === 'gas' ? 'bg-blue-500' : 'bg-orange-500'}`}>
+                  {offer.type === 'gas' ? <Fuel className="text-white" size={18} /> : <Coffee className="text-white" size={18} />}
+                </div>
+                <div className="flex-1">
+                  <p className="text-slate-900 font-medium text-sm">{offer.name}</p>
+                  <p className="text-emerald-600 text-xs">{offer.discount}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-emerald-500 font-bold text-sm">{offer.gems}💎</p>
+                  <p className="text-slate-400 text-[10px]">{offer.distance}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Challenges Sub-tab */}
+      {rewardsTab === 'challenges' && (
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-slate-900 font-semibold">Weekly Challenges</h3>
+              <p className="text-slate-500 text-xs">{challenges.filter(c => c.completed).length}/{challenges.length} completed</p>
+            </div>
+            <button onClick={loadData} className="text-blue-500 text-xs">Refresh</button>
+          </div>
+
+          <div className="space-y-3">
+            {challenges.map(challenge => (
+              <div key={challenge.id} className={`bg-white rounded-xl p-4 shadow-sm ${challenge.claimed ? 'opacity-60' : ''}`}>
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <h4 className="text-slate-900 font-medium">{challenge.title}</h4>
+                    <p className="text-slate-500 text-xs">{challenge.description}</p>
+                  </div>
+                  <span className="text-emerald-500 font-bold">+{challenge.gems}💎</span>
+                </div>
+                
+                <div className="mb-3">
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-slate-500">{challenge.progress}/{challenge.target}</span>
+                    <span className="text-slate-400">{challenge.expires} left</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2">
+                    <div className={`h-2 rounded-full transition-all ${challenge.completed ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                      style={{ width: `${Math.min((challenge.progress / challenge.target) * 100, 100)}%` }} />
+                  </div>
+                </div>
+
+                {challenge.completed && !challenge.claimed ? (
+                  <button onClick={() => handleClaimChallenge(challenge.id)} data-testid={`claim-${challenge.id}`}
+                    className="w-full bg-emerald-500 text-white py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                    <Gem size={14} /> Claim Reward
+                  </button>
+                ) : challenge.claimed ? (
+                  <div className="text-center text-slate-400 text-sm py-2">
+                    <Check size={14} className="inline mr-1" /> Claimed
+                  </div>
+                ) : (
+                  <div className="text-center text-slate-400 text-sm py-2">
+                    {Math.round((challenge.progress / challenge.target) * 100)}% complete
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Badges Sub-tab */}
+      {rewardsTab === 'badges' && (
+        <div className="p-4">
+          <button onClick={() => setShowBadgesGrid(true)} data-testid="view-all-badges"
+            className="w-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl p-4 mb-4 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/80 text-xs">Badge Collection</p>
+                <p className="text-2xl font-bold">{userData.badges_earned_count || 11}/160</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Award className="text-yellow-300" size={24} />
+                <span className="text-sm">View All →</span>
+              </div>
+            </div>
+          </button>
+
+          <h3 className="text-slate-900 font-semibold mb-3">Recent Badges</h3>
+          <div className="grid grid-cols-4 gap-2">
+            {badges.filter(b => b.earned).slice(0, 8).map(badge => (
+              <div key={badge.id} className="bg-white rounded-xl p-2 text-center">
+                <div className="w-10 h-10 mx-auto rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-lg mb-1">
+                  {badge.icon}
+                </div>
+                <p className="text-[9px] text-slate-600 line-clamp-1">{badge.name}</p>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="text-slate-900 font-semibold mb-3 mt-4">Almost There!</h3>
+          <div className="space-y-2">
+            {badges.filter(b => !b.earned && b.progress > 50).slice(0, 3).map(badge => (
+              <div key={badge.id} className="bg-white rounded-xl p-3 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-slate-200 flex items-center justify-center">
+                  <Lock size={16} className="text-slate-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-slate-900 text-sm font-medium">{badge.name}</p>
+                  <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1">
+                    <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${badge.progress}%` }} />
+                  </div>
+                </div>
+                <span className="text-slate-400 text-xs">{badge.progress}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Skins Sub-tab */}
+      {rewardsTab === 'skins' && (
+        <div className="p-4">
+          <button onClick={() => setShowCarShowroom(true)} data-testid="open-car-studio"
+            className="w-full bg-gradient-to-r from-slate-700 to-slate-800 rounded-xl p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-slate-400 text-xs">Car Studio</p>
+                <p className="text-white text-lg font-bold">Customize Your Ride</p>
+              </div>
+              <Car className="text-blue-400" size={32} />
+            </div>
+          </button>
+
+          <h3 className="text-slate-900 font-semibold mb-3">Owned Skins</h3>
+          <div className="grid grid-cols-3 gap-2">
+            {skins.filter(s => s.owned).map(skin => (
+              <div key={skin.id} className="rounded-xl overflow-hidden">
+                <div className="aspect-square" style={skin.gradient ? { background: skin.gradient } : { background: skin.color || '#3B82F6' }}>
+                  {skin.equipped && (
+                    <div className="w-full h-full flex items-center justify-center bg-black/30">
+                      <Check className="text-white" size={24} />
+                    </div>
+                  )}
+                </div>
+                <div className="bg-white p-2 text-center">
+                  <p className="text-[10px] text-slate-900 font-medium">{skin.name}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
   // Routes Tab - More Detailed
   const renderRoutes = () => (
     <div className="flex-1 bg-slate-100 overflow-auto">
