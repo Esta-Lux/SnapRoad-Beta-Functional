@@ -414,17 +414,9 @@ COMMUNITY_BADGES = [
     {"id": 20, "name": "Road Master", "desc": "Earn all other community badges", "icon": "👑", "requirement": 19},
 ]
 
-# ==================== SAVED DATA ====================
-saved_locations = [
-    {"id": 1, "name": "Home", "address": "123 Oak Street", "category": "home"},
-    {"id": 2, "name": "Work", "address": "Downtown Office", "category": "work"},
-    {"id": 3, "name": "Gym", "address": "FitLife Center", "category": "gym"},
-]
-
-saved_routes = [
-    {"id": 1, "name": "Morning Commute", "origin": "Home", "destination": "Work", "departure_time": "07:30", "days_active": ["Mon", "Tue", "Wed", "Thu", "Fri"], "estimated_time": 25, "distance": 12.5, "is_active": True, "notifications": True},
-    {"id": 2, "name": "School Pickup", "origin": "Work", "destination": "School", "departure_time": "15:00", "days_active": ["Mon", "Tue", "Wed", "Thu", "Fri"], "estimated_time": 18, "distance": 8.2, "is_active": True, "notifications": True},
-]
+# ==================== SAVED DATA (Empty for new users) ====================
+saved_locations = []  # New users start with no saved locations
+saved_routes = []  # New users start with no saved routes
 
 widget_settings = {
     "score": {"visible": True, "collapsed": False, "position": {"x": 12, "y": 290}},
