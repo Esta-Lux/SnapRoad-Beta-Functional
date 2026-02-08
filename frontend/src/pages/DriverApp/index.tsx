@@ -144,6 +144,12 @@ export default function DriverApp() {
   const [showRoadReports, setShowRoadReports] = useState(false)
   const [showCommunityBadges, setShowCommunityBadges] = useState(false)
   const [showLevelProgress, setShowLevelProgress] = useState(false)
+  const [showOrionVoice, setShowOrionVoice] = useState(false)
+  const [showQuickPhotoReport, setShowQuickPhotoReport] = useState(false)
+  const [selectedRoadStatus, setSelectedRoadStatus] = useState<any>(null)
+  
+  // User location (mock - Columbus, OH)
+  const [userLocation, setUserLocation] = useState({ lat: 39.9612, lng: -82.9988 })
   
   // User plan state
   const [userPlan, setUserPlan] = useState<'basic' | 'premium'>('basic')
