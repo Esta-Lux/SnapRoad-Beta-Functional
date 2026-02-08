@@ -33,6 +33,7 @@ import RoadStatusOverlay, { RoadStatusMarkers, MOCK_ROAD_SEGMENTS } from './comp
 import OffersModal, { OfferMarker } from './components/OffersModal'
 import ShareTripScore from './components/ShareTripScore'
 import DrivingScore from './components/DrivingScore'
+import ChallengeHistory from './components/ChallengeHistory'
 import { NavMarker, ProfileCar, CAR_COLORS } from './components/Car3D'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
