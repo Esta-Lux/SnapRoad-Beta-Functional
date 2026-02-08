@@ -10,18 +10,23 @@ import {
   Trash2, Timer, RefreshCw, EyeOff, School, ShoppingCart, Dumbbell, 
   Building, Compass, Layers, GripVertical, Minimize2, Maximize2,
   Phone, MessageCircle, Battery, ChevronLeft, Shield, Zap, TrendingUp,
-  History, Download, BarChart3, HelpCircle, Lock, Edit2, UserPlus
+  History, Download, BarChart3, HelpCircle, Lock, Edit2, UserPlus, Share2
 } from 'lucide-react'
 import FriendsHub from './components/FriendsHub'
 import Leaderboard from './components/Leaderboard'
 import CarShowroom from './components/CarShowroom'
 import BadgesGrid from './components/BadgesGrid'
+import TripHistory from './components/TripHistory'
+import GemHistory from './components/GemHistory'
+import NotificationSettings from './components/NotificationSettings'
+import HelpSupport from './components/HelpSupport'
+import FuelTracker from './components/FuelTracker'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
-// Types
-type TabType = 'map' | 'offers' | 'routes' | 'engagement' | 'profile'
-type EngagementTab = 'badges' | 'skins' | 'challenges' | 'reports'
+// Types - Changed to 4 tabs: Map, Routes, Rewards, Profile
+type TabType = 'map' | 'routes' | 'rewards' | 'profile'
+type RewardsTab = 'offers' | 'challenges' | 'badges' | 'skins'
 type ProfileTab = 'overview' | 'score' | 'fuel' | 'settings'
 type LocationCategory = 'favorites' | 'nearby'
 
