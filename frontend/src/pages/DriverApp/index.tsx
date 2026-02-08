@@ -1104,6 +1104,18 @@ export default function DriverApp() {
         </div>
       )}
 
+      {/* Road Status Markers */}
+      <RoadStatusMarkers 
+        roads={MOCK_ROAD_SEGMENTS} 
+        onSelectRoad={setSelectedRoadStatus} 
+      />
+
+      {/* Road Status Overlay (when road selected) */}
+      <RoadStatusOverlay 
+        selectedRoad={selectedRoadStatus}
+        onClose={() => setSelectedRoadStatus(null)}
+      />
+
       {/* Current Location Marker - User's Car */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         {isNavigating ? (
@@ -1133,7 +1145,7 @@ export default function DriverApp() {
 
       {/* Action Buttons - Right Side */}
       <div className="absolute right-3 bottom-20 flex flex-col gap-2">
-        <button onClick={() => setShowReportModal(true)} data-testid="report-btn"
+        <button onClick={() => setShowQuickPhotoReport(true)} data-testid="report-btn"
           className="w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
           <Camera className="text-white" size={18} />
         </button>
