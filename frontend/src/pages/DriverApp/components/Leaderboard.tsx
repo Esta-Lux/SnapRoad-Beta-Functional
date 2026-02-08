@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Trophy, Medal, MapPin, ChevronDown, Shield, Crown, X, Gem, Zap, Clock, Calendar, TrendingUp } from 'lucide-react'
+import { Trophy, Medal, MapPin, ChevronDown, Shield, Crown, X, Gem, Zap, Clock, Calendar, TrendingUp, Swords } from 'lucide-react'
+import ChallengeModal from './ChallengeModal'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
@@ -20,11 +21,12 @@ interface LeaderboardProps {
   isOpen: boolean
   onClose: () => void
   userId: string
+  userGems?: number
 }
 
 type TimeFilter = 'all_time' | 'weekly' | 'monthly'
 
-export default function Leaderboard({ isOpen, onClose, userId }: LeaderboardProps) {
+export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: LeaderboardProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [selectedState, setSelectedState] = useState<string>('OH') // Default to Ohio
   const [states, setStates] = useState<string[]>([])
