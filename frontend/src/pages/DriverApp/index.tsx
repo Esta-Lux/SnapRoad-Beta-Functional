@@ -152,6 +152,7 @@ export default function DriverApp() {
   const [showOffersModal, setShowOffersModal] = useState(false)
   const [showShareTrip, setShowShareTrip] = useState(false)
   const [lastTripData, setLastTripData] = useState<any>(null)
+  const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
   
   // User location (mock - Columbus, OH)
   const [userLocation, setUserLocation] = useState({ lat: 39.9612, lng: -82.9988 })
