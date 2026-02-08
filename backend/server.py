@@ -383,12 +383,7 @@ for i in range(100):
 current_user_id = "123456"
 
 # ==================== ROAD REPORTS DATABASE ====================
-road_reports_db = [
-    {"id": 1, "user_id": "123456", "type": "hazard", "title": "Pothole on Main St", "description": "Large pothole near intersection", "lat": 39.9612, "lng": -82.9988, "upvotes": 15, "upvoters": ["123457", "123458"], "created_at": "2025-02-08T10:30:00", "expires_at": "2025-02-08T22:30:00", "verified": True},
-    {"id": 2, "user_id": "123457", "type": "accident", "title": "Fender bender on I-71", "description": "Two cars, right lane blocked", "lat": 39.9550, "lng": -83.0050, "upvotes": 32, "upvoters": ["123456"], "created_at": "2025-02-08T11:15:00", "expires_at": "2025-02-08T14:15:00", "verified": True},
-    {"id": 3, "user_id": "123458", "type": "construction", "title": "Road work on High St", "description": "Lane closure until 5pm", "lat": 39.9700, "lng": -83.0000, "upvotes": 8, "upvoters": [], "created_at": "2025-02-08T08:00:00", "expires_at": "2025-02-08T17:00:00", "verified": False},
-    {"id": 4, "user_id": "123456", "type": "police", "title": "Speed trap", "description": "Officer with radar near mile marker 5", "lat": 39.9400, "lng": -82.9900, "upvotes": 45, "upvoters": ["123457"], "created_at": "2025-02-08T09:45:00", "expires_at": "2025-02-08T12:45:00", "verified": True},
-]
+road_reports_db = []  # Empty for new users - reports are community-submitted
 
 # ==================== COMMUNITY BADGES ====================
 COMMUNITY_BADGES = [
