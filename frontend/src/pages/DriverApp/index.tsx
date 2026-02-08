@@ -1764,6 +1764,27 @@ export default function DriverApp() {
         isOpen={showBadgesGrid} 
         onClose={() => setShowBadgesGrid(false)}
       />
+      <TripHistory
+        isOpen={showTripHistory}
+        onClose={() => setShowTripHistory(false)}
+      />
+      <GemHistory
+        isOpen={showGemHistory}
+        onClose={() => setShowGemHistory(false)}
+      />
+      <NotificationSettings
+        isOpen={showNotificationSettings}
+        onClose={() => setShowNotificationSettings(false)}
+      />
+      <HelpSupport
+        isOpen={showHelpSupport}
+        onClose={() => setShowHelpSupport(false)}
+      />
+      <FuelTracker
+        isOpen={showFuelTracker}
+        onClose={() => setShowFuelTracker(false)}
+        isPremium={userData.is_premium}
+      />
     </div>
   )
 }
