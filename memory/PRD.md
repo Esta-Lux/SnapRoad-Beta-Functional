@@ -8,7 +8,49 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 - **Backend:** FastAPI (Python) with in-memory mock data
 - **Planned:** iOS native (Swift/SwiftUI), Mapbox integration
 
+## App Routes
+- `/` - Welcome/Landing page with auth modal
+- `/driver` - Driver mobile app experience
+- `/partner` - Partner business dashboard
+- `/admin` - Admin console with full control
+
 ## Completed Features
+
+### Welcome Page & Auth System ✅ NEW
+- ✅ Beautiful landing page with city background
+- ✅ "Safe journeys, smart rewards" tagline
+- ✅ Feature strip: Safety Score, Earn Gems, Leaderboards, Premium Perks
+- ✅ Glassmorphism auth modal with role selector (Driver/Partner/Admin)
+- ✅ Email/password form with visibility toggle
+- ✅ Sign in/Sign up mode toggle
+
+### Partner Dashboard (Web) ✅ NEW
+- ✅ Sidebar navigation with SnapRoad Partner Portal branding
+- ✅ Overview: Total Redemptions, Views, New Customers, Revenue
+- ✅ My Offers: Create, edit, pause, delete offers
+- ✅ Analytics placeholder for performance tracking
+- ✅ Recent redemptions list with timestamps
+
+### Admin Dashboard (Web) ✅ NEW
+- ✅ Full control console with purple/pink branding
+- ✅ **Stats**: Total Users, Partners, Avg Safety Score
+- ✅ **User Management**: View, edit, suspend users
+- ✅ **Partner Management**: Approve, view, manage partners
+- ✅ **Events System**: Create daily/weekly/special events
+  - Gems multiplier and XP bonus settings
+  - Start/end date configuration
+  - Active/scheduled/ended status
+- ✅ **Quick Actions**: Create Event, View Reports, Send Broadcast, Export Data
+- ✅ **Platform Health**: API, Database, Payment, Push status
+
+### Orion Offer Alerts (During Drives) ✅ NEW
+- ✅ Pushes 2 offers during active navigation
+- ✅ Voice announcement: "Hey! There's a [business] nearby..."
+- ✅ Shows distance, discount, and gems reward
+- ✅ Mute/unmute button
+- ✅ "View Offer" button opens redemption popup
+- ✅ Auto-dismiss after 15 seconds
+- ✅ Doesn't repeat same offer twice per session
 
 ### Phase 2C: Tiered Offers & Share Trip (Feb 8, 2025) ✅ NEW
 
