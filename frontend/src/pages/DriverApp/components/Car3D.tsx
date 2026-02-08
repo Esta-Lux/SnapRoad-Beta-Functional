@@ -1,41 +1,89 @@
 import { useMemo } from 'react'
 
-// Extended Color Palette - 24 colors including metallics and mattes
+// Extended Color Palette - 24 colors with realistic car paint effects
 export const CAR_COLORS = {
   // Standard Colors
-  'midnight-black': { name: 'Midnight Black', hex: '#1a1a1a', type: 'standard', gradient: 'linear-gradient(145deg, #2d2d2d 0%, #1a1a1a 50%, #0d0d0d 100%)' },
-  'arctic-white': { name: 'Arctic White', hex: '#f5f5f5', type: 'standard', gradient: 'linear-gradient(145deg, #ffffff 0%, #f5f5f5 50%, #e8e8e8 100%)' },
-  'racing-red': { name: 'Racing Red', hex: '#dc2626', type: 'standard', gradient: 'linear-gradient(145deg, #ef4444 0%, #dc2626 50%, #b91c1c 100%)' },
-  'ocean-blue': { name: 'Ocean Blue', hex: '#2563eb', type: 'standard', gradient: 'linear-gradient(145deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)' },
-  'forest-green': { name: 'Forest Green', hex: '#16a34a', type: 'standard', gradient: 'linear-gradient(145deg, #22c55e 0%, #16a34a 50%, #15803d 100%)' },
-  'sunset-orange': { name: 'Sunset Orange', hex: '#ea580c', type: 'standard', gradient: 'linear-gradient(145deg, #f97316 0%, #ea580c 50%, #c2410c 100%)' },
-  'royal-purple': { name: 'Royal Purple', hex: '#7c3aed', type: 'standard', gradient: 'linear-gradient(145deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%)' },
-  'canary-yellow': { name: 'Canary Yellow', hex: '#eab308', type: 'standard', gradient: 'linear-gradient(145deg, #facc15 0%, #eab308 50%, #ca8a04 100%)' },
+  'midnight-black': { name: 'Midnight Black', hex: '#0a0a0a', type: 'standard', 
+    body: 'linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 40%, #050505 100%)',
+    highlight: 'rgba(255,255,255,0.15)', reflection: 'rgba(255,255,255,0.08)' },
+  'arctic-white': { name: 'Arctic White', hex: '#f8f8f8', type: 'standard',
+    body: 'linear-gradient(180deg, #ffffff 0%, #f0f0f0 40%, #e8e8e8 100%)',
+    highlight: 'rgba(255,255,255,0.9)', reflection: 'rgba(200,200,200,0.3)' },
+  'racing-red': { name: 'Racing Red', hex: '#c41e3a', type: 'standard',
+    body: 'linear-gradient(180deg, #e63946 0%, #c41e3a 40%, #9a1829 100%)',
+    highlight: 'rgba(255,150,150,0.4)', reflection: 'rgba(255,100,100,0.2)' },
+  'ocean-blue': { name: 'Ocean Blue', hex: '#1e4d8c', type: 'standard',
+    body: 'linear-gradient(180deg, #2d6bb5 0%, #1e4d8c 40%, #163a6b 100%)',
+    highlight: 'rgba(100,180,255,0.3)', reflection: 'rgba(80,150,220,0.2)' },
+  'forest-green': { name: 'Forest Green', hex: '#1a5f3b', type: 'standard',
+    body: 'linear-gradient(180deg, #248a52 0%, #1a5f3b 40%, #134430 100%)',
+    highlight: 'rgba(100,200,130,0.3)', reflection: 'rgba(80,180,100,0.2)' },
+  'sunset-orange': { name: 'Sunset Orange', hex: '#d45500', type: 'standard',
+    body: 'linear-gradient(180deg, #ff6b1a 0%, #d45500 40%, #a34200 100%)',
+    highlight: 'rgba(255,200,100,0.4)', reflection: 'rgba(255,150,50,0.2)' },
+  'royal-purple': { name: 'Royal Purple', hex: '#5c2d7a', type: 'standard',
+    body: 'linear-gradient(180deg, #7a3d9e 0%, #5c2d7a 40%, #45215c 100%)',
+    highlight: 'rgba(200,150,255,0.3)', reflection: 'rgba(150,100,200,0.2)' },
+  'canary-yellow': { name: 'Canary Yellow', hex: '#d4a500', type: 'standard',
+    body: 'linear-gradient(180deg, #ffc61a 0%, #d4a500 40%, #a38000 100%)',
+    highlight: 'rgba(255,230,100,0.5)', reflection: 'rgba(255,220,80,0.3)' },
   
-  // Metallic Colors
-  'pearl-white': { name: 'Pearl White', hex: '#fafafa', type: 'metallic', gradient: 'linear-gradient(145deg, #ffffff 0%, #f0f0f0 30%, #e8e8e8 50%, #f5f5f5 70%, #ffffff 100%)', shine: true },
-  'gunmetal': { name: 'Gunmetal', hex: '#374151', type: 'metallic', gradient: 'linear-gradient(145deg, #6b7280 0%, #4b5563 30%, #374151 50%, #4b5563 70%, #6b7280 100%)', shine: true },
-  'chrome-silver': { name: 'Chrome Silver', hex: '#d1d5db', type: 'metallic', gradient: 'linear-gradient(145deg, #f3f4f6 0%, #e5e7eb 25%, #d1d5db 50%, #e5e7eb 75%, #f9fafb 100%)', shine: true },
-  'copper-bronze': { name: 'Copper Bronze', hex: '#b45309', type: 'metallic', gradient: 'linear-gradient(145deg, #d97706 0%, #b45309 30%, #92400e 50%, #b45309 70%, #d97706 100%)', shine: true },
-  'rose-gold': { name: 'Rose Gold', hex: '#f472b6', type: 'metallic', gradient: 'linear-gradient(145deg, #fbcfe8 0%, #f9a8d4 30%, #f472b6 50%, #f9a8d4 70%, #fbcfe8 100%)', shine: true },
-  'champagne': { name: 'Champagne', hex: '#d4af37', type: 'metallic', gradient: 'linear-gradient(145deg, #fde68a 0%, #d4af37 30%, #b8860b 50%, #d4af37 70%, #fde68a 100%)', shine: true },
+  // Metallic Colors - with shine effects
+  'pearl-white': { name: 'Pearl White', hex: '#f5f5f5', type: 'metallic',
+    body: 'linear-gradient(180deg, #ffffff 0%, #f5f5f5 30%, #e8e8e8 50%, #f0f0f0 70%, #f8f8f8 100%)',
+    highlight: 'rgba(255,255,255,1)', reflection: 'rgba(255,255,255,0.5)', shine: true },
+  'gunmetal': { name: 'Gunmetal', hex: '#3d4249', type: 'metallic',
+    body: 'linear-gradient(180deg, #5a6270 0%, #3d4249 30%, #2d3238 50%, #3d4249 70%, #4a515a 100%)',
+    highlight: 'rgba(150,160,180,0.5)', reflection: 'rgba(100,110,130,0.3)', shine: true },
+  'chrome-silver': { name: 'Chrome Silver', hex: '#c0c5cb', type: 'metallic',
+    body: 'linear-gradient(180deg, #e8eaed 0%, #c0c5cb 25%, #a8adb5 50%, #c5cad0 75%, #d5d8dc 100%)',
+    highlight: 'rgba(255,255,255,0.8)', reflection: 'rgba(200,205,215,0.5)', shine: true },
+  'copper-bronze': { name: 'Copper Bronze', hex: '#8b4513', type: 'metallic',
+    body: 'linear-gradient(180deg, #c4652a 0%, #8b4513 30%, #6b3510 50%, #8b4513 70%, #a85520 100%)',
+    highlight: 'rgba(255,180,100,0.5)', reflection: 'rgba(200,130,60,0.3)', shine: true },
+  'rose-gold': { name: 'Rose Gold', hex: '#b76e79', type: 'metallic',
+    body: 'linear-gradient(180deg, #dba3ab 0%, #b76e79 30%, #9d5560 50%, #b76e79 70%, #c98a93 100%)',
+    highlight: 'rgba(255,200,210,0.5)', reflection: 'rgba(220,150,160,0.3)', shine: true },
+  'champagne': { name: 'Champagne', hex: '#c9a961', type: 'metallic',
+    body: 'linear-gradient(180deg, #e5d08a 0%, #c9a961 30%, #a8894d 50%, #c9a961 70%, #d9bc75 100%)',
+    highlight: 'rgba(255,240,180,0.5)', reflection: 'rgba(220,200,120,0.3)', shine: true },
   
-  // Matte Colors
-  'matte-black': { name: 'Matte Black', hex: '#262626', type: 'matte', gradient: 'linear-gradient(145deg, #303030 0%, #262626 50%, #1f1f1f 100%)', matte: true },
-  'matte-grey': { name: 'Matte Grey', hex: '#525252', type: 'matte', gradient: 'linear-gradient(145deg, #5c5c5c 0%, #525252 50%, #474747 100%)', matte: true },
-  'matte-army': { name: 'Matte Army', hex: '#4d5739', type: 'matte', gradient: 'linear-gradient(145deg, #5a6642 0%, #4d5739 50%, #3f4730 100%)', matte: true },
-  'matte-navy': { name: 'Matte Navy', hex: '#1e3a5f', type: 'matte', gradient: 'linear-gradient(145deg, #254770 0%, #1e3a5f 50%, #172d4d 100%)', matte: true },
+  // Matte Colors - flat finish
+  'matte-black': { name: 'Matte Black', hex: '#1a1a1a', type: 'matte',
+    body: 'linear-gradient(180deg, #252525 0%, #1a1a1a 50%, #151515 100%)',
+    highlight: 'rgba(80,80,80,0.2)', reflection: 'rgba(60,60,60,0.1)', matte: true },
+  'matte-grey': { name: 'Matte Grey', hex: '#4a4a4a', type: 'matte',
+    body: 'linear-gradient(180deg, #5a5a5a 0%, #4a4a4a 50%, #3a3a3a 100%)',
+    highlight: 'rgba(120,120,120,0.2)', reflection: 'rgba(100,100,100,0.1)', matte: true },
+  'matte-army': { name: 'Matte Army', hex: '#4b5320', type: 'matte',
+    body: 'linear-gradient(180deg, #5c6428 0%, #4b5320 50%, #3c4219 100%)',
+    highlight: 'rgba(100,110,50,0.2)', reflection: 'rgba(80,90,40,0.1)', matte: true },
+  'matte-navy': { name: 'Matte Navy', hex: '#1c2841', type: 'matte',
+    body: 'linear-gradient(180deg, #243350 0%, #1c2841 50%, #151f33 100%)',
+    highlight: 'rgba(50,70,100,0.2)', reflection: 'rgba(40,60,90,0.1)', matte: true },
   
-  // Premium Colors (require unlock)
-  'carbon-fiber': { name: 'Carbon Fiber', hex: '#1f1f1f', type: 'premium', gradient: 'repeating-linear-gradient(45deg, #1f1f1f 0px, #1f1f1f 2px, #2d2d2d 2px, #2d2d2d 4px)', premium: true, price: 2500 },
-  'neon-cyan': { name: 'Neon Cyan', hex: '#06b6d4', type: 'premium', gradient: 'linear-gradient(145deg, #22d3ee 0%, #06b6d4 50%, #0891b2 100%)', premium: true, glow: true, price: 1500 },
-  'neon-pink': { name: 'Neon Pink', hex: '#ec4899', type: 'premium', gradient: 'linear-gradient(145deg, #f472b6 0%, #ec4899 50%, #db2777 100%)', premium: true, glow: true, price: 1500 },
-  'neon-lime': { name: 'Neon Lime', hex: '#84cc16', type: 'premium', gradient: 'linear-gradient(145deg, #a3e635 0%, #84cc16 50%, #65a30d 100%)', premium: true, glow: true, price: 1500 },
-  'galaxy-purple': { name: 'Galaxy Purple', hex: '#581c87', type: 'premium', gradient: 'linear-gradient(145deg, #7c3aed 0%, #6b21a8 30%, #581c87 50%, #3b0764 100%)', premium: true, price: 2000 },
-  'inferno': { name: 'Inferno', hex: '#dc2626', type: 'premium', gradient: 'linear-gradient(145deg, #fbbf24 0%, #f97316 30%, #dc2626 60%, #991b1b 100%)', premium: true, price: 2000 },
+  // Premium Colors
+  'carbon-fiber': { name: 'Carbon Fiber', hex: '#1a1a1a', type: 'premium',
+    body: 'repeating-linear-gradient(45deg, #1a1a1a 0px, #1a1a1a 1px, #252525 1px, #252525 2px)',
+    highlight: 'rgba(100,100,100,0.3)', reflection: 'rgba(80,80,80,0.2)', premium: true, price: 2500 },
+  'neon-cyan': { name: 'Neon Cyan', hex: '#00d4ff', type: 'premium',
+    body: 'linear-gradient(180deg, #33e0ff 0%, #00d4ff 40%, #00a8cc 100%)',
+    highlight: 'rgba(150,255,255,0.6)', reflection: 'rgba(100,230,255,0.4)', premium: true, glow: true, price: 1500 },
+  'neon-pink': { name: 'Neon Pink', hex: '#ff1493', type: 'premium',
+    body: 'linear-gradient(180deg, #ff4db2 0%, #ff1493 40%, #cc1077 100%)',
+    highlight: 'rgba(255,150,220,0.6)', reflection: 'rgba(255,100,200,0.4)', premium: true, glow: true, price: 1500 },
+  'neon-lime': { name: 'Neon Lime', hex: '#7fff00', type: 'premium',
+    body: 'linear-gradient(180deg, #a0ff33 0%, #7fff00 40%, #66cc00 100%)',
+    highlight: 'rgba(200,255,100,0.6)', reflection: 'rgba(150,255,50,0.4)', premium: true, glow: true, price: 1500 },
+  'galaxy-purple': { name: 'Galaxy Purple', hex: '#4b0082', type: 'premium',
+    body: 'linear-gradient(180deg, #7b2cbf 0%, #5a189a 30%, #4b0082 50%, #3c0068 100%)',
+    highlight: 'rgba(180,100,255,0.4)', reflection: 'rgba(140,60,220,0.3)', premium: true, price: 2000 },
+  'inferno': { name: 'Inferno', hex: '#ff4500', type: 'premium',
+    body: 'linear-gradient(180deg, #ffd700 0%, #ff8c00 25%, #ff4500 50%, #cc3700 100%)',
+    highlight: 'rgba(255,220,100,0.5)', reflection: 'rgba(255,180,50,0.3)', premium: true, price: 2000 },
 }
 
-// Car Categories with variants
+// Car Categories with realistic shapes
 export const CAR_CATEGORIES = {
   sedan: {
     name: 'Sedan',
@@ -136,350 +184,568 @@ export default function Car3D({
 }: Car3DProps) {
   const colorData = CAR_COLORS[color] || CAR_COLORS['midnight-black']
   
-  const sizeClasses = {
-    sm: { width: 60, height: 30 },
-    md: { width: 120, height: 60 },
-    lg: { width: 180, height: 90 },
-    xl: { width: 260, height: 130 },
+  const sizeMap = {
+    sm: { width: 80, height: 45 },
+    md: { width: 160, height: 90 },
+    lg: { width: 240, height: 135 },
+    xl: { width: 320, height: 180 },
   }
   
-  const { width, height } = sizeClasses[size]
-  
-  // Generate car shape based on category
-  const carShape = useMemo(() => {
-    const shapes: Record<string, { body: string, roof: string, wheels: string, lights: string }> = {
+  const { width, height } = sizeMap[size]
+
+  // Realistic car path shapes by category
+  const carPaths = useMemo(() => {
+    const paths: Record<string, {
+      body: string
+      bodyTop: string
+      hood: string
+      cabin: string
+      windows: string
+      frontWindow: string
+      rearWindow: string
+      trim: string
+      bumperFront: string
+      bumperRear: string
+      wheelWellFront: string
+      wheelWellRear: string
+      doorLine: string
+      handleArea: string
+    }> = {
       sedan: {
-        body: 'M5,65 L15,65 L20,55 L25,45 L75,45 L85,55 L90,65 L95,65 L95,75 L5,75 Z',
-        roof: 'M30,45 L35,30 L65,30 L70,45 Z',
-        wheels: '18,75 82,75',
-        lights: 'M10,58 L18,58 L18,68 L10,68 Z M82,58 L90,58 L90,68 L82,68 Z'
+        body: 'M 15 65 Q 10 65 8 60 L 12 48 Q 18 42 28 38 L 72 38 Q 82 42 88 48 L 92 60 Q 90 65 85 65 L 15 65 Z',
+        bodyTop: 'M 20 48 Q 22 42 30 38 L 70 38 Q 78 42 80 48 L 20 48 Z',
+        hood: 'M 12 52 L 28 40 L 36 40 L 36 52 Z',
+        cabin: 'M 30 38 Q 32 26 40 22 L 60 22 Q 68 26 70 38 L 30 38 Z',
+        windows: 'M 32 36 Q 34 28 40 24 L 60 24 Q 66 28 68 36 L 32 36 Z',
+        frontWindow: 'M 34 35 L 38 26 L 49 26 L 49 35 Z',
+        rearWindow: 'M 51 35 L 51 26 L 62 26 L 66 35 Z',
+        trim: 'M 15 52 L 85 52',
+        bumperFront: 'M 8 62 Q 6 58 10 55 L 18 55 Q 14 58 14 62 Z',
+        bumperRear: 'M 86 62 Q 86 58 82 55 L 90 55 Q 94 58 92 62 Z',
+        wheelWellFront: 'M 18 65 Q 18 56 26 56 Q 34 56 34 65',
+        wheelWellRear: 'M 66 65 Q 66 56 74 56 Q 82 56 82 65',
+        doorLine: 'M 50 38 L 50 62',
+        handleArea: 'M 42 48 L 48 48 L 48 50 L 42 50 Z',
       },
       suv: {
-        body: 'M5,65 L10,65 L15,50 L20,40 L80,40 L85,50 L90,65 L95,65 L95,78 L5,78 Z',
-        roof: 'M22,40 L25,25 L75,25 L78,40 Z',
-        wheels: '18,78 82,78',
-        lights: 'M8,52 L16,52 L16,64 L8,64 Z M84,52 L92,52 L92,64 L84,64 Z'
+        body: 'M 12 68 Q 8 68 6 62 L 10 48 Q 14 40 24 36 L 76 36 Q 86 40 90 48 L 94 62 Q 92 68 88 68 L 12 68 Z',
+        bodyTop: 'M 18 48 Q 20 40 26 36 L 74 36 Q 80 40 82 48 L 18 48 Z',
+        hood: 'M 10 52 L 24 38 L 32 38 L 32 52 Z',
+        cabin: 'M 26 36 Q 28 22 36 18 L 64 18 Q 72 22 74 36 L 26 36 Z',
+        windows: 'M 28 34 Q 30 24 36 20 L 64 20 Q 70 24 72 34 L 28 34 Z',
+        frontWindow: 'M 30 32 L 35 22 L 48 22 L 48 32 Z',
+        rearWindow: 'M 52 32 L 52 22 L 65 22 L 70 32 Z',
+        trim: 'M 12 52 L 88 52',
+        bumperFront: 'M 6 65 Q 4 60 8 56 L 16 56 Q 12 60 12 65 Z',
+        bumperRear: 'M 88 65 Q 88 60 84 56 L 92 56 Q 96 60 94 65 Z',
+        wheelWellFront: 'M 16 68 Q 16 58 26 58 Q 36 58 36 68',
+        wheelWellRear: 'M 64 68 Q 64 58 74 58 Q 84 58 84 68',
+        doorLine: 'M 50 36 L 50 65',
+        handleArea: 'M 40 48 L 46 48 L 46 51 L 40 51 Z',
       },
       sports: {
-        body: 'M2,68 L12,68 L18,58 L30,50 L70,50 L85,58 L92,68 L98,68 L98,75 L2,75 Z',
-        roof: 'M35,50 L40,38 L60,38 L65,50 Z',
-        wheels: '16,75 84,75',
-        lights: 'M5,60 L14,60 L14,68 L5,68 Z M86,60 L95,60 L95,68 L86,68 Z'
+        body: 'M 8 62 Q 4 62 4 58 L 10 48 Q 18 42 30 40 L 70 40 Q 85 42 92 48 L 96 58 Q 96 62 92 62 L 8 62 Z',
+        bodyTop: 'M 16 48 Q 22 42 32 40 L 68 40 Q 80 42 84 48 L 16 48 Z',
+        hood: 'M 10 52 L 32 42 L 42 42 L 36 52 Z',
+        cabin: 'M 38 40 Q 40 32 46 30 L 58 30 Q 64 32 66 40 L 38 40 Z',
+        windows: 'M 40 38 Q 42 32 46 30 L 58 30 Q 62 32 64 38 L 40 38 Z',
+        frontWindow: 'M 42 37 L 45 31 L 51 31 L 51 37 Z',
+        rearWindow: 'M 53 37 L 53 31 L 59 31 L 62 37 Z',
+        trim: 'M 10 50 L 90 50',
+        bumperFront: 'M 4 60 Q 2 56 6 52 L 14 52 Q 10 56 10 60 Z',
+        bumperRear: 'M 90 60 Q 90 56 86 52 L 94 52 Q 98 56 96 60 Z',
+        wheelWellFront: 'M 14 62 Q 14 54 22 54 Q 30 54 30 62',
+        wheelWellRear: 'M 70 62 Q 70 54 78 54 Q 86 54 86 62',
+        doorLine: 'M 52 40 L 52 60',
+        handleArea: 'M 44 48 L 50 48 L 50 50 L 44 50 Z',
       },
       truck: {
-        body: 'M5,65 L10,65 L15,50 L20,40 L45,40 L48,50 L95,50 L95,78 L5,78 Z',
-        roof: 'M22,40 L25,28 L43,28 L46,40 Z',
-        wheels: '18,78 78,78',
-        lights: 'M8,52 L16,52 L16,64 L8,64 Z M88,55 L93,55 L93,65 L88,65 Z'
+        body: 'M 12 70 Q 8 70 6 64 L 10 52 Q 14 44 22 40 L 46 40 L 46 50 L 88 50 L 94 64 Q 92 70 88 70 L 12 70 Z',
+        bodyTop: 'M 16 52 Q 18 44 24 40 L 44 40 L 44 50 L 84 50 L 16 52 Z',
+        hood: 'M 10 55 L 22 42 L 30 42 L 30 55 Z',
+        cabin: 'M 24 40 Q 26 28 32 24 L 44 24 Q 46 28 46 40 L 24 40 Z',
+        windows: 'M 26 38 Q 28 30 32 26 L 44 26 Q 45 30 45 38 L 26 38 Z',
+        frontWindow: 'M 28 36 L 32 28 L 44 28 L 44 36 Z',
+        rearWindow: 'M 44 36 L 44 28 L 44 28 L 44 36 Z',
+        trim: 'M 12 55 L 46 55 M 46 55 L 88 55',
+        bumperFront: 'M 6 68 Q 4 62 8 58 L 16 58 Q 12 62 12 68 Z',
+        bumperRear: 'M 88 68 Q 88 62 84 58 L 92 58 Q 96 62 94 68 Z',
+        wheelWellFront: 'M 16 70 Q 16 60 26 60 Q 36 60 36 70',
+        wheelWellRear: 'M 68 70 Q 68 60 78 60 Q 88 60 88 70',
+        doorLine: 'M 36 40 L 36 67',
+        handleArea: 'M 30 50 L 34 50 L 34 52 L 30 52 Z',
       },
       hatchback: {
-        body: 'M8,65 L15,65 L20,52 L28,45 L72,45 L82,55 L88,65 L92,65 L92,75 L8,75 Z',
-        roof: 'M32,45 L35,32 L70,32 L75,45 Z',
-        wheels: '20,75 78,75',
-        lights: 'M12,55 L18,55 L18,64 L12,64 Z M82,55 L88,55 L88,64 L82,64 Z'
+        body: 'M 14 64 Q 10 64 8 58 L 12 48 Q 18 42 28 40 L 72 40 Q 80 44 84 52 L 88 58 Q 86 64 82 64 L 14 64 Z',
+        bodyTop: 'M 18 48 Q 22 42 30 40 L 70 40 Q 76 44 78 52 L 18 48 Z',
+        hood: 'M 12 52 L 28 42 L 36 42 L 36 52 Z',
+        cabin: 'M 30 40 Q 32 28 38 24 L 62 24 Q 72 28 78 40 L 30 40 Z',
+        windows: 'M 32 38 Q 34 30 38 26 L 62 26 Q 70 30 75 38 L 32 38 Z',
+        frontWindow: 'M 34 36 L 38 28 L 50 28 L 50 36 Z',
+        rearWindow: 'M 52 36 L 52 28 L 66 28 L 72 36 Z',
+        trim: 'M 14 52 L 82 52',
+        bumperFront: 'M 8 62 Q 6 58 10 54 L 18 54 Q 14 58 14 62 Z',
+        bumperRear: 'M 82 62 Q 82 58 78 54 L 86 54 Q 90 58 88 62 Z',
+        wheelWellFront: 'M 18 64 Q 18 56 26 56 Q 34 56 34 64',
+        wheelWellRear: 'M 62 64 Q 62 56 70 56 Q 78 56 78 64',
+        doorLine: 'M 48 40 L 48 62',
+        handleArea: 'M 40 48 L 46 48 L 46 50 L 40 50 Z',
       },
       luxury: {
-        body: 'M3,65 L12,65 L18,52 L25,42 L78,42 L85,52 L92,65 L97,65 L97,76 L3,76 Z',
-        roof: 'M28,42 L32,28 L72,28 L76,42 Z',
-        wheels: '16,76 84,76',
-        lights: 'M6,54 L15,54 L15,65 L6,65 Z M85,54 L94,54 L94,65 L85,65 Z'
+        body: 'M 10 66 Q 6 66 4 60 L 8 48 Q 14 40 26 36 L 74 36 Q 86 40 92 48 L 96 60 Q 94 66 90 66 L 10 66 Z',
+        bodyTop: 'M 14 48 Q 18 40 28 36 L 72 36 Q 82 40 86 48 L 14 48 Z',
+        hood: 'M 8 52 L 26 38 L 36 38 L 34 52 Z',
+        cabin: 'M 28 36 Q 30 24 38 20 L 62 20 Q 70 24 72 36 L 28 36 Z',
+        windows: 'M 30 34 Q 32 26 38 22 L 62 22 Q 68 26 70 34 L 30 34 Z',
+        frontWindow: 'M 32 33 L 37 24 L 49 24 L 49 33 Z',
+        rearWindow: 'M 51 33 L 51 24 L 63 24 L 68 33 Z',
+        trim: 'M 10 52 L 90 52 M 10 56 L 90 56',
+        bumperFront: 'M 4 64 Q 2 58 6 54 L 14 54 Q 10 58 10 64 Z',
+        bumperRear: 'M 90 64 Q 90 58 86 54 L 94 54 Q 98 58 96 64 Z',
+        wheelWellFront: 'M 16 66 Q 16 56 26 56 Q 36 56 36 66',
+        wheelWellRear: 'M 64 66 Q 64 56 74 56 Q 84 56 84 66',
+        doorLine: 'M 50 36 L 50 64',
+        handleArea: 'M 42 46 L 48 46 L 48 49 L 42 49 Z',
       },
       electric: {
-        body: 'M5,65 L12,65 L18,55 L25,48 L75,48 L82,55 L88,65 L95,65 L95,74 L5,74 Z',
-        roof: 'M28,48 L32,35 L68,35 L72,48 Z',
-        wheels: '18,74 82,74',
-        lights: 'M8,56 L16,56 L16,65 L8,65 Z M84,56 L92,56 L92,65 L84,65 Z'
+        body: 'M 12 64 Q 8 64 6 58 L 10 48 Q 16 42 28 40 L 72 40 Q 84 42 90 48 L 94 58 Q 92 64 88 64 L 12 64 Z',
+        bodyTop: 'M 16 48 Q 20 42 30 40 L 70 40 Q 80 42 84 48 L 16 48 Z',
+        hood: 'M 10 52 L 28 42 L 38 42 L 36 52 Z',
+        cabin: 'M 30 40 Q 32 28 40 24 L 60 24 Q 68 28 70 40 L 30 40 Z',
+        windows: 'M 32 38 Q 34 30 40 26 L 60 26 Q 66 30 68 38 L 32 38 Z',
+        frontWindow: 'M 34 36 L 39 28 L 49 28 L 49 36 Z',
+        rearWindow: 'M 51 36 L 51 28 L 61 28 L 66 36 Z',
+        trim: 'M 12 52 L 88 52',
+        bumperFront: 'M 6 62 Q 4 58 8 54 L 16 54 Q 12 58 12 62 Z',
+        bumperRear: 'M 88 62 Q 88 58 84 54 L 92 54 Q 96 58 94 62 Z',
+        wheelWellFront: 'M 18 64 Q 18 55 27 55 Q 36 55 36 64',
+        wheelWellRear: 'M 64 64 Q 64 55 73 55 Q 82 55 82 64',
+        doorLine: 'M 50 40 L 50 62',
+        handleArea: 'M 42 48 L 48 48 L 48 50 L 42 50 Z',
       },
     }
-    return shapes[category] || shapes.sedan
+    return paths[category] || paths.sedan
   }, [category])
 
-  const perspectiveTransform = {
-    side: 'rotateY(0deg)',
-    front: 'rotateY(90deg)',
-    angled: 'rotateX(15deg) rotateY(-25deg)',
-    top: 'rotateX(60deg)',
+  const transform3D = {
+    side: 'rotateY(0deg) rotateX(5deg)',
+    front: 'rotateY(-75deg) rotateX(5deg)',
+    angled: 'rotateY(-25deg) rotateX(12deg)',
+    top: 'rotateX(55deg) rotateY(0deg)',
   }
 
   return (
     <div 
-      className={`relative ${animated ? 'animate-float' : ''} ${onClick ? 'cursor-pointer' : ''}`}
+      className={`relative ${animated ? 'animate-float' : ''} ${onClick ? 'cursor-pointer hover:scale-105 transition-transform' : ''}`}
       style={{ 
         width, 
-        height: height + 20,
-        perspective: '500px',
-        transformStyle: 'preserve-3d',
+        height: height + 30,
+        perspective: '800px',
       }}
       onClick={onClick}
     >
-      {/* Car Container with 3D Transform */}
+      {/* 3D Container */}
       <div 
-        className="absolute inset-0 transition-transform duration-500"
+        className="absolute inset-0 transition-transform duration-700 ease-out"
         style={{
-          transform: `${perspectiveTransform[perspective]} rotateZ(${rotation}deg)`,
+          transform: `${transform3D[perspective]} rotateZ(${rotation}deg)`,
           transformStyle: 'preserve-3d',
         }}
       >
+        {/* Ground Shadow */}
+        {showShadow && (
+          <div 
+            className="absolute bottom-0 left-1/2 -translate-x-1/2"
+            style={{
+              width: width * 0.7,
+              height: 8,
+              background: 'radial-gradient(ellipse, rgba(0,0,0,0.4) 0%, transparent 70%)',
+              filter: 'blur(4px)',
+              transform: 'translateZ(-20px)',
+            }}
+          />
+        )}
+
         {/* Main Car SVG */}
         <svg 
-          viewBox="0 0 100 85" 
-          className="w-full h-full drop-shadow-2xl"
-          style={{ 
-            filter: colorData.glow ? `drop-shadow(0 0 10px ${colorData.hex})` : undefined 
+          viewBox="0 0 100 80" 
+          className="w-full h-full"
+          style={{
+            filter: colorData.glow 
+              ? `drop-shadow(0 0 15px ${colorData.hex}80) drop-shadow(0 4px 8px rgba(0,0,0,0.3))` 
+              : 'drop-shadow(0 4px 12px rgba(0,0,0,0.4)) drop-shadow(0 2px 4px rgba(0,0,0,0.2))',
           }}
         >
           <defs>
-            {/* Body Gradient */}
-            <linearGradient id={`body-${color}`} x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor={colorData.hex} stopOpacity="1" />
-              <stop offset="50%" stopColor={colorData.hex} stopOpacity="0.9" />
-              <stop offset="100%" stopColor={colorData.hex} stopOpacity="0.7" />
+            {/* Main body gradient */}
+            <linearGradient id={`body-grad-${color}-${category}`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor={colorData.highlight} />
+              <stop offset="15%" stopColor={colorData.hex} />
+              <stop offset="60%" stopColor={colorData.hex} />
+              <stop offset="100%" stopColor="rgba(0,0,0,0.3)" />
             </linearGradient>
-            
-            {/* Metallic Shine */}
-            {colorData.shine && (
-              <linearGradient id={`shine-${color}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="white" stopOpacity="0.4" />
-                <stop offset="50%" stopColor="white" stopOpacity="0" />
-                <stop offset="100%" stopColor="white" stopOpacity="0.2" />
-              </linearGradient>
-            )}
-            
-            {/* Window Gradient */}
-            <linearGradient id="window-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#1e293b" />
-              <stop offset="50%" stopColor="#334155" />
-              <stop offset="100%" stopColor="#1e293b" />
+
+            {/* Hood/roof highlight */}
+            <linearGradient id={`hood-highlight-${color}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.4)" />
+              <stop offset="50%" stopColor="rgba(255,255,255,0.1)" />
+              <stop offset="100%" stopColor="rgba(255,255,255,0)" />
             </linearGradient>
-            
-            {/* Chrome Gradient for trim */}
-            <linearGradient id="chrome" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#e5e7eb" />
-              <stop offset="50%" stopColor="#9ca3af" />
-              <stop offset="100%" stopColor="#6b7280" />
+
+            {/* Window glass gradient */}
+            <linearGradient id="window-glass" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#1a2530" />
+              <stop offset="30%" stopColor="#2a3a48" />
+              <stop offset="70%" stopColor="#1a2530" />
+              <stop offset="100%" stopColor="#0f1820" />
             </linearGradient>
+
+            {/* Window reflection */}
+            <linearGradient id="window-reflect" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="rgba(180,200,220,0.5)" />
+              <stop offset="30%" stopColor="rgba(180,200,220,0.2)" />
+              <stop offset="100%" stopColor="rgba(180,200,220,0)" />
+            </linearGradient>
+
+            {/* Chrome trim */}
+            <linearGradient id="chrome-trim" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#f0f0f0" />
+              <stop offset="30%" stopColor="#c0c0c0" />
+              <stop offset="50%" stopColor="#a0a0a0" />
+              <stop offset="70%" stopColor="#c0c0c0" />
+              <stop offset="100%" stopColor="#808080" />
+            </linearGradient>
+
+            {/* Tire rubber */}
+            <radialGradient id="tire-rubber" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#2a2a2a" />
+              <stop offset="70%" stopColor="#1a1a1a" />
+              <stop offset="100%" stopColor="#0a0a0a" />
+            </radialGradient>
+
+            {/* Rim gradient */}
+            <radialGradient id="rim-metal" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="#e8e8e8" />
+              <stop offset="50%" stopColor="#b0b0b0" />
+              <stop offset="100%" stopColor="#707070" />
+            </radialGradient>
+
+            {/* Headlight */}
+            <radialGradient id="headlight" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#ffffff" />
+              <stop offset="40%" stopColor="#fff8e0" />
+              <stop offset="100%" stopColor="#d0c8a0" />
+            </radialGradient>
+
+            {/* Taillight */}
+            <radialGradient id="taillight" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#ff4040" />
+              <stop offset="60%" stopColor="#cc2020" />
+              <stop offset="100%" stopColor="#801010" />
+            </radialGradient>
           </defs>
-          
-          {/* Shadow underneath */}
-          {showShadow && (
-            <ellipse cx="50" cy="82" rx="40" ry="3" fill="rgba(0,0,0,0.3)" />
-          )}
-          
-          {/* Car Body */}
+
+          {/* Car Body - Main Shape */}
           <path 
-            d={carShape.body} 
-            fill={`url(#body-${color})`}
-            stroke={colorData.hex}
-            strokeWidth="0.5"
-            className="transition-all duration-300"
-          />
-          
-          {/* Body Highlight for 3D effect */}
-          <path 
-            d={carShape.body} 
-            fill="url(#chrome)"
-            opacity="0.1"
-            style={{ clipPath: 'inset(0 0 50% 0)' }}
-          />
-          
-          {/* Metallic Shine Overlay */}
-          {colorData.shine && (
-            <path 
-              d={carShape.body} 
-              fill={`url(#shine-${color})`}
-            />
-          )}
-          
-          {/* Roof / Windows */}
-          <path 
-            d={carShape.roof} 
-            fill="url(#window-gradient)"
-            stroke="#475569"
+            d={carPaths.body}
+            fill={`url(#body-grad-${color}-${category})`}
+            stroke="rgba(0,0,0,0.3)"
             strokeWidth="0.5"
           />
-          
-          {/* Window Reflection */}
+
+          {/* Body panel highlight */}
           <path 
-            d={carShape.roof} 
-            fill="white"
-            opacity="0.15"
-            style={{ clipPath: 'inset(0 50% 50% 0)' }}
+            d={carPaths.bodyTop}
+            fill={`url(#hood-highlight-${color})`}
+            opacity={colorData.matte ? 0.1 : 0.4}
           />
-          
-          {/* Headlights / Taillights */}
+
+          {/* Cabin/Roof Structure */}
           <path 
-            d={carShape.lights} 
-            fill="#fef3c7"
-            stroke="#fbbf24"
+            d={carPaths.cabin}
+            fill={`url(#body-grad-${color}-${category})`}
+            stroke="rgba(0,0,0,0.2)"
             strokeWidth="0.3"
           />
-          
-          {/* Wheels */}
-          {carShape.wheels.split(' ').map((pos, i) => {
-            const [x, y] = pos.split(',').map(Number)
-            return (
-              <g key={i}>
-                {/* Tire */}
-                <circle cx={x} cy={y} r="8" fill="#1f2937" stroke="#374151" strokeWidth="0.5" />
-                {/* Rim */}
-                <circle cx={x} cy={y} r="5" fill="url(#chrome)" />
-                {/* Rim Center */}
-                <circle cx={x} cy={y} r="2" fill="#374151" />
-                {/* Rim Spokes */}
-                {[0, 72, 144, 216, 288].map((angle, j) => (
-                  <line 
-                    key={j}
-                    x1={x} y1={y - 5}
-                    x2={x} y2={y - 2}
-                    stroke="#6b7280"
-                    strokeWidth="0.5"
-                    transform={`rotate(${angle} ${x} ${y})`}
-                  />
-                ))}
-              </g>
-            )
-          })}
-          
-          {/* Chrome Trim Line */}
-          <line x1="15" y1="65" x2="85" y2="65" stroke="url(#chrome)" strokeWidth="1" opacity="0.6" />
-          
+
+          {/* Windows - Glass */}
+          <path 
+            d={carPaths.windows}
+            fill="url(#window-glass)"
+            stroke="rgba(0,0,0,0.4)"
+            strokeWidth="0.3"
+          />
+
+          {/* Window Reflection */}
+          <path 
+            d={carPaths.frontWindow}
+            fill="url(#window-reflect)"
+            opacity="0.6"
+          />
+
+          {/* Wheel Wells */}
+          <path 
+            d={carPaths.wheelWellFront}
+            fill="#0a0a0a"
+          />
+          <path 
+            d={carPaths.wheelWellRear}
+            fill="#0a0a0a"
+          />
+
+          {/* Front Wheel */}
+          <g transform="translate(26, 64)">
+            {/* Tire */}
+            <ellipse cx="0" cy="0" rx="8" ry="8" fill="url(#tire-rubber)" />
+            {/* Rim */}
+            <ellipse cx="0" cy="0" rx="5.5" ry="5.5" fill="url(#rim-metal)" />
+            {/* Rim center cap */}
+            <circle cx="0" cy="0" r="2" fill="#505050" />
+            {/* Rim spokes */}
+            {[0, 60, 120, 180, 240, 300].map((angle, i) => (
+              <line 
+                key={i}
+                x1="0" y1="-2"
+                x2="0" y2="-5"
+                stroke="#808080"
+                strokeWidth="1"
+                transform={`rotate(${angle})`}
+              />
+            ))}
+          </g>
+
+          {/* Rear Wheel */}
+          <g transform="translate(74, 64)">
+            <ellipse cx="0" cy="0" rx="8" ry="8" fill="url(#tire-rubber)" />
+            <ellipse cx="0" cy="0" rx="5.5" ry="5.5" fill="url(#rim-metal)" />
+            <circle cx="0" cy="0" r="2" fill="#505050" />
+            {[0, 60, 120, 180, 240, 300].map((angle, i) => (
+              <line 
+                key={i}
+                x1="0" y1="-2"
+                x2="0" y2="-5"
+                stroke="#808080"
+                strokeWidth="1"
+                transform={`rotate(${angle})`}
+              />
+            ))}
+          </g>
+
+          {/* Chrome Trim Lines */}
+          <path 
+            d={carPaths.trim}
+            fill="none"
+            stroke="url(#chrome-trim)"
+            strokeWidth="0.8"
+            opacity="0.7"
+          />
+
+          {/* Door Line */}
+          <path 
+            d={carPaths.doorLine}
+            fill="none"
+            stroke="rgba(0,0,0,0.15)"
+            strokeWidth="0.5"
+          />
+
           {/* Door Handle */}
-          <rect x="45" y="55" width="6" height="2" rx="1" fill="url(#chrome)" opacity="0.8" />
+          <path 
+            d={carPaths.handleArea}
+            fill="url(#chrome-trim)"
+            opacity="0.8"
+          />
+
+          {/* Headlights */}
+          <ellipse cx="12" cy="52" rx="3" ry="2" fill="url(#headlight)" />
           
-          {/* Side Mirror (left) */}
-          <ellipse cx="22" cy="48" rx="3" ry="2" fill={`url(#body-${color})`} stroke={colorData.hex} strokeWidth="0.3" />
+          {/* Taillights */}
+          <ellipse cx="88" cy="54" rx="2.5" ry="1.8" fill="url(#taillight)" />
+
+          {/* Front Grille Area */}
+          <rect x="9" y="54" width="6" height="4" rx="0.5" fill="rgba(30,30,30,0.9)" />
+
+          {/* Side Mirror */}
+          <ellipse cx="28" cy="42" rx="2" ry="1.2" fill={colorData.hex} stroke="rgba(0,0,0,0.2)" strokeWidth="0.2" />
         </svg>
       </div>
-      
+
       {/* Floor Reflection */}
       {showReflection && (
         <div 
-          className="absolute bottom-0 left-0 right-0 h-1/3 opacity-20"
+          className="absolute bottom-0 left-0 right-0"
           style={{
-            transform: 'scaleY(-1)',
-            maskImage: 'linear-gradient(to bottom, transparent, black)',
-            WebkitMaskImage: 'linear-gradient(to bottom, transparent, black)',
+            height: height * 0.3,
+            transform: 'scaleY(-0.4) translateY(20px)',
+            opacity: 0.15,
+            maskImage: 'linear-gradient(to top, transparent 0%, black 100%)',
+            WebkitMaskImage: 'linear-gradient(to top, transparent 0%, black 100%)',
+            filter: 'blur(2px)',
           }}
         >
-          <svg viewBox="0 0 100 85" className="w-full h-full">
-            <path d={carShape.body} fill={colorData.hex} opacity="0.3" />
+          <svg viewBox="0 0 100 80" className="w-full h-full">
+            <path d={carPaths.body} fill={colorData.hex} />
           </svg>
         </div>
       )}
+
+      {/* CSS Animation */}
+      <style>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-8px); }
+        }
+        .animate-float {
+          animation: float 4s ease-in-out infinite;
+        }
+      `}</style>
     </div>
   )
 }
 
-// Navigation Marker Component - Shows car from angled top-down view
+// Navigation Marker - 3D angled top-down view
 interface NavMarkerProps {
   category: keyof typeof CAR_CATEGORIES
   color: keyof typeof CAR_COLORS
-  heading?: number // Direction in degrees
+  heading?: number
   size?: number
   isMoving?: boolean
 }
 
-export function NavMarker({ category, color, heading = 0, size = 32, isMoving = false }: NavMarkerProps) {
+export function NavMarker({ category, color, heading = 0, size = 40, isMoving = false }: NavMarkerProps) {
   const colorData = CAR_COLORS[color] || CAR_COLORS['midnight-black']
   
   return (
     <div 
-      className={`relative ${isMoving ? 'animate-pulse' : ''}`}
+      className={`relative ${isMoving ? '' : ''}`}
       style={{ 
         width: size, 
-        height: size * 1.5,
+        height: size * 1.4,
         transform: `rotate(${heading}deg)`,
-        transition: 'transform 0.3s ease-out',
+        transition: 'transform 0.4s ease-out',
+        filter: `drop-shadow(0 3px 6px rgba(0,0,0,0.4))`,
       }}
     >
-      <svg viewBox="0 0 32 48" className="w-full h-full drop-shadow-lg">
+      <svg viewBox="0 0 40 56" className="w-full h-full">
         <defs>
-          <linearGradient id={`nav-body-${color}`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={colorData.hex} />
-            <stop offset="100%" stopColor={colorData.hex} stopOpacity="0.7" />
+          <linearGradient id={`nav-body-${color}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={colorData.highlight} />
+            <stop offset="50%" stopColor={colorData.hex} />
+            <stop offset="100%" stopColor="rgba(0,0,0,0.3)" />
+          </linearGradient>
+          <linearGradient id="nav-window" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#3a4a58" />
+            <stop offset="100%" stopColor="#1a2530" />
           </linearGradient>
         </defs>
         
         {/* Car body - angled top view */}
         <path 
-          d="M16,2 L28,14 L28,38 L24,44 L8,44 L4,38 L4,14 Z" 
+          d="M 20 4 L 34 16 Q 36 18 36 22 L 36 44 Q 36 48 32 50 L 24 54 Q 20 56 16 54 L 8 50 Q 4 48 4 44 L 4 22 Q 4 18 6 16 L 20 4 Z" 
           fill={`url(#nav-body-${color})`}
           stroke={colorData.hex}
-          strokeWidth="1"
+          strokeWidth="0.5"
+        />
+        
+        {/* Hood */}
+        <path 
+          d="M 12 18 L 20 8 L 28 18 L 28 26 L 12 26 Z" 
+          fill={colorData.hex}
+          opacity="0.9"
         />
         
         {/* Windshield */}
         <path 
-          d="M10,16 L16,8 L22,16 L22,22 L10,22 Z" 
-          fill="#1e293b"
-          opacity="0.8"
+          d="M 13 20 L 20 10 L 27 20 L 27 28 L 13 28 Z" 
+          fill="url(#nav-window)"
         />
+        
+        {/* Roof */}
+        <rect x="12" y="28" width="16" height="12" rx="2" fill={colorData.hex} opacity="0.95" />
         
         {/* Rear window */}
         <path 
-          d="M10,32 L22,32 L22,38 L10,38 Z" 
-          fill="#1e293b"
-          opacity="0.6"
+          d="M 13 40 L 27 40 L 27 46 L 13 46 Z" 
+          fill="url(#nav-window)"
+          opacity="0.8"
         />
         
         {/* Headlights */}
-        <circle cx="10" cy="12" r="2" fill="#fef3c7" />
-        <circle cx="22" cy="12" r="2" fill="#fef3c7" />
+        <ellipse cx="11" cy="17" rx="2" ry="1.5" fill="#fff8e0" />
+        <ellipse cx="29" cy="17" rx="2" ry="1.5" fill="#fff8e0" />
         
         {/* Taillights */}
-        <rect x="8" y="40" width="4" height="2" rx="0.5" fill="#ef4444" />
-        <rect x="20" y="40" width="4" height="2" rx="0.5" fill="#ef4444" />
+        <rect x="10" y="48" width="4" height="2" rx="0.5" fill="#ff3030" />
+        <rect x="26" y="48" width="4" height="2" rx="0.5" fill="#ff3030" />
         
-        {/* Direction indicator arrow */}
+        {/* Direction indicator when moving */}
         {isMoving && (
-          <path 
-            d="M16,0 L20,6 L12,6 Z" 
-            fill="#3b82f6"
-            className="animate-bounce"
-          />
+          <g className="animate-pulse">
+            <path d="M 20 0 L 24 6 L 16 6 Z" fill="#4a90d9" />
+          </g>
         )}
       </svg>
     </div>
   )
 }
 
-// Mini car for profile avatars
+// Profile Car - Side view silhouette
 interface ProfileCarProps {
   category: keyof typeof CAR_CATEGORIES
   color: keyof typeof CAR_COLORS
   size?: number
 }
 
-export function ProfileCar({ category, color, size = 48 }: ProfileCarProps) {
+export function ProfileCar({ category, color, size = 56 }: ProfileCarProps) {
   const colorData = CAR_COLORS[color] || CAR_COLORS['midnight-black']
   
   return (
     <div 
       className="relative"
-      style={{ width: size, height: size * 0.6 }}
+      style={{ 
+        width: size, 
+        height: size * 0.5,
+        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))',
+      }}
     >
-      <svg viewBox="0 0 100 60" className="w-full h-full">
+      <svg viewBox="0 0 100 50" className="w-full h-full">
         <defs>
           <linearGradient id={`profile-body-${color}`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={colorData.hex} />
-            <stop offset="100%" stopColor={colorData.hex} stopOpacity="0.8" />
+            <stop offset="0%" stopColor={colorData.highlight} />
+            <stop offset="40%" stopColor={colorData.hex} />
+            <stop offset="100%" stopColor="rgba(0,0,0,0.2)" />
           </linearGradient>
         </defs>
         
-        {/* Simplified car silhouette */}
+        {/* Car body silhouette */}
         <path 
-          d="M10,40 L15,40 L20,30 L30,22 L70,22 L80,30 L85,40 L90,40 L90,48 L10,48 Z" 
+          d="M 8 38 Q 5 38 5 34 L 10 28 Q 16 22 26 20 L 74 20 Q 84 22 90 28 L 95 34 Q 95 38 92 38 L 8 38 Z" 
           fill={`url(#profile-body-${color})`}
         />
+        
+        {/* Cabin */}
         <path 
-          d="M32,22 L38,12 L62,12 L68,22 Z" 
-          fill="#334155"
+          d="M 30 20 Q 32 12 40 10 L 60 10 Q 68 12 70 20 Z" 
+          fill={colorData.hex}
+          opacity="0.9"
         />
+        
+        {/* Windows */}
+        <path 
+          d="M 32 18 Q 34 13 40 11 L 60 11 Q 66 13 68 18 Z" 
+          fill="#2a3a48"
+        />
+        
         {/* Wheels */}
-        <circle cx="25" cy="48" r="6" fill="#1f2937" />
-        <circle cx="25" cy="48" r="3" fill="#6b7280" />
-        <circle cx="75" cy="48" r="6" fill="#1f2937" />
-        <circle cx="75" cy="48" r="3" fill="#6b7280" />
+        <circle cx="22" cy="38" r="6" fill="#1a1a1a" />
+        <circle cx="22" cy="38" r="4" fill="#808080" />
+        <circle cx="78" cy="38" r="6" fill="#1a1a1a" />
+        <circle cx="78" cy="38" r="4" fill="#808080" />
+        
+        {/* Headlight */}
+        <ellipse cx="8" cy="30" rx="2" ry="1.5" fill="#fff8e0" />
+        
+        {/* Taillight */}
+        <ellipse cx="92" cy="31" rx="1.5" ry="1.2" fill="#ff3030" />
       </svg>
     </div>
   )
