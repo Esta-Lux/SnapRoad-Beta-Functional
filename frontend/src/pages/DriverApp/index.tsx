@@ -1303,27 +1303,63 @@ export default function DriverApp() {
             </div>
           </button>
 
-          {/* Offers */}
+          {/* View All Offers Button */}
+          <button onClick={() => setShowOffersModal(true)} data-testid="view-all-offers"
+            className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl p-4 mb-4 text-left">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/80 text-xs">
+                  {userPlan === 'premium' ? '🌟 Premium: 18% off all offers' : '📍 Basic: 6% off all offers'}
+                </p>
+                <p className="text-white text-lg font-bold">View All Offers</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Gift className="text-white" size={24} />
+                <ChevronRight className="text-white" size={20} />
+              </div>
+            </div>
+          </button>
+
+          {/* Nearby Offers Preview */}
           <h3 className="text-slate-900 font-semibold mb-3 flex items-center gap-2">
             <Gift size={16} className="text-emerald-500" /> Nearby Offers
           </h3>
           <div className="space-y-2">
-            {offers.slice(0, 4).map(offer => (
-              <div key={offer.id} onClick={() => setShowOfferDetail(offer)} data-testid={`offer-${offer.id}`}
-                className="bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm cursor-pointer">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${offer.type === 'gas' ? 'bg-blue-500' : 'bg-orange-500'}`}>
-                  {offer.type === 'gas' ? <Fuel className="text-white" size={18} /> : <Coffee className="text-white" size={18} />}
-                </div>
-                <div className="flex-1">
-                  <p className="text-slate-900 font-medium text-sm">{offer.name}</p>
-                  <p className="text-emerald-600 text-xs">{offer.discount}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-emerald-500 font-bold text-sm">{offer.gems}💎</p>
-                  <p className="text-slate-400 text-[10px]">{offer.distance}</p>
-                </div>
+            {offers.length === 0 ? (
+              <div className="bg-white rounded-xl p-6 text-center shadow-sm">
+                <Gift className="text-slate-300 mx-auto mb-2" size={32} />
+                <p className="text-slate-500 text-sm">No offers available nearby</p>
+                <p className="text-slate-400 text-xs mt-1">Check back later for deals!</p>
               </div>
-            ))}
+            ) : (
+              offers.slice(0, 4).map(offer => (
+                <div key={offer.id} onClick={() => setShowOffersModal(true)} data-testid={`offer-${offer.id}`}
+                  className="bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm cursor-pointer hover:shadow-md transition-shadow">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                    offer.business_type === 'gas' ? 'bg-blue-500' : 
+                    offer.business_type === 'cafe' ? 'bg-orange-500' :
+                    offer.business_type === 'carwash' ? 'bg-cyan-500' : 'bg-emerald-500'
+                  }`}>
+                    {offer.business_type === 'gas' ? <Fuel className="text-white" size={18} /> : 
+                     offer.business_type === 'cafe' ? <Coffee className="text-white" size={18} /> :
+                     offer.business_type === 'carwash' ? <Car className="text-white" size={18} /> :
+                     <Gift className="text-white" size={18} />}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-slate-900 font-medium text-sm">{offer.business_name || offer.name}</p>
+                    <p className="text-emerald-600 text-xs">{offer.discount_percent || offer.discount}% off</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-emerald-500 font-bold text-sm">+{offer.gems_reward || offer.gems}💎</p>
+                    {offer.redeemed && (
+                      <span className="text-emerald-400 text-[10px] flex items-center gap-0.5">
+                        <Check size={10} /> Redeemed
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
