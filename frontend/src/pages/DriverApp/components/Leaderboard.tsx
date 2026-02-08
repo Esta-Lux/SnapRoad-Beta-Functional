@@ -36,6 +36,8 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all_time')
   const [loading, setLoading] = useState(false)
   const [totalUsers, setTotalUsers] = useState(0)
+  const [challengeTarget, setChallengeTarget] = useState<LeaderboardEntry | null>(null)
+  const [showChallengeModal, setShowChallengeModal] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
@@ -64,6 +66,11 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleChallengeClick = (entry: LeaderboardEntry) => {
+    setChallengeTarget(entry)
+    setShowChallengeModal(true)
   }
 
   const getRankIcon = (rank: number) => {
