@@ -2214,6 +2214,7 @@ export default function DriverApp() {
         isOpen={showLeaderboard} 
         onClose={() => setShowLeaderboard(false)}
         userId={userData.id || '123456'}
+        userGems={userData.gems || 0}
       />
       <CarShowroom 
         isOpen={showCarShowroom} 
