@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { X, ChevronLeft, ChevronRight, RotateCcw, Check, Lock, Sparkles, Volume2, VolumeX, Zap } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Check, Lock, Sparkles, Zap } from 'lucide-react'
 import Car3D, { CAR_CATEGORIES, CAR_COLORS } from './Car3D'
 
 interface CarStudioProps {
@@ -21,45 +21,19 @@ export default function CarStudio({
   onPurchaseColor,
   onChangeCar
 }: CarStudioProps) {
-  const [activeTab, setActiveTab] = useState<'garage' | 'paint' | 'upgrades'>('garage')
-  const [selectedCategory, setSelectedCategory] = useState(currentCar.category)
-  const [selectedVariant, setSelectedVariant] = useState(currentCar.variant)
+  const [activeTab, setActiveTab] = useState<'garage' | 'paint' | 'upgrades'>('paint')
   const [selectedColor, setSelectedColor] = useState(currentCar.color)
-  const [rotation, setRotation] = useState(0)
-  const [isDragging, setIsDragging] = useState(false)
-  const [startX, setStartX] = useState(0)
-  const [soundEnabled, setSoundEnabled] = useState(true)
   const [showConfirm, setShowConfirm] = useState(false)
-  const [autoRotate, setAutoRotate] = useState(true)
-  const rotationRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Auto-rotate effect
-  useEffect(() => {
-    if (autoRotate && !isDragging) {
-      rotationRef.current = setInterval(() => {
-        setRotation(prev => (prev + 0.5) % 360)
-      }, 50)
-    }
-    return () => {
-      if (rotationRef.current) clearInterval(rotationRef.current)
-    }
-  }, [autoRotate, isDragging])
-
-  // Reset when opening
+  // Reset when opening - default to Paint tab
   useEffect(() => {
     if (isOpen) {
-      setSelectedCategory(currentCar.category)
-      setSelectedVariant(currentCar.variant)
       setSelectedColor(currentCar.color)
-      setRotation(0)
-      setAutoRotate(true)
+      setActiveTab('paint')
     }
   }, [isOpen, currentCar])
 
   if (!isOpen) return null
-
-  const categories = Object.entries(CAR_CATEGORIES)
-  const currentCategoryData = CAR_CATEGORIES[selectedCategory as keyof typeof CAR_CATEGORIES]
   
   // Color organization
   const colorsByType = {
@@ -69,56 +43,10 @@ export default function CarStudio({
     premium: Object.entries(CAR_COLORS).filter(([_, c]) => c.type === 'premium'),
   }
 
-  // Handle drag rotation (horizontal - side to side)
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true)
-    setAutoRotate(false)
-    setStartX(e.clientX)
-  }
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isDragging) {
-      const diff = e.clientX - startX
-      setRotation(prev => prev + diff * 0.8)
-      setStartX(e.clientX)
-    }
-  }
-
-  const handleMouseUp = () => {
-    setIsDragging(false)
-  }
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setIsDragging(true)
-    setAutoRotate(false)
-    setStartX(e.touches[0].clientX)
-  }
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (isDragging) {
-      const diff = e.touches[0].clientX - startX
-      setRotation(prev => prev + diff * 0.8)
-      setStartX(e.touches[0].clientX)
-    }
-  }
-
-  const rotateLeft = () => {
-    setAutoRotate(false)
-    setRotation(r => r - 45)
-  }
-  const rotateRight = () => {
-    setAutoRotate(false)
-    setRotation(r => r + 45)
-  }
-  const resetRotation = () => {
-    setRotation(0)
-    setAutoRotate(true)
-  }
-
   const handleApplyChanges = () => {
     onChangeCar({
-      category: selectedCategory,
-      variant: selectedVariant,
+      category: currentCar.category,
+      variant: currentCar.variant,
       color: selectedColor,
     })
     setShowConfirm(true)
@@ -133,21 +61,19 @@ export default function CarStudio({
     }
   }
 
-  const hasChanges = selectedCategory !== currentCar.category || 
-                     selectedVariant !== currentCar.variant || 
-                     selectedColor !== currentCar.color
+  const hasChanges = selectedColor !== currentCar.color
 
   const colorData = CAR_COLORS[selectedColor as keyof typeof CAR_COLORS]
+  const categoryData = CAR_CATEGORIES[currentCar.category as keyof typeof CAR_CATEGORIES]
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col overflow-hidden">
-      {/* Premium Dark Background with Gradient */}
+      {/* Premium Dark Background */}
       <div className="absolute inset-0 bg-[#0a0a0f]" />
       
-      {/* Animated Gradient Orbs */}
+      {/* Ambient Lighting Effects */}
       <div className="absolute top-20 left-1/4 w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[120px] animate-pulse" />
       <div className="absolute bottom-20 right-1/4 w-[400px] h-[400px] bg-purple-600/10 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: '1s' }} />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-amber-500/5 rounded-full blur-[80px]" />
 
       {/* Header */}
       <div className="relative z-10 flex items-center justify-between px-4 pt-12 pb-2">
@@ -160,53 +86,41 @@ export default function CarStudio({
           </div>
           <span className="text-white font-bold text-lg tracking-wide">CAR STUDIO</span>
         </div>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-sm flex items-center justify-center text-white/70 hover:bg-white/10 transition-all"
-          >
-            {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
-          </button>
-          <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 backdrop-blur-sm rounded-full px-4 py-2 flex items-center gap-2 border border-amber-500/30">
-            <Zap size={14} className="text-amber-400" />
-            <span className="text-white font-bold">{gems.toLocaleString()}</span>
-          </div>
+        <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 backdrop-blur-sm rounded-full px-4 py-2 flex items-center gap-2 border border-amber-500/30">
+          <Zap size={14} className="text-amber-400" />
+          <span className="text-white font-bold">{gems.toLocaleString()}</span>
         </div>
       </div>
 
-      {/* Premium Tabs */}
+      {/* Tabs */}
       <div className="relative z-10 flex gap-2 px-4 py-3">
         {[
-          { id: 'garage', label: 'GARAGE', icon: '🏠' },
-          { id: 'paint', label: 'PAINT SHOP', icon: '🎨' },
-          { id: 'upgrades', label: 'UPGRADES', icon: '⚡' },
+          { id: 'garage', label: 'GARAGE', icon: '🏠', disabled: true },
+          { id: 'paint', label: 'PAINT SHOP', icon: '🎨', disabled: false },
+          { id: 'upgrades', label: 'UPGRADES', icon: '⚡', disabled: true },
         ].map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as typeof activeTab)}
+            onClick={() => !tab.disabled && setActiveTab(tab.id as typeof activeTab)}
             className={`flex-1 py-3 rounded-xl text-xs font-bold tracking-wider flex items-center justify-center gap-2 transition-all duration-300 ${
-              activeTab === tab.id 
-                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30' 
-                : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 border border-white/10'
+              tab.disabled 
+                ? 'bg-white/5 text-white/30 cursor-not-allowed border border-white/5'
+                : activeTab === tab.id 
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30' 
+                  : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 border border-white/10'
             }`}
           >
             <span className="text-sm">{tab.icon}</span>
             {tab.label}
+            {tab.disabled && <Lock size={10} className="ml-1 opacity-50" />}
           </button>
         ))}
       </div>
 
-      {/* Showroom Area - Premium Design */}
+      {/* Car Display Area - Fixed Side View (No Rotation) */}
       <div 
-        className="relative z-10 mx-4 rounded-3xl overflow-hidden cursor-grab active:cursor-grabbing"
-        style={{ height: '300px' }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleMouseUp}
+        className="relative z-10 mx-4 rounded-3xl overflow-hidden"
+        style={{ height: '280px' }}
       >
         {/* Showroom Background */}
         <div className="absolute inset-0 bg-gradient-to-b from-white/[0.02] via-transparent to-white/[0.01]" />
@@ -235,7 +149,7 @@ export default function CarStudio({
         <div className="absolute top-1/3 left-4 w-1 h-24 bg-gradient-to-b from-amber-400/50 via-amber-400/20 to-transparent rounded-full" />
         <div className="absolute top-1/3 right-4 w-1 h-24 bg-gradient-to-b from-amber-400/50 via-amber-400/20 to-transparent rounded-full" />
         
-        {/* Color Glow Effect (based on selected color) */}
+        {/* Color Glow Effect */}
         {colorData?.glow && (
           <div 
             className="absolute bottom-10 left-1/2 -translate-x-1/2 w-64 h-16 rounded-full blur-2xl opacity-50"
@@ -243,120 +157,59 @@ export default function CarStudio({
           />
         )}
 
-        {/* Rotating Platform */}
-        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-56 h-6">
+        {/* Platform */}
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-56 h-6">
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent rounded-full" />
-          <div className="absolute inset-x-4 inset-y-1 bg-gradient-to-r from-transparent via-white/5 to-transparent rounded-full" />
         </div>
 
-        {/* Car Display */}
+        {/* Car Display - Fixed Side View */}
         <div className="absolute inset-0 flex items-center justify-center" style={{ paddingBottom: '20px' }}>
           <Car3D 
-            category={selectedCategory as keyof typeof CAR_CATEGORIES}
+            category={currentCar.category as keyof typeof CAR_CATEGORIES}
             color={selectedColor as keyof typeof CAR_COLORS}
             size="xl"
-            rotation={rotation}
+            rotation={0}
             showShadow={true}
             showReflection={true}
             perspective="side"
           />
         </div>
 
-        {/* Car Name Badge */}
+        {/* Car Info Badge */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
           <p className="text-white font-medium text-sm">
-            {colorData?.name || 'Custom'} <span className="text-white/50">|</span> <span className="capitalize">{selectedCategory}</span>
+            {colorData?.name || 'Custom'} <span className="text-white/50">•</span> <span className="capitalize">{categoryData?.name || currentCar.category}</span>
           </p>
         </div>
 
-        {/* Rotation Controls */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
-          <button 
-            onClick={rotateLeft}
-            className="w-11 h-11 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/70 hover:bg-black/60 hover:text-white hover:border-white/20 transition-all"
-          >
-            <ChevronLeft size={22} />
-          </button>
-          <button 
-            onClick={resetRotation}
-            className={`w-11 h-11 rounded-full backdrop-blur-md border flex items-center justify-center transition-all ${
-              autoRotate 
-                ? 'bg-amber-500/20 border-amber-500/50 text-amber-400' 
-                : 'bg-black/40 border-white/10 text-white/70 hover:bg-black/60 hover:text-white'
-            }`}
-          >
-            <RotateCcw size={18} className={autoRotate ? 'animate-spin' : ''} style={{ animationDuration: '3s' }} />
-          </button>
-          <button 
-            onClick={rotateRight}
-            className="w-11 h-11 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/70 hover:bg-black/60 hover:text-white hover:border-white/20 transition-all"
-          >
-            <ChevronRight size={22} />
-          </button>
+        {/* BETA Badge */}
+        <div className="absolute top-4 right-4 bg-amber-500/20 backdrop-blur-sm px-3 py-1 rounded-full border border-amber-500/30">
+          <p className="text-amber-400 text-xs font-bold">BETA</p>
         </div>
       </div>
 
       {/* Content Area */}
       <div className="relative z-10 flex-1 overflow-auto px-4 py-4">
-        {/* Garage Tab */}
+        {/* Garage Tab - Coming Soon */}
         {activeTab === 'garage' && (
-          <div className="space-y-5">
-            <div>
-              <h3 className="text-white/40 text-xs font-bold tracking-widest mb-3">SELECT YOUR RIDE</h3>
-              <div className="grid grid-cols-4 gap-2">
-                {categories.map(([key, cat]) => (
-                  <button
-                    key={key}
-                    onClick={() => {
-                      setSelectedCategory(key)
-                      const category = CAR_CATEGORIES[key as keyof typeof CAR_CATEGORIES]
-                      if (category.variants.length > 0) {
-                        setSelectedVariant(category.variants[0].id)
-                      }
-                    }}
-                    className={`relative p-3 rounded-2xl text-center transition-all duration-300 ${
-                      selectedCategory === key
-                        ? 'bg-gradient-to-br from-amber-500/20 to-orange-500/20 border-2 border-amber-500/50 shadow-lg shadow-amber-500/10'
-                        : 'bg-white/5 border-2 border-transparent hover:bg-white/10 hover:border-white/10'
-                    }`}
-                  >
-                    {selectedCategory === key && (
-                      <div className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
-                        <Check size={12} className="text-white" />
-                      </div>
-                    )}
-                    <div className="text-2xl mb-1">{cat.icon}</div>
-                    <p className="text-white text-[10px] font-semibold">{cat.name}</p>
-                  </button>
-                ))}
-              </div>
+          <div className="h-full flex flex-col items-center justify-center text-center">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] flex items-center justify-center mb-4 border border-white/10">
+              <span className="text-4xl">🚗</span>
             </div>
-
-            {/* Style Variants */}
-            {currentCategoryData && (
-              <div>
-                <h3 className="text-white/40 text-xs font-bold tracking-widest mb-3">STYLE</h3>
-                <div className="flex gap-2">
-                  {currentCategoryData.variants.map(variant => (
-                    <button
-                      key={variant.id}
-                      onClick={() => setSelectedVariant(variant.id)}
-                      className={`flex-1 py-3 px-4 rounded-xl text-xs font-semibold transition-all ${
-                        selectedVariant === variant.id
-                          ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/20'
-                          : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white border border-white/10'
-                      }`}
-                    >
-                      {variant.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            <h3 className="text-white font-bold text-xl mb-2">Coming Soon</h3>
+            <p className="text-white/40 text-sm max-w-xs">
+              Choose your vehicle type in a future update. For now, customize your color!
+            </p>
+            <button 
+              onClick={() => setActiveTab('paint')}
+              className="mt-6 px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-semibold text-sm"
+            >
+              Go to Paint Shop →
+            </button>
           </div>
         )}
 
-        {/* Paint Shop Tab */}
+        {/* Paint Shop Tab - ACTIVE */}
         {activeTab === 'paint' && (
           <div className="space-y-5">
             {/* Current Color Display */}
@@ -415,7 +268,6 @@ export default function CarStudio({
                     style={{ background: color.body }}
                     title={color.name}
                   >
-                    {/* Metallic shine effect */}
                     <div className="absolute inset-0 bg-gradient-to-br from-white/30 via-transparent to-transparent" />
                   </button>
                 ))}
@@ -485,7 +337,6 @@ export default function CarStudio({
                           <Check size={12} className="text-white" />
                         </div>
                       )}
-                      {/* Color name label */}
                       <div className="absolute bottom-1 left-1 right-1">
                         <p className="text-white text-[9px] font-semibold text-center truncate bg-black/30 rounded-md px-1 py-0.5">
                           {color.name}
@@ -499,37 +350,22 @@ export default function CarStudio({
           </div>
         )}
 
-        {/* Upgrades Tab */}
+        {/* Upgrades Tab - Coming Soon */}
         {activeTab === 'upgrades' && (
-          <div className="space-y-4">
-            <div className="bg-gradient-to-br from-white/5 to-white/[0.02] rounded-2xl p-6 text-center border border-white/10">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
-                <Zap size={28} className="text-amber-400" />
-              </div>
-              <p className="text-white font-bold text-lg">Coming Soon</p>
-              <p className="text-white/40 text-sm mt-2">Rims, Spoilers & Decals</p>
-              <p className="text-white/30 text-xs mt-3 max-w-xs mx-auto">
-                Unlock unique customizations by completing challenges and earning gems
-              </p>
+          <div className="h-full flex flex-col items-center justify-center text-center">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] flex items-center justify-center mb-4 border border-white/10">
+              <span className="text-4xl">⚡</span>
             </div>
-            
-            {/* Preview Cards */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { icon: '🛞', label: 'Rims', desc: '12 styles' },
-                { icon: '🏁', label: 'Spoilers', desc: '8 styles' },
-                { icon: '✨', label: 'Decals', desc: '20+ designs' },
-              ].map(item => (
-                <div 
-                  key={item.label}
-                  className="bg-white/5 rounded-xl p-4 text-center border border-white/5 opacity-50"
-                >
-                  <div className="text-3xl mb-2">{item.icon}</div>
-                  <p className="text-white text-sm font-medium">{item.label}</p>
-                  <p className="text-white/30 text-xs">{item.desc}</p>
-                </div>
-              ))}
-            </div>
+            <h3 className="text-white font-bold text-xl mb-2">Coming Soon</h3>
+            <p className="text-white/40 text-sm max-w-xs">
+              Rims, spoilers, and decals will be available in a future update.
+            </p>
+            <button 
+              onClick={() => setActiveTab('paint')}
+              className="mt-6 px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-semibold text-sm"
+            >
+              Go to Paint Shop →
+            </button>
           </div>
         )}
       </div>
@@ -542,7 +378,7 @@ export default function CarStudio({
             className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 hover:scale-[1.02] transition-all"
           >
             <Check size={22} />
-            Apply Changes
+            Apply Color
           </button>
         </div>
       )}
@@ -551,7 +387,7 @@ export default function CarStudio({
       {showConfirm && (
         <div className="absolute top-28 left-1/2 -translate-x-1/2 z-50 bg-emerald-500 text-white px-6 py-3 rounded-2xl flex items-center gap-2 shadow-lg shadow-emerald-500/30 animate-bounce">
           <Check size={20} />
-          <span className="font-semibold">Changes Applied!</span>
+          <span className="font-semibold">Color Applied!</span>
         </div>
       )}
     </div>
