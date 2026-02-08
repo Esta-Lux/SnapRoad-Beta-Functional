@@ -1729,6 +1729,41 @@ export default function DriverApp() {
             </div>
           </button>
 
+          {/* Driving Score Card */}
+          <button 
+            onClick={() => setShowDrivingScore(true)}
+            className={`w-full rounded-xl p-4 flex items-center gap-4 shadow-lg ${
+              userPlan === 'premium' 
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-500' 
+                : 'bg-gradient-to-r from-slate-600 to-slate-700'
+            }`}
+            data-testid="profile-driving-score"
+          >
+            <div className={`w-14 h-14 rounded-full flex flex-col items-center justify-center ${
+              userPlan === 'premium' ? 'bg-white/20' : 'bg-amber-500/30'
+            }`}>
+              <Shield className="text-white" size={24} />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="flex items-center gap-2">
+                <p className="text-white font-semibold">Driving Score</p>
+                {userPlan !== 'premium' && (
+                  <span className="bg-amber-500 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    PREMIUM
+                  </span>
+                )}
+              </div>
+              <p className={`text-xs ${userPlan === 'premium' ? 'text-emerald-200' : 'text-slate-400'}`}>
+                {userPlan === 'premium' ? 'View detailed insights & Orion tips' : 'Unlock with Premium'}
+              </p>
+            </div>
+            <div className="text-right">
+              <span className={`text-xs ${userPlan === 'premium' ? 'text-emerald-200' : 'text-amber-400'}`}>
+                {userPlan === 'premium' ? 'View →' : 'Upgrade →'}
+              </span>
+            </div>
+          </button>
+
           {/* My Car Card */}
           <button 
             onClick={() => setShowCarStudio(true)}
