@@ -2224,6 +2224,23 @@ export default function DriverApp() {
         onPurchaseColor={handlePurchaseColor}
         onChangeCar={handleCarChange}
       />
+      
+      {/* Offers Modal */}
+      <OffersModal
+        isOpen={showOffersModal}
+        onClose={() => setShowOffersModal(false)}
+        userPlan={userPlan}
+        onRedeem={handleRedeemOffer}
+      />
+      
+      {/* Share Trip Score Modal */}
+      <ShareTripScore
+        isOpen={showShareTrip}
+        onClose={() => setShowShareTrip(false)}
+        tripData={lastTripData}
+        userName={userData.name || 'Driver'}
+        userLevel={userData.level || 1}
+      />
     </div>
   )
 }

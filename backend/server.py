@@ -856,8 +856,79 @@ def toggle_widget_collapse(widget_id: str):
     raise HTTPException(status_code=404, detail="Widget not found")
 
 # ==================== OFFERS (TIERED DISCOUNTS) ====================
-# Offers database - stores all available offers
-offers_db = []
+# Offers database - stores all available offers with seed data
+offers_db = [
+    {
+        "id": 1,
+        "business_name": "Shell Gas Station",
+        "business_type": "gas",
+        "description": "Save on your next fill-up!",
+        "base_gems": 25,
+        "lat": 39.9650,
+        "lng": -82.9930,
+        "is_admin_offer": False,
+        "created_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now() + timedelta(days=7)).isoformat(),
+        "created_by": "business",
+        "redemption_count": 0,
+    },
+    {
+        "id": 2,
+        "business_name": "Starbucks Downtown",
+        "business_type": "cafe",
+        "description": "Get a free size upgrade!",
+        "base_gems": 15,
+        "lat": 39.9580,
+        "lng": -83.0020,
+        "is_admin_offer": False,
+        "created_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now() + timedelta(days=5)).isoformat(),
+        "created_by": "business",
+        "redemption_count": 0,
+    },
+    {
+        "id": 3,
+        "business_name": "Quick Shine Car Wash",
+        "business_type": "carwash",
+        "description": "Premium wash at basic price",
+        "base_gems": 30,
+        "lat": 39.9700,
+        "lng": -82.9850,
+        "is_admin_offer": False,
+        "created_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now() + timedelta(days=10)).isoformat(),
+        "created_by": "business",
+        "redemption_count": 0,
+    },
+    {
+        "id": 4,
+        "business_name": "SnapRoad Partner Deal",
+        "business_type": "restaurant",
+        "description": "Exclusive SnapRoad member discount!",
+        "base_gems": 50,
+        "lat": 39.9550,
+        "lng": -83.0100,
+        "is_admin_offer": True,
+        "created_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now() + timedelta(days=14)).isoformat(),
+        "created_by": "admin",
+        "redemption_count": 0,
+    },
+    {
+        "id": 5,
+        "business_name": "BP Gas Station",
+        "business_type": "gas",
+        "description": "Save 10¢/gallon with SnapRoad",
+        "base_gems": 20,
+        "lat": 39.9480,
+        "lng": -82.9900,
+        "is_admin_offer": False,
+        "created_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now() + timedelta(days=3)).isoformat(),
+        "created_by": "business",
+        "redemption_count": 0,
+    },
+]
 
 # Offer configuration
 OFFER_CONFIG = {
