@@ -292,6 +292,40 @@ export default function DriverApp() {
     }
   }
 
+  // Handle plan selection
+  const handlePlanSelect = async (plan: 'basic' | 'premium') => {
+    try {
+      const res = await api.post('/api/user/plan', { plan })
+      if (res.success) {
+        setUserPlan(plan)
+        setGemMultiplier(plan === 'premium' ? 2 : 1)
+        setUserData((prev: any) => ({ 
+          ...prev, 
+          plan, 
+          is_premium: plan === 'premium',
+          gem_multiplier: plan === 'premium' ? 2 : 1
+        }))
+        setShowPlanSelection(false)
+        // Show car onboarding next
+        setShowCarOnboarding(true)
+        toast.success(plan === 'premium' ? '🎉 Welcome to Premium!' : 'Plan selected!')
+      }
+    } catch (e) {
+      // Mock success
+      setUserPlan(plan)
+      setGemMultiplier(plan === 'premium' ? 2 : 1)
+      setUserData((prev: any) => ({ 
+        ...prev, 
+        plan, 
+        is_premium: plan === 'premium',
+        gem_multiplier: plan === 'premium' ? 2 : 1
+      }))
+      setShowPlanSelection(false)
+      setShowCarOnboarding(true)
+      toast.success(plan === 'premium' ? '🎉 Welcome to Premium!' : 'Plan selected!')
+    }
+  }
+
   const handleCarOnboardingComplete = async (selection: { category: string; variant: string; color: string }) => {
     setUserCar(selection)
     setShowCarOnboarding(false)
