@@ -373,10 +373,10 @@ export default function Car3D({
   }, [category])
 
   const transform3D = {
-    side: 'rotateY(0deg) rotateX(5deg)',
-    front: 'rotateY(-75deg) rotateX(5deg)',
-    angled: 'rotateY(-25deg) rotateX(12deg)',
-    top: 'rotateX(55deg) rotateY(0deg)',
+    side: 'rotateX(8deg)',
+    front: 'rotateY(-90deg) rotateX(8deg)',
+    angled: 'rotateY(-25deg) rotateX(10deg)',
+    top: 'rotateX(60deg)',
   }
 
   return (
@@ -385,15 +385,15 @@ export default function Car3D({
       style={{ 
         width, 
         height: height + 30,
-        perspective: '800px',
+        perspective: '1000px',
       }}
       onClick={onClick}
     >
-      {/* 3D Container */}
+      {/* 3D Container - rotateY for horizontal side-to-side rotation */}
       <div 
-        className="absolute inset-0 transition-transform duration-700 ease-out"
+        className="absolute inset-0 transition-transform duration-300 ease-out"
         style={{
-          transform: `${transform3D[perspective]} rotateZ(${rotation}deg)`,
+          transform: `${transform3D[perspective]} rotateY(${rotation}deg)`,
           transformStyle: 'preserve-3d',
         }}
       >
@@ -402,10 +402,10 @@ export default function Car3D({
           <div 
             className="absolute bottom-0 left-1/2 -translate-x-1/2"
             style={{
-              width: width * 0.7,
-              height: 8,
-              background: 'radial-gradient(ellipse, rgba(0,0,0,0.4) 0%, transparent 70%)',
-              filter: 'blur(4px)',
+              width: width * 0.75,
+              height: 12,
+              background: 'radial-gradient(ellipse, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 40%, transparent 70%)',
+              filter: 'blur(6px)',
               transform: 'translateZ(-20px)',
             }}
           />
