@@ -417,76 +417,100 @@ export default function Car3D({
           className="w-full h-full"
           style={{
             filter: colorData.glow 
-              ? `drop-shadow(0 0 15px ${colorData.hex}80) drop-shadow(0 4px 8px rgba(0,0,0,0.3))` 
-              : 'drop-shadow(0 4px 12px rgba(0,0,0,0.4)) drop-shadow(0 2px 4px rgba(0,0,0,0.2))',
+              ? `drop-shadow(0 0 20px ${colorData.hex}60) drop-shadow(0 8px 16px rgba(0,0,0,0.4))` 
+              : 'drop-shadow(0 8px 20px rgba(0,0,0,0.5)) drop-shadow(0 4px 8px rgba(0,0,0,0.3))',
           }}
         >
           <defs>
-            {/* Main body gradient */}
+            {/* Main body gradient - more premium with color blending */}
             <linearGradient id={`body-grad-${color}-${category}`} x1="0%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stopColor={colorData.highlight} />
-              <stop offset="15%" stopColor={colorData.hex} />
-              <stop offset="60%" stopColor={colorData.hex} />
-              <stop offset="100%" stopColor="rgba(0,0,0,0.3)" />
+              <stop offset="20%" stopColor={colorData.hex} />
+              <stop offset="70%" stopColor={colorData.hex} />
+              <stop offset="100%" stopColor="rgba(0,0,0,0.4)" />
             </linearGradient>
 
-            {/* Hood/roof highlight */}
+            {/* Body side gradient for 3D depth */}
+            <linearGradient id={`body-side-${color}`} x1="0%" y1="50%" x2="100%" y2="50%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.1)" />
+              <stop offset="50%" stopColor="rgba(255,255,255,0)" />
+              <stop offset="100%" stopColor="rgba(0,0,0,0.2)" />
+            </linearGradient>
+
+            {/* Hood/roof highlight - premium shine */}
             <linearGradient id={`hood-highlight-${color}`} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="rgba(255,255,255,0.4)" />
-              <stop offset="50%" stopColor="rgba(255,255,255,0.1)" />
+              <stop offset="0%" stopColor="rgba(255,255,255,0.5)" />
+              <stop offset="30%" stopColor="rgba(255,255,255,0.2)" />
+              <stop offset="60%" stopColor="rgba(255,255,255,0.05)" />
               <stop offset="100%" stopColor="rgba(255,255,255,0)" />
             </linearGradient>
 
-            {/* Window glass gradient */}
+            {/* Window glass gradient - darker, more realistic */}
             <linearGradient id="window-glass" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#1a2530" />
-              <stop offset="30%" stopColor="#2a3a48" />
-              <stop offset="70%" stopColor="#1a2530" />
-              <stop offset="100%" stopColor="#0f1820" />
+              <stop offset="0%" stopColor="#0a1520" />
+              <stop offset="30%" stopColor="#1a2535" />
+              <stop offset="70%" stopColor="#0f1a28" />
+              <stop offset="100%" stopColor="#050a10" />
             </linearGradient>
 
-            {/* Window reflection */}
-            <linearGradient id="window-reflect" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="rgba(180,200,220,0.5)" />
-              <stop offset="30%" stopColor="rgba(180,200,220,0.2)" />
-              <stop offset="100%" stopColor="rgba(180,200,220,0)" />
+            {/* Window sky reflection */}
+            <linearGradient id="window-sky" x1="50%" y1="0%" x2="50%" y2="100%">
+              <stop offset="0%" stopColor="rgba(135,180,220,0.4)" />
+              <stop offset="100%" stopColor="rgba(80,120,160,0.1)" />
             </linearGradient>
 
-            {/* Chrome trim */}
+            {/* Chrome trim - high polish */}
             <linearGradient id="chrome-trim" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#f0f0f0" />
-              <stop offset="30%" stopColor="#c0c0c0" />
-              <stop offset="50%" stopColor="#a0a0a0" />
-              <stop offset="70%" stopColor="#c0c0c0" />
-              <stop offset="100%" stopColor="#808080" />
+              <stop offset="0%" stopColor="#ffffff" />
+              <stop offset="20%" stopColor="#e8e8e8" />
+              <stop offset="40%" stopColor="#a0a0a0" />
+              <stop offset="60%" stopColor="#d0d0d0" />
+              <stop offset="80%" stopColor="#909090" />
+              <stop offset="100%" stopColor="#606060" />
             </linearGradient>
 
-            {/* Tire rubber */}
+            {/* Premium alloy rim */}
+            <radialGradient id="rim-alloy" cx="35%" cy="35%" r="65%">
+              <stop offset="0%" stopColor="#f5f5f5" />
+              <stop offset="30%" stopColor="#d0d0d0" />
+              <stop offset="60%" stopColor="#a0a0a0" />
+              <stop offset="100%" stopColor="#606060" />
+            </radialGradient>
+
+            {/* Tire rubber - realistic */}
             <radialGradient id="tire-rubber" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#2a2a2a" />
-              <stop offset="70%" stopColor="#1a1a1a" />
+              <stop offset="0%" stopColor="#252525" />
+              <stop offset="60%" stopColor="#1a1a1a" />
+              <stop offset="85%" stopColor="#101010" />
               <stop offset="100%" stopColor="#0a0a0a" />
             </radialGradient>
 
-            {/* Rim gradient */}
-            <radialGradient id="rim-metal" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#e8e8e8" />
-              <stop offset="50%" stopColor="#b0b0b0" />
-              <stop offset="100%" stopColor="#707070" />
+            {/* Tire sidewall */}
+            <radialGradient id="tire-sidewall" cx="50%" cy="50%" r="50%">
+              <stop offset="70%" stopColor="transparent" />
+              <stop offset="85%" stopColor="rgba(40,40,40,0.5)" />
+              <stop offset="100%" stopColor="rgba(20,20,20,0.8)" />
             </radialGradient>
 
-            {/* Headlight */}
-            <radialGradient id="headlight" cx="50%" cy="50%" r="50%">
+            {/* LED Headlight */}
+            <radialGradient id="headlight-led" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="#ffffff" />
-              <stop offset="40%" stopColor="#fff8e0" />
-              <stop offset="100%" stopColor="#d0c8a0" />
+              <stop offset="30%" stopColor="#f0f8ff" />
+              <stop offset="60%" stopColor="#e0f0ff" />
+              <stop offset="100%" stopColor="#b0d0e8" />
             </radialGradient>
 
-            {/* Taillight */}
-            <radialGradient id="taillight" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#ff4040" />
-              <stop offset="60%" stopColor="#cc2020" />
-              <stop offset="100%" stopColor="#801010" />
+            {/* LED Taillight */}
+            <radialGradient id="taillight-led" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#ff2020" />
+              <stop offset="50%" stopColor="#cc1010" />
+              <stop offset="100%" stopColor="#800808" />
+            </radialGradient>
+
+            {/* Ambient occlusion for wheel wells */}
+            <radialGradient id="wheel-well-shadow" cx="50%" cy="0%" r="100%">
+              <stop offset="0%" stopColor="rgba(0,0,0,0.8)" />
+              <stop offset="100%" stopColor="rgba(0,0,0,0.3)" />
             </radialGradient>
           </defs>
 
@@ -494,30 +518,36 @@ export default function Car3D({
           <path 
             d={carData.body}
             fill={`url(#body-grad-${color}-${category})`}
-            stroke="rgba(0,0,0,0.3)"
-            strokeWidth="0.5"
+            stroke="rgba(0,0,0,0.4)"
+            strokeWidth="0.8"
           />
 
-          {/* Body panel highlight */}
+          {/* Body side 3D effect */}
+          <path 
+            d={carData.body}
+            fill={`url(#body-side-${color})`}
+          />
+
+          {/* Body panel highlight - premium shine */}
           <path 
             d={carData.bodyTop}
             fill={`url(#hood-highlight-${color})`}
-            opacity={colorData.matte ? 0.1 : 0.4}
+            opacity={colorData.matte ? 0.15 : 0.6}
           />
 
           {/* Cabin/Roof Structure */}
           <path 
             d={carData.cabin}
             fill={`url(#body-grad-${color}-${category})`}
-            stroke="rgba(0,0,0,0.2)"
-            strokeWidth="0.3"
+            stroke="rgba(0,0,0,0.3)"
+            strokeWidth="0.5"
           />
 
-          {/* Windows - Glass */}
+          {/* Windows - Dark Glass */}
           <path 
             d={carData.windows}
             fill="url(#window-glass)"
-            stroke="rgba(0,0,0,0.4)"
+            stroke="rgba(0,0,0,0.5)"
             strokeWidth="0.3"
           />
 
