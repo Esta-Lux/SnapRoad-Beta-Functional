@@ -2033,6 +2033,23 @@ export default function DriverApp() {
         isPremium={userData.is_premium}
       />
       
+      {/* Road Reports & Community Features */}
+      <RoadReports
+        isOpen={showRoadReports}
+        onClose={() => setShowRoadReports(false)}
+        onCreateReport={handleCreateReport}
+        onUpvote={handleUpvoteReport}
+        currentUserId={userData.id || '123456'}
+      />
+      <CommunityBadges
+        isOpen={showCommunityBadges}
+        onClose={() => setShowCommunityBadges(false)}
+      />
+      <LevelProgress
+        isOpen={showLevelProgress}
+        onClose={() => setShowLevelProgress(false)}
+      />
+      
       {/* Onboarding Modals */}
       {showPlanSelection && (
         <PlanSelection
