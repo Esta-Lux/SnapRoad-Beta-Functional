@@ -1,83 +1,75 @@
 # SnapRoad - Privacy-First Navigation App
 
 ## Product Overview
-SnapRoad is a privacy-first navigation app with gamified safety rewards. Features an iPhone 16-optimized driver interface with Forza-style realistic car customization.
+SnapRoad is a privacy-first navigation app with gamified safety rewards. Features an iPhone 16-optimized driver interface with Forza-style premium car customization.
 
 ## Tech Stack
 - **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS
 - **Backend:** FastAPI (Python) with in-memory mock data
-- **Database Schema:** PostgreSQL (documented, not connected)
 
 ## Completed Features (Feb 8, 2025)
 
-### 🚗 Premium Forza-Style Car System (UPGRADED!)
-- ✅ **Realistic 3D CSS Car Renders** (not flat stickers) with:
-  - Proper body shapes with curves and proportions
-  - Dark tinted windows with reflections
-  - Chrome wheels with 6-spoke rims
-  - Headlights and taillights
-  - Side mirrors and door handles
-  - 3D perspective with drop shadows
-  
-- ✅ **7 Car Categories with DISTINCT Body Shapes:**
-  - **Sedan**: Classic 4-door with trunk
-  - **SUV**: Tall body, larger cabin, upright profile
-  - **Sports Car**: Low/sleek profile, small cabin, aerodynamic
-  - **Truck**: Cab + bed pickup design, taller profile
-  - **Hatchback**: Compact with sloped rear
-  - **Luxury**: Long elegant body with premium proportions
-  - **Electric**: Modern EV with smooth lines
+### 🚗 Premium Forza-Style Car Studio (UPGRADED!)
 
-- ✅ **3 Style Variants per Category** (21 total):
-  - Sedan: Classic, Sport, Executive
-  - SUV: Compact, Midsize, Full-Size
-  - Sports: Coupe, Convertible, Supercar
-  - Truck: Standard, Crew Cab, Off-Road
-  - Hatchback: City, Hot Hatch, Sport Wagon
-  - Luxury: Sedan, Grand Tourer, Executive
-  - Electric: Sedan, Crossover, Sports
+#### Car Renders - Realistic 3D CSS
+- ✅ **Realistic proportions** with proper body shapes
+- ✅ **Premium wheels** - 5-spoke alloy rims with tire sidewalls
+- ✅ **LED lighting** - Bright headlights and red taillights
+- ✅ **Chrome trim** with realistic metallic gradients
+- ✅ **Dark tinted windows** with sky reflections
+- ✅ **Side mirrors** with glass detail
+- ✅ **Drop shadows** and floor reflections
+- ✅ **Smooth side-to-side rotation** (horizontal, not vertical)
 
-- ✅ **24 Color Options** in organized palette:
-  - Standard (8): Black, White, Red, Blue, Green, Orange, Purple, Yellow
-  - Metallic ✨ (6): Pearl White, Gunmetal, Chrome Silver, Copper Bronze, Rose Gold, Champagne
-  - Matte (4): Black, Grey, Army, Navy
-  - Premium 💎 (6): Carbon Fiber, Neon Cyan/Pink/Lime, Galaxy Purple, Inferno
+#### Car Studio Showroom
+- ✅ **Premium dark theme** with ambient lighting
+- ✅ **Auto-rotating car display** with manual controls
+- ✅ **Grid floor effect** with perspective
+- ✅ **Amber side accent lights**
+- ✅ **Rotating platform** visual
+- ✅ **Color badge** showing current selection
+- ✅ **Gems balance** in header
 
-- ✅ **Car Selection Onboarding** - 3-step flow on first login
-- ✅ **Premium Car Studio** - Dark showroom with spotlight, rotation controls
-- ✅ **Real-time Preview** - Car updates instantly when changing colors
-- ✅ **Map Navigation Marker** - User's car shows instead of blue dot
-- ✅ **Profile Car Display** - Car in profile header and My Car card
+#### 7 Distinct Car Shapes
+Each category has UNIQUE body silhouette:
+- **Sedan:** Classic 4-door with trunk
+- **SUV:** Tall body, larger cabin
+- **Sports Car:** Low/sleek, small cabin, aerodynamic
+- **Truck:** Cab + bed pickup design (clearly visible)
+- **Hatchback:** Compact with sloped rear
+- **Luxury:** Long elegant body
+- **Electric:** Modern EV with smooth lines
 
-### Social & Gamification
-- ✅ **6-digit User IDs** with Friends Hub
-- ✅ **State-based Leaderboard** with 20 US states
+#### 24 Color Paint Shop
+- **Standard (8):** Black, White, Red, Blue, Green, Orange, Purple, Yellow
+- **Metallic ✨ (6):** Pearl White, Gunmetal, Chrome Silver, Copper Bronze, Rose Gold, Champagne
+- **Matte (4):** Black, Grey, Army, Navy
+- **Premium 💎 (6):** Carbon Fiber, Neon Cyan/Pink/Lime, Galaxy Purple, Inferno
+
+### Other Features
+- ✅ **4-Tab Navigation:** Map, Routes, Rewards, Profile
+- ✅ **Car as Navigation Marker** on map
+- ✅ **Profile Car Display** 
+- ✅ **Friends System** with 6-digit IDs
+- ✅ **State Leaderboard** with 20 US states
 - ✅ **160 Badges** across 6 categories
-- ✅ **4-Tab Navigation**: Map, Routes, Rewards, Profile
-
-### Profile Detail Screens
-- ✅ Trip History, Gem History
-- ✅ Notification Settings, Help & Support
-- ✅ Fuel Tracker
+- ✅ **Trip/Gem History** detail screens
 
 ## Testing Status
 - **Latest Report:** `/app/test_reports/iteration_6.json`
-- **Frontend:** 100% pass rate
-- **All car customization features verified**
+- **All features verified working**
 
 ## ⚠️ MOCKED DATA
-All data is in-memory mock data. No database or external services connected.
+All data is in-memory. No database connected.
 
 ## Upcoming Tasks
 1. 🔴 P0: Connect PostgreSQL database
 2. 🔴 P0: Integrate real map (Mapbox)
 3. 🟡 P1: Add authentication (Supabase)
-4. 🟡 P1: Implement "Share Trip Score" feature
-5. 🟢 P2: Add rims, spoilers, decals upgrades
+4. 🟢 P2: Add rims, spoilers, decals upgrades
 
 ## Future/Backlog
-- Build Flutter mobile app
-- Integrate Stripe for gem purchases
-- Engine sound feedback for car types
-- Post-trip "garage" animation
-- Family tracking, AI coaching
+- Flutter mobile app
+- Engine sound feedback
+- Post-trip garage animation
+- Stripe for gem purchases
