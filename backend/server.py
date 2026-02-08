@@ -543,14 +543,20 @@ def get_badge_categories():
 
 # ==================== LEADERBOARD ====================
 @app.get("/api/leaderboard")
-def get_leaderboard(state: Optional[str] = None, limit: int = 50):
+def get_leaderboard(state: Optional[str] = None, limit: int = 50, time_filter: Optional[str] = None):
+    """
+    Get leaderboard with optional filtering.
+    - state: Filter by state (e.g., "OH" for Ohio)
+    - time_filter: 'weekly', 'monthly', or None for all-time
+    """
     users_list = list(users_db.values())
     
+    # Filter by state if specified
     if state:
         users_list = [u for u in users_list if u.get("state") == state]
     
-    # Sort by safety score
-    users_list.sort(key=lambda x: x.get("safety_score", 0), reverse=True)
+    # Sort by safety score (primary) and gems (secondary)
+    users_list.sort(key=lambda x: (x.get("safety_score", 0), x.get("gems", 0)), reverse=True)
     
     leaderboard = []
     for i, u in enumerate(users_list[:limit]):
@@ -559,25 +565,54 @@ def get_leaderboard(state: Optional[str] = None, limit: int = 50):
             "id": u["id"],
             "name": u["name"],
             "safety_score": u["safety_score"],
+            "gems": u.get("gems", 0),
             "level": u["level"],
             "state": u["state"],
-            "badges_count": len(u.get("badges_earned", []))
+            "badges_count": len(u.get("badges_earned", [])),
+            "total_miles": u.get("total_miles", 0),
+            "is_premium": u.get("is_premium", False),
         })
     
-    # Get current user rank
+    # Get current user rank (considering state filter)
     current_user = users_db.get(current_user_id, {})
     my_rank = None
-    for i, u in enumerate(sorted(list(users_db.values()), key=lambda x: x.get("safety_score", 0), reverse=True)):
+    my_data = None
+    
+    # If state filter is applied, calculate rank within that state
+    rank_list = users_list if state else list(users_db.values())
+    rank_list_sorted = sorted(rank_list, key=lambda x: (x.get("safety_score", 0), x.get("gems", 0)), reverse=True)
+    
+    for i, u in enumerate(rank_list_sorted):
         if u["id"] == current_user_id:
             my_rank = i + 1
+            my_data = {
+                "rank": my_rank,
+                "safety_score": u.get("safety_score", 0),
+                "gems": u.get("gems", 0),
+                "level": u.get("level", 1),
+                "state": u.get("state", "OH"),
+            }
             break
+    
+    # Get unique states for filter dropdown
+    unique_states = sorted(list(set(u.get("state", "OH") for u in users_db.values())))
+    
+    # Ohio focus - put OH first
+    if "OH" in unique_states:
+        unique_states.remove("OH")
+        unique_states.insert(0, "OH")
     
     return {
         "success": True,
         "data": leaderboard,
         "my_rank": my_rank,
+        "my_data": my_data,
         "total_users": len(users_list),
-        "states": STATES
+        "states": unique_states,
+        "current_filter": {
+            "state": state,
+            "time_filter": time_filter or "all_time"
+        }
     }
 
 # ==================== CARS ====================
