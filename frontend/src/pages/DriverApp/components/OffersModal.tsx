@@ -240,104 +240,83 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
         )}
       </div>
 
-      {/* Offer Detail Modal */}
+      {/* Offer Detail Modal - Compact Version */}
       {selectedOffer && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-6">
-          <div className="bg-slate-800 rounded-2xl w-full max-w-sm overflow-hidden">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-6 text-center relative">
-              <button 
-                onClick={() => setSelectedOffer(null)} 
-                className="absolute top-4 right-4 text-white/60 hover:text-white"
-              >
-                <X size={20} />
-              </button>
-              
-              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setSelectedOffer(null)}>
+          <div className="bg-slate-800 rounded-xl w-full max-w-xs overflow-hidden shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+            {/* Compact Header */}
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-4 flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
                 {(() => {
                   const Icon = BUSINESS_ICONS[selectedOffer.business_type] || BUSINESS_ICONS.default
-                  return <Icon size={32} className="text-white" />
+                  return <Icon size={20} className="text-white" />
                 })()}
               </div>
-              
-              <h2 className="text-white font-bold text-xl">{selectedOffer.business_name}</h2>
-              <p className="text-emerald-100 text-sm">{selectedOffer.description}</p>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-white font-bold text-sm truncate">{selectedOffer.business_name}</h2>
+                <p className="text-emerald-100 text-xs truncate">{selectedOffer.description}</p>
+              </div>
+              <button onClick={() => setSelectedOffer(null)} className="text-white/60 hover:text-white p-1">
+                <X size={18} />
+              </button>
             </div>
 
-            {/* Discount Display */}
-            <div className="p-6 space-y-4">
-              {/* Gems Reward */}
-              <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-4 text-center">
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  <Gem className="text-cyan-400" size={24} />
-                  <span className="text-cyan-400 text-2xl font-bold">+{selectedOffer.gems_reward}</span>
+            {/* Compact Body */}
+            <div className="p-4 space-y-3">
+              {/* Gems & Discount Row */}
+              <div className="flex gap-2">
+                <div className="flex-1 bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-2 text-center">
+                  <div className="flex items-center justify-center gap-1">
+                    <Gem className="text-cyan-400" size={16} />
+                    <span className="text-cyan-400 text-lg font-bold">+{selectedOffer.gems_reward}</span>
+                  </div>
+                  <p className="text-cyan-300/70 text-[10px]">Gems</p>
                 </div>
-                <p className="text-cyan-300/70 text-xs">Gems reward</p>
-              </div>
-
-              {/* Discount Tiers */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className={`rounded-xl p-4 text-center border ${
-                  !isPremium 
-                    ? 'bg-emerald-500/20 border-emerald-500/50' 
-                    : 'bg-slate-700/50 border-slate-600'
-                }`}>
-                  <p className="text-slate-400 text-xs mb-1">Free</p>
-                  <p className={`text-2xl font-bold ${!isPremium ? 'text-emerald-400' : 'text-slate-500'}`}>
-                    {discountInfo.free_discount}%
-                  </p>
-                </div>
-                
-                <div className={`rounded-xl p-4 text-center border ${
-                  isPremium 
-                    ? 'bg-gradient-to-br from-amber-500/20 to-orange-500/20 border-amber-500/50' 
-                    : 'bg-slate-700/50 border-slate-600'
-                }`}>
-                  <p className="text-slate-400 text-xs mb-1 flex items-center justify-center gap-1">
-                    <Zap size={10} className="text-amber-400" /> Premium
-                  </p>
-                  <p className={`text-2xl font-bold ${isPremium ? 'text-amber-400' : 'text-slate-500'}`}>
-                    {discountInfo.premium_discount}%
-                  </p>
+                <div className="flex-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2 text-center">
+                  <p className="text-emerald-400 text-lg font-bold">{selectedOffer.discount_percent}%</p>
+                  <p className="text-emerald-300/70 text-[10px]">Your Discount</p>
                 </div>
               </div>
 
-              {/* Your Discount */}
-              <div className="bg-slate-700/50 rounded-xl p-4 text-center">
-                <p className="text-slate-400 text-sm mb-1">Your discount</p>
-                <p className="text-3xl font-bold text-white">{selectedOffer.discount_percent}% OFF</p>
-              </div>
+              {/* Premium Upsell (if applicable) */}
+              {!isPremium && !selectedOffer.is_admin_offer && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 flex items-center gap-2">
+                  <Zap className="text-amber-400" size={14} />
+                  <p className="text-amber-400 text-xs flex-1">
+                    Premium gets {discountInfo.premium_discount}% off
+                  </p>
+                </div>
+              )}
 
               {/* Redeem Button */}
               <button
                 onClick={handleRedeem}
                 disabled={redeeming || selectedOffer.redeemed}
-                className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 ${
+                className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 text-sm ${
                   selectedOffer.redeemed
                     ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-400 hover:to-teal-400'
+                    : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white active:scale-[0.98]'
                 }`}
                 data-testid="redeem-offer-btn"
               >
                 {redeeming ? (
-                  <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+                  <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
                 ) : selectedOffer.redeemed ? (
                   <>
-                    <Check size={20} />
-                    Already Redeemed
+                    <Check size={16} />
+                    Redeemed
                   </>
                 ) : (
                   <>
-                    <Sparkles size={20} />
+                    <Sparkles size={16} />
                     Redeem Offer
                   </>
                 )}
               </button>
-
-              {!isPremium && !selectedOffer.is_admin_offer && (
-                <p className="text-center text-amber-400 text-xs">
-                  Upgrade to Premium for {discountInfo.premium_discount - discountInfo.free_discount}% more off!
-                </p>
+            </div>
+          </div>
+        </div>
+      )}
               )}
             </div>
           </div>
