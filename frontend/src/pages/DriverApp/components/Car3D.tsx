@@ -550,7 +550,7 @@ export default function Car3D({
 
           {/* Car Body - Main Shape */}
           <path 
-            d={carPaths.body}
+            d={carData.body}
             fill={`url(#body-grad-${color}-${category})`}
             stroke="rgba(0,0,0,0.3)"
             strokeWidth="0.5"
@@ -558,14 +558,14 @@ export default function Car3D({
 
           {/* Body panel highlight */}
           <path 
-            d={carPaths.bodyTop}
+            d={carData.bodyTop}
             fill={`url(#hood-highlight-${color})`}
             opacity={colorData.matte ? 0.1 : 0.4}
           />
 
           {/* Cabin/Roof Structure */}
           <path 
-            d={carPaths.cabin}
+            d={carData.cabin}
             fill={`url(#body-grad-${color}-${category})`}
             stroke="rgba(0,0,0,0.2)"
             strokeWidth="0.3"
@@ -573,7 +573,7 @@ export default function Car3D({
 
           {/* Windows - Glass */}
           <path 
-            d={carPaths.windows}
+            d={carData.windows}
             fill="url(#window-glass)"
             stroke="rgba(0,0,0,0.4)"
             strokeWidth="0.3"
@@ -581,23 +581,23 @@ export default function Car3D({
 
           {/* Window Reflection */}
           <path 
-            d={carPaths.frontWindow}
+            d={carData.frontWindow}
             fill="url(#window-reflect)"
             opacity="0.6"
           />
 
           {/* Wheel Wells */}
           <path 
-            d={carPaths.wheelWellFront}
+            d={carData.wheelWellFront}
             fill="#0a0a0a"
           />
           <path 
-            d={carPaths.wheelWellRear}
+            d={carData.wheelWellRear}
             fill="#0a0a0a"
           />
 
           {/* Front Wheel */}
-          <g transform="translate(26, 64)">
+          <g transform={`translate(${carData.wheelFrontX}, ${carData.wheelFrontY})`}>
             {/* Tire */}
             <ellipse cx="0" cy="0" rx="8" ry="8" fill="url(#tire-rubber)" />
             {/* Rim */}
@@ -618,7 +618,7 @@ export default function Car3D({
           </g>
 
           {/* Rear Wheel */}
-          <g transform="translate(74, 64)">
+          <g transform={`translate(${carData.wheelRearX}, ${carData.wheelRearY})`}>
             <ellipse cx="0" cy="0" rx="8" ry="8" fill="url(#tire-rubber)" />
             <ellipse cx="0" cy="0" rx="5.5" ry="5.5" fill="url(#rim-metal)" />
             <circle cx="0" cy="0" r="2" fill="#505050" />
@@ -636,7 +636,7 @@ export default function Car3D({
 
           {/* Chrome Trim Lines */}
           <path 
-            d={carPaths.trim}
+            d={carData.trim}
             fill="none"
             stroke="url(#chrome-trim)"
             strokeWidth="0.8"
@@ -645,7 +645,7 @@ export default function Car3D({
 
           {/* Door Line */}
           <path 
-            d={carPaths.doorLine}
+            d={carData.doorLine}
             fill="none"
             stroke="rgba(0,0,0,0.15)"
             strokeWidth="0.5"
@@ -653,22 +653,22 @@ export default function Car3D({
 
           {/* Door Handle */}
           <path 
-            d={carPaths.handleArea}
+            d={carData.handleArea}
             fill="url(#chrome-trim)"
             opacity="0.8"
           />
 
           {/* Headlights */}
-          <ellipse cx="12" cy="52" rx="3" ry="2" fill="url(#headlight)" />
+          <ellipse cx={carData.headlightX} cy={carData.headlightY} rx="3" ry="2" fill="url(#headlight)" />
           
           {/* Taillights */}
-          <ellipse cx="88" cy="54" rx="2.5" ry="1.8" fill="url(#taillight)" />
+          <ellipse cx={carData.taillightX} cy={carData.taillightY} rx="2.5" ry="1.8" fill="url(#taillight)" />
 
           {/* Front Grille Area */}
-          <rect x="9" y="54" width="6" height="4" rx="0.5" fill="rgba(30,30,30,0.9)" />
+          <rect x={carData.headlightX - 3} y={carData.headlightY + 2} width="6" height="4" rx="0.5" fill="rgba(30,30,30,0.9)" />
 
           {/* Side Mirror */}
-          <ellipse cx="28" cy="42" rx="2" ry="1.2" fill={colorData.hex} stroke="rgba(0,0,0,0.2)" strokeWidth="0.2" />
+          <ellipse cx={carData.mirrorX} cy={carData.mirrorY} rx="2" ry="1.2" fill={colorData.hex} stroke="rgba(0,0,0,0.2)" strokeWidth="0.2" />
         </svg>
       </div>
 
@@ -686,7 +686,7 @@ export default function Car3D({
           }}
         >
           <svg viewBox="0 0 100 80" className="w-full h-full">
-            <path d={carPaths.body} fill={colorData.hex} />
+            <path d={carData.body} fill={colorData.hex} />
           </svg>
         </div>
       )}
