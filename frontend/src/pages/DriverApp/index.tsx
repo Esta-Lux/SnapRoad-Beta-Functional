@@ -30,7 +30,7 @@ import LevelProgress from './components/LevelProgress'
 import OrionVoice from './components/OrionVoice'
 import QuickPhotoReport from './components/QuickPhotoReport'
 import RoadStatusOverlay, { RoadStatusMarkers, MOCK_ROAD_SEGMENTS } from './components/RoadStatusOverlay'
-import OffersModal from './components/OffersModal'
+import OffersModal, { OfferMarker } from './components/OffersModal'
 import ShareTripScore from './components/ShareTripScore'
 import { NavMarker, ProfileCar, CAR_COLORS } from './components/Car3D'
 
