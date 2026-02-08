@@ -568,7 +568,6 @@ export default function DriverApp() {
     // Open Orion voice assistant
     setShowOrionVoice(true)
   }
-  }
 
   // Location handlers
   const handleAddLocation = async () => {
