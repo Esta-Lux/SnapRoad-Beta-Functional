@@ -1549,10 +1549,12 @@ export default function DriverApp() {
       {profileTab === 'overview' && (
         <div className="p-4 space-y-2">
           {[
-            { icon: Trophy, label: 'Achievements', value: `${userData.badges_earned}/160 badges`, action: () => { setActiveTab('engagement'); setEngagementTab('badges') } },
+            { icon: Trophy, label: 'Achievements', value: `${userData.badges_earned_count || 11}/160 badges`, action: () => setShowBadgesGrid(true) },
             { icon: Route, label: 'My Routes', value: `${routes.length} saved`, action: () => setActiveTab('routes') },
-            { icon: History, label: 'Trip History', value: `${userData.total_trips} trips`, action: () => toast('Opening history...') },
-            { icon: Gem, label: 'Gem History', value: '+2,450 this month', action: () => toast('Opening gems...') },
+            { icon: History, label: 'Trip History', value: `${userData.total_trips} trips`, action: () => setShowTripHistory(true) },
+            { icon: Gem, label: 'Gem History', value: '+2,450 this month', action: () => setShowGemHistory(true) },
+            { icon: Users, label: 'Friends', value: `${userData.friends_count || 0} friends`, action: () => setShowFriendsHub(true) },
+            { icon: Car, label: 'Car Showroom', value: 'Customize your ride', action: () => setShowCarShowroom(true) },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`profile-${item.label.toLowerCase().replace(' ', '-')}`}
               className="w-full bg-white rounded-xl p-4 flex items-center gap-3 shadow-sm hover:shadow-md">
@@ -1647,10 +1649,11 @@ export default function DriverApp() {
       {profileTab === 'settings' && (
         <div className="p-4 space-y-2">
           {[
-            { icon: Bell, label: 'Notifications', desc: 'Manage alerts', action: () => toast('Opening notifications...') },
+            { icon: Bell, label: 'Notifications', desc: 'Manage alerts', action: () => setShowNotificationSettings(true) },
             { icon: Volume2, label: 'Voice Settings', desc: isMuted ? 'Muted' : 'Active', action: handleToggleVoice },
             { icon: Layers, label: 'Map Widgets', desc: 'Customize display', action: () => setShowWidgetSettings(true) },
-            { icon: HelpCircle, label: 'Help & Support', desc: 'Get assistance', action: () => toast('Opening help...') },
+            { icon: Fuel, label: 'Fuel Tracker', desc: 'Log fill-ups', action: () => setShowFuelTracker(true) },
+            { icon: HelpCircle, label: 'Help & Support', desc: 'Get assistance', action: () => setShowHelpSupport(true) },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`settings-${item.label.toLowerCase().replace(' ', '-')}`}
               className="w-full bg-white rounded-xl p-4 flex items-center gap-3 shadow-sm">
