@@ -29,6 +29,16 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 - ✅ Click marker → Opens OffersModal with offer auto-selected
 - ✅ Markers positioned based on offer lat/lng relative to user
 
+#### Enhanced Leaderboard ✅ NEW
+- ✅ State-based filtering with Ohio (OH) as default focus state
+- ✅ Time filters: All Time, This Week, This Month
+- ✅ User's ranking card shows position within selected state
+- ✅ Gems displayed alongside Safety Score
+- ✅ Premium user badges (⚡ indicator)
+- ✅ Color-coded Safety Scores (green 90+, amber 70-89, red <70)
+- ✅ Crown/Medal icons for top 3 positions
+- ✅ "You" indicator for current user's entry
+
 #### Share Trip Score
 - ✅ Shareable trip summary card with SnapRoad branding
 - ✅ Safety Score display with circular progress
