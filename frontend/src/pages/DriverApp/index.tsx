@@ -183,10 +183,11 @@ export default function DriverApp() {
     id: '123456',
     name: user?.name || 'Driver',
     gems: 0, level: 1, xp: 0, safety_score: 100, streak: 0,
-    total_miles: 2847, total_trips: 156, badges_earned_count: 11, rank: 42,
-    is_premium: true, member_since: 'Jan 2025', friends_count: 2, state: 'OH',
-    plan: 'premium', gem_multiplier: 2, safe_drive_streak: 3,
-    reports_posted: 12, reports_upvotes_received: 47
+    total_miles: 0, total_trips: 0, badges_earned_count: 0, rank: 0,
+    is_premium: false, member_since: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), 
+    friends_count: 0, state: 'OH',
+    plan: null, gem_multiplier: 1, safe_drive_streak: 0,
+    reports_posted: 0, reports_upvotes_received: 0
   })
   
   // Widget states - positioned below location panel (which ends around y=280)
