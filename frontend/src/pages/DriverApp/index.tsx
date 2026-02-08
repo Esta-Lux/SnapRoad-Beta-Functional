@@ -134,6 +134,11 @@ export default function DriverApp() {
   const [showFuelTracker, setShowFuelTracker] = useState(false)
   const [showCarOnboarding, setShowCarOnboarding] = useState(false)
   const [showCarStudio, setShowCarStudio] = useState(false)
+  const [showPlanSelection, setShowPlanSelection] = useState(false)
+  
+  // User plan state
+  const [userPlan, setUserPlan] = useState<'basic' | 'premium'>('basic')
+  const [gemMultiplier, setGemMultiplier] = useState(1)
   
   // Car customization state
   const [userCar, setUserCar] = useState({
@@ -157,7 +162,8 @@ export default function DriverApp() {
     name: user?.name || 'Sarah Johnson',
     gems: 12400, level: 42, safety_score: 87, streak: 14,
     total_miles: 2847, total_trips: 156, badges_earned_count: 11, rank: 42,
-    is_premium: true, member_since: 'Jan 2025', friends_count: 2, state: 'TX'
+    is_premium: true, member_since: 'Jan 2025', friends_count: 2, state: 'OH',
+    plan: 'premium', gem_multiplier: 2
   })
   
   // Widget states - positioned below location panel (which ends around y=280)
