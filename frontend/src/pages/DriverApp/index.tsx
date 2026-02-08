@@ -872,6 +872,13 @@ export default function DriverApp() {
             <MapPin size={16} />
             <span className="text-sm font-medium">Nearby</span>
           </button>
+
+          {/* Report Hazard Button */}
+          <button onClick={() => setShowRoadReports(true)} data-testid="report-hazard-btn"
+            className="flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 bg-amber-500/90 text-white backdrop-blur hover:bg-amber-500 transition-all">
+            <AlertTriangle size={16} />
+            <span className="text-sm font-medium">Report</span>
+          </button>
         </div>
 
         {/* Favorites Content - Shows when Favorites is selected */}
