@@ -317,11 +317,6 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
           </div>
         </div>
       )}
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
