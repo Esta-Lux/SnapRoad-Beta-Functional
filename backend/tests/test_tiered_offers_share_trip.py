@@ -197,11 +197,16 @@ class TestOfferRedemption:
     
     def test_redeem_already_redeemed_offer_fails(self):
         """Test that redeeming an already redeemed offer fails"""
-        # Try to redeem offer 1 again (was redeemed earlier)
-        response = requests.post(f"{BASE_URL}/api/offers/1/redeem")
+        # First redeem an offer
+        response = requests.post(f"{BASE_URL}/api/offers/3/redeem")
+        first_data = response.json()
+        
+        # Try to redeem the same offer again
+        response = requests.post(f"{BASE_URL}/api/offers/3/redeem")
         data = response.json()
         # Should fail because already redeemed
-        assert data["success"] == False or "Already redeemed" in data.get("message", "")
+        assert data["success"] == False, f"Expected failure for double redemption, got: {data}"
+        assert "Already redeemed" in data.get("message", "")
         print("✓ Cannot redeem already redeemed offer")
     
     def test_redeem_nonexistent_offer_fails(self):
