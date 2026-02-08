@@ -1134,3 +1134,108 @@ def generate_share_content(trip_id: int):
             }
         }
     }
+
+# ==================== PRICING & PLANS ====================
+@app.get("/api/pricing")
+def get_pricing():
+    """Get current pricing configuration"""
+    return {
+        "success": True,
+        "data": pricing_config
+    }
+
+@app.put("/api/admin/pricing")
+def update_pricing(update: PricingUpdate):
+    """Admin: Update pricing configuration"""
+    if update.founders_price is not None:
+        pricing_config["founders_price"] = update.founders_price
+    if update.public_price is not None:
+        pricing_config["public_price"] = update.public_price
+    if update.is_founders_active is not None:
+        pricing_config["is_founders_active"] = update.is_founders_active
+    
+    return {
+        "success": True,
+        "message": "Pricing updated",
+        "data": pricing_config
+    }
+
+@app.post("/api/user/plan")
+def update_user_plan(plan_update: PlanUpdate):
+    """Update user's subscription plan"""
+    if current_user_id not in users_db:
+        return {"success": False, "message": "User not found"}
+    
+    plan = plan_update.plan.lower()
+    if plan not in ["basic", "premium"]:
+        return {"success": False, "message": "Invalid plan"}
+    
+    users_db[current_user_id]["plan"] = plan
+    users_db[current_user_id]["is_premium"] = plan == "premium"
+    users_db[current_user_id]["gem_multiplier"] = 2 if plan == "premium" else 1
+    users_db[current_user_id]["onboarding_complete"] = True
+    
+    return {
+        "success": True,
+        "message": f"Plan updated to {plan}",
+        "data": {
+            "plan": plan,
+            "is_premium": plan == "premium",
+            "gem_multiplier": 2 if plan == "premium" else 1,
+            "price": pricing_config["founders_price"] if pricing_config["is_founders_active"] and plan == "premium" else (pricing_config["public_price"] if plan == "premium" else 0)
+        }
+    }
+
+@app.get("/api/user/plan")
+def get_user_plan():
+    """Get user's current subscription plan"""
+    user = users_db.get(current_user_id, {})
+    return {
+        "success": True,
+        "data": {
+            "plan": user.get("plan", "basic"),
+            "is_premium": user.get("is_premium", False),
+            "gem_multiplier": user.get("gem_multiplier", 1),
+            "onboarding_complete": user.get("onboarding_complete", False),
+        }
+    }
+
+@app.get("/api/user/onboarding-status")
+def get_onboarding_status():
+    """Get user's onboarding completion status"""
+    user = users_db.get(current_user_id, {})
+    return {
+        "success": True,
+        "data": {
+            "onboarding_complete": user.get("onboarding_complete", False),
+            "plan_selected": user.get("plan") is not None,
+            "car_selected": user.get("car_onboarding_complete", False),
+        }
+    }
+
+# ==================== TRIP COMPLETION WITH GEM MULTIPLIER ====================
+@app.post("/api/trips/complete")
+def complete_trip():
+    """Complete a trip and award gems based on user's plan"""
+    user = users_db.get(current_user_id, {})
+    base_gems = 5  # Base gems per drive
+    multiplier = user.get("gem_multiplier", 1)
+    gems_earned = base_gems * multiplier
+    
+    # Update user gems
+    if current_user_id in users_db:
+        users_db[current_user_id]["gems"] = user.get("gems", 0) + gems_earned
+        users_db[current_user_id]["total_trips"] = user.get("total_trips", 0) + 1
+    
+    return {
+        "success": True,
+        "message": f"Trip completed! +{gems_earned} gems earned",
+        "data": {
+            "base_gems": base_gems,
+            "multiplier": multiplier,
+            "gems_earned": gems_earned,
+            "total_gems": users_db[current_user_id].get("gems", 0),
+            "is_premium": user.get("is_premium", False)
+        }
+    }
+
