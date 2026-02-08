@@ -17,6 +17,9 @@ import PartnerDetail from './pages/Partners/PartnerDetail'
 import Settings from './pages/Settings'
 import DriverApp from './pages/DriverApp'
 import BusinessDashboard from './pages/BusinessDashboard'
+import WelcomePage from './pages/WelcomePage'
+import PartnerDashboard from './pages/PartnerDashboard'
+import AdminDashboard from './pages/AdminDashboard'
 
 // Protected route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -33,6 +36,9 @@ function App() {
   return (
     <AuthProvider>
       <Routes>
+        {/* Welcome/Landing Page */}
+        <Route path="/" element={<WelcomePage />} />
+        
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
         
@@ -40,17 +46,22 @@ function App() {
         <Route path="/driver" element={<DriverApp />} />
         <Route path="/driver/auth" element={<AuthFlow />} />
         
-        {/* Business Partner Dashboard - Public for demo */}
+        {/* Partner Dashboard - Web-based */}
+        <Route path="/partner" element={<PartnerDashboard />} />
+        
+        {/* Admin Dashboard - Web-based full control */}
+        <Route path="/admin" element={<AdminDashboard />} />
+        
+        {/* Business Partner Dashboard - Legacy */}
         <Route path="/business" element={<BusinessDashboard />} />
         
-        {/* Protected Admin routes */}
-        <Route path="/" element={
+        {/* Protected Admin routes (old) */}
+        <Route path="/dashboard" element={
           <ProtectedRoute>
             <Layout />
           </ProtectedRoute>
         }>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
+          <Route index element={<Dashboard />} />
           <Route path="users" element={<Users />} />
           <Route path="users/:id" element={<UserDetail />} />
           <Route path="trips" element={<Trips />} />
@@ -63,8 +74,8 @@ function App() {
           <Route path="settings" element={<Settings />} />
         </Route>
         
-        {/* Catch all */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* Catch all - redirect to welcome */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>
   )
