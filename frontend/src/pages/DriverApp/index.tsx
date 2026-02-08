@@ -138,6 +138,9 @@ export default function DriverApp() {
   const [showCarOnboarding, setShowCarOnboarding] = useState(false)
   const [showCarStudio, setShowCarStudio] = useState(false)
   const [showPlanSelection, setShowPlanSelection] = useState(false)
+  const [showRoadReports, setShowRoadReports] = useState(false)
+  const [showCommunityBadges, setShowCommunityBadges] = useState(false)
+  const [showLevelProgress, setShowLevelProgress] = useState(false)
   
   // User plan state
   const [userPlan, setUserPlan] = useState<'basic' | 'premium'>('basic')
