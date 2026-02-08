@@ -2035,7 +2035,7 @@ export default function DriverApp() {
             className="flex-1 bg-slate-100 text-slate-900 py-3 rounded-xl font-medium flex items-center justify-center gap-2">
             <Navigation size={16} /> Navigate
           </button>
-          <button onClick={() => handleRedeemOffer(showOfferDetail)} data-testid="redeem-offer-btn"
+          <button onClick={() => handleRedeemOffer(showOfferDetail.id)} data-testid="redeem-offer-btn"
             className="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-medium">
             Redeem for {showOfferDetail.gems}💎
           </button>
