@@ -616,12 +616,6 @@ export default function Car3D({
             <circle cx="0" cy="0" r="1.8" fill="#404040" />
             <circle cx="0" cy="0" r="1.2" fill="url(#chrome-trim)" />
             <circle cx="0" cy="0" r="0.5" fill="#303030" />
-                x2="0" y2="-5"
-                stroke="#808080"
-                strokeWidth="1"
-                transform={`rotate(${angle})`}
-              />
-            ))}
           </g>
 
           {/* Chrome Trim Lines */}
@@ -629,35 +623,70 @@ export default function Car3D({
             d={carData.trim}
             fill="none"
             stroke="url(#chrome-trim)"
-            strokeWidth="0.8"
-            opacity="0.7"
+            strokeWidth="1"
+            opacity="0.8"
           />
 
           {/* Door Line */}
           <path 
             d={carData.doorLine}
             fill="none"
-            stroke="rgba(0,0,0,0.15)"
-            strokeWidth="0.5"
+            stroke="rgba(0,0,0,0.2)"
+            strokeWidth="0.6"
           />
 
-          {/* Door Handle */}
+          {/* Door Handle - Premium Chrome */}
           <path 
             d={carData.handleArea}
             fill="url(#chrome-trim)"
-            opacity="0.8"
+            stroke="rgba(0,0,0,0.3)"
+            strokeWidth="0.2"
           />
 
-          {/* Headlights */}
-          <ellipse cx={carData.headlightX} cy={carData.headlightY} rx="3" ry="2" fill="url(#headlight)" />
+          {/* LED Headlights */}
+          <g>
+            <ellipse cx={carData.headlightX} cy={carData.headlightY} rx="3.5" ry="2.2" fill="url(#headlight-led)" />
+            <ellipse cx={carData.headlightX} cy={carData.headlightY} rx="2" ry="1.2" fill="#ffffff" opacity="0.8" />
+          </g>
           
-          {/* Taillights */}
-          <ellipse cx={carData.taillightX} cy={carData.taillightY} rx="2.5" ry="1.8" fill="url(#taillight)" />
+          {/* LED Taillights */}
+          <g>
+            <ellipse cx={carData.taillightX} cy={carData.taillightY} rx="3" ry="2" fill="url(#taillight-led)" />
+            <ellipse cx={carData.taillightX} cy={carData.taillightY} rx="1.5" ry="1" fill="#ff4040" opacity="0.9" />
+          </g>
 
-          {/* Front Grille Area */}
-          <rect x={carData.headlightX - 3} y={carData.headlightY + 2} width="6" height="4" rx="0.5" fill="rgba(30,30,30,0.9)" />
+          {/* Front Grille - Dark Chrome */}
+          <rect 
+            x={carData.headlightX - 3} 
+            y={carData.headlightY + 2} 
+            width="7" 
+            height="5" 
+            rx="1" 
+            fill="rgba(20,20,25,0.95)"
+            stroke="url(#chrome-trim)"
+            strokeWidth="0.3"
+          />
+          {/* Grille mesh pattern */}
+          <g opacity="0.4">
+            {[0, 1, 2].map(i => (
+              <line 
+                key={i}
+                x1={carData.headlightX - 2} 
+                y1={carData.headlightY + 3 + i * 1.3}
+                x2={carData.headlightX + 3}
+                y2={carData.headlightY + 3 + i * 1.3}
+                stroke="#404040"
+                strokeWidth="0.3"
+              />
+            ))}
+          </g>
 
-          {/* Side Mirror */}
+          {/* Side Mirror - Premium */}
+          <g>
+            <ellipse cx={carData.mirrorX} cy={carData.mirrorY} rx="2.5" ry="1.5" fill={colorData.hex} />
+            <ellipse cx={carData.mirrorX} cy={carData.mirrorY} rx="2.5" ry="1.5" fill="url(#hood-highlight-${color})" opacity="0.5" />
+            <ellipse cx={carData.mirrorX + 0.5} cy={carData.mirrorY} rx="1.5" ry="0.8" fill="#1a2530" opacity="0.8" />
+          </g>
           <ellipse cx={carData.mirrorX} cy={carData.mirrorY} rx="2" ry="1.2" fill={colorData.hex} stroke="rgba(0,0,0,0.2)" strokeWidth="0.2" />
         </svg>
       </div>
