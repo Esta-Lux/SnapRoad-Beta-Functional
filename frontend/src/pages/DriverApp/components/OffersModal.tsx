@@ -24,6 +24,7 @@ interface OffersModalProps {
   onClose: () => void
   userPlan: 'basic' | 'premium' | null
   onRedeem: (offerId: number) => Promise<any>
+  selectedOfferId?: number | null
 }
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
@@ -36,7 +37,7 @@ const BUSINESS_ICONS: Record<string, any> = {
   default: Gift,
 }
 
-export default function OffersModal({ isOpen, onClose, userPlan, onRedeem }: OffersModalProps) {
+export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selectedOfferId }: OffersModalProps) {
   const [offers, setOffers] = useState<Offer[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null)
@@ -48,6 +49,16 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem }: Off
       loadOffers()
     }
   }, [isOpen])
+
+  // Auto-select offer when selectedOfferId changes
+  useEffect(() => {
+    if (selectedOfferId && offers.length > 0) {
+      const offer = offers.find(o => o.id === selectedOfferId)
+      if (offer && !offer.redeemed) {
+        setSelectedOffer(offer)
+      }
+    }
+  }, [selectedOfferId, offers])
 
   const loadOffers = async () => {
     setLoading(true)
