@@ -2139,3 +2139,58 @@ def get_driving_score():
             "last_updated": datetime.now().isoformat()
         }
     }
+
+@app.get("/api/challenges/history")
+def get_challenge_history():
+    """Get challenge history with stats and badges."""
+    user_challenges = [
+        c for c in challenges_db 
+        if c["challenger_id"] == current_user_id or c["opponent_id"] == current_user_id
+    ]
+    
+    # Calculate stats
+    wins = sum(1 for c in user_challenges if c.get("status") == "won" or 
+               (c["challenger_id"] == current_user_id and c.get("winner_id") == current_user_id))
+    losses = sum(1 for c in user_challenges if c.get("status") == "lost" or
+                 (c["challenger_id"] == current_user_id and c.get("winner_id") != current_user_id and c.get("status") == "completed"))
+    draws = sum(1 for c in user_challenges if c.get("status") == "draw")
+    
+    total = wins + losses + draws
+    win_rate = round((wins / total * 100) if total > 0 else 0)
+    
+    # Mock some additional data for demo
+    total_gems_won = wins * 100  # Simplified
+    total_gems_lost = losses * 100
+    
+    stats = {
+        "total_challenges": len(user_challenges),
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+        "win_rate": win_rate,
+        "total_gems_won": total_gems_won,
+        "total_gems_lost": total_gems_lost,
+        "current_streak": min(wins, 3),  # Simplified
+        "best_streak": wins,
+    }
+    
+    # Badge progress
+    badges = [
+        {"id": "first_win", "name": "First Victory", "description": "Win your first challenge", "icon": "trophy", "unlocked": wins >= 1},
+        {"id": "win_streak_3", "name": "Hot Streak", "description": "Win 3 challenges in a row", "icon": "flame", "unlocked": stats["best_streak"] >= 3},
+        {"id": "win_streak_5", "name": "On Fire", "description": "Win 5 challenges in a row", "icon": "fire", "unlocked": stats["best_streak"] >= 5},
+        {"id": "total_wins_10", "name": "Champion", "description": "Win 10 total challenges", "icon": "crown", "unlocked": wins >= 10, "progress": wins, "total": 10},
+        {"id": "total_wins_25", "name": "Legend", "description": "Win 25 total challenges", "icon": "star", "unlocked": wins >= 25, "progress": wins, "total": 25},
+        {"id": "gems_earned_1k", "name": "Gem Collector", "description": "Earn 1,000 gems from challenges", "icon": "gem", "unlocked": total_gems_won >= 1000, "progress": total_gems_won, "total": 1000},
+        {"id": "perfect_score", "name": "Perfect Driver", "description": "Win with 100 safety score", "icon": "shield", "unlocked": False},
+        {"id": "comeback_king", "name": "Comeback King", "description": "Win after being behind at halftime", "icon": "trending", "unlocked": False},
+    ]
+    
+    return {
+        "success": True,
+        "data": {
+            "challenges": user_challenges,
+            "stats": stats,
+            "badges": badges,
+        }
+    }
