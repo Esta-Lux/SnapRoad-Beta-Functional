@@ -193,9 +193,9 @@ export default function Car3D({
   
   const { width, height } = sizeMap[size]
 
-  // Realistic car path shapes by category
-  const carPaths = useMemo(() => {
-    const paths: Record<string, {
+  // Realistic car path shapes by category with wheel positions
+  const carData = useMemo(() => {
+    const data: Record<string, {
       body: string
       bodyTop: string
       hood: string
@@ -210,6 +210,16 @@ export default function Car3D({
       wheelWellRear: string
       doorLine: string
       handleArea: string
+      wheelFrontX: number
+      wheelFrontY: number
+      wheelRearX: number
+      wheelRearY: number
+      headlightX: number
+      headlightY: number
+      taillightX: number
+      taillightY: number
+      mirrorX: number
+      mirrorY: number
     }> = {
       sedan: {
         body: 'M 15 65 Q 10 65 8 60 L 12 48 Q 18 42 28 38 L 72 38 Q 82 42 88 48 L 92 60 Q 90 65 85 65 L 15 65 Z',
@@ -226,6 +236,11 @@ export default function Car3D({
         wheelWellRear: 'M 66 65 Q 66 56 74 56 Q 82 56 82 65',
         doorLine: 'M 50 38 L 50 62',
         handleArea: 'M 42 48 L 48 48 L 48 50 L 42 50 Z',
+        wheelFrontX: 26, wheelFrontY: 64,
+        wheelRearX: 74, wheelRearY: 64,
+        headlightX: 12, headlightY: 52,
+        taillightX: 88, taillightY: 54,
+        mirrorX: 28, mirrorY: 42,
       },
       suv: {
         body: 'M 12 68 Q 8 68 6 62 L 10 48 Q 14 40 24 36 L 76 36 Q 86 40 90 48 L 94 62 Q 92 68 88 68 L 12 68 Z',
@@ -242,22 +257,32 @@ export default function Car3D({
         wheelWellRear: 'M 64 68 Q 64 58 74 58 Q 84 58 84 68',
         doorLine: 'M 50 36 L 50 65',
         handleArea: 'M 40 48 L 46 48 L 46 51 L 40 51 Z',
+        wheelFrontX: 26, wheelFrontY: 68,
+        wheelRearX: 74, wheelRearY: 68,
+        headlightX: 10, headlightY: 50,
+        taillightX: 90, taillightY: 54,
+        mirrorX: 26, mirrorY: 38,
       },
       sports: {
-        body: 'M 8 62 Q 4 62 4 58 L 10 48 Q 18 42 30 40 L 70 40 Q 85 42 92 48 L 96 58 Q 96 62 92 62 L 8 62 Z',
-        bodyTop: 'M 16 48 Q 22 42 32 40 L 68 40 Q 80 42 84 48 L 16 48 Z',
-        hood: 'M 10 52 L 32 42 L 42 42 L 36 52 Z',
-        cabin: 'M 38 40 Q 40 32 46 30 L 58 30 Q 64 32 66 40 L 38 40 Z',
-        windows: 'M 40 38 Q 42 32 46 30 L 58 30 Q 62 32 64 38 L 40 38 Z',
-        frontWindow: 'M 42 37 L 45 31 L 51 31 L 51 37 Z',
-        rearWindow: 'M 53 37 L 53 31 L 59 31 L 62 37 Z',
-        trim: 'M 10 50 L 90 50',
-        bumperFront: 'M 4 60 Q 2 56 6 52 L 14 52 Q 10 56 10 60 Z',
-        bumperRear: 'M 90 60 Q 90 56 86 52 L 94 52 Q 98 56 96 60 Z',
-        wheelWellFront: 'M 14 62 Q 14 54 22 54 Q 30 54 30 62',
-        wheelWellRear: 'M 70 62 Q 70 54 78 54 Q 86 54 86 62',
-        doorLine: 'M 52 40 L 52 60',
-        handleArea: 'M 44 48 L 50 48 L 50 50 L 44 50 Z',
+        body: 'M 6 58 Q 2 58 2 54 L 8 46 Q 16 40 30 38 L 70 38 Q 86 40 92 46 L 98 54 Q 98 58 94 58 L 6 58 Z',
+        bodyTop: 'M 14 46 Q 20 40 32 38 L 68 38 Q 82 40 86 46 L 14 46 Z',
+        hood: 'M 8 50 L 32 40 L 44 40 L 38 50 Z',
+        cabin: 'M 42 38 Q 44 32 50 30 L 60 30 Q 66 32 68 38 L 42 38 Z',
+        windows: 'M 44 36 Q 46 32 50 30 L 60 30 Q 64 32 66 36 L 44 36 Z',
+        frontWindow: 'M 46 35 L 49 31 L 54 31 L 54 35 Z',
+        rearWindow: 'M 56 35 L 56 31 L 61 31 L 64 35 Z',
+        trim: 'M 8 48 L 92 48',
+        bumperFront: 'M 2 56 Q 0 52 4 48 L 12 48 Q 8 52 8 56 Z',
+        bumperRear: 'M 92 56 Q 92 52 88 48 L 96 48 Q 100 52 98 56 Z',
+        wheelWellFront: 'M 12 58 Q 12 50 20 50 Q 28 50 28 58',
+        wheelWellRear: 'M 72 58 Q 72 50 80 50 Q 88 50 88 58',
+        doorLine: 'M 55 38 L 55 56',
+        handleArea: 'M 48 46 L 53 46 L 53 48 L 48 48 Z',
+        wheelFrontX: 20, wheelFrontY: 57,
+        wheelRearX: 80, wheelRearY: 57,
+        headlightX: 6, headlightY: 48,
+        taillightX: 94, taillightY: 50,
+        mirrorX: 36, mirrorY: 40,
       },
       truck: {
         body: 'M 12 70 Q 8 70 6 64 L 10 52 Q 14 44 22 40 L 46 40 L 46 50 L 88 50 L 94 64 Q 92 70 88 70 L 12 70 Z',
@@ -268,6 +293,84 @@ export default function Car3D({
         frontWindow: 'M 28 36 L 32 28 L 44 28 L 44 36 Z',
         rearWindow: 'M 44 36 L 44 28 L 44 28 L 44 36 Z',
         trim: 'M 12 55 L 46 55 M 46 55 L 88 55',
+        bumperFront: 'M 6 68 Q 4 62 8 58 L 16 58 Q 12 62 12 68 Z',
+        bumperRear: 'M 88 68 Q 88 62 84 58 L 92 58 Q 96 62 94 68 Z',
+        wheelWellFront: 'M 16 70 Q 16 60 26 60 Q 36 60 36 70',
+        wheelWellRear: 'M 68 70 Q 68 60 78 60 Q 88 60 88 70',
+        doorLine: 'M 36 40 L 36 67',
+        handleArea: 'M 30 50 L 34 50 L 34 52 L 30 52 Z',
+        wheelFrontX: 26, wheelFrontY: 69,
+        wheelRearX: 78, wheelRearY: 69,
+        headlightX: 10, headlightY: 52,
+        taillightX: 90, taillightY: 56,
+        mirrorX: 24, mirrorY: 42,
+      },
+      hatchback: {
+        body: 'M 14 64 Q 10 64 8 58 L 12 48 Q 18 42 28 40 L 72 40 Q 80 44 84 52 L 88 58 Q 86 64 82 64 L 14 64 Z',
+        bodyTop: 'M 18 48 Q 22 42 30 40 L 70 40 Q 76 44 78 52 L 18 48 Z',
+        hood: 'M 12 52 L 28 42 L 36 42 L 36 52 Z',
+        cabin: 'M 30 40 Q 32 28 38 24 L 62 24 Q 72 28 78 40 L 30 40 Z',
+        windows: 'M 32 38 Q 34 30 38 26 L 62 26 Q 70 30 75 38 L 32 38 Z',
+        frontWindow: 'M 34 36 L 38 28 L 50 28 L 50 36 Z',
+        rearWindow: 'M 52 36 L 52 28 L 66 28 L 72 36 Z',
+        trim: 'M 14 52 L 82 52',
+        bumperFront: 'M 8 62 Q 6 58 10 54 L 18 54 Q 14 58 14 62 Z',
+        bumperRear: 'M 82 62 Q 82 58 78 54 L 86 54 Q 90 58 88 62 Z',
+        wheelWellFront: 'M 18 64 Q 18 56 26 56 Q 34 56 34 64',
+        wheelWellRear: 'M 62 64 Q 62 56 70 56 Q 78 56 78 64',
+        doorLine: 'M 48 40 L 48 62',
+        handleArea: 'M 40 48 L 46 48 L 46 50 L 40 50 Z',
+        wheelFrontX: 26, wheelFrontY: 63,
+        wheelRearX: 70, wheelRearY: 63,
+        headlightX: 12, headlightY: 52,
+        taillightX: 84, taillightY: 54,
+        mirrorX: 28, mirrorY: 42,
+      },
+      luxury: {
+        body: 'M 10 66 Q 6 66 4 60 L 8 48 Q 14 40 26 36 L 74 36 Q 86 40 92 48 L 96 60 Q 94 66 90 66 L 10 66 Z',
+        bodyTop: 'M 14 48 Q 18 40 28 36 L 72 36 Q 82 40 86 48 L 14 48 Z',
+        hood: 'M 8 52 L 26 38 L 36 38 L 34 52 Z',
+        cabin: 'M 28 36 Q 30 24 38 20 L 62 20 Q 70 24 72 36 L 28 36 Z',
+        windows: 'M 30 34 Q 32 26 38 22 L 62 22 Q 68 26 70 34 L 30 34 Z',
+        frontWindow: 'M 32 33 L 37 24 L 49 24 L 49 33 Z',
+        rearWindow: 'M 51 33 L 51 24 L 63 24 L 68 33 Z',
+        trim: 'M 10 52 L 90 52 M 10 56 L 90 56',
+        bumperFront: 'M 4 64 Q 2 58 6 54 L 14 54 Q 10 58 10 64 Z',
+        bumperRear: 'M 90 64 Q 90 58 86 54 L 94 54 Q 98 58 96 64 Z',
+        wheelWellFront: 'M 16 66 Q 16 56 26 56 Q 36 56 36 66',
+        wheelWellRear: 'M 64 66 Q 64 56 74 56 Q 84 56 84 66',
+        doorLine: 'M 50 36 L 50 64',
+        handleArea: 'M 42 46 L 48 46 L 48 49 L 42 49 Z',
+        wheelFrontX: 26, wheelFrontY: 65,
+        wheelRearX: 74, wheelRearY: 65,
+        headlightX: 8, headlightY: 50,
+        taillightX: 92, taillightY: 54,
+        mirrorX: 28, mirrorY: 38,
+      },
+      electric: {
+        body: 'M 12 64 Q 8 64 6 58 L 10 48 Q 16 42 28 40 L 72 40 Q 84 42 90 48 L 94 58 Q 92 64 88 64 L 12 64 Z',
+        bodyTop: 'M 16 48 Q 20 42 30 40 L 70 40 Q 80 42 84 48 L 16 48 Z',
+        hood: 'M 10 52 L 28 42 L 38 42 L 36 52 Z',
+        cabin: 'M 30 40 Q 32 28 40 24 L 60 24 Q 68 28 70 40 L 30 40 Z',
+        windows: 'M 32 38 Q 34 30 40 26 L 60 26 Q 66 30 68 38 L 32 38 Z',
+        frontWindow: 'M 34 36 L 39 28 L 49 28 L 49 36 Z',
+        rearWindow: 'M 51 36 L 51 28 L 61 28 L 66 36 Z',
+        trim: 'M 12 52 L 88 52',
+        bumperFront: 'M 6 62 Q 4 58 8 54 L 16 54 Q 12 58 12 62 Z',
+        bumperRear: 'M 88 62 Q 88 58 84 54 L 92 54 Q 96 58 94 62 Z',
+        wheelWellFront: 'M 18 64 Q 18 55 27 55 Q 36 55 36 64',
+        wheelWellRear: 'M 64 64 Q 64 55 73 55 Q 82 55 82 64',
+        doorLine: 'M 50 40 L 50 62',
+        handleArea: 'M 42 48 L 48 48 L 48 50 L 42 50 Z',
+        wheelFrontX: 27, wheelFrontY: 63,
+        wheelRearX: 73, wheelRearY: 63,
+        headlightX: 10, headlightY: 50,
+        taillightX: 90, taillightY: 54,
+        mirrorX: 28, mirrorY: 42,
+      },
+    }
+    return data[category] || data.sedan
+  }, [category])
         bumperFront: 'M 6 68 Q 4 62 8 58 L 16 58 Q 12 62 12 68 Z',
         bumperRear: 'M 88 68 Q 88 62 84 58 L 92 58 Q 96 62 94 68 Z',
         wheelWellFront: 'M 16 70 Q 16 60 26 60 Q 36 60 36 70',
