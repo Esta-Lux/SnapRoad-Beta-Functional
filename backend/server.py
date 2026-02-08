@@ -314,23 +314,43 @@ users_db = {
 }
 
 # Generate sample users for leaderboard - MORE Ohio users for focus
-STATES = ["OH", "OH", "OH", "OH", "CA", "TX", "FL", "NY", "PA", "IL", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN"]  # Weighted toward Ohio
+STATES = ["OH", "OH", "OH", "OH", "CA", "TX", "FL", "NY", "PA", "IL", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN"]
 FIRST_NAMES = ["James", "Emma", "Liam", "Olivia", "Noah", "Ava", "Oliver", "Isabella", "Elijah", "Sophia", "Lucas", "Mia", "Mason", "Charlotte", "Ethan", "Amelia", "Aiden", "Harper", "Jacob", "Evelyn"]
 LAST_NAMES = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Anderson", "Taylor", "Thomas", "Moore", "Jackson", "Martin", "Lee", "Thompson", "White", "Harris"]
+
+def calculate_xp_for_level(level: int) -> int:
+    """Calculate total XP needed to reach a level. Level 1→2 = 2500, +500 per level."""
+    if level <= 1:
+        return 0
+    total = 0
+    for lvl in range(2, level + 1):
+        total += 2500 + (lvl - 2) * 500
+    return total
+
+def calculate_xp_to_next_level(level: int) -> int:
+    """XP needed to go from current level to next."""
+    if level >= 99:
+        return 0  # Max level
+    return 2500 + (level - 1) * 500
 
 for i in range(100):
     uid = str(123457 + i)
     is_premium = random.choice([True, False])
+    level = random.randint(5, 99)
     users_db[uid] = {
         "id": uid,
         "name": f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
         "gems": random.randint(500, 50000),
-        "level": random.randint(5, 100),
+        "level": level,
+        "xp": calculate_xp_for_level(level) + random.randint(0, calculate_xp_to_next_level(level) // 2),
+        "xp_to_next_level": calculate_xp_to_next_level(level),
         "safety_score": random.randint(60, 100),
         "streak": random.randint(0, 100),
+        "safe_drive_streak": random.randint(0, 10),
         "total_miles": random.randint(100, 10000),
         "total_trips": random.randint(10, 500),
         "badges_earned": random.sample(range(1, 161), random.randint(3, 30)),
+        "community_badges": random.sample(range(1, 21), random.randint(0, 5)),
         "rank": i + 1,
         "state": random.choice(STATES),
         "is_premium": is_premium,
@@ -344,10 +364,44 @@ for i in range(100):
         "owned_skins": [1, 2],
         "equipped_skin": 1,
         "onboarding_complete": True,
+        "reports_posted": random.randint(0, 50),
+        "reports_upvotes_received": random.randint(0, 200),
     }
 
 # Current user reference
 current_user_id = "123456"
+
+# ==================== ROAD REPORTS DATABASE ====================
+road_reports_db = [
+    {"id": 1, "user_id": "123456", "type": "hazard", "title": "Pothole on Main St", "description": "Large pothole near intersection", "lat": 39.9612, "lng": -82.9988, "upvotes": 15, "upvoters": ["123457", "123458"], "created_at": "2025-02-08T10:30:00", "expires_at": "2025-02-08T22:30:00", "verified": True},
+    {"id": 2, "user_id": "123457", "type": "accident", "title": "Fender bender on I-71", "description": "Two cars, right lane blocked", "lat": 39.9550, "lng": -83.0050, "upvotes": 32, "upvoters": ["123456"], "created_at": "2025-02-08T11:15:00", "expires_at": "2025-02-08T14:15:00", "verified": True},
+    {"id": 3, "user_id": "123458", "type": "construction", "title": "Road work on High St", "description": "Lane closure until 5pm", "lat": 39.9700, "lng": -83.0000, "upvotes": 8, "upvoters": [], "created_at": "2025-02-08T08:00:00", "expires_at": "2025-02-08T17:00:00", "verified": False},
+    {"id": 4, "user_id": "123456", "type": "police", "title": "Speed trap", "description": "Officer with radar near mile marker 5", "lat": 39.9400, "lng": -82.9900, "upvotes": 45, "upvoters": ["123457"], "created_at": "2025-02-08T09:45:00", "expires_at": "2025-02-08T12:45:00", "verified": True},
+]
+
+# ==================== COMMUNITY BADGES ====================
+COMMUNITY_BADGES = [
+    {"id": 1, "name": "First Report", "desc": "Post your first road report", "icon": "📍", "requirement": 1},
+    {"id": 2, "name": "Helpful Driver", "desc": "Get 10 upvotes on reports", "icon": "👍", "requirement": 10},
+    {"id": 3, "name": "Road Guardian", "desc": "Post 10 road reports", "icon": "🛡️", "requirement": 10},
+    {"id": 4, "name": "Community Hero", "desc": "Get 50 upvotes total", "icon": "🦸", "requirement": 50},
+    {"id": 5, "name": "Hazard Hunter", "desc": "Report 5 hazards", "icon": "⚠️", "requirement": 5},
+    {"id": 6, "name": "Traffic Watcher", "desc": "Report 5 accidents", "icon": "🚗", "requirement": 5},
+    {"id": 7, "name": "Construction Crew", "desc": "Report 5 construction zones", "icon": "🚧", "requirement": 5},
+    {"id": 8, "name": "Eagle Eye", "desc": "Get 100 upvotes total", "icon": "🦅", "requirement": 100},
+    {"id": 9, "name": "Legend", "desc": "Post 50 verified reports", "icon": "⭐", "requirement": 50},
+    {"id": 10, "name": "Night Watcher", "desc": "Post 10 reports after 8pm", "icon": "🌙", "requirement": 10},
+    {"id": 11, "name": "Early Bird", "desc": "Post 10 reports before 7am", "icon": "🐦", "requirement": 10},
+    {"id": 12, "name": "Weekend Warrior", "desc": "Post 20 weekend reports", "icon": "📅", "requirement": 20},
+    {"id": 13, "name": "Trusted Reporter", "desc": "Have 25 verified reports", "icon": "✅", "requirement": 25},
+    {"id": 14, "name": "Local Expert", "desc": "Report in 10 different areas", "icon": "🗺️", "requirement": 10},
+    {"id": 15, "name": "Speed Demon Spotter", "desc": "Report 10 speed traps", "icon": "🚔", "requirement": 10},
+    {"id": 16, "name": "Weather Watcher", "desc": "Report 5 weather hazards", "icon": "🌧️", "requirement": 5},
+    {"id": 17, "name": "Influencer", "desc": "Get 200 upvotes total", "icon": "📢", "requirement": 200},
+    {"id": 18, "name": "Veteran Reporter", "desc": "Post 100 reports", "icon": "🎖️", "requirement": 100},
+    {"id": 19, "name": "Community Champion", "desc": "Get 500 upvotes total", "icon": "🏆", "requirement": 500},
+    {"id": 20, "name": "Road Master", "desc": "Earn all other community badges", "icon": "👑", "requirement": 19},
+]
 
 # ==================== SAVED DATA ====================
 saved_locations = [
