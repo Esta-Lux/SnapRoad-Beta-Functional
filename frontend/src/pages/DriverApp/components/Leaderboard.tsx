@@ -268,23 +268,37 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
                 </div>
 
                 {/* Safety Score */}
-                <div className="w-16 text-center">
-                  <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg ${
+                <div className="w-14 text-center">
+                  <div className={`inline-flex items-center gap-1 px-1.5 py-1 rounded-lg ${
                     entry.safety_score >= 90 ? 'bg-emerald-500/20 text-emerald-400' :
                     entry.safety_score >= 70 ? 'bg-amber-500/20 text-amber-400' :
                     'bg-red-500/20 text-red-400'
                   }`}>
-                    <Shield size={12} />
-                    <span className="font-bold text-sm">{entry.safety_score}</span>
+                    <Shield size={10} />
+                    <span className="font-bold text-xs">{entry.safety_score}</span>
                   </div>
                 </div>
 
                 {/* Gems */}
-                <div className="w-16 text-center">
-                  <div className="flex items-center justify-center gap-1 text-cyan-400">
-                    <Gem size={12} />
-                    <span className="font-medium text-sm">{formatGems(entry.gems)}</span>
+                <div className="w-14 text-center">
+                  <div className="flex items-center justify-center gap-0.5 text-cyan-400">
+                    <Gem size={10} />
+                    <span className="font-medium text-xs">{formatGems(entry.gems)}</span>
                   </div>
+                </div>
+
+                {/* Challenge Button */}
+                <div className="w-12 flex justify-center">
+                  {entry.id !== userId && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleChallengeClick(entry); }}
+                      className="w-8 h-8 rounded-lg bg-red-500/20 hover:bg-red-500/40 flex items-center justify-center transition-all group"
+                      data-testid={`challenge-${entry.id}`}
+                      title={`Challenge ${entry.name}`}
+                    >
+                      <Swords size={14} className="text-red-400 group-hover:text-red-300" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))
@@ -298,6 +312,18 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
           </p>
         </div>
       </div>
+
+      {/* Challenge Modal */}
+      <ChallengeModal
+        isOpen={showChallengeModal}
+        onClose={() => { setShowChallengeModal(false); setChallengeTarget(null); }}
+        opponent={challengeTarget}
+        currentUserGems={userGems}
+        onChallengeCreated={() => {
+          // Refresh leaderboard or show success
+          loadLeaderboard()
+        }}
+      />
     </div>
   )
 }
