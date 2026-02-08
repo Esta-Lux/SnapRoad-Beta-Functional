@@ -211,8 +211,9 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
         <div className="px-4 py-2 bg-slate-800/50 flex items-center text-xs text-slate-400 font-medium">
           <span className="w-10 text-center">Rank</span>
           <span className="flex-1 pl-12">Driver</span>
-          <span className="w-16 text-center">Score</span>
-          <span className="w-16 text-center">Gems</span>
+          <span className="w-14 text-center">Score</span>
+          <span className="w-14 text-center">Gems</span>
+          <span className="w-12 text-center"></span>
         </div>
 
         {/* Leaderboard List */}
