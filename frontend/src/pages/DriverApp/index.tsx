@@ -886,7 +886,13 @@ export default function DriverApp() {
             className="flex-1 bg-slate-900/95 backdrop-blur rounded-full px-4 h-12 flex items-center gap-3 shadow-lg">
             <Search className="text-slate-400" size={18} />
             <span className="flex-1 text-slate-400 text-sm text-left">{isNavigating ? 'Navigating...' : 'Search here'}</span>
-            <Mic className="text-slate-400" size={18} onClick={(e) => { e.stopPropagation(); handleVoiceCommand() }} />
+            <button 
+              onClick={(e) => { e.stopPropagation(); handleVoiceCommand() }}
+              className="p-1 hover:bg-slate-700 rounded-full transition-colors"
+              data-testid="orion-btn"
+            >
+              <Mic className="text-slate-400" size={18} />
+            </button>
           </button>
         </div>
 
