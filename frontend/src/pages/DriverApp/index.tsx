@@ -1871,6 +1871,24 @@ export default function DriverApp() {
         onClose={() => setShowFuelTracker(false)}
         isPremium={userData.is_premium}
       />
+      
+      {/* Car Customization Modals */}
+      {showCarOnboarding && (
+        <CarOnboarding
+          onComplete={handleCarOnboardingComplete}
+          onSkip={() => setShowCarOnboarding(false)}
+        />
+      )}
+      
+      <CarStudio
+        isOpen={showCarStudio}
+        onClose={() => setShowCarStudio(false)}
+        currentCar={userCar}
+        gems={userData.gems}
+        ownedColors={ownedColors}
+        onPurchaseColor={handlePurchaseColor}
+        onChangeCar={handleCarChange}
+      />
     </div>
   )
 }
