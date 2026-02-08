@@ -548,56 +548,74 @@ export default function Car3D({
             d={carData.windows}
             fill="url(#window-glass)"
             stroke="rgba(0,0,0,0.5)"
-            strokeWidth="0.3"
+            strokeWidth="0.4"
           />
 
-          {/* Window Reflection */}
+          {/* Window Sky Reflection */}
           <path 
             d={carData.frontWindow}
-            fill="url(#window-reflect)"
-            opacity="0.6"
+            fill="url(#window-sky)"
+            opacity="0.7"
           />
 
-          {/* Wheel Wells */}
+          {/* Wheel Wells with shadow */}
           <path 
             d={carData.wheelWellFront}
-            fill="#0a0a0a"
+            fill="url(#wheel-well-shadow)"
           />
           <path 
             d={carData.wheelWellRear}
-            fill="#0a0a0a"
+            fill="url(#wheel-well-shadow)"
           />
 
-          {/* Front Wheel */}
+          {/* Front Wheel - Premium Alloy */}
           <g transform={`translate(${carData.wheelFrontX}, ${carData.wheelFrontY})`}>
-            {/* Tire */}
-            <ellipse cx="0" cy="0" rx="8" ry="8" fill="url(#tire-rubber)" />
-            {/* Rim */}
-            <ellipse cx="0" cy="0" rx="5.5" ry="5.5" fill="url(#rim-metal)" />
-            {/* Rim center cap */}
-            <circle cx="0" cy="0" r="2" fill="#505050" />
-            {/* Rim spokes */}
-            {[0, 60, 120, 180, 240, 300].map((angle, i) => (
-              <line 
-                key={i}
-                x1="0" y1="-2"
-                x2="0" y2="-5"
-                stroke="#808080"
-                strokeWidth="1"
-                transform={`rotate(${angle})`}
-              />
+            {/* Tire with sidewall detail */}
+            <circle cx="0" cy="0" r="9" fill="url(#tire-rubber)" />
+            <circle cx="0" cy="0" r="9" fill="url(#tire-sidewall)" />
+            {/* Rim outer ring */}
+            <circle cx="0" cy="0" r="6.5" fill="none" stroke="#404040" strokeWidth="0.5" />
+            {/* Premium alloy rim */}
+            <circle cx="0" cy="0" r="6" fill="url(#rim-alloy)" />
+            {/* Rim inner shadow */}
+            <circle cx="0" cy="0" r="5.5" fill="none" stroke="rgba(0,0,0,0.2)" strokeWidth="0.5" />
+            {/* 5-spoke design */}
+            {[0, 72, 144, 216, 288].map((angle, i) => (
+              <g key={i} transform={`rotate(${angle})`}>
+                <path 
+                  d="M -1 -1.5 L 0 -5.5 L 1 -1.5 Z" 
+                  fill="url(#chrome-trim)"
+                  stroke="#505050"
+                  strokeWidth="0.2"
+                />
+              </g>
             ))}
+            {/* Center cap with logo effect */}
+            <circle cx="0" cy="0" r="1.8" fill="#404040" />
+            <circle cx="0" cy="0" r="1.2" fill="url(#chrome-trim)" />
+            <circle cx="0" cy="0" r="0.5" fill="#303030" />
           </g>
 
-          {/* Rear Wheel */}
+          {/* Rear Wheel - Premium Alloy */}
           <g transform={`translate(${carData.wheelRearX}, ${carData.wheelRearY})`}>
-            <ellipse cx="0" cy="0" rx="8" ry="8" fill="url(#tire-rubber)" />
-            <ellipse cx="0" cy="0" rx="5.5" ry="5.5" fill="url(#rim-metal)" />
-            <circle cx="0" cy="0" r="2" fill="#505050" />
-            {[0, 60, 120, 180, 240, 300].map((angle, i) => (
-              <line 
-                key={i}
-                x1="0" y1="-2"
+            <circle cx="0" cy="0" r="9" fill="url(#tire-rubber)" />
+            <circle cx="0" cy="0" r="9" fill="url(#tire-sidewall)" />
+            <circle cx="0" cy="0" r="6.5" fill="none" stroke="#404040" strokeWidth="0.5" />
+            <circle cx="0" cy="0" r="6" fill="url(#rim-alloy)" />
+            <circle cx="0" cy="0" r="5.5" fill="none" stroke="rgba(0,0,0,0.2)" strokeWidth="0.5" />
+            {[0, 72, 144, 216, 288].map((angle, i) => (
+              <g key={i} transform={`rotate(${angle})`}>
+                <path 
+                  d="M -1 -1.5 L 0 -5.5 L 1 -1.5 Z" 
+                  fill="url(#chrome-trim)"
+                  stroke="#505050"
+                  strokeWidth="0.2"
+                />
+              </g>
+            ))}
+            <circle cx="0" cy="0" r="1.8" fill="#404040" />
+            <circle cx="0" cy="0" r="1.2" fill="url(#chrome-trim)" />
+            <circle cx="0" cy="0" r="0.5" fill="#303030" />
                 x2="0" y2="-5"
                 stroke="#808080"
                 strokeWidth="1"
