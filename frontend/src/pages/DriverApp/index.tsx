@@ -713,22 +713,6 @@ export default function DriverApp() {
     }
   }
 
-  // Offer handlers
-  const handleRedeemOffer = async (offer: any) => {
-    if (userData.gems >= offer.gems) {
-      try {
-        const res = await api.post(`/api/offers/${offer.id}/redeem`)
-        toast.success(res.message || `Redeemed "${offer.name}" for ${offer.gems} gems!`)
-        setShowOfferDetail(null)
-      } catch (e) {
-        toast.success(`Redeemed "${offer.name}" for ${offer.gems} gems!`)
-        setShowOfferDetail(null)
-      }
-    } else {
-      toast.error(`Need ${offer.gems - userData.gems} more gems!`)
-    }
-  }
-
   const handleFavoriteOffer = async (id: number) => {
     const newFavs = favorites.includes(id) ? favorites.filter(f => f !== id) : [...favorites, id]
     setFavorites(newFavs)
