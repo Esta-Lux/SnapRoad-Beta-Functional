@@ -1,160 +1,186 @@
 <analysis>**original_problem_statement:**
-The user wants to build a privacy-first navigation app called SnapRoad. The project's current focus is on creating a high-fidelity, interactive React-based preview of the driver-facing application, simulating an iPhone 16 interface. The user provides detailed, evolving requirements for UI and functionality, including a recent pivot to a simpler, Google Maps-inspired design for the map screen and extensive additions around gamification (badges, leaderboards), social features (friends system), and user engagement (car customization, challenges). The ultimate goal is to build out a complete, interactive prototype of the driver app with mocked backend functionality.
+The user is building SnapRoad, a privacy-first, gamified navigation app. The initial goal was a high-fidelity React-based web preview of the driver's mobile app. The scope has significantly expanded to include a full web presence with a dedicated welcome/landing page, and separate web-based dashboards for Partners (businesses managing offers) and Admins (platform management).
 
 PRODUCT REQUIREMENTS:
-- **Application:** SnapRoad, a privacy-first, gamified navigation app.
-- **Current Focus:** Implement and refine a feature-rich, iPhone 16-optimized driver-side application UI within a React web app. Key features include a simplified map interface, a 4-tab navigation (Map, Routes, Rewards, Profile), a friends system with 6-digit user IDs, a state-based leaderboard, 160 collectible badges, a car showroom with vehicles purchasable with gems, and detailed history logs for trips and gems.
-- **Tech Stack:**
-    - **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS.
-    - **Backend (Mocked):** FastAPI (Python).
+- **Driver App (Mobile Simulation):**
+    - **Gamification:** XP/Leveling system, badges for milestones.
+    - **Tiered Plans:**  (free) vs.  plans gating features.
+    - **Tiered Offers:** Location-based discounts from partners, with premium users getting better deals.
+    - **Geofenced QR Codes:** Offer redemption via a QR code that is only available when the user is physically near the location (e.g., within 1 mile) and is protected against screenshots.
+    - **Orion Voice Assistant:** A mock voice assistant for hands-free actions and proactive alerts (e.g., announcing nearby offers).
+    - **Safety Features:** Driving score, road hazard reporting, and passenger mode.
+    - **Social Features:** Leaderboard with state-based filtering and a head-to-head challenge system.
+- **Web Platform:**
+    - **Welcome Page:** A modern, visually appealing landing page for the app, based on user-provided images, with a glassmorphism-style login/signup modal.
+    - **Partner Dashboard:** A web portal for businesses to log in, create/manage their offers, and view redemption analytics.
+    - **Admin Dashboard:** A comprehensive web portal for administrators to manage users, partners, offers, and create platform-wide events (e.g., 2x Gems Weekend).
+- **Production-Ready Flow:** The application must simulate a clean, new-user experience on load, triggering the onboarding flow correctly. The backend state for the default user should reset.
 
 **User's preferred language**: English
 
 **what currently exists?**
-The project has a monorepo structure in  and a working React preview app in . The core of the application is the  component, which renders a self-contained iPhone 16 simulation. The backend is a mocked FastAPI server providing data for all features.
-
-In the last session, the agent implemented a significant number of new features, including a friends hub, leaderboard, car showroom, and a comprehensive badge system. Following user feedback, the agent then began a major refactoring to simplify the UI, moving from a 5-tab to a 4-tab navigation system and creating several new components for detailed views like trip history, gem history, notification settings, help/support, and fuel tracking.
+The project is a multi-page full-stack application.
+1.  **Driver App ():** A functional React web preview simulating an iPhone interface with a 4-tab navigation (Map, Routes, Rewards, Profile). It includes plan selection, car customization, XP/leveling, road hazard reporting, a leaderboard with challenges, premium-gated features like Driving Score and Weekly Recap, and an offers system with glowing map markers and geofenced, screenshot-protected QR codes.
+2.  **Welcome Page ():** A complete, visually styled landing page based on user designs, featuring an auth modal with a role selector (Driver, Partner, Admin).
+3.  **Partner Dashboard ():** A functional, web-only dashboard for businesses to manage their offers and view analytics.
+4.  **Admin Dashboard ():** A functional, web-only dashboard for platform administrators to manage users, partners, and create events.
+5.  **Backend ():** A mock FastAPI server using in-memory data to support all features across the driver app and dashboards.
 
 **Last working item**:
-    - Last item agent was working: The agent was in the middle of a large-scale refactoring of the main driver app component () to align with the user's latest request for a simpler 4-tab navigation and more detailed profile sections. New components for these detail views were created, backend endpoints were added, and the agent was in the process of rewiring the main  file.
+    - Last item agent was working: The agent was conducting a comprehensive, end-to-end functional check of the entire application (Welcome Page, Driver App, Partner Dashboard, and Admin Dashboard) as requested by the user, to ensure all pages function correctly and to identify any remaining issues.
     - Status: IN PROGRESS
-    - Agent Testing Done: N
-    - Which testing method agent to use? screenshot tool
+    - Agent Testing Done: Y (Conducted via manual screenshots across all pages)
+    - Which testing method agent to use? backend testing agent (to verify state reset) and frontend testing agent (for a final regression test).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  - Issue 1: Application is in a broken state due to incomplete refactoring. (Priority: P0)
-  
+  - Issue 1:  The driver app's state is persisting between test sessions, preventing a clean check. (P0)
+
   Issues Detail:
   - Issue 1: 
-     - Attempted fixes: The agent started a major refactor, creating new components, adding backend endpoints, and modifying the main  file. It successfully inserted a new  function but did not finish integrating all the new components into the  tab or remove the now-obsolete  and  functions.
-     - Next debug checklist: 
-        1. Open .
-        2. Locate the  function.
-        3. Modify the function to include buttons that open the newly created modals: , , , , and .
-        4. Locate and delete the now-redundant  and  functions.
-        5. Ensure the new  function correctly displays sub-tabs or sections for Offers, Challenges, Badges, and Leaderboard.
-        6. Verify the bottom navigation correctly displays only the four tabs: Map, Routes, Rewards, and Profile.
-     - Why fix this issue and what will be achieved with the fix? Completing this refactor is critical to make the application runnable again. It will align the app with the user's core request for a cleaner, more intuitive 4-tab navigation structure and make all newly requested features accessible.
+     - Attempted fixes: The agent has been performing manual checks. During the check of the Driver App, it was noted that previously redeemed offers were still marked as Redeemed, indicating the mock user's state is not fully resetting. This contradicts the user's requirement for a clean, new-user experience for testing.
+     - Next debug checklist:
+       1. Review the  and related session logic in .
+       2. Implement a more robust mechanism to reset the default user's data () at the start of each session or on a specific trigger. This should include clearing redeemed offers, trip history, XP, gems, etc.
+       3. After fixing, perform a  test against the user status endpoint to confirm it returns a fresh state.
+       4. Re-run the manual test flow: Onboarding -> Redeem an offer -> Close/re-open session -> Verify the offer is no longer marked as redeemed.
+     - Why fix this issue and what will be achieved with the fix? This will satisfy the user's critical requirement for a clean testing environment that simulates a new user on every load, allowing for accurate validation of the onboarding and feature progression.
      - Status:  IN PROGRESS
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? both
+     - Is recurring issue? Y
+     - Should Test frontend/backend/both after fix? Both
      - Blocked on other issue: None
 
 **In progress Task List**:
-  - Task 1: Complete UI and Navigation Refactor (P0)
-  
+  - Task 1:  Complete the comprehensive application audit. (P0)
+
  Task Detail:
   - Task 1: 
-     - Where to resume: Continue editing . The immediate next step is to update the JSX within the  tab to add buttons that trigger the modals for Trip History, Gem History, Notifications, and Help.
-     - What will be achieved with this? A functional application with a simplified 4-tab navigation system and access to all the newly requested detail screens.
+     - Where to resume: After fixing the state persistence issue (Pending Issue 1), continue the manual E2E check. The last check was on the Admin Dashboard's Events tab. The agent should complete checking all functionalities on the Admin dashboard and then perform a final verification of the driver app with the state reset working correctly.
+     - What will be achieved with this? This will fulfill the user's request for a full audit of the application, ensuring all recently added pages and features are functioning as expected.
      - Status:  IN PROGRESS
-     - Should Test frontend/backend/both after fix? both
-     - Blocked on something: N/A
+     - Should Test frontend/backend/both after fix? Both
+     - Blocked on something: Blocked on Pending/In progress Issue list - Issue 1.
 
 **Upcoming and Future Tasks**
 Upcoming Tasks:
-- **P0: Audit and Implement All Button Endpoints:** The user has repeatedly asked for all buttons to be functional. Once the refactor is complete, systematically go through every interactive element and ensure it either opens a modal or calls a corresponding (mocked) backend API endpoint.
-- **P1: Implement Share Trip Score feature:** Add a button that appears after a trip is completed, allowing users to share a pre-formatted image/summary.
-- **P2: Refine Leaderboard:** Add weekly/monthly filtering options to the leaderboard to boost engagement.
+- **P2: Full Button Audit:** Systematically go through the entire application (Driver App, Partner/Admin Dashboards) and wire up any remaining non-functional buttons or interactive elements to mock backend endpoints.
+- **P3: Orion Proactive Offer Alerts:** Implement the logic where Orion pushes 1-2 offers to the user during a drive, even if no destination is set.
 
 Future Tasks:
-- **Integrate Real 3rd Party Services:** Use  to replace mocked data with actual services like Supabase (for database/auth) and Mapbox (for interactive maps).
-- **Update Admin/Business Dashboards:** Redesign the legacy dashboards to match the modern aesthetic of the Driver App.
-- **Build Flutter Mobile App:** Begin development of the native mobile app based on the validated React prototype.
+- Native iOS App Migration.
+- Live Mapbox Integration.
+- Real Authentication Integration (e.g., Firebase, Auth0).
+- Real Stripe Integration for Partner offer boosting and Premium subscriptions.
+- Real Orion Voice Integration using native iOS libraries.
 
 **Completed work in this session**
-- **Backend Overhaul:** Implemented a comprehensive set of mocked FastAPI endpoints for a friends system, state-based leaderboard, 160 unique badges, a car showroom with gem-based purchasing, trip/gem history logs, dynamic challenges, and an FAQ system.
-- **Frontend Feature Implementation:**
-    - Redesigned the map screen to a clean, Google Maps-like UI with a search bar and Favorites/Nearby pill buttons.
-    - Created and integrated several complex, modal-based components: , , , and .
-    - Created placeholder components for the next refactoring phase: , , , , .
-- **Testing and Bug Fixes:**
-    - Successfully used the  to automatically identify and fix UI bugs related to button nesting and widget positioning.
-    - Resolved a Vite-specific environment variable error ().
-- **Code Synchronization:** All stable changes were synced from the working  directory to the  monorepo directory.
+- **Tiered Offers & Share Trip Score:** Completed the frontend and backend for the tiered offers system and the trip summary sharing modal.
+- **Glowing Gem Markers on Map:** Added interactive, glowing markers on the map to represent nearby offers, which open the offers modal on click.
+- **Enhanced Leaderboard:** Implemented state-based filtering (with a focus on Ohio), time filters (Week/Month), and display of user gems.
+- **Driving Score & Challenge Feature:** Added a premium-gated Driving Score feature and a Challenge Friend system to the leaderboard.
+- **UI/UX Refinements:** Redesigned the offer redemption popup to be smaller and more streamlined.
+- **Challenge History & Badges:** Created a modal to view past challenge results and track progress on challenge-related achievement badges.
+- **Geofenced & Secure QR Codes:** Implemented a standalone redemption popup with a geofenced QR code (checks user is in range) and screenshot-blocking capabilities.
+- **Weekly Recap:** Added a premium-gated Weekly Recap feature for users to see their weekly driving summary.
+- **New Web Pages:**
+  - Created a new landing/welcome page with a glassmorphism-style authentication modal.
+  - Built out separate, fully-featured web dashboards for Partners and Admins with routing.
+- **Orion Offer Alerts:** Added a UI component to simulate Orion pushing offer alerts to the driver.
 
 **Earlier issues found/mentioned but not fixed**
-   - Issue 1: **Tech Stack Discrepancy**: The project uses a Python/FastAPI mock backend, while the user's original request was for Node.js/PostgreSQL. This is a known and accepted constraint for the prototyping phase.
-   - Issue 2: **Linter Configuration**: The ESLint configuration is not set up for TypeScript, causing non-blocking parsing error warnings in the logs.
+   - **Linter Configuration**: ESLint is not configured for TypeScript, causing non-blocking parsing error warnings in the logs. This is a known, low-priority issue.
 
 **Known issue recurrence from previous fork**
-  - N/A
+  - The issue of the default user's state not resetting cleanly for new sessions has appeared before and is the primary blocker currently.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Frontend**: React, TypeScript, Vite, Tailwind CSS, Framer Motion.
-- **Backend**: Mocked FastAPI (Python) server. All data is hardcoded and served via API endpoints.
-- **UI Paradigm**: A mobile-app-in-a-browser simulation, framed within an iPhone 16 viewport. The design is component-driven, with complex features encapsulated in modals to keep the main view clean.
+- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, React Router DOM (for multi-page routing).
+- **Backend**: A monolithic mock FastAPI (Python) server using in-memory Python dictionaries to simulate a database for users, offers, reports, challenges, etc.
+- **UI Paradigm**: Hybrid model. It includes a mobile-app-in-a-browser simulation for the driver experience, alongside traditional multi-page web dashboards for partners and admins.
+- **Security:** Mock implementation of geofencing (distance calculation) and screenshot prevention (CSS overlay ).
 
 **key DB schema**
-  - No database is connected. The schema is implicitly defined by the Pydantic models in .
+  - ****: Stores user profiles, including , , , , , and redeemed offers.
+  - ****: Stores available offers with tiered discounts and business info.
+  - ****: Stores active and completed head-to-head challenges between users.
+  - ****: Stores mock weekly summary data for premium users.
+  - Data is mocked in .
 
 **changes in tech stack**
-  - No changes. The project continues with React for the frontend and a mock Python backend.
+  - The project has evolved from a single-page application (SPA) preview into a multi-page application using  to serve distinct experiences for anonymous users (), drivers (), partners (), and admins ().
 
 **All files of reference**
-- : The primary, large component that is currently being refactored.
-- : Directory containing all new modular components.
-- : The single file containing all mocked backend logic and API endpoints.
-- : The Product Requirements Document, which has been updated with completed features.
-
-**Areas that need refactoring**:
-- The main  file is becoming excessively large. After the current refactor, custom hooks should be considered to extract state logic (e.g., , ).
-- The old  and  pages are stylistically inconsistent and need a complete overhaul.
-
-**key api endpoints**
-- All endpoints are defined in . Recent additions include:
-  - , 
-  - , 
-  - , 
+- : Updated to handle routing for the new pages.
+- : Heavily modified with new endpoints and data for challenges, driving score, weekly recaps, and dashboards.
+- **New Pages:**
+  - 
+  - 
+  - 
+- **New Components:**
+  - 
+  - 
+  - 
+  - 
+  - 
   - 
 
+**Areas that need refactoring**:
+-  is now over 2500 lines and desperately needs to be broken down. Logic should be extracted into custom hooks (e.g., , , ) and state management could be centralized with a state management library (like Zustand or Redux Toolkit) instead of prop drilling.
+-  is also monolithic. The routes, data models, and mock data should be split into separate files/modules (e.g., , , ).
+
+**key api endpoints**
+- : GETs leaderboard data with state and time filters.
+- : POST to create a new user challenge.
+- : GETs the current user's challenge history and badges.
+- : GETs detailed driving score data for premium users.
+- : GETs the weekly summary data for premium users.
+- : POST to redeem an offer, now with a geofence check.
+- **Dashboard Endpoints**: New mock endpoints exist to supply data for the Partner and Admin dashboards (e.g., partner redemptions, user lists, event data).
+
 **Critical Info for New Agent**
-- **You are resuming an incomplete, large-scale refactor.** The application is currently in a broken state.
-- Your immediate and highest-priority task is to finish editing .
-- **Focus on the  tab:** You must modify its content to add buttons that open the new modal components (, , , etc.).
-- **Finalize the  tab:** Ensure the  function correctly organizes Offers, Challenges, Badges, and the Leaderboard.
-- **Clean up obsolete code:** You must delete the old  and  functions to complete the transition to the new  tab.
-- The goal is a stable application with a clean 4-tab navigation structure: **Map, Routes, Rewards, Profile**. Do not proceed to other tasks until this core refactor is complete and verified.
+- **Top Priority:** Fix the user state reset mechanism in . This is blocking the completion of the user's request for a clean check of the whole application.
+- **App Structure:** Be aware that the application is now multi-faceted. You are not just working on the driver simulation anymore. There are distinct web dashboards for different user roles.
+- **Refactoring:** The  and  files are extremely large. While a full refactor isn't the immediate task, any new logic should be added in a modular way (e.g., new components/files) to avoid making the problem worse.
 
 **documents and test reports created in this job**
 - 
 - 
 - 
+-  (repeatedly updated)
 
 **Last 10 User Messages and any pending HUMAN messages** 
-1. **User**: Requested to continue the build, refine all areas, ensure all buttons have endpoints, and asked the agent to ask clarifying questions.
-2. **Agent**: Acknowledged and began a systematic audit of the app.
-3. **Agent**: Shared screenshots and identified UI bugs in the Engagement and Profile tabs.
-4. **Agent**: Sent an  request to get clarification on the desired functionality for multiple buttons and features across the app.
-5. **User**: Provided a detailed and decisive response, outlining a major simplification to a 4-tab navigation, defining the purpose of new detail screens (Trip History, Gem History, etc.), and requesting new features like fuel tracking.
-6. **Agent**: Acknowledged the clear direction and began implementing the major refactor.
-7. **Agent**: Updated the backend () with new endpoints to support all the requested features.
-8. **Agent**: Created five new frontend components (, , etc.) to house the new detail views.
-9. **Agent**: Began editing the main  file, updating types, state, and the bottom navigation structure.
-10. **Agent**: Successfully inserted the new  function logic into the file, with the next step being the modification of the  tab.
-- **Pending Human Message**: The user's detailed request from message #5 is the active directive that the agent is currently implementing.
+1. **User**: Requests to continue building, adding Challenge History and a smaller redemption popup. (Implemented)
+2. **User**: Asks to wire up remaining buttons, add a weekly recap, geofenced QR codes with screenshot blocking, and make the redemption popup standalone. (Implemented)
+3. **User**: Asks to create a new welcome page, plus separate Partner and Admin web dashboards based on uploaded images. Also requests Orion to push offers during a drive. (Implemented)
+4. **Agent**: Analyzes the user-provided images for the new UI.
+5. **Agent**: Implements the Welcome Page, Partner/Admin Dashboards, and Orion alerts.
+6. **User**: Asks for a comprehensive clean check of the entire app (all pages) to fix any remaining issues. (In Progress)
+7. **Agent**: Begins the comprehensive check, starting with the Welcome Page and Driver App.
+8. **Agent**: Notes that the Driver App state (redeemed offers) is not resetting correctly.
+9. **User**: Asks agent to continue building (in response to an agent prompt while checking pages).
+10. **Agent**: Continues the check, moving on to the Partner and Admin dashboards, confirming their functionality via screenshots. The state-reset issue remains unresolved.
 
 **Project Health Check:**
-- **Broken**: The frontend application is non-functional due to the in-progress refactoring of .
-- **Mocked**: All backend logic and data are simulated within . No real database or external services are connected.
+- **Working**: The application is largely functional across all its new pages (Welcome, Driver, Partner, Admin). All major features have been implemented.
+- **Broken**: The default user's state is not resetting correctly between sessions, which prevents accurate testing of the new-user flow and feature progression.
 
 **3rd Party Integrations**
-- None implemented.
-- Planned integrations include Supabase, Mapbox, and Stripe, to be handled via the  tool.
+- **None Implemented.**
+- **Planned for Native iOS:** Mapbox, Stripe, Firebase, ElevenLabs.
+- **Planned for Web:** A real authentication provider (e.g., Firebase, Auth0) will be needed to replace the current mock login system.
 
 **Testing status**
-  - Testing agent used after significant changes: YES (for the previous feature set)
+  - Testing agent used after significant changes: YES, multiple times.
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: []
-  - Known regressions: The entire app is currently non-functional due to the refactor.
+  - Known regressions: The state reset for the default user, which worked in earlier phases, seems to have regressed.
 
 **Credentials to test flow:**
-- The primary interface is the  route, which is a self-contained simulation and does not require login.
-- A legacy  route exists ( / ) but is not relevant to the current driver app development.
+- No credentials are needed. The application uses a mock authentication and role-based routing system.
 
 **What agent forgot to execute**
-- The agent is in the middle of executing a large task. It has not forgotten anything but has stopped mid-process. The next agent must complete the ongoing refactoring of  before proceeding with any other actions.</analysis>
+- The agent was in the middle of a comprehensive check requested by the user. The primary pending action is to resolve the state-reset issue identified during this check and then complete the audit of all pages.
+- The task Wire up the remaining [interactive elements] from the user's request has not been explicitly started and should be prioritized as **P2: Full Button Audit** after the current check is complete.</analysis>
