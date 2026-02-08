@@ -131,6 +131,17 @@ export default function DriverApp() {
   const [showNotificationSettings, setShowNotificationSettings] = useState(false)
   const [showHelpSupport, setShowHelpSupport] = useState(false)
   const [showFuelTracker, setShowFuelTracker] = useState(false)
+  const [showCarOnboarding, setShowCarOnboarding] = useState(false)
+  const [showCarStudio, setShowCarStudio] = useState(false)
+  
+  // Car customization state
+  const [userCar, setUserCar] = useState({
+    category: 'sedan',
+    variant: 'sedan-classic',
+    color: 'midnight-black',
+  })
+  const [ownedColors, setOwnedColors] = useState<string[]>([])
+  const [carHeading, setCarHeading] = useState(0) // Direction for nav marker
   
   // Data states
   const [locations, setLocations] = useState<SavedLocation[]>([])
