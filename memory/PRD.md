@@ -1,7 +1,7 @@
 # SnapRoad - Privacy-First Navigation App
 
 ## Product Overview
-SnapRoad is a privacy-first navigation app with gamified safety rewards. Features an iPhone 16-optimized driver interface with Forza-style premium car customization, subscription-based plans, and comprehensive XP/leveling system.
+SnapRoad is a privacy-first navigation app with gamified safety rewards. Features an iPhone 16-optimized driver interface with Forza-style premium car customization, Orion voice assistant, and comprehensive XP/leveling system.
 
 ## Tech Stack
 - **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS
@@ -10,137 +10,115 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 
 ## Completed Features
 
-### Phase 2A: XP/Leveling & Road Reports (Feb 8, 2025) ✅ NEW
+### Phase 2B+: Orion Voice & Quick Reporting (Feb 8, 2025) ✅ NEW
 
-#### XP & Leveling System (Levels 1-99)
-- ✅ Photo/Hazard report: +500 XP
-- ✅ Offer redemption: +700 XP
-- ✅ Safe drive: +1000 XP
-- ✅ 3 consecutive safe drives bonus: +500 XP
-- ✅ Safety score drops: -500 XP (can level down)
-- ✅ Level progression: 2500 XP for level 1→2, +500 per level
-- ✅ Max level: 99
-- ✅ Level Progress UI with progress bar, XP earning methods, requirements
+#### Orion Voice Assistant
+- ✅ Voice-activated reporting: "cop on my left", "hazard ahead"
+- ✅ Web Speech API with fallback to quick action buttons
+- ✅ Quick action buttons: Hazard, Accident, Construction, Police, Weather
+- ✅ Direction support: left, right, ahead, behind
+- ✅ Auto-submits report with location after voice command
+- ✅ iOS implementation notes included in code comments
 
-#### Road Reports System
-- ✅ Create reports (Hazard, Accident, Construction, Police, Weather)
-- ✅ Upvote system: 10 gems per upvote to reporter
-- ✅ User stats: Reports posted, upvotes received, gems earned
-- ✅ Report list with type icons, verified badges, time ago
-- ✅ "My Reports" tab to view own submissions
-- ✅ Report button on Map quick actions
+#### Quick Photo Report (Safety-First)
+- ✅ One-tap photo posting - no typing required
+- ✅ **Safety guardrails:**
+  - Can't use camera while car in motion (>10 mph)
+  - Orion voice warning: "Using phone while driving isn't safe"
+  - Passenger Mode toggle for passengers
+  - Gallery/camera roll always allowed
+- ✅ Auto-location tracking from photo
+- ✅ Report type selection after photo taken
+- ✅ iOS implementation notes for motion detection
 
-#### Community Badges (20 Total)
-- ✅ Clean grid layout with emoji icons
-- ✅ Earned badges: green checkmark, purple gradient
-- ✅ Locked badges: grayed out with lock icon
-- ✅ NO progress bars (as per requirements)
-- ✅ Badge detail modal with description
+#### Road Status Overlay
+- ✅ Mock traffic data for Columbus, OH area
+- ✅ Color-coded markers:
+  - ⬛ Black = Road closed
+  - 🟡 Yellow = Moderate traffic
+  - 🔴 Red = Heavy traffic/congestion
+  - Clear = No indicator needed
+- ✅ Tap marker for details (road name, reason, delay)
+- ✅ Ready for Mapbox integration
 
-#### Trip Completion with Safety Metrics
-- ✅ Tracks hard brakes, speeding, phone usage
-- ✅ Awards/penalizes XP based on driving behavior
-- ✅ Updates safe drive streak (bonus every 3 safe drives)
-- ✅ Gem rewards with plan multiplier (1× basic, 2× premium)
+### Phase 2A: XP/Leveling & Road Reports (Feb 8, 2025) ✅
+- ✅ Levels 1-99 with XP progression
+- ✅ XP rewards: Photo report (+500), Safe drive (+1000), Offer redemption (+700)
+- ✅ Road Reports with upvotes (10 gems per upvote)
+- ✅ Community Badges (20 total, no progress bars)
+- ✅ Trip completion with safety metrics
 
 ### Phase 1: Plan Selection System (Feb 8, 2025) ✅
-- ✅ Basic ($0/mo, 1× gems) and Premium ($10.99/mo founders, 2× gems)
+- ✅ Basic ($0/mo, 1× gems) and Premium ($10.99/mo, 2× gems)
 - ✅ Admin pricing control with founders toggle
-- ✅ 35% discount display, "Lock in price for life!" callout
-- ✅ Profile PREMIUM badge and gem multiplier indicator
-- ✅ Settings "Your Plan" card with Manage button
 - ✅ Onboarding flow: Plan Selection → Car Color Selection → Main App
 
-### Premium Car Studio (Previous) ✅
-- ✅ Realistic 3D CSS car models with 7 distinct body shapes
-- ✅ 24 color paint shop (Standard, Metallic, Matte, Premium)
-- ✅ Premium showroom UI with horizontal rotation
+### Premium Car Studio ✅
+- ✅ Realistic 3D CSS car models with 7 body shapes
+- ✅ 24 color paint shop
 - ✅ Car as navigation marker and profile avatar
-- ✅ MVP simplified: Color changes only (Garage/Upgrades coming soon)
 
 ### Core Features ✅
 - ✅ 4-Tab Navigation: Map, Routes, Rewards, Profile
-- ✅ Friends System with 6-digit IDs
-- ✅ State Leaderboard (focused on Ohio)
-- ✅ 160 Achievements Badges across 6 categories
-- ✅ Trip/Gem History screens
-- ✅ Weekly Challenges with gem rewards
+- ✅ Friends System, State Leaderboard (Ohio focus)
+- ✅ 160 Achievement Badges, Weekly Challenges
+
+## Map Quick Actions
+```
+[Favorites] [Nearby] [Report] [Photo]
+```
+- **Report** → Opens Road Reports screen
+- **Photo** → Opens Quick Photo Report
 
 ## API Endpoints
 
 ### XP & Leveling
-- `GET /api/xp/status` - User's level, XP, progress
-- `GET /api/xp/config` - XP configuration values
-- `POST /api/xp/add` - Add XP for events
+- `GET /api/xp/status`, `GET /api/xp/config`, `POST /api/xp/add`
 
 ### Road Reports
-- `GET /api/reports` - All road reports
-- `POST /api/reports` - Create report (+500 XP)
-- `POST /api/reports/{id}/upvote` - Upvote (+10 gems to reporter)
-- `GET /api/reports/my` - User's reports with stats
-- `DELETE /api/reports/{id}` - Delete own report
+- `GET /api/reports`, `POST /api/reports`, `POST /api/reports/{id}/upvote`
+- `GET /api/reports/my`, `DELETE /api/reports/{id}`
 
 ### Community Badges
-- `GET /api/badges/community` - All badges with earned status
-
-### Trip Completion
-- `POST /api/trips/complete-with-safety` - Complete trip with safety metrics
+- `GET /api/badges/community`
 
 ### Pricing & Plans
-- `GET /api/pricing` - Pricing configuration
-- `PUT /api/admin/pricing` - Admin update pricing
-- `POST /api/user/plan` - Update user's plan
-- `GET /api/user/plan` - Get user's plan
+- `GET /api/pricing`, `PUT /api/admin/pricing`
+- `POST /api/user/plan`, `GET /api/user/plan`
 
 ## Testing Status
-- **Latest Report:** `/app/test_reports/iteration_8.json`
-- **Phase 2A Backend:** 100% (21/21 tests passed)
-- **Phase 2A Frontend:** 100% verified
+- **Latest Report:** `/app/test_reports/iteration_9.json`
+- **All Features:** 100% pass rate
 
 ## ⚠️ MOCKED DATA
-All data is in-memory. No database connected.
+- All backend data is in-memory
+- Road status uses `MOCK_ROAD_SEGMENTS` constant
+- User location mock: Columbus, OH (39.9612, -82.9988)
+
+## iOS Implementation Notes
+Each component includes detailed Swift/SwiftUI implementation notes:
+- **OrionVoice.tsx**: Apple Speech framework, AVSpeechSynthesizer for TTS
+- **QuickPhotoReport.tsx**: CMMotionActivityManager, CLLocationManager for speed
+- **RoadStatusOverlay.tsx**: Mapbox traffic layer integration
 
 ## Upcoming Tasks
 
-### P2B - Offers & Premium Tiers
-- Tiered offer system (Free: 6% / Premium: 18% discounts)
+### P2C - Tiered Offers System
+- Free: 6% discount / Premium: 18% discount
 - Glowing gem markers on map
-- Business voucher/offer system
-- Offer redemption flow with gems
-
-### P2.5 - Share Trip Score
-- Shareable trip summary after completion
-- Social media integration
+- Offer redemption with gems
 
 ### P3 - Enhanced Leaderboard
-- Top 10 per state (focus on Ohio)
-- Primary ranking by Safety Score
 - Weekly/monthly filtering
+- Top 10 per state (Ohio focus)
 
 ### P3.5 - Route Reminders
-- Free: In-app popup when opening app
+- Free: In-app popup
 - Premium: Push notifications
 
 ## Future/Backlog
-
-### Orion AI Assistant
-- Voice-driven offer announcements
-- Voice customization (gender, accent, name)
-- "Take me there" voice commands
-- Audio ducking for music
-
-### Business & Admin
+- Orion "Is it still there?" prompts for other drivers
 - Business Offer Dashboard (web only)
-- Admin Panel with pricing controls (web only)
-
-### Mobile App
-- iOS native with Swift/SwiftUI
-- Mapbox integration
-- Real-time traffic overlay
-- CarPlay support
-
-### Integrations
-- Supabase (database/auth)
-- Mapbox (maps/traffic)
-- Stripe (payments)
-- ElevenLabs (voice - optional)
+- Admin Panel (web only)
+- iOS native app with Mapbox
+- Stripe payments integration
