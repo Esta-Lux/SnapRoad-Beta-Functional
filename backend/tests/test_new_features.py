@@ -9,7 +9,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://road-tracker-ui.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://car-studio-mvp.preview.emergentagent.com')
 
 class TestFriendsHub:
     """Friends Hub - search and add friends by 6-digit ID"""
