@@ -212,7 +212,7 @@ export default function DriverApp() {
   // Load all data from API
   const loadData = async () => {
     try {
-      const [locRes, routeRes, offerRes, badgeRes, skinRes, famRes, userRes, challengeRes, carRes] = await Promise.all([
+      const [locRes, routeRes, offerRes, badgeRes, skinRes, famRes, userRes, challengeRes, carRes, onboardingRes] = await Promise.all([
         api.get('/api/locations'),
         api.get('/api/routes'),
         api.get('/api/offers'),
@@ -221,7 +221,8 @@ export default function DriverApp() {
         api.get('/api/family/members'),
         api.get('/api/user/profile'),
         api.get('/api/challenges'),
-        api.get('/api/user/car')
+        api.get('/api/user/car'),
+        api.get('/api/user/onboarding-status')
       ])
       if (locRes.success) setLocations(locRes.data)
       if (routeRes.success) setRoutes(routeRes.data)
@@ -229,7 +230,11 @@ export default function DriverApp() {
       if (badgeRes.success) setBadges(badgeRes.data)
       if (skinRes.success) setSkins(skinRes.data)
       if (famRes.success) setFamily(famRes.data)
-      if (userRes.success) setUserData(userRes.data)
+      if (userRes.success) {
+        setUserData(userRes.data)
+        setUserPlan(userRes.data.plan || 'basic')
+        setGemMultiplier(userRes.data.gem_multiplier || 1)
+      }
       if (challengeRes.success) setChallenges(challengeRes.data)
       if (carRes.success) {
         setUserCar({
@@ -238,9 +243,16 @@ export default function DriverApp() {
           color: carRes.data.color || 'midnight-black',
         })
         setOwnedColors(carRes.data.owned_colors || [])
-        // Show onboarding if not completed
-        if (!carRes.data.has_completed_onboarding) {
-          setShowCarOnboarding(true)
+      }
+      
+      // Check onboarding status - show plan selection first, then car onboarding
+      if (onboardingRes.success) {
+        if (!onboardingRes.data.onboarding_complete) {
+          if (!onboardingRes.data.plan_selected) {
+            setShowPlanSelection(true)
+          } else if (!onboardingRes.data.car_selected) {
+            setShowCarOnboarding(true)
+          }
         }
       }
     } catch (e) {
