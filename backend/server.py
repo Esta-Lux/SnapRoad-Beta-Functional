@@ -286,15 +286,15 @@ users_db = {
         "email": "sarah@example.com",
         "gems": 12400,
         "level": 42,
-        "xp": 105000,  # XP system
-        "xp_to_next_level": 23500,  # XP needed for level 43
+        "xp": 512500,  # Correct XP for level 42 + some progress
+        "xp_to_next_level": 23000,  # XP needed for level 43 (2500 + 41*500)
         "safety_score": 87,
         "streak": 14,
-        "safe_drive_streak": 3,  # Consecutive safe drives
+        "safe_drive_streak": 3,
         "total_miles": 2847,
         "total_trips": 156,
         "badges_earned": [1, 2, 3, 4, 5, 21, 22, 51, 81, 82, 101],
-        "community_badges": [1, 2, 3],  # Community badges (no progress bars)
+        "community_badges": [1, 2, 3],
         "rank": 42,
         "state": "OH",
         "is_premium": True,
