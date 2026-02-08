@@ -1347,12 +1347,24 @@ export default function DriverApp() {
   // Profile Tab
   const renderProfile = () => (
     <div className="flex-1 bg-slate-100 overflow-auto">
-      {/* Header */}
+      {/* Header with Car */}
       <div className="bg-gradient-to-b from-blue-500 to-blue-600 px-4 pt-4 pb-6">
         <div className="flex items-center gap-3">
-          <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center text-blue-500 font-bold text-xl">
-            {userData.name?.split(' ').map((n: string) => n[0]).join('')}
-          </div>
+          {/* User Avatar with Car */}
+          <button 
+            onClick={() => setShowCarStudio(true)}
+            className="relative w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center overflow-hidden group"
+          >
+            <ProfileCar 
+              category={userCar.category as any}
+              color={userCar.color as any}
+              size={56}
+            />
+            {/* Edit overlay */}
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <Edit2 className="text-white" size={16} />
+            </div>
+          </button>
           <div className="flex-1">
             <h1 className="text-lg font-bold text-white">{userData.name}</h1>
             <div className="flex items-center gap-2">
@@ -1390,13 +1402,36 @@ export default function DriverApp() {
 
       {profileTab === 'overview' && (
         <div className="p-4 space-y-2">
+          {/* My Car Card */}
+          <button 
+            onClick={() => setShowCarStudio(true)}
+            className="w-full bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-4 flex items-center gap-4 shadow-lg"
+            data-testid="profile-my-car"
+          >
+            <div className="w-16 h-12 flex items-center justify-center">
+              <ProfileCar 
+                category={userCar.category as any}
+                color={userCar.color as any}
+                size={64}
+              />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-white font-semibold">My Car</p>
+              <p className="text-slate-400 text-xs">
+                {CAR_COLORS[userCar.color as keyof typeof CAR_COLORS]?.name || 'Custom'} {userCar.category}
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-amber-400 text-xs">Customize →</span>
+            </div>
+          </button>
+
           {[
             { icon: Trophy, label: 'Achievements', value: `${userData.badges_earned_count || 11}/160 badges`, action: () => setShowBadgesGrid(true) },
             { icon: Route, label: 'My Routes', value: `${routes.length} saved`, action: () => setActiveTab('routes') },
             { icon: History, label: 'Trip History', value: `${userData.total_trips} trips`, action: () => setShowTripHistory(true) },
             { icon: Gem, label: 'Gem History', value: '+2,450 this month', action: () => setShowGemHistory(true) },
             { icon: Users, label: 'Friends', value: `${userData.friends_count || 0} friends`, action: () => setShowFriendsHub(true) },
-            { icon: Car, label: 'Car Showroom', value: 'Customize your ride', action: () => setShowCarShowroom(true) },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`profile-${item.label.toLowerCase().replace(' ', '-')}`}
               className="w-full bg-white rounded-xl p-4 flex items-center gap-3 shadow-sm hover:shadow-md">
