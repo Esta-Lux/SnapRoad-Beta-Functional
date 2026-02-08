@@ -1398,6 +1398,22 @@ export default function DriverApp() {
       {/* Challenges Sub-tab */}
       {rewardsTab === 'challenges' && (
         <div className="p-4">
+          {/* Challenge History Button */}
+          <button 
+            onClick={() => setShowChallengeHistory(true)}
+            className="w-full bg-gradient-to-r from-red-500 to-orange-500 rounded-xl p-4 mb-4 flex items-center gap-3 shadow-lg"
+            data-testid="view-challenge-history"
+          >
+            <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+              <Swords className="text-white" size={20} />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-white font-semibold text-sm">Challenge History</p>
+              <p className="text-red-100 text-xs">View past battles & badges</p>
+            </div>
+            <ChevronRight className="text-white/80" size={18} />
+          </button>
+
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-slate-900 font-semibold">Weekly Challenges</h3>
