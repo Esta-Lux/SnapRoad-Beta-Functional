@@ -36,6 +36,7 @@ import DrivingScore from './components/DrivingScore'
 import ChallengeHistory from './components/ChallengeHistory'
 import RedemptionPopup from './components/RedemptionPopup'
 import WeeklyRecap from './components/WeeklyRecap'
+import OrionOfferAlerts from './components/OrionOfferAlerts'
 import { NavMarker, ProfileCar, CAR_COLORS } from './components/Car3D'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
