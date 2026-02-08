@@ -1,3 +1,6 @@
+# Additional imports at top - will be merged
+from datetime import datetime, timedelta
+import random
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
