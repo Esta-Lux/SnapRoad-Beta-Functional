@@ -309,13 +309,14 @@ users_db = {
     }
 }
 
-# Generate sample users for leaderboard
-STATES = ["CA", "TX", "FL", "NY", "PA", "IL", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI"]
+# Generate sample users for leaderboard - MORE Ohio users for focus
+STATES = ["OH", "OH", "OH", "OH", "CA", "TX", "FL", "NY", "PA", "IL", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN"]  # Weighted toward Ohio
 FIRST_NAMES = ["James", "Emma", "Liam", "Olivia", "Noah", "Ava", "Oliver", "Isabella", "Elijah", "Sophia", "Lucas", "Mia", "Mason", "Charlotte", "Ethan", "Amelia", "Aiden", "Harper", "Jacob", "Evelyn"]
 LAST_NAMES = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Anderson", "Taylor", "Thomas", "Moore", "Jackson", "Martin", "Lee", "Thompson", "White", "Harris"]
 
 for i in range(100):
     uid = str(123457 + i)
+    is_premium = random.choice([True, False])
     users_db[uid] = {
         "id": uid,
         "name": f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
@@ -328,7 +329,9 @@ for i in range(100):
         "badges_earned": random.sample(range(1, 161), random.randint(3, 30)),
         "rank": i + 1,
         "state": random.choice(STATES),
-        "is_premium": random.choice([True, False]),
+        "is_premium": is_premium,
+        "plan": "premium" if is_premium else "basic",
+        "gem_multiplier": 2 if is_premium else 1,
         "member_since": "2025",
         "friends": [],
         "friend_requests": [],
@@ -336,6 +339,7 @@ for i in range(100):
         "equipped_car": 1,
         "owned_skins": [1, 2],
         "equipped_skin": 1,
+        "onboarding_complete": True,
     }
 
 # Current user reference
