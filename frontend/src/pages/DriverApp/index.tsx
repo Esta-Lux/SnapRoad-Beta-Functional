@@ -193,6 +193,8 @@ export default function DriverApp() {
     if (isNavigating) {
       const interval = setInterval(() => {
         setCurrentSpeed(Math.floor(Math.random() * 20) + 55)
+        // Simulate car direction changes while navigating
+        setCarHeading(prev => prev + (Math.random() > 0.5 ? 5 : -5))
       }, 3000)
       return () => clearInterval(interval)
     } else {
@@ -203,7 +205,7 @@ export default function DriverApp() {
   // Load all data from API
   const loadData = async () => {
     try {
-      const [locRes, routeRes, offerRes, badgeRes, skinRes, famRes, userRes, challengeRes] = await Promise.all([
+      const [locRes, routeRes, offerRes, badgeRes, skinRes, famRes, userRes, challengeRes, carRes] = await Promise.all([
         api.get('/api/locations'),
         api.get('/api/routes'),
         api.get('/api/offers'),
@@ -211,7 +213,8 @@ export default function DriverApp() {
         api.get('/api/skins'),
         api.get('/api/family/members'),
         api.get('/api/user/profile'),
-        api.get('/api/challenges')
+        api.get('/api/challenges'),
+        api.get('/api/user/car')
       ])
       if (locRes.success) setLocations(locRes.data)
       if (routeRes.success) setRoutes(routeRes.data)
@@ -221,8 +224,63 @@ export default function DriverApp() {
       if (famRes.success) setFamily(famRes.data)
       if (userRes.success) setUserData(userRes.data)
       if (challengeRes.success) setChallenges(challengeRes.data)
+      if (carRes.success) {
+        setUserCar({
+          category: carRes.data.category || 'sedan',
+          variant: carRes.data.variant || 'sedan-classic',
+          color: carRes.data.color || 'midnight-black',
+        })
+        setOwnedColors(carRes.data.owned_colors || [])
+        // Show onboarding if not completed
+        if (!carRes.data.has_completed_onboarding) {
+          setShowCarOnboarding(true)
+        }
+      }
     } catch (e) {
       console.log('Using mock data')
+    }
+  }
+
+  // Handle car customization
+  const handleCarChange = async (car: { category: string; variant: string; color: string }) => {
+    try {
+      const res = await api.post('/api/user/car', car)
+      if (res.success) {
+        setUserCar(car)
+        toast.success('Car updated!')
+      }
+    } catch (e) {
+      setUserCar(car)
+      toast.success('Car updated!')
+    }
+  }
+
+  const handlePurchaseColor = async (colorKey: string, price: number) => {
+    try {
+      const res = await api.post(`/api/user/car/color/${colorKey}/purchase`)
+      if (res.success) {
+        setOwnedColors(prev => [...prev, colorKey])
+        setUserData((prev: any) => ({ ...prev, gems: res.new_gems }))
+        toast.success(`Color purchased for ${price} gems!`)
+      } else {
+        toast.error(res.message)
+      }
+    } catch (e) {
+      // Mock success
+      setOwnedColors(prev => [...prev, colorKey])
+      setUserData((prev: any) => ({ ...prev, gems: prev.gems - price }))
+      toast.success(`Color purchased for ${price} gems!`)
+    }
+  }
+
+  const handleCarOnboardingComplete = async (selection: { category: string; variant: string; color: string }) => {
+    setUserCar(selection)
+    setShowCarOnboarding(false)
+    try {
+      await api.post('/api/user/car', selection)
+      toast.success('Welcome to SnapRoad! 🚗')
+    } catch (e) {
+      toast.success('Welcome to SnapRoad! 🚗')
     }
   }
 
