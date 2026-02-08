@@ -39,8 +39,8 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: AuthModalProps) {
     e.preventDefault()
     setLoading(true)
     
-    // Simulate auth
-    await new Promise(r => setTimeout(r, 1000))
+    // Reset user state for fresh experience (especially for drivers)
+    await resetUserSession(role)
     
     // Navigate based on role
     if (role === 'driver') {
