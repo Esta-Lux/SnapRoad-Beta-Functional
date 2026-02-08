@@ -1745,6 +1745,22 @@ export default function DriverApp() {
               <ChevronRight className="text-slate-400" size={16} />
             </button>
           ))}
+          
+          {/* Share Last Trip Card */}
+          <button 
+            onClick={handleShareTrip} 
+            data-testid="share-trip-score-btn"
+            className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl p-4 flex items-center gap-3 shadow-lg hover:shadow-xl mt-3"
+          >
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+              <Share2 className="text-white" size={18} />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-sm font-semibold text-white">Share Trip Score</p>
+              <p className="text-xs text-blue-200">Show off your safe driving!</p>
+            </div>
+            <ChevronRight className="text-white/80" size={16} />
+          </button>
         </div>
       )}
 
