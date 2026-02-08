@@ -286,16 +286,20 @@ users_db = {
         "email": "sarah@example.com",
         "gems": 12400,
         "level": 42,
+        "xp": 105000,  # XP system
+        "xp_to_next_level": 23500,  # XP needed for level 43
         "safety_score": 87,
         "streak": 14,
+        "safe_drive_streak": 3,  # Consecutive safe drives
         "total_miles": 2847,
         "total_trips": 156,
         "badges_earned": [1, 2, 3, 4, 5, 21, 22, 51, 81, 82, 101],
+        "community_badges": [1, 2, 3],  # Community badges (no progress bars)
         "rank": 42,
-        "state": "OH",  # Changed to Ohio as focus state
+        "state": "OH",
         "is_premium": True,
-        "plan": "premium",  # NEW: User's subscription plan
-        "gem_multiplier": 2,  # NEW: Premium gets 2x
+        "plan": "premium",
+        "gem_multiplier": 2,
         "member_since": "Jan 2025",
         "friends": ["123457", "123458"],
         "friend_requests": [],
@@ -303,7 +307,9 @@ users_db = {
         "equipped_car": 1,
         "owned_skins": [1, 2],
         "equipped_skin": 1,
-        "onboarding_complete": False,  # NEW: Track onboarding status
+        "onboarding_complete": False,
+        "reports_posted": 12,
+        "reports_upvotes_received": 47,
     }
 }
 
