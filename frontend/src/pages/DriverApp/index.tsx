@@ -1398,13 +1398,13 @@ export default function DriverApp() {
       {profileTab === 'settings' && (
         <div className="p-4 space-y-2">
           {[
-            { icon: Bell, label: 'Notifications', desc: 'Manage alerts', action: () => setShowNotificationSettings(true) },
-            { icon: Volume2, label: 'Voice Settings', desc: isMuted ? 'Muted' : 'Active', action: handleToggleVoice },
-            { icon: Layers, label: 'Map Widgets', desc: 'Customize display', action: () => setShowWidgetSettings(true) },
-            { icon: Fuel, label: 'Fuel Tracker', desc: 'Log fill-ups', action: () => setShowFuelTracker(true) },
-            { icon: HelpCircle, label: 'Help & Support', desc: 'Get assistance', action: () => setShowHelpSupport(true) },
+            { icon: Bell, label: 'Notifications', id: 'notifications', desc: 'Manage alerts', action: () => setShowNotificationSettings(true) },
+            { icon: Volume2, label: 'Voice Settings', id: 'voice', desc: isMuted ? 'Muted' : 'Active', action: handleToggleVoice },
+            { icon: Layers, label: 'Map Widgets', id: 'widgets', desc: 'Customize display', action: () => setShowWidgetSettings(true) },
+            { icon: Fuel, label: 'Fuel Tracker', id: 'fuel', desc: 'Log fill-ups', action: () => setShowFuelTracker(true) },
+            { icon: HelpCircle, label: 'Help & Support', id: 'help', desc: 'Get assistance', action: () => setShowHelpSupport(true) },
           ].map((item, i) => (
-            <button key={i} onClick={item.action} data-testid={`settings-${item.label.toLowerCase().replace(' ', '-')}`}
+            <button key={i} onClick={item.action} data-testid={`settings-${item.id}`}
               className="w-full bg-white rounded-xl p-4 flex items-center gap-3 shadow-sm">
               <item.icon className="text-slate-600" size={20} />
               <div className="flex-1 text-left">
