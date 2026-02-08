@@ -1297,3 +1297,427 @@ def complete_trip():
         }
     }
 
+# ==================== XP & LEVELING SYSTEM ====================
+# XP Values (configurable - easy to change for your deployment)
+XP_CONFIG = {
+    "photo_report": 500,       # Posting a photo/hazard report
+    "offer_redemption": 700,   # Redeeming an offer
+    "safe_drive": 1000,        # Safe drive report
+    "consistent_driving": 500, # 3 consecutive safe drives bonus
+    "safety_score_penalty": -500,  # Safety score went down
+    "base_xp_to_level": 2500,  # XP for level 1→2
+    "xp_increment": 500,       # Additional XP needed per level
+    "max_level": 99,
+}
+
+class XPEvent(BaseModel):
+    event_type: str  # photo_report, offer_redemption, safe_drive, safety_penalty, consistent_bonus
+    amount: Optional[int] = None  # Override default XP if needed
+
+def add_xp_to_user(user_id: str, xp_amount: int) -> dict:
+    """Add XP to user and handle level ups/downs. Returns level change info."""
+    if user_id not in users_db:
+        return {"error": "User not found"}
+    
+    user = users_db[user_id]
+    old_level = user.get("level", 1)
+    old_xp = user.get("xp", 0)
+    
+    new_xp = max(0, old_xp + xp_amount)  # XP can't go below 0
+    users_db[user_id]["xp"] = new_xp
+    
+    # Calculate new level based on total XP
+    new_level = 1
+    xp_threshold = 0
+    for lvl in range(2, XP_CONFIG["max_level"] + 1):
+        xp_needed = XP_CONFIG["base_xp_to_level"] + (lvl - 2) * XP_CONFIG["xp_increment"]
+        xp_threshold += xp_needed
+        if new_xp >= xp_threshold:
+            new_level = lvl
+        else:
+            break
+    
+    # Cap at max level
+    new_level = min(new_level, XP_CONFIG["max_level"])
+    users_db[user_id]["level"] = new_level
+    
+    # Calculate XP to next level
+    if new_level < XP_CONFIG["max_level"]:
+        xp_to_next = XP_CONFIG["base_xp_to_level"] + (new_level - 1) * XP_CONFIG["xp_increment"]
+        xp_at_current_level = calculate_xp_for_level(new_level)
+        xp_progress = new_xp - xp_at_current_level
+        users_db[user_id]["xp_to_next_level"] = xp_to_next
+        users_db[user_id]["xp_progress"] = xp_progress
+    else:
+        users_db[user_id]["xp_to_next_level"] = 0
+        users_db[user_id]["xp_progress"] = 0
+    
+    level_change = new_level - old_level
+    
+    return {
+        "old_level": old_level,
+        "new_level": new_level,
+        "level_change": level_change,
+        "leveled_up": level_change > 0,
+        "leveled_down": level_change < 0,
+        "xp_gained": xp_amount,
+        "total_xp": new_xp,
+        "xp_to_next_level": users_db[user_id].get("xp_to_next_level", 0),
+    }
+
+@app.post("/api/xp/add")
+def add_xp(event: XPEvent):
+    """Add XP based on event type"""
+    event_type = event.event_type.lower()
+    
+    # Get XP amount from config or use override
+    xp_map = {
+        "photo_report": XP_CONFIG["photo_report"],
+        "offer_redemption": XP_CONFIG["offer_redemption"],
+        "safe_drive": XP_CONFIG["safe_drive"],
+        "consistent_bonus": XP_CONFIG["consistent_driving"],
+        "safety_penalty": XP_CONFIG["safety_score_penalty"],
+    }
+    
+    xp_amount = event.amount if event.amount is not None else xp_map.get(event_type, 0)
+    
+    if xp_amount == 0:
+        return {"success": False, "message": f"Unknown event type: {event_type}"}
+    
+    result = add_xp_to_user(current_user_id, xp_amount)
+    
+    message = f"+{xp_amount} XP" if xp_amount > 0 else f"{xp_amount} XP"
+    if result.get("leveled_up"):
+        message += f" 🎉 Level up! Now level {result['new_level']}"
+    elif result.get("leveled_down"):
+        message += f" 📉 Level down to {result['new_level']}"
+    
+    return {
+        "success": True,
+        "message": message,
+        "data": result
+    }
+
+@app.get("/api/xp/status")
+def get_xp_status():
+    """Get user's current XP and level status"""
+    user = users_db.get(current_user_id, {})
+    level = user.get("level", 1)
+    xp = user.get("xp", 0)
+    
+    # Calculate progress to next level
+    xp_at_current = calculate_xp_for_level(level)
+    xp_to_next = calculate_xp_to_next_level(level) if level < 99 else 0
+    xp_progress = xp - xp_at_current
+    progress_percent = (xp_progress / xp_to_next * 100) if xp_to_next > 0 else 100
+    
+    return {
+        "success": True,
+        "data": {
+            "level": level,
+            "total_xp": xp,
+            "xp_progress": xp_progress,
+            "xp_to_next_level": xp_to_next,
+            "progress_percent": round(progress_percent, 1),
+            "is_max_level": level >= 99,
+        }
+    }
+
+@app.get("/api/xp/config")
+def get_xp_config():
+    """Get XP configuration (for client-side display)"""
+    return {"success": True, "data": XP_CONFIG}
+
+# ==================== ROAD REPORTS ====================
+class RoadReport(BaseModel):
+    type: str  # hazard, accident, construction, police, weather, other
+    title: str
+    description: Optional[str] = ""
+    lat: float
+    lng: float
+    photo_url: Optional[str] = None
+
+@app.get("/api/reports")
+def get_road_reports(lat: Optional[float] = None, lng: Optional[float] = None, radius: float = 10):
+    """Get road reports. Optionally filter by location within radius (km)."""
+    reports = road_reports_db
+    
+    # If location provided, filter by proximity (simplified - in production use proper geo queries)
+    if lat is not None and lng is not None:
+        # Simple distance filter (not accurate for large distances, but works for demo)
+        def is_nearby(report):
+            dlat = abs(report["lat"] - lat)
+            dlng = abs(report["lng"] - lng)
+            # Rough km conversion (1 degree ≈ 111km)
+            dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+            return dist <= radius
+        reports = [r for r in reports if is_nearby(r)]
+    
+    return {
+        "success": True,
+        "data": reports,
+        "total": len(reports)
+    }
+
+@app.post("/api/reports")
+def create_road_report(report: RoadReport):
+    """Create a new road report. Awards XP and gems."""
+    user = users_db.get(current_user_id, {})
+    
+    new_id = max([r["id"] for r in road_reports_db], default=0) + 1
+    new_report = {
+        "id": new_id,
+        "user_id": current_user_id,
+        "type": report.type,
+        "title": report.title,
+        "description": report.description,
+        "lat": report.lat,
+        "lng": report.lng,
+        "photo_url": report.photo_url,
+        "upvotes": 0,
+        "upvoters": [],
+        "created_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now() + timedelta(hours=12)).isoformat(),
+        "verified": False,
+    }
+    road_reports_db.append(new_report)
+    
+    # Award XP for posting report
+    xp_result = add_xp_to_user(current_user_id, XP_CONFIG["photo_report"])
+    
+    # Update user stats
+    if current_user_id in users_db:
+        users_db[current_user_id]["reports_posted"] = user.get("reports_posted", 0) + 1
+    
+    # Check for community badge unlocks
+    badges_earned = check_community_badges(current_user_id)
+    
+    return {
+        "success": True,
+        "message": f"Report posted! +{XP_CONFIG['photo_report']} XP",
+        "data": {
+            "report": new_report,
+            "xp_result": xp_result,
+            "badges_earned": badges_earned
+        }
+    }
+
+@app.post("/api/reports/{report_id}/upvote")
+def upvote_report(report_id: int):
+    """Upvote a road report. Awards gems to the reporter."""
+    report = next((r for r in road_reports_db if r["id"] == report_id), None)
+    if not report:
+        return {"success": False, "message": "Report not found"}
+    
+    if current_user_id in report["upvoters"]:
+        return {"success": False, "message": "Already upvoted"}
+    
+    if report["user_id"] == current_user_id:
+        return {"success": False, "message": "Cannot upvote your own report"}
+    
+    # Add upvote
+    report["upvotes"] += 1
+    report["upvoters"].append(current_user_id)
+    
+    # Award gems to report creator (10 gems per upvote)
+    reporter_id = report["user_id"]
+    if reporter_id in users_db:
+        users_db[reporter_id]["gems"] = users_db[reporter_id].get("gems", 0) + 10
+        users_db[reporter_id]["reports_upvotes_received"] = users_db[reporter_id].get("reports_upvotes_received", 0) + 1
+        
+        # Check for community badge unlocks for reporter
+        check_community_badges(reporter_id)
+    
+    return {
+        "success": True,
+        "message": "Upvoted! Reporter earned 10 gems",
+        "data": {
+            "report_id": report_id,
+            "new_upvote_count": report["upvotes"],
+            "gems_awarded": 10
+        }
+    }
+
+@app.delete("/api/reports/{report_id}")
+def delete_report(report_id: int):
+    """Delete a road report (only owner can delete)"""
+    global road_reports_db
+    report = next((r for r in road_reports_db if r["id"] == report_id), None)
+    
+    if not report:
+        return {"success": False, "message": "Report not found"}
+    
+    if report["user_id"] != current_user_id:
+        return {"success": False, "message": "Can only delete your own reports"}
+    
+    road_reports_db = [r for r in road_reports_db if r["id"] != report_id]
+    return {"success": True, "message": "Report deleted"}
+
+@app.get("/api/reports/my")
+def get_my_reports():
+    """Get current user's reports"""
+    my_reports = [r for r in road_reports_db if r["user_id"] == current_user_id]
+    total_upvotes = sum(r["upvotes"] for r in my_reports)
+    
+    return {
+        "success": True,
+        "data": my_reports,
+        "stats": {
+            "total_reports": len(my_reports),
+            "total_upvotes": total_upvotes,
+            "gems_from_upvotes": total_upvotes * 10
+        }
+    }
+
+# ==================== COMMUNITY BADGES ====================
+def check_community_badges(user_id: str) -> list:
+    """Check and award community badges. Returns list of newly earned badges."""
+    if user_id not in users_db:
+        return []
+    
+    user = users_db[user_id]
+    earned = user.get("community_badges", [])
+    newly_earned = []
+    
+    reports_count = user.get("reports_posted", 0)
+    upvotes_count = user.get("reports_upvotes_received", 0)
+    
+    badge_checks = {
+        1: reports_count >= 1,  # First Report
+        2: upvotes_count >= 10,  # Helpful Driver
+        3: reports_count >= 10,  # Road Guardian
+        4: upvotes_count >= 50,  # Community Hero
+        8: upvotes_count >= 100,  # Eagle Eye
+        17: upvotes_count >= 200,  # Influencer
+        18: reports_count >= 100,  # Veteran Reporter
+        19: upvotes_count >= 500,  # Community Champion
+    }
+    
+    for badge_id, condition in badge_checks.items():
+        if condition and badge_id not in earned:
+            earned.append(badge_id)
+            newly_earned.append(badge_id)
+    
+    users_db[user_id]["community_badges"] = earned
+    return newly_earned
+
+@app.get("/api/badges/community")
+def get_community_badges():
+    """Get all community badges with user's earn status"""
+    user = users_db.get(current_user_id, {})
+    earned_ids = set(user.get("community_badges", []))
+    
+    badges = []
+    for badge in COMMUNITY_BADGES:
+        badges.append({
+            **badge,
+            "earned": badge["id"] in earned_ids,
+        })
+    
+    return {
+        "success": True,
+        "data": badges,
+        "earned_count": len(earned_ids),
+        "total_count": len(COMMUNITY_BADGES)
+    }
+
+# ==================== SAFE DRIVING & TRIP COMPLETION ====================
+class TripResult(BaseModel):
+    distance: float  # miles
+    duration: int  # minutes
+    safety_metrics: dict  # {hard_brakes: 0, speeding_incidents: 0, phone_usage: 0}
+
+@app.post("/api/trips/complete-with-safety")
+def complete_trip_with_safety(trip: TripResult):
+    """Complete a trip with safety metrics. Awards XP based on driving behavior."""
+    user = users_db.get(current_user_id, {})
+    
+    # Calculate if it was a safe drive
+    metrics = trip.safety_metrics
+    is_safe_drive = (
+        metrics.get("hard_brakes", 0) == 0 and
+        metrics.get("speeding_incidents", 0) == 0 and
+        metrics.get("phone_usage", 0) == 0
+    )
+    
+    # Calculate safety score change
+    old_safety_score = user.get("safety_score", 85)
+    penalties = (
+        metrics.get("hard_brakes", 0) * 2 +
+        metrics.get("speeding_incidents", 0) * 3 +
+        metrics.get("phone_usage", 0) * 5
+    )
+    
+    # Adjust safety score
+    if is_safe_drive:
+        new_safety_score = min(100, old_safety_score + 1)
+    else:
+        new_safety_score = max(0, old_safety_score - penalties)
+    
+    safety_improved = new_safety_score > old_safety_score
+    safety_dropped = new_safety_score < old_safety_score
+    
+    # Update user
+    if current_user_id in users_db:
+        users_db[current_user_id]["safety_score"] = new_safety_score
+        users_db[current_user_id]["total_trips"] = user.get("total_trips", 0) + 1
+        users_db[current_user_id]["total_miles"] = user.get("total_miles", 0) + trip.distance
+    
+    # XP rewards/penalties
+    xp_changes = []
+    total_xp = 0
+    
+    if is_safe_drive:
+        # Safe drive XP
+        total_xp += XP_CONFIG["safe_drive"]
+        xp_changes.append({"type": "safe_drive", "xp": XP_CONFIG["safe_drive"]})
+        
+        # Update safe drive streak
+        old_streak = user.get("safe_drive_streak", 0)
+        new_streak = old_streak + 1
+        users_db[current_user_id]["safe_drive_streak"] = new_streak
+        
+        # Consistent driving bonus (every 3 safe drives)
+        if new_streak % 3 == 0:
+            total_xp += XP_CONFIG["consistent_driving"]
+            xp_changes.append({"type": "consistent_bonus", "xp": XP_CONFIG["consistent_driving"]})
+    else:
+        # Reset streak
+        users_db[current_user_id]["safe_drive_streak"] = 0
+        
+        # Safety penalty
+        if safety_dropped:
+            total_xp += XP_CONFIG["safety_score_penalty"]  # Negative
+            xp_changes.append({"type": "safety_penalty", "xp": XP_CONFIG["safety_score_penalty"]})
+    
+    # Apply XP
+    xp_result = add_xp_to_user(current_user_id, total_xp) if total_xp != 0 else {}
+    
+    # Award gems (base 5, multiplied by plan)
+    gem_multiplier = user.get("gem_multiplier", 1)
+    gems_earned = 5 * gem_multiplier
+    if current_user_id in users_db:
+        users_db[current_user_id]["gems"] = user.get("gems", 0) + gems_earned
+    
+    return {
+        "success": True,
+        "message": "Trip completed!",
+        "data": {
+            "is_safe_drive": is_safe_drive,
+            "safety_score": {
+                "old": old_safety_score,
+                "new": new_safety_score,
+                "change": new_safety_score - old_safety_score,
+            },
+            "xp": {
+                "changes": xp_changes,
+                "total_earned": total_xp,
+                "result": xp_result,
+            },
+            "gems": {
+                "earned": gems_earned,
+                "multiplier": gem_multiplier,
+            },
+            "safe_drive_streak": users_db[current_user_id].get("safe_drive_streak", 0),
+        }
+    }
