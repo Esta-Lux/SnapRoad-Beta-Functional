@@ -861,22 +861,174 @@ def toggle_widget_collapse(widget_id: str):
         return {"success": True, "message": "Widget collapse toggled"}
     raise HTTPException(status_code=404, detail="Widget not found")
 
-# ==================== OFFERS ====================
+# ==================== OFFERS (TIERED DISCOUNTS) ====================
+# Offers database - stores all available offers
+offers_db = []
+
+# Offer configuration
+OFFER_CONFIG = {
+    "free_discount_percent": 6,    # Free users get 6% discount
+    "premium_discount_percent": 18, # Premium users get 18% discount
+    "gem_reward_multiplier": 1,     # Base gems for redeeming (multiplied by plan)
+}
+
+class OfferCreate(BaseModel):
+    business_name: str
+    business_type: str  # gas, cafe, restaurant, carwash, etc.
+    description: str
+    base_gems: int  # Gems awarded for redemption
+    lat: float
+    lng: float
+    expires_hours: int = 24
+    is_admin_offer: bool = False  # True = same discount for all, False = tiered
+
 @app.get("/api/offers")
-def get_offers(offer_type: Optional[str] = None):
-    offers = [
-        {"id": 1, "name": "Shell Gas", "type": "gas", "gems": 50, "discount": "10¢/gal off", "distance": "0.5 mi", "trending": True, "expires": "2h", "rating": 4.5},
-        {"id": 2, "name": "Starbucks", "type": "cafe", "gems": 30, "discount": "20% off", "distance": "0.8 mi", "trending": False, "expires": "1d", "rating": 4.8},
-        {"id": 3, "name": "QuickMart", "type": "gas", "gems": 45, "discount": "15¢/gal off", "distance": "1.2 mi", "trending": True, "expires": "5h", "rating": 4.2},
-        {"id": 4, "name": "Dunkin", "type": "cafe", "gems": 25, "discount": "Free donut", "distance": "1.5 mi", "trending": False, "expires": "3d", "rating": 4.3},
-    ]
-    if offer_type:
-        offers = [o for o in offers if o["type"] == offer_type]
-    return {"success": True, "data": offers, "total_savings": "$127.50"}
+def get_offers(offer_type: Optional[str] = None, lat: Optional[float] = None, lng: Optional[float] = None):
+    """Get available offers. Discounts are calculated based on user's plan."""
+    user = users_db.get(current_user_id, {})
+    is_premium = user.get("is_premium", False)
+    
+    result_offers = []
+    for offer in offers_db:
+        # Skip expired offers
+        if datetime.fromisoformat(offer["expires_at"]) < datetime.now():
+            continue
+            
+        # Filter by type if specified
+        if offer_type and offer["business_type"] != offer_type:
+            continue
+        
+        # Calculate discount based on plan and offer type
+        if offer["is_admin_offer"]:
+            # Admin offers: same discount for everyone (use premium rate)
+            discount_percent = OFFER_CONFIG["premium_discount_percent"]
+        else:
+            # Business offers: tiered discount
+            discount_percent = OFFER_CONFIG["premium_discount_percent"] if is_premium else OFFER_CONFIG["free_discount_percent"]
+        
+        # Calculate gem reward
+        gem_multiplier = user.get("gem_multiplier", 1)
+        gems_reward = offer["base_gems"] * gem_multiplier
+        
+        result_offers.append({
+            "id": offer["id"],
+            "business_name": offer["business_name"],
+            "business_type": offer["business_type"],
+            "description": offer["description"],
+            "discount_percent": discount_percent,
+            "gems_reward": gems_reward,
+            "lat": offer["lat"],
+            "lng": offer["lng"],
+            "expires_at": offer["expires_at"],
+            "is_admin_offer": offer["is_admin_offer"],
+            "is_premium_offer": not offer["is_admin_offer"],
+            "created_by": offer.get("created_by", "admin"),
+            "redeemed": offer["id"] in user.get("redeemed_offers", []),
+        })
+    
+    return {
+        "success": True, 
+        "data": result_offers, 
+        "user_plan": user.get("plan", "basic"),
+        "discount_info": {
+            "free_discount": OFFER_CONFIG["free_discount_percent"],
+            "premium_discount": OFFER_CONFIG["premium_discount_percent"],
+        }
+    }
+
+@app.post("/api/offers")
+def create_offer(offer: OfferCreate):
+    """Create a new offer (for business dashboard or admin)"""
+    new_id = max([o["id"] for o in offers_db], default=0) + 1
+    new_offer = {
+        "id": new_id,
+        "business_name": offer.business_name,
+        "business_type": offer.business_type,
+        "description": offer.description,
+        "base_gems": offer.base_gems,
+        "lat": offer.lat,
+        "lng": offer.lng,
+        "is_admin_offer": offer.is_admin_offer,
+        "created_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
+        "created_by": "admin" if offer.is_admin_offer else "business",
+        "redemption_count": 0,
+    }
+    offers_db.append(new_offer)
+    return {"success": True, "message": "Offer created", "data": new_offer}
 
 @app.post("/api/offers/{offer_id}/redeem")
 def redeem_offer(offer_id: int):
-    return {"success": True, "message": "Offer redeemed!", "data": {"redemption_code": f"SNAP{offer_id}2025"}}
+    """Redeem an offer and award gems + XP"""
+    user = users_db.get(current_user_id, {})
+    offer = next((o for o in offers_db if o["id"] == offer_id), None)
+    
+    if not offer:
+        return {"success": False, "message": "Offer not found"}
+    
+    if offer_id in user.get("redeemed_offers", []):
+        return {"success": False, "message": "Already redeemed"}
+    
+    # Calculate rewards
+    gem_multiplier = user.get("gem_multiplier", 1)
+    gems_earned = offer["base_gems"] * gem_multiplier
+    is_premium = user.get("is_premium", False)
+    
+    if offer["is_admin_offer"]:
+        discount_percent = OFFER_CONFIG["premium_discount_percent"]
+    else:
+        discount_percent = OFFER_CONFIG["premium_discount_percent"] if is_premium else OFFER_CONFIG["free_discount_percent"]
+    
+    # Update user
+    if current_user_id in users_db:
+        users_db[current_user_id]["gems"] = user.get("gems", 0) + gems_earned
+        if "redeemed_offers" not in users_db[current_user_id]:
+            users_db[current_user_id]["redeemed_offers"] = []
+        users_db[current_user_id]["redeemed_offers"].append(offer_id)
+    
+    # Award XP for redemption
+    xp_result = add_xp_to_user(current_user_id, XP_CONFIG["offer_redemption"])
+    
+    # Update offer stats
+    offer["redemption_count"] = offer.get("redemption_count", 0) + 1
+    
+    return {
+        "success": True, 
+        "message": f"Offer redeemed! +{gems_earned} gems, +{XP_CONFIG['offer_redemption']} XP",
+        "data": {
+            "redemption_code": f"SNAP{offer_id}{datetime.now().strftime('%H%M')}",
+            "discount_percent": discount_percent,
+            "gems_earned": gems_earned,
+            "xp_earned": XP_CONFIG["offer_redemption"],
+            "xp_result": xp_result,
+        }
+    }
+
+@app.get("/api/offers/nearby")
+def get_nearby_offers(lat: float, lng: float, radius: float = 5.0):
+    """Get offers within radius (km) of location"""
+    user = users_db.get(current_user_id, {})
+    is_premium = user.get("is_premium", False)
+    
+    nearby = []
+    for offer in offers_db:
+        if datetime.fromisoformat(offer["expires_at"]) < datetime.now():
+            continue
+        
+        # Simple distance calc
+        dlat = abs(offer["lat"] - lat)
+        dlng = abs(offer["lng"] - lng)
+        dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+        
+        if dist <= radius:
+            discount_percent = OFFER_CONFIG["premium_discount_percent"] if (is_premium or offer["is_admin_offer"]) else OFFER_CONFIG["free_discount_percent"]
+            nearby.append({
+                **offer,
+                "distance_km": round(dist, 2),
+                "discount_percent": discount_percent,
+            })
+    
+    return {"success": True, "data": nearby}
 
 # ==================== INCIDENTS ====================
 @app.post("/api/incidents/report")
@@ -886,57 +1038,42 @@ def report_incident(report: ReportIncident):
 
 @app.get("/api/family/members")
 def get_family_members():
-    return {"success": True, "data": [
-        {"id": 1, "name": "Mom", "status": "driving", "location": "Highway 71 N", "battery": 78, "distance": "12 mi"},
-        {"id": 2, "name": "Dad", "status": "parked", "location": "Work", "battery": 45, "distance": "8 mi"},
-    ]}
+    """Get family members - returns empty for new users"""
+    return {"success": True, "data": []}
 
 # ==================== TRIP HISTORY ====================
 @app.get("/api/trips/history")
 def get_trip_history(month: Optional[str] = None, limit: int = 50):
-    """Get trip history with optional month filter (format: YYYY-MM)"""
-    trips = []
-    base_date = datetime.now()
+    """Get trip history - returns empty for new users"""
+    user = users_db.get(current_user_id, {})
     
-    routes = [
-        ("Home", "Work", 12.5, 25),
-        ("Work", "Home", 12.5, 28),
-        ("Home", "Gym", 5.2, 12),
-        ("Work", "School", 8.2, 18),
-        ("Home", "Grocery Store", 3.1, 8),
-        ("Downtown", "Airport", 22.4, 35),
-        ("Home", "Mom's House", 45.2, 52),
-    ]
+    # New users have no trip history
+    if user.get("total_trips", 0) == 0:
+        return {
+            "success": True,
+            "data": [],
+            "total": 0,
+            "stats": {
+                "total_trips": 0,
+                "total_miles": 0,
+                "avg_safety_score": 100,
+                "total_gems_earned": 0
+            }
+        }
     
-    for i in range(50):
-        trip_date = base_date - timedelta(days=i // 3, hours=random.randint(6, 20))
-        route = random.choice(routes)
-        trips.append({
-            "id": i + 1,
-            "date": trip_date.strftime("%Y-%m-%d"),
-            "time": trip_date.strftime("%I:%M %p"),
-            "origin": route[0],
-            "destination": route[1],
-            "distance": route[2] + random.uniform(-1, 1),
-            "duration": route[3] + random.randint(-5, 5),
-            "safety_score": random.randint(78, 100),
-            "gems_earned": random.randint(10, 50),
-        })
-    
-    if month:
-        trips = [t for t in trips if t["date"].startswith(month)]
-    
+    # For users with trips, return their actual stats
     return {
         "success": True,
-        "data": trips[:limit],
-        "total": len(trips),
+        "data": [],  # Would be populated from actual trip records
+        "total": user.get("total_trips", 0),
         "stats": {
-            "total_trips": 156,
-            "total_miles": 2847,
-            "avg_safety_score": 87,
-            "total_gems_earned": 12400
+            "total_trips": user.get("total_trips", 0),
+            "total_miles": user.get("total_miles", 0),
+            "avg_safety_score": user.get("safety_score", 100),
+            "total_gems_earned": user.get("gems", 0)
         }
     }
+
 
 # ==================== GEM HISTORY ====================
 @app.get("/api/gems/history")
