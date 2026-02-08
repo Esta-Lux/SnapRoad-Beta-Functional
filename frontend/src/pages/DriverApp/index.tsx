@@ -2307,9 +2307,13 @@ export default function DriverApp() {
       {/* Offers Modal */}
       <OffersModal
         isOpen={showOffersModal}
-        onClose={() => setShowOffersModal(false)}
+        onClose={() => {
+          setShowOffersModal(false)
+          setSelectedOfferId(null)
+        }}
         userPlan={userPlan}
         onRedeem={handleRedeemOffer}
+        selectedOfferId={selectedOfferId}
       />
       
       {/* Share Trip Score Modal */}
