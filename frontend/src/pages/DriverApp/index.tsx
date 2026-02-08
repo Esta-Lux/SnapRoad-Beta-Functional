@@ -1173,6 +1173,48 @@ export default function DriverApp() {
         onClose={() => setSelectedRoadStatus(null)}
       />
 
+      {/* Offer Gem Markers - Glowing markers for nearby offers */}
+      {offers.filter(o => !o.redeemed).slice(0, 5).map((offer, index) => {
+        // Position markers in a semi-circle around the user
+        // Each marker is offset from center based on offer's lat/lng difference from user
+        const latDiff = (offer.lat || userLocation.lat + (index * 0.003 - 0.006)) - userLocation.lat
+        const lngDiff = (offer.lng || userLocation.lng + (index * 0.004 - 0.008)) - userLocation.lng
+        
+        // Convert to pixel offsets (roughly 50px per 0.01 degree)
+        const xOffset = lngDiff * 5000  // Scale lng difference
+        const yOffset = -latDiff * 5000 // Scale lat difference (negative because y increases downward)
+        
+        // Clamp to reasonable bounds on the map
+        const clampedX = Math.max(-120, Math.min(120, xOffset))
+        const clampedY = Math.max(-80, Math.min(80, yOffset))
+        
+        return (
+          <div 
+            key={offer.id}
+            className="absolute z-[8]"
+            style={{ 
+              left: `calc(50% + ${clampedX}px)`,
+              top: `calc(50% + ${clampedY}px)`,
+              transform: 'translate(-50%, -50%)'
+            }}
+          >
+            <OfferMarker
+              offer={{
+                id: offer.id,
+                lat: offer.lat || userLocation.lat,
+                lng: offer.lng || userLocation.lng,
+                business_name: offer.business_name || offer.name || 'Offer',
+                discount_percent: offer.discount_percent || 6
+              }}
+              onClick={() => {
+                setSelectedOfferId(offer.id)
+                setShowOffersModal(true)
+              }}
+            />
+          </div>
+        )
+      })}
+
       {/* Current Location Marker - User's Car */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         {isNavigating ? (
