@@ -710,3 +710,316 @@ def get_family_members():
         {"id": 1, "name": "Mom", "status": "driving", "location": "Highway 71 N", "battery": 78, "distance": "12 mi"},
         {"id": 2, "name": "Dad", "status": "parked", "location": "Work", "battery": 45, "distance": "8 mi"},
     ]}
+
+# ==================== TRIP HISTORY ====================
+@app.get("/api/trips/history")
+def get_trip_history(month: Optional[str] = None, limit: int = 50):
+    """Get trip history with optional month filter (format: YYYY-MM)"""
+    trips = []
+    base_date = datetime.now()
+    
+    routes = [
+        ("Home", "Work", 12.5, 25),
+        ("Work", "Home", 12.5, 28),
+        ("Home", "Gym", 5.2, 12),
+        ("Work", "School", 8.2, 18),
+        ("Home", "Grocery Store", 3.1, 8),
+        ("Downtown", "Airport", 22.4, 35),
+        ("Home", "Mom's House", 45.2, 52),
+    ]
+    
+    for i in range(50):
+        trip_date = base_date - timedelta(days=i // 3, hours=random.randint(6, 20))
+        route = random.choice(routes)
+        trips.append({
+            "id": i + 1,
+            "date": trip_date.strftime("%Y-%m-%d"),
+            "time": trip_date.strftime("%I:%M %p"),
+            "origin": route[0],
+            "destination": route[1],
+            "distance": route[2] + random.uniform(-1, 1),
+            "duration": route[3] + random.randint(-5, 5),
+            "safety_score": random.randint(78, 100),
+            "gems_earned": random.randint(10, 50),
+        })
+    
+    if month:
+        trips = [t for t in trips if t["date"].startswith(month)]
+    
+    return {
+        "success": True,
+        "data": trips[:limit],
+        "total": len(trips),
+        "stats": {
+            "total_trips": 156,
+            "total_miles": 2847,
+            "avg_safety_score": 87,
+            "total_gems_earned": 12400
+        }
+    }
+
+# ==================== GEM HISTORY ====================
+@app.get("/api/gems/history")
+def get_gem_history(limit: int = 50):
+    """Get gem transaction history"""
+    transactions = []
+    base_date = datetime.now()
+    balance = 12400
+    
+    transaction_types = [
+        ("Safe trip bonus", 25, 50, "earn"),
+        ("Challenge completed", 50, 150, "earn"),
+        ("Hazard reported", 10, 25, "earn"),
+        ("Offer redeemed", -30, -100, "spend"),
+        ("Daily login bonus", 10, 20, "earn"),
+        ("Badge earned", 50, 200, "earn"),
+        ("Skin purchased", -500, -2000, "spend"),
+        ("Weekly challenge", 75, 150, "earn"),
+        ("Friend referral", 100, 250, "earn"),
+    ]
+    
+    for i in range(50):
+        tx_date = base_date - timedelta(days=i // 4, hours=random.randint(0, 23))
+        tx_type = random.choice(transaction_types)
+        amount = random.randint(tx_type[1], tx_type[2]) if tx_type[1] < tx_type[2] else random.randint(tx_type[2], tx_type[1])
+        
+        transactions.append({
+            "id": i + 1,
+            "date": tx_date.strftime("%Y-%m-%d"),
+            "time": tx_date.strftime("%I:%M %p"),
+            "description": tx_type[0],
+            "amount": amount,
+            "type": tx_type[3],
+            "balance": balance
+        })
+        balance -= amount
+    
+    return {
+        "success": True,
+        "data": transactions[:limit],
+        "current_balance": 12400,
+        "this_month": {
+            "earned": 2450,
+            "spent": 800,
+            "net": 1650
+        }
+    }
+
+# ==================== CHALLENGES ====================
+challenges_data = [
+    {"id": 1, "title": "Weekly Driver", "description": "Complete 10 trips this week", "progress": 7, "target": 10, "gems": 100, "expires": "3 days", "type": "weekly", "completed": False, "claimed": False},
+    {"id": 2, "title": "Safety Champion", "description": "Maintain 90+ safety score for 5 days", "progress": 3, "target": 5, "gems": 150, "expires": "4 days", "type": "weekly", "completed": False, "claimed": False},
+    {"id": 3, "title": "Report Hero", "description": "Report 3 road hazards", "progress": 3, "target": 3, "gems": 75, "expires": "2 days", "type": "weekly", "completed": True, "claimed": False},
+    {"id": 4, "title": "Distance Master", "description": "Drive 50 miles this week", "progress": 32, "target": 50, "gems": 125, "expires": "5 days", "type": "weekly", "completed": False, "claimed": False},
+    {"id": 5, "title": "Early Bird", "description": "Start 3 trips before 7 AM", "progress": 1, "target": 3, "gems": 60, "expires": "6 days", "type": "weekly", "completed": False, "claimed": False},
+]
+
+@app.get("/api/challenges")
+def get_challenges():
+    """Get active challenges"""
+    return {
+        "success": True,
+        "data": challenges_data,
+        "weekly_progress": {
+            "completed": sum(1 for c in challenges_data if c["completed"]),
+            "total": len(challenges_data)
+        }
+    }
+
+@app.post("/api/challenges/{challenge_id}/claim")
+def claim_challenge(challenge_id: int):
+    """Claim reward for completed challenge"""
+    for c in challenges_data:
+        if c["id"] == challenge_id:
+            if not c["completed"]:
+                return {"success": False, "message": "Challenge not completed yet"}
+            if c["claimed"]:
+                return {"success": False, "message": "Reward already claimed"}
+            c["claimed"] = True
+            return {
+                "success": True,
+                "message": f"Claimed {c['gems']} gems!",
+                "gems_earned": c["gems"],
+                "animation": "confetti"
+            }
+    return {"success": False, "message": "Challenge not found"}
+
+# ==================== FUEL TRACKING ====================
+fuel_history = [
+    {"id": 1, "date": "2025-02-01", "station": "Shell", "price_per_gallon": 3.29, "gallons": 12.5, "total": 41.13, "odometer": 45230},
+    {"id": 2, "date": "2025-01-28", "station": "Chevron", "price_per_gallon": 3.35, "gallons": 11.8, "total": 39.53, "odometer": 44920},
+    {"id": 3, "date": "2025-01-24", "station": "Shell", "price_per_gallon": 3.31, "gallons": 13.2, "total": 43.69, "odometer": 44580},
+    {"id": 4, "date": "2025-01-20", "station": "Exxon", "price_per_gallon": 3.42, "gallons": 10.9, "total": 37.28, "odometer": 44210},
+    {"id": 5, "date": "2025-01-16", "station": "Shell", "price_per_gallon": 3.38, "gallons": 12.1, "total": 40.90, "odometer": 43870},
+]
+
+class FuelLog(BaseModel):
+    date: str
+    station: Optional[str] = "Unknown"
+    price_per_gallon: float
+    gallons: float
+    total: float
+
+@app.get("/api/fuel/history")
+def get_fuel_history():
+    """Get fuel purchase history"""
+    total_spent = sum(f["total"] for f in fuel_history)
+    total_gallons = sum(f["gallons"] for f in fuel_history)
+    avg_price = total_spent / total_gallons if total_gallons > 0 else 0
+    
+    return {
+        "success": True,
+        "data": fuel_history,
+        "stats": {
+            "total_spent": round(total_spent, 2),
+            "total_gallons": round(total_gallons, 1),
+            "avg_price": round(avg_price, 2),
+            "avg_mpg": 28.4,
+            "this_month": {
+                "spent": round(fuel_history[0]["total"] + fuel_history[1]["total"], 2) if len(fuel_history) >= 2 else 0,
+                "gallons": round(fuel_history[0]["gallons"] + fuel_history[1]["gallons"], 1) if len(fuel_history) >= 2 else 0
+            }
+        }
+    }
+
+@app.post("/api/fuel/log")
+def log_fuel_purchase(log: FuelLog):
+    """Log a new fuel purchase"""
+    new_id = max(f["id"] for f in fuel_history) + 1 if fuel_history else 1
+    new_entry = {
+        "id": new_id,
+        "date": log.date,
+        "station": log.station,
+        "price_per_gallon": log.price_per_gallon,
+        "gallons": log.gallons,
+        "total": log.total,
+        "odometer": 45500 + new_id * 100
+    }
+    fuel_history.insert(0, new_entry)
+    return {"success": True, "message": "Fuel purchase logged!", "data": new_entry}
+
+@app.get("/api/fuel/trends")
+def get_fuel_trends():
+    """Get 30-day fuel price trends"""
+    trends = []
+    base_price = 3.35
+    for i in range(30):
+        date = (datetime.now() - timedelta(days=29-i)).strftime("%Y-%m-%d")
+        price = base_price + random.uniform(-0.15, 0.15)
+        trends.append({"date": date, "price": round(price, 2)})
+    
+    return {
+        "success": True,
+        "data": trends,
+        "avg_price": round(sum(t["price"] for t in trends) / len(trends), 2),
+        "lowest": min(t["price"] for t in trends),
+        "highest": max(t["price"] for t in trends),
+        "trend": "stable"
+    }
+
+# ==================== NOTIFICATION SETTINGS ====================
+notification_settings = {
+    "push_notifications": {
+        "trip_summary": True,
+        "challenges": True,
+        "offers": True,
+        "gems_earned": True,
+        "friend_activity": False,
+        "safety_alerts": True,
+    },
+    "email_alerts": {
+        "weekly_summary": True,
+        "monthly_report": True,
+        "special_offers": False,
+        "account_updates": True,
+    },
+    "in_app_sounds": {
+        "navigation_voice": True,
+        "notifications": True,
+        "achievements": True,
+    }
+}
+
+@app.get("/api/settings/notifications")
+def get_notification_settings():
+    """Get notification settings"""
+    return {"success": True, "data": notification_settings}
+
+@app.put("/api/settings/notifications")
+def update_notification_settings(category: str, setting: str, enabled: bool):
+    """Update a specific notification setting"""
+    if category in notification_settings and setting in notification_settings[category]:
+        notification_settings[category][setting] = enabled
+        return {"success": True, "message": f"{setting} {'enabled' if enabled else 'disabled'}"}
+    return {"success": False, "message": "Setting not found"}
+
+# ==================== HELP & FAQ ====================
+faq_data = [
+    {"id": 1, "category": "Getting Started", "question": "How do I start using SnapRoad?", "answer": "Simply open the app and allow location access. The app will automatically track your trips and calculate your safety score."},
+    {"id": 2, "category": "Getting Started", "question": "What is a safety score?", "answer": "Your safety score (0-100) measures your driving habits including speed, braking, acceleration, and phone usage. Higher scores earn more gems!"},
+    {"id": 3, "category": "Gems & Rewards", "question": "How do I earn gems?", "answer": "Earn gems by completing trips safely, finishing challenges, reporting road hazards, and maintaining high safety scores."},
+    {"id": 4, "category": "Gems & Rewards", "question": "What can I use gems for?", "answer": "Spend gems on offers at partner locations (gas stations, coffee shops), car skins, and premium features."},
+    {"id": 5, "category": "Gems & Rewards", "question": "Do gems expire?", "answer": "No, your gems never expire. Accumulate as many as you want!"},
+    {"id": 6, "category": "Privacy", "question": "Is my location data shared?", "answer": "Never. SnapRoad is privacy-first. Your trip data stays on your device and is never sold to third parties."},
+    {"id": 7, "category": "Privacy", "question": "Can I delete my trip history?", "answer": "Yes, go to Settings > Privacy > Delete Trip History to remove all your trip data."},
+    {"id": 8, "category": "Features", "question": "How do challenges work?", "answer": "Challenges refresh weekly. Complete them before they expire to earn bonus gems. Tap 'Claim' when finished!"},
+    {"id": 9, "category": "Features", "question": "How do I add friends?", "answer": "Open Friends Hub from the menu, go to 'Find Friends', and enter their 6-digit SnapRoad ID."},
+    {"id": 10, "category": "Features", "question": "What is the leaderboard?", "answer": "The leaderboard ranks drivers by safety score. Filter by state to see how you compare locally!"},
+    {"id": 11, "category": "Account", "question": "How do I upgrade to Premium?", "answer": "Go to Profile > Settings > Upgrade to unlock fuel tracking, advanced analytics, and exclusive rewards."},
+    {"id": 12, "category": "Account", "question": "How do I change my profile?", "answer": "Go to Profile > tap your name to edit your display name, profile picture, and preferences."},
+    {"id": 13, "category": "Troubleshooting", "question": "Why isn't my trip being tracked?", "answer": "Ensure location services are enabled and the app has 'Always' location permission. Check battery optimization settings."},
+    {"id": 14, "category": "Troubleshooting", "question": "My safety score seems wrong", "answer": "Scores update after each trip. If you notice issues, try force-closing and reopening the app."},
+    {"id": 15, "category": "Troubleshooting", "question": "App is using too much battery", "answer": "SnapRoad uses minimal battery. Go to Settings > Battery Mode to switch to power-saving tracking."},
+]
+
+class ContactForm(BaseModel):
+    subject: str
+    message: str
+    email: Optional[str] = None
+
+@app.get("/api/help/faq")
+def get_faq(search: Optional[str] = None, category: Optional[str] = None):
+    """Get FAQ with optional search and category filter"""
+    results = faq_data
+    
+    if category:
+        results = [f for f in results if f["category"] == category]
+    
+    if search:
+        search_lower = search.lower()
+        results = [f for f in results if search_lower in f["question"].lower() or search_lower in f["answer"].lower()]
+    
+    categories = list(set(f["category"] for f in faq_data))
+    
+    return {
+        "success": True,
+        "data": results,
+        "categories": categories,
+        "total": len(results)
+    }
+
+@app.post("/api/help/contact")
+def submit_contact(form: ContactForm):
+    """Submit a support request"""
+    return {
+        "success": True,
+        "message": "Your message has been sent! We'll respond within 24 hours.",
+        "ticket_id": f"SR-{random.randint(10000, 99999)}"
+    }
+
+# ==================== SHARE TRIP ====================
+@app.post("/api/trips/{trip_id}/share")
+def generate_share_content(trip_id: int):
+    """Generate shareable content for a trip"""
+    return {
+        "success": True,
+        "data": {
+            "text": f"🚗 Just completed a trip with a 92 safety score on SnapRoad! 🏆 #SafeDriving #SnapRoad",
+            "image_url": f"/api/trips/{trip_id}/share-image",
+            "share_links": {
+                "twitter": f"https://twitter.com/intent/tweet?text=...",
+                "facebook": f"https://facebook.com/sharer/...",
+                "instagram": "Copy to clipboard for Instagram"
+            }
+        }
+    }
