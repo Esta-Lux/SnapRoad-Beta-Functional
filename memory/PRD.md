@@ -21,6 +21,14 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 - ✅ "Upgrade for 18%" upsell for Basic users
 - ✅ Redeemed offers marked with checkmark
 
+#### Glowing Gem Markers on Map ✅ NEW
+- ✅ Interactive glowing gem markers for nearby offers
+- ✅ Pulsing emerald glow effect animation
+- ✅ Discount percentage badge on each marker
+- ✅ Business name tooltip on hover
+- ✅ Click marker → Opens OffersModal with offer auto-selected
+- ✅ Markers positioned based on offer lat/lng relative to user
+
 #### Share Trip Score
 - ✅ Shareable trip summary card with SnapRoad branding
 - ✅ Safety Score display with circular progress
