@@ -921,6 +921,13 @@ export default function DriverApp() {
             <AlertTriangle size={16} />
             <span className="text-sm font-medium">Report</span>
           </button>
+
+          {/* Quick Photo Button */}
+          <button onClick={() => setShowQuickPhotoReport(true)} data-testid="quick-photo-btn"
+            className="flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 bg-blue-500/90 text-white backdrop-blur hover:bg-blue-500 transition-all">
+            <Camera size={16} />
+            <span className="text-sm font-medium">Photo</span>
+          </button>
         </div>
 
         {/* Favorites Content - Shows when Favorites is selected */}
