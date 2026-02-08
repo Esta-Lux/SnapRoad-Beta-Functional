@@ -2375,6 +2375,12 @@ export default function DriverApp() {
           setShowPlanSelection(true)
         }}
       />
+      
+      {/* Challenge History Modal */}
+      <ChallengeHistory
+        isOpen={showChallengeHistory}
+        onClose={() => setShowChallengeHistory(false)}
+      />
     </div>
   )
 }
