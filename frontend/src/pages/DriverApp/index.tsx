@@ -100,9 +100,9 @@ export default function DriverApp() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
   
-  // Main state
+  // Main state - 4 tabs now
   const [activeTab, setActiveTab] = useState<TabType>('map')
-  const [engagementTab, setEngagementTab] = useState<EngagementTab>('badges')
+  const [rewardsTab, setRewardsTab] = useState<RewardsTab>('offers')
   const [profileTab, setProfileTab] = useState<ProfileTab>('overview')
   const [locationCategory, setLocationCategory] = useState<LocationCategory>('favorites')
   
@@ -123,11 +123,17 @@ export default function DriverApp() {
   const [showLeaderboard, setShowLeaderboard] = useState(false)
   const [showCarShowroom, setShowCarShowroom] = useState(false)
   const [showBadgesGrid, setShowBadgesGrid] = useState(false)
+  const [showTripHistory, setShowTripHistory] = useState(false)
+  const [showGemHistory, setShowGemHistory] = useState(false)
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false)
+  const [showHelpSupport, setShowHelpSupport] = useState(false)
+  const [showFuelTracker, setShowFuelTracker] = useState(false)
   
   // Data states
   const [locations, setLocations] = useState<SavedLocation[]>([])
   const [routes, setRoutes] = useState<SavedRoute[]>([])
   const [offers, setOffers] = useState<any[]>([])
+  const [challenges, setChallenges] = useState<any[]>([])
   const [badges, setBadges] = useState<any[]>([])
   const [skins, setSkins] = useState<any[]>([])
   const [family, setFamily] = useState<any[]>([])
