@@ -1973,3 +1973,169 @@ def complete_trip_with_safety(trip: TripResult):
             "safe_drive_streak": users_db[current_user_id].get("safe_drive_streak", 0),
         }
     }
+
+# ==================== CHALLENGES ====================
+challenges_db = []
+
+class ChallengeCreate(BaseModel):
+    opponent_id: str
+    stake: int
+    duration_hours: int
+
+@app.post("/api/challenges")
+def create_challenge(challenge: ChallengeCreate):
+    """Create a head-to-head safe driving challenge."""
+    user = users_db.get(current_user_id, {})
+    opponent = users_db.get(challenge.opponent_id, {})
+    
+    if not opponent:
+        raise HTTPException(status_code=404, detail="Opponent not found")
+    
+    if user.get("gems", 0) < challenge.stake:
+        raise HTTPException(status_code=400, detail="Not enough gems")
+    
+    # Deduct stake from challenger
+    users_db[current_user_id]["gems"] = user.get("gems", 0) - challenge.stake
+    
+    new_challenge = {
+        "id": str(len(challenges_db) + 1),
+        "challenger_id": current_user_id,
+        "opponent_id": challenge.opponent_id,
+        "challenger_name": user.get("name", "Unknown"),
+        "opponent_name": opponent.get("name", "Unknown"),
+        "stake": challenge.stake,
+        "duration_hours": challenge.duration_hours,
+        "status": "pending",  # pending, active, completed
+        "your_score": user.get("safety_score", 85),
+        "opponent_score": opponent.get("safety_score", 85),
+        "created_at": datetime.now().isoformat(),
+        "ends_at": (datetime.now() + timedelta(hours=challenge.duration_hours)).isoformat(),
+    }
+    
+    challenges_db.append(new_challenge)
+    
+    return {
+        "success": True,
+        "message": f"Challenge sent to {opponent.get('name')}!",
+        "data": new_challenge
+    }
+
+@app.get("/api/challenges")
+def get_challenges():
+    """Get user's active and past challenges."""
+    user_challenges = [
+        c for c in challenges_db 
+        if c["challenger_id"] == current_user_id or c["opponent_id"] == current_user_id
+    ]
+    
+    return {
+        "success": True,
+        "data": user_challenges
+    }
+
+@app.post("/api/challenges/{challenge_id}/accept")
+def accept_challenge(challenge_id: str):
+    """Accept a pending challenge."""
+    for c in challenges_db:
+        if c["id"] == challenge_id and c["opponent_id"] == current_user_id:
+            user = users_db.get(current_user_id, {})
+            if user.get("gems", 0) < c["stake"]:
+                raise HTTPException(status_code=400, detail="Not enough gems to accept")
+            
+            # Deduct stake
+            users_db[current_user_id]["gems"] = user.get("gems", 0) - c["stake"]
+            c["status"] = "active"
+            
+            return {"success": True, "message": "Challenge accepted!", "data": c}
+    
+    raise HTTPException(status_code=404, detail="Challenge not found")
+
+# ==================== DRIVING SCORE ====================
+@app.get("/api/driving-score")
+def get_driving_score():
+    """Get detailed driving score breakdown for premium users."""
+    user = users_db.get(current_user_id, {})
+    
+    # Generate mock driving metrics based on user's safety score
+    base_score = user.get("safety_score", 85)
+    
+    # Vary metrics around the base score
+    metrics = [
+        {
+            "id": "speed",
+            "name": "Speed Compliance",
+            "score": min(100, base_score + random.randint(-5, 10)),
+            "trend": random.choice(["up", "stable", "up"]),
+            "description": "Staying within speed limits"
+        },
+        {
+            "id": "braking",
+            "name": "Smooth Braking",
+            "score": min(100, base_score + random.randint(-15, 5)),
+            "trend": random.choice(["down", "stable", "up"]),
+            "description": "Gradual, safe braking"
+        },
+        {
+            "id": "acceleration",
+            "name": "Smooth Acceleration",
+            "score": min(100, base_score + random.randint(-8, 8)),
+            "trend": random.choice(["stable", "up"]),
+            "description": "Gradual speed increases"
+        },
+        {
+            "id": "following",
+            "name": "Following Distance",
+            "score": min(100, base_score + random.randint(-3, 10)),
+            "trend": random.choice(["up", "stable"]),
+            "description": "Safe distance from other cars"
+        },
+        {
+            "id": "turns",
+            "name": "Turn Signals",
+            "score": min(100, base_score + random.randint(0, 12)),
+            "trend": "up",
+            "description": "Signaling before turns"
+        },
+        {
+            "id": "focus",
+            "name": "Focus Time",
+            "score": min(100, base_score + random.randint(-10, 5)),
+            "trend": random.choice(["stable", "down", "up"]),
+            "description": "Minimal phone distractions"
+        },
+    ]
+    
+    # Find lowest scores for tips
+    sorted_metrics = sorted(metrics, key=lambda x: x["score"])
+    
+    orion_tips = []
+    tip_templates = {
+        "speed": "Try using cruise control on highways to maintain consistent speeds.",
+        "braking": "Start braking a bit earlier. This gives you more control and is easier on your passengers!",
+        "acceleration": "Ease into the gas pedal when starting from stops. Your car (and wallet) will thank you!",
+        "following": "The 3-second rule is your friend! Pick a point and count after the car ahead passes it.",
+        "turns": "Great job with turn signals! Keep signaling even when you think no one is around.",
+        "focus": "Mount your phone for hands-free navigation. Staying focused is key to safe driving!",
+    }
+    
+    for i, metric in enumerate(sorted_metrics[:3]):
+        priority = "high" if i == 0 else ("medium" if i == 1 else "low")
+        orion_tips.append({
+            "id": str(i + 1),
+            "metric": metric["id"],
+            "tip": tip_templates.get(metric["id"], "Keep up the great driving!"),
+            "priority": priority
+        })
+    
+    # Calculate overall score as weighted average
+    overall_score = sum(m["score"] for m in metrics) // len(metrics)
+    
+    return {
+        "success": True,
+        "data": {
+            "overall_score": overall_score,
+            "metrics": metrics,
+            "orion_tips": orion_tips,
+            "last_updated": datetime.now().isoformat()
+        }
+    }
