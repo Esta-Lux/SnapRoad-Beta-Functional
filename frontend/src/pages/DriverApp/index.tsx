@@ -565,19 +565,9 @@ export default function DriverApp() {
   }
 
   const handleVoiceCommand = async () => {
-    toast('🎤 Listening...', { duration: 2000 })
-    try {
-      const res = await api.post('/api/navigation/voice-command')
-      setTimeout(() => {
-        toast.success(res.data?.command || 'Voice: "Navigate to Work"')
-        handleStartNavigation('Work')
-      }, 2000)
-    } catch (e) {
-      setTimeout(() => {
-        toast.success('Voice: "Navigate to Work"')
-        handleStartNavigation('Work')
-      }, 2000)
-    }
+    // Open Orion voice assistant
+    setShowOrionVoice(true)
+  }
   }
 
   // Location handlers
