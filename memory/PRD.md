@@ -49,6 +49,24 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Feature
 - ✅ Both drivers earn bonus XP regardless of outcome
 - ✅ Backend endpoints: POST /api/challenges, GET /api/challenges
 
+#### Challenge History & Badges ✅ NEW
+- ✅ Challenge History modal with win/loss/draw stats
+- ✅ Net gems earned from challenges displayed
+- ✅ Win rate percentage calculation
+- ✅ Current and best win streak tracking
+- ✅ History tab: Past battles with scores, opponents, and gem results
+- ✅ Badges tab: 8 challenge achievement badges with progress bars
+  - First Victory, Hot Streak (3), On Fire (5), Champion (10 wins)
+  - Legend (25 wins), Gem Collector (1K gems), Perfect Driver, Comeback King
+- ✅ Backend endpoint: GET /api/challenges/history
+
+#### Compact Offer Redemption Popup ✅ IMPROVED
+- ✅ Smaller, cleaner popup that doesn't cover the whole page
+- ✅ Inline header with icon, name, description, and close button
+- ✅ Compact gems and discount display side by side
+- ✅ Simple premium upsell message
+- ✅ Click outside to dismiss
+
 #### Driving Score & Orion Tips (Premium) ✅ NEW
 - ✅ Premium feature with upsell modal for Basic users
 - ✅ 6 driving metrics: Speed Compliance, Smooth Braking, Smooth Acceleration, Following Distance, Turn Signals, Focus Time
