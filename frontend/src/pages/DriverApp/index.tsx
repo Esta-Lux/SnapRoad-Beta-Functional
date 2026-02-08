@@ -343,6 +343,35 @@ export default function DriverApp() {
     }
   }
 
+  // Road Reports handlers
+  const handleCreateReport = async (report: { type: string; title: string; description: string; lat: number; lng: number }) => {
+    try {
+      const res = await api.post('/api/reports', report)
+      if (res.success) {
+        toast.success(res.message)
+        // Refresh user data to update XP
+        loadData()
+      }
+      return res
+    } catch (e) {
+      toast.error('Failed to create report')
+      return { success: false }
+    }
+  }
+
+  const handleUpvoteReport = async (reportId: number) => {
+    try {
+      const res = await api.post(`/api/reports/${reportId}/upvote`)
+      if (res.success) {
+        toast.success(res.message)
+      }
+      return res
+    } catch (e) {
+      toast.error('Failed to upvote')
+      return { success: false }
+    }
+  }
+
   // Claim challenge reward
   const handleClaimChallenge = async (challengeId: number) => {
     try {
