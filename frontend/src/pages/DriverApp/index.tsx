@@ -1709,24 +1709,22 @@ export default function DriverApp() {
 
           {/* Content */}
           {activeTab === 'map' && renderMap()}
-          {activeTab === 'offers' && renderOffers()}
           {activeTab === 'routes' && renderRoutes()}
-          {activeTab === 'engagement' && renderEngagement()}
+          {activeTab === 'rewards' && renderRewards()}
           {activeTab === 'profile' && renderProfile()}
 
-          {/* Bottom Navigation */}
-          <div className="h-20 bg-white border-t border-slate-200 flex items-start pt-2 px-2">
+          {/* Bottom Navigation - 4 Tabs */}
+          <div className="h-20 bg-white border-t border-slate-200 flex items-start pt-2 px-4">
             {[
               { id: 'map', icon: MapPin, label: 'Map' },
-              { id: 'offers', icon: Gift, label: 'Offers' },
               { id: 'routes', icon: Route, label: 'Routes' },
-              { id: 'engagement', icon: Trophy, label: 'Engage' },
+              { id: 'rewards', icon: Gift, label: 'Rewards' },
               { id: 'profile', icon: Settings, label: 'Profile' },
             ].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as TabType)} data-testid={`nav-${tab.id}`}
                 className={`flex-1 flex flex-col items-center py-1 ${activeTab === tab.id ? 'text-blue-500' : 'text-slate-400'}`}>
-                <tab.icon size={20} />
-                <span className="text-[10px] mt-0.5">{tab.label}</span>
+                <tab.icon size={22} />
+                <span className="text-[11px] mt-0.5 font-medium">{tab.label}</span>
               </button>
             ))}
           </div>
