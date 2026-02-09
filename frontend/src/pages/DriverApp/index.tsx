@@ -1223,8 +1223,9 @@ export default function DriverApp() {
                 discount_percent: offer.discount_percent || 6
               }}
               onClick={() => {
-                setSelectedOfferId(offer.id)
-                setShowOffersModal(true)
+                // Open RedemptionPopup directly when clicking a gem
+                setSelectedOfferForRedemption(offer)
+                setShowRedemptionPopup(true)
               }}
             />
           </div>
