@@ -1,25 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
-import { Gem, Navigation, MapPin, Minus, Plus, Locate } from 'lucide-react'
-
-// Fix Leaflet marker icon issue in React
-delete (L.Icon.Default.prototype as any)._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-})
+import { useState, useRef, useEffect } from 'react'
+import { Gem, Navigation, MapPin, Minus, Plus, Locate, Compass, Layers } from 'lucide-react'
 
 interface Offer {
   id: number
   business_name: string
   discount_percent: number
   gems_reward: number
-  lat: number
-  lng: number
+  lat?: number
+  lng?: number
   business_type?: string
+  redeemed?: boolean
 }
 
 interface InteractiveMapProps {
@@ -27,95 +17,7 @@ interface InteractiveMapProps {
   offers: Offer[]
   isNavigating: boolean
   onOfferClick: (offer: Offer) => void
-  carCategory?: string
   carColor?: string
-}
-
-// Custom car icon SVG
-const createCarIcon = (color: string = '#3b82f6') => {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32">
-      <circle cx="12" cy="12" r="10" fill="${color}" stroke="white" stroke-width="2"/>
-      <path d="M12 6 L16 12 L12 18 L8 12 Z" fill="white"/>
-    </svg>
-  `
-  return L.divIcon({
-    html: svg,
-    className: 'custom-car-icon',
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-  })
-}
-
-// Custom gem marker icon
-const createGemIcon = (discount: number) => {
-  const color = discount >= 15 ? '#10b981' : '#3b82f6'
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40">
-      <defs>
-        <filter id="glow">
-          <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-          <feMerge>
-            <feMergeNode in="coloredBlur"/>
-            <feMergeNode in="SourceGraphic"/>
-          </feMerge>
-        </filter>
-      </defs>
-      <circle cx="20" cy="20" r="15" fill="${color}" filter="url(#glow)" opacity="0.9"/>
-      <circle cx="20" cy="20" r="12" fill="${color}"/>
-      <polygon points="20,8 24,16 20,24 16,16" fill="white" opacity="0.9"/>
-      <text x="20" y="33" font-size="8" fill="white" text-anchor="middle" font-weight="bold">${discount}%</text>
-    </svg>
-  `
-  return L.divIcon({
-    html: svg,
-    className: 'gem-marker-icon',
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-  })
-}
-
-// Map Controls Component
-function MapControls({ userLocation }: { userLocation: { lat: number; lng: number } }) {
-  const map = useMap()
-  
-  const handleZoomIn = () => map.zoomIn()
-  const handleZoomOut = () => map.zoomOut()
-  const handleRecenter = () => map.flyTo([userLocation.lat, userLocation.lng], 15, { duration: 1 })
-  
-  return (
-    <div className="absolute right-3 bottom-32 z-[1000] flex flex-col gap-2">
-      <button
-        onClick={handleZoomIn}
-        className="w-10 h-10 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg hover:bg-slate-800"
-      >
-        <Plus className="text-white" size={18} />
-      </button>
-      <button
-        onClick={handleZoomOut}
-        className="w-10 h-10 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg hover:bg-slate-800"
-      >
-        <Minus className="text-white" size={18} />
-      </button>
-      <button
-        onClick={handleRecenter}
-        className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center shadow-lg hover:bg-blue-600"
-      >
-        <Locate className="text-white" size={18} />
-      </button>
-    </div>
-  )
-}
-
-// Map Auto-Update Component
-function MapUpdater({ center, zoom }: { center: [number, number]; zoom: number }) {
-  const map = useMap()
-  
-  useEffect(() => {
-    // Only update on significant position change
-  }, [center, zoom, map])
-  
-  return null
 }
 
 export default function InteractiveMap({ 
@@ -125,135 +27,272 @@ export default function InteractiveMap({
   onOfferClick,
   carColor = '#3b82f6'
 }: InteractiveMapProps) {
-  const [mapReady, setMapReady] = useState(false)
-  const mapRef = useRef<L.Map | null>(null)
-  
-  // Columbus, OH area - centered on user
-  const center: [number, number] = [userLocation.lat, userLocation.lng]
-  
+  const [zoom, setZoom] = useState(15)
+  const [center, setCenter] = useState(userLocation)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0, lat: 0, lng: 0 })
+  const mapRef = useRef<HTMLDivElement>(null)
+
+  // Calculate tile coordinates
+  const lon2tile = (lon: number, zoom: number) => Math.floor((lon + 180) / 360 * Math.pow(2, zoom))
+  const lat2tile = (lat: number, zoom: number) => Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))
+
+  // Convert tile back to coordinates
+  const tile2lon = (x: number, z: number) => x / Math.pow(2, z) * 360 - 180
+  const tile2lat = (y: number, z: number) => {
+    const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z)
+    return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))
+  }
+
+  const handleZoomIn = () => setZoom(Math.min(zoom + 1, 18))
+  const handleZoomOut = () => setZoom(Math.max(zoom - 1, 10))
+  const handleRecenter = () => setCenter(userLocation)
+
+  const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    setIsDragging(true)
+    setDragStart({ x: clientX, y: clientY, lat: center.lat, lng: center.lng })
+  }
+
+  const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDragging) return
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    
+    const dx = clientX - dragStart.x
+    const dy = clientY - dragStart.y
+    
+    // Convert pixel movement to lat/lng (rough approximation)
+    const scale = 156543.03392 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, zoom)
+    const newLng = dragStart.lng - (dx * scale / 111320)
+    const newLat = dragStart.lat + (dy * scale / 110540)
+    
+    setCenter({ lat: newLat, lng: newLng })
+  }
+
+  const handleMouseUp = () => setIsDragging(false)
+
+  // Generate visible offers with positions
+  const visibleOffers = offers.filter(o => !o.redeemed).slice(0, 8).map((offer, index) => {
+    const lat = offer.lat || userLocation.lat + (Math.sin(index * 0.8) * 0.008)
+    const lng = offer.lng || userLocation.lng + (Math.cos(index * 0.8) * 0.01)
+    return { ...offer, lat, lng }
+  })
+
+  // Convert lat/lng to pixel position relative to map center
+  const latLngToPixel = (lat: number, lng: number) => {
+    const scale = Math.pow(2, zoom) * 256
+    const worldX = ((lng + 180) / 360) * scale
+    const worldY = ((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2) * scale
+    
+    const centerWorldX = ((center.lng + 180) / 360) * scale
+    const centerWorldY = ((1 - Math.log(Math.tan(center.lat * Math.PI / 180) + 1 / Math.cos(center.lat * Math.PI / 180)) / Math.PI) / 2) * scale
+    
+    const mapWidth = mapRef.current?.clientWidth || 400
+    const mapHeight = mapRef.current?.clientHeight || 600
+    
+    return {
+      x: (worldX - centerWorldX) + mapWidth / 2,
+      y: (worldY - centerWorldY) + mapHeight / 2
+    }
+  }
+
+  // Generate tile URLs for the current view
+  const getTiles = () => {
+    const tiles = []
+    const centerX = lon2tile(center.lng, zoom)
+    const centerY = lat2tile(center.lat, zoom)
+    
+    // Generate 3x3 grid of tiles around center
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const x = centerX + dx
+        const y = centerY + dy
+        tiles.push({
+          x, y, zoom,
+          url: `https://c.basemaps.cartocdn.com/dark_all/${zoom}/${x}/${y}.png`,
+          left: dx * 256,
+          top: dy * 256
+        })
+      }
+    }
+    return tiles
+  }
+
+  const tiles = getTiles()
+
   return (
-    <div className="absolute inset-0 z-0">
-      <MapContainer
-        center={center}
-        zoom={15}
-        style={{ height: '100%', width: '100%' }}
-        zoomControl={false}
-        attributionControl={false}
-        ref={mapRef}
-        whenReady={() => setMapReady(true)}
+    <div className="absolute inset-0 z-0 overflow-hidden bg-slate-900" ref={mapRef}>
+      {/* Map Tiles Container */}
+      <div
+        className="absolute inset-0 cursor-grab active:cursor-grabbing"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onTouchStart={handleMouseDown}
+        onTouchMove={handleMouseMove}
+        onTouchEnd={handleMouseUp}
+        style={{ touchAction: 'none' }}
       >
-        {/* OpenStreetMap Tile Layer - Dark Mode */}
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        />
-        
-        {/* User Location Circle (accuracy indicator) */}
-        <Circle
-          center={center}
-          radius={100}
-          pathOptions={{
-            color: '#3b82f6',
-            fillColor: '#3b82f6',
-            fillOpacity: 0.1,
-            weight: 2,
+        {/* Tiles */}
+        <div 
+          className="absolute"
+          style={{
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)'
           }}
-        />
-        
-        {/* User Car Marker */}
-        <Marker 
-          position={center} 
-          icon={createCarIcon(carColor)}
         >
-          <Popup className="custom-popup">
-            <div className="text-center p-1">
-              <p className="font-semibold text-sm">You are here</p>
-              <p className="text-xs text-slate-500">Columbus, OH</p>
-            </div>
-          </Popup>
-        </Marker>
-        
+          {tiles.map((tile, i) => (
+            <img
+              key={`${tile.x}-${tile.y}-${tile.zoom}`}
+              src={tile.url}
+              alt=""
+              className="absolute select-none"
+              style={{
+                width: 256,
+                height: 256,
+                left: tile.left,
+                top: tile.top,
+                imageRendering: 'crisp-edges'
+              }}
+              draggable={false}
+            />
+          ))}
+        </div>
+
+        {/* User Location Marker */}
+        <div
+          className="absolute z-10 pointer-events-none"
+          style={{
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)'
+          }}
+        >
+          {/* Accuracy circle */}
+          <div 
+            className="absolute rounded-full bg-blue-500/20 border-2 border-blue-500/50"
+            style={{
+              width: 80,
+              height: 80,
+              left: -40,
+              top: -40,
+            }}
+          />
+          {/* Car marker */}
+          <div 
+            className="absolute rounded-full shadow-lg flex items-center justify-center"
+            style={{
+              width: 32,
+              height: 32,
+              left: -16,
+              top: -16,
+              background: carColor,
+              border: '3px solid white'
+            }}
+          >
+            <Navigation className="text-white" size={16} style={{ transform: 'rotate(0deg)' }} />
+          </div>
+        </div>
+
         {/* Offer Markers */}
-        {offers.filter(o => !o.redeemed).slice(0, 8).map((offer, index) => {
-          // Calculate offset position for demo
-          const offsetLat = userLocation.lat + (Math.sin(index * 0.8) * 0.008)
-          const offsetLng = userLocation.lng + (Math.cos(index * 0.8) * 0.01)
+        {visibleOffers.map((offer, index) => {
+          const pos = latLngToPixel(offer.lat, offer.lng)
+          const isVisible = pos.x > -50 && pos.x < (mapRef.current?.clientWidth || 400) + 50 &&
+                           pos.y > -50 && pos.y < (mapRef.current?.clientHeight || 600) + 50
+          
+          if (!isVisible) return null
           
           return (
-            <Marker
+            <button
               key={offer.id}
-              position={[offer.lat || offsetLat, offer.lng || offsetLng]}
-              icon={createGemIcon(offer.discount_percent || 10)}
-              eventHandlers={{
-                click: () => onOfferClick(offer),
+              onClick={(e) => { e.stopPropagation(); onOfferClick(offer) }}
+              className="absolute z-20 group"
+              style={{
+                left: pos.x,
+                top: pos.y,
+                transform: 'translate(-50%, -50%)'
               }}
             >
-              <Popup className="custom-popup">
-                <div className="p-2 min-w-[150px]">
-                  <p className="font-semibold text-sm">{offer.business_name}</p>
-                  <p className="text-emerald-500 font-bold">{offer.discount_percent}% off</p>
-                  <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-                    <Gem size={12} className="text-cyan-500" />
-                    +{offer.gems_reward} gems
-                  </p>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); onOfferClick(offer) }}
-                    className="mt-2 w-full bg-emerald-500 text-white text-xs py-1.5 rounded-lg hover:bg-emerald-600"
-                  >
-                    View Offer
-                  </button>
+              {/* Glowing gem marker */}
+              <div className="relative">
+                <div 
+                  className="absolute inset-0 rounded-full animate-ping opacity-75"
+                  style={{
+                    background: offer.discount_percent >= 15 ? '#10b981' : '#3b82f6',
+                    width: 40,
+                    height: 40,
+                    left: -4,
+                    top: -4,
+                  }}
+                />
+                <div 
+                  className="relative w-8 h-8 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"
+                  style={{
+                    background: `linear-gradient(135deg, ${offer.discount_percent >= 15 ? '#10b981' : '#3b82f6'}, ${offer.discount_percent >= 15 ? '#059669' : '#2563eb'})`
+                  }}
+                >
+                  <Gem className="text-white" size={14} />
                 </div>
-              </Popup>
-            </Marker>
+                {/* Discount badge */}
+                <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                  {offer.discount_percent}%
+                </div>
+              </div>
+            </button>
           )
         })}
-        
-        {/* Map Controls */}
-        <MapControls userLocation={userLocation} />
-        
-        {/* Map Updater */}
-        <MapUpdater center={center} zoom={15} />
-      </MapContainer>
-      
+      </div>
+
+      {/* Map Controls */}
+      <div className="absolute right-3 bottom-32 z-30 flex flex-col gap-2">
+        <button
+          onClick={handleZoomIn}
+          className="w-10 h-10 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg hover:bg-slate-800 active:scale-95 transition-all"
+        >
+          <Plus className="text-white" size={18} />
+        </button>
+        <button
+          onClick={handleZoomOut}
+          className="w-10 h-10 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg hover:bg-slate-800 active:scale-95 transition-all"
+        >
+          <Minus className="text-white" size={18} />
+        </button>
+        <button
+          onClick={handleRecenter}
+          className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center shadow-lg hover:bg-blue-600 active:scale-95 transition-all"
+        >
+          <Locate className="text-white" size={18} />
+        </button>
+      </div>
+
+      {/* Compass */}
+      <div className="absolute right-3 top-24 z-30">
+        <div className="w-10 h-10 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
+          <Compass className="text-white" size={18} />
+        </div>
+      </div>
+
+      {/* Zoom Level Indicator */}
+      <div className="absolute left-3 bottom-32 z-30 bg-slate-900/80 backdrop-blur px-2 py-1 rounded-lg">
+        <span className="text-white text-xs font-mono">Zoom: {zoom}</span>
+      </div>
+
       {/* Navigation Indicator */}
       {isNavigating && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[1001] bg-blue-500 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 bg-blue-500 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
           <Navigation className="animate-pulse" size={16} />
           <span className="text-sm font-medium">Navigating...</span>
         </div>
       )}
-      
-      {/* Custom Styles */}
-      <style>{`
-        .custom-car-icon {
-          background: none !important;
-          border: none !important;
-        }
-        .gem-marker-icon {
-          background: none !important;
-          border: none !important;
-          cursor: pointer;
-        }
-        .gem-marker-icon:hover {
-          transform: scale(1.1);
-          transition: transform 0.2s;
-        }
-        .leaflet-popup-content-wrapper {
-          background: #1e293b;
-          color: white;
-          border-radius: 12px;
-          border: 1px solid rgba(255,255,255,0.1);
-        }
-        .leaflet-popup-tip {
-          background: #1e293b;
-        }
-        .leaflet-popup-close-button {
-          color: white !important;
-        }
-        .custom-popup .leaflet-popup-content {
-          margin: 0;
-        }
-      `}</style>
+
+      {/* Attribution */}
+      <div className="absolute bottom-2 left-2 z-30 text-[10px] text-slate-500">
+        © OpenStreetMap contributors
+      </div>
     </div>
   )
 }
