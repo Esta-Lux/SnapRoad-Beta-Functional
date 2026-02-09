@@ -552,8 +552,14 @@ export default function AdminDashboard() {
           </div>
 
           <div className="mt-8 pt-8 border-t border-white/5 space-y-2">
-            <button onClick={() => setShowOnboarding(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5">
+            <button onClick={() => setShowHelp(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5">
               <HelpCircle size={20} /><span className="font-medium">Help & Tour</span>
+            </button>
+            <button onClick={() => setShowSettings(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5">
+              <Settings size={20} /><span className="font-medium">Settings</span>
+            </button>
+            <button onClick={() => setShowNotifications(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5">
+              <Bell size={20} /><span className="font-medium">Notifications</span>
             </button>
           </div>
         </nav>
@@ -575,6 +581,11 @@ export default function AdminDashboard() {
           </button>
         </div>
       </aside>
+
+      {/* Modals */}
+      <NotificationCenter isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
+      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} userPlan="premium" onLogout={() => navigate('/')} />
+      <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} appType="admin" />
 
       {/* Main Content */}
       <main className="ml-72 p-8">
