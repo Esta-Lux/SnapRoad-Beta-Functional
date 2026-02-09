@@ -45,7 +45,34 @@ export default function InteractiveMap({
   const [center, setCenter] = useState(userLocation)
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, lat: 0, lng: 0 })
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [filteredSuggestions, setFilteredSuggestions] = useState(LOCATION_SUGGESTIONS)
   const mapRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // Filter suggestions based on query
+  useEffect(() => {
+    if (searchQuery.length > 0) {
+      const filtered = LOCATION_SUGGESTIONS.filter(loc => 
+        loc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        loc.address.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+      setFilteredSuggestions(filtered)
+      setShowSuggestions(true)
+    } else {
+      setFilteredSuggestions(LOCATION_SUGGESTIONS)
+      setShowSuggestions(false)
+    }
+  }, [searchQuery])
+
+  const handleSelectLocation = (location: typeof LOCATION_SUGGESTIONS[0]) => {
+    setCenter({ lat: location.lat, lng: location.lng })
+    setZoom(16)
+    setSearchQuery(location.name)
+    setShowSuggestions(false)
+    onSearch?.(location.name, { lat: location.lat, lng: location.lng })
+  }
 
   // Calculate tile coordinates
   const lon2tile = (lon: number, zoom: number) => Math.floor((lon + 180) / 360 * Math.pow(2, zoom))
