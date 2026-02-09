@@ -1,148 +1,141 @@
 # SnapRoad - Privacy-First Navigation App
 
 ## Product Overview
-SnapRoad is a privacy-first navigation app with gamified safety rewards. Features an iPhone 16-optimized driver interface with Forza-style premium car customization, Orion voice assistant, tiered offers system, and comprehensive XP/leveling system.
+SnapRoad is a privacy-first navigation app with gamified safety rewards. Currently a web preview/prototype with plans for native iOS migration.
 
 ## Tech Stack
 - **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS + Recharts
 - **Backend:** FastAPI (Python) with in-memory mock data
 - **AI Integration:** Gemini Nano Banana (via Emergent LLM Key)
-- **Planned:** iOS native (Swift/SwiftUI), Mapbox integration
+- **Maps:** Custom tile-based map using OpenStreetMap/Carto dark tiles
+- **Target:** Native iOS (Swift/SwiftUI) - not yet migrated
 
 ## App Routes & URLs
 
-### Public Routes
-- `/` - Welcome/Landing page with auth modal
-- `/driver` - Driver mobile app experience
+### Driver App
+- `/` - Welcome page (Driver only - Start Driving button)
+- `/driver` - Driver mobile app experience with interactive map
 
-### Business Portal (Separate URL for Custom Domain)
-- `/portal/partner` - Partner business dashboard with real-time analytics
+### Business Portal (For Custom Domain)
+- `/portal/partner` - Partner business dashboard
 
-### Admin Console (SECRET - Only Accessible via Direct Link)
-- `/portal/admin-sr2025secure` - Admin console with full platform control
-- **NOTE:** `/admin` redirects to home - admin is NOT searchable
+### Admin Console (SECRET)
+- `/portal/admin-sr2025secure` - Admin console (direct link only)
+- `/admin` → Redirects to home (not searchable)
 
-## Completed Features
+## ✅ Completed Features (This Session)
 
-### Premium Partner Dashboard ✅ NEW (Dec 2025)
-- ✅ Glassmorphism UI with ambient background effects
-- ✅ **4-Step Onboarding Walkthrough** (Skip/Continue)
-- ✅ **Real-Time Analytics Dashboard**:
-  - Stats Cards: Total Views, Clicks, Redemptions, Revenue with trends
-  - Performance Trend Chart (Area chart with views/redemptions)
-  - Geographic Distribution (Pie chart with top locations)
-  - CTR, Conversion Rate, Avg Order Value metrics
-- ✅ **Boost Center** with customizable:
-  - Duration slider (1-30 days): $25 base + $20 per extra day
-  - Reach slider (100-2,000 people): $5 for 100 + $10 per 100 increment
-  - Real-time cost calculation
-- ✅ **AI Image Generator** for offers (Gemini Nano Banana)
-- ✅ Create/Edit/Delete offers with premium UI
+### Interactive Map (NEW)
+- Real OpenStreetMap tiles (Carto dark theme)
+- Draggable/pannable map
+- Zoom in/out controls
+- User location marker (blue car icon)
+- Glowing gem markers with discount percentages
+- Click gem → Opens RedemptionPopup directly (FIXED)
+- Recenter button
 
-### Premium Admin Dashboard ✅ NEW (Dec 2025)
-- ✅ Purple/pink gradient branding with glassmorphism
-- ✅ **4-Step Onboarding Walkthrough** (Skip/Continue)
-- ✅ **Platform Analytics**:
-  - Stats: Total Users, Partners, Avg Safety Score
-  - Platform Growth Chart (new users over time)
-  - Revenue Trend Chart
-- ✅ **Quick Actions**: Create Offer, Export, Import, Create Event
-- ✅ **Create Offers on Behalf of Businesses**:
-  - Partner selector dropdown
-  - AI Image Generator integration
-  - All standard offer fields
-- ✅ **Export Data**:
-  - Export Offers (JSON/CSV)
-  - Export Users (JSON/CSV)
-  - Download functionality
-- ✅ **Import Data**:
-  - Import offers from JSON
-  - Bulk offer creation
-- ✅ User Management with filters
-- ✅ Partner Management with quick offer creation
-- ✅ Events System (daily/weekly/special)
+### Simplified Welcome Page (NEW)
+- Driver-only authentication (no Partner/Admin in auth modal)
+- "Business Portal" link moved to footer
+- Clean, focused onboarding for drivers
 
-### Boost System ✅ NEW (Dec 2025)
-**Pricing Structure:**
-- **Duration**: $25/day base, +$20 for each additional day
-  - 1 day = $25
-  - 2 days = $45
-  - 3 days = $65
-  - etc.
-- **Reach**: $5 for 100 people, +$10 per additional 100
-  - 100 reach = $5
-  - 200 reach = $15
-  - 300 reach = $25
-  - etc.
+### Improved RedemptionPopup (NEW)
+- Cleaner two-step flow: Details → QR Code
+- Clear discount and gems display
+- In-range indicator
+- 2-minute QR expiry countdown
+- Navigate button
+- No confusion with offers tab (FIXED)
 
-### AI Image Generation ✅ NEW (Dec 2025)
-- ✅ Uses Gemini Nano Banana via Emergent LLM Key
-- ✅ Offer type-specific prompts (gas, cafe, restaurant, carwash, retail)
-- ✅ Available in both Partner and Admin dashboards
-- ✅ Generated images can be attached to offers
+### Premium Partner Dashboard
+- Real-time analytics charts (Recharts)
+- Boost system with pricing calculator
+- AI image generation for offers
+- 4-step onboarding walkthrough
 
-### Session Management & User State Reset ✅
-- ✅ `/api/auth/login?role=driver` resets driver state
-- ✅ Fresh user starts with 0 gems, Level 1, 0 XP
-- ✅ Onboarding flow triggers correctly for new users
-
-### Driver App Features ✅
-- ✅ XP/Leveling system (Levels 1-99)
-- ✅ Tiered Offers (Basic 6% vs Premium 18%)
-- ✅ Glowing gem markers on map
-- ✅ Geofenced QR Code redemption
-- ✅ Weekly Recap (Premium)
-- ✅ Driving Score (Premium)
-- ✅ Orion Voice Assistant
-- ✅ Challenge Friend system
-- ✅ Road Reports with upvotes
-
-## API Endpoints
+### Premium Admin Dashboard
+- Platform-wide analytics
+- Create offers on behalf of businesses
+- Export/Import functionality (JSON/CSV)
+- AI image generation
+- 4-step onboarding walkthrough
 
 ### Boost System
+- Duration: $25/day base + $20/extra day
+- Reach: $5 for 100 + $10 per 100 increment
+- Full customization sliders
+
+## 📋 API Endpoints
+
+### Working (Real)
 - `POST /api/boosts/calculate` - Calculate boost cost
-- `POST /api/boosts/create` - Create a new boost
-- `GET /api/boosts` - Get all boosts
-- `DELETE /api/boosts/{boost_id}` - Cancel boost
+- `POST /api/images/generate` - AI image generation
+- `GET /api/admin/export/offers` - Export offers
+- `GET /api/admin/export/users` - Export users
+- `POST /api/admin/import/offers` - Import offers
+- `GET /api/analytics/dashboard` - Business analytics
 
-### AI Image Generation
-- `POST /api/images/generate` - Generate promotional image
-- `GET /api/images/{image_id}` - Get generated image
-
-### Business Analytics
-- `POST /api/analytics/track` - Track analytics event
-- `GET /api/analytics/dashboard` - Get business analytics
-
-### Admin Features
-- `POST /api/admin/offers/create` - Create offer for business
-- `GET /api/admin/export/offers` - Export offers (JSON/CSV)
-- `GET /api/admin/export/users` - Export users (JSON/CSV)
-- `POST /api/admin/import/offers` - Import offers from JSON
-- `GET /api/admin/analytics` - Platform-wide analytics
-
-## Testing Status
-- **Latest Report:** `/app/test_reports/iteration_15.json`
-- **Backend:** 100% (17/17 tests pass)
-- **Frontend:** 100% (all features working)
+### Working (Mock Data)
+- `GET /api/offers` - Mock offers
+- `POST /api/offers/{id}/redeem` - Mock redemption
+- `GET /api/user/profile` - Mock user data
+- `POST /api/auth/login` - Session reset (mock auth)
 
 ## ⚠️ MOCKED DATA
-- All backend data is in-memory (users_db, offers_db, boosts_db, analytics_db)
-- AI image generation uses real Gemini Nano Banana API
-- Boost payments are simulated (no real Stripe integration)
+- All user data (gems, XP, level, safety score)
+- Navigation (no real routing)
+- Offers (hardcoded mock data)
+- Analytics (random generated data)
+- Authentication (no real auth)
+- Payments (no real transactions)
 
-## Upcoming Tasks
+## 📄 Full Remaining Work
+See `/app/memory/REMAINING_WORK.md` for comprehensive list of:
+- Native iOS migration tasks
+- All backend APIs needed
+- Third-party integrations required
+- Database schema
+- Security requirements
+- Testing requirements
+- DevOps & deployment checklist
 
-### P2 - Full Button Audit
-- Wire up Settings, Notifications buttons on dashboards
-- Ensure all interactive elements function
+## Summary of What's NOT Functioning Yet
 
-### P3 - Enhanced Features
-- Real-time WebSocket updates for analytics
-- More granular boost targeting options
+### Navigation
+- No real turn-by-turn navigation
+- No real routing (Mapbox/Google Maps needed)
+- No real traffic data
+- No ETA calculations
 
-## Future/Backlog
-- Native iOS App Migration (Swift/SwiftUI)
-- Live Mapbox Integration
-- Real Stripe Payment Integration for boosts
-- Real Authentication (Firebase/Auth0)
-- Push Notifications System
+### Safety/Driving
+- No real driving telemetry
+- Safety score is mock (always 100)
+- No hard brake detection
+- No speeding detection
+
+### Payments
+- No Stripe integration
+- Premium subscriptions are mock
+- Boost payments are mock
+
+### Authentication  
+- No real JWT authentication
+- No password hashing
+- No email verification
+- No 2FA
+
+### Database
+- All data is in-memory
+- Lost on server restart
+- No PostgreSQL/Redis setup
+
+### Push Notifications
+- No Firebase/APNs integration
+- No real-time alerts
+
+## Portal URLs
+- **Partner Portal:** `yourdomain.com/portal/partner`
+- **Admin Console:** `yourdomain.com/portal/admin-sr2025secure`
+
+---
+**Last Updated:** December 2025
