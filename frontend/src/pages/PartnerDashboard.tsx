@@ -13,9 +13,9 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts'
-import { NotificationCenter, NotificationBell, useNotifications, notificationService } from '../../components/NotificationSystem'
-import SettingsModal from '../../components/SettingsModal'
-import HelpModal from '../../components/HelpModal'
+import { NotificationCenter, NotificationBell, useNotifications, notificationService } from '@/components/NotificationSystem'
+import SettingsModal from '@/components/SettingsModal'
+import HelpModal from '@/components/HelpModal'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
