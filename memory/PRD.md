@@ -4,156 +4,145 @@
 SnapRoad is a privacy-first navigation app with gamified safety rewards. Features an iPhone 16-optimized driver interface with Forza-style premium car customization, Orion voice assistant, tiered offers system, and comprehensive XP/leveling system.
 
 ## Tech Stack
-- **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS
+- **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS + Recharts
 - **Backend:** FastAPI (Python) with in-memory mock data
+- **AI Integration:** Gemini Nano Banana (via Emergent LLM Key)
 - **Planned:** iOS native (Swift/SwiftUI), Mapbox integration
 
-## App Routes
+## App Routes & URLs
+
+### Public Routes
 - `/` - Welcome/Landing page with auth modal
 - `/driver` - Driver mobile app experience
-- `/partner` - Partner business dashboard (Premium UI)
-- `/admin` - Admin console with full control (Premium UI)
+
+### Business Portal (Separate URL for Custom Domain)
+- `/portal/partner` - Partner business dashboard with real-time analytics
+
+### Admin Console (SECRET - Only Accessible via Direct Link)
+- `/portal/admin-sr2025secure` - Admin console with full platform control
+- **NOTE:** `/admin` redirects to home - admin is NOT searchable
 
 ## Completed Features
 
-### Session Management & User State Reset ✅ NEW (Dec 2025)
-- ✅ `/api/auth/login?role=driver` resets driver state for fresh testing experience
-- ✅ `/api/session/reset` endpoint for manual state reset
-- ✅ Driver login automatically clears gems, XP, level, redeemed offers
-- ✅ Fresh user starts with 0 gems, Level 1, 0 XP, no redeemed offers
-- ✅ Onboarding flow triggers correctly for new users
-
 ### Premium Partner Dashboard ✅ NEW (Dec 2025)
 - ✅ Glassmorphism UI with ambient background effects
-- ✅ Premium gradient cards with hover glow effects
-- ✅ **Onboarding Walkthrough** (4 steps with Skip/Continue)
-  - Welcome to Partner Portal
-  - Create Compelling Offers
-  - Track Your Performance
-  - Reach Premium Drivers
-- ✅ Overview: Total Redemptions, Views, New Customers, Revenue with trends
-- ✅ My Offers: Create, edit, pause, delete offers
-- ✅ Analytics placeholder for performance tracking
-- ✅ Recent redemptions list with timestamps and gem rewards
-- ✅ Help & Tour button to re-trigger onboarding
-- ✅ Business card with partner stats
+- ✅ **4-Step Onboarding Walkthrough** (Skip/Continue)
+- ✅ **Real-Time Analytics Dashboard**:
+  - Stats Cards: Total Views, Clicks, Redemptions, Revenue with trends
+  - Performance Trend Chart (Area chart with views/redemptions)
+  - Geographic Distribution (Pie chart with top locations)
+  - CTR, Conversion Rate, Avg Order Value metrics
+- ✅ **Boost Center** with customizable:
+  - Duration slider (1-30 days): $25 base + $20 per extra day
+  - Reach slider (100-2,000 people): $5 for 100 + $10 per 100 increment
+  - Real-time cost calculation
+- ✅ **AI Image Generator** for offers (Gemini Nano Banana)
+- ✅ Create/Edit/Delete offers with premium UI
 
 ### Premium Admin Dashboard ✅ NEW (Dec 2025)
 - ✅ Purple/pink gradient branding with glassmorphism
-- ✅ Premium ambient background effects
-- ✅ **Onboarding Walkthrough** (4 steps with Skip/Continue)
-  - Welcome, Administrator
-  - User Management
-  - Partner Oversight
-  - Create Platform Events
-- ✅ **Stats**: Total Users, Partners, Avg Safety Score with trends
-- ✅ **User Management**: View, edit, suspend users with filters
-- ✅ **Partner Management**: Approve, view, manage partners
-- ✅ **Events System**: Create daily/weekly/special events
-  - Gems multiplier and XP bonus settings
-  - Start/end date configuration
-  - Active/scheduled/ended status
-- ✅ **Quick Actions**: Create Event, View Reports, Send Broadcast, Export Data
-- ✅ **Platform Health**: API, Database, Payment, Push status
-- ✅ Help & Tour button to re-trigger onboarding
-- ✅ Super Admin card with full access indicator
+- ✅ **4-Step Onboarding Walkthrough** (Skip/Continue)
+- ✅ **Platform Analytics**:
+  - Stats: Total Users, Partners, Avg Safety Score
+  - Platform Growth Chart (new users over time)
+  - Revenue Trend Chart
+- ✅ **Quick Actions**: Create Offer, Export, Import, Create Event
+- ✅ **Create Offers on Behalf of Businesses**:
+  - Partner selector dropdown
+  - AI Image Generator integration
+  - All standard offer fields
+- ✅ **Export Data**:
+  - Export Offers (JSON/CSV)
+  - Export Users (JSON/CSV)
+  - Download functionality
+- ✅ **Import Data**:
+  - Import offers from JSON
+  - Bulk offer creation
+- ✅ User Management with filters
+- ✅ Partner Management with quick offer creation
+- ✅ Events System (daily/weekly/special)
 
-### Welcome Page & Auth System ✅
-- ✅ Beautiful landing page with city background
-- ✅ "Safe journeys, smart rewards" tagline
-- ✅ Feature strip: Safety Score, Earn Gems, Leaderboards, Premium Perks
-- ✅ Glassmorphism auth modal with role selector (Driver/Partner/Admin)
-- ✅ Email/password form with visibility toggle
-- ✅ Sign in/Sign up mode toggle
-- ✅ **Auto-resets driver state** on login for fresh experience
+### Boost System ✅ NEW (Dec 2025)
+**Pricing Structure:**
+- **Duration**: $25/day base, +$20 for each additional day
+  - 1 day = $25
+  - 2 days = $45
+  - 3 days = $65
+  - etc.
+- **Reach**: $5 for 100 people, +$10 per additional 100
+  - 100 reach = $5
+  - 200 reach = $15
+  - 300 reach = $25
+  - etc.
 
-### Orion Offer Alerts (During Drives) ✅
-- ✅ Pushes 2 offers during active navigation
-- ✅ Voice announcement: "Hey! There's a [business] nearby..."
-- ✅ Shows distance, discount, and gems reward
-- ✅ Mute/unmute button
-- ✅ "View Offer" button opens redemption popup
-- ✅ Auto-dismiss after 15 seconds
+### AI Image Generation ✅ NEW (Dec 2025)
+- ✅ Uses Gemini Nano Banana via Emergent LLM Key
+- ✅ Offer type-specific prompts (gas, cafe, restaurant, carwash, retail)
+- ✅ Available in both Partner and Admin dashboards
+- ✅ Generated images can be attached to offers
 
-### Phase 2C: Tiered Offers & Share Trip ✅
-- ✅ Tiered discounts: Basic (6%) vs Premium (18%)
-- ✅ Admin offers give 18% to all users
-- ✅ 5 seed offers with redemption tracking
-- ✅ Glowing gem markers on map for nearby offers
-- ✅ Enhanced Leaderboard with state filtering
-- ✅ Challenge Friend system with gems at stake
-- ✅ Challenge History & Badges modal
-- ✅ Geofenced QR Code system with screenshot blocking
-- ✅ Weekly Recap (Premium feature)
-- ✅ Driving Score & Orion Tips (Premium feature)
+### Session Management & User State Reset ✅
+- ✅ `/api/auth/login?role=driver` resets driver state
+- ✅ Fresh user starts with 0 gems, Level 1, 0 XP
+- ✅ Onboarding flow triggers correctly for new users
 
-### Phase 2A-B: Core Features ✅
+### Driver App Features ✅
 - ✅ XP/Leveling system (Levels 1-99)
-- ✅ Road Reports with upvotes
-- ✅ Community Badges (20 total)
+- ✅ Tiered Offers (Basic 6% vs Premium 18%)
+- ✅ Glowing gem markers on map
+- ✅ Geofenced QR Code redemption
+- ✅ Weekly Recap (Premium)
+- ✅ Driving Score (Premium)
 - ✅ Orion Voice Assistant
-- ✅ Quick Photo Report with safety guardrails
-- ✅ Road Status Overlay
-
-### Phase 1: Plan Selection System ✅
-- ✅ Basic ($0/mo, 1× gems) and Premium ($10.99/mo, 2× gems)
-- ✅ Admin pricing control with founders toggle
-- ✅ Onboarding flow: Plan Selection → Car Color Selection → Main App
-
-### Premium Car Studio ✅
-- ✅ Realistic 3D CSS car models with 7 body shapes
-- ✅ 24 color paint shop
-- ✅ Car as navigation marker and profile avatar
-
-### Core Features ✅
-- ✅ 4-Tab Navigation: Map, Routes, Rewards, Profile
-- ✅ Friends System, State Leaderboard (Ohio focus)
-- ✅ 160 Achievement Badges, Weekly Challenges
+- ✅ Challenge Friend system
+- ✅ Road Reports with upvotes
 
 ## API Endpoints
 
-### Session Management (NEW)
-- `POST /api/auth/login?role=driver` - Mock login with state reset for drivers
-- `POST /api/session/reset` - Manual state reset
+### Boost System
+- `POST /api/boosts/calculate` - Calculate boost cost
+- `POST /api/boosts/create` - Create a new boost
+- `GET /api/boosts` - Get all boosts
+- `DELETE /api/boosts/{boost_id}` - Cancel boost
 
-### Offers System
-- `GET /api/offers` - Get all offers with tiered discounts
-- `POST /api/offers` - Create new offer (business/admin)
-- `POST /api/offers/{id}/redeem` - Redeem an offer
-- `GET /api/offers/nearby` - Get offers within radius
+### AI Image Generation
+- `POST /api/images/generate` - Generate promotional image
+- `GET /api/images/{image_id}` - Get generated image
 
-### XP & Leveling
-- `GET /api/xp/status`, `GET /api/xp/config`, `POST /api/xp/add`
+### Business Analytics
+- `POST /api/analytics/track` - Track analytics event
+- `GET /api/analytics/dashboard` - Get business analytics
 
-### Road Reports
-- `GET /api/reports`, `POST /api/reports`, `POST /api/reports/{id}/upvote`
-
-### Pricing & Plans
-- `GET /api/pricing`, `PUT /api/admin/pricing`
-- `POST /api/user/plan`, `GET /api/user/plan`
+### Admin Features
+- `POST /api/admin/offers/create` - Create offer for business
+- `GET /api/admin/export/offers` - Export offers (JSON/CSV)
+- `GET /api/admin/export/users` - Export users (JSON/CSV)
+- `POST /api/admin/import/offers` - Import offers from JSON
+- `GET /api/admin/analytics` - Platform-wide analytics
 
 ## Testing Status
-- **Latest Report:** `/app/test_reports/iteration_14.json`
-- **Backend:** 100% pass rate (all session reset tests pass)
-- **Frontend:** 100% pass rate (Skip Tour button fixed)
+- **Latest Report:** `/app/test_reports/iteration_15.json`
+- **Backend:** 100% (17/17 tests pass)
+- **Frontend:** 100% (all features working)
 
 ## ⚠️ MOCKED DATA
-- All backend data is in-memory (users_db, offers_db, etc.)
-- Session resets are instant but don't persist across server restarts
-- Road status uses mock Columbus, OH area data
+- All backend data is in-memory (users_db, offers_db, boosts_db, analytics_db)
+- AI image generation uses real Gemini Nano Banana API
+- Boost payments are simulated (no real Stripe integration)
 
 ## Upcoming Tasks
 
 ### P2 - Full Button Audit
-- Ensure all interactive elements are wired to backend endpoints
 - Wire up Settings, Notifications buttons on dashboards
+- Ensure all interactive elements function
 
-### P3 - Orion Proactive Offer Alerts
-- Push offers during drives even without destination set
+### P3 - Enhanced Features
+- Real-time WebSocket updates for analytics
+- More granular boost targeting options
 
 ## Future/Backlog
 - Native iOS App Migration (Swift/SwiftUI)
-- Live Mapbox Integration (placeholder for API key)
-- Real Orion Voice with native iOS libs
-- Stripe payments integration
-- Real authentication (Firebase/Auth0)
+- Live Mapbox Integration
+- Real Stripe Payment Integration for boosts
+- Real Authentication (Firebase/Auth0)
+- Push Notifications System
