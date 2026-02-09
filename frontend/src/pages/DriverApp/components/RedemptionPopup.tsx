@@ -1,440 +1,298 @@
-import { useState, useEffect, useRef } from 'react'
-import { 
-  X, Gem, Shield, MapPin, Lock, AlertTriangle, Check, 
-  Sparkles, Zap, Clock, QrCode, Eye, EyeOff, Navigation
-} from 'lucide-react'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+import { useState, useEffect } from 'react'
+import { X, Gem, MapPin, Clock, Check, QrCode, AlertCircle, Gift, Star, Navigation } from 'lucide-react'
 
 interface Offer {
   id: number
   business_name: string
-  business_type: string
-  description: string
+  business_type?: string
+  description?: string
   discount_percent: number
-  gems_reward: number
+  base_gems?: number
+  gems_reward?: number
   lat?: number
   lng?: number
-  is_admin_offer?: boolean
+  distance?: number
+  expires_at?: string
 }
 
 interface RedemptionPopupProps {
-  isOpen: boolean
-  onClose: () => void
   offer: Offer | null
   userPlan: 'basic' | 'premium' | null
   userLocation: { lat: number; lng: number }
-  onRedeem: (offerId: number) => Promise<any>
+  onClose: () => void
+  onRedeem: (offerId: number) => void
 }
 
-// Calculate distance between two coordinates in miles
-function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 3959 // Earth's radius in miles
-  const dLat = (lat2 - lat1) * Math.PI / 180
-  const dLng = (lng2 - lng1) * Math.PI / 180
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng/2) * Math.sin(dLng/2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-  return R * c
-}
-
-// Generate a simple QR code pattern (visual representation)
-function QRCodeDisplay({ code, isBlurred, distance }: { code: string; isBlurred: boolean; distance: number }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    
-    const size = 160
-    canvas.width = size
-    canvas.height = size
-    
-    // Create QR-like pattern based on code
-    const moduleSize = 8
-    const modules = size / moduleSize
-    
-    // Background
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, size, size)
-    
-    // Generate pattern from code hash
-    const hash = code.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)
-    
-    // Draw QR pattern
-    ctx.fillStyle = '#000000'
-    
-    // Corner patterns (finder patterns)
-    const drawFinder = (x: number, y: number) => {
-      ctx.fillRect(x, y, moduleSize * 7, moduleSize)
-      ctx.fillRect(x, y + moduleSize * 6, moduleSize * 7, moduleSize)
-      ctx.fillRect(x, y, moduleSize, moduleSize * 7)
-      ctx.fillRect(x + moduleSize * 6, y, moduleSize, moduleSize * 7)
-      ctx.fillRect(x + moduleSize * 2, y + moduleSize * 2, moduleSize * 3, moduleSize * 3)
-    }
-    
-    drawFinder(0, 0)
-    drawFinder(size - moduleSize * 7, 0)
-    drawFinder(0, size - moduleSize * 7)
-    
-    // Data pattern
-    for (let i = 8; i < modules - 8; i++) {
-      for (let j = 8; j < modules - 8; j++) {
-        if (((hash >> ((i * j) % 32)) & 1) === 1) {
-          ctx.fillRect(i * moduleSize, j * moduleSize, moduleSize, moduleSize)
-        }
-      }
-    }
-    
-    // Add timing patterns
-    for (let i = 8; i < modules - 8; i++) {
-      if (i % 2 === 0) {
-        ctx.fillRect(i * moduleSize, 6 * moduleSize, moduleSize, moduleSize)
-        ctx.fillRect(6 * moduleSize, i * moduleSize, moduleSize, moduleSize)
-      }
-    }
-    
-  }, [code])
-  
-  return (
-    <div className="relative">
-      <canvas 
-        ref={canvasRef}
-        className={`rounded-lg ${isBlurred ? 'blur-lg' : ''}`}
-        style={{ 
-          imageRendering: 'pixelated',
-          // Prevent screenshots on supported browsers
-          WebkitUserSelect: 'none',
-          userSelect: 'none',
-        }}
-      />
-      {isBlurred && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/60 rounded-lg">
-          <Lock className="text-amber-400 mb-2" size={32} />
-          <p className="text-white text-xs font-medium text-center px-4">
-            Move within 1 mile to unlock
-          </p>
-          <p className="text-amber-400 text-[10px] mt-1">
-            {distance.toFixed(1)} mi away
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-export default function RedemptionPopup({ 
-  isOpen, 
-  onClose, 
-  offer, 
-  userPlan, 
+export default function RedemptionPopup({
+  offer,
+  userPlan,
   userLocation,
-  onRedeem 
+  onClose,
+  onRedeem,
 }: RedemptionPopupProps) {
-  const [redeeming, setRedeeming] = useState(false)
-  const [redeemed, setRedeemed] = useState(false)
-  const [qrCode, setQrCode] = useState<string | null>(null)
-  const [showQR, setShowQR] = useState(false)
-  const [screenshotAttempt, setScreenshotAttempt] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
-  
-  const isPremium = userPlan === 'premium'
-  
-  // Calculate distance to offer
-  const distance = offer ? calculateDistance(
-    userLocation.lat, 
-    userLocation.lng, 
-    offer.lat || userLocation.lat, 
-    offer.lng || userLocation.lng
-  ) : 0
-  
-  const isWithinRange = distance <= 1 // 1 mile geofence
-  
-  // Generate unique QR code for this redemption
+  const [step, setStep] = useState<'details' | 'qr'>('details')
+  const [isInRange, setIsInRange] = useState(true)
+  const [countdown, setCountdown] = useState(120) // 2 min QR expiry
+  const [qrCode, setQrCode] = useState('')
+  const [isRedeeming, setIsRedeeming] = useState(false)
+
   useEffect(() => {
-    if (offer && redeemed) {
-      const timestamp = Date.now()
-      const code = `SR-${offer.id}-${timestamp}-${Math.random().toString(36).substr(2, 9)}`
-      setQrCode(code)
-    }
-  }, [offer, redeemed])
-  
-  // Screenshot detection
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden && showQR) {
-        setScreenshotAttempt(true)
-        setTimeout(() => setScreenshotAttempt(false), 3000)
-      }
-    }
-    
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Detect common screenshot shortcuts
-      if (
-        (e.key === 'PrintScreen') ||
-        (e.metaKey && e.shiftKey && (e.key === '3' || e.key === '4' || e.key === '5')) ||
-        (e.ctrlKey && e.key === 'p')
-      ) {
-        e.preventDefault()
-        setScreenshotAttempt(true)
-        setTimeout(() => setScreenshotAttempt(false), 3000)
-      }
-    }
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    document.addEventListener('keydown', handleKeyDown)
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [showQR])
-  
-  const handleRedeem = async () => {
     if (!offer) return
-    setRedeeming(true)
-    
-    try {
-      const result = await onRedeem(offer.id)
-      if (result?.success) {
-        setRedeemed(true)
-        setShowQR(true)
-      }
-    } catch (e) {
-      // Still show success for demo
-      setRedeemed(true)
-      setShowQR(true)
-    } finally {
-      setRedeeming(false)
-    }
-  }
+
+    // Calculate distance (mock - always in range for demo)
+    const distance = offer.distance || 0.3
+    setIsInRange(distance < 1) // Within 1 mile
+
+    // Generate QR code data
+    setQrCode(`SNAPROAD-${offer.id}-${Date.now()}`)
+  }, [offer, userLocation])
+
+  useEffect(() => {
+    if (step !== 'qr') return
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer)
+          setStep('details')
+          return 120
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [step])
+
+  if (!offer) return null
+
+  // Calculate actual discount based on plan
+  const actualDiscount = userPlan === 'premium' 
+    ? Math.round(offer.discount_percent * 1.5) // Premium gets 1.5x
+    : offer.discount_percent
   
-  const handleClose = () => {
-    setRedeemed(false)
-    setShowQR(false)
-    setQrCode(null)
+  const gemsReward = offer.gems_reward || offer.base_gems || 50
+  const isPremium = userPlan === 'premium'
+
+  const handleGetQR = () => {
+    if (!isInRange) return
+    setStep('qr')
+  }
+
+  const handleRedeem = async () => {
+    setIsRedeeming(true)
+    await onRedeem(offer.id)
+    setIsRedeeming(false)
     onClose()
   }
-  
-  if (!isOpen || !offer) return null
-  
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const getBusinessIcon = () => {
+    switch (offer.business_type) {
+      case 'gas': return '⛽'
+      case 'cafe': return '☕'
+      case 'restaurant': return '🍔'
+      case 'carwash': return '🚗'
+      default: return '🎁'
+    }
+  }
+
   return (
-    <div 
-      className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4"
-      onClick={handleClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      {/* Backdrop */}
       <div 
-        ref={containerRef}
-        className={`w-full max-w-xs bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl overflow-hidden shadow-2xl animate-scale-in border border-slate-700 ${
-          screenshotAttempt ? 'screenshot-blocked' : ''
-        }`}
-        onClick={e => e.stopPropagation()}
-        style={{
-          // Additional screenshot prevention
-          WebkitTouchCallout: 'none',
-          WebkitUserSelect: 'none',
-          userSelect: 'none',
-        }}
-      >
-        {/* Screenshot Warning Overlay */}
-        {screenshotAttempt && (
-          <div className="absolute inset-0 bg-black z-50 flex flex-col items-center justify-center animate-pulse">
-            <AlertTriangle className="text-red-500 mb-3" size={48} />
-            <p className="text-red-500 font-bold">Screenshot Blocked</p>
-            <p className="text-red-400 text-xs mt-1">QR codes are protected</p>
-          </div>
-        )}
-        
-        {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-4">
-          <div className="flex items-center justify-between">
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      
+      {/* Modal */}
+      <div className="relative w-full max-w-sm mx-4 mb-4 sm:mb-0 animate-slide-up">
+        <div className="bg-gradient-to-b from-slate-800 to-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-white/10">
+          
+          {/* Header */}
+          <div className="relative p-4 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border-b border-white/5">
+            <button
+              onClick={onClose}
+              className="absolute top-3 right-3 w-8 h-8 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20"
+            >
+              <X className="text-white/80" size={16} />
+            </button>
+            
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                <Gem className="text-white" size={20} />
+              <div className="w-14 h-14 bg-slate-700/50 rounded-2xl flex items-center justify-center text-3xl">
+                {getBusinessIcon()}
               </div>
-              <div>
-                <h2 className="text-white font-bold text-sm">{offer.business_name}</h2>
-                <p className="text-emerald-100 text-xs">{offer.discount_percent}% off</p>
+              <div className="flex-1">
+                <h2 className="text-white font-bold text-lg leading-tight">{offer.business_name}</h2>
+                <p className="text-slate-400 text-sm">{offer.description || 'Special offer'}</p>
               </div>
             </div>
-            <button 
-              onClick={handleClose}
-              className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30"
-              data-testid="redemption-close"
-            >
-              <X className="text-white" size={16} />
-            </button>
           </div>
-        </div>
-        
-        {/* Content */}
-        <div className="p-4">
-          {!redeemed ? (
-            // Pre-redemption view
-            <div className="space-y-4">
-              {/* Reward Display */}
-              <div className="bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 rounded-xl p-4 text-center">
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  <Sparkles className="text-cyan-400" size={20} />
-                  <span className="text-cyan-400 text-2xl font-bold">+{offer.gems_reward}</span>
-                  <Gem className="text-cyan-400" size={20} />
-                </div>
-                <p className="text-cyan-300/70 text-xs">Gems you'll earn</p>
-              </div>
-              
-              {/* Location Status */}
-              <div className={`rounded-xl p-3 flex items-center gap-3 ${
-                isWithinRange 
-                  ? 'bg-emerald-500/10 border border-emerald-500/30' 
-                  : 'bg-amber-500/10 border border-amber-500/30'
-              }`}>
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                  isWithinRange ? 'bg-emerald-500/20' : 'bg-amber-500/20'
-                }`}>
-                  {isWithinRange ? (
-                    <Check className="text-emerald-400" size={16} />
-                  ) : (
-                    <Navigation className="text-amber-400" size={16} />
+
+          {/* Details Step */}
+          {step === 'details' && (
+            <div className="p-4">
+              {/* Discount & Gems Row */}
+              <div className="flex gap-3 mb-4">
+                {/* Discount Card */}
+                <div className="flex-1 bg-emerald-500/10 rounded-2xl p-4 border border-emerald-500/20 text-center">
+                  <p className="text-emerald-400 text-3xl font-bold">{actualDiscount}%</p>
+                  <p className="text-emerald-300 text-xs font-medium mt-1">OFF</p>
+                  {isPremium && (
+                    <span className="inline-block mt-2 bg-amber-500/20 text-amber-400 text-[10px] px-2 py-0.5 rounded-full">
+                      PREMIUM RATE
+                    </span>
                   )}
                 </div>
-                <div className="flex-1">
-                  <p className={`text-xs font-medium ${isWithinRange ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    {isWithinRange ? 'You\'re in range!' : `${distance.toFixed(1)} miles away`}
-                  </p>
-                  <p className="text-slate-400 text-[10px]">
-                    {isWithinRange ? 'QR code will unlock' : 'Move closer to unlock QR'}
-                  </p>
+                
+                {/* Gems Card */}
+                <div className="flex-1 bg-cyan-500/10 rounded-2xl p-4 border border-cyan-500/20 text-center">
+                  <div className="flex items-center justify-center gap-1">
+                    <Gem className="text-cyan-400" size={20} />
+                    <p className="text-cyan-400 text-3xl font-bold">+{gemsReward}</p>
+                  </div>
+                  <p className="text-cyan-300 text-xs font-medium mt-1">GEMS</p>
                 </div>
               </div>
-              
-              {/* Premium Badge */}
-              {isPremium && (
-                <div className="flex items-center justify-center gap-2 text-amber-400 text-xs">
-                  <Zap size={12} />
-                  <span>Premium: Extra 12% discount applied</span>
+
+              {/* Location Info */}
+              <div className="bg-slate-700/30 rounded-xl p-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <MapPin className={`${isInRange ? 'text-emerald-400' : 'text-amber-400'}`} size={16} />
+                  <span className="text-slate-300 text-sm">
+                    {offer.distance ? `${offer.distance.toFixed(1)} miles away` : '0.3 miles away'}
+                  </span>
+                  {isInRange && (
+                    <span className="ml-auto bg-emerald-500/20 text-emerald-400 text-xs px-2 py-0.5 rounded-full">
+                      In Range
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Not in range warning */}
+              {!isInRange && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 mb-4 flex items-start gap-2">
+                  <AlertCircle className="text-amber-400 flex-shrink-0 mt-0.5" size={16} />
+                  <div>
+                    <p className="text-amber-400 text-sm font-medium">Too far away</p>
+                    <p className="text-slate-400 text-xs">Drive closer to this location to unlock the QR code</p>
+                  </div>
                 </div>
               )}
-              
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={onClose}
+                  className="flex-1 bg-slate-700/50 text-white py-3 rounded-xl font-medium hover:bg-slate-700 transition-colors"
+                >
+                  Maybe Later
+                </button>
+                <button
+                  onClick={handleGetQR}
+                  disabled={!isInRange}
+                  className={`flex-1 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all ${
+                    isInRange
+                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:from-emerald-400 hover:to-cyan-400'
+                      : 'bg-slate-700/30 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  <QrCode size={18} />
+                  Get QR Code
+                </button>
+              </div>
+
+              {/* Navigate Button */}
+              <button className="w-full mt-3 bg-blue-500/10 text-blue-400 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-blue-500/20 transition-colors">
+                <Navigation size={16} />
+                Navigate Here
+              </button>
+            </div>
+          )}
+
+          {/* QR Code Step */}
+          {step === 'qr' && (
+            <div className="p-4">
+              {/* Timer Warning */}
+              <div className="flex items-center justify-center gap-2 mb-4 text-amber-400">
+                <Clock size={16} />
+                <span className="font-mono font-bold text-lg">{formatTime(countdown)}</span>
+                <span className="text-sm text-slate-400">remaining</span>
+              </div>
+
+              {/* QR Code Display */}
+              <div className="bg-white rounded-2xl p-4 mb-4 relative overflow-hidden">
+                {/* QR Code Pattern (simplified visual) */}
+                <div className="aspect-square bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl flex items-center justify-center relative">
+                  <div className="absolute inset-4 border-2 border-slate-800 rounded-lg" />
+                  <div className="grid grid-cols-7 gap-1 p-6">
+                    {Array.from({ length: 49 }).map((_, i) => (
+                      <div 
+                        key={i} 
+                        className={`w-4 h-4 rounded-sm ${
+                          Math.random() > 0.4 ? 'bg-slate-800' : 'bg-transparent'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  {/* Corner markers */}
+                  <div className="absolute top-3 left-3 w-8 h-8 border-4 border-slate-800 rounded-sm" />
+                  <div className="absolute top-3 right-3 w-8 h-8 border-4 border-slate-800 rounded-sm" />
+                  <div className="absolute bottom-3 left-3 w-8 h-8 border-4 border-slate-800 rounded-sm" />
+                </div>
+                
+                {/* Secure overlay (screenshot protection visual) */}
+                <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/5 to-transparent pointer-events-none" />
+              </div>
+
+              {/* Instructions */}
+              <div className="text-center mb-4">
+                <p className="text-white font-medium">Show this to the cashier</p>
+                <p className="text-slate-400 text-sm">QR code expires in {formatTime(countdown)}</p>
+              </div>
+
               {/* Redeem Button */}
               <button
                 onClick={handleRedeem}
-                disabled={redeeming}
-                className="w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white active:scale-[0.98] disabled:opacity-50"
-                data-testid="redeem-btn"
+                disabled={isRedeeming}
+                className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-white py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 hover:from-emerald-400 hover:to-cyan-400 disabled:opacity-50"
               >
-                {redeeming ? (
-                  <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+                {isRedeeming ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
                   <>
-                    <Sparkles size={18} />
-                    Redeem Now
+                    <Check size={18} />
+                    Mark as Redeemed
                   </>
                 )}
               </button>
-            </div>
-          ) : (
-            // Post-redemption view with QR
-            <div className="space-y-4">
-              {/* Success Message */}
-              <div className="text-center">
-                <div className="w-12 h-12 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-2">
-                  <Check className="text-white" size={24} />
-                </div>
-                <p className="text-emerald-400 font-bold">Redeemed!</p>
-                <p className="text-slate-400 text-xs">+{offer.gems_reward} gems earned</p>
-              </div>
-              
-              {/* QR Code Section */}
-              <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <QrCode className="text-slate-400" size={16} />
-                    <span className="text-slate-300 text-xs font-medium">Redemption QR</span>
-                  </div>
-                  <button
-                    onClick={() => setShowQR(!showQR)}
-                    className="text-slate-400 hover:text-white"
-                  >
-                    {showQR ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-                
-                {/* QR Code Display */}
-                <div className="flex justify-center">
-                  {qrCode && (
-                    <QRCodeDisplay 
-                      code={qrCode} 
-                      isBlurred={!isWithinRange} 
-                      distance={distance}
-                    />
-                  )}
-                </div>
-                
-                {/* Geofence Warning */}
-                {!isWithinRange && (
-                  <div className="mt-3 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 flex items-center gap-2">
-                    <Lock className="text-amber-400" size={14} />
-                    <p className="text-amber-400 text-[10px]">
-                      QR unlocks within 1 mile of location
-                    </p>
-                  </div>
-                )}
-                
-                {/* Code Display */}
-                {isWithinRange && qrCode && (
-                  <div className="mt-3 bg-slate-700/50 rounded-lg p-2 text-center">
-                    <p className="text-slate-500 text-[10px] mb-1">Redemption Code</p>
-                    <p className="text-white text-xs font-mono tracking-wider">{qrCode}</p>
-                  </div>
-                )}
-              </div>
-              
-              {/* Timer */}
-              <div className="flex items-center justify-center gap-2 text-slate-400 text-xs">
-                <Clock size={12} />
-                <span>Valid for 24 hours</span>
-              </div>
-              
-              {/* Security Notice */}
-              <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                <div className="flex items-start gap-2">
-                  <Shield className="text-blue-400 mt-0.5" size={14} />
-                  <div>
-                    <p className="text-blue-400 text-[10px] font-medium">Protected QR Code</p>
-                    <p className="text-slate-500 text-[10px]">
-                      Screenshots are blocked. Present this screen at the location to redeem.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Done Button */}
+
+              {/* Back Button */}
               <button
-                onClick={handleClose}
-                className="w-full py-3 rounded-xl font-medium bg-slate-700 text-white hover:bg-slate-600"
+                onClick={() => setStep('details')}
+                className="w-full mt-2 text-slate-400 text-sm py-2 hover:text-white"
               >
-                Done
+                ← Back to details
               </button>
             </div>
           )}
         </div>
       </div>
-      
-      {/* CSS for screenshot blocking */}
+
+      {/* CSS Animation */}
       <style>{`
-        .screenshot-blocked * {
-          filter: blur(20px) !important;
-          opacity: 0 !important;
+        @keyframes slide-up {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
         }
-        
-        @media print {
-          .screenshot-blocked, [data-testid="redemption-close"] {
-            display: none !important;
-          }
+        .animate-slide-up {
+          animation: slide-up 0.3s ease-out;
         }
       `}</style>
     </div>
