@@ -42,13 +42,15 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: AuthModalProps) {
     // Reset user state for fresh experience (especially for drivers)
     await resetUserSession(role)
     
-    // Navigate based on role
+    // Navigate based on role to new portal paths
     if (role === 'driver') {
       navigate('/driver')
     } else if (role === 'partner') {
-      navigate('/partner')
+      navigate('/portal/partner')
     } else {
-      navigate('/admin')
+      // Admin uses secret path - this is only shown in auth modal for demo
+      // In production, admin would use direct link only
+      navigate('/portal/admin-sr2025secure')
     }
     
     setLoading(false)
