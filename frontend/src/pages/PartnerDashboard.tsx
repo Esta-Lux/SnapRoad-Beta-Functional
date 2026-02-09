@@ -295,11 +295,21 @@ export default function PartnerDashboard() {
   const [showBoostModal, setShowBoostModal] = useState<Offer | null>(null)
   const [showImageGenerator, setShowImageGenerator] = useState(false)
   const [newOfferImage, setNewOfferImage] = useState<string | null>(null)
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
+  
+  // Notification hooks
+  const { sendNotification } = useNotifications()
 
   useEffect(() => {
     const hasSeenOnboarding = localStorage.getItem('partner_onboarding_complete')
     if (!hasSeenOnboarding) setShowOnboarding(true)
     loadData()
+    
+    // Start demo notifications every 45 seconds
+    const stopNotifications = notificationService.startDemoNotifications(45000)
+    return () => stopNotifications()
   }, [])
 
   const loadData = async () => {
