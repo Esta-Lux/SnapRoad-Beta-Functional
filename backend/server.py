@@ -2278,3 +2278,517 @@ def get_weekly_recap():
         "success": True,
         "data": stats
     }
+
+# ==================== BOOST SYSTEM ====================
+# Pricing Configuration
+BOOST_PRICING = {
+    "base_daily_cost": 25,  # $25 for first day
+    "additional_day_cost": 20,  # +$20 for each additional day
+    "base_reach": 100,  # Base reach of 100 people
+    "base_reach_cost": 5,  # $5 for 100 reach
+    "reach_increment": 100,  # Increases by 100
+    "reach_increment_cost": 10,  # +$10 per 100 increment
+}
+
+# Boosts Database
+boosts_db = []
+
+class BoostCreate(BaseModel):
+    offer_id: int
+    duration_days: int  # 1-30 days
+    reach_target: int  # 100, 200, 300, etc.
+    business_id: Optional[str] = None
+
+class BoostCalculate(BaseModel):
+    duration_days: int
+    reach_target: int
+
+@app.post("/api/boosts/calculate")
+def calculate_boost_cost(calc: BoostCalculate):
+    """Calculate the cost of a boost based on duration and reach."""
+    # Duration cost: $25 base + $20 per additional day
+    duration_cost = BOOST_PRICING["base_daily_cost"]
+    if calc.duration_days > 1:
+        duration_cost += (calc.duration_days - 1) * BOOST_PRICING["additional_day_cost"]
+    
+    # Reach cost: $5 for 100, +$10 per additional 100
+    reach_increments = calc.reach_target // BOOST_PRICING["reach_increment"]
+    reach_cost = BOOST_PRICING["base_reach_cost"]
+    if reach_increments > 1:
+        reach_cost += (reach_increments - 1) * BOOST_PRICING["reach_increment_cost"]
+    
+    total_cost = duration_cost + reach_cost
+    
+    return {
+        "success": True,
+        "data": {
+            "duration_days": calc.duration_days,
+            "reach_target": calc.reach_target,
+            "duration_cost": duration_cost,
+            "reach_cost": reach_cost,
+            "total_cost": total_cost,
+            "breakdown": {
+                "duration": f"${BOOST_PRICING['base_daily_cost']} base + ${(calc.duration_days - 1) * BOOST_PRICING['additional_day_cost']} for {calc.duration_days - 1} extra days",
+                "reach": f"${BOOST_PRICING['base_reach_cost']} for 100 + ${(reach_increments - 1) * BOOST_PRICING['reach_increment_cost']} for {(reach_increments - 1) * 100} extra reach"
+            }
+        }
+    }
+
+@app.post("/api/boosts/create")
+def create_boost(boost: BoostCreate):
+    """Create a new boost for an offer."""
+    # Calculate cost
+    calc_result = calculate_boost_cost(BoostCalculate(
+        duration_days=boost.duration_days,
+        reach_target=boost.reach_target
+    ))
+    
+    new_boost = {
+        "id": str(uuid.uuid4())[:8],
+        "offer_id": boost.offer_id,
+        "business_id": boost.business_id or "default_business",
+        "duration_days": boost.duration_days,
+        "reach_target": boost.reach_target,
+        "total_cost": calc_result["data"]["total_cost"],
+        "status": "active",
+        "created_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now() + timedelta(days=boost.duration_days)).isoformat(),
+        "current_reach": 0,
+        "impressions": 0,
+        "clicks": 0,
+    }
+    
+    boosts_db.append(new_boost)
+    
+    return {
+        "success": True,
+        "message": f"Boost created! ${calc_result['data']['total_cost']} charged.",
+        "data": new_boost
+    }
+
+@app.get("/api/boosts")
+def get_boosts(business_id: Optional[str] = None):
+    """Get all boosts, optionally filtered by business."""
+    if business_id:
+        filtered = [b for b in boosts_db if b["business_id"] == business_id]
+        return {"success": True, "data": filtered}
+    return {"success": True, "data": boosts_db}
+
+@app.get("/api/boosts/{boost_id}")
+def get_boost(boost_id: str):
+    """Get a specific boost."""
+    boost = next((b for b in boosts_db if b["id"] == boost_id), None)
+    if not boost:
+        raise HTTPException(status_code=404, detail="Boost not found")
+    return {"success": True, "data": boost}
+
+@app.delete("/api/boosts/{boost_id}")
+def cancel_boost(boost_id: str):
+    """Cancel a boost."""
+    global boosts_db
+    boost = next((b for b in boosts_db if b["id"] == boost_id), None)
+    if not boost:
+        raise HTTPException(status_code=404, detail="Boost not found")
+    boost["status"] = "cancelled"
+    return {"success": True, "message": "Boost cancelled"}
+
+# ==================== AI IMAGE GENERATION ====================
+class ImageGenerateRequest(BaseModel):
+    prompt: str
+    offer_type: Optional[str] = None  # gas, cafe, restaurant, carwash, etc.
+
+# Store generated images
+generated_images_db = {}
+
+@app.post("/api/images/generate")
+async def generate_offer_image(request: ImageGenerateRequest):
+    """Generate an AI image for an offer using Gemini Nano Banana."""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        
+        api_key = os.getenv("EMERGENT_LLM_KEY")
+        if not api_key:
+            return {"success": False, "message": "API key not configured"}
+        
+        # Create enhanced prompt for marketing image
+        enhanced_prompt = f"""Create a professional, eye-catching promotional marketing image for this offer: {request.prompt}. 
+        Make it vibrant, modern, and suitable for a mobile app. Include visual elements that represent the offer type.
+        Style: Clean, professional, marketing material with bold colors."""
+        
+        if request.offer_type:
+            type_hints = {
+                "gas": "Include gas station, fuel pump, or car elements",
+                "cafe": "Include coffee cups, cozy cafe atmosphere",
+                "restaurant": "Include delicious food, dining atmosphere",
+                "carwash": "Include clean shiny car, water droplets, soap suds",
+                "retail": "Include shopping bags, store front",
+                "entertainment": "Include fun, vibrant entertainment elements",
+            }
+            if request.offer_type in type_hints:
+                enhanced_prompt += f" {type_hints[request.offer_type]}"
+        
+        # Generate image
+        chat = LlmChat(
+            api_key=api_key, 
+            session_id=f"img-{uuid.uuid4()}", 
+            system_message="You are a professional marketing image generator."
+        )
+        chat.with_model("gemini", "gemini-3-pro-image-preview").with_params(modalities=["image", "text"])
+        
+        msg = UserMessage(text=enhanced_prompt)
+        text_response, images = await chat.send_message_multimodal_response(msg)
+        
+        if images and len(images) > 0:
+            # Store the image
+            image_id = str(uuid.uuid4())[:8]
+            image_data = images[0]["data"]
+            generated_images_db[image_id] = {
+                "id": image_id,
+                "data": image_data,
+                "mime_type": images[0].get("mime_type", "image/png"),
+                "prompt": request.prompt,
+                "created_at": datetime.now().isoformat()
+            }
+            
+            return {
+                "success": True,
+                "data": {
+                    "image_id": image_id,
+                    "image_data": image_data[:100] + "...",  # Truncated for response
+                    "image_base64": f"data:image/png;base64,{image_data}",
+                    "message": text_response or "Image generated successfully"
+                }
+            }
+        else:
+            return {"success": False, "message": "No image was generated"}
+            
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/images/{image_id}")
+def get_generated_image(image_id: str):
+    """Get a generated image by ID."""
+    if image_id not in generated_images_db:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    img = generated_images_db[image_id]
+    return {
+        "success": True,
+        "data": {
+            "image_id": img["id"],
+            "image_base64": f"data:{img['mime_type']};base64,{img['data']}",
+            "created_at": img["created_at"]
+        }
+    }
+
+# ==================== BUSINESS ANALYTICS ====================
+# Analytics database for real-time tracking
+analytics_db = {
+    "default_business": {
+        "views": [],
+        "redemptions": [],
+        "clicks": [],
+        "revenue": 0,
+        "total_savings": 0,
+    }
+}
+
+class AnalyticsEvent(BaseModel):
+    event_type: str  # view, click, redemption
+    offer_id: int
+    business_id: Optional[str] = "default_business"
+    user_location: Optional[dict] = None
+
+@app.post("/api/analytics/track")
+def track_analytics_event(event: AnalyticsEvent):
+    """Track an analytics event."""
+    if event.business_id not in analytics_db:
+        analytics_db[event.business_id] = {
+            "views": [], "redemptions": [], "clicks": [],
+            "revenue": 0, "total_savings": 0
+        }
+    
+    event_data = {
+        "offer_id": event.offer_id,
+        "timestamp": datetime.now().isoformat(),
+        "location": event.user_location
+    }
+    
+    if event.event_type == "view":
+        analytics_db[event.business_id]["views"].append(event_data)
+    elif event.event_type == "click":
+        analytics_db[event.business_id]["clicks"].append(event_data)
+    elif event.event_type == "redemption":
+        analytics_db[event.business_id]["redemptions"].append(event_data)
+        analytics_db[event.business_id]["revenue"] += random.randint(10, 50)
+        analytics_db[event.business_id]["total_savings"] += random.randint(5, 20)
+    
+    return {"success": True, "message": "Event tracked"}
+
+@app.get("/api/analytics/dashboard")
+def get_analytics_dashboard(business_id: str = "default_business", days: int = 7):
+    """Get comprehensive analytics for business dashboard."""
+    if business_id not in analytics_db:
+        analytics_db[business_id] = {
+            "views": [], "redemptions": [], "clicks": [],
+            "revenue": 0, "total_savings": 0
+        }
+    
+    data = analytics_db[business_id]
+    
+    # Generate mock historical data for charts
+    chart_data = []
+    for i in range(days):
+        date = (datetime.now() - timedelta(days=days-1-i)).strftime("%b %d")
+        chart_data.append({
+            "date": date,
+            "views": random.randint(50, 200),
+            "clicks": random.randint(20, 80),
+            "redemptions": random.randint(5, 30),
+            "revenue": random.randint(100, 500),
+        })
+    
+    # Calculate totals
+    total_views = sum(d["views"] for d in chart_data)
+    total_clicks = sum(d["clicks"] for d in chart_data)
+    total_redemptions = sum(d["redemptions"] for d in chart_data)
+    total_revenue = sum(d["revenue"] for d in chart_data)
+    
+    # CTR calculation
+    ctr = round((total_clicks / total_views * 100), 1) if total_views > 0 else 0
+    conversion_rate = round((total_redemptions / total_clicks * 100), 1) if total_clicks > 0 else 0
+    
+    # Geographic data (mock)
+    geo_data = [
+        {"city": "Columbus", "lat": 39.9612, "lng": -82.9988, "redemptions": random.randint(20, 50)},
+        {"city": "Dublin", "lat": 40.0992, "lng": -83.1141, "redemptions": random.randint(10, 30)},
+        {"city": "Westerville", "lat": 40.1262, "lng": -82.9291, "redemptions": random.randint(8, 25)},
+        {"city": "Grove City", "lat": 39.8812, "lng": -83.0930, "redemptions": random.randint(5, 20)},
+        {"city": "Reynoldsburg", "lat": 39.9573, "lng": -82.8121, "redemptions": random.randint(5, 15)},
+    ]
+    
+    # Hourly distribution
+    hourly_data = []
+    for hour in range(24):
+        hourly_data.append({
+            "hour": f"{hour:02d}:00",
+            "redemptions": random.randint(0, 15) if 6 <= hour <= 22 else random.randint(0, 3)
+        })
+    
+    return {
+        "success": True,
+        "data": {
+            "summary": {
+                "total_views": total_views,
+                "total_clicks": total_clicks,
+                "total_redemptions": total_redemptions,
+                "total_revenue": total_revenue,
+                "ctr": ctr,
+                "conversion_rate": conversion_rate,
+                "avg_order_value": round(total_revenue / total_redemptions, 2) if total_redemptions > 0 else 0,
+            },
+            "chart_data": chart_data,
+            "geo_data": geo_data,
+            "hourly_data": hourly_data,
+            "top_offers": [
+                {"name": "15% Off First Visit", "redemptions": random.randint(50, 150), "revenue": random.randint(500, 1500)},
+                {"name": "Weekend Special", "redemptions": random.randint(30, 100), "revenue": random.randint(300, 900)},
+                {"name": "Loyalty Bonus", "redemptions": random.randint(20, 60), "revenue": random.randint(200, 600)},
+            ],
+            "recent_activity": [
+                {"type": "redemption", "offer": "15% Off First Visit", "time": "2 minutes ago", "location": "Columbus"},
+                {"type": "view", "offer": "Weekend Special", "time": "5 minutes ago", "location": "Dublin"},
+                {"type": "redemption", "offer": "Loyalty Bonus", "time": "12 minutes ago", "location": "Westerville"},
+                {"type": "click", "offer": "15% Off First Visit", "time": "18 minutes ago", "location": "Grove City"},
+            ]
+        }
+    }
+
+# ==================== ADMIN FEATURES ====================
+# Admin-created offers on behalf of businesses
+admin_offers_db = []
+
+class AdminOfferCreate(BaseModel):
+    business_name: str
+    business_id: Optional[str] = None
+    business_type: str
+    description: str
+    discount_percent: int
+    base_gems: int
+    lat: float
+    lng: float
+    expires_hours: int = 24
+    image_id: Optional[str] = None
+
+@app.post("/api/admin/offers/create")
+def admin_create_offer(offer: AdminOfferCreate):
+    """Admin creates an offer on behalf of a business."""
+    new_id = max([o["id"] for o in offers_db], default=0) + 1
+    new_offer = {
+        "id": new_id,
+        "business_name": offer.business_name,
+        "business_id": offer.business_id or f"biz_{new_id}",
+        "business_type": offer.business_type,
+        "description": offer.description,
+        "discount_percent": offer.discount_percent,
+        "base_gems": offer.base_gems,
+        "lat": offer.lat,
+        "lng": offer.lng,
+        "is_admin_offer": True,
+        "created_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
+        "created_by": "admin",
+        "redemption_count": 0,
+        "image_id": offer.image_id,
+    }
+    offers_db.append(new_offer)
+    admin_offers_db.append(new_offer)
+    
+    return {"success": True, "message": f"Offer created for {offer.business_name}", "data": new_offer}
+
+@app.get("/api/admin/export/offers")
+def export_offers(format: str = "json"):
+    """Export all offers as JSON or CSV."""
+    export_data = []
+    for offer in offers_db:
+        export_data.append({
+            "id": offer["id"],
+            "business_name": offer["business_name"],
+            "business_type": offer["business_type"],
+            "description": offer["description"],
+            "discount_percent": offer.get("discount_percent", 0),
+            "base_gems": offer["base_gems"],
+            "lat": offer["lat"],
+            "lng": offer["lng"],
+            "created_at": offer["created_at"],
+            "expires_at": offer["expires_at"],
+            "redemption_count": offer.get("redemption_count", 0),
+        })
+    
+    if format == "csv":
+        # Generate CSV string
+        if not export_data:
+            return {"success": True, "data": "", "format": "csv"}
+        
+        headers = list(export_data[0].keys())
+        csv_lines = [",".join(headers)]
+        for row in export_data:
+            csv_lines.append(",".join(str(row.get(h, "")) for h in headers))
+        
+        return {"success": True, "data": "\n".join(csv_lines), "format": "csv", "count": len(export_data)}
+    
+    return {"success": True, "data": export_data, "format": "json", "count": len(export_data)}
+
+@app.get("/api/admin/export/users")
+def export_users(format: str = "json"):
+    """Export all users as JSON or CSV."""
+    export_data = []
+    for uid, user in users_db.items():
+        export_data.append({
+            "id": user["id"],
+            "name": user["name"],
+            "plan": user.get("plan", "basic"),
+            "gems": user.get("gems", 0),
+            "level": user.get("level", 1),
+            "safety_score": user.get("safety_score", 0),
+            "total_miles": user.get("total_miles", 0),
+            "total_trips": user.get("total_trips", 0),
+            "state": user.get("state", ""),
+            "member_since": user.get("member_since", ""),
+        })
+    
+    if format == "csv":
+        if not export_data:
+            return {"success": True, "data": "", "format": "csv"}
+        
+        headers = list(export_data[0].keys())
+        csv_lines = [",".join(headers)]
+        for row in export_data:
+            csv_lines.append(",".join(str(row.get(h, "")) for h in headers))
+        
+        return {"success": True, "data": "\n".join(csv_lines), "format": "csv", "count": len(export_data)}
+    
+    return {"success": True, "data": export_data, "format": "json", "count": len(export_data)}
+
+class OfferImport(BaseModel):
+    offers: List[dict]
+
+@app.post("/api/admin/import/offers")
+def import_offers(import_data: OfferImport):
+    """Import offers from JSON data."""
+    imported_count = 0
+    errors = []
+    
+    for offer_data in import_data.offers:
+        try:
+            new_id = max([o["id"] for o in offers_db], default=0) + 1
+            new_offer = {
+                "id": new_id,
+                "business_name": offer_data.get("business_name", "Imported Business"),
+                "business_type": offer_data.get("business_type", "retail"),
+                "description": offer_data.get("description", ""),
+                "base_gems": offer_data.get("base_gems", 25),
+                "lat": offer_data.get("lat", 39.9612),
+                "lng": offer_data.get("lng", -82.9988),
+                "is_admin_offer": True,
+                "created_at": datetime.now().isoformat(),
+                "expires_at": (datetime.now() + timedelta(hours=offer_data.get("expires_hours", 24))).isoformat(),
+                "created_by": "admin_import",
+                "redemption_count": 0,
+            }
+            offers_db.append(new_offer)
+            imported_count += 1
+        except Exception as e:
+            errors.append(str(e))
+    
+    return {
+        "success": True,
+        "message": f"Imported {imported_count} offers",
+        "data": {"imported": imported_count, "errors": errors}
+    }
+
+# ==================== ADMIN ANALYTICS ====================
+@app.get("/api/admin/analytics")
+def get_admin_analytics():
+    """Get platform-wide analytics for admin dashboard."""
+    total_users = len(users_db)
+    premium_users = sum(1 for u in users_db.values() if u.get("is_premium", False))
+    total_offers = len(offers_db)
+    total_redemptions = sum(o.get("redemption_count", 0) for o in offers_db)
+    
+    # Generate chart data
+    chart_data = []
+    for i in range(30):
+        date = (datetime.now() - timedelta(days=29-i)).strftime("%b %d")
+        chart_data.append({
+            "date": date,
+            "new_users": random.randint(50, 200),
+            "active_users": random.randint(500, 2000),
+            "redemptions": random.randint(100, 500),
+            "revenue": random.randint(5000, 20000),
+        })
+    
+    return {
+        "success": True,
+        "data": {
+            "summary": {
+                "total_users": total_users,
+                "premium_users": premium_users,
+                "total_offers": total_offers,
+                "total_redemptions": total_redemptions,
+                "total_revenue": sum(d["revenue"] for d in chart_data),
+                "avg_safety_score": round(sum(u.get("safety_score", 0) for u in users_db.values()) / total_users, 1) if total_users > 0 else 0,
+            },
+            "chart_data": chart_data,
+            "user_growth": {
+                "today": random.randint(100, 300),
+                "this_week": random.randint(700, 1500),
+                "this_month": random.randint(3000, 6000),
+            },
+            "top_partners": [
+                {"name": "Shell Gas Station", "redemptions": random.randint(500, 1500)},
+                {"name": "Starbucks Downtown", "redemptions": random.randint(400, 1200)},
+                {"name": "Quick Shine Car Wash", "redemptions": random.randint(300, 800)},
+            ],
+        }
+    }
