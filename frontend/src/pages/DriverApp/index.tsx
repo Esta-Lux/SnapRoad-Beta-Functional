@@ -936,12 +936,21 @@ export default function DriverApp() {
       onTouchMove={draggingWidget ? handleWidgetDrag : undefined}
       onTouchEnd={handleWidgetDragEnd}>
       
-      {/* Map Background - Clean */}
-      <div className="absolute inset-0 bg-gradient-to-b from-slate-700 to-slate-900">
-        <div className="absolute inset-0 opacity-10" style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%234a5568' fill-opacity='0.3'%3E%3Cpath d='M0 0h40v40H0z' fill='none'/%3E%3Cpath d='M20 0v40M0 20h40' stroke='%234a5568' stroke-width='0.5'/%3E%3C/g%3E%3C/svg%3E")`
-        }} />
-      </div>
+      {/* Interactive Map - Real OpenStreetMap */}
+      <InteractiveMap
+        userLocation={userLocation}
+        offers={offers}
+        isNavigating={isNavigating}
+        onOfferClick={(offer) => {
+          setSelectedOfferForRedemption(offer)
+          setShowRedemptionPopup(true)
+        }}
+        carColor={userCar.color.includes('blue') ? '#3b82f6' : 
+                  userCar.color.includes('red') ? '#ef4444' : 
+                  userCar.color.includes('green') ? '#22c55e' :
+                  userCar.color.includes('white') ? '#f8fafc' :
+                  userCar.color.includes('gold') ? '#fbbf24' : '#1e293b'}
+      />
 
       {/* Top Bar - Google Maps Style */}
       <div className="absolute top-3 left-3 right-3 z-10">
