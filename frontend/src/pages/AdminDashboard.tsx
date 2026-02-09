@@ -451,6 +451,9 @@ export default function AdminDashboard() {
   const [showCreateEventModal, setShowCreateEventModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const [analytics, setAnalytics] = useState<any>(null)
   
   const [stats] = useState({ total_users: 12450, premium_users: 3240, total_partners: 156, active_offers: 847, total_trips: 89420, avg_safety_score: 87 })
@@ -462,6 +465,10 @@ export default function AdminDashboard() {
     const hasSeenOnboarding = localStorage.getItem('admin_onboarding_complete')
     if (!hasSeenOnboarding) setShowOnboarding(true)
     loadData()
+    
+    // Start demo notifications every 60 seconds for admin
+    const stopNotifications = notificationService.startDemoNotifications(60000)
+    return () => stopNotifications()
   }, [])
 
   const loadData = async () => {
