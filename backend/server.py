@@ -2,10 +2,17 @@
 from datetime import datetime, timedelta
 import random
 import os
-from fastapi import FastAPI, HTTPException, Query
+import base64
+import asyncio
+import uuid
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI(title="SnapRoad API")
 
