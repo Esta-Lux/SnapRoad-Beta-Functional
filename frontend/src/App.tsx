@@ -46,11 +46,15 @@ function App() {
         <Route path="/driver" element={<DriverApp />} />
         <Route path="/driver/auth" element={<AuthFlow />} />
         
-        {/* Partner Dashboard - Web-based */}
-        <Route path="/partner" element={<PartnerDashboard />} />
+        {/* Partner Portal - Separate URL for custom domain */}
+        <Route path="/portal/partner" element={<PartnerDashboard />} />
         
-        {/* Admin Dashboard - Web-based full control */}
-        <Route path="/admin" element={<AdminDashboard />} />
+        {/* Admin Console - Secret path (only accessible via direct link) */}
+        <Route path="/portal/admin-sr2025secure" element={<AdminDashboard />} />
+        
+        {/* Legacy routes - redirect to new portal paths */}
+        <Route path="/partner" element={<Navigate to="/portal/partner" replace />} />
+        <Route path="/admin" element={<Navigate to="/" replace />} />
         
         {/* Business Partner Dashboard - Legacy */}
         <Route path="/business" element={<BusinessDashboard />} />
