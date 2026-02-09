@@ -310,8 +310,55 @@ export default function InteractiveMap({
         </button>
       </div>
 
+      {/* Search Bar */}
+      <div className="absolute top-3 left-3 right-3 z-30">
+        <div className="relative">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              ref={searchRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setShowSuggestions(true)}
+              placeholder="Search destination..."
+              className="w-full bg-slate-900/95 backdrop-blur text-white placeholder-slate-400 pl-10 pr-10 py-3 rounded-xl border border-white/10 focus:outline-none focus:border-blue-500/50 shadow-lg text-sm"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => { setSearchQuery(''); setShowSuggestions(false) }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+          
+          {/* Suggestions Dropdown */}
+          {showSuggestions && filteredSuggestions.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900/95 backdrop-blur rounded-xl border border-white/10 shadow-2xl overflow-hidden max-h-64 overflow-y-auto">
+              {filteredSuggestions.map((suggestion, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleSelectLocation(suggestion)}
+                  className="w-full flex items-start gap-3 p-3 hover:bg-white/5 text-left transition-colors"
+                >
+                  <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <MapPin className="text-blue-400" size={14} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium truncate">{suggestion.name}</p>
+                    <p className="text-slate-400 text-xs truncate">{suggestion.address}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Compass */}
-      <div className="absolute right-3 top-24 z-30">
+      <div className="absolute right-3 top-16 z-30">
         <div className="w-10 h-10 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
           <Compass className="text-white" size={18} />
         </div>
