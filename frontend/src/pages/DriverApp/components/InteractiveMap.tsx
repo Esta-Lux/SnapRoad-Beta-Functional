@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Gem, Navigation, MapPin, Minus, Plus, Locate, Compass, Layers } from 'lucide-react'
+import { Gem, Navigation, MapPin, Minus, Plus, Locate, Compass, Search, X } from 'lucide-react'
 
 interface Offer {
   id: number
@@ -18,14 +18,28 @@ interface InteractiveMapProps {
   isNavigating: boolean
   onOfferClick: (offer: Offer) => void
   carColor?: string
+  onSearch?: (query: string, location?: { lat: number; lng: number }) => void
 }
+
+// Mock location suggestions
+const LOCATION_SUGGESTIONS = [
+  { name: 'Downtown Columbus', address: '100 N High St, Columbus, OH', lat: 39.9612, lng: -82.9988 },
+  { name: 'Ohio State University', address: '281 W Lane Ave, Columbus, OH', lat: 40.0067, lng: -83.0305 },
+  { name: 'Easton Town Center', address: '160 Easton Town Center, Columbus, OH', lat: 40.0507, lng: -82.9137 },
+  { name: 'Columbus Zoo', address: '4850 W Powell Rd, Powell, OH', lat: 40.1560, lng: -83.1186 },
+  { name: 'Polaris Fashion Place', address: '1500 Polaris Pkwy, Columbus, OH', lat: 40.1455, lng: -82.9801 },
+  { name: 'Short North Arts District', address: 'N High St, Columbus, OH', lat: 39.9775, lng: -83.0037 },
+  { name: 'German Village', address: 'S Third St, Columbus, OH', lat: 39.9437, lng: -82.9912 },
+  { name: 'John Glenn Airport', address: '4600 International Gateway, Columbus, OH', lat: 39.9980, lng: -82.8919 },
+]
 
 export default function InteractiveMap({ 
   userLocation, 
   offers, 
   isNavigating,
   onOfferClick,
-  carColor = '#3b82f6'
+  carColor = '#3b82f6',
+  onSearch
 }: InteractiveMapProps) {
   const [zoom, setZoom] = useState(15)
   const [center, setCenter] = useState(userLocation)
