@@ -530,6 +530,7 @@ export default function PartnerDashboard() {
             {[
               { id: 'overview', icon: BarChart3, label: 'Overview' },
               { id: 'offers', icon: Gift, label: 'My Offers', badge: offers.length.toString() },
+              { id: 'locations', icon: Store, label: 'Locations', badge: partnerProfile?.location_count?.toString() || '0' },
               { id: 'analytics', icon: TrendingUp, label: 'Analytics' },
               { id: 'boosts', icon: Rocket, label: 'Boosts' },
             ].map(item => (
