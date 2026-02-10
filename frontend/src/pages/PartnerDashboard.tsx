@@ -393,6 +393,110 @@ export default function PartnerDashboard() {
     setShowOnboarding(false)
   }
 
+  // Location Management Functions
+  const handleAddLocation = async (locationData: { name: string; address: string; lat: number; lng: number; is_primary: boolean }) => {
+    try {
+      const res = await fetch(`${API_URL}/api/partner/locations?partner_id=default_partner`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(locationData)
+      })
+      const data = await res.json()
+      if (data.success) {
+        sendNotification('success', 'Location Added', `${locationData.name} has been added to your locations.`)
+        loadPartnerProfile()
+        setShowAddLocationModal(false)
+      } else {
+        sendNotification('error', 'Error', data.message || 'Failed to add location')
+      }
+    } catch (e) {
+      sendNotification('error', 'Error', 'Failed to add location')
+    }
+  }
+
+  const handleUpdateLocation = async (locationId: number, locationData: { name: string; address: string; lat: number; lng: number; is_primary: boolean }) => {
+    try {
+      const res = await fetch(`${API_URL}/api/partner/locations/${locationId}?partner_id=default_partner`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(locationData)
+      })
+      const data = await res.json()
+      if (data.success) {
+        sendNotification('success', 'Location Updated', 'Location has been updated successfully.')
+        loadPartnerProfile()
+        setEditingLocation(null)
+      }
+    } catch (e) {
+      sendNotification('error', 'Error', 'Failed to update location')
+    }
+  }
+
+  const handleDeleteLocation = async (locationId: number) => {
+    if (!window.confirm('Are you sure you want to delete this location?')) return
+    try {
+      const res = await fetch(`${API_URL}/api/partner/locations/${locationId}?partner_id=default_partner`, {
+        method: 'DELETE'
+      })
+      const data = await res.json()
+      if (data.success) {
+        sendNotification('success', 'Location Deleted', 'Location has been removed.')
+        loadPartnerProfile()
+      }
+    } catch (e) {
+      sendNotification('error', 'Error', 'Failed to delete location')
+    }
+  }
+
+  const handleSetPrimaryLocation = async (locationId: number) => {
+    try {
+      const res = await fetch(`${API_URL}/api/partner/locations/${locationId}/set-primary?partner_id=default_partner`, {
+        method: 'POST'
+      })
+      const data = await res.json()
+      if (data.success) {
+        sendNotification('success', 'Primary Location', 'Primary location updated.')
+        loadPartnerProfile()
+      }
+    } catch (e) {
+      sendNotification('error', 'Error', 'Failed to update primary location')
+    }
+  }
+
+  const handleCreateOffer = async () => {
+    if (!newOfferData.title || !newOfferData.location_id) {
+      sendNotification('error', 'Error', 'Please fill in all required fields and select a location.')
+      return
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/partner/offers?partner_id=default_partner`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newOfferData.title,
+          description: newOfferData.description,
+          discount_percent: newOfferData.discount_percent,
+          gems_reward: newOfferData.gems_reward,
+          location_id: newOfferData.location_id,
+          expires_hours: newOfferData.expires_days * 24,
+          image_url: newOfferImage
+        })
+      })
+      const data = await res.json()
+      if (data.success) {
+        sendNotification('success', 'Offer Created', 'Your new offer is now live!')
+        setShowCreateModal(false)
+        setNewOfferData({ title: '', description: '', discount_percent: 15, gems_reward: 50, location_id: partnerProfile?.locations[0]?.id || 0, expires_days: 7 })
+        setNewOfferImage(null)
+        loadData()
+      } else {
+        sendNotification('error', 'Error', data.message || 'Failed to create offer')
+      }
+    } catch (e) {
+      sendNotification('error', 'Error', 'Failed to create offer')
+    }
+  }
+
   const COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444']
 
   return (
