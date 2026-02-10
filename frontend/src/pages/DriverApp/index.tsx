@@ -1583,7 +1583,7 @@ export default function DriverApp() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-white/80 text-xs">Badge Collection</p>
-                <p className="text-2xl font-bold">{userData.badges_earned_count || 11}/160</p>
+                <p className="text-2xl font-bold">{badges.filter(b => b.earned).length}/160</p>
               </div>
               <div className="flex items-center gap-2">
                 <Award className="text-yellow-300" size={24} />
