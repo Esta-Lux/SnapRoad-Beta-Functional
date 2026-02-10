@@ -1953,7 +1953,7 @@ export default function DriverApp() {
           </button>
 
           {[
-            { icon: Trophy, label: 'Achievements', value: `${userData.badges_earned_count || 11}/160 badges`, action: () => setShowBadgesGrid(true), color: 'bg-amber-100', iconColor: 'text-amber-500' },
+            { icon: Trophy, label: 'Achievements', value: `${badges.filter(b => b.earned).length}/160 badges`, action: () => setShowBadgesGrid(true), color: 'bg-amber-100', iconColor: 'text-amber-500' },
             { icon: Award, label: 'Community Badges', value: 'Help other drivers', action: () => setShowCommunityBadges(true), color: 'bg-purple-100', iconColor: 'text-purple-500' },
             { icon: AlertTriangle, label: 'Road Reports', value: 'Report hazards', action: () => setShowRoadReports(true), color: 'bg-orange-100', iconColor: 'text-orange-500' },
             { icon: Route, label: 'My Routes', value: `${routes.length} saved`, action: () => setActiveTab('routes'), color: 'bg-blue-100', iconColor: 'text-blue-500' },
