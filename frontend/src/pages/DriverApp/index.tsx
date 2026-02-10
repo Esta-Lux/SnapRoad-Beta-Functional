@@ -1001,6 +1001,18 @@ export default function DriverApp() {
             </button>
           ))}
 
+          <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">ANALYTICS</p>
+          {[
+            { icon: Fuel, label: 'Fuel Tracker', action: () => { setShowFuelDashboard(true); setShowMenu(false) } },
+            { icon: Shield, label: 'Driver Score', action: () => { setActiveTab('profile'); setProfileTab('score'); setShowMenu(false) } },
+          ].map((item, i) => (
+            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
+              <item.icon size={16} />
+              <span className="flex-1 text-left text-sm">{item.label}</span>
+            </button>
+          ))}
+
           <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">SETTINGS</p>
           {[
             { icon: Volume2, label: isMuted ? 'Unmute' : 'Mute', action: handleToggleVoice },
