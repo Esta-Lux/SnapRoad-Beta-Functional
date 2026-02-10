@@ -2541,6 +2541,137 @@ export default function DriverApp() {
         onClose={() => setShowFuelTracker(false)}
         isPremium={userData.is_premium}
       />
+
+      {/* Comprehensive Analytics Dashboard */}
+      {showFuelDashboard && (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setShowFuelDashboard(false)}>
+          <div className="w-full max-w-md bg-slate-900 rounded-2xl max-h-[85vh] overflow-hidden animate-scale-in" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-500 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-white font-bold text-xl">Driver Analytics</h2>
+                  <p className="text-emerald-100 text-sm">Your complete driving stats</p>
+                </div>
+                <button onClick={() => setShowFuelDashboard(false)} className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                  <X className="text-white" size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 overflow-auto" style={{ maxHeight: 'calc(85vh - 100px)' }}>
+              {/* Main Stats Grid */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-xl p-3 border border-blue-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Shield className="text-blue-400" size={18} />
+                    <span className="text-slate-400 text-xs">Driver Score</span>
+                  </div>
+                  <p className="text-2xl font-bold text-white">{userData.safety_score || 85}</p>
+                  <p className="text-blue-400 text-xs">Excellent</p>
+                </div>
+                <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-600/20 rounded-xl p-3 border border-emerald-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <DollarSign className="text-emerald-400" size={18} />
+                    <span className="text-slate-400 text-xs">Money Saved</span>
+                  </div>
+                  <p className="text-2xl font-bold text-white">${((userData.total_miles || 0) * 0.12).toFixed(0)}</p>
+                  <p className="text-emerald-400 text-xs">This month</p>
+                </div>
+                <div className="bg-gradient-to-br from-amber-500/20 to-amber-600/20 rounded-xl p-3 border border-amber-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Droplets className="text-amber-400" size={18} />
+                    <span className="text-slate-400 text-xs">Gallons Saved</span>
+                  </div>
+                  <p className="text-2xl font-bold text-white">{((userData.total_miles || 0) / 35).toFixed(1)}</p>
+                  <p className="text-amber-400 text-xs">Eco driving bonus</p>
+                </div>
+                <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-xl p-3 border border-purple-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Leaf className="text-purple-400" size={18} />
+                    <span className="text-slate-400 text-xs">CO₂ Reduced</span>
+                  </div>
+                  <p className="text-2xl font-bold text-white">{((userData.total_miles || 0) * 0.41).toFixed(0)} lb</p>
+                  <p className="text-purple-400 text-xs">Environmental impact</p>
+                </div>
+              </div>
+
+              {/* Driving Habits */}
+              <div className="bg-slate-800 rounded-xl p-4 mb-4">
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <Target className="text-blue-400" size={18} />
+                  Driving Habits
+                </h3>
+                <div className="space-y-3">
+                  {[
+                    { label: 'Smooth Braking', score: 92, color: 'bg-emerald-500' },
+                    { label: 'Steady Speed', score: 88, color: 'bg-blue-500' },
+                    { label: 'Safe Following', score: 95, color: 'bg-emerald-500' },
+                    { label: 'Night Driving', score: 78, color: 'bg-amber-500' },
+                    { label: 'Weather Driving', score: 85, color: 'bg-blue-500' },
+                  ].map((habit, i) => (
+                    <div key={i}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-slate-400 text-sm">{habit.label}</span>
+                        <span className="text-white text-sm font-medium">{habit.score}%</span>
+                      </div>
+                      <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div className={`h-full ${habit.color} rounded-full transition-all`} style={{ width: `${habit.score}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Trip Summary */}
+              <div className="bg-slate-800 rounded-xl p-4 mb-4">
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <Route className="text-emerald-400" size={18} />
+                  Trip Summary
+                </h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-white">{userData.total_trips || 0}</p>
+                    <p className="text-slate-400 text-xs">Total Trips</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-white">{userData.total_miles || 0}</p>
+                    <p className="text-slate-400 text-xs">Miles Driven</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-white">{((userData.total_miles || 0) / Math.max(userData.total_trips || 1, 1)).toFixed(1)}</p>
+                    <p className="text-slate-400 text-xs">Avg Distance</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fuel Stats */}
+              <div className="bg-slate-800 rounded-xl p-4">
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <Fuel className="text-amber-400" size={18} />
+                  Fuel Efficiency
+                </h3>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <p className="text-3xl font-bold text-white">28.5</p>
+                    <p className="text-slate-400 text-xs">Avg MPG</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-emerald-400 text-sm font-medium">+12% better</p>
+                    <p className="text-slate-500 text-xs">than average</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => { setShowFuelDashboard(false); setShowFuelTracker(true) }}
+                  className="w-full bg-amber-500/20 text-amber-400 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/30"
+                >
+                  Log Fuel Fill-Up
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Road Reports & Community Features */}
       <RoadReports
