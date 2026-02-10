@@ -651,12 +651,90 @@ export default function DriverApp() {
 
   const handleStopNavigation = async () => {
     setIsNavigating(false)
+    setShowTurnByTurn(false)
+    setNavigationData(null)
+    setSelectedDestination(null)
+    setCurrentStepIndex(0)
     try {
       await api.post('/api/navigation/stop')
       toast.success('Navigation stopped')
     } catch (e) {
       toast.success('Navigation stopped')
     }
+  }
+
+  // Search location with API
+  const handleSearchLocations = async (query: string) => {
+    if (query.length < 1) {
+      setSearchResults([])
+      return
+    }
+    setIsSearching(true)
+    try {
+      const params = new URLSearchParams({
+        q: query,
+        lat: userLocation.lat.toString(),
+        lng: userLocation.lng.toString(),
+        limit: '8'
+      })
+      const res = await fetch(`${API_URL}/api/map/search?${params}`)
+      const data = await res.json()
+      if (data.success) {
+        setSearchResults(data.data)
+      }
+    } catch (e) {
+      console.error('Search error:', e)
+    }
+    setIsSearching(false)
+  }
+
+  // Handle search input change with debounce
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query)
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+    if (query.length > 0) {
+      searchTimeoutRef.current = setTimeout(() => handleSearchLocations(query), 300)
+    } else {
+      setSearchResults([])
+    }
+  }
+
+  // Fetch directions from API
+  const fetchDirections = async (destination: any) => {
+    try {
+      const params = new URLSearchParams({
+        origin_lat: userLocation.lat.toString(),
+        origin_lng: userLocation.lng.toString(),
+        dest_lat: destination.lat.toString(),
+        dest_lng: destination.lng.toString(),
+        dest_name: destination.name
+      })
+      const res = await fetch(`${API_URL}/api/map/directions?${params}`)
+      const data = await res.json()
+      if (data.success) {
+        setNavigationData(data.data)
+        setShowTurnByTurn(true)
+        setCurrentStepIndex(0)
+      }
+    } catch (e) {
+      console.error('Directions error:', e)
+    }
+  }
+
+  // Handle destination selection from search
+  const handleSelectDestination = async (location: any) => {
+    setSelectedDestination(location)
+    setSearchQuery(location.name)
+    setSearchResults([])
+    setShowSearch(false)
+    
+    // Start navigation with turn-by-turn
+    setIsNavigating(true)
+    toast.loading('Calculating route...', { duration: 1500 })
+    await fetchDirections(location)
+    setTimeout(() => {
+      toast.success(`Navigating to ${location.name}`)
+    }, 1500)
   }
 
   const handleVoiceCommand = async () => {
