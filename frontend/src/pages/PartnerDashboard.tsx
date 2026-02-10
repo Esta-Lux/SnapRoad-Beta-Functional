@@ -31,6 +31,33 @@ interface Offer {
   created_at: string
   expires_at: string
   image_url?: string
+  location_id?: number
+  location_name?: string
+}
+
+interface PartnerLocation {
+  id: number
+  name: string
+  address: string
+  lat: number
+  lng: number
+  is_primary: boolean
+  created_at: string
+}
+
+interface PartnerProfile {
+  id: string
+  business_name: string
+  plan: string
+  plan_info: {
+    name: string
+    max_locations: number
+    features: string[]
+  }
+  locations: PartnerLocation[]
+  location_count: number
+  max_locations: number
+  can_add_location: boolean
 }
 
 interface BoostConfig {
