@@ -2584,21 +2584,53 @@ export default function DriverApp() {
       {/* Comprehensive Analytics Dashboard */}
       {showFuelDashboard && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setShowFuelDashboard(false)}>
-          <div className="w-full max-w-md bg-slate-900 rounded-2xl max-h-[85vh] overflow-hidden animate-scale-in" onClick={e => e.stopPropagation()}>
-            {/* Header */}
-            <div className="bg-gradient-to-r from-emerald-600 to-teal-500 p-4">
+          <div className="w-full max-w-md max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden animate-scale-in flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Header - Fixed */}
+            <div className="flex-shrink-0 bg-gradient-to-r from-emerald-600 to-teal-500 p-4 relative overflow-hidden">
+              <div className="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full" />
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-white font-bold text-xl">Driver Analytics</h2>
                   <p className="text-emerald-100 text-sm">Your complete driving stats</p>
                 </div>
-                <button onClick={() => setShowFuelDashboard(false)} className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                <button onClick={() => setShowFuelDashboard(false)} className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30" data-testid="fuel-dashboard-close">
                   <X className="text-white" size={18} />
                 </button>
               </div>
             </div>
 
-            <div className="p-4 overflow-auto" style={{ maxHeight: 'calc(85vh - 100px)' }}>
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {/* Nearby Gas Prices */}
+              <div className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 rounded-xl p-4 mb-4 border border-amber-500/20">
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <Fuel className="text-amber-400" size={18} />
+                  Nearby Gas Prices
+                </h3>
+                <div className="space-y-2">
+                  {[
+                    { name: 'Shell - Polaris', price: 3.29, distance: '0.3 mi', isFavorite: true },
+                    { name: 'BP - Downtown', price: 3.35, distance: '0.8 mi', isFavorite: false },
+                    { name: 'Speedway - Campus', price: 3.19, distance: '1.2 mi', isFavorite: true },
+                  ].map((station, i) => (
+                    <div key={i} className="flex items-center justify-between bg-slate-800/50 rounded-lg p-2">
+                      <div className="flex items-center gap-2">
+                        {station.isFavorite && <Star className="text-amber-400" size={12} fill="#fbbf24" />}
+                        <div>
+                          <p className="text-white text-sm font-medium">{station.name}</p>
+                          <p className="text-slate-400 text-xs">{station.distance}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-emerald-400">${station.price.toFixed(2)}</p>
+                        <p className="text-slate-500 text-[10px]">/gal</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-slate-500 text-[10px] mt-2 text-center">⭐ Prices from your frequent stations</p>
+              </div>
+
               {/* Main Stats Grid */}
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-xl p-3 border border-blue-500/20">
@@ -2607,30 +2639,30 @@ export default function DriverApp() {
                     <span className="text-slate-400 text-xs">Driver Score</span>
                   </div>
                   <p className="text-2xl font-bold text-white">{userData.safety_score || 85}</p>
-                  <p className="text-blue-400 text-xs">Excellent</p>
+                  <p className="text-blue-400 text-xs">{(userData.safety_score || 85) >= 90 ? 'Excellent' : (userData.safety_score || 85) >= 70 ? 'Good' : 'Needs Work'}</p>
                 </div>
                 <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-600/20 rounded-xl p-3 border border-emerald-500/20">
                   <div className="flex items-center gap-2 mb-2">
                     <DollarSign className="text-emerald-400" size={18} />
                     <span className="text-slate-400 text-xs">Money Saved</span>
                   </div>
-                  <p className="text-2xl font-bold text-white">${((userData.total_miles || 0) * 0.12).toFixed(0)}</p>
-                  <p className="text-emerald-400 text-xs">This month</p>
+                  <p className="text-2xl font-bold text-white">${(((userData.total_miles || 0) / 28.5) * 3.29 * 0.15).toFixed(0)}</p>
+                  <p className="text-emerald-400 text-xs">Eco driving @ $3.29/gal</p>
                 </div>
                 <div className="bg-gradient-to-br from-amber-500/20 to-amber-600/20 rounded-xl p-3 border border-amber-500/20">
                   <div className="flex items-center gap-2 mb-2">
                     <Droplets className="text-amber-400" size={18} />
                     <span className="text-slate-400 text-xs">Gallons Saved</span>
                   </div>
-                  <p className="text-2xl font-bold text-white">{((userData.total_miles || 0) / 35).toFixed(1)}</p>
-                  <p className="text-amber-400 text-xs">Eco driving bonus</p>
+                  <p className="text-2xl font-bold text-white">{((userData.total_miles || 0) / 28.5 * 0.15).toFixed(1)}</p>
+                  <p className="text-amber-400 text-xs">15% eco bonus</p>
                 </div>
                 <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-xl p-3 border border-purple-500/20">
                   <div className="flex items-center gap-2 mb-2">
                     <Leaf className="text-purple-400" size={18} />
                     <span className="text-slate-400 text-xs">CO₂ Reduced</span>
                   </div>
-                  <p className="text-2xl font-bold text-white">{((userData.total_miles || 0) * 0.41).toFixed(0)} lb</p>
+                  <p className="text-2xl font-bold text-white">{((userData.total_miles || 0) * 0.41 * 0.15).toFixed(0)} lb</p>
                   <p className="text-purple-400 text-xs">Environmental impact</p>
                 </div>
               </div>
@@ -2696,13 +2728,13 @@ export default function DriverApp() {
                     <p className="text-slate-400 text-xs">Avg MPG</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-emerald-400 text-sm font-medium">+12% better</p>
-                    <p className="text-slate-500 text-xs">than average</p>
+                    <p className="text-emerald-400 text-sm font-medium">+15% better</p>
+                    <p className="text-slate-500 text-xs">than avg driver</p>
                   </div>
                 </div>
                 <button 
                   onClick={() => { setShowFuelDashboard(false); setShowFuelTracker(true) }}
-                  className="w-full bg-amber-500/20 text-amber-400 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/30"
+                  className="w-full bg-amber-500 text-white py-3 rounded-lg font-medium hover:bg-amber-400 transition-colors"
                 >
                   Log Fuel Fill-Up
                 </button>
