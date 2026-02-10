@@ -1441,8 +1441,8 @@ export default function DriverApp() {
         <div className="flex gap-1 bg-white/10 rounded-xl p-1">
           {(['offers', 'challenges', 'badges', 'carstudio'] as const).map(tab => (
             <button key={tab} onClick={() => setRewardsTab(tab)} data-testid={`rewards-tab-${tab}`}
-              className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize ${rewardsTab === tab ? 'bg-white text-emerald-600' : 'text-white'}`}>
-              {tab}
+              className={`flex-1 py-2 rounded-lg text-xs font-medium ${rewardsTab === tab ? 'bg-white text-emerald-600' : 'text-white'}`}>
+              {tab === 'carstudio' ? 'Car Studio' : tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
