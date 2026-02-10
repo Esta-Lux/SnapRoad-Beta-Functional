@@ -2961,3 +2961,386 @@ def get_mock_directions(
         }
     }
 
+
+# ==================== PARTNER PLANS & LOCATIONS ====================
+# Partner plan configuration with location limits
+PARTNER_PLANS = {
+    "starter": {
+        "name": "Starter",
+        "price_founders": 20.99,
+        "price_public": 34.99,
+        "max_locations": 5,
+        "features": [
+            "Up to 5 locations",
+            "Gem placement on map", 
+            "Offer creation & tracking",
+            "Foot traffic insights",
+            "Business support"
+        ]
+    },
+    "growth": {
+        "name": "Growth",
+        "price_founders": 49.99,
+        "price_public": 79.99,
+        "max_locations": 25,
+        "features": [
+            "Everything in Starter",
+            "Up to 25 locations",
+            "Advanced analytics",
+            "Featured placement",
+            "Team access"
+        ]
+    },
+    "enterprise": {
+        "name": "Enterprise",
+        "price_founders": None,  # Custom pricing
+        "price_public": None,
+        "max_locations": 999999,  # Unlimited
+        "features": [
+            "Unlimited locations",
+            "Everything in Growth",
+            "Quarterly reviews",
+            "Full API access",
+            "Dedicated account manager"
+        ]
+    }
+}
+
+# Partner database - stores partner accounts and their locations
+partners_db = {
+    "default_partner": {
+        "id": "default_partner",
+        "business_name": "Demo Business",
+        "email": "partner@demo.com",
+        "plan": "starter",
+        "is_founders": True,
+        "locations": [
+            {
+                "id": 1,
+                "name": "Main Store - Downtown",
+                "address": "100 N High St, Columbus, OH 43215",
+                "lat": 39.9612,
+                "lng": -82.9988,
+                "is_primary": True,
+                "created_at": datetime.now().isoformat()
+            }
+        ],
+        "created_at": datetime.now().isoformat()
+    }
+}
+
+# Models for partner operations
+class PartnerLocation(BaseModel):
+    name: str
+    address: str
+    lat: float
+    lng: float
+    is_primary: bool = False
+
+class PartnerPlanUpdate(BaseModel):
+    plan: str  # starter, growth, enterprise
+
+class PartnerOfferCreate(BaseModel):
+    title: str
+    description: str
+    discount_percent: int
+    gems_reward: int
+    location_id: int  # Which location this offer is for
+    expires_hours: int = 168  # 7 days default
+    image_url: Optional[str] = None
+
+# Get partner plans info
+@app.get("/api/partner/plans")
+def get_partner_plans():
+    """Get available partner plans with pricing and features."""
+    return {
+        "success": True,
+        "data": {
+            "plans": PARTNER_PLANS,
+            "is_founders_active": True  # Founders pricing is currently active
+        }
+    }
+
+# Get partner profile with locations
+@app.get("/api/partner/profile")
+def get_partner_profile(partner_id: str = "default_partner"):
+    """Get partner profile including plan and locations."""
+    partner = partners_db.get(partner_id)
+    if not partner:
+        # Create a default partner if doesn't exist
+        partners_db[partner_id] = {
+            "id": partner_id,
+            "business_name": "New Business",
+            "email": "",
+            "plan": "starter",
+            "is_founders": True,
+            "locations": [],
+            "created_at": datetime.now().isoformat()
+        }
+        partner = partners_db[partner_id]
+    
+    plan_info = PARTNER_PLANS.get(partner["plan"], PARTNER_PLANS["starter"])
+    
+    return {
+        "success": True,
+        "data": {
+            "id": partner["id"],
+            "business_name": partner["business_name"],
+            "email": partner.get("email", ""),
+            "plan": partner["plan"],
+            "plan_info": plan_info,
+            "is_founders": partner.get("is_founders", True),
+            "locations": partner["locations"],
+            "location_count": len(partner["locations"]),
+            "max_locations": plan_info["max_locations"],
+            "can_add_location": len(partner["locations"]) < plan_info["max_locations"],
+            "created_at": partner["created_at"]
+        }
+    }
+
+# Update partner plan
+@app.post("/api/partner/plan")
+def update_partner_plan(plan_update: PartnerPlanUpdate, partner_id: str = "default_partner"):
+    """Update partner's subscription plan."""
+    if plan_update.plan not in PARTNER_PLANS:
+        return {"success": False, "message": "Invalid plan"}
+    
+    if partner_id not in partners_db:
+        return {"success": False, "message": "Partner not found"}
+    
+    partners_db[partner_id]["plan"] = plan_update.plan
+    plan_info = PARTNER_PLANS[plan_update.plan]
+    
+    return {
+        "success": True,
+        "message": f"Plan updated to {plan_info['name']}",
+        "data": {
+            "plan": plan_update.plan,
+            "max_locations": plan_info["max_locations"],
+            "features": plan_info["features"]
+        }
+    }
+
+# Get partner locations
+@app.get("/api/partner/locations")
+def get_partner_locations(partner_id: str = "default_partner"):
+    """Get all locations for a partner."""
+    partner = partners_db.get(partner_id)
+    if not partner:
+        return {"success": False, "message": "Partner not found", "data": []}
+    
+    plan_info = PARTNER_PLANS.get(partner["plan"], PARTNER_PLANS["starter"])
+    
+    return {
+        "success": True,
+        "data": partner["locations"],
+        "count": len(partner["locations"]),
+        "max_locations": plan_info["max_locations"],
+        "can_add_more": len(partner["locations"]) < plan_info["max_locations"]
+    }
+
+# Add a new location
+@app.post("/api/partner/locations")
+def add_partner_location(location: PartnerLocation, partner_id: str = "default_partner"):
+    """Add a new location for a partner."""
+    if partner_id not in partners_db:
+        partners_db[partner_id] = {
+            "id": partner_id,
+            "business_name": "New Business",
+            "email": "",
+            "plan": "starter",
+            "is_founders": True,
+            "locations": [],
+            "created_at": datetime.now().isoformat()
+        }
+    
+    partner = partners_db[partner_id]
+    plan_info = PARTNER_PLANS.get(partner["plan"], PARTNER_PLANS["starter"])
+    
+    # Check location limit
+    if len(partner["locations"]) >= plan_info["max_locations"]:
+        return {
+            "success": False,
+            "message": f"Location limit reached ({plan_info['max_locations']}). Upgrade your plan for more locations.",
+            "data": {
+                "current_count": len(partner["locations"]),
+                "max_locations": plan_info["max_locations"],
+                "upgrade_needed": True
+            }
+        }
+    
+    # Create new location
+    new_id = max([loc["id"] for loc in partner["locations"]], default=0) + 1
+    
+    # If this is the first location or marked as primary, update others
+    if location.is_primary or len(partner["locations"]) == 0:
+        for loc in partner["locations"]:
+            loc["is_primary"] = False
+        location.is_primary = True
+    
+    new_location = {
+        "id": new_id,
+        "name": location.name,
+        "address": location.address,
+        "lat": location.lat,
+        "lng": location.lng,
+        "is_primary": location.is_primary,
+        "created_at": datetime.now().isoformat()
+    }
+    
+    partner["locations"].append(new_location)
+    
+    return {
+        "success": True,
+        "message": f"Location '{location.name}' added successfully",
+        "data": new_location,
+        "locations_remaining": plan_info["max_locations"] - len(partner["locations"])
+    }
+
+# Update a location
+@app.put("/api/partner/locations/{location_id}")
+def update_partner_location(location_id: int, location: PartnerLocation, partner_id: str = "default_partner"):
+    """Update an existing location."""
+    partner = partners_db.get(partner_id)
+    if not partner:
+        return {"success": False, "message": "Partner not found"}
+    
+    loc_to_update = next((loc for loc in partner["locations"] if loc["id"] == location_id), None)
+    if not loc_to_update:
+        return {"success": False, "message": "Location not found"}
+    
+    # Update location details
+    loc_to_update["name"] = location.name
+    loc_to_update["address"] = location.address
+    loc_to_update["lat"] = location.lat
+    loc_to_update["lng"] = location.lng
+    
+    # Handle primary status
+    if location.is_primary:
+        for loc in partner["locations"]:
+            loc["is_primary"] = loc["id"] == location_id
+    
+    return {
+        "success": True,
+        "message": "Location updated successfully",
+        "data": loc_to_update
+    }
+
+# Delete a location
+@app.delete("/api/partner/locations/{location_id}")
+def delete_partner_location(location_id: int, partner_id: str = "default_partner"):
+    """Delete a location."""
+    partner = partners_db.get(partner_id)
+    if not partner:
+        return {"success": False, "message": "Partner not found"}
+    
+    loc_to_delete = next((loc for loc in partner["locations"] if loc["id"] == location_id), None)
+    if not loc_to_delete:
+        return {"success": False, "message": "Location not found"}
+    
+    partner["locations"] = [loc for loc in partner["locations"] if loc["id"] != location_id]
+    
+    # If deleted location was primary, make another one primary
+    if loc_to_delete["is_primary"] and partner["locations"]:
+        partner["locations"][0]["is_primary"] = True
+    
+    return {
+        "success": True,
+        "message": "Location deleted successfully",
+        "remaining_locations": len(partner["locations"])
+    }
+
+# Set a location as primary
+@app.post("/api/partner/locations/{location_id}/set-primary")
+def set_primary_location(location_id: int, partner_id: str = "default_partner"):
+    """Set a location as the primary/default location."""
+    partner = partners_db.get(partner_id)
+    if not partner:
+        return {"success": False, "message": "Partner not found"}
+    
+    found = False
+    for loc in partner["locations"]:
+        if loc["id"] == location_id:
+            loc["is_primary"] = True
+            found = True
+        else:
+            loc["is_primary"] = False
+    
+    if not found:
+        return {"success": False, "message": "Location not found"}
+    
+    return {"success": True, "message": "Primary location updated"}
+
+# Create an offer for a specific location
+@app.post("/api/partner/offers")
+def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_partner"):
+    """Create an offer tied to a specific partner location."""
+    partner = partners_db.get(partner_id)
+    if not partner:
+        return {"success": False, "message": "Partner not found"}
+    
+    # Find the selected location
+    location = next((loc for loc in partner["locations"] if loc["id"] == offer.location_id), None)
+    if not location:
+        return {"success": False, "message": "Location not found. Please select a valid location."}
+    
+    # Create the offer with location data
+    new_id = max([o["id"] for o in offers_db], default=0) + 1
+    new_offer = {
+        "id": new_id,
+        "business_name": partner["business_name"],
+        "business_type": "retail",  # Can be expanded
+        "title": offer.title,
+        "description": offer.description,
+        "discount_percent": offer.discount_percent,
+        "base_gems": offer.gems_reward,
+        "lat": location["lat"],
+        "lng": location["lng"],
+        "location_id": offer.location_id,
+        "location_name": location["name"],
+        "location_address": location["address"],
+        "is_admin_offer": False,
+        "created_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
+        "created_by": partner_id,
+        "redemption_count": 0,
+        "views": 0,
+        "status": "active",
+        "image_url": offer.image_url,
+    }
+    
+    offers_db.append(new_offer)
+    
+    return {
+        "success": True,
+        "message": f"Offer created at {location['name']}",
+        "data": new_offer
+    }
+
+# Get partner's offers
+@app.get("/api/partner/offers")
+def get_partner_offers(partner_id: str = "default_partner"):
+    """Get all offers created by a partner."""
+    partner_offers = [o for o in offers_db if o.get("created_by") == partner_id]
+    
+    return {
+        "success": True,
+        "data": partner_offers,
+        "count": len(partner_offers)
+    }
+
+# Update partner business info
+@app.put("/api/partner/profile")
+def update_partner_profile(business_name: Optional[str] = None, email: Optional[str] = None, partner_id: str = "default_partner"):
+    """Update partner business information."""
+    if partner_id not in partners_db:
+        return {"success": False, "message": "Partner not found"}
+    
+    partner = partners_db[partner_id]
+    if business_name:
+        partner["business_name"] = business_name
+    if email:
+        partner["email"] = email
+    
+    return {"success": True, "message": "Profile updated", "data": partner}
+
