@@ -1274,6 +1274,7 @@ export default function DriverApp() {
           </div>
         )}
       </div>
+      )}
 
       {/* Moveable Score Widget */}
       {widgets.score.visible && (
