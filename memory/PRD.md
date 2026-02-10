@@ -141,6 +141,19 @@ See `/app/memory/REMAINING_WORK.md` for comprehensive list of:
 
 ## ✅ Latest Updates (December 2025)
 
+### Map UI Cleanup (LATEST)
+- **Fixed map tile rendering** - Tiles now display correctly with proper positioning
+- **Map is draggable** - Mouse and touch drag support for panning
+- **Gems spread out** - Only 5 gems shown, spread in a wider circle around user
+- **Removed clutter:**
+  - Road hazard markers hidden by default
+  - Floating widgets hidden by default
+  - Removed redundant compass and layer buttons
+  - Removed zoom indicator
+  - Only camera button and zoom controls remain
+- **Hidden scrollbars** - Global CSS to hide scrollbars for premium feel
+- **Cleaner controls** - Simplified zoom buttons (+/-/recenter)
+
 ### Map Search & Navigation (NEW)
 - **Backend endpoints:**
   - `GET /api/map/search?q=<query>&lat=<lat>&lng=<lng>` - Search locations with relevance scoring and distance
