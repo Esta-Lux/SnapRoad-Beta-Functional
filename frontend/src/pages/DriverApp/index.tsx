@@ -2547,12 +2547,6 @@ export default function DriverApp() {
         userId={userData.id || '123456'}
         userGems={userData.gems || 0}
       />
-      <CarShowroom 
-        isOpen={showCarShowroom} 
-        onClose={() => setShowCarShowroom(false)}
-        userGems={userData.gems}
-        onGemsUpdate={(newGems) => setUserData((prev: any) => ({ ...prev, gems: newGems }))}
-      />
       <BadgesGrid 
         isOpen={showBadgesGrid} 
         onClose={() => setShowBadgesGrid(false)}
