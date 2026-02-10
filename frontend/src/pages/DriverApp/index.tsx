@@ -2134,24 +2134,90 @@ export default function DriverApp() {
 
   // ==================== MODALS ====================
 
-  // Search Modal
+  // Search Modal - Enhanced with backend API integration
   const renderSearchModal = () => showSearch && (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-start justify-center pt-20" onClick={() => setShowSearch(false)}>
-      <div className="w-80 bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-2 bg-slate-800 rounded-xl px-3 py-2 mb-3">
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-start justify-center pt-4" onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]) }}>
+      <div className="w-[95%] max-w-md bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
+        {/* Search Input */}
+        <div className="flex items-center gap-2 bg-slate-800 rounded-xl px-3 py-3 mb-3">
           <Search className="text-slate-400" size={18} />
-          <input type="text" placeholder="Search destination..." autoFocus
-            className="flex-1 bg-transparent text-white text-sm outline-none" />
-        </div>
-        <div className="space-y-2">
-          {['Home', 'Work', 'Gym', 'School'].map(place => (
-            <button key={place} onClick={() => { handleStartNavigation(place); setShowSearch(false) }} data-testid={`search-${place.toLowerCase()}`}
-              className="w-full p-3 bg-slate-800 rounded-xl text-left hover:bg-slate-700 flex items-center gap-3">
-              <MapPin className="text-blue-400" size={16} />
-              <span className="text-white text-sm">{place}</span>
+          <input 
+            type="text" 
+            placeholder="Search destination..." 
+            autoFocus
+            value={searchQuery}
+            onChange={e => handleSearchChange(e.target.value)}
+            data-testid="search-modal-input"
+            className="flex-1 bg-transparent text-white text-sm outline-none" 
+          />
+          {searchQuery && (
+            <button onClick={() => { setSearchQuery(''); setSearchResults([]) }}>
+              <X className="text-slate-400" size={16} />
             </button>
-          ))}
+          )}
         </div>
+
+        {/* Loading Indicator */}
+        {isSearching && (
+          <div className="flex items-center justify-center py-4">
+            <div className="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" />
+            <span className="text-slate-400 text-sm ml-2">Searching...</span>
+          </div>
+        )}
+
+        {/* Search Results */}
+        {!isSearching && searchResults.length > 0 && (
+          <div className="space-y-2 max-h-64 overflow-y-auto mb-3">
+            {searchResults.map(result => (
+              <button 
+                key={result.id} 
+                onClick={() => handleSelectDestination(result)} 
+                data-testid={`search-result-${result.id}`}
+                className="w-full p-3 bg-slate-800 rounded-xl text-left hover:bg-slate-700 flex items-start gap-3 transition-colors"
+              >
+                <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <MapPin className="text-blue-400" size={14} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm font-medium truncate">{result.name}</p>
+                  <p className="text-slate-400 text-xs truncate">{result.address}</p>
+                </div>
+                {result.distance_km && (
+                  <span className="text-slate-500 text-xs flex-shrink-0">{result.distance_km} km</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Quick Places (shown when no search query) */}
+        {!searchQuery && (
+          <>
+            <p className="text-slate-400 text-xs mb-2 px-1">Quick Places</p>
+            <div className="space-y-2">
+              {['Home', 'Work', 'Gym', 'School'].map(place => (
+                <button key={place} onClick={() => { handleStartNavigation(place); setShowSearch(false) }} data-testid={`search-${place.toLowerCase()}`}
+                  className="w-full p-3 bg-slate-800 rounded-xl text-left hover:bg-slate-700 flex items-center gap-3 transition-colors">
+                  <div className="w-8 h-8 bg-slate-700 rounded-lg flex items-center justify-center">
+                    {place === 'Home' ? <Home className="text-blue-400" size={14} /> : 
+                     place === 'Work' ? <Briefcase className="text-green-400" size={14} /> :
+                     place === 'Gym' ? <Dumbbell className="text-purple-400" size={14} /> :
+                     <School className="text-amber-400" size={14} />}
+                  </div>
+                  <span className="text-white text-sm">{place}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* No Results */}
+        {!isSearching && searchQuery && searchResults.length === 0 && (
+          <div className="text-center py-4">
+            <p className="text-slate-400 text-sm">No locations found</p>
+            <p className="text-slate-500 text-xs mt-1">Try a different search term</p>
+          </div>
+        )}
       </div>
     </div>
   )
