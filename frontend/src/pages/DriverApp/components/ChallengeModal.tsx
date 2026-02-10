@@ -97,15 +97,15 @@ export default function ChallengeModal({ isOpen, onClose, opponent, currentUserG
 
   return (
     <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="w-full max-w-md bg-slate-900 rounded-2xl overflow-hidden animate-scale-in" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="bg-gradient-to-r from-red-500 to-orange-500 p-4">
+      <div className="w-full max-w-md max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden animate-scale-in flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header - Fixed */}
+        <div className="flex-shrink-0 bg-gradient-to-r from-red-500 to-orange-500 p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Swords className="text-white" size={20} />
               <h2 className="text-white font-bold text-lg">Challenge Friend</h2>
             </div>
-            <button onClick={onClose} className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center" data-testid="challenge-close">
+            <button onClick={onClose} className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors" data-testid="challenge-close">
               <X className="text-white" size={16} />
             </button>
           </div>
@@ -132,130 +132,135 @@ export default function ChallengeModal({ isOpen, onClose, opponent, currentUserG
           </div>
         </div>
 
-        {success ? (
-          <div className="p-8 text-center">
-            <div className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-              <Check className="text-white" size={32} />
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto">
+          {success ? (
+            <div className="p-8 text-center">
+              <div className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                <Check className="text-white" size={32} />
+              </div>
+              <h3 className="text-white font-bold text-xl mb-2">Challenge Sent!</h3>
+              <p className="text-slate-400 text-sm">Waiting for {opponent.name} to accept...</p>
             </div>
-            <h3 className="text-white font-bold text-xl mb-2">Challenge Sent!</h3>
-            <p className="text-slate-400 text-sm">Waiting for {opponent.name} to accept...</p>
+          ) : (
+            <>
+              {/* Duration Selection */}
+              <div className="p-4 border-b border-slate-800">
+                <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+                  <Clock size={14} className="text-blue-400" /> Challenge Duration
+                </h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {CHALLENGE_DURATIONS.map(duration => (
+                    <button
+                      key={duration.hours}
+                      onClick={() => setSelectedDuration(duration.hours)}
+                      className={`p-3 rounded-xl border transition-all ${
+                        selectedDuration === duration.hours
+                          ? 'bg-blue-500/20 border-blue-500 text-blue-400'
+                          : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600'
+                      }`}
+                      data-testid={`duration-${duration.hours}`}
+                    >
+                      <p className="font-bold text-sm">{duration.label}</p>
+                      <p className="text-[10px] opacity-70">{duration.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Stake Selection */}
+              <div className="p-4 border-b border-slate-800">
+                <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+                  <Gem size={14} className="text-cyan-400" /> Gems at Stake
+                </h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {STAKE_OPTIONS.map(stake => (
+                    <button
+                      key={stake.amount}
+                      onClick={() => setSelectedStake(stake.amount)}
+                      disabled={currentUserGems < stake.amount}
+                      className={`p-3 rounded-xl border transition-all ${
+                        currentUserGems < stake.amount
+                          ? 'bg-slate-800/30 border-slate-800 text-slate-600 cursor-not-allowed'
+                          : selectedStake === stake.amount
+                          ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400'
+                          : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600'
+                      }`}
+                      data-testid={`stake-${stake.amount}`}
+                    >
+                      <div className="flex items-center justify-center gap-1 mb-1">
+                        <Gem size={14} />
+                        <span className="font-bold">{stake.label}</span>
+                      </div>
+                      <p className={`text-[10px] ${
+                        stake.risk === 'Low' ? 'text-emerald-400' :
+                        stake.risk === 'Medium' ? 'text-amber-400' :
+                        stake.risk === 'High' ? 'text-orange-400' : 'text-red-400'
+                      }`}>{stake.risk} Risk</p>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-slate-500 text-xs mt-2 text-center">
+                  Your gems: <span className="text-cyan-400 font-medium">{currentUserGems.toLocaleString()}</span>
+                </p>
+              </div>
+
+              {/* Challenge Rules */}
+              <div className="p-4">
+                <h3 className="text-white font-semibold text-sm mb-2">How it works</h3>
+                <ul className="space-y-1 text-slate-400 text-xs">
+                  <li className="flex items-start gap-2">
+                    <Trophy className="text-yellow-400 mt-0.5" size={12} />
+                    <span>Highest average Safety Score during challenge wins</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Gem className="text-cyan-400 mt-0.5" size={12} />
+                    <span>Winner takes all staked gems ({selectedStake * 2} total)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Zap className="text-amber-400 mt-0.5" size={12} />
+                    <span>Both drivers earn bonus XP regardless of outcome</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Error Message */}
+              {error && (
+                <div className="mx-4 mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl flex items-center gap-2">
+                  <AlertCircle className="text-red-400" size={16} />
+                  <p className="text-red-400 text-sm">{error}</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer - Fixed */}
+        {!success && (
+          <div className="flex-shrink-0 p-4 border-t border-slate-800 bg-slate-900/95">
+            <button
+              onClick={handleSendChallenge}
+              disabled={sending || currentUserGems < selectedStake}
+              className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
+                sending || currentUserGems < selectedStake
+                  ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-red-500 to-orange-500 text-white hover:shadow-lg hover:shadow-red-500/25'
+              }`}
+              data-testid="send-challenge-btn"
+            >
+              {sending ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Swords size={18} />
+                  Challenge for {selectedStake} Gems
+                </>
+              )}
+            </button>
           </div>
-        ) : (
-          <>
-            {/* Duration Selection */}
-            <div className="p-4 border-b border-slate-800">
-              <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
-                <Clock size={14} className="text-blue-400" /> Challenge Duration
-              </h3>
-              <div className="grid grid-cols-3 gap-2">
-                {CHALLENGE_DURATIONS.map(duration => (
-                  <button
-                    key={duration.hours}
-                    onClick={() => setSelectedDuration(duration.hours)}
-                    className={`p-3 rounded-xl border transition-all ${
-                      selectedDuration === duration.hours
-                        ? 'bg-blue-500/20 border-blue-500 text-blue-400'
-                        : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600'
-                    }`}
-                    data-testid={`duration-${duration.hours}`}
-                  >
-                    <p className="font-bold text-sm">{duration.label}</p>
-                    <p className="text-[10px] opacity-70">{duration.description}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Stake Selection */}
-            <div className="p-4 border-b border-slate-800">
-              <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
-                <Gem size={14} className="text-cyan-400" /> Gems at Stake
-              </h3>
-              <div className="grid grid-cols-2 gap-2">
-                {STAKE_OPTIONS.map(stake => (
-                  <button
-                    key={stake.amount}
-                    onClick={() => setSelectedStake(stake.amount)}
-                    disabled={currentUserGems < stake.amount}
-                    className={`p-3 rounded-xl border transition-all ${
-                      currentUserGems < stake.amount
-                        ? 'bg-slate-800/30 border-slate-800 text-slate-600 cursor-not-allowed'
-                        : selectedStake === stake.amount
-                        ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400'
-                        : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600'
-                    }`}
-                    data-testid={`stake-${stake.amount}`}
-                  >
-                    <div className="flex items-center justify-center gap-1 mb-1">
-                      <Gem size={14} />
-                      <span className="font-bold">{stake.label}</span>
-                    </div>
-                    <p className={`text-[10px] ${
-                      stake.risk === 'Low' ? 'text-emerald-400' :
-                      stake.risk === 'Medium' ? 'text-amber-400' :
-                      stake.risk === 'High' ? 'text-orange-400' : 'text-red-400'
-                    }`}>{stake.risk} Risk</p>
-                  </button>
-                ))}
-              </div>
-              <p className="text-slate-500 text-xs mt-2 text-center">
-                Your gems: <span className="text-cyan-400 font-medium">{currentUserGems.toLocaleString()}</span>
-              </p>
-            </div>
-
-            {/* Challenge Rules */}
-            <div className="p-4 border-b border-slate-800">
-              <h3 className="text-white font-semibold text-sm mb-2">How it works</h3>
-              <ul className="space-y-1 text-slate-400 text-xs">
-                <li className="flex items-start gap-2">
-                  <Trophy className="text-yellow-400 mt-0.5" size={12} />
-                  <span>Highest average Safety Score during challenge wins</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Gem className="text-cyan-400 mt-0.5" size={12} />
-                  <span>Winner takes all staked gems ({selectedStake * 2} total)</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Zap className="text-amber-400 mt-0.5" size={12} />
-                  <span>Both drivers earn bonus XP regardless of outcome</span>
-                </li>
-              </ul>
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="mx-4 mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl flex items-center gap-2">
-                <AlertCircle className="text-red-400" size={16} />
-                <p className="text-red-400 text-sm">{error}</p>
-              </div>
-            )}
-
-            {/* Action Button */}
-            <div className="p-4">
-              <button
-                onClick={handleSendChallenge}
-                disabled={sending || currentUserGems < selectedStake}
-                className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
-                  sending || currentUserGems < selectedStake
-                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-red-500 to-orange-500 text-white hover:shadow-lg hover:shadow-red-500/25'
-                }`}
-                data-testid="send-challenge-btn"
-              >
-                {sending ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <Swords size={18} />
-                    Challenge for {selectedStake} Gems
-                  </>
-                )}
-              </button>
-            </div>
-          </>
         )}
       </div>
     </div>
