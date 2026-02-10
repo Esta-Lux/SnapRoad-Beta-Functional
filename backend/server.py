@@ -2792,3 +2792,172 @@ def get_admin_analytics():
             ],
         }
     }
+
+
+# ==================== MAP SEARCH / AUTOCOMPLETE ====================
+# Pre-defined locations for autocomplete (mock data for Columbus, OH area)
+MAP_LOCATIONS = [
+    {"id": 1, "name": "Downtown Columbus", "address": "100 N High St, Columbus, OH 43215", "lat": 39.9612, "lng": -82.9988, "type": "area"},
+    {"id": 2, "name": "Ohio State University", "address": "281 W Lane Ave, Columbus, OH 43210", "lat": 40.0067, "lng": -83.0305, "type": "university"},
+    {"id": 3, "name": "Easton Town Center", "address": "160 Easton Town Center, Columbus, OH 43219", "lat": 40.0507, "lng": -82.9137, "type": "shopping"},
+    {"id": 4, "name": "Columbus Zoo", "address": "4850 W Powell Rd, Powell, OH 43065", "lat": 40.1560, "lng": -83.1186, "type": "attraction"},
+    {"id": 5, "name": "Polaris Fashion Place", "address": "1500 Polaris Pkwy, Columbus, OH 43240", "lat": 40.1455, "lng": -82.9801, "type": "shopping"},
+    {"id": 6, "name": "Short North Arts District", "address": "N High St, Columbus, OH 43201", "lat": 39.9775, "lng": -83.0037, "type": "entertainment"},
+    {"id": 7, "name": "German Village", "address": "S Third St, Columbus, OH 43206", "lat": 39.9437, "lng": -82.9912, "type": "neighborhood"},
+    {"id": 8, "name": "John Glenn Columbus Airport", "address": "4600 International Gateway, Columbus, OH 43219", "lat": 39.9980, "lng": -82.8919, "type": "airport"},
+    {"id": 9, "name": "Nationwide Arena", "address": "200 W Nationwide Blvd, Columbus, OH 43215", "lat": 39.9692, "lng": -83.0059, "type": "venue"},
+    {"id": 10, "name": "Ohio Stadium", "address": "411 Woody Hayes Dr, Columbus, OH 43210", "lat": 40.0017, "lng": -83.0196, "type": "stadium"},
+    {"id": 11, "name": "COSI (Center of Science)", "address": "333 W Broad St, Columbus, OH 43215", "lat": 39.9576, "lng": -83.0064, "type": "museum"},
+    {"id": 12, "name": "Franklin Park Conservatory", "address": "1777 E Broad St, Columbus, OH 43203", "lat": 39.9657, "lng": -82.9534, "type": "attraction"},
+    {"id": 13, "name": "Columbus City Center", "address": "111 S 3rd St, Columbus, OH 43215", "lat": 39.9595, "lng": -82.9990, "type": "area"},
+    {"id": 14, "name": "Scioto Mile Park", "address": "233 Civic Center Dr, Columbus, OH 43215", "lat": 39.9558, "lng": -83.0032, "type": "park"},
+    {"id": 15, "name": "Ohio Statehouse", "address": "1 Capitol Square, Columbus, OH 43215", "lat": 39.9612, "lng": -82.9994, "type": "landmark"},
+    {"id": 16, "name": "Shell Gas - Polaris", "address": "8799 Sancus Blvd, Columbus, OH 43240", "lat": 40.1430, "lng": -82.9805, "type": "gas"},
+    {"id": 17, "name": "BP Gas - Downtown", "address": "150 E Broad St, Columbus, OH 43215", "lat": 39.9605, "lng": -82.9960, "type": "gas"},
+    {"id": 18, "name": "Starbucks - Short North", "address": "785 N High St, Columbus, OH 43215", "lat": 39.9770, "lng": -83.0035, "type": "cafe"},
+    {"id": 19, "name": "Chipotle - Campus", "address": "1726 N High St, Columbus, OH 43210", "lat": 40.0055, "lng": -83.0077, "type": "restaurant"},
+    {"id": 20, "name": "Target - Easton", "address": "3893 Morse Rd, Columbus, OH 43219", "lat": 40.0484, "lng": -82.9183, "type": "shopping"},
+]
+
+class LocationSearch(BaseModel):
+    query: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    limit: int = 8
+
+@app.get("/api/map/search")
+def search_map_locations(q: str = Query(..., min_length=1), lat: Optional[float] = None, lng: Optional[float] = None, limit: int = 8):
+    """
+    Search for locations by name or address.
+    Returns matches sorted by relevance and optionally by distance if lat/lng provided.
+    """
+    query = q.lower().strip()
+    results = []
+    
+    for loc in MAP_LOCATIONS:
+        name_match = query in loc["name"].lower()
+        address_match = query in loc["address"].lower()
+        type_match = query in loc["type"].lower()
+        
+        if name_match or address_match or type_match:
+            # Calculate relevance score
+            relevance = 0
+            if name_match:
+                relevance += 10
+                if loc["name"].lower().startswith(query):
+                    relevance += 5
+            if address_match:
+                relevance += 5
+            if type_match:
+                relevance += 3
+            
+            # Calculate distance if user location provided
+            distance = None
+            if lat is not None and lng is not None:
+                dlat = abs(loc["lat"] - lat)
+                dlng = abs(loc["lng"] - lng)
+                distance = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5  # km
+            
+            results.append({
+                **loc,
+                "relevance": relevance,
+                "distance_km": round(distance, 2) if distance else None
+            })
+    
+    # Sort by relevance (primary) and distance (secondary if available)
+    results.sort(key=lambda x: (-x["relevance"], x["distance_km"] or 999))
+    
+    return {
+        "success": True,
+        "data": results[:limit],
+        "query": q,
+        "total_results": len(results)
+    }
+
+@app.get("/api/map/directions")
+def get_mock_directions(
+    origin_lat: float, 
+    origin_lng: float, 
+    dest_lat: float, 
+    dest_lng: float,
+    dest_name: Optional[str] = "Destination"
+):
+    """
+    Get mock turn-by-turn directions between two points.
+    In production, this would call Mapbox or Google Maps API.
+    """
+    # Calculate straight-line distance
+    dlat = abs(dest_lat - origin_lat)
+    dlng = abs(dest_lng - origin_lng)
+    distance_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+    distance_miles = distance_km * 0.621371
+    
+    # Mock ETA based on average speed of 30 mph in city
+    eta_minutes = int((distance_miles / 30) * 60) + random.randint(2, 8)
+    
+    # Generate mock turn-by-turn instructions
+    # Determine general direction
+    lat_diff = dest_lat - origin_lat
+    lng_diff = dest_lng - origin_lng
+    
+    if abs(lat_diff) > abs(lng_diff):
+        primary_direction = "north" if lat_diff > 0 else "south"
+    else:
+        primary_direction = "east" if lng_diff > 0 else "west"
+    
+    # Mock street names
+    streets = ["High St", "Broad St", "Main St", "3rd Ave", "Lane Ave", "Spring St", "Neil Ave", "Summit St"]
+    
+    steps = [
+        {
+            "instruction": "Head " + primary_direction + " on Current Street",
+            "distance": f"{round(distance_miles * 0.15, 1)} mi",
+            "duration": f"{int(eta_minutes * 0.15)} min",
+            "maneuver": "straight"
+        },
+        {
+            "instruction": f"Turn right onto {random.choice(streets)}",
+            "distance": f"{round(distance_miles * 0.25, 1)} mi",
+            "duration": f"{int(eta_minutes * 0.25)} min",
+            "maneuver": "turn-right"
+        },
+        {
+            "instruction": f"Continue on {random.choice(streets)}",
+            "distance": f"{round(distance_miles * 0.3, 1)} mi",
+            "duration": f"{int(eta_minutes * 0.3)} min",
+            "maneuver": "straight"
+        },
+        {
+            "instruction": f"Turn left onto {random.choice(streets)}",
+            "distance": f"{round(distance_miles * 0.2, 1)} mi",
+            "duration": f"{int(eta_minutes * 0.2)} min",
+            "maneuver": "turn-left"
+        },
+        {
+            "instruction": f"Arrive at {dest_name}",
+            "distance": f"{round(distance_miles * 0.1, 1)} mi",
+            "duration": f"{int(eta_minutes * 0.1)} min",
+            "maneuver": "arrive"
+        },
+    ]
+    
+    return {
+        "success": True,
+        "data": {
+            "origin": {"lat": origin_lat, "lng": origin_lng},
+            "destination": {"lat": dest_lat, "lng": dest_lng, "name": dest_name},
+            "distance": {
+                "km": round(distance_km, 2),
+                "miles": round(distance_miles, 2),
+                "text": f"{round(distance_miles, 1)} mi"
+            },
+            "duration": {
+                "minutes": eta_minutes,
+                "text": f"{eta_minutes} min"
+            },
+            "steps": steps,
+            "route_type": "fastest",
+            "traffic": random.choice(["light", "moderate", "heavy"]),
+        }
+    }
+
