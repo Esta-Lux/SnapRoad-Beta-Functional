@@ -575,6 +575,7 @@ export default function PartnerDashboard() {
             <h1 className="text-3xl font-bold text-white mb-1">
               {activeTab === 'overview' && 'Dashboard Overview'}
               {activeTab === 'offers' && 'My Offers'}
+              {activeTab === 'locations' && 'Store Locations'}
               {activeTab === 'analytics' && 'Real-Time Analytics'}
               {activeTab === 'boosts' && 'Boost Center'}
             </h1>
