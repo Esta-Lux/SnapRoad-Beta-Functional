@@ -976,7 +976,7 @@ export default function DriverApp() {
           <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">REWARDS</p>
           {[
             { icon: Gift, label: 'Offers', badge: offers.length, action: () => { setActiveTab('rewards'); setRewardsTab('offers'); setShowMenu(false) } },
-            { icon: Award, label: 'All Badges', badge: `${userData.badges_earned_count}/160`, action: () => { setShowBadgesGrid(true); setShowMenu(false) } },
+            { icon: Award, label: 'All Badges', badge: `${badges.filter(b => b.earned).length}/160`, action: () => { setShowBadgesGrid(true); setShowMenu(false) } },
             { icon: Car, label: 'Car Studio', action: () => { setShowCarShowroom(true); setShowMenu(false) } },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
