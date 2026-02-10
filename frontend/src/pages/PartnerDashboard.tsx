@@ -757,6 +757,128 @@ export default function PartnerDashboard() {
               </div>
             )}
 
+            {/* Locations Tab */}
+            {activeTab === 'locations' && partnerProfile && (
+              <div className="space-y-6">
+                {/* Plan & Location Limit Info */}
+                <div className="bg-gradient-to-br from-emerald-500/10 to-teal-500/10 rounded-2xl border border-emerald-500/20 p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center">
+                        <Crown className="text-white" size={28} />
+                      </div>
+                      <div>
+                        <h3 className="text-white font-bold text-lg">{partnerProfile.plan_info.name} Plan</h3>
+                        <p className="text-slate-400 text-sm">
+                          {partnerProfile.location_count} of {partnerProfile.max_locations === 999999 ? 'Unlimited' : partnerProfile.max_locations} locations used
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-emerald-400 font-bold text-xl">{partnerProfile.max_locations === 999999 ? '∞' : partnerProfile.max_locations - partnerProfile.location_count}</p>
+                        <p className="text-slate-500 text-xs">Remaining</p>
+                      </div>
+                      {partnerProfile.plan !== 'enterprise' && (
+                        <button className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-400 hover:from-purple-500/30 hover:to-pink-500/30 font-medium text-sm">
+                          Upgrade Plan
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-4 h-2 bg-slate-700/50 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all"
+                      style={{ width: `${Math.min((partnerProfile.location_count / (partnerProfile.max_locations === 999999 ? 100 : partnerProfile.max_locations)) * 100, 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Add Location Button */}
+                {partnerProfile.can_add_location && (
+                  <button 
+                    onClick={() => setShowAddLocationModal(true)}
+                    data-testid="add-location-btn"
+                    className="w-full bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-2xl border border-dashed border-emerald-500/30 p-6 hover:border-emerald-500/50 transition-all group"
+                  >
+                    <div className="flex items-center justify-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center group-hover:bg-emerald-500/30 transition-all">
+                        <Plus className="text-emerald-400" size={24} />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-white font-semibold">Add New Location</p>
+                        <p className="text-slate-400 text-sm">Add a store or business location to create offers for</p>
+                      </div>
+                    </div>
+                  </button>
+                )}
+
+                {/* Locations List */}
+                <div className="space-y-4">
+                  {partnerProfile.locations.map(location => (
+                    <div key={location.id} className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/5 p-5">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-4">
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${location.is_primary ? 'bg-gradient-to-br from-amber-500/20 to-orange-500/20' : 'bg-slate-700/50'}`}>
+                            <MapPin className={location.is_primary ? 'text-amber-400' : 'text-slate-400'} size={24} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-white font-semibold">{location.name}</h3>
+                              {location.is_primary && (
+                                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-xs font-medium">Primary</span>
+                              )}
+                            </div>
+                            <p className="text-slate-400 text-sm mt-1">{location.address}</p>
+                            <p className="text-slate-500 text-xs mt-2">
+                              Lat: {location.lat.toFixed(4)}, Lng: {location.lng.toFixed(4)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!location.is_primary && (
+                            <button 
+                              onClick={() => handleSetPrimaryLocation(location.id)}
+                              className="px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-sm font-medium"
+                            >
+                              Set Primary
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => setEditingLocation(location)}
+                            className="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 text-white"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteLocation(location.id)}
+                            className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Empty State */}
+                {partnerProfile.locations.length === 0 && (
+                  <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-2xl border border-white/5 p-12 text-center">
+                    <Store className="text-slate-600 mx-auto mb-4" size={64} />
+                    <h3 className="text-white font-bold text-xl mb-2">No Locations Yet</h3>
+                    <p className="text-slate-400 mb-6 max-w-md mx-auto">Add your business locations to start creating offers. Each location can have its own offers that appear on the map.</p>
+                    <button 
+                      onClick={() => setShowAddLocationModal(true)}
+                      className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold hover:from-emerald-400 hover:to-teal-400 inline-flex items-center gap-2"
+                    >
+                      <Plus size={20} />Add Your First Location
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Boosts Tab */}
             {activeTab === 'boosts' && (
               <div className="space-y-6">
