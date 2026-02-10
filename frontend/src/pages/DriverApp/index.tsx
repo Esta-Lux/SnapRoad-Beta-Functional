@@ -381,8 +381,11 @@ export default function DriverApp() {
     try {
       await api.post('/api/user/car', selection)
       toast.success('Welcome to SnapRoad! 🚗')
+      // Show app tour for new users
+      setShowAppTour(true)
     } catch (e) {
       toast.success('Welcome to SnapRoad! 🚗')
+      setShowAppTour(true)
     }
   }
 
