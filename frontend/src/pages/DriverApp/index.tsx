@@ -165,6 +165,16 @@ export default function DriverApp() {
   const [selectedOfferForRedemption, setSelectedOfferForRedemption] = useState<any>(null)
   const [showWeeklyRecap, setShowWeeklyRecap] = useState(false)
   
+  // Search and navigation states
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [selectedDestination, setSelectedDestination] = useState<any>(null)
+  const [navigationData, setNavigationData] = useState<any>(null)
+  const [showTurnByTurn, setShowTurnByTurn] = useState(false)
+  const [currentStepIndex, setCurrentStepIndex] = useState(0)
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  
   // User location (mock - Columbus, OH)
   const [userLocation, setUserLocation] = useState({ lat: 39.9612, lng: -82.9988 })
   
