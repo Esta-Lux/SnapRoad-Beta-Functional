@@ -1364,69 +1364,19 @@ export default function DriverApp() {
         onClose={() => setSelectedRoadStatus(null)}
       />
 
-      {/* Note: Offer gems are now rendered in InteractiveMap component */}
+      {/* Note: Offer gems and user marker are rendered in InteractiveMap component */}
 
-      {/* Current Location Marker - User's Car */}
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[15] pointer-events-none">
-        {isNavigating ? (
-          <NavMarker 
-            category={userCar.category as any}
-            color={userCar.color as any}
-            heading={carHeading}
-            size={36}
-            isMoving={true}
-          />
-        ) : (
-          <div className="relative">
-            <NavMarker 
-              category={userCar.category as any}
-              color={userCar.color as any}
-              heading={0}
-              size={32}
-              isMoving={false}
-            />
-            {/* Pulse ring when stationary */}
-            <div className="absolute inset-0 -m-2">
-              <div className="w-full h-full bg-blue-500/20 rounded-full animate-ping" />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Action Buttons - Right Side */}
-      <div className="absolute right-3 bottom-20 flex flex-col gap-2">
+      {/* Floating Action Button - Bottom Right (Camera only, cleaner look) */}
+      <div className="absolute right-3 bottom-24 flex flex-col gap-2 z-20">
         <button onClick={() => setShowQuickPhotoReport(true)} data-testid="report-btn"
           className="w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
           <Camera className="text-white" size={18} />
-        </button>
-        {isNavigating ? (
-          <button onClick={handleStopNavigation} data-testid="stop-nav-btn"
-            className="w-11 h-11 bg-red-500 rounded-full flex items-center justify-center shadow-lg">
-            <X className="text-white" size={18} />
-          </button>
-        ) : (
-          <button onClick={() => handleStartNavigation()} data-testid="start-nav-btn"
-            className="w-11 h-11 bg-blue-500 rounded-full flex items-center justify-center shadow-lg hover:bg-blue-600">
-            <Navigation className="text-white" size={18} />
-          </button>
-        )}
-      </div>
-
-      {/* Map Controls - Left Side */}
-      <div className="absolute left-3 bottom-20 flex flex-col gap-2">
-        <button onClick={() => toast('Centering map')} data-testid="center-map-btn"
-          className="w-10 h-10 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
-          <Compass className="text-white" size={16} />
-        </button>
-        <button onClick={() => setShowWidgetSettings(true)} data-testid="layers-btn"
-          className="w-10 h-10 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
-          <Layers className="text-white" size={16} />
         </button>
       </div>
 
       {/* Speed Display (when navigating) */}
       {isNavigating && (
-        <div className="absolute left-3 bottom-40 bg-slate-900/95 backdrop-blur rounded-xl p-3 text-center">
+        <div className="absolute left-3 bottom-24 bg-slate-900/95 backdrop-blur rounded-xl p-3 text-center z-20">
           <p className="text-2xl font-bold text-white">{currentSpeed}</p>
           <p className="text-[10px] text-slate-400">MPH</p>
           <div className="flex items-center justify-center gap-1 mt-1">
