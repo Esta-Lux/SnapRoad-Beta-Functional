@@ -141,11 +141,17 @@ See `/app/memory/REMAINING_WORK.md` for comprehensive list of:
 
 ## ✅ Latest Updates (December 2025)
 
-### UI Improvements - Premium Feel (LATEST)
+### UI Fixes & Improvements (LATEST)
+- **App Tour:** Fixed scroll and close button (X), 7 tour steps now scrollable
+- **Fuel Dashboard:** Added nearby gas prices from favorite stations (Shell $3.29, BP $3.35, Speedway $3.19 - MOCKED)
+- **Car Studio:** Renamed "Skins" to "Car Studio" in Rewards tab, shows current vehicle and colors
+- **Leaderboard:** Premium podium display for top 3 (gold/silver/bronze), time filters (All Time/Week/Month), state filter
+- **Challenge Modal:** Fixed scrolling and close button
+
+### UI Improvements - Premium Feel
 - **Scrollable modals:** Car onboarding and Challenge modal now have proper scrolling
 - **3D Car markers:** SVG-based 3D cars (sedan/SUV/truck) without white background circles
 - **Improved onboarding:** 2-step flow: 1) Vehicle type, 2) Color selection
-- **Challenge modal:** Fixed close button and scroll functionality
 - **Hamburger menu:** Profile shows user's car icon instead of initials
 - **Badge count:** Consistent X/160 format across all views
 - **Map controls:** Pinch-to-zoom, drag-to-pan, Orion button, recenter button
@@ -154,33 +160,16 @@ See `/app/memory/REMAINING_WORK.md` for comprehensive list of:
 - **Fixed map tile rendering** - Tiles now display correctly with proper positioning
 - **Map is draggable** - Mouse and touch drag support for panning
 - **Gems spread out** - Only 5 gems shown, spread in a wider circle around user
-- **Removed clutter:**
-  - Road hazard markers hidden by default
-  - Floating widgets hidden by default
-  - Removed zoom buttons (replaced with pinch-to-zoom)
-  - Only Orion and recenter buttons remain
 - **Hidden scrollbars** - Global CSS to hide scrollbars for premium feel
 - **3D car marker** - Shows actual car type (sedan/SUV/truck) without white background
 
 ### Map Search & Navigation
 - **Backend endpoints:**
-  - `GET /api/map/search?q=<query>&lat=<lat>&lng=<lng>` - Search locations with relevance scoring and distance
-  - `GET /api/map/directions?origin_lat=<lat>&origin_lng=<lng>&dest_lat=<lat>&dest_lng=<lng>` - Get mock turn-by-turn directions
+  - `GET /api/map/search?q=<query>&lat=<lat>&lng=<lng>` - Search locations with relevance scoring
+  - `GET /api/map/directions` - Get mock turn-by-turn directions
 - **Frontend features:**
   - Enhanced search modal with API integration
-  - Real-time search results with distance display
-  - Quick Places (Home, Work, Gym, School) shortcuts
   - Turn-by-turn navigation UI panel
-
-### Dashboard Modals
-- Partner Dashboard: Help modal with topics (Creating Offers, Boosting Offers, Analytics)
-- Admin Dashboard: Settings modal with 13 toggles across 6 sections
-- Admin Dashboard: Help modal with topics and Contact Support
-
-### Note on Mocked Data
-- Map search returns pre-defined Columbus, OH locations
-- Directions are mock turn-by-turn steps (not real routing)
-- For production: integrate Mapbox or Google Maps API
 
 ---
 **Last Updated:** December 2025
