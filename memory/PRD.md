@@ -141,20 +141,28 @@ See `/app/memory/REMAINING_WORK.md` for comprehensive list of:
 
 ## ✅ Latest Updates (December 2025)
 
-### Map UI Cleanup (LATEST)
+### UI Improvements - Premium Feel (LATEST)
+- **Scrollable modals:** Car onboarding and Challenge modal now have proper scrolling
+- **3D Car markers:** SVG-based 3D cars (sedan/SUV/truck) without white background circles
+- **Improved onboarding:** 2-step flow: 1) Vehicle type, 2) Color selection
+- **Challenge modal:** Fixed close button and scroll functionality
+- **Hamburger menu:** Profile shows user's car icon instead of initials
+- **Badge count:** Consistent X/160 format across all views
+- **Map controls:** Pinch-to-zoom, drag-to-pan, Orion button, recenter button
+
+### Map UI Cleanup
 - **Fixed map tile rendering** - Tiles now display correctly with proper positioning
 - **Map is draggable** - Mouse and touch drag support for panning
 - **Gems spread out** - Only 5 gems shown, spread in a wider circle around user
 - **Removed clutter:**
   - Road hazard markers hidden by default
   - Floating widgets hidden by default
-  - Removed redundant compass and layer buttons
-  - Removed zoom indicator
-  - Only camera button and zoom controls remain
+  - Removed zoom buttons (replaced with pinch-to-zoom)
+  - Only Orion and recenter buttons remain
 - **Hidden scrollbars** - Global CSS to hide scrollbars for premium feel
-- **Cleaner controls** - Simplified zoom buttons (+/-/recenter)
+- **3D car marker** - Shows actual car type (sedan/SUV/truck) without white background
 
-### Map Search & Navigation (NEW)
+### Map Search & Navigation
 - **Backend endpoints:**
   - `GET /api/map/search?q=<query>&lat=<lat>&lng=<lng>` - Search locations with relevance scoring and distance
   - `GET /api/map/directions?origin_lat=<lat>&origin_lng=<lng>&dest_lat=<lat>&dest_lng=<lng>` - Get mock turn-by-turn directions
@@ -162,15 +170,9 @@ See `/app/memory/REMAINING_WORK.md` for comprehensive list of:
   - Enhanced search modal with API integration
   - Real-time search results with distance display
   - Quick Places (Home, Work, Gym, School) shortcuts
-  - Turn-by-turn navigation UI panel:
-    - Current instruction with maneuver icon
-    - Step distance and duration
-    - Total ETA and distance
-    - Traffic indicator (light/moderate/heavy)
-    - Navigation step controls (up/down/volume)
-    - Close navigation button
+  - Turn-by-turn navigation UI panel
 
-### Dashboard Modals (NEW)
+### Dashboard Modals
 - Partner Dashboard: Help modal with topics (Creating Offers, Boosting Offers, Analytics)
 - Admin Dashboard: Settings modal with 13 toggles across 6 sections
 - Admin Dashboard: Help modal with topics and Contact Support
