@@ -6,7 +6,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://navgame-app.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://snapmap-3.preview.emergentagent.com')
 
 class TestMapSearchAPI:
     """Tests for /api/map/search endpoint"""
