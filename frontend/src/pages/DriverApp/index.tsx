@@ -997,7 +997,7 @@ export default function DriverApp() {
           {[
             { icon: Gift, label: 'Offers', badge: offers.length, action: () => { setActiveTab('rewards'); setRewardsTab('offers'); setShowMenu(false) } },
             { icon: Award, label: 'All Badges', badge: `${badges.filter(b => b.earned).length}/160`, action: () => { setShowBadgesGrid(true); setShowMenu(false) } },
-            { icon: Car, label: 'Car Studio', action: () => { setShowCarShowroom(true); setShowMenu(false) } },
+            { icon: Car, label: 'Car Studio', action: () => { setShowCarStudio(true); setShowMenu(false) } },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
