@@ -1,5 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
-import { Gem, Navigation, MapPin, Minus, Plus, Locate, Compass, Search, X } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { 
+  Gem, Navigation, MapPin, Minus, Plus, Locate, Compass, Search, X,
+  ChevronUp, ChevronDown, Volume2, Clock, ArrowUp, ArrowRight, 
+  ArrowLeft, CornerUpRight, CornerUpLeft, Flag
+} from 'lucide-react'
+
+const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 interface Offer {
   id: number
@@ -12,6 +18,31 @@ interface Offer {
   redeemed?: boolean
 }
 
+interface LocationSuggestion {
+  id: number
+  name: string
+  address: string
+  lat: number
+  lng: number
+  type: string
+  distance_km?: number
+}
+
+interface NavigationStep {
+  instruction: string
+  distance: string
+  duration: string
+  maneuver: string
+}
+
+interface NavigationData {
+  destination: { lat: number; lng: number; name: string }
+  distance: { text: string; miles: number }
+  duration: { text: string; minutes: number }
+  steps: NavigationStep[]
+  traffic: string
+}
+
 interface InteractiveMapProps {
   userLocation: { lat: number; lng: number }
   offers: Offer[]
@@ -19,19 +50,8 @@ interface InteractiveMapProps {
   onOfferClick: (offer: Offer) => void
   carColor?: string
   onSearch?: (query: string, location?: { lat: number; lng: number }) => void
+  onStartNavigation?: (destination: LocationSuggestion) => void
 }
-
-// Mock location suggestions
-const LOCATION_SUGGESTIONS = [
-  { name: 'Downtown Columbus', address: '100 N High St, Columbus, OH', lat: 39.9612, lng: -82.9988 },
-  { name: 'Ohio State University', address: '281 W Lane Ave, Columbus, OH', lat: 40.0067, lng: -83.0305 },
-  { name: 'Easton Town Center', address: '160 Easton Town Center, Columbus, OH', lat: 40.0507, lng: -82.9137 },
-  { name: 'Columbus Zoo', address: '4850 W Powell Rd, Powell, OH', lat: 40.1560, lng: -83.1186 },
-  { name: 'Polaris Fashion Place', address: '1500 Polaris Pkwy, Columbus, OH', lat: 40.1455, lng: -82.9801 },
-  { name: 'Short North Arts District', address: 'N High St, Columbus, OH', lat: 39.9775, lng: -83.0037 },
-  { name: 'German Village', address: 'S Third St, Columbus, OH', lat: 39.9437, lng: -82.9912 },
-  { name: 'John Glenn Airport', address: '4600 International Gateway, Columbus, OH', lat: 39.9980, lng: -82.8919 },
-]
 
 export default function InteractiveMap({ 
   userLocation, 
@@ -39,7 +59,8 @@ export default function InteractiveMap({
   isNavigating,
   onOfferClick,
   carColor = '#3b82f6',
-  onSearch
+  onSearch,
+  onStartNavigation
 }: InteractiveMapProps) {
   const [zoom, setZoom] = useState(15)
   const [center, setCenter] = useState(userLocation)
@@ -47,43 +68,125 @@ export default function InteractiveMap({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, lat: 0, lng: 0 })
   const [searchQuery, setSearchQuery] = useState('')
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [filteredSuggestions, setFilteredSuggestions] = useState(LOCATION_SUGGESTIONS)
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [selectedDestination, setSelectedDestination] = useState<LocationSuggestion | null>(null)
+  const [navigationData, setNavigationData] = useState<NavigationData | null>(null)
+  const [showTurnByTurn, setShowTurnByTurn] = useState(false)
+  const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const mapRef = useRef<HTMLDivElement>(null)
-  const searchRef = useRef<HTMLInputElement>(null)
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Filter suggestions based on query
+  // Search locations from backend
+  const searchLocations = useCallback(async (query: string) => {
+    if (query.length < 1) {
+      setSuggestions([])
+      return
+    }
+
+    setIsSearching(true)
+    try {
+      const params = new URLSearchParams({
+        q: query,
+        lat: userLocation.lat.toString(),
+        lng: userLocation.lng.toString(),
+        limit: '8'
+      })
+      const res = await fetch(`${API_URL}/api/map/search?${params}`)
+      const data = await res.json()
+      if (data.success) {
+        setSuggestions(data.data)
+      }
+    } catch (e) {
+      console.error('Search error:', e)
+    }
+    setIsSearching(false)
+  }, [userLocation])
+
+  // Debounced search
   useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+    
     if (searchQuery.length > 0) {
-      const filtered = LOCATION_SUGGESTIONS.filter(loc => 
-        loc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        loc.address.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-      setFilteredSuggestions(filtered)
+      searchTimeoutRef.current = setTimeout(() => {
+        searchLocations(searchQuery)
+      }, 300)
       setShowSuggestions(true)
     } else {
-      setFilteredSuggestions(LOCATION_SUGGESTIONS)
+      setSuggestions([])
       setShowSuggestions(false)
     }
-  }, [searchQuery])
 
-  const handleSelectLocation = (location: typeof LOCATION_SUGGESTIONS[0]) => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
+    }
+  }, [searchQuery, searchLocations])
+
+  // Fetch directions when destination is selected
+  const fetchDirections = async (destination: LocationSuggestion) => {
+    try {
+      const params = new URLSearchParams({
+        origin_lat: userLocation.lat.toString(),
+        origin_lng: userLocation.lng.toString(),
+        dest_lat: destination.lat.toString(),
+        dest_lng: destination.lng.toString(),
+        dest_name: destination.name
+      })
+      const res = await fetch(`${API_URL}/api/map/directions?${params}`)
+      const data = await res.json()
+      if (data.success) {
+        setNavigationData(data.data)
+        setShowTurnByTurn(true)
+        setCurrentStepIndex(0)
+      }
+    } catch (e) {
+      console.error('Directions error:', e)
+    }
+  }
+
+  const handleSelectLocation = (location: LocationSuggestion) => {
     setCenter({ lat: location.lat, lng: location.lng })
     setZoom(16)
     setSearchQuery(location.name)
     setShowSuggestions(false)
+    setSelectedDestination(location)
     onSearch?.(location.name, { lat: location.lat, lng: location.lng })
+    // Fetch directions to the selected location
+    fetchDirections(location)
+  }
+
+  const handleStartNavigation = () => {
+    if (selectedDestination) {
+      onStartNavigation?.(selectedDestination)
+    }
+  }
+
+  const handleEndNavigation = () => {
+    setNavigationData(null)
+    setShowTurnByTurn(false)
+    setSelectedDestination(null)
+    setSearchQuery('')
+    setCurrentStepIndex(0)
+  }
+
+  // Get maneuver icon
+  const getManeuverIcon = (maneuver: string) => {
+    switch (maneuver) {
+      case 'turn-right': return <CornerUpRight className="text-white" size={24} />
+      case 'turn-left': return <CornerUpLeft className="text-white" size={24} />
+      case 'straight': return <ArrowUp className="text-white" size={24} />
+      case 'arrive': return <Flag className="text-white" size={24} />
+      default: return <ArrowUp className="text-white" size={24} />
+    }
   }
 
   // Calculate tile coordinates
   const lon2tile = (lon: number, zoom: number) => Math.floor((lon + 180) / 360 * Math.pow(2, zoom))
   const lat2tile = (lat: number, zoom: number) => Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))
-
-  // Convert tile back to coordinates
-  const tile2lon = (x: number, z: number) => x / Math.pow(2, z) * 360 - 180
-  const tile2lat = (y: number, z: number) => {
-    const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z)
-    return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))
-  }
 
   const handleZoomIn = () => setZoom(Math.min(zoom + 1, 18))
   const handleZoomOut = () => setZoom(Math.max(zoom - 1, 10))
@@ -104,7 +207,6 @@ export default function InteractiveMap({
     const dx = clientX - dragStart.x
     const dy = clientY - dragStart.y
     
-    // Convert pixel movement to lat/lng (rough approximation)
     const scale = 156543.03392 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, zoom)
     const newLng = dragStart.lng - (dx * scale / 111320)
     const newLat = dragStart.lat + (dy * scale / 110540)
@@ -145,7 +247,6 @@ export default function InteractiveMap({
     const centerX = lon2tile(center.lng, zoom)
     const centerY = lat2tile(center.lat, zoom)
     
-    // Generate 3x3 grid of tiles around center
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         const x = centerX + dx
@@ -186,7 +287,7 @@ export default function InteractiveMap({
             transform: 'translate(-50%, -50%)'
           }}
         >
-          {tiles.map((tile, i) => (
+          {tiles.map((tile) => (
             <img
               key={`${tile.x}-${tile.y}-${tile.zoom}`}
               src={tile.url}
@@ -213,17 +314,10 @@ export default function InteractiveMap({
             transform: 'translate(-50%, -50%)'
           }}
         >
-          {/* Accuracy circle */}
           <div 
             className="absolute rounded-full bg-blue-500/20 border-2 border-blue-500/50"
-            style={{
-              width: 80,
-              height: 80,
-              left: -40,
-              top: -40,
-            }}
+            style={{ width: 80, height: 80, left: -40, top: -40 }}
           />
-          {/* Car marker */}
           <div 
             className="absolute rounded-full shadow-lg flex items-center justify-center"
             style={{
@@ -235,12 +329,33 @@ export default function InteractiveMap({
               border: '3px solid white'
             }}
           >
-            <Navigation className="text-white" size={16} style={{ transform: 'rotate(0deg)' }} />
+            <Navigation className="text-white" size={16} />
           </div>
         </div>
 
+        {/* Destination Marker */}
+        {selectedDestination && (
+          <div
+            className="absolute z-15"
+            style={{
+              ...(() => {
+                const pos = latLngToPixel(selectedDestination.lat, selectedDestination.lng)
+                return { left: pos.x, top: pos.y }
+              })(),
+              transform: 'translate(-50%, -100%)'
+            }}
+          >
+            <div className="relative">
+              <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center shadow-lg border-2 border-white">
+                <Flag className="text-white" size={18} />
+              </div>
+              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[8px] border-r-[8px] border-t-[12px] border-l-transparent border-r-transparent border-t-red-500" />
+            </div>
+          </div>
+        )}
+
         {/* Offer Markers */}
-        {visibleOffers.map((offer, index) => {
+        {visibleOffers.map((offer) => {
           const pos = latLngToPixel(offer.lat, offer.lng)
           const isVisible = pos.x > -50 && pos.x < (mapRef.current?.clientWidth || 400) + 50 &&
                            pos.y > -50 && pos.y < (mapRef.current?.clientHeight || 600) + 50
@@ -252,22 +367,14 @@ export default function InteractiveMap({
               key={offer.id}
               onClick={(e) => { e.stopPropagation(); onOfferClick(offer) }}
               className="absolute z-20 group"
-              style={{
-                left: pos.x,
-                top: pos.y,
-                transform: 'translate(-50%, -50%)'
-              }}
+              style={{ left: pos.x, top: pos.y, transform: 'translate(-50%, -50%)' }}
             >
-              {/* Glowing gem marker */}
               <div className="relative">
                 <div 
                   className="absolute inset-0 rounded-full animate-ping opacity-75"
                   style={{
                     background: offer.discount_percent >= 15 ? '#10b981' : '#3b82f6',
-                    width: 40,
-                    height: 40,
-                    left: -4,
-                    top: -4,
+                    width: 40, height: 40, left: -4, top: -4,
                   }}
                 />
                 <div 
@@ -278,7 +385,6 @@ export default function InteractiveMap({
                 >
                   <Gem className="text-white" size={14} />
                 </div>
-                {/* Discount badge */}
                 <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
                   {offer.discount_percent}%
                 </div>
@@ -288,8 +394,74 @@ export default function InteractiveMap({
         })}
       </div>
 
+      {/* Turn-by-Turn Navigation Panel */}
+      {showTurnByTurn && navigationData && (
+        <div className="absolute top-0 left-0 right-0 z-40">
+          {/* Current Step */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-500 p-4 shadow-lg">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center">
+                {getManeuverIcon(navigationData.steps[currentStepIndex]?.maneuver || 'straight')}
+              </div>
+              <div className="flex-1">
+                <p className="text-white font-bold text-lg">
+                  {navigationData.steps[currentStepIndex]?.instruction || 'Continue'}
+                </p>
+                <p className="text-blue-100 text-sm">
+                  {navigationData.steps[currentStepIndex]?.distance} • {navigationData.steps[currentStepIndex]?.duration}
+                </p>
+              </div>
+              <button 
+                onClick={handleEndNavigation}
+                className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30"
+              >
+                <X className="text-white" size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* ETA Bar */}
+          <div className="bg-slate-900/95 backdrop-blur px-4 py-3 flex items-center justify-between border-b border-white/10">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Clock className="text-emerald-400" size={16} />
+                <span className="text-white font-semibold">{navigationData.duration.text}</span>
+              </div>
+              <div className="text-slate-400">•</div>
+              <span className="text-slate-300">{navigationData.distance.text}</span>
+              <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                navigationData.traffic === 'light' ? 'bg-emerald-500/20 text-emerald-400' :
+                navigationData.traffic === 'moderate' ? 'bg-amber-500/20 text-amber-400' :
+                'bg-red-500/20 text-red-400'
+              }`}>
+                {navigationData.traffic} traffic
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setCurrentStepIndex(Math.max(0, currentStepIndex - 1))}
+                disabled={currentStepIndex === 0}
+                className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center disabled:opacity-30"
+              >
+                <ChevronUp className="text-white" size={16} />
+              </button>
+              <button 
+                onClick={() => setCurrentStepIndex(Math.min(navigationData.steps.length - 1, currentStepIndex + 1))}
+                disabled={currentStepIndex === navigationData.steps.length - 1}
+                className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center disabled:opacity-30"
+              >
+                <ChevronDown className="text-white" size={16} />
+              </button>
+              <button className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center">
+                <Volume2 className="text-white" size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Map Controls */}
-      <div className="absolute right-3 bottom-32 z-30 flex flex-col gap-2">
+      <div className={`absolute right-3 ${showTurnByTurn ? 'bottom-32' : 'bottom-32'} z-30 flex flex-col gap-2`}>
         <button
           onClick={handleZoomIn}
           className="w-10 h-10 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg hover:bg-slate-800 active:scale-95 transition-all"
@@ -310,55 +482,68 @@ export default function InteractiveMap({
         </button>
       </div>
 
-      {/* Search Bar */}
-      <div className="absolute top-3 left-3 right-3 z-30">
-        <div className="relative">
+      {/* Search Bar - Hidden during turn-by-turn */}
+      {!showTurnByTurn && (
+        <div className="absolute top-3 left-3 right-3 z-30">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input
-              ref={searchRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setShowSuggestions(true)}
-              placeholder="Search destination..."
-              className="w-full bg-slate-900/95 backdrop-blur text-white placeholder-slate-400 pl-10 pr-10 py-3 rounded-xl border border-white/10 focus:outline-none focus:border-blue-500/50 shadow-lg text-sm"
-            />
-            {searchQuery && (
-              <button 
-                onClick={() => { setSearchQuery(''); setShowSuggestions(false) }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-              >
-                <X size={16} />
-              </button>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setShowSuggestions(true)}
+                placeholder="Search destination..."
+                data-testid="map-search-input"
+                className="w-full bg-slate-900/95 backdrop-blur text-white placeholder-slate-400 pl-10 pr-10 py-3 rounded-xl border border-white/10 focus:outline-none focus:border-blue-500/50 shadow-lg text-sm"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => { setSearchQuery(''); setShowSuggestions(false); setSuggestions([]) }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+            
+            {/* Suggestions Dropdown */}
+            {showSuggestions && (suggestions.length > 0 || isSearching) && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900/95 backdrop-blur rounded-xl border border-white/10 shadow-2xl overflow-hidden max-h-64 overflow-y-auto">
+                {isSearching ? (
+                  <div className="p-4 text-center">
+                    <div className="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin mx-auto" />
+                    <p className="text-slate-400 text-sm mt-2">Searching...</p>
+                  </div>
+                ) : (
+                  suggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.id}
+                      onClick={() => handleSelectLocation(suggestion)}
+                      className="w-full flex items-start gap-3 p-3 hover:bg-white/5 text-left transition-colors"
+                      data-testid={`search-result-${suggestion.id}`}
+                    >
+                      <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <MapPin className="text-blue-400" size={14} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-medium truncate">{suggestion.name}</p>
+                        <p className="text-slate-400 text-xs truncate">{suggestion.address}</p>
+                      </div>
+                      {suggestion.distance_km && (
+                        <span className="text-slate-500 text-xs">{suggestion.distance_km} km</span>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
             )}
           </div>
-          
-          {/* Suggestions Dropdown */}
-          {showSuggestions && filteredSuggestions.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900/95 backdrop-blur rounded-xl border border-white/10 shadow-2xl overflow-hidden max-h-64 overflow-y-auto">
-              {filteredSuggestions.map((suggestion, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleSelectLocation(suggestion)}
-                  className="w-full flex items-start gap-3 p-3 hover:bg-white/5 text-left transition-colors"
-                >
-                  <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <MapPin className="text-blue-400" size={14} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-medium truncate">{suggestion.name}</p>
-                    <p className="text-slate-400 text-xs truncate">{suggestion.address}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
-      </div>
+      )}
 
       {/* Compass */}
-      <div className="absolute right-3 top-16 z-30">
+      <div className={`absolute right-3 ${showTurnByTurn ? 'top-36' : 'top-16'} z-30`}>
         <div className="w-10 h-10 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
           <Compass className="text-white" size={18} />
         </div>
@@ -369,8 +554,33 @@ export default function InteractiveMap({
         <span className="text-white text-xs font-mono">Zoom: {zoom}</span>
       </div>
 
-      {/* Navigation Indicator */}
-      {isNavigating && (
+      {/* Start Navigation Button */}
+      {selectedDestination && !showTurnByTurn && (
+        <div className="absolute bottom-24 left-3 right-3 z-30">
+          <div className="bg-slate-900/95 backdrop-blur rounded-xl border border-white/10 p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center">
+                <MapPin className="text-red-400" size={18} />
+              </div>
+              <div className="flex-1">
+                <p className="text-white font-medium">{selectedDestination.name}</p>
+                <p className="text-slate-400 text-xs">{selectedDestination.address}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleStartNavigation}
+              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 hover:from-blue-400 hover:to-blue-500"
+              data-testid="start-navigation-btn"
+            >
+              <Navigation size={18} />
+              Start Navigation
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Simple Navigation Indicator (fallback) */}
+      {isNavigating && !showTurnByTurn && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 bg-blue-500 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
           <Navigation className="animate-pulse" size={16} />
           <span className="text-sm font-medium">Navigating...</span>
