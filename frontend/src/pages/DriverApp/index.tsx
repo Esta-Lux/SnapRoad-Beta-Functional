@@ -10,7 +10,8 @@ import {
   Trash2, Timer, RefreshCw, EyeOff, School, ShoppingCart, Dumbbell, 
   Building, Compass, Layers, GripVertical, Minimize2, Maximize2,
   Phone, MessageCircle, Battery, ChevronLeft, Shield, Zap, TrendingUp,
-  History, Download, BarChart3, HelpCircle, Lock, Edit2, UserPlus, Share2, Swords
+  History, Download, BarChart3, HelpCircle, Lock, Edit2, UserPlus, Share2, Swords,
+  DollarSign, Droplets, Leaf, Target
 } from 'lucide-react'
 import FriendsHub from './components/FriendsHub'
 import Leaderboard from './components/Leaderboard'
