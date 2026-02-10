@@ -1659,33 +1659,69 @@ export default function DriverApp() {
       {/* Car Studio Sub-tab */}
       {rewardsTab === 'carstudio' && (
         <div className="p-4">
+          {/* Current Car Display */}
+          <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl p-4 mb-4 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16" />
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-16 bg-white/20 rounded-xl flex items-center justify-center">
+                <Car className="text-white" size={36} />
+              </div>
+              <div className="flex-1">
+                <p className="text-white/70 text-xs">Current Vehicle</p>
+                <p className="text-white font-bold text-lg capitalize">{userCar.category || 'Sedan'}</p>
+                <p className="text-white/80 text-xs">Color: {userCar.color?.replace('-', ' ') || 'Ocean Blue'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Open Car Studio Button */}
           <button onClick={() => setShowCarShowroom(true)} data-testid="open-car-studio"
-            className="w-full bg-gradient-to-r from-slate-700 to-slate-800 rounded-xl p-4 mb-4">
+            className="w-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl p-4 mb-4 hover:from-amber-400 hover:to-orange-400 transition-colors shadow-lg">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-slate-400 text-xs">Car Studio</p>
-                <p className="text-white text-lg font-bold">Customize Your Ride</p>
+                <p className="text-white font-bold text-lg">Open Car Studio</p>
+                <p className="text-amber-100 text-xs">Customize colors & unlock new styles</p>
               </div>
-              <Car className="text-blue-400" size={32} />
+              <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                <ChevronRight className="text-white" size={24} />
+              </div>
             </div>
           </button>
 
-          <h3 className="text-slate-900 font-semibold mb-3">Owned Skins</h3>
-          <div className="grid grid-cols-3 gap-2">
-            {skins.filter(s => s.owned).map(skin => (
-              <div key={skin.id} className="rounded-xl overflow-hidden">
-                <div className="aspect-square" style={skin.gradient ? { background: skin.gradient } : { background: skin.color || '#3B82F6' }}>
-                  {skin.equipped && (
-                    <div className="w-full h-full flex items-center justify-center bg-black/30">
-                      <Check className="text-white" size={24} />
-                    </div>
-                  )}
-                </div>
-                <div className="bg-white p-2 text-center">
-                  <p className="text-[10px] text-slate-900 font-medium">{skin.name}</p>
-                </div>
-              </div>
+          {/* Owned Colors */}
+          <h3 className="text-slate-900 font-semibold mb-3 flex items-center gap-2">
+            <Gem className="text-blue-500" size={16} />
+            Owned Colors
+          </h3>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            {ownedColors.map((color, i) => (
+              <button 
+                key={i}
+                onClick={() => handleCarChange({ ...userCar, color })}
+                className={`relative aspect-square rounded-xl transition-all ${
+                  userCar.color === color ? 'ring-2 ring-amber-500 ring-offset-2' : 'hover:scale-105'
+                }`}
+                style={{ 
+                  background: color === 'ocean-blue' ? '#3b82f6' :
+                             color === 'midnight-black' ? '#1e293b' :
+                             color === 'pearl-white' ? '#f1f5f9' :
+                             color === 'racing-red' ? '#ef4444' :
+                             color === 'forest-green' ? '#22c55e' :
+                             color === 'sunset-gold' ? '#fbbf24' : '#3b82f6'
+                }}
+              >
+                {userCar.color === color && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-xl">
+                    <Check className="text-white" size={20} />
+                  </div>
+                )}
+              </button>
             ))}
+          </div>
+
+          {/* Unlock More */}
+          <div className="bg-slate-100 rounded-xl p-3 text-center">
+            <p className="text-slate-600 text-sm">💎 Earn gems to unlock more colors!</p>
           </div>
         </div>
       )}
