@@ -1657,7 +1657,7 @@ export default function DriverApp() {
       )}
 
       {/* Skins Sub-tab */}
-      {rewardsTab === 'skins' && (
+      {rewardsTab === 'carstudio' && (
         <div className="p-4">
           <button onClick={() => setShowCarShowroom(true)} data-testid="open-car-studio"
             className="w-full bg-gradient-to-r from-slate-700 to-slate-800 rounded-xl p-4 mb-4">
