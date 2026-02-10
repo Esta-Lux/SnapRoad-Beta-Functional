@@ -211,9 +211,11 @@ export default function WelcomePage() {
         {/* Header */}
         <header className="p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-xl flex items-center justify-center">
-              <MapPin className="text-white" size={20} />
-            </div>
+            <img 
+              src="https://customer-assets.emergentagent.com/job_navgame-app/artifacts/9j85u2ed_BiggerLogoSR.png" 
+              alt="SnapRoad" 
+              className="h-10 w-auto"
+            />
             <span className="text-white font-bold text-xl">SnapRoad</span>
           </div>
           <button 
