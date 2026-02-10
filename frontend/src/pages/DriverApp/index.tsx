@@ -15,7 +15,6 @@ import {
 } from 'lucide-react'
 import FriendsHub from './components/FriendsHub'
 import Leaderboard from './components/Leaderboard'
-import CarShowroom from './components/CarShowroom'
 import BadgesGrid from './components/BadgesGrid'
 import TripHistory from './components/TripHistory'
 import GemHistory from './components/GemHistory'
@@ -140,7 +139,6 @@ export default function DriverApp() {
   // New modal states
   const [showFriendsHub, setShowFriendsHub] = useState(false)
   const [showLeaderboard, setShowLeaderboard] = useState(false)
-  const [showCarShowroom, setShowCarShowroom] = useState(false)
   const [showBadgesGrid, setShowBadgesGrid] = useState(false)
   const [showTripHistory, setShowTripHistory] = useState(false)
   const [showGemHistory, setShowGemHistory] = useState(false)
