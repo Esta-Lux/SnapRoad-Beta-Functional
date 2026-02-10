@@ -2724,6 +2724,54 @@ export default function DriverApp() {
           onSkip={() => setShowCarOnboarding(false)}
         />
       )}
+
+      {/* App Tour for New Users */}
+      {showAppTour && (
+        <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-slate-900 rounded-2xl overflow-hidden animate-scale-in">
+            {/* Tour Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-center">
+              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Navigation className="text-white" size={32} />
+              </div>
+              <h2 className="text-white text-xl font-bold">Welcome to SnapRoad!</h2>
+              <p className="text-white/80 text-sm mt-1">Let's take a quick tour</p>
+            </div>
+
+            {/* Tour Steps */}
+            <div className="p-4 space-y-3">
+              {[
+                { icon: MapPin, title: 'Interactive Map', desc: 'Pinch to zoom, drag to pan. Find nearby offers!' },
+                { icon: Gem, title: 'Collect Gems', desc: 'Tap glowing gems on the map to redeem discounts' },
+                { icon: Mic, title: 'Meet Orion', desc: 'Your voice assistant - tap the purple mic button' },
+                { icon: Shield, title: 'Drive Safe', desc: 'Earn points for smooth braking and safe driving' },
+                { icon: Fuel, title: 'Track Analytics', desc: 'Monitor fuel, savings, and your driver score' },
+              ].map((step, i) => (
+                <div key={i} className="flex items-center gap-3 bg-slate-800 rounded-xl p-3">
+                  <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <step.icon className="text-blue-400" size={20} />
+                  </div>
+                  <div>
+                    <p className="text-white font-medium text-sm">{step.title}</p>
+                    <p className="text-slate-400 text-xs">{step.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Start Button */}
+            <div className="p-4 border-t border-slate-800">
+              <button
+                onClick={() => setShowAppTour(false)}
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+              >
+                <Check size={20} />
+                Start Driving!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       <CarStudio
         isOpen={showCarStudio}
