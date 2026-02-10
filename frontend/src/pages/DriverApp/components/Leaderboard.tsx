@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Trophy, Medal, MapPin, ChevronDown, Shield, Crown, X, Gem, Zap, Clock, Calendar, TrendingUp, Swords } from 'lucide-react'
+import { Trophy, Medal, MapPin, ChevronDown, Shield, Crown, X, Gem, Zap, Clock, Calendar, TrendingUp, Swords, Star, Users } from 'lucide-react'
 import ChallengeModal from './ChallengeModal'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
@@ -28,7 +28,7 @@ type TimeFilter = 'all_time' | 'weekly' | 'monthly'
 
 export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: LeaderboardProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
-  const [selectedState, setSelectedState] = useState<string>('OH') // Default to Ohio
+  const [selectedState, setSelectedState] = useState<string>('OH')
   const [states, setStates] = useState<string[]>([])
   const [myRank, setMyRank] = useState<number | null>(null)
   const [myData, setMyData] = useState<any>(null)
@@ -73,19 +73,27 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
     setShowChallengeModal(true)
   }
 
-  const getRankIcon = (rank: number) => {
-    if (rank === 1) return <Crown className="text-yellow-400" size={20} />
-    if (rank === 2) return <Medal className="text-slate-300" size={18} />
-    if (rank === 3) return <Medal className="text-amber-600" size={18} />
-    return <span className="text-slate-400 font-bold text-sm">#{rank}</span>
-  }
-
-  const getRankBg = (rank: number, isCurrentUser: boolean) => {
-    if (isCurrentUser) return 'bg-gradient-to-r from-blue-600/30 to-blue-700/30 border-2 border-blue-500'
-    if (rank === 1) return 'bg-gradient-to-r from-yellow-500/20 to-yellow-600/20 border border-yellow-500/30'
-    if (rank === 2) return 'bg-gradient-to-r from-slate-400/20 to-slate-500/20 border border-slate-400/30'
-    if (rank === 3) return 'bg-gradient-to-r from-amber-600/20 to-amber-700/20 border border-amber-600/30'
-    return 'bg-slate-800/50 border border-slate-700/50'
+  const getRankDisplay = (rank: number) => {
+    if (rank === 1) return (
+      <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center shadow-lg shadow-yellow-500/30">
+        <Crown className="text-white" size={20} />
+      </div>
+    )
+    if (rank === 2) return (
+      <div className="w-10 h-10 bg-gradient-to-br from-slate-300 to-slate-400 rounded-full flex items-center justify-center">
+        <Medal className="text-white" size={18} />
+      </div>
+    )
+    if (rank === 3) return (
+      <div className="w-10 h-10 bg-gradient-to-br from-amber-600 to-amber-700 rounded-full flex items-center justify-center">
+        <Medal className="text-white" size={18} />
+      </div>
+    )
+    return (
+      <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center">
+        <span className="text-slate-400 font-bold text-sm">#{rank}</span>
+      </div>
+    )
   }
 
   const formatGems = (gems: number) => {
@@ -94,52 +102,104 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
     return gems.toString()
   }
 
-  const getTimeFilterLabel = () => {
-    switch (timeFilter) {
-      case 'weekly': return 'This Week'
-      case 'monthly': return 'This Month'
-      default: return 'All Time'
-    }
-  }
-
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="w-full max-w-md bg-slate-900 rounded-2xl overflow-hidden animate-scale-in" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="bg-gradient-to-r from-purple-600 to-pink-500 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Trophy className="text-yellow-300" size={20} />
-              <h2 className="text-white font-bold text-lg">Leaderboard</h2>
+    <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="w-full max-w-md max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden animate-scale-in flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Premium Header */}
+        <div className="flex-shrink-0 bg-gradient-to-br from-purple-600 via-pink-500 to-rose-500 p-4 relative overflow-hidden">
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full" />
+          <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-white/5 rounded-full" />
+          
+          <div className="relative">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Trophy className="text-yellow-300" size={24} />
+                </div>
+                <div>
+                  <h2 className="text-white font-bold text-xl">Leaderboard</h2>
+                  <p className="text-white/70 text-xs flex items-center gap-1">
+                    <Users size={12} />
+                    {totalUsers.toLocaleString()} drivers competing
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={onClose} 
+                className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+                data-testid="leaderboard-close"
+              >
+                <X className="text-white" size={18} />
+              </button>
             </div>
-            <button onClick={onClose} className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center" data-testid="leaderboard-close">
-              <X className="text-white" size={16} />
-            </button>
-          </div>
 
-          {/* Filters Row */}
-          <div className="flex gap-2 mb-3">
+            {/* Your Rank Card */}
+            {myData && (
+              <div className="bg-white/10 backdrop-blur rounded-xl p-3 flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center text-white font-bold">
+                  {myData.name?.split(' ').map((n: string) => n[0]).join('')}
+                </div>
+                <div className="flex-1">
+                  <p className="text-white font-semibold text-sm">{myData.name}</p>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="text-yellow-300 font-bold">Rank #{myRank}</span>
+                    <span className="text-white/70">{myData.safety_score} pts</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-white font-bold">{formatGems(myData.gems || 0)}</p>
+                  <p className="text-white/60 text-xs">gems</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex-shrink-0 bg-slate-800/50 p-3 border-b border-slate-700/50">
+          <div className="flex gap-2">
+            {/* Time Filter Pills */}
+            <div className="flex-1 flex gap-1 bg-slate-800 rounded-lg p-1">
+              {[
+                { key: 'all_time', label: 'All Time', icon: Star },
+                { key: 'weekly', label: 'Week', icon: Calendar },
+                { key: 'monthly', label: 'Month', icon: TrendingUp },
+              ].map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setTimeFilter(f.key as TimeFilter)}
+                  className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center gap-1 transition-colors ${
+                    timeFilter === f.key
+                      ? 'bg-purple-500 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  data-testid={`time-${f.key}`}
+                >
+                  <f.icon size={12} />
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
             {/* State Selector */}
-            <div className="relative flex-1">
+            <div className="relative">
               <button 
                 onClick={() => setShowStateDropdown(!showStateDropdown)}
-                className="w-full bg-white/10 rounded-xl px-3 py-2 flex items-center justify-between text-white text-sm"
+                className="h-full px-3 bg-slate-800 rounded-lg flex items-center gap-2 text-white text-xs hover:bg-slate-700"
                 data-testid="state-filter"
               >
-                <div className="flex items-center gap-2">
-                  <MapPin size={14} />
-                  <span>{selectedState || 'All States'}</span>
-                </div>
-                <ChevronDown size={14} className={`transition-transform ${showStateDropdown ? 'rotate-180' : ''}`} />
+                <MapPin size={12} />
+                {selectedState || 'All'}
+                <ChevronDown size={12} className={`transition-transform ${showStateDropdown ? 'rotate-180' : ''}`} />
               </button>
               
               {showStateDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 rounded-xl max-h-48 overflow-auto z-10 shadow-xl">
+                <div className="absolute top-full right-0 mt-1 w-36 bg-slate-800 rounded-xl max-h-48 overflow-auto z-20 shadow-xl border border-slate-700">
                   <button 
                     onClick={() => { setSelectedState(''); setShowStateDropdown(false) }}
-                    className="w-full px-4 py-2 text-left text-white hover:bg-slate-700 text-sm"
+                    className="w-full px-3 py-2 text-left text-white hover:bg-slate-700 text-xs"
                     data-testid="state-all"
                   >
                     All States
@@ -148,182 +208,137 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
                     <button 
                       key={state} 
                       onClick={() => { setSelectedState(state); setShowStateDropdown(false) }}
-                      className={`w-full px-4 py-2 text-left text-sm hover:bg-slate-700 flex items-center justify-between ${selectedState === state ? 'text-blue-400 bg-slate-700/50' : 'text-white'}`}
+                      className={`w-full px-3 py-2 text-left text-xs hover:bg-slate-700 ${selectedState === state ? 'text-purple-400 bg-slate-700/50' : 'text-white'}`}
                       data-testid={`state-${state}`}
                     >
-                      <span>{state}</span>
-                      {state === 'OH' && <span className="text-xs text-purple-400">⭐ Focus</span>}
+                      {state}
                     </button>
                   ))}
                 </div>
               )}
             </div>
-
-            {/* Time Filter */}
-            <div className="flex bg-white/10 rounded-xl p-1">
-              {[
-                { value: 'all_time', icon: TrendingUp, label: 'All' },
-                { value: 'weekly', icon: Clock, label: 'Week' },
-                { value: 'monthly', icon: Calendar, label: 'Month' },
-              ].map(filter => (
-                <button
-                  key={filter.value}
-                  onClick={() => setTimeFilter(filter.value as TimeFilter)}
-                  className={`px-2 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
-                    timeFilter === filter.value
-                      ? 'bg-white text-purple-600'
-                      : 'text-white/70 hover:text-white'
-                  }`}
-                  data-testid={`time-${filter.value}`}
-                >
-                  <filter.icon size={12} />
-                  {filter.label}
-                </button>
-              ))}
-            </div>
           </div>
-
-          {/* My Rank Card */}
-          {myRank && myData && (
-            <div className="bg-white/10 rounded-xl p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-white/70 text-xs">Your Ranking {selectedState ? `in ${selectedState}` : 'Overall'}</span>
-                <span className="text-yellow-300 font-bold text-lg">#{myRank}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1">
-                    <Shield size={14} className="text-emerald-400" />
-                    <span className="text-white font-medium">{myData.safety_score}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Gem size={14} className="text-cyan-400" />
-                    <span className="text-white font-medium">{formatGems(myData.gems)}</span>
-                  </div>
-                </div>
-                <span className="text-white/50 text-xs">of {totalUsers} drivers</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Column Headers */}
-        <div className="px-4 py-2 bg-slate-800/50 flex items-center text-xs text-slate-400 font-medium">
-          <span className="w-10 text-center">Rank</span>
-          <span className="flex-1 pl-12">Driver</span>
-          <span className="w-14 text-center">Score</span>
-          <span className="w-14 text-center">Gems</span>
-          <span className="w-12 text-center"></span>
         </div>
 
         {/* Leaderboard List */}
-        <div className="p-3 max-h-[350px] overflow-auto space-y-2">
+        <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin w-6 h-6 border-2 border-purple-400 border-t-transparent rounded-full" />
-            </div>
-          ) : leaderboard.length === 0 ? (
-            <div className="text-center py-8">
-              <Trophy className="text-slate-600 mx-auto mb-2" size={32} />
-              <p className="text-slate-500 text-sm">No drivers found</p>
-              <p className="text-slate-600 text-xs mt-1">Try a different filter</p>
+            <div className="flex items-center justify-center py-12">
+              <div className="w-8 h-8 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
             </div>
           ) : (
-            leaderboard.map(entry => (
-              <div 
-                key={entry.id} 
-                data-testid={`leaderboard-${entry.id}`}
-                className={`rounded-xl p-3 flex items-center gap-2 transition-all ${getRankBg(entry.rank, entry.id === userId)}`}
-              >
-                {/* Rank */}
-                <div className="w-10 flex items-center justify-center">
-                  {getRankIcon(entry.rank)}
-                </div>
-
-                {/* Avatar */}
-                <div className="relative">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 flex items-center justify-center text-white font-bold text-sm">
-                    {entry.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                  </div>
-                  {entry.is_premium && (
-                    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
-                      <Zap size={10} className="text-amber-900" />
+            <div className="p-3 space-y-2">
+              {/* Top 3 Podium */}
+              {leaderboard.length >= 3 && (
+                <div className="flex items-end justify-center gap-2 py-4 mb-4">
+                  {/* 2nd Place */}
+                  <div className="flex flex-col items-center">
+                    <div className="w-14 h-14 bg-gradient-to-br from-slate-300 to-slate-400 rounded-full flex items-center justify-center mb-2 border-2 border-slate-300">
+                      <span className="text-white font-bold text-lg">{leaderboard[1]?.name?.charAt(0)}</span>
                     </div>
-                  )}
-                </div>
+                    <div className="bg-gradient-to-t from-slate-500 to-slate-400 w-20 h-16 rounded-t-lg flex flex-col items-center justify-center">
+                      <Medal className="text-white" size={16} />
+                      <span className="text-white text-xs font-bold">2nd</span>
+                    </div>
+                    <p className="text-slate-400 text-[10px] mt-1 truncate w-20 text-center">{leaderboard[1]?.name}</p>
+                  </div>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-white font-medium text-sm truncate flex items-center gap-1">
-                    {entry.name}
-                    {entry.id === userId && <span className="text-blue-400 text-xs">(You)</span>}
-                  </p>
-                  <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                    <span>Lvl {entry.level}</span>
-                    <span>•</span>
-                    <span>{entry.state}</span>
-                    <span>•</span>
-                    <span>{entry.badges_count} 🎖️</span>
+                  {/* 1st Place */}
+                  <div className="flex flex-col items-center -mb-4">
+                    <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center mb-2 border-2 border-yellow-300 shadow-lg shadow-yellow-500/30">
+                      <span className="text-white font-bold text-xl">{leaderboard[0]?.name?.charAt(0)}</span>
+                    </div>
+                    <div className="bg-gradient-to-t from-amber-600 to-yellow-400 w-24 h-24 rounded-t-lg flex flex-col items-center justify-center">
+                      <Crown className="text-white" size={20} />
+                      <span className="text-white text-sm font-bold">1st</span>
+                      <span className="text-white/80 text-[10px]">{leaderboard[0]?.safety_score} pts</span>
+                    </div>
+                    <p className="text-white text-xs mt-1 font-medium">{leaderboard[0]?.name}</p>
+                  </div>
+
+                  {/* 3rd Place */}
+                  <div className="flex flex-col items-center">
+                    <div className="w-14 h-14 bg-gradient-to-br from-amber-600 to-amber-700 rounded-full flex items-center justify-center mb-2 border-2 border-amber-600">
+                      <span className="text-white font-bold text-lg">{leaderboard[2]?.name?.charAt(0)}</span>
+                    </div>
+                    <div className="bg-gradient-to-t from-amber-800 to-amber-600 w-20 h-12 rounded-t-lg flex flex-col items-center justify-center">
+                      <Medal className="text-white" size={16} />
+                      <span className="text-white text-xs font-bold">3rd</span>
+                    </div>
+                    <p className="text-slate-400 text-[10px] mt-1 truncate w-20 text-center">{leaderboard[2]?.name}</p>
                   </div>
                 </div>
+              )}
 
-                {/* Safety Score */}
-                <div className="w-14 text-center">
-                  <div className={`inline-flex items-center gap-1 px-1.5 py-1 rounded-lg ${
-                    entry.safety_score >= 90 ? 'bg-emerald-500/20 text-emerald-400' :
-                    entry.safety_score >= 70 ? 'bg-amber-500/20 text-amber-400' :
-                    'bg-red-500/20 text-red-400'
-                  }`}>
-                    <Shield size={10} />
-                    <span className="font-bold text-xs">{entry.safety_score}</span>
+              {/* Rest of the list */}
+              {leaderboard.slice(3).map((entry) => {
+                const isCurrentUser = entry.id === userId
+                return (
+                  <div
+                    key={entry.id}
+                    className={`rounded-xl p-3 flex items-center gap-3 transition-all ${
+                      isCurrentUser 
+                        ? 'bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/50' 
+                        : 'bg-slate-800/50 hover:bg-slate-800'
+                    }`}
+                  >
+                    {getRankDisplay(entry.rank)}
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className={`font-semibold text-sm truncate ${isCurrentUser ? 'text-blue-400' : 'text-white'}`}>
+                          {entry.name}
+                        </p>
+                        {entry.is_premium && <Zap className="text-yellow-400" size={12} />}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-slate-400">
+                        <span className="flex items-center gap-1">
+                          <Shield size={10} />
+                          {entry.safety_score}
+                        </span>
+                        <span>Lvl {entry.level}</span>
+                        <span className="text-slate-500">{entry.state}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="text-right mr-2">
+                        <p className="text-cyan-400 font-bold text-sm flex items-center gap-1">
+                          <Gem size={12} />
+                          {formatGems(entry.gems)}
+                        </p>
+                      </div>
+                      
+                      {!isCurrentUser && (
+                        <button
+                          onClick={() => handleChallengeClick(entry)}
+                          className="w-9 h-9 bg-gradient-to-br from-red-500 to-orange-500 rounded-lg flex items-center justify-center hover:from-red-400 hover:to-orange-400 transition-colors shadow-lg"
+                          data-testid={`challenge-${entry.id}`}
+                          title={`Challenge ${entry.name}`}
+                        >
+                          <Swords className="text-white" size={16} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-
-                {/* Gems */}
-                <div className="w-14 text-center">
-                  <div className="flex items-center justify-center gap-0.5 text-cyan-400">
-                    <Gem size={10} />
-                    <span className="font-medium text-xs">{formatGems(entry.gems)}</span>
-                  </div>
-                </div>
-
-                {/* Challenge Button */}
-                <div className="w-12 flex justify-center">
-                  {entry.id !== userId && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleChallengeClick(entry); }}
-                      className="w-8 h-8 rounded-lg bg-red-500/20 hover:bg-red-500/40 flex items-center justify-center transition-all group"
-                      data-testid={`challenge-${entry.id}`}
-                      title={`Challenge ${entry.name}`}
-                    >
-                      <Swords size={14} className="text-red-400 group-hover:text-red-300" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))
+                )
+              })}
+            </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="p-3 border-t border-slate-800 bg-slate-900/80">
-          <p className="text-center text-slate-500 text-xs">
-            Ranked by Safety Score • {getTimeFilterLabel()} • {selectedState ? `${selectedState} drivers` : 'All drivers'}
-          </p>
-        </div>
+        {/* Challenge Modal */}
+        <ChallengeModal
+          isOpen={showChallengeModal}
+          onClose={() => setShowChallengeModal(false)}
+          opponent={challengeTarget}
+          currentUserGems={userGems}
+          onChallengeSuccess={() => {
+            setShowChallengeModal(false)
+            loadLeaderboard()
+          }}
+        />
       </div>
-
-      {/* Challenge Modal */}
-      <ChallengeModal
-        isOpen={showChallengeModal}
-        onClose={() => { setShowChallengeModal(false); setChallengeTarget(null); }}
-        opponent={challengeTarget}
-        currentUserGems={userGems}
-        onChallengeCreated={() => {
-          // Refresh leaderboard or show success
-          loadLeaderboard()
-        }}
-      />
     </div>
   )
 }
