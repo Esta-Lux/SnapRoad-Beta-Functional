@@ -1040,7 +1040,83 @@ export default function DriverApp() {
                   userCar.color.includes('gold') ? '#fbbf24' : '#1e293b'}
       />
 
-      {/* Top Bar - Google Maps Style */}
+      {/* Turn-by-Turn Navigation Panel */}
+      {showTurnByTurn && navigationData && (
+        <div className="absolute top-0 left-0 right-0 z-30">
+          {/* Current Step */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-500 p-4 shadow-lg">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center">
+                {navigationData.steps[currentStepIndex]?.maneuver === 'turn-right' ? (
+                  <ChevronRight className="text-white" size={28} />
+                ) : navigationData.steps[currentStepIndex]?.maneuver === 'turn-left' ? (
+                  <ChevronLeft className="text-white" size={28} />
+                ) : navigationData.steps[currentStepIndex]?.maneuver === 'arrive' ? (
+                  <MapPin className="text-white" size={24} />
+                ) : (
+                  <Navigation className="text-white" size={24} />
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="text-white font-bold text-lg">
+                  {navigationData.steps[currentStepIndex]?.instruction || 'Continue'}
+                </p>
+                <p className="text-blue-100 text-sm">
+                  {navigationData.steps[currentStepIndex]?.distance} • {navigationData.steps[currentStepIndex]?.duration}
+                </p>
+              </div>
+              <button 
+                onClick={handleStopNavigation}
+                className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30"
+                data-testid="end-navigation-btn"
+              >
+                <X className="text-white" size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* ETA Bar */}
+          <div className="bg-slate-900/95 backdrop-blur px-4 py-3 flex items-center justify-between border-b border-white/10">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Clock className="text-emerald-400" size={16} />
+                <span className="text-white font-semibold">{navigationData.duration?.text || '-- min'}</span>
+              </div>
+              <div className="text-slate-400">•</div>
+              <span className="text-slate-300">{navigationData.distance?.text || '-- mi'}</span>
+              <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                navigationData.traffic === 'light' ? 'bg-emerald-500/20 text-emerald-400' :
+                navigationData.traffic === 'moderate' ? 'bg-amber-500/20 text-amber-400' :
+                'bg-red-500/20 text-red-400'
+              }`}>
+                {navigationData.traffic || 'normal'} traffic
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setCurrentStepIndex(Math.max(0, currentStepIndex - 1))}
+                disabled={currentStepIndex === 0}
+                className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center disabled:opacity-30"
+              >
+                <ChevronUp className="text-white" size={16} />
+              </button>
+              <button 
+                onClick={() => setCurrentStepIndex(Math.min((navigationData.steps?.length || 1) - 1, currentStepIndex + 1))}
+                disabled={currentStepIndex === (navigationData.steps?.length || 1) - 1}
+                className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center disabled:opacity-30"
+              >
+                <ChevronDown className="text-white" size={16} />
+              </button>
+              <button className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center">
+                <Volume2 className="text-white" size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top Bar - Google Maps Style (Hidden during turn-by-turn) */}
+      {!showTurnByTurn && (
       <div className="absolute top-3 left-3 right-3 z-10">
         {/* Search Bar with Menu */}
         <div className="flex gap-2">
