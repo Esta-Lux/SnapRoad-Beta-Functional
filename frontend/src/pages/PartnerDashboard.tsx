@@ -348,11 +348,26 @@ export default function PartnerDashboard() {
     const hasSeenOnboarding = localStorage.getItem('partner_onboarding_complete')
     if (!hasSeenOnboarding) setShowOnboarding(true)
     loadData()
+    loadPartnerProfile()
     
     // Start demo notifications every 45 seconds
     const stopNotifications = notificationService.startDemoNotifications(45000)
     return () => stopNotifications()
   }, [])
+
+  const loadPartnerProfile = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/partner/profile?partner_id=default_partner`)
+      const data = await res.json()
+      if (data.success) {
+        setPartnerProfile(data.data)
+        // Set default location for offer creation
+        if (data.data.locations.length > 0) {
+          setNewOfferData(prev => ({ ...prev, location_id: data.data.locations[0].id }))
+        }
+      }
+    } catch (e) { console.error('Error loading partner profile:', e) }
+  }
 
   const loadData = async () => {
     setLoading(true)
