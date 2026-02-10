@@ -52,6 +52,14 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Current
 - Boost system with pricing calculator
 - AI image generation for offers
 - 4-step onboarding walkthrough
+- **NEW: Location Management System**
+  - Partner plans with location limits (Starter: 5, Growth: 25, Enterprise: unlimited)
+  - Locations tab to add/edit/delete store locations
+  - Quick address selection for Columbus area
+  - Adjustable map coordinates for precise gem placement
+  - Primary location designation
+  - Location dropdown in Create Offer modal
+  - Plan limit enforcement with upgrade prompts
 
 ### Premium Admin Dashboard
 - Platform-wide analytics
