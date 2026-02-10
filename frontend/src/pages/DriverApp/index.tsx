@@ -146,6 +146,8 @@ export default function DriverApp() {
   const [showNotificationSettings, setShowNotificationSettings] = useState(false)
   const [showHelpSupport, setShowHelpSupport] = useState(false)
   const [showFuelTracker, setShowFuelTracker] = useState(false)
+  const [showFuelDashboard, setShowFuelDashboard] = useState(false)
+  const [showAppTour, setShowAppTour] = useState(false)
   const [showCarOnboarding, setShowCarOnboarding] = useState(false)
   const [showCarStudio, setShowCarStudio] = useState(false)
   const [showPlanSelection, setShowPlanSelection] = useState(false)
