@@ -1675,7 +1675,7 @@ export default function DriverApp() {
           </div>
 
           {/* Open Car Studio Button */}
-          <button onClick={() => setShowCarShowroom(true)} data-testid="open-car-studio"
+          <button onClick={() => setShowCarStudio(true)} data-testid="open-car-studio"
             className="w-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl p-4 mb-4 hover:from-amber-400 hover:to-orange-400 transition-colors shadow-lg">
             <div className="flex items-center justify-between">
               <div>
