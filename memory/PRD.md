@@ -138,4 +138,35 @@ See `/app/memory/REMAINING_WORK.md` for comprehensive list of:
 - **Admin Console:** `yourdomain.com/portal/admin-sr2025secure`
 
 ---
+
+## ✅ Latest Updates (December 2025)
+
+### Map Search & Navigation (NEW)
+- **Backend endpoints:**
+  - `GET /api/map/search?q=<query>&lat=<lat>&lng=<lng>` - Search locations with relevance scoring and distance
+  - `GET /api/map/directions?origin_lat=<lat>&origin_lng=<lng>&dest_lat=<lat>&dest_lng=<lng>` - Get mock turn-by-turn directions
+- **Frontend features:**
+  - Enhanced search modal with API integration
+  - Real-time search results with distance display
+  - Quick Places (Home, Work, Gym, School) shortcuts
+  - Turn-by-turn navigation UI panel:
+    - Current instruction with maneuver icon
+    - Step distance and duration
+    - Total ETA and distance
+    - Traffic indicator (light/moderate/heavy)
+    - Navigation step controls (up/down/volume)
+    - Close navigation button
+
+### Dashboard Modals (NEW)
+- Partner Dashboard: Help modal with topics (Creating Offers, Boosting Offers, Analytics)
+- Admin Dashboard: Settings modal with 13 toggles across 6 sections
+- Admin Dashboard: Help modal with topics and Contact Support
+
+### Note on Mocked Data
+- Map search returns pre-defined Columbus, OH locations
+- Directions are mock turn-by-turn steps (not real routing)
+- For production: integrate Mapbox or Google Maps API
+
+---
 **Last Updated:** December 2025
+
