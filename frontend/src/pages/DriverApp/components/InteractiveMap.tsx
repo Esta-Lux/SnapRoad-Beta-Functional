@@ -31,81 +31,202 @@ interface InteractiveMapProps {
   onRecenter?: () => void
 }
 
-// Car icon SVG based on category
-const CarIcon = ({ category, color, size = 32 }: { category: string; color: string; size?: number }) => {
-  const getCarPath = () => {
+// Color mapping
+const COLOR_MAP: Record<string, string> = {
+  'ocean-blue': '#3b82f6',
+  'midnight-black': '#1e293b',
+  'pearl-white': '#f1f5f9',
+  'racing-red': '#ef4444',
+  'forest-green': '#22c55e',
+  'sunset-gold': '#fbbf24',
+}
+
+// 3D Car SVG Component with perspective and shadows
+const Car3DMarker = ({ category, color, size = 40 }: { category: string; color: string; size?: number }) => {
+  const carColor = COLOR_MAP[color] || color || '#3b82f6'
+  const shadowColor = `${carColor}66`
+  const highlightColor = '#ffffff'
+  
+  const renderCar = () => {
     switch (category) {
       case 'suv':
         return (
-          <g transform={`scale(${size / 40})`}>
-            {/* SUV body */}
-            <rect x="8" y="14" width="24" height="14" rx="3" fill={color} />
-            <rect x="10" y="8" width="20" height="10" rx="2" fill={color} />
+          <g>
+            {/* Shadow */}
+            <ellipse cx="20" cy="36" rx="14" ry="3" fill="rgba(0,0,0,0.4)" />
+            
+            {/* Body base */}
+            <path d="M6 24 L6 30 Q6 32 8 32 L32 32 Q34 32 34 30 L34 24 Q34 20 32 18 L28 18 L28 14 Q28 12 26 12 L14 12 Q12 12 12 14 L12 18 L8 18 Q6 20 6 24Z" 
+              fill={carColor} />
+            
+            {/* Body highlight (3D effect) */}
+            <path d="M8 24 L8 20 Q8 18 10 18 L30 18 Q32 18 32 20 L32 24" 
+              fill={`${carColor}ee`} stroke={highlightColor} strokeWidth="0.5" strokeOpacity="0.3" />
+            
+            {/* Roof */}
+            <path d="M12 18 L12 12 Q12 10 14 10 L26 10 Q28 10 28 12 L28 18" 
+              fill={carColor} />
+            <path d="M13 11 L27 11" stroke={highlightColor} strokeWidth="0.8" strokeOpacity="0.5" />
+            
             {/* Windows */}
-            <rect x="12" y="10" width="6" height="6" rx="1" fill="#1e293b" opacity="0.8" />
-            <rect x="20" y="10" width="8" height="6" rx="1" fill="#1e293b" opacity="0.8" />
-            {/* Wheels */}
-            <circle cx="13" cy="28" r="4" fill="#1e293b" />
-            <circle cx="27" cy="28" r="4" fill="#1e293b" />
-            <circle cx="13" cy="28" r="2" fill="#475569" />
-            <circle cx="27" cy="28" r="2" fill="#475569" />
+            <rect x="13" y="11" width="5" height="6" rx="1" fill="#0f172a" opacity="0.9" />
+            <rect x="19" y="11" width="8" height="6" rx="1" fill="#0f172a" opacity="0.9" />
+            
+            {/* Window reflections */}
+            <path d="M14 12 L17 12 L14 16Z" fill="rgba(255,255,255,0.2)" />
+            <path d="M20 12 L26 12 L20 16Z" fill="rgba(255,255,255,0.2)" />
+            
+            {/* Front grill */}
+            <rect x="8" y="26" width="24" height="2" rx="0.5" fill="#1e293b" />
+            <rect x="10" y="26.5" width="20" height="1" rx="0.5" fill="#374151" />
+            
+            {/* Headlights */}
+            <circle cx="10" cy="24" r="2" fill="#fef3c7" />
+            <circle cx="10" cy="24" r="1.5" fill="#fef08a" />
+            <circle cx="30" cy="24" r="2" fill="#fef3c7" />
+            <circle cx="30" cy="24" r="1.5" fill="#fef08a" />
+            
+            {/* Wheels with 3D effect */}
+            <circle cx="12" cy="32" r="4" fill="#1e293b" />
+            <circle cx="12" cy="32" r="3" fill="#374151" />
+            <circle cx="12" cy="32" r="1.5" fill="#6b7280" />
+            <circle cx="28" cy="32" r="4" fill="#1e293b" />
+            <circle cx="28" cy="32" r="3" fill="#374151" />
+            <circle cx="28" cy="32" r="1.5" fill="#6b7280" />
           </g>
         )
       case 'truck':
         return (
-          <g transform={`scale(${size / 40})`}>
-            {/* Truck cab */}
-            <rect x="4" y="12" width="14" height="14" rx="2" fill={color} />
-            <rect x="6" y="8" width="10" height="8" rx="2" fill={color} />
+          <g>
+            {/* Shadow */}
+            <ellipse cx="22" cy="36" rx="16" ry="3" fill="rgba(0,0,0,0.4)" />
+            
             {/* Truck bed */}
-            <rect x="18" y="14" width="18" height="12" rx="2" fill={color} opacity="0.9" />
+            <path d="M18 20 L18 30 Q18 32 20 32 L36 32 Q38 32 38 30 L38 20 Q38 18 36 18 L20 18 Q18 18 18 20Z" 
+              fill={carColor} opacity="0.9" />
+            <path d="M19 19 L37 19" stroke={highlightColor} strokeWidth="0.5" strokeOpacity="0.4" />
+            
+            {/* Cabin */}
+            <path d="M4 22 L4 30 Q4 32 6 32 L16 32 L16 18 L6 18 Q4 18 4 20Z" 
+              fill={carColor} />
+            
+            {/* Cabin roof */}
+            <path d="M6 18 L6 12 Q6 10 8 10 L14 10 Q16 10 16 12 L16 18" 
+              fill={carColor} />
+            <path d="M7 11 L15 11" stroke={highlightColor} strokeWidth="0.8" strokeOpacity="0.5" />
+            
             {/* Window */}
-            <rect x="7" y="9" width="8" height="5" rx="1" fill="#1e293b" opacity="0.8" />
+            <rect x="7" y="11" width="8" height="6" rx="1" fill="#0f172a" opacity="0.9" />
+            <path d="M8 12 L14 12 L8 16Z" fill="rgba(255,255,255,0.2)" />
+            
+            {/* Headlight */}
+            <circle cx="6" cy="24" r="2" fill="#fef3c7" />
+            <circle cx="6" cy="24" r="1.5" fill="#fef08a" />
+            
             {/* Wheels */}
-            <circle cx="11" cy="26" r="4" fill="#1e293b" />
-            <circle cx="30" cy="26" r="4" fill="#1e293b" />
-            <circle cx="11" cy="26" r="2" fill="#475569" />
-            <circle cx="30" cy="26" r="2" fill="#475569" />
+            <circle cx="10" cy="32" r="4" fill="#1e293b" />
+            <circle cx="10" cy="32" r="3" fill="#374151" />
+            <circle cx="10" cy="32" r="1.5" fill="#6b7280" />
+            <circle cx="32" cy="32" r="4" fill="#1e293b" />
+            <circle cx="32" cy="32" r="3" fill="#374151" />
+            <circle cx="32" cy="32" r="1.5" fill="#6b7280" />
           </g>
         )
       default: // sedan
         return (
-          <g transform={`scale(${size / 40})`}>
-            {/* Sedan body */}
-            <ellipse cx="20" cy="22" rx="16" ry="6" fill={color} />
-            <ellipse cx="20" cy="16" rx="10" ry="5" fill={color} />
+          <g>
+            {/* Shadow */}
+            <ellipse cx="20" cy="36" rx="14" ry="3" fill="rgba(0,0,0,0.4)" />
+            
+            {/* Body base with 3D curve */}
+            <path d="M4 26 Q4 32 8 32 L32 32 Q36 32 36 26 L36 24 Q36 20 32 20 L8 20 Q4 20 4 24Z" 
+              fill={carColor} />
+            
+            {/* Body top highlight */}
+            <path d="M6 24 Q6 21 10 21 L30 21 Q34 21 34 24" 
+              fill={`${carColor}dd`} stroke={highlightColor} strokeWidth="0.5" strokeOpacity="0.4" />
+            
+            {/* Roof/cabin */}
+            <path d="M10 20 L12 12 Q13 10 16 10 L24 10 Q27 10 28 12 L30 20" 
+              fill={carColor} />
+            <path d="M13 11 L27 11" stroke={highlightColor} strokeWidth="1" strokeOpacity="0.5" />
+            
             {/* Windows */}
-            <ellipse cx="15" cy="15" rx="4" ry="3" fill="#1e293b" opacity="0.8" />
-            <ellipse cx="25" cy="15" rx="4" ry="3" fill="#1e293b" opacity="0.8" />
-            {/* Wheels */}
-            <circle cx="10" cy="24" r="4" fill="#1e293b" />
-            <circle cx="30" cy="24" r="4" fill="#1e293b" />
-            <circle cx="10" cy="24" r="2" fill="#475569" />
-            <circle cx="30" cy="24" r="2" fill="#475569" />
+            <path d="M13 12 L14 18 L18 18 L18 12Z" fill="#0f172a" opacity="0.9" />
+            <path d="M20 12 L20 18 L27 18 L26 12Z" fill="#0f172a" opacity="0.9" />
+            
+            {/* Window reflections */}
+            <path d="M14 13 L17 13 L15 17Z" fill="rgba(255,255,255,0.15)" />
+            <path d="M21 13 L25 13 L22 17Z" fill="rgba(255,255,255,0.15)" />
+            
+            {/* Hood line */}
+            <path d="M10 20 L8 24" stroke={highlightColor} strokeWidth="0.5" strokeOpacity="0.3" />
+            <path d="M30 20 L32 24" stroke={highlightColor} strokeWidth="0.5" strokeOpacity="0.3" />
+            
+            {/* Front grill */}
+            <rect x="8" y="27" width="24" height="2" rx="0.5" fill="#1e293b" />
+            
+            {/* Headlights with glow */}
+            <circle cx="8" cy="25" r="2.5" fill="#fef3c7" />
+            <circle cx="8" cy="25" r="1.8" fill="#fef08a" />
+            <circle cx="32" cy="25" r="2.5" fill="#fef3c7" />
+            <circle cx="32" cy="25" r="1.8" fill="#fef08a" />
+            
+            {/* Wheels with 3D depth */}
+            <circle cx="11" cy="32" r="4" fill="#1e293b" />
+            <circle cx="11" cy="32" r="3.2" fill="#374151" />
+            <circle cx="11" cy="32" r="1.5" fill="#6b7280" />
+            <ellipse cx="11" cy="31.5" rx="1" ry="0.5" fill="#9ca3af" opacity="0.5" />
+            
+            <circle cx="29" cy="32" r="4" fill="#1e293b" />
+            <circle cx="29" cy="32" r="3.2" fill="#374151" />
+            <circle cx="29" cy="32" r="1.5" fill="#6b7280" />
+            <ellipse cx="29" cy="31.5" rx="1" ry="0.5" fill="#9ca3af" opacity="0.5" />
           </g>
         )
     }
   }
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {getCarPath()}
+    <svg width={size} height={size} viewBox="0 0 40 40" style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }}>
+      {renderCar()}
     </svg>
   )
 }
 
-// Navigation arrow
-const NavArrow = ({ color, size = 28 }: { color: string; size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <path 
-      d="M12 2L4 20L12 16L20 20L12 2Z" 
-      fill={color}
-      stroke="white"
-      strokeWidth="1.5"
-      strokeLinejoin="round"
-    />
-  </svg>
-)
+// Navigation Arrow for when no car is selected
+const NavArrow3D = ({ color, size = 36 }: { color: string; size?: number }) => {
+  const arrowColor = COLOR_MAP[color] || color || '#3b82f6'
+  
+  return (
+    <svg width={size} height={size} viewBox="0 0 36 36" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.4))' }}>
+      {/* Shadow */}
+      <ellipse cx="18" cy="32" rx="8" ry="2" fill="rgba(0,0,0,0.3)" />
+      
+      {/* Arrow body with 3D effect */}
+      <path 
+        d="M18 4 L6 28 L18 22 L30 28 Z" 
+        fill={arrowColor}
+        stroke="white"
+        strokeWidth="2"
+      />
+      
+      {/* Highlight */}
+      <path 
+        d="M18 6 L9 25 L18 20 L18 6Z" 
+        fill="rgba(255,255,255,0.2)"
+      />
+      
+      {/* Inner detail */}
+      <path 
+        d="M18 10 L12 24 L18 20 L24 24 Z" 
+        fill={`${arrowColor}dd`}
+        stroke="rgba(255,255,255,0.3)"
+        strokeWidth="0.5"
+      />
+    </svg>
+  )
+}
 
 export default function InteractiveMap({ 
   userLocation, 
@@ -125,7 +246,6 @@ export default function InteractiveMap({
   const mapRef = useRef<HTMLDivElement>(null)
   const lastTouchDistance = useRef<number | null>(null)
 
-  // Update map size on resize
   useEffect(() => {
     const updateSize = () => {
       if (mapRef.current) {
@@ -140,7 +260,6 @@ export default function InteractiveMap({
     return () => window.removeEventListener('resize', updateSize)
   }, [])
 
-  // Calculate tile coordinates
   const lon2tile = (lon: number, z: number) => ((lon + 180) / 360) * Math.pow(2, z)
   const lat2tile = (lat: number, z: number) => ((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2) * Math.pow(2, z)
 
@@ -149,10 +268,8 @@ export default function InteractiveMap({
     onRecenter?.()
   }, [userLocation, onRecenter])
 
-  // Mouse/Touch drag handling
   const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
     if ('touches' in e && e.touches.length === 2) {
-      // Pinch zoom start
       const touch1 = e.touches[0]
       const touch2 = e.touches[1]
       const distance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY)
@@ -169,7 +286,6 @@ export default function InteractiveMap({
 
   const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
     if ('touches' in e && e.touches.length === 2) {
-      // Pinch zoom
       const touch1 = e.touches[0]
       const touch2 = e.touches[1]
       const distance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY)
@@ -208,7 +324,6 @@ export default function InteractiveMap({
     lastTouchDistance.current = null
   }
 
-  // Mouse wheel zoom
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? -0.5 : 0.5
@@ -223,7 +338,6 @@ export default function InteractiveMap({
     }
   }, [handleWheel])
 
-  // Generate spread out offers
   const visibleOffers = offers.filter(o => !o.redeemed).slice(0, 5).map((offer, index) => {
     const angle = (index / 5) * 2 * Math.PI + Math.PI / 6
     const distance = 0.015 + (index % 2) * 0.008
@@ -232,7 +346,6 @@ export default function InteractiveMap({
     return { ...offer, lat, lng }
   })
 
-  // Convert lat/lng to pixel position
   const latLngToPixel = (lat: number, lng: number) => {
     const targetX = lon2tile(lng, zoom) * 256
     const targetY = lat2tile(lat, zoom) * 256
@@ -245,7 +358,6 @@ export default function InteractiveMap({
     }
   }
 
-  // Generate tiles
   const getTiles = () => {
     const tiles = []
     const centerTileX = lon2tile(center.lng, zoom)
@@ -281,8 +393,6 @@ export default function InteractiveMap({
   }
 
   const tiles = getTiles()
-
-  // Get user marker position (always centered)
   const userPos = latLngToPixel(userLocation.lat, userLocation.lng)
 
   return (
@@ -318,7 +428,7 @@ export default function InteractiveMap({
           />
         ))}
 
-        {/* User Location Marker - Positioned based on actual user location */}
+        {/* User Location Marker - 3D Car or Arrow */}
         <div
           className="absolute pointer-events-none"
           style={{
@@ -330,25 +440,32 @@ export default function InteractiveMap({
         >
           {/* Pulse ring */}
           <div 
-            className="absolute rounded-full bg-blue-500/20 animate-pulse"
-            style={{ width: 50, height: 50, left: -25, top: -25 }}
+            className="absolute rounded-full animate-pulse"
+            style={{ 
+              width: 60, 
+              height: 60, 
+              left: -30, 
+              top: -30,
+              background: 'radial-gradient(circle, rgba(59,130,246,0.3) 0%, rgba(59,130,246,0) 70%)'
+            }}
           />
-          {/* User marker - Car or Arrow based on selection */}
+          
+          {/* 3D Car or Arrow marker */}
           <div 
-            className="absolute rounded-full shadow-lg flex items-center justify-center"
+            className="absolute"
             style={{
-              width: 36,
-              height: 36,
-              left: -18,
-              top: -18,
-              background: 'white',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.3)'
+              left: -20,
+              top: -20,
             }}
           >
-            {userCar ? (
-              <CarIcon category={userCar.category} color={carColor} size={28} />
+            {userCar?.category ? (
+              <Car3DMarker 
+                category={userCar.category} 
+                color={userCar.color || 'ocean-blue'} 
+                size={40} 
+              />
             ) : (
-              <NavArrow color={carColor} size={24} />
+              <NavArrow3D color={carColor} size={40} />
             )}
           </div>
         </div>
@@ -408,18 +525,19 @@ export default function InteractiveMap({
         {/* Orion Voice Button */}
         <button
           onClick={onOrionClick}
-          className="w-11 h-11 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg hover:from-purple-400 hover:to-indigo-500 active:scale-95 transition-all"
+          className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg hover:from-purple-400 hover:to-indigo-500 active:scale-95 transition-all"
           data-testid="orion-map-btn"
+          style={{ boxShadow: '0 4px 15px rgba(139, 92, 246, 0.4)' }}
         >
-          <Mic className="text-white" size={20} />
+          <Mic className="text-white" size={22} />
         </button>
         {/* Recenter Button */}
         <button
           onClick={handleRecenter}
-          className="w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg hover:bg-slate-800 active:scale-95 transition-all"
+          className="w-12 h-12 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg hover:bg-slate-800 active:scale-95 transition-all border border-white/10"
           data-testid="map-recenter"
         >
-          <Locate className="text-white" size={20} />
+          <Locate className="text-white" size={22} />
         </button>
       </div>
 
