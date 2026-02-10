@@ -905,9 +905,23 @@ export default function DriverApp() {
       <div className="w-72 bg-slate-900 h-full animate-slide-right" onClick={e => e.stopPropagation()}>
         <div className="p-4 bg-gradient-to-r from-blue-600 to-blue-500">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-blue-500 font-bold text-lg">
-              {userData.name?.split(' ').map((n: string) => n[0]).join('')}
-            </div>
+            {/* Show user's car if selected, otherwise show initials */}
+            <button 
+              onClick={() => setShowCarStudio(true)}
+              className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center overflow-hidden hover:bg-white/20 transition-colors"
+            >
+              {userCar.category ? (
+                <ProfileCar 
+                  category={userCar.category as any}
+                  color={userCar.color as any}
+                  size={48}
+                />
+              ) : (
+                <span className="text-white font-bold text-lg">
+                  {userData.name?.split(' ').map((n: string) => n[0]).join('')}
+                </span>
+              )}
+            </button>
             <div>
               <h3 className="text-white font-semibold text-sm">{userData.name}</h3>
               <p className="text-blue-200 text-xs">Level {userData.level} • {userData.is_premium ? '⚡ PRO' : 'Free'}</p>
