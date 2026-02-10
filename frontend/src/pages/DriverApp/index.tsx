@@ -1038,6 +1038,9 @@ export default function DriverApp() {
                   userCar.color.includes('green') ? '#22c55e' :
                   userCar.color.includes('white') ? '#f8fafc' :
                   userCar.color.includes('gold') ? '#fbbf24' : '#1e293b'}
+        userCar={userCar}
+        onOrionClick={() => setShowOrionVoice(true)}
+        onRecenter={() => toast.success('Centered on your location')}
       />
 
       {/* Turn-by-Turn Navigation Panel */}
