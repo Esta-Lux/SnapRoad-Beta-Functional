@@ -2727,29 +2727,40 @@ export default function DriverApp() {
 
       {/* App Tour for New Users */}
       {showAppTour && (
-        <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-slate-900 rounded-2xl overflow-hidden animate-scale-in">
-            {/* Tour Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-center">
-              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Navigation className="text-white" size={32} />
+        <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={() => setShowAppTour(false)}>
+          <div className="w-full max-w-sm max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden animate-scale-in flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Tour Header - Fixed */}
+            <div className="flex-shrink-0 bg-gradient-to-r from-blue-600 to-purple-600 p-5 relative">
+              <button 
+                onClick={() => setShowAppTour(false)}
+                className="absolute top-3 right-3 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30"
+                data-testid="tour-close-btn"
+              >
+                <X className="text-white" size={16} />
+              </button>
+              <div className="text-center">
+                <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-2">
+                  <Navigation className="text-white" size={28} />
+                </div>
+                <h2 className="text-white text-lg font-bold">Welcome to SnapRoad!</h2>
+                <p className="text-white/80 text-xs mt-1">Let's take a quick tour</p>
               </div>
-              <h2 className="text-white text-xl font-bold">Welcome to SnapRoad!</h2>
-              <p className="text-white/80 text-sm mt-1">Let's take a quick tour</p>
             </div>
 
-            {/* Tour Steps */}
-            <div className="p-4 space-y-3">
+            {/* Tour Steps - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {[
                 { icon: MapPin, title: 'Interactive Map', desc: 'Pinch to zoom, drag to pan. Find nearby offers!' },
                 { icon: Gem, title: 'Collect Gems', desc: 'Tap glowing gems on the map to redeem discounts' },
                 { icon: Mic, title: 'Meet Orion', desc: 'Your voice assistant - tap the purple mic button' },
                 { icon: Shield, title: 'Drive Safe', desc: 'Earn points for smooth braking and safe driving' },
                 { icon: Fuel, title: 'Track Analytics', desc: 'Monitor fuel, savings, and your driver score' },
+                { icon: Car, title: 'Customize Your Ride', desc: 'Unlock new colors and car styles as you level up' },
+                { icon: Trophy, title: 'Compete & Win', desc: 'Challenge friends and climb the leaderboard' },
               ].map((step, i) => (
                 <div key={i} className="flex items-center gap-3 bg-slate-800 rounded-xl p-3">
                   <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <step.icon className="text-blue-400" size={20} />
+                    <step.icon className="text-blue-400" size={18} />
                   </div>
                   <div>
                     <p className="text-white font-medium text-sm">{step.title}</p>
@@ -2759,11 +2770,12 @@ export default function DriverApp() {
               ))}
             </div>
 
-            {/* Start Button */}
-            <div className="p-4 border-t border-slate-800">
+            {/* Start Button - Fixed */}
+            <div className="flex-shrink-0 p-4 border-t border-slate-800 bg-slate-900/95">
               <button
                 onClick={() => setShowAppTour(false)}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg"
+                data-testid="tour-start-btn"
               >
                 <Check size={20} />
                 Start Driving!
