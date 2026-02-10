@@ -316,7 +316,7 @@ export default function PartnerDashboard() {
   const [offers, setOffers] = useState<Offer[]>([])
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'offers' | 'analytics' | 'boosts'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'offers' | 'locations' | 'analytics' | 'boosts'>('overview')
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showBoostModal, setShowBoostModal] = useState<Offer | null>(null)
@@ -325,6 +325,21 @@ export default function PartnerDashboard() {
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  
+  // Location management states
+  const [partnerProfile, setPartnerProfile] = useState<PartnerProfile | null>(null)
+  const [showAddLocationModal, setShowAddLocationModal] = useState(false)
+  const [editingLocation, setEditingLocation] = useState<PartnerLocation | null>(null)
+  
+  // Offer creation form states
+  const [newOfferData, setNewOfferData] = useState({
+    title: '',
+    description: '',
+    discount_percent: 15,
+    gems_reward: 50,
+    location_id: 0,
+    expires_days: 7
+  })
   
   // Notification hooks
   const { sendNotification } = useNotifications()
