@@ -1,11 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef } from 'react'
 import { 
-  Gem, Navigation, MapPin, Minus, Plus, Locate, Compass, Search, X,
-  ChevronUp, ChevronDown, Volume2, Clock, ArrowUp, ArrowRight, 
-  ArrowLeft, CornerUpRight, CornerUpLeft, Flag
+  Gem, Navigation, Minus, Plus, Locate, Compass
 } from 'lucide-react'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 interface Offer {
   id: number
@@ -18,39 +14,12 @@ interface Offer {
   redeemed?: boolean
 }
 
-interface LocationSuggestion {
-  id: number
-  name: string
-  address: string
-  lat: number
-  lng: number
-  type: string
-  distance_km?: number
-}
-
-interface NavigationStep {
-  instruction: string
-  distance: string
-  duration: string
-  maneuver: string
-}
-
-interface NavigationData {
-  destination: { lat: number; lng: number; name: string }
-  distance: { text: string; miles: number }
-  duration: { text: string; minutes: number }
-  steps: NavigationStep[]
-  traffic: string
-}
-
 interface InteractiveMapProps {
   userLocation: { lat: number; lng: number }
   offers: Offer[]
   isNavigating: boolean
   onOfferClick: (offer: Offer) => void
   carColor?: string
-  onSearch?: (query: string, location?: { lat: number; lng: number }) => void
-  onStartNavigation?: (destination: LocationSuggestion) => void
 }
 
 export default function InteractiveMap({ 
@@ -58,131 +27,13 @@ export default function InteractiveMap({
   offers, 
   isNavigating,
   onOfferClick,
-  carColor = '#3b82f6',
-  onSearch,
-  onStartNavigation
+  carColor = '#3b82f6'
 }: InteractiveMapProps) {
   const [zoom, setZoom] = useState(15)
   const [center, setCenter] = useState(userLocation)
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, lat: 0, lng: 0 })
-  const [searchQuery, setSearchQuery] = useState('')
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([])
-  const [isSearching, setIsSearching] = useState(false)
-  const [selectedDestination, setSelectedDestination] = useState<LocationSuggestion | null>(null)
-  const [navigationData, setNavigationData] = useState<NavigationData | null>(null)
-  const [showTurnByTurn, setShowTurnByTurn] = useState(false)
-  const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const mapRef = useRef<HTMLDivElement>(null)
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-
-  // Search locations from backend
-  const searchLocations = useCallback(async (query: string) => {
-    if (query.length < 1) {
-      setSuggestions([])
-      return
-    }
-
-    setIsSearching(true)
-    try {
-      const params = new URLSearchParams({
-        q: query,
-        lat: userLocation.lat.toString(),
-        lng: userLocation.lng.toString(),
-        limit: '8'
-      })
-      const res = await fetch(`${API_URL}/api/map/search?${params}`)
-      const data = await res.json()
-      if (data.success) {
-        setSuggestions(data.data)
-      }
-    } catch (e) {
-      console.error('Search error:', e)
-    }
-    setIsSearching(false)
-  }, [userLocation])
-
-  // Debounced search
-  useEffect(() => {
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current)
-    }
-    
-    if (searchQuery.length > 0) {
-      searchTimeoutRef.current = setTimeout(() => {
-        searchLocations(searchQuery)
-      }, 300)
-      setShowSuggestions(true)
-    } else {
-      setSuggestions([])
-      setShowSuggestions(false)
-    }
-
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current)
-      }
-    }
-  }, [searchQuery, searchLocations])
-
-  // Fetch directions when destination is selected
-  const fetchDirections = async (destination: LocationSuggestion) => {
-    try {
-      const params = new URLSearchParams({
-        origin_lat: userLocation.lat.toString(),
-        origin_lng: userLocation.lng.toString(),
-        dest_lat: destination.lat.toString(),
-        dest_lng: destination.lng.toString(),
-        dest_name: destination.name
-      })
-      const res = await fetch(`${API_URL}/api/map/directions?${params}`)
-      const data = await res.json()
-      if (data.success) {
-        setNavigationData(data.data)
-        setShowTurnByTurn(true)
-        setCurrentStepIndex(0)
-      }
-    } catch (e) {
-      console.error('Directions error:', e)
-    }
-  }
-
-  const handleSelectLocation = (location: LocationSuggestion) => {
-    setCenter({ lat: location.lat, lng: location.lng })
-    setZoom(16)
-    setSearchQuery(location.name)
-    setShowSuggestions(false)
-    setSelectedDestination(location)
-    onSearch?.(location.name, { lat: location.lat, lng: location.lng })
-    // Fetch directions to the selected location
-    fetchDirections(location)
-  }
-
-  const handleStartNavigation = () => {
-    if (selectedDestination) {
-      onStartNavigation?.(selectedDestination)
-    }
-  }
-
-  const handleEndNavigation = () => {
-    setNavigationData(null)
-    setShowTurnByTurn(false)
-    setSelectedDestination(null)
-    setSearchQuery('')
-    setCurrentStepIndex(0)
-  }
-
-  // Get maneuver icon
-  const getManeuverIcon = (maneuver: string) => {
-    switch (maneuver) {
-      case 'turn-right': return <CornerUpRight className="text-white" size={24} />
-      case 'turn-left': return <CornerUpLeft className="text-white" size={24} />
-      case 'straight': return <ArrowUp className="text-white" size={24} />
-      case 'arrive': return <Flag className="text-white" size={24} />
-      default: return <ArrowUp className="text-white" size={24} />
-    }
-  }
 
   // Calculate tile coordinates
   const lon2tile = (lon: number, zoom: number) => Math.floor((lon + 180) / 360 * Math.pow(2, zoom))
@@ -333,27 +184,6 @@ export default function InteractiveMap({
           </div>
         </div>
 
-        {/* Destination Marker */}
-        {selectedDestination && (
-          <div
-            className="absolute z-15"
-            style={{
-              ...(() => {
-                const pos = latLngToPixel(selectedDestination.lat, selectedDestination.lng)
-                return { left: pos.x, top: pos.y }
-              })(),
-              transform: 'translate(-50%, -100%)'
-            }}
-          >
-            <div className="relative">
-              <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center shadow-lg border-2 border-white">
-                <Flag className="text-white" size={18} />
-              </div>
-              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[8px] border-r-[8px] border-t-[12px] border-l-transparent border-r-transparent border-t-red-500" />
-            </div>
-          </div>
-        )}
-
         {/* Offer Markers */}
         {visibleOffers.map((offer) => {
           const pos = latLngToPixel(offer.lat, offer.lng)
@@ -368,6 +198,7 @@ export default function InteractiveMap({
               onClick={(e) => { e.stopPropagation(); onOfferClick(offer) }}
               className="absolute z-20 group"
               style={{ left: pos.x, top: pos.y, transform: 'translate(-50%, -50%)' }}
+              data-testid={`offer-marker-${offer.id}`}
             >
               <div className="relative">
                 <div 
@@ -394,201 +225,53 @@ export default function InteractiveMap({
         })}
       </div>
 
-      {/* Turn-by-Turn Navigation Panel */}
-      {showTurnByTurn && navigationData && (
-        <div className="absolute top-0 left-0 right-0 z-40">
-          {/* Current Step */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-500 p-4 shadow-lg">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center">
-                {getManeuverIcon(navigationData.steps[currentStepIndex]?.maneuver || 'straight')}
-              </div>
-              <div className="flex-1">
-                <p className="text-white font-bold text-lg">
-                  {navigationData.steps[currentStepIndex]?.instruction || 'Continue'}
-                </p>
-                <p className="text-blue-100 text-sm">
-                  {navigationData.steps[currentStepIndex]?.distance} • {navigationData.steps[currentStepIndex]?.duration}
-                </p>
-              </div>
-              <button 
-                onClick={handleEndNavigation}
-                className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30"
-              >
-                <X className="text-white" size={20} />
-              </button>
-            </div>
-          </div>
-
-          {/* ETA Bar */}
-          <div className="bg-slate-900/95 backdrop-blur px-4 py-3 flex items-center justify-between border-b border-white/10">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Clock className="text-emerald-400" size={16} />
-                <span className="text-white font-semibold">{navigationData.duration.text}</span>
-              </div>
-              <div className="text-slate-400">•</div>
-              <span className="text-slate-300">{navigationData.distance.text}</span>
-              <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                navigationData.traffic === 'light' ? 'bg-emerald-500/20 text-emerald-400' :
-                navigationData.traffic === 'moderate' ? 'bg-amber-500/20 text-amber-400' :
-                'bg-red-500/20 text-red-400'
-              }`}>
-                {navigationData.traffic} traffic
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setCurrentStepIndex(Math.max(0, currentStepIndex - 1))}
-                disabled={currentStepIndex === 0}
-                className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center disabled:opacity-30"
-              >
-                <ChevronUp className="text-white" size={16} />
-              </button>
-              <button 
-                onClick={() => setCurrentStepIndex(Math.min(navigationData.steps.length - 1, currentStepIndex + 1))}
-                disabled={currentStepIndex === navigationData.steps.length - 1}
-                className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center disabled:opacity-30"
-              >
-                <ChevronDown className="text-white" size={16} />
-              </button>
-              <button className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center">
-                <Volume2 className="text-white" size={16} />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Map Controls */}
-      <div className={`absolute right-3 ${showTurnByTurn ? 'bottom-32' : 'bottom-32'} z-30 flex flex-col gap-2`}>
+      <div className="absolute right-3 bottom-32 z-30 flex flex-col gap-2">
         <button
           onClick={handleZoomIn}
           className="w-10 h-10 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg hover:bg-slate-800 active:scale-95 transition-all"
+          data-testid="map-zoom-in"
         >
           <Plus className="text-white" size={18} />
         </button>
         <button
           onClick={handleZoomOut}
           className="w-10 h-10 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg hover:bg-slate-800 active:scale-95 transition-all"
+          data-testid="map-zoom-out"
         >
           <Minus className="text-white" size={18} />
         </button>
         <button
           onClick={handleRecenter}
           className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center shadow-lg hover:bg-blue-600 active:scale-95 transition-all"
+          data-testid="map-recenter"
         >
           <Locate className="text-white" size={18} />
         </button>
       </div>
 
-      {/* Search Bar - Hidden during turn-by-turn */}
-      {!showTurnByTurn && (
-        <div className="absolute top-3 left-3 right-3 z-30">
-          <div className="relative">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => setShowSuggestions(true)}
-                placeholder="Search destination..."
-                data-testid="map-search-input"
-                className="w-full bg-slate-900/95 backdrop-blur text-white placeholder-slate-400 pl-10 pr-10 py-3 rounded-xl border border-white/10 focus:outline-none focus:border-blue-500/50 shadow-lg text-sm"
-              />
-              {searchQuery && (
-                <button 
-                  onClick={() => { setSearchQuery(''); setShowSuggestions(false); setSuggestions([]) }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                >
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-            
-            {/* Suggestions Dropdown */}
-            {showSuggestions && (suggestions.length > 0 || isSearching) && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900/95 backdrop-blur rounded-xl border border-white/10 shadow-2xl overflow-hidden max-h-64 overflow-y-auto">
-                {isSearching ? (
-                  <div className="p-4 text-center">
-                    <div className="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin mx-auto" />
-                    <p className="text-slate-400 text-sm mt-2">Searching...</p>
-                  </div>
-                ) : (
-                  suggestions.map((suggestion) => (
-                    <button
-                      key={suggestion.id}
-                      onClick={() => handleSelectLocation(suggestion)}
-                      className="w-full flex items-start gap-3 p-3 hover:bg-white/5 text-left transition-colors"
-                      data-testid={`search-result-${suggestion.id}`}
-                    >
-                      <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <MapPin className="text-blue-400" size={14} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{suggestion.name}</p>
-                        <p className="text-slate-400 text-xs truncate">{suggestion.address}</p>
-                      </div>
-                      {suggestion.distance_km && (
-                        <span className="text-slate-500 text-xs">{suggestion.distance_km} km</span>
-                      )}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Compass */}
-      <div className={`absolute right-3 ${showTurnByTurn ? 'top-36' : 'top-16'} z-30`}>
+      <div className="absolute right-3 top-16 z-20">
         <div className="w-10 h-10 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
           <Compass className="text-white" size={18} />
         </div>
       </div>
 
       {/* Zoom Level Indicator */}
-      <div className="absolute left-3 bottom-32 z-30 bg-slate-900/80 backdrop-blur px-2 py-1 rounded-lg">
+      <div className="absolute left-3 bottom-32 z-20 bg-slate-900/80 backdrop-blur px-2 py-1 rounded-lg">
         <span className="text-white text-xs font-mono">Zoom: {zoom}</span>
       </div>
 
-      {/* Start Navigation Button */}
-      {selectedDestination && !showTurnByTurn && (
-        <div className="absolute bottom-24 left-3 right-3 z-30">
-          <div className="bg-slate-900/95 backdrop-blur rounded-xl border border-white/10 p-4">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center">
-                <MapPin className="text-red-400" size={18} />
-              </div>
-              <div className="flex-1">
-                <p className="text-white font-medium">{selectedDestination.name}</p>
-                <p className="text-slate-400 text-xs">{selectedDestination.address}</p>
-              </div>
-            </div>
-            <button
-              onClick={handleStartNavigation}
-              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 hover:from-blue-400 hover:to-blue-500"
-              data-testid="start-navigation-btn"
-            >
-              <Navigation size={18} />
-              Start Navigation
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Simple Navigation Indicator (fallback) */}
-      {isNavigating && !showTurnByTurn && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 bg-blue-500 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+      {/* Navigation Indicator */}
+      {isNavigating && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 bg-blue-500 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
           <Navigation className="animate-pulse" size={16} />
           <span className="text-sm font-medium">Navigating...</span>
         </div>
       )}
 
       {/* Attribution */}
-      <div className="absolute bottom-2 left-2 z-30 text-[10px] text-slate-500">
+      <div className="absolute bottom-2 left-2 z-20 text-[10px] text-slate-500">
         © OpenStreetMap contributors
       </div>
     </div>
