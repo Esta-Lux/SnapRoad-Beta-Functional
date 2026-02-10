@@ -142,6 +142,7 @@ See `/app/memory/REMAINING_WORK.md` for comprehensive list of:
 ## ✅ Latest Updates (December 2025)
 
 ### UI Fixes & Improvements (LATEST)
+- **Car Studio Unified:** Fixed inconsistency where hamburger menu and profile page opened different Car Studio components. Both now use the premium CarStudioNew component with 3D car preview, Paint Shop, and color selection.
 - **App Tour:** Fixed scroll and close button (X), 7 tour steps now scrollable
 - **Fuel Dashboard:** Added nearby gas prices from favorite stations (Shell $3.29, BP $3.35, Speedway $3.19 - MOCKED)
 - **Car Studio:** Renamed "Skins" to "Car Studio" in Rewards tab, shows current vehicle and colors
