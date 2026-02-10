@@ -45,7 +45,7 @@ const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BA
 
 // Types - Changed to 4 tabs: Map, Routes, Rewards, Profile
 type TabType = 'map' | 'routes' | 'rewards' | 'profile'
-type RewardsTab = 'offers' | 'challenges' | 'badges' | 'skins'
+type RewardsTab = 'offers' | 'challenges' | 'badges' | 'carstudio'
 type ProfileTab = 'overview' | 'score' | 'fuel' | 'settings'
 type LocationCategory = 'favorites' | 'nearby'
 
