@@ -55,7 +55,7 @@ export default function Layout() {
         <div className="h-16 flex items-center justify-between px-6 border-b border-slate-700">
           <div className="flex items-center gap-3">
             <img
-              src="https://customer-assets.emergentagent.com/job_navigate-app-1/artifacts/nn7pu72r_BiggerLogoSR.png"
+              src="/assets/logo.png"
               alt="SnapRoad"
               className="h-8 w-auto"
             />

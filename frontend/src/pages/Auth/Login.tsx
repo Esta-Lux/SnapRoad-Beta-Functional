@@ -50,7 +50,7 @@ export default function Login() {
         {/* Logo */}
         <div className="text-center mb-8">
           <img
-            src="https://customer-assets.emergentagent.com/job_navigate-app-1/artifacts/nn7pu72r_BiggerLogoSR.png"
+            src="/assets/logo.png"
             alt="SnapRoad"
             className="h-12 mx-auto mb-4"
           />

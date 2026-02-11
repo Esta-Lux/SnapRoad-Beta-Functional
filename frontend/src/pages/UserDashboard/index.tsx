@@ -993,7 +993,7 @@ export default function UserDashboard() {
       <header className="bg-slate-800 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <img
-            src="https://customer-assets.emergentagent.com/job_navigate-app-1/artifacts/nn7pu72r_BiggerLogoSR.png"
+            src="/assets/logo.png"
             alt="SnapRoad"
             className="h-6"
           />

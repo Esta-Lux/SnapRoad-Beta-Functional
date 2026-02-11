@@ -212,7 +212,7 @@ export default function WelcomePage() {
         <header className="p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img 
-              src="https://customer-assets.emergentagent.com/job_navgame-app/artifacts/9j85u2ed_BiggerLogoSR.png" 
+              src="/assets/logo.png" 
               alt="SnapRoad" 
               className="h-10 w-auto"
             />
