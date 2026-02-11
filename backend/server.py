@@ -2402,13 +2402,60 @@ generated_images_db = {}
 
 @app.post("/api/images/generate")
 async def generate_offer_image(request: ImageGenerateRequest):
-    """Generate an AI image for an offer using Gemini Nano Banana."""
+    """Generate an AI image for an offer.
+    
+    DEPLOYMENT NOTE: This endpoint requires an AI image generation service.
+    Options to implement:
+    1. OpenAI DALL-E 3: pip install openai, use openai.images.generate()
+    2. Stability AI: pip install stability-sdk
+    3. Replicate: pip install replicate
+    4. Self-hosted Stable Diffusion
+    
+    For now, returns a placeholder response. Replace with your preferred provider.
+    """
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        # Get API key from environment (configure for your chosen provider)
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("IMAGE_API_KEY")
         
-        api_key = os.getenv("EMERGENT_LLM_KEY")
         if not api_key:
-            return {"success": False, "message": "API key not configured"}
+            # Return a mock response for development without API key
+            image_id = str(uuid.uuid4())[:8]
+            generated_images_db[image_id] = {
+                "id": image_id,
+                "data": None,
+                "placeholder": True,
+                "prompt": request.prompt,
+                "created_at": datetime.now().isoformat()
+            }
+            return {
+                "success": True,
+                "data": {
+                    "image_id": image_id,
+                    "placeholder": True,
+                    "message": "API key not configured. Using placeholder. Set OPENAI_API_KEY or IMAGE_API_KEY in .env"
+                }
+            }
+        
+        # TODO: Implement your chosen image generation provider here
+        # Example for OpenAI DALL-E 3:
+        # 
+        # from openai import OpenAI
+        # client = OpenAI(api_key=api_key)
+        # 
+        # enhanced_prompt = f"Professional marketing image: {request.prompt}"
+        # response = client.images.generate(
+        #     model="dall-e-3",
+        #     prompt=enhanced_prompt,
+        #     size="1024x1024",
+        #     quality="standard",
+        #     n=1,
+        # )
+        # image_url = response.data[0].url
+        # 
+        # # Download and store
+        # import requests
+        # img_response = requests.get(image_url)
+        # image_data = base64.b64encode(img_response.content).decode()
         
         # Create enhanced prompt for marketing image
         enhanced_prompt = f"""Create a professional, eye-catching promotional marketing image for this offer: {request.prompt}. 
@@ -2427,40 +2474,25 @@ async def generate_offer_image(request: ImageGenerateRequest):
             if request.offer_type in type_hints:
                 enhanced_prompt += f" {type_hints[request.offer_type]}"
         
-        # Generate image
-        chat = LlmChat(
-            api_key=api_key, 
-            session_id=f"img-{uuid.uuid4()}", 
-            system_message="You are a professional marketing image generator."
-        )
-        chat.with_model("gemini", "gemini-3-pro-image-preview").with_params(modalities=["image", "text"])
+        # Placeholder response - implement your provider above
+        image_id = str(uuid.uuid4())[:8]
+        generated_images_db[image_id] = {
+            "id": image_id,
+            "data": None,
+            "placeholder": True,
+            "prompt": request.prompt,
+            "enhanced_prompt": enhanced_prompt,
+            "created_at": datetime.now().isoformat()
+        }
         
-        msg = UserMessage(text=enhanced_prompt)
-        text_response, images = await chat.send_message_multimodal_response(msg)
-        
-        if images and len(images) > 0:
-            # Store the image
-            image_id = str(uuid.uuid4())[:8]
-            image_data = images[0]["data"]
-            generated_images_db[image_id] = {
-                "id": image_id,
-                "data": image_data,
-                "mime_type": images[0].get("mime_type", "image/png"),
-                "prompt": request.prompt,
-                "created_at": datetime.now().isoformat()
+        return {
+            "success": True,
+            "data": {
+                "image_id": image_id,
+                "placeholder": True,
+                "message": "Image generation endpoint ready. Implement your preferred AI provider."
             }
-            
-            return {
-                "success": True,
-                "data": {
-                    "image_id": image_id,
-                    "image_data": image_data[:100] + "...",  # Truncated for response
-                    "image_base64": f"data:image/png;base64,{image_data}",
-                    "message": text_response or "Image generated successfully"
-                }
-            }
-        else:
-            return {"success": False, "message": "No image was generated"}
+        }
             
     except Exception as e:
         return {"success": False, "message": str(e)}
