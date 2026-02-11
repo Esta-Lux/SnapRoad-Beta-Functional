@@ -6,9 +6,14 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. Current
 ## Tech Stack
 - **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS + Recharts
 - **Backend:** FastAPI (Python) with in-memory mock data
-- **AI Integration:** Gemini Nano Banana (via Emergent LLM Key)
+- **AI Integration:** Stub ready for OpenAI DALL-E / Stability AI (configure in .env)
 - **Maps:** Custom tile-based map using OpenStreetMap/Carto dark tiles
 - **Target:** Native iOS (Swift/SwiftUI) - not yet migrated
+
+## ⚠️ IMPORTANT: All Emergent AI Dependencies Removed
+- Logo now served from `/assets/logo.png` (local)
+- Image generation API is a stub ready for your preferred AI provider
+- No external Emergent dependencies remain in codebase
 
 ## App Routes & URLs
 
