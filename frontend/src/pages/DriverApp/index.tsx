@@ -1,954 +1,2926 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import toast from 'react-hot-toast'
 import {
-  MapPin, Gift, Trophy, Users, User, Search, Home, Briefcase, Bell, Menu, Mic,
-  Navigation, ChevronRight, ChevronDown, Shield, Target, Settings, Camera,
-  Share2, Gem, Heart, Zap, Award, X, Plus, Check, Star, Clock, Car, Fuel,
-  Coffee, AlertTriangle, Volume2, Filter, Grid, Eye, Lock, TrendingUp,
-  Battery, Phone, MapPinned, Route, Gauge, Leaf, Moon, Sun, CreditCard,
-  HelpCircle, LogOut, ChevronLeft, Play, Pause, BarChart3, Wallet, Percent
+  MapPin, Gift, Trophy, Users, Search, Home, Briefcase, Bell, Menu, Mic,
+  Navigation, ChevronRight, ChevronDown, ChevronUp, Settings, Camera,
+  Gem, Heart, Award, X, Plus, Check, Star, Clock, Car, Fuel,
+  Coffee, AlertTriangle, Volume2, Route, Gauge, LogOut, Play, Pause,
+  Trash2, Timer, RefreshCw, EyeOff, School, ShoppingCart, Dumbbell, 
+  Building, Compass, Layers, GripVertical, Minimize2, Maximize2,
+  Phone, MessageCircle, Battery, ChevronLeft, Shield, Zap, TrendingUp,
+  History, Download, BarChart3, HelpCircle, Lock, Edit2, UserPlus, Share2, Swords,
+  DollarSign, Droplets, Leaf, Target
 } from 'lucide-react'
+import FriendsHub from './components/FriendsHub'
+import Leaderboard from './components/Leaderboard'
+import BadgesGrid from './components/BadgesGrid'
+import TripHistory from './components/TripHistory'
+import GemHistory from './components/GemHistory'
+import NotificationSettings from './components/NotificationSettings'
+import HelpSupport from './components/HelpSupport'
+import FuelTracker from './components/FuelTracker'
+import CarOnboarding from './components/CarOnboarding'
+import CarStudio from './components/CarStudioNew'
+import PlanSelection from './components/PlanSelection'
+import RoadReports from './components/RoadReports'
+import CommunityBadges from './components/CommunityBadges'
+import LevelProgress from './components/LevelProgress'
+import OrionVoice from './components/OrionVoice'
+import QuickPhotoReport from './components/QuickPhotoReport'
+import RoadStatusOverlay, { RoadStatusMarkers, MOCK_ROAD_SEGMENTS } from './components/RoadStatusOverlay'
+import OffersModal, { OfferMarker } from './components/OffersModal'
+import ShareTripScore from './components/ShareTripScore'
+import DrivingScore from './components/DrivingScore'
+import ChallengeHistory from './components/ChallengeHistory'
+import RedemptionPopup from './components/RedemptionPopup'
+import WeeklyRecap from './components/WeeklyRecap'
+import OrionOfferAlerts from './components/OrionOfferAlerts'
+import InteractiveMap from './components/InteractiveMap'
+import { NavMarker, ProfileCar, CAR_COLORS } from './components/Car3D'
 
-// Types
-type TabType = 'map' | 'offers' | 'engagement' | 'live' | 'profile'
-type EngagementTab = 'badges' | 'skins' | 'progress' | 'reports'
+const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+
+// Types - Changed to 4 tabs: Map, Routes, Rewards, Profile
+type TabType = 'map' | 'routes' | 'rewards' | 'profile'
+type RewardsTab = 'offers' | 'challenges' | 'badges' | 'carstudio'
 type ProfileTab = 'overview' | 'score' | 'fuel' | 'settings'
+type LocationCategory = 'favorites' | 'nearby'
 
-// Mock Data
-const mockOffers = [
-  { id: 1, name: 'Shell Gas', type: 'gas', gems: 50, discount: '10¢/gal off', distance: '0.5 mi', trending: true, expires: '2h' },
-  { id: 2, name: 'Starbucks', type: 'cafe', gems: 30, discount: '20% off', distance: '0.8 mi', trending: false, expires: '1d' },
-  { id: 3, name: 'QuickMart', type: 'gas', gems: 45, discount: '15¢/gal off', distance: '1.2 mi', trending: true, expires: '5h' },
-  { id: 4, name: 'Dunkin', type: 'cafe', gems: 25, discount: 'Free donut', distance: '1.5 mi', trending: false, expires: '3d' },
-]
+interface SavedLocation {
+  id: number
+  name: string
+  address: string
+  category: string
+  lat?: number
+  lng?: number
+}
 
-const mockBadges = [
-  { id: 1, name: 'First Mile', desc: 'Drive your first mile', progress: 100, earned: true, gems: 10, category: 'distance' },
-  { id: 2, name: 'Century Club', desc: 'Drive 100 miles', progress: 100, earned: true, gems: 50, category: 'distance' },
-  { id: 3, name: 'Safety First', desc: '95+ safety score', progress: 92, earned: false, gems: 100, category: 'safety' },
-  { id: 4, name: 'Road Guardian', desc: 'Report 10 incidents', progress: 70, earned: false, gems: 75, category: 'community' },
-  { id: 5, name: 'Eco Warrior', desc: '90%+ eco score 5x', progress: 60, earned: false, gems: 150, category: 'eco' },
-  { id: 6, name: 'Night Owl', desc: '50 night trips', progress: 100, earned: true, gems: 200, category: 'distance' },
-  { id: 7, name: 'Perfect Week', desc: '7 days perfect safety', progress: 43, earned: false, gems: 500, category: 'safety' },
-  { id: 8, name: 'Community Hero', desc: '100 upvotes on reports', progress: 35, earned: false, gems: 300, category: 'community' },
-]
+interface SavedRoute {
+  id: number
+  name: string
+  origin: string
+  destination: string
+  departure_time: string
+  days_active: string[]
+  estimated_time: number
+  distance: number
+  is_active: boolean
+  notifications: boolean
+}
 
-const mockSkins = [
-  { id: 1, name: 'Neon Pulse', gradient: 'from-emerald-400 to-blue-500', owned: true, equipped: true, price: 0, rarity: 'common' },
-  { id: 2, name: 'Midnight', gradient: 'from-slate-700 to-slate-900', owned: true, equipped: false, price: 0, rarity: 'common' },
-  { id: 3, name: 'Fire Storm', gradient: 'from-red-500 to-orange-400', owned: false, equipped: false, price: 800, rarity: 'rare' },
-  { id: 4, name: 'Chrome', gradient: 'from-slate-300 to-white', owned: false, equipped: false, price: 1500, rarity: 'epic' },
-  { id: 5, name: 'Aurora', gradient: 'from-purple-500 to-pink-500', owned: false, equipped: false, price: 2500, rarity: 'legendary' },
-  { id: 6, name: 'Galaxy', gradient: 'from-indigo-600 via-purple-600 to-pink-600', owned: false, equipped: false, price: 5000, rarity: 'exotic' },
-]
+interface WidgetState {
+  visible: boolean
+  collapsed: boolean
+  position: { x: number; y: number }
+}
 
-const mockFamily = [
-  { id: 1, name: 'Mom', avatar: 'M', status: 'driving', location: 'Highway 71 N', battery: 78, distance: '12 mi', speed: 65 },
-  { id: 2, name: 'Dad', avatar: 'D', status: 'parked', location: 'Work - Downtown', battery: 45, distance: '8 mi', speed: 0 },
-  { id: 3, name: 'Emma', avatar: 'E', status: 'offline', location: 'Last: School', battery: 23, distance: '3 mi', speed: 0, lastSeen: '2h ago' },
-]
+// API Helper
+const api = {
+  async get(endpoint: string) {
+    const res = await fetch(`${API_URL}${endpoint}`)
+    return res.json()
+  },
+  async post(endpoint: string, data?: object) {
+    const res = await fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: data ? JSON.stringify(data) : undefined
+    })
+    return res.json()
+  },
+  async put(endpoint: string, data?: object) {
+    const res = await fetch(`${API_URL}${endpoint}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: data ? JSON.stringify(data) : undefined
+    })
+    return res.json()
+  },
+  async delete(endpoint: string) {
+    const res = await fetch(`${API_URL}${endpoint}`, { method: 'DELETE' })
+    return res.json()
+  }
+}
 
-const mockReports = [
-  { id: 1, type: 'pothole', location: 'Main St & 5th', time: '2h ago', gems: 15, status: 'verified', upvotes: 12 },
-  { id: 2, type: 'accident', location: 'Highway 71', time: '5h ago', gems: 50, status: 'active', upvotes: 34 },
-  { id: 3, type: 'construction', location: 'Oak Street', time: '1d ago', gems: 10, status: 'resolved', upvotes: 8 },
-]
-
-const mockChallenges = [
-  { id: 1, title: 'Drive 50 miles', progress: 32, target: 50, gems: 100, type: 'weekly' },
-  { id: 2, title: 'Report 3 incidents', progress: 1, target: 3, gems: 75, type: 'weekly' },
-  { id: 3, title: 'Maintain 95+ score', progress: 87, target: 95, gems: 150, type: 'weekly' },
-  { id: 4, title: 'Redeem 2 offers', progress: 0, target: 2, gems: 50, type: 'weekly' },
-]
+// Category icons
+const categoryIcons: Record<string, { icon: typeof Home; color: string }> = {
+  home: { icon: Home, color: 'emerald' },
+  work: { icon: Briefcase, color: 'blue' },
+  gym: { icon: Dumbbell, color: 'purple' },
+  school: { icon: School, color: 'yellow' },
+  shopping: { icon: ShoppingCart, color: 'pink' },
+  favorite: { icon: Star, color: 'amber' },
+}
 
 export default function DriverApp() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
+  
+  // Main state - 4 tabs now
   const [activeTab, setActiveTab] = useState<TabType>('map')
-  const [engagementTab, setEngagementTab] = useState<EngagementTab>('badges')
+  const [rewardsTab, setRewardsTab] = useState<RewardsTab>('offers')
   const [profileTab, setProfileTab] = useState<ProfileTab>('overview')
+  const [locationCategory, setLocationCategory] = useState<LocationCategory>('favorites')
+  
+  // UI states
+  const [showMenu, setShowMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
-  const [showOfferDetail, setShowOfferDetail] = useState<typeof mockOffers[0] | null>(null)
-  const [showBadgeDetail, setShowBadgeDetail] = useState<typeof mockBadges[0] | null>(null)
-  const [showFamilyMember, setShowFamilyMember] = useState<typeof mockFamily[0] | null>(null)
+  const [showAddLocation, setShowAddLocation] = useState(false)
+  const [showAddRoute, setShowAddRoute] = useState(false)
+  const [showWidgetSettings, setShowWidgetSettings] = useState(false)
+  const [showOfferDetail, setShowOfferDetail] = useState<any>(null)
+  const [showFamilyMember, setShowFamilyMember] = useState<any>(null)
   const [showReportModal, setShowReportModal] = useState(false)
-  const [favorites, setFavorites] = useState<number[]>([])
+  const [draggingWidget, setDraggingWidget] = useState<string | null>(null)
+  
+  // New modal states
+  const [showFriendsHub, setShowFriendsHub] = useState(false)
+  const [showLeaderboard, setShowLeaderboard] = useState(false)
+  const [showBadgesGrid, setShowBadgesGrid] = useState(false)
+  const [showTripHistory, setShowTripHistory] = useState(false)
+  const [showGemHistory, setShowGemHistory] = useState(false)
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false)
+  const [showHelpSupport, setShowHelpSupport] = useState(false)
+  const [showFuelTracker, setShowFuelTracker] = useState(false)
+  const [showFuelDashboard, setShowFuelDashboard] = useState(false)
+  const [showAppTour, setShowAppTour] = useState(false)
+  const [showCarOnboarding, setShowCarOnboarding] = useState(false)
+  const [showCarStudio, setShowCarStudio] = useState(false)
+  const [showPlanSelection, setShowPlanSelection] = useState(false)
+  const [showRoadReports, setShowRoadReports] = useState(false)
+  const [showCommunityBadges, setShowCommunityBadges] = useState(false)
+  const [showLevelProgress, setShowLevelProgress] = useState(false)
+  const [showOrionVoice, setShowOrionVoice] = useState(false)
+  const [showQuickPhotoReport, setShowQuickPhotoReport] = useState(false)
+  const [selectedRoadStatus, setSelectedRoadStatus] = useState<any>(null)
+  const [showOffersModal, setShowOffersModal] = useState(false)
+  const [showShareTrip, setShowShareTrip] = useState(false)
+  const [lastTripData, setLastTripData] = useState<any>(null)
+  const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
+  const [showDrivingScore, setShowDrivingScore] = useState(false)
+  const [showChallengeHistory, setShowChallengeHistory] = useState(false)
+  const [showRedemptionPopup, setShowRedemptionPopup] = useState(false)
+  const [selectedOfferForRedemption, setSelectedOfferForRedemption] = useState<any>(null)
+  const [showWeeklyRecap, setShowWeeklyRecap] = useState(false)
+  
+  // Search and navigation states
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [selectedDestination, setSelectedDestination] = useState<any>(null)
+  const [navigationData, setNavigationData] = useState<any>(null)
+  const [showTurnByTurn, setShowTurnByTurn] = useState(false)
+  const [currentStepIndex, setCurrentStepIndex] = useState(0)
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // User location (mock - Columbus, OH)
+  const [userLocation, setUserLocation] = useState({ lat: 39.9612, lng: -82.9988 })
+  
+  // User plan state
+  const [userPlan, setUserPlan] = useState<'basic' | 'premium' | null>(null)
+  const [gemMultiplier, setGemMultiplier] = useState(1)
+  
+  // Car customization state
+  const [userCar, setUserCar] = useState({
+    category: 'sedan',
+    variant: 'sedan-classic',
+    color: 'midnight-black',
+  })
+  const [ownedColors, setOwnedColors] = useState<string[]>([])
+  const [carHeading, setCarHeading] = useState(0) // Direction for nav marker
+  
+  // Data states
+  const [locations, setLocations] = useState<SavedLocation[]>([])
+  const [routes, setRoutes] = useState<SavedRoute[]>([])
+  const [offers, setOffers] = useState<any[]>([])
+  const [challenges, setChallenges] = useState<any[]>([])
+  const [badges, setBadges] = useState<any[]>([])
+  const [skins, setSkins] = useState<any[]>([])
+  const [family, setFamily] = useState<any[]>([])
+  
+  // Fresh user state - starts empty
+  const [userData, setUserData] = useState<any>({
+    id: '123456',
+    name: user?.name || 'Driver',
+    gems: 0, level: 1, xp: 0, safety_score: 100, streak: 0,
+    total_miles: 0, total_trips: 0, badges_earned_count: 0, rank: 0,
+    is_premium: false, member_since: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), 
+    friends_count: 0, state: 'OH',
+    plan: null, gem_multiplier: 1, safe_drive_streak: 0,
+    reports_posted: 0, reports_upvotes_received: 0
+  })
+  
+  // Widget states - positioned below location panel (which ends around y=280)
+  const [widgets, setWidgets] = useState<Record<string, WidgetState>>({
+    score: { visible: false, collapsed: true, position: { x: 12, y: 290 } },
+    gems: { visible: false, collapsed: true, position: { x: 260, y: 290 } },
+  })
+  
+  // Navigation & settings states
+  const [isNavigating, setIsNavigating] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [currentSpeed, setCurrentSpeed] = useState(0)
   const [offerFilter, setOfferFilter] = useState<'all' | 'gas' | 'cafe'>('all')
   const [badgeFilter, setBadgeFilter] = useState<'all' | 'earned' | 'locked'>('all')
   const [equippedSkin, setEquippedSkin] = useState(1)
-  const [isNavigating, setIsNavigating] = useState(false)
+  const [favorites, setFavorites] = useState<number[]>([])
+  
+  // Form states
+  const [newLocation, setNewLocation] = useState({ name: '', address: '', category: 'favorite' })
+  const [newRoute, setNewRoute] = useState({ name: '', origin: '', destination: '', departure_time: '08:00', days_active: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], notifications: true })
+  
+  // Swipe state for locations
+  const [swipeOffset, setSwipeOffset] = useState(0)
+  const swipeRef = useRef<HTMLDivElement>(null)
+  const startX = useRef(0)
 
-  // User data
-  const userData = user || {
-    name: 'Sarah Johnson',
-    gems: 12400,
-    level: 42,
-    safetyScore: 87,
-    streak: 14,
-    totalMiles: 2847,
-    totalTrips: 156,
-    badges: 11,
-    rank: 42,
-    isPremium: true,
-    isFamilyPlan: true
-  }
+  // Load data on mount
+  useEffect(() => {
+    loadData()
+  }, [])
 
-  // Handlers
-  const handleFavorite = (id: number) => {
-    setFavorites(prev => prev.includes(id) 
-      ? prev.filter(x => x !== id) 
-      : [...prev, id]
-    )
-    toast.success(favorites.includes(id) ? 'Removed from favorites' : 'Added to favorites!')
-  }
-
-  const handleRedeem = (offer: typeof mockOffers[0]) => {
-    if (userData.gems >= offer.gems) {
-      toast.success(`Redeemed "${offer.name}" for ${offer.gems} gems!`)
-      setShowOfferDetail(null)
+  // Speed simulation when navigating
+  useEffect(() => {
+    if (isNavigating) {
+      const interval = setInterval(() => {
+        setCurrentSpeed(Math.floor(Math.random() * 20) + 55)
+        // Simulate car direction changes while navigating
+        setCarHeading(prev => prev + (Math.random() > 0.5 ? 5 : -5))
+      }, 3000)
+      return () => clearInterval(interval)
     } else {
-      toast.error('Not enough gems!')
+      setCurrentSpeed(0)
+    }
+  }, [isNavigating])
+
+  // Load all data from API
+  const loadData = async () => {
+    try {
+      const [locRes, routeRes, offerRes, badgeRes, skinRes, famRes, userRes, challengeRes, carRes, onboardingRes] = await Promise.all([
+        api.get('/api/locations'),
+        api.get('/api/routes'),
+        api.get('/api/offers'),
+        api.get('/api/badges'),
+        api.get('/api/skins'),
+        api.get('/api/family/members'),
+        api.get('/api/user/profile'),
+        api.get('/api/challenges'),
+        api.get('/api/user/car'),
+        api.get('/api/user/onboarding-status')
+      ])
+      if (locRes.success) setLocations(locRes.data)
+      if (routeRes.success) setRoutes(routeRes.data)
+      if (offerRes.success) setOffers(offerRes.data)
+      if (badgeRes.success) setBadges(badgeRes.data)
+      if (skinRes.success) setSkins(skinRes.data)
+      if (famRes.success) setFamily(famRes.data)
+      if (userRes.success) {
+        setUserData(userRes.data)
+        setUserPlan(userRes.data.plan || 'basic')
+        setGemMultiplier(userRes.data.gem_multiplier || 1)
+      }
+      if (challengeRes.success) setChallenges(challengeRes.data)
+      if (carRes.success) {
+        setUserCar({
+          category: carRes.data.category || 'sedan',
+          variant: carRes.data.variant || 'sedan-classic',
+          color: carRes.data.color || 'midnight-black',
+        })
+        setOwnedColors(carRes.data.owned_colors || [])
+      }
+      
+      // Check onboarding status - show plan selection first, then car onboarding
+      if (onboardingRes.success) {
+        if (!onboardingRes.data.onboarding_complete) {
+          if (!onboardingRes.data.plan_selected) {
+            setShowPlanSelection(true)
+          } else if (!onboardingRes.data.car_selected) {
+            setShowCarOnboarding(true)
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Using mock data')
     }
   }
 
-  const handleEquipSkin = (skinId: number) => {
-    setEquippedSkin(skinId)
-    toast.success('Skin equipped!')
+  // Handle car customization
+  const handleCarChange = async (car: { category: string; variant: string; color: string }) => {
+    try {
+      const res = await api.post('/api/user/car', car)
+      if (res.success) {
+        setUserCar(car)
+        toast.success('Car updated!')
+      }
+    } catch (e) {
+      setUserCar(car)
+      toast.success('Car updated!')
+    }
   }
 
-  const handleStartNavigation = (dest?: string) => {
+  const handlePurchaseColor = async (colorKey: string, price: number) => {
+    try {
+      const res = await api.post(`/api/user/car/color/${colorKey}/purchase`)
+      if (res.success) {
+        setOwnedColors(prev => [...prev, colorKey])
+        setUserData((prev: any) => ({ ...prev, gems: res.new_gems }))
+        toast.success(`Color purchased for ${price} gems!`)
+      } else {
+        toast.error(res.message)
+      }
+    } catch (e) {
+      // Mock success
+      setOwnedColors(prev => [...prev, colorKey])
+      setUserData((prev: any) => ({ ...prev, gems: prev.gems - price }))
+      toast.success(`Color purchased for ${price} gems!`)
+    }
+  }
+
+  // Handle plan selection
+  const handlePlanSelect = async (plan: 'basic' | 'premium') => {
+    try {
+      const res = await api.post('/api/user/plan', { plan })
+      if (res.success) {
+        setUserPlan(plan)
+        setGemMultiplier(plan === 'premium' ? 2 : 1)
+        setUserData((prev: any) => ({ 
+          ...prev, 
+          plan, 
+          is_premium: plan === 'premium',
+          gem_multiplier: plan === 'premium' ? 2 : 1
+        }))
+        setShowPlanSelection(false)
+        // Show car onboarding next
+        setShowCarOnboarding(true)
+        toast.success(plan === 'premium' ? '🎉 Welcome to Premium!' : 'Plan selected!')
+      }
+    } catch (e) {
+      // Mock success
+      setUserPlan(plan)
+      setGemMultiplier(plan === 'premium' ? 2 : 1)
+      setUserData((prev: any) => ({ 
+        ...prev, 
+        plan, 
+        is_premium: plan === 'premium',
+        gem_multiplier: plan === 'premium' ? 2 : 1
+      }))
+      setShowPlanSelection(false)
+      setShowCarOnboarding(true)
+      toast.success(plan === 'premium' ? '🎉 Welcome to Premium!' : 'Plan selected!')
+    }
+  }
+
+  const handleCarOnboardingComplete = async (selection: { category: string; variant: string; color: string }) => {
+    setUserCar(selection)
+    setShowCarOnboarding(false)
+    try {
+      await api.post('/api/user/car', selection)
+      toast.success('Welcome to SnapRoad! 🚗')
+      // Show app tour for new users
+      setShowAppTour(true)
+    } catch (e) {
+      toast.success('Welcome to SnapRoad! 🚗')
+      setShowAppTour(true)
+    }
+  }
+
+  // Road Reports handlers
+  const handleCreateReport = async (report: { type: string; title: string; description: string; lat: number; lng: number }) => {
+    try {
+      const res = await api.post('/api/reports', report)
+      if (res.success) {
+        toast.success(res.message)
+        // Refresh user data to update XP
+        loadData()
+      }
+      return res
+    } catch (e) {
+      toast.error('Failed to create report')
+      return { success: false }
+    }
+  }
+
+  const handleUpvoteReport = async (reportId: number) => {
+    try {
+      const res = await api.post(`/api/reports/${reportId}/upvote`)
+      if (res.success) {
+        toast.success(res.message)
+      }
+      return res
+    } catch (e) {
+      toast.error('Failed to upvote')
+      return { success: false }
+    }
+  }
+
+  // Orion voice report handler
+  const handleOrionReport = async (report: { type: string; direction: string; lat: number; lng: number }) => {
+    try {
+      const res = await api.post('/api/reports', {
+        type: report.type,
+        title: `${report.type.charAt(0).toUpperCase() + report.type.slice(1)} ${report.direction}`,
+        description: `Reported via Orion voice command`,
+        lat: report.lat,
+        lng: report.lng,
+      })
+      if (res.success) {
+        toast.success(`${report.type} reported ${report.direction}! +500 XP`)
+        loadData() // Refresh to update XP
+      }
+    } catch (e) {
+      // Mock success
+      toast.success(`${report.type} reported ${report.direction}! +500 XP`)
+    }
+  }
+
+  // Quick photo report handler
+  const handleQuickPhotoReport = async (report: { type: string; photo_url: string; lat: number; lng: number }) => {
+    try {
+      const res = await api.post('/api/reports', {
+        type: report.type,
+        title: `Photo report: ${report.type}`,
+        description: 'Photo report submitted',
+        lat: report.lat,
+        lng: report.lng,
+        photo_url: report.photo_url,
+      })
+      if (res.success) {
+        toast.success('Photo report posted! +500 XP')
+        loadData()
+      }
+      return res
+    } catch (e) {
+      toast.success('Photo report posted! +500 XP')
+      return { success: true }
+    }
+  }
+
+  // Redeem offer handler
+  const handleRedeemOffer = async (offerId: number) => {
+    try {
+      const res = await api.post(`/api/offers/${offerId}/redeem`)
+      if (res.success) {
+        toast.success(res.message)
+        // Update gems
+        setUserData((prev: any) => ({ 
+          ...prev, 
+          gems: prev.gems + (res.data?.gems_earned || 0),
+          xp: prev.xp + (res.data?.xp_earned || 700)
+        }))
+        loadData()
+      } else {
+        toast.error(res.message)
+      }
+      return res
+    } catch (e) {
+      toast.error('Could not redeem offer')
+      return { success: false }
+    }
+  }
+
+  // Claim challenge reward
+  const handleClaimChallenge = async (challengeId: number) => {
+    try {
+      const res = await api.post(`/api/challenges/${challengeId}/claim`)
+      if (res.success) {
+        toast.success(res.message)
+        // Update local state
+        setChallenges(challenges.map(c => c.id === challengeId ? { ...c, claimed: true } : c))
+        // Update gems
+        setUserData((prev: any) => ({ ...prev, gems: prev.gems + res.gems_earned }))
+      } else {
+        toast.error(res.message)
+      }
+    } catch (e) {
+      toast.error('Could not claim reward')
+    }
+  }
+
+  // Share trip score - opens the share modal with trip data
+  const handleShareTrip = async () => {
+    // Create sample trip data (in real app, this would come from completed trip)
+    const tripData = {
+      distance: 12.5,
+      duration: 25,
+      safety_score: userData.safety_score,
+      gems_earned: 5 * userData.gem_multiplier,
+      xp_earned: 1000,
+      origin: 'Current Location',
+      destination: 'Destination',
+      date: new Date().toLocaleDateString(),
+      is_safe_drive: true
+    }
+    setLastTripData(tripData)
+    setShowShareTrip(true)
+  }
+
+  // Open share modal after trip completion
+  const handleTripComplete = (tripResult: any) => {
+    if (tripResult) {
+      setLastTripData({
+        distance: tripResult.distance || 10,
+        duration: tripResult.duration || 20,
+        safety_score: tripResult.safety_score?.new || userData.safety_score,
+        gems_earned: tripResult.gems?.earned || 5,
+        xp_earned: tripResult.xp?.total_earned || 1000,
+        origin: 'Start',
+        destination: 'End',
+        date: new Date().toLocaleDateString(),
+        is_safe_drive: tripResult.is_safe_drive || false
+      })
+      setShowShareTrip(true)
+    }
+  }
+
+  // Handle direct offer redemption (opens compact popup)
+  const handleDirectRedemption = (offer: any) => {
+    setSelectedOfferForRedemption(offer)
+    setShowRedemptionPopup(true)
+  }
+
+  // Old share trip function for backwards compatibility
+  const handleShareTripLegacy = async () => {
+    try {
+      const res = await api.post('/api/trips/1/share')
+      if (res.success) {
+        toast.success('Share content generated! Copy to clipboard.')
+        // In a real app, this would open native share sheet
+      }
+    } catch (e) {
+      toast.success('🚗 Just completed a trip with 92 safety score! #SnapRoad')
+    }
+  }
+
+  // Swipe handlers for locations
+  const handleTouchStart = (e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX
+  }
+  
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const diff = e.touches[0].clientX - startX.current
+    setSwipeOffset(diff)
+  }
+  
+  const handleTouchEnd = () => {
+    if (swipeOffset > 50) {
+      // Swipe right - previous category
+      const cats: LocationCategory[] = ['home', 'work', 'favorites']
+      const idx = cats.indexOf(locationCategory)
+      if (idx > 0) setLocationCategory(cats[idx - 1])
+    } else if (swipeOffset < -50) {
+      // Swipe left - next category
+      const cats: LocationCategory[] = ['home', 'work', 'favorites']
+      const idx = cats.indexOf(locationCategory)
+      if (idx < cats.length - 1) setLocationCategory(cats[idx + 1])
+    }
+    setSwipeOffset(0)
+  }
+
+  // Widget drag handlers
+  const handleWidgetDragStart = (widgetId: string, e: React.MouseEvent | React.TouchEvent) => {
+    setDraggingWidget(widgetId)
+    e.preventDefault()
+  }
+
+  const handleWidgetDrag = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!draggingWidget) return
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    const container = document.getElementById('map-container')
+    if (container) {
+      const rect = container.getBoundingClientRect()
+      setWidgets(prev => ({
+        ...prev,
+        [draggingWidget]: {
+          ...prev[draggingWidget],
+          position: {
+            x: Math.max(0, Math.min(clientX - rect.left - 50, rect.width - 120)),
+            y: Math.max(120, Math.min(clientY - rect.top - 20, rect.height - 100))
+          }
+        }
+      }))
+    }
+  }
+
+  const handleWidgetDragEnd = async () => {
+    if (draggingWidget) {
+      try {
+        const w = widgets[draggingWidget]
+        await api.put(`/api/widgets/${draggingWidget}/position?x=${w.position.x}&y=${w.position.y}`)
+      } catch (e) {}
+    }
+    setDraggingWidget(null)
+  }
+
+  // Toggle widget collapse
+  const toggleWidgetCollapse = async (widgetId: string) => {
+    setWidgets(prev => ({
+      ...prev,
+      [widgetId]: { ...prev[widgetId], collapsed: !prev[widgetId].collapsed }
+    }))
+    try {
+      await api.put(`/api/widgets/${widgetId}/collapse`)
+    } catch (e) {}
+  }
+
+  // Toggle widget visibility
+  const toggleWidgetVisibility = async (widgetId: string) => {
+    setWidgets(prev => ({
+      ...prev,
+      [widgetId]: { ...prev[widgetId], visible: !prev[widgetId].visible }
+    }))
+    try {
+      await api.put(`/api/widgets/${widgetId}/toggle`)
+    } catch (e) {}
+  }
+
+  // Navigation handlers
+  const handleStartNavigation = async (dest?: string) => {
     setIsNavigating(true)
-    toast.loading('Starting navigation...', { duration: 1500 })
+    setShowMenu(false)
+    setShowSearch(false)
+    toast.loading('Calculating route...', { duration: 1500 })
+    try {
+      const res = await api.post('/api/navigation/start', { destination: dest || 'Unknown', origin: 'current_location' })
+      setTimeout(() => {
+        toast.success(res.message || `Navigating to ${dest || 'destination'}`)
+      }, 1500)
+    } catch (e) {
+      setTimeout(() => toast.success(`Navigating to ${dest || 'destination'}`), 1500)
+    }
+  }
+
+  const handleStopNavigation = async () => {
+    setIsNavigating(false)
+    setShowTurnByTurn(false)
+    setNavigationData(null)
+    setSelectedDestination(null)
+    setCurrentStepIndex(0)
+    try {
+      await api.post('/api/navigation/stop')
+      toast.success('Navigation stopped')
+    } catch (e) {
+      toast.success('Navigation stopped')
+    }
+  }
+
+  // Search location with API
+  const handleSearchLocations = async (query: string) => {
+    if (query.length < 1) {
+      setSearchResults([])
+      return
+    }
+    setIsSearching(true)
+    try {
+      const params = new URLSearchParams({
+        q: query,
+        lat: userLocation.lat.toString(),
+        lng: userLocation.lng.toString(),
+        limit: '8'
+      })
+      const res = await fetch(`${API_URL}/api/map/search?${params}`)
+      const data = await res.json()
+      if (data.success) {
+        setSearchResults(data.data)
+      }
+    } catch (e) {
+      console.error('Search error:', e)
+    }
+    setIsSearching(false)
+  }
+
+  // Handle search input change with debounce
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query)
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+    if (query.length > 0) {
+      searchTimeoutRef.current = setTimeout(() => handleSearchLocations(query), 300)
+    } else {
+      setSearchResults([])
+    }
+  }
+
+  // Fetch directions from API
+  const fetchDirections = async (destination: any) => {
+    try {
+      const params = new URLSearchParams({
+        origin_lat: userLocation.lat.toString(),
+        origin_lng: userLocation.lng.toString(),
+        dest_lat: destination.lat.toString(),
+        dest_lng: destination.lng.toString(),
+        dest_name: destination.name
+      })
+      const res = await fetch(`${API_URL}/api/map/directions?${params}`)
+      const data = await res.json()
+      if (data.success) {
+        setNavigationData(data.data)
+        setShowTurnByTurn(true)
+        setCurrentStepIndex(0)
+      }
+    } catch (e) {
+      console.error('Directions error:', e)
+    }
+  }
+
+  // Handle destination selection from search
+  const handleSelectDestination = async (location: any) => {
+    setSelectedDestination(location)
+    setSearchQuery(location.name)
+    setSearchResults([])
+    setShowSearch(false)
+    
+    // Start navigation with turn-by-turn
+    setIsNavigating(true)
+    toast.loading('Calculating route...', { duration: 1500 })
+    await fetchDirections(location)
     setTimeout(() => {
-      toast.success(`Navigating to ${dest || 'destination'}`)
+      toast.success(`Navigating to ${location.name}`)
     }, 1500)
   }
 
-  const handleReport = (type: string) => {
-    toast.success(`Reported ${type}! +25 gems`)
-    setShowReportModal(false)
+  const handleVoiceCommand = async () => {
+    // Open Orion voice assistant
+    setShowOrionVoice(true)
   }
 
-  // Render Map Tab
-  const renderMap = () => (
-    <div className="flex-1 relative bg-slate-800 overflow-hidden">
-      {/* Map Background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-slate-700 to-slate-900">
-        <div className="absolute inset-0 opacity-20" style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none'%3E%3Cg fill='%234a5568' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
-        }} />
-      </div>
+  // Location handlers
+  const handleAddLocation = async () => {
+    if (!newLocation.name || !newLocation.address) {
+      toast.error('Please fill all fields')
+      return
+    }
+    try {
+      const res = await api.post('/api/locations', newLocation)
+      toast.success(res.message || 'Location added!')
+      if (res.data) setLocations([...locations, res.data])
+      setNewLocation({ name: '', address: '', category: 'favorite' })
+      setShowAddLocation(false)
+    } catch (e) {
+      toast.success('Location added!')
+      setShowAddLocation(false)
+    }
+  }
 
-      {/* Search Bar */}
-      <div className="absolute top-3 left-3 right-3 z-10">
-        <div className="flex gap-2">
-          <button onClick={() => toast('Menu')} className="w-10 h-10 bg-slate-900/90 backdrop-blur rounded-xl flex items-center justify-center">
-            <Menu className="text-white" size={18} />
-          </button>
-          <button onClick={() => setShowSearch(true)} className="flex-1 bg-slate-900/90 backdrop-blur rounded-xl px-3 h-10 flex items-center gap-2">
-            <Search className="text-slate-400" size={16} />
-            <span className="text-slate-400 text-sm">Where to?</span>
-          </button>
-          <button onClick={() => setShowNotifications(true)} className="w-10 h-10 bg-slate-900/90 backdrop-blur rounded-xl flex items-center justify-center relative">
-            <Bell className="text-emerald-400" size={18} />
-            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center">3</span>
-          </button>
-        </div>
+  const handleDeleteLocation = async (id: number) => {
+    try {
+      await api.delete(`/api/locations/${id}`)
+      setLocations(locations.filter(l => l.id !== id))
+      toast.success('Location removed')
+    } catch (e) {
+      setLocations(locations.filter(l => l.id !== id))
+      toast.success('Location removed')
+    }
+  }
 
-        {/* Quick Actions */}
-        <div className="flex gap-2 mt-2">
-          <button onClick={() => handleStartNavigation('Home')} className="flex-1 bg-slate-900/90 backdrop-blur rounded-xl px-3 h-9 flex items-center gap-2">
-            <Home className="text-emerald-400" size={14} />
-            <span className="text-white text-xs">Home</span>
-          </button>
-          <button onClick={() => handleStartNavigation('Work')} className="flex-1 bg-slate-900/90 backdrop-blur rounded-xl px-3 h-9 flex items-center gap-2">
-            <Briefcase className="text-blue-400" size={14} />
-            <span className="text-white text-xs">Work</span>
-          </button>
-          <button onClick={() => setActiveTab('offers')} className="w-9 h-9 bg-slate-900/90 backdrop-blur rounded-xl flex items-center justify-center">
-            <Gem className="text-emerald-400" size={16} />
-          </button>
-        </div>
-      </div>
+  // Route handlers
+  const handleAddRoute = async () => {
+    if (!newRoute.name || !newRoute.origin || !newRoute.destination) {
+      toast.error('Please fill all fields')
+      return
+    }
+    try {
+      const res = await api.post('/api/routes', newRoute)
+      toast.success(res.message || 'Route saved!')
+      if (res.data) setRoutes([...routes, res.data])
+      setNewRoute({ name: '', origin: '', destination: '', departure_time: '08:00', days_active: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], notifications: true })
+      setShowAddRoute(false)
+    } catch (e) {
+      toast.error('Could not add route')
+    }
+  }
 
-      {/* Score Widget */}
-      <div className="absolute left-3 top-28 bg-slate-900/95 backdrop-blur rounded-xl p-3 w-28">
-        <div className="relative w-16 h-16 mx-auto mb-1">
-          <svg className="w-full h-full -rotate-90">
-            <circle cx="32" cy="32" r="28" stroke="#1e293b" strokeWidth="5" fill="none" />
-            <circle cx="32" cy="32" r="28" stroke="#3b82f6" strokeWidth="5" fill="none"
-              strokeDasharray={`${(userData.safetyScore / 100) * 176} 176`} strokeLinecap="round" />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-lg font-bold text-white">{userData.safetyScore}</span>
-            <span className="text-[10px] text-blue-400">SCORE</span>
-          </div>
-        </div>
-        <button onClick={() => { setActiveTab('profile'); setProfileTab('score') }} className="w-full bg-blue-500 text-white text-[10px] font-medium py-1.5 rounded-lg">
-          DETAILS
-        </button>
-      </div>
+  const handleDeleteRoute = async (id: number) => {
+    try {
+      await api.delete(`/api/routes/${id}`)
+      setRoutes(routes.filter(r => r.id !== id))
+      toast.success('Route deleted')
+    } catch (e) {
+      setRoutes(routes.filter(r => r.id !== id))
+      toast.success('Route deleted')
+    }
+  }
 
-      {/* Gem Counter */}
-      <div className="absolute right-3 top-28 bg-slate-900/95 backdrop-blur rounded-xl p-3">
-        <div className="flex items-center gap-2">
-          <Gem className="text-emerald-400" size={18} />
-          <span className="text-white font-bold">{(userData.gems / 1000).toFixed(1)}K</span>
-        </div>
-        <p className="text-[10px] text-slate-400 mt-1">+125 today</p>
-      </div>
+  const handleToggleRoute = async (id: number) => {
+    try {
+      const res = await api.put(`/api/routes/${id}/toggle`)
+      setRoutes(routes.map(r => r.id === id ? { ...r, is_active: !r.is_active } : r))
+      toast.success(res.message || 'Route updated')
+    } catch (e) {
+      setRoutes(routes.map(r => r.id === id ? { ...r, is_active: !r.is_active } : r))
+    }
+  }
 
-      {/* Map Markers */}
-      <button onClick={() => setShowOfferDetail(mockOffers[0])} className="absolute right-20 top-48">
-        <div className="w-8 h-8 bg-blue-500 rounded-lg rotate-45 flex items-center justify-center">
-          <Fuel className="text-white -rotate-45" size={14} />
-        </div>
-      </button>
-      <button onClick={() => setShowOfferDetail(mockOffers[1])} className="absolute left-20 bottom-48">
-        <div className="w-8 h-8 bg-orange-500 rounded-lg rotate-45 flex items-center justify-center">
-          <Coffee className="text-white -rotate-45" size={14} />
-        </div>
-      </button>
-      <button onClick={() => handleReport('hazard')} className="absolute right-12 bottom-56">
-        <div className="w-9 h-9 bg-red-500 rounded-full flex items-center justify-center animate-pulse">
-          <AlertTriangle className="text-white" size={18} />
-        </div>
-      </button>
+  const handleToggleRouteNotifications = async (id: number) => {
+    try {
+      const res = await api.put(`/api/routes/${id}/notifications`)
+      setRoutes(routes.map(r => r.id === id ? { ...r, notifications: !r.notifications } : r))
+      toast.success(res.message || 'Notifications updated')
+    } catch (e) {
+      setRoutes(routes.map(r => r.id === id ? { ...r, notifications: !r.notifications } : r))
+    }
+  }
 
-      {/* Action Buttons */}
-      <div className="absolute right-3 bottom-20 flex flex-col gap-2">
-        <button onClick={() => toast('🎤 Listening...')} className="w-11 h-11 bg-blue-500 rounded-full flex items-center justify-center shadow-lg">
-          <Mic className="text-white" size={20} />
-        </button>
-        <button onClick={() => setShowReportModal(true)} className="w-11 h-11 bg-red-500/80 rounded-full flex items-center justify-center">
-          <Camera className="text-white" size={20} />
-        </button>
-        <button onClick={() => handleStartNavigation()} className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg ${isNavigating ? 'bg-emerald-500' : 'bg-blue-500'}`}>
-          <Navigation className={`text-white ${isNavigating ? 'animate-pulse' : ''}`} size={20} />
-        </button>
-      </div>
+  const handleFavoriteOffer = async (id: number) => {
+    const newFavs = favorites.includes(id) ? favorites.filter(f => f !== id) : [...favorites, id]
+    setFavorites(newFavs)
+    try {
+      await api.post(`/api/offers/${id}/favorite`)
+      toast.success(favorites.includes(id) ? 'Removed from favorites' : 'Added to favorites!')
+    } catch (e) {
+      toast.success(favorites.includes(id) ? 'Removed from favorites' : 'Added to favorites!')
+    }
+  }
 
-      {/* Current Location */}
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-        <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg" />
-        <div className="absolute inset-0 w-4 h-4 bg-blue-500/30 rounded-full animate-ping" />
-      </div>
-    </div>
-  )
+  // Report incident
+  const handleReportIncident = async (type: string, gems: number) => {
+    try {
+      const res = await api.post('/api/incidents/report', { incident_type: type, location: 'Current location' })
+      toast.success(res.message || `Reported ${type}! +${gems} gems`)
+      setShowReportModal(false)
+    } catch (e) {
+      toast.success(`Reported ${type}! +${gems} gems`)
+      setShowReportModal(false)
+    }
+  }
 
-  // Render Offers Tab
-  const renderOffers = () => (
-    <div className="flex-1 bg-slate-100 overflow-auto">
-      {/* Header */}
-      <div className="bg-white px-4 pt-3 pb-2 sticky top-0 z-10">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h1 className="text-lg font-bold text-slate-900">Offers Nearby</h1>
-            <p className="text-xs text-blue-500 font-medium">{mockOffers.length} ACTIVE DEALS</p>
-          </div>
-          <button className="w-9 h-9 bg-slate-100 rounded-lg flex items-center justify-center">
-            <Filter className="text-slate-600" size={18} />
-          </button>
-        </div>
-        <div className="flex gap-2">
-          {(['all', 'gas', 'cafe'] as const).map(f => (
-            <button key={f} onClick={() => setOfferFilter(f)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 ${offerFilter === f ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600'}`}>
-              {f === 'gas' && <Fuel size={12} />}
-              {f === 'cafe' && <Coffee size={12} />}
-              {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+  // Family handlers
+  const handleCallMember = async (member: any) => {
+    try {
+      await api.post(`/api/family/${member.id}/call`)
+      toast.success(`Calling ${member.name}...`)
+    } catch (e) {
+      toast.success(`Calling ${member.name}...`)
+    }
+  }
+
+  const handleMessageMember = async (member: any) => {
+    try {
+      await api.post(`/api/family/${member.id}/message`)
+      toast.success(`Opening chat with ${member.name}`)
+    } catch (e) {
+      toast.success(`Opening chat with ${member.name}`)
+    }
+  }
+
+  // Skin handlers
+  const handleEquipSkin = async (skinId: number, skin: any) => {
+    if (skin.owned) {
+      setEquippedSkin(skinId)
+      try {
+        await api.post(`/api/skins/${skinId}/equip`)
+        toast.success(`${skin.name} equipped!`)
+      } catch (e) {
+        toast.success(`${skin.name} equipped!`)
+      }
+    } else {
+      if (userData.gems >= skin.price) {
+        try {
+          await api.post(`/api/skins/${skinId}/purchase`)
+          toast.success(`Purchased ${skin.name} for ${skin.price} gems!`)
+        } catch (e) {
+          toast.success(`Purchased ${skin.name} for ${skin.price} gems!`)
+        }
+      } else {
+        toast.error(`Need ${skin.price - userData.gems} more gems`)
+      }
+    }
+  }
+
+  // Voice toggle
+  const handleToggleVoice = async () => {
+    const newMuted = !isMuted
+    setIsMuted(newMuted)
+    try {
+      await api.put(`/api/settings/voice?muted=${newMuted}`)
+      toast.success(newMuted ? 'Voice muted' : 'Voice unmuted')
+    } catch (e) {
+      toast.success(newMuted ? 'Voice muted' : 'Voice unmuted')
+    }
+  }
+
+  // ==================== RENDER FUNCTIONS ====================
+
+  // Hamburger Menu
+  const renderMenu = () => (
+    <div className="fixed inset-0 bg-black/80 z-50 flex" onClick={() => setShowMenu(false)}>
+      <div className="w-72 bg-slate-900 h-full animate-slide-right" onClick={e => e.stopPropagation()}>
+        <div className="p-4 bg-gradient-to-r from-blue-600 to-blue-500">
+          <div className="flex items-center gap-3">
+            {/* Show user's car if selected, otherwise show initials */}
+            <button 
+              onClick={() => setShowCarStudio(true)}
+              className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center overflow-hidden hover:bg-white/20 transition-colors"
+            >
+              {userCar.category ? (
+                <ProfileCar 
+                  category={userCar.category as any}
+                  color={userCar.color as any}
+                  size={48}
+                />
+              ) : (
+                <span className="text-white font-bold text-lg">
+                  {userData.name?.split(' ').map((n: string) => n[0]).join('')}
+                </span>
+              )}
             </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Savings Card */}
-      <div className="mx-4 mt-3 p-3 bg-gradient-to-r from-blue-500 to-emerald-400 rounded-xl text-white">
-        <div className="flex justify-between items-start">
-          <div>
-            <p className="text-[10px] text-blue-100 font-medium">POTENTIAL SAVINGS</p>
-            <p className="text-2xl font-bold">$127.50</p>
-          </div>
-          <div className="bg-white/20 rounded-lg px-2 py-1">
-            <p className="text-[10px] text-blue-100">WALLET</p>
-            <p className="text-sm font-bold flex items-center gap-1"><Gem size={12} /> {(userData.gems / 1000).toFixed(1)}K</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Offers List */}
-      <div className="p-4 space-y-2">
-        {mockOffers.filter(o => offerFilter === 'all' || o.type === offerFilter).map(offer => (
-          <button key={offer.id} onClick={() => setShowOfferDetail(offer)}
-            className="w-full bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm">
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${offer.type === 'gas' ? 'bg-blue-500' : 'bg-orange-500'}`}>
-              {offer.type === 'gas' ? <Fuel className="text-white" size={20} /> : <Coffee className="text-white" size={20} />}
-            </div>
-            <div className="flex-1 text-left">
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-slate-900 text-sm">{offer.name}</span>
-                {offer.trending && <span className="text-[10px] bg-red-100 text-red-500 px-1.5 py-0.5 rounded-full">🔥</span>}
-              </div>
-              <p className="text-emerald-600 text-xs font-medium">{offer.discount}</p>
-              <p className="text-slate-400 text-[10px]">{offer.distance} • Expires {offer.expires}</p>
-            </div>
-            <button onClick={(e) => { e.stopPropagation(); handleFavorite(offer.id) }}
-              className={`w-8 h-8 rounded-full flex items-center justify-center ${favorites.includes(offer.id) ? 'bg-red-100' : 'bg-slate-100'}`}>
-              <Heart className={favorites.includes(offer.id) ? 'text-red-500 fill-red-500' : 'text-slate-400'} size={16} />
-            </button>
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-
-  // Render Engagement Tab
-  const renderEngagement = () => (
-    <div className="flex-1 bg-slate-100 overflow-auto">
-      {/* Header */}
-      <div className="bg-white px-4 pt-3 pb-2 sticky top-0 z-10">
-        <div className="flex items-center gap-2 mb-2">
-          <Award className="text-emerald-500" size={20} />
-          <h1 className="text-lg font-bold text-slate-900">Engagement</h1>
-        </div>
-        <div className="flex border-b border-slate-200">
-          {(['badges', 'skins', 'progress', 'reports'] as const).map(tab => (
-            <button key={tab} onClick={() => setEngagementTab(tab)}
-              className={`flex-1 py-2 text-xs font-medium capitalize ${engagementTab === tab ? 'text-slate-900 border-b-2 border-emerald-500' : 'text-slate-400'}`}>
-              {tab === 'reports' ? 'My Reports' : tab}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Badges Tab */}
-      {engagementTab === 'badges' && (
-        <>
-          <div className="mx-4 mt-3 p-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl text-white">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Trophy className="text-yellow-300" size={16} />
-              <span className="text-[10px] text-blue-200 font-medium">YOUR COLLECTION</span>
-            </div>
-            <p className="text-2xl font-bold">{userData.badges} <span className="text-sm font-normal text-blue-200">/160 Badges</span></p>
-            <div className="mt-2 w-full bg-blue-700 rounded-full h-1.5">
-              <div className="bg-emerald-400 h-1.5 rounded-full" style={{ width: `${(userData.badges / 160) * 100}%` }} />
+            <div>
+              <h3 className="text-white font-semibold text-sm">{userData.name}</h3>
+              <p className="text-blue-200 text-xs">Level {userData.level} • {userData.is_premium ? '⚡ PRO' : 'Free'}</p>
             </div>
           </div>
-          <div className="px-4 py-3 flex gap-2">
-            {(['all', 'earned', 'locked'] as const).map(f => (
-              <button key={f} onClick={() => setBadgeFilter(f)}
-                className={`flex-1 py-2 rounded-xl text-xs font-medium ${badgeFilter === f ? 'bg-blue-500 text-white' : 'bg-white text-slate-600'}`}>
-                {f.charAt(0).toUpperCase() + f.slice(1)}
-              </button>
-            ))}
-          </div>
-          <div className="px-4 pb-4 grid grid-cols-2 gap-2">
-            {mockBadges.filter(b => badgeFilter === 'all' || (badgeFilter === 'earned' ? b.earned : !b.earned)).map(badge => (
-              <button key={badge.id} onClick={() => setShowBadgeDetail(badge)}
-                className="bg-white rounded-xl p-3 text-left">
-                <div className={`w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-2 relative ${badge.earned ? 'bg-blue-500' : 'bg-slate-200'}`}>
-                  <Shield className={badge.earned ? 'text-white' : 'text-slate-400'} size={24} />
-                  {badge.earned && <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center"><Check size={12} className="text-white" /></div>}
-                  {!badge.earned && <div className="absolute -top-1 -right-1 w-5 h-5 bg-slate-400 rounded-full flex items-center justify-center"><Lock size={10} className="text-white" /></div>}
-                </div>
-                <p className="text-center text-xs font-semibold text-slate-900">{badge.name}</p>
-                <div className="mt-1.5 w-full bg-slate-100 rounded-full h-1">
-                  <div className={`h-1 rounded-full ${badge.earned ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${badge.progress}%` }} />
-                </div>
-                <p className="text-center text-[10px] text-slate-400 mt-1">{badge.earned ? 'Earned' : `${badge.progress}%`}</p>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* Skins Tab */}
-      {engagementTab === 'skins' && (
-        <>
-          <div className="mx-4 mt-3 p-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl text-white">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Car size={16} />
-              <span className="text-[10px] font-medium">CAR STUDIO</span>
-            </div>
-            <p className="text-lg font-bold">Premium Skins</p>
-            <p className="text-purple-200 text-xs">Personalize your ride</p>
-          </div>
-          <div className="px-4 py-3 grid grid-cols-2 gap-2">
-            {mockSkins.map(skin => (
-              <button key={skin.id} onClick={() => skin.owned ? handleEquipSkin(skin.id) : toast.error(`Need ${skin.price} gems`)}
-                className={`bg-white rounded-xl p-3 border-2 ${equippedSkin === skin.id ? 'border-emerald-500' : 'border-transparent'}`}>
-                <div className={`w-full aspect-square rounded-lg mb-2 bg-gradient-to-br ${skin.gradient}`} />
-                <p className="text-xs font-semibold text-slate-900">{skin.name}</p>
-                {skin.owned ? (
-                  <p className={`text-[10px] ${equippedSkin === skin.id ? 'text-emerald-500' : 'text-slate-400'}`}>
-                    {equippedSkin === skin.id ? '✓ Equipped' : 'Owned'}
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-purple-500 flex items-center gap-0.5"><Gem size={10} /> {skin.price}</p>
-                )}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* Progress Tab */}
-      {engagementTab === 'progress' && (
-        <>
-          <div className="mx-4 mt-3 p-3 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl text-white">
-            <p className="text-[10px] font-medium text-emerald-200">THIS WEEK</p>
-            <p className="text-2xl font-bold">Level {userData.level}</p>
-            <div className="flex justify-between text-xs mt-1 mb-1">
-              <span>Next Level</span>
-              <span>2,400 / 3,000 XP</span>
-            </div>
-            <div className="w-full bg-emerald-700 rounded-full h-1.5">
-              <div className="bg-white h-1.5 rounded-full" style={{ width: '80%' }} />
-            </div>
-          </div>
-          <div className="p-4">
-            <h3 className="text-sm font-semibold text-slate-900 mb-2">Weekly Challenges</h3>
-            <div className="space-y-2">
-              {mockChallenges.map(c => (
-                <div key={c.id} className="bg-white rounded-xl p-3">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-xs font-medium text-slate-900">{c.title}</span>
-                    <span className="text-xs text-emerald-500 font-medium">+{c.gems} 💎</span>
-                  </div>
-                  <div className="w-full bg-slate-100 rounded-full h-1.5">
-                    <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${(c.progress / c.target) * 100}%` }} />
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-1">{c.progress}/{c.target}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 bg-amber-50 rounded-xl p-3">
-              <div className="flex items-center gap-2">
-                <div className="text-2xl">🔥</div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">{userData.streak} Day Streak!</p>
-                  <p className="text-[10px] text-slate-500">Keep driving to maintain</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Reports Tab */}
-      {engagementTab === 'reports' && (
-        <>
-          <div className="mx-4 mt-3 p-3 bg-gradient-to-r from-red-500 to-orange-500 rounded-xl text-white">
-            <div className="flex justify-between items-start">
+          
+          {/* User ID Card */}
+          <div className="mt-3 bg-white/10 rounded-xl px-3 py-2">
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-medium text-red-200">TOTAL REPORTS</p>
-                <p className="text-2xl font-bold">{mockReports.length}</p>
+                <p className="text-blue-200 text-[10px]">Your ID</p>
+                <p className="text-white font-bold text-lg tracking-wider">{userData.id || '123456'}</p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] text-red-200">GEMS EARNED</p>
-                <p className="text-lg font-bold">75 💎</p>
+                <p className="text-blue-200 text-[10px]">Friends</p>
+                <p className="text-white font-bold">{userData.friends_count || 0}</p>
               </div>
             </div>
           </div>
-          <div className="p-4">
-            <button onClick={() => setShowReportModal(true)}
-              className="w-full bg-red-500 text-white py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 mb-3">
-              <Plus size={16} /> Report New Hazard
-            </button>
-            <div className="space-y-2">
-              {mockReports.map(r => (
-                <div key={r.id} className="bg-white rounded-xl p-3">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-xs font-semibold text-slate-900 capitalize">{r.type}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${r.status === 'verified' ? 'bg-emerald-100 text-emerald-600' : r.status === 'active' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600'}`}>
-                      {r.status}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-500">{r.location}</p>
-                  <div className="flex justify-between mt-1">
-                    <span className="text-[10px] text-slate-400">{r.time}</span>
-                    <span className="text-[10px] text-emerald-500 font-medium">+{r.gems} 💎 • {r.upvotes} 👍</span>
-                  </div>
-                </div>
-              ))}
+          
+          <div className="flex gap-4 mt-3">
+            <div className="text-center">
+              <p className="text-white font-bold text-sm">{(userData.gems/1000).toFixed(1)}K</p>
+              <p className="text-blue-200 text-[10px]">Gems</p>
+            </div>
+            <div className="text-center">
+              <p className="text-white font-bold text-sm">{userData.safety_score}</p>
+              <p className="text-blue-200 text-[10px]">Score</p>
+            </div>
+            <div className="text-center">
+              <p className="text-white font-bold text-sm">#{userData.rank}</p>
+              <p className="text-blue-200 text-[10px]">Rank</p>
             </div>
           </div>
-        </>
-      )}
-    </div>
-  )
+        </div>
 
-  // Render Live Tab (Family)
-  const renderLive = () => (
-    <div className="flex-1 bg-slate-100 overflow-auto">
-      <div className="bg-white px-4 pt-3 pb-3 sticky top-0 z-10">
-        <div className="flex items-center gap-2">
-          <Users className="text-indigo-500" size={20} />
-          <h1 className="text-lg font-bold text-slate-900">Live Locations</h1>
-        </div>
-        <p className="text-xs text-slate-500">{mockFamily.filter(f => f.status !== 'offline').length} of {mockFamily.length} online</p>
-      </div>
-
-      {userData.isFamilyPlan ? (
-        <div className="p-4 space-y-2">
-          {mockFamily.map(member => (
-            <button key={member.id} onClick={() => setShowFamilyMember(member)}
-              className="w-full bg-white rounded-xl p-3 flex items-center gap-3">
-              <div className="relative">
-                <div className="w-11 h-11 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold">
-                  {member.avatar}
-                </div>
-                <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white ${member.status === 'driving' ? 'bg-emerald-500' : member.status === 'parked' ? 'bg-blue-500' : 'bg-slate-400'}`} />
-              </div>
-              <div className="flex-1 text-left">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-semibold text-slate-900 text-sm">{member.name}</span>
-                  {member.status === 'driving' && <span className="text-[10px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full">{member.speed} mph</span>}
-                </div>
-                <p className="text-[10px] text-slate-500">{member.location}</p>
-                {member.lastSeen && <p className="text-[10px] text-slate-400">Last seen {member.lastSeen}</p>}
-              </div>
-              <div className="text-right">
-                <div className="flex items-center gap-0.5 text-slate-400">
-                  <Battery size={12} className={member.battery < 30 ? 'text-red-500' : ''} />
-                  <span className="text-[10px]">{member.battery}%</span>
-                </div>
-                <p className="text-[10px] text-slate-500">{member.distance}</p>
-              </div>
-              <ChevronRight className="text-slate-400" size={16} />
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="p-4 text-center">
-          <div className="bg-indigo-100 rounded-xl p-6 mb-4">
-            <Users className="mx-auto text-indigo-500 mb-2" size={40} />
-            <h3 className="text-lg font-bold text-slate-900 mb-1">Family Plan</h3>
-            <p className="text-xs text-slate-500 mb-3">Track up to 6 family members in real-time</p>
-            <button className="bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
-              Upgrade for $14.99/mo
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-
-  // Render Profile Tab
-  const renderProfile = () => (
-    <div className="flex-1 bg-slate-100 overflow-auto">
-      {/* Profile Header */}
-      <div className="bg-gradient-to-b from-blue-500 to-blue-600 px-4 pt-4 pb-6">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center text-blue-500 font-bold text-xl">
-              {userData.name?.split(' ').map(n => n[0]).join('') || 'SJ'}
-            </div>
-            <button className="absolute -bottom-1 -right-1 w-6 h-6 bg-blue-400 rounded-full flex items-center justify-center">
-              <Camera className="text-white" size={12} />
-            </button>
-          </div>
-          <div className="flex-1">
-            <h1 className="text-lg font-bold text-white">{userData.name || 'Sarah Johnson'}</h1>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-blue-200">Level {userData.level}</span>
-              {userData.isPremium && <span className="text-[10px] bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded-full font-medium">⚡ PRO</span>}
-            </div>
-          </div>
-          <button onClick={() => toast('Profile shared!')} className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
-            <Share2 className="text-white" size={16} />
-          </button>
-        </div>
-        
-        {/* Stats */}
-        <div className="grid grid-cols-4 gap-2 mt-4">
+        <div className="p-2 overflow-auto" style={{ maxHeight: 'calc(100% - 240px)' }}>
+          <p className="text-slate-500 text-[10px] font-medium px-3 py-2">SOCIAL</p>
           {[
-            { value: `${(userData.gems / 1000).toFixed(1)}K`, label: 'Gems', icon: '💎' },
-            { value: userData.rank, label: 'Rank', icon: '🏆' },
-            { value: userData.totalTrips, label: 'Trips', icon: '🚗' },
-            { value: `${(userData.totalMiles / 1000).toFixed(1)}K`, label: 'Miles', icon: '📍' },
-          ].map((s, i) => (
-            <button key={i} onClick={() => setActiveTab('engagement')} className="bg-white/10 rounded-xl p-2 text-center">
-              <span className="text-sm">{s.icon}</span>
-              <p className="text-white font-bold text-sm">{s.value}</p>
-              <p className="text-blue-200 text-[10px]">{s.label}</p>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Sub Tabs */}
-      <div className="bg-white px-4 py-2 flex border-b border-slate-200 sticky top-0 z-10">
-        {(['overview', 'score', 'fuel', 'settings'] as const).map(tab => (
-          <button key={tab} onClick={() => setProfileTab(tab)}
-            className={`flex-1 py-2 text-xs font-medium capitalize ${profileTab === tab ? 'text-blue-500 border-b-2 border-blue-500' : 'text-slate-400'}`}>
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {/* Overview */}
-      {profileTab === 'overview' && (
-        <div className="p-4 space-y-2">
-          {[
-            { icon: Trophy, label: 'Achievements', value: `${userData.badges}/160 badges`, action: () => { setActiveTab('engagement'); setEngagementTab('badges') } },
-            { icon: TrendingUp, label: 'Leaderboard', value: `Rank #${userData.rank}`, action: () => toast('Leaderboard') },
-            { icon: Route, label: 'Trip History', value: `${userData.totalTrips} trips`, action: () => toast('Trip History') },
-            { icon: Gem, label: 'Gem History', value: '+2,450 this month', action: () => setActiveTab('offers') },
+            { icon: Users, label: 'Friends Hub', badge: userData.friends_count, action: () => { setShowFriendsHub(true); setShowMenu(false) } },
+            { icon: BarChart3, label: 'Leaderboard', action: () => { setShowLeaderboard(true); setShowMenu(false) } },
           ].map((item, i) => (
-            <button key={i} onClick={item.action}
-              className="w-full bg-white rounded-xl p-3 flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                <item.icon className="text-blue-500" size={18} />
-              </div>
-              <div className="flex-1 text-left">
-                <p className="text-sm font-medium text-slate-900">{item.label}</p>
-                <p className="text-[10px] text-slate-500">{item.value}</p>
-              </div>
-              <ChevronRight className="text-slate-400" size={16} />
+            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
+              <item.icon size={16} />
+              <span className="flex-1 text-left text-sm">{item.label}</span>
+              {item.badge !== undefined && <span className="text-xs bg-slate-700 px-2 py-0.5 rounded-full">{item.badge}</span>}
+            </button>
+          ))}
+
+          <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">NAVIGATION</p>
+          {[
+            { icon: MapPin, label: 'Map', action: () => { setActiveTab('map'); setShowMenu(false) } },
+            { icon: Route, label: 'My Routes', badge: `${routes.length}/20`, action: () => { setActiveTab('routes'); setShowMenu(false) } },
+            { icon: Star, label: 'Favorites', badge: locations.filter(l => !['home','work'].includes(l.category)).length, action: () => { setActiveTab('map'); setLocationCategory('favorites'); setShowMenu(false) } },
+            { icon: Layers, label: 'Map Widgets', action: () => { setShowWidgetSettings(true); setShowMenu(false) } },
+          ].map((item, i) => (
+            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
+              <item.icon size={16} />
+              <span className="flex-1 text-left text-sm">{item.label}</span>
+              {item.badge !== undefined && <span className="text-xs bg-slate-700 px-2 py-0.5 rounded-full">{item.badge}</span>}
+            </button>
+          ))}
+
+          <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">REWARDS</p>
+          {[
+            { icon: Gift, label: 'Offers', badge: offers.length, action: () => { setActiveTab('rewards'); setRewardsTab('offers'); setShowMenu(false) } },
+            { icon: Award, label: 'All Badges', badge: `${badges.filter(b => b.earned).length}/160`, action: () => { setShowBadgesGrid(true); setShowMenu(false) } },
+            { icon: Car, label: 'Car Studio', action: () => { setShowCarStudio(true); setShowMenu(false) } },
+          ].map((item, i) => (
+            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
+              <item.icon size={16} />
+              <span className="flex-1 text-left text-sm">{item.label}</span>
+              {item.badge && <span className="text-xs bg-slate-700 px-2 py-0.5 rounded-full">{item.badge}</span>}
+            </button>
+          ))}
+
+          <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">ANALYTICS</p>
+          {[
+            { icon: Fuel, label: 'Fuel Tracker', action: () => { setShowFuelDashboard(true); setShowMenu(false) } },
+            { icon: Shield, label: 'Driver Score', action: () => { setActiveTab('profile'); setProfileTab('score'); setShowMenu(false) } },
+          ].map((item, i) => (
+            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
+              <item.icon size={16} />
+              <span className="flex-1 text-left text-sm">{item.label}</span>
+            </button>
+          ))}
+
+          <p className="text-slate-500 text-[10px] font-medium px-3 py-2 mt-2">SETTINGS</p>
+          {[
+            { icon: Volume2, label: isMuted ? 'Unmute' : 'Mute', action: handleToggleVoice },
+            { icon: Settings, label: 'Settings', action: () => { setActiveTab('profile'); setProfileTab('settings'); setShowMenu(false) } },
+            { icon: HelpCircle, label: 'Help', action: () => { setShowHelpSupport(true); setShowMenu(false) } },
+          ].map((item, i) => (
+            <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase()}`}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
+              <item.icon size={16} />
+              <span className="flex-1 text-left text-sm">{item.label}</span>
             </button>
           ))}
         </div>
+
+        <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-slate-800">
+          <button onClick={() => { logout(); navigate('/login') }} data-testid="logout-btn"
+            className="w-full flex items-center justify-center gap-2 py-2 text-red-400 hover:bg-red-500/10 rounded-xl">
+            <LogOut size={16} /> Log Out
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // Get home location
+  const getHomeLocation = () => locations.find(l => l.category === 'home')
+  const getWorkLocation = () => locations.find(l => l.category === 'work')
+  const getFavoriteLocations = () => locations.filter(l => !['home', 'work'].includes(l.category))
+
+  // Clean Map Tab - Google Maps Style
+  const renderMap = () => (
+    <div id="map-container" className="flex-1 relative bg-slate-800 overflow-hidden"
+      onMouseMove={draggingWidget ? handleWidgetDrag : undefined}
+      onMouseUp={handleWidgetDragEnd}
+      onTouchMove={draggingWidget ? handleWidgetDrag : undefined}
+      onTouchEnd={handleWidgetDragEnd}>
+      
+      {/* Interactive Map - Real OpenStreetMap */}
+      <InteractiveMap
+        userLocation={userLocation}
+        offers={offers}
+        isNavigating={isNavigating}
+        onOfferClick={(offer) => {
+          setSelectedOfferForRedemption(offer)
+          setShowRedemptionPopup(true)
+        }}
+        carColor={userCar.color.includes('blue') ? '#3b82f6' : 
+                  userCar.color.includes('red') ? '#ef4444' : 
+                  userCar.color.includes('green') ? '#22c55e' :
+                  userCar.color.includes('white') ? '#f8fafc' :
+                  userCar.color.includes('gold') ? '#fbbf24' : '#1e293b'}
+        userCar={userCar}
+        onOrionClick={() => setShowOrionVoice(true)}
+        onRecenter={() => toast.success('Centered on your location')}
+      />
+
+      {/* Turn-by-Turn Navigation Panel */}
+      {showTurnByTurn && navigationData && (
+        <div className="absolute top-0 left-0 right-0 z-30">
+          {/* Current Step */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-500 p-4 shadow-lg">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center">
+                {navigationData.steps[currentStepIndex]?.maneuver === 'turn-right' ? (
+                  <ChevronRight className="text-white" size={28} />
+                ) : navigationData.steps[currentStepIndex]?.maneuver === 'turn-left' ? (
+                  <ChevronLeft className="text-white" size={28} />
+                ) : navigationData.steps[currentStepIndex]?.maneuver === 'arrive' ? (
+                  <MapPin className="text-white" size={24} />
+                ) : (
+                  <Navigation className="text-white" size={24} />
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="text-white font-bold text-lg">
+                  {navigationData.steps[currentStepIndex]?.instruction || 'Continue'}
+                </p>
+                <p className="text-blue-100 text-sm">
+                  {navigationData.steps[currentStepIndex]?.distance} • {navigationData.steps[currentStepIndex]?.duration}
+                </p>
+              </div>
+              <button 
+                onClick={handleStopNavigation}
+                className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30"
+                data-testid="end-navigation-btn"
+              >
+                <X className="text-white" size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* ETA Bar */}
+          <div className="bg-slate-900/95 backdrop-blur px-4 py-3 flex items-center justify-between border-b border-white/10">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Clock className="text-emerald-400" size={16} />
+                <span className="text-white font-semibold">{navigationData.duration?.text || '-- min'}</span>
+              </div>
+              <div className="text-slate-400">•</div>
+              <span className="text-slate-300">{navigationData.distance?.text || '-- mi'}</span>
+              <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                navigationData.traffic === 'light' ? 'bg-emerald-500/20 text-emerald-400' :
+                navigationData.traffic === 'moderate' ? 'bg-amber-500/20 text-amber-400' :
+                'bg-red-500/20 text-red-400'
+              }`}>
+                {navigationData.traffic || 'normal'} traffic
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setCurrentStepIndex(Math.max(0, currentStepIndex - 1))}
+                disabled={currentStepIndex === 0}
+                className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center disabled:opacity-30"
+              >
+                <ChevronUp className="text-white" size={16} />
+              </button>
+              <button 
+                onClick={() => setCurrentStepIndex(Math.min((navigationData.steps?.length || 1) - 1, currentStepIndex + 1))}
+                disabled={currentStepIndex === (navigationData.steps?.length || 1) - 1}
+                className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center disabled:opacity-30"
+              >
+                <ChevronDown className="text-white" size={16} />
+              </button>
+              <button className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center">
+                <Volume2 className="text-white" size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Score Tab */}
-      {profileTab === 'score' && (
-        <div className="p-4">
-          <div className="bg-white rounded-xl p-4 mb-4">
-            <div className="flex items-center justify-center mb-4">
-              <div className="relative w-28 h-28">
+      {/* Top Bar - Google Maps Style (Hidden during turn-by-turn) */}
+      {!showTurnByTurn && (
+      <div className="absolute top-3 left-3 right-3 z-10">
+        {/* Search Bar with Menu */}
+        <div className="flex gap-2">
+          <button onClick={() => setShowMenu(true)} data-testid="menu-btn"
+            className="w-12 h-12 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
+            <Menu className="text-white" size={20} />
+          </button>
+          <button onClick={() => setShowSearch(true)} data-testid="search-btn" 
+            className="flex-1 bg-slate-900/95 backdrop-blur rounded-full px-4 h-12 flex items-center gap-3 shadow-lg">
+            <Search className="text-slate-400" size={18} />
+            <span className="flex-1 text-slate-400 text-sm text-left">{isNavigating ? 'Navigating...' : 'Search here'}</span>
+            <button 
+              onClick={(e) => { e.stopPropagation(); handleVoiceCommand() }}
+              className="p-1 hover:bg-slate-700 rounded-full transition-colors"
+              data-testid="orion-btn"
+            >
+              <Mic className="text-slate-400" size={18} />
+            </button>
+          </button>
+        </div>
+
+        {/* Quick Action Pills - Google Maps Style */}
+        <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+          {/* Favorites Tab */}
+          <button onClick={() => setLocationCategory('favorites')} data-testid="tab-favorites"
+            className={`flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 transition-all ${
+              locationCategory === 'favorites' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-slate-900/90 text-white backdrop-blur'
+            }`}>
+            <Star size={16} className={locationCategory === 'favorites' ? 'text-white' : 'text-yellow-400'} />
+            <span className="text-sm font-medium">Favorites</span>
+          </button>
+
+          {/* Nearby Tab */}
+          <button onClick={() => setLocationCategory('nearby')} data-testid="tab-nearby"
+            className={`flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 transition-all ${
+              locationCategory === 'nearby' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-slate-900/90 text-white backdrop-blur'
+            }`}>
+            <MapPin size={16} />
+            <span className="text-sm font-medium">Nearby</span>
+          </button>
+
+          {/* Report Hazard Button */}
+          <button onClick={() => setShowRoadReports(true)} data-testid="report-hazard-btn"
+            className="flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 bg-amber-500/90 text-white backdrop-blur hover:bg-amber-500 transition-all">
+            <AlertTriangle size={16} />
+            <span className="text-sm font-medium">Report</span>
+          </button>
+
+          {/* Quick Photo Button */}
+          <button onClick={() => setShowQuickPhotoReport(true)} data-testid="quick-photo-btn"
+            className="flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 bg-blue-500/90 text-white backdrop-blur hover:bg-blue-500 transition-all">
+            <Camera size={16} />
+            <span className="text-sm font-medium">Photo</span>
+          </button>
+        </div>
+
+        {/* Favorites Content - Shows when Favorites is selected */}
+        {locationCategory === 'favorites' && (
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {/* Home Button */}
+            {getHomeLocation() ? (
+              <button onClick={() => handleStartNavigation(getHomeLocation()!.name)} data-testid="quick-home"
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                  <Home size={16} className="text-slate-300" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-sm font-medium">Home</p>
+                  <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{getHomeLocation()!.address}</p>
+                </div>
+              </button>
+            ) : (
+              <button onClick={() => { setNewLocation({ ...newLocation, category: 'home' }); setShowAddLocation(true) }} data-testid="add-home"
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                  <Home size={16} className="text-slate-300" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-sm font-medium">Home</p>
+                  <p className="text-blue-400 text-[11px]">Set location</p>
+                </div>
+              </button>
+            )}
+
+            {/* Work Button */}
+            {getWorkLocation() ? (
+              <button onClick={() => handleStartNavigation(getWorkLocation()!.name)} data-testid="quick-work"
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                  <Briefcase size={16} className="text-slate-300" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-sm font-medium">Work</p>
+                  <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{getWorkLocation()!.address}</p>
+                </div>
+              </button>
+            ) : (
+              <button onClick={() => { setNewLocation({ ...newLocation, category: 'work' }); setShowAddLocation(true) }} data-testid="add-work"
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                  <Briefcase size={16} className="text-slate-300" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-sm font-medium">Work</p>
+                  <p className="text-blue-400 text-[11px]">Set location</p>
+                </div>
+              </button>
+            )}
+
+            {/* Other Favorites */}
+            {getFavoriteLocations().map(loc => (
+              <button key={loc.id} onClick={() => handleStartNavigation(loc.name)} data-testid={`fav-${loc.id}`}
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                  <Star size={16} className="text-yellow-400" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-sm font-medium truncate max-w-[60px]">{loc.name}</p>
+                  <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{loc.address}</p>
+                </div>
+              </button>
+            ))}
+
+            {/* More / Add Button */}
+            <button onClick={() => setShowAddLocation(true)} data-testid="add-favorite"
+              className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full px-4 py-2 flex items-center gap-2">
+              <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                <Plus size={16} className="text-slate-300" />
+              </div>
+              <span className="text-white text-sm font-medium">More</span>
+            </button>
+          </div>
+        )}
+
+        {/* Nearby Content - Shows when Nearby is selected */}
+        {locationCategory === 'nearby' && (
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {[
+              { icon: Fuel, label: 'Gas', color: 'blue' },
+              { icon: Coffee, label: 'Coffee', color: 'orange' },
+              { icon: ShoppingCart, label: 'Shopping', color: 'pink' },
+              { icon: Dumbbell, label: 'Gym', color: 'purple' },
+            ].map((item, i) => (
+              <button key={i} onClick={() => { setActiveTab('rewards'); setRewardsTab('offers'); setOfferFilter(item.label.toLowerCase() === 'gas' ? 'gas' : item.label.toLowerCase() === 'coffee' ? 'cafe' : 'all') }}
+                data-testid={`nearby-${item.label.toLowerCase()}`}
+                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full px-4 py-2 flex items-center gap-2">
+                <item.icon size={16} className={`text-${item.color}-400`} />
+                <span className="text-white text-sm">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      )}
+
+      {/* Moveable Score Widget */}
+      {widgets.score.visible && (
+        <div 
+          className="absolute bg-slate-900/95 backdrop-blur rounded-xl transition-all cursor-move select-none z-[5]"
+          style={{ left: widgets.score.position.x, top: widgets.score.position.y, width: widgets.score.collapsed ? 100 : 110 }}
+          data-testid="widget-score"
+        >
+          <div 
+            className="flex items-center justify-between px-2 py-1.5 border-b border-slate-700/50"
+            onMouseDown={(e) => handleWidgetDragStart('score', e)}
+            onTouchStart={(e) => handleWidgetDragStart('score', e)}
+          >
+            <GripVertical size={12} className="text-slate-500" />
+            <span className="text-[10px] text-slate-400 font-medium">SCORE</span>
+            <button onClick={() => toggleWidgetCollapse('score')} data-testid="collapse-score-widget">
+              {widgets.score.collapsed ? <Maximize2 size={12} className="text-slate-500" /> : <Minimize2 size={12} className="text-slate-500" />}
+            </button>
+          </div>
+          
+          {!widgets.score.collapsed && (
+            <div className="p-2">
+              <div className="relative w-14 h-14 mx-auto mb-1">
                 <svg className="w-full h-full -rotate-90">
-                  <circle cx="56" cy="56" r="50" stroke="#e2e8f0" strokeWidth="8" fill="none" />
-                  <circle cx="56" cy="56" r="50" stroke={userData.safetyScore >= 90 ? '#22c55e' : userData.safetyScore >= 70 ? '#eab308' : '#ef4444'}
-                    strokeWidth="8" fill="none" strokeDasharray={`${(userData.safetyScore / 100) * 314} 314`} strokeLinecap="round" />
+                  <circle cx="28" cy="28" r="24" stroke="#1e293b" strokeWidth="4" fill="none" />
+                  <circle cx="28" cy="28" r="24" 
+                    stroke={userData.safety_score >= 90 ? '#22c55e' : userData.safety_score >= 70 ? '#3b82f6' : '#ef4444'}
+                    strokeWidth="4" fill="none" strokeDasharray={`${(userData.safety_score / 100) * 151} 151`} strokeLinecap="round" />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-3xl font-bold text-slate-900">{userData.safetyScore}</span>
-                  <span className="text-xs text-slate-500">Safety Score</span>
+                  <span className="text-lg font-bold text-white">{userData.safety_score}</span>
                 </div>
               </div>
-            </div>
-            <div className="space-y-2">
-              {[
-                { label: 'Speed', score: 92, icon: Gauge },
-                { label: 'Braking', score: 85, icon: AlertTriangle },
-                { label: 'Acceleration', score: 88, icon: TrendingUp },
-                { label: 'Phone Use', score: 78, icon: Phone },
-              ].map((cat, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <cat.icon size={14} className="text-slate-400" />
-                  <span className="text-xs text-slate-600 w-20">{cat.label}</span>
-                  <div className="flex-1 bg-slate-100 rounded-full h-2">
-                    <div className={`h-2 rounded-full ${cat.score >= 90 ? 'bg-emerald-500' : cat.score >= 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                      style={{ width: `${cat.score}%` }} />
-                  </div>
-                  <span className="text-xs font-medium text-slate-900 w-8">{cat.score}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Fuel Tab */}
-      {profileTab === 'fuel' && (
-        <div className="p-4">
-          {userData.isPremium ? (
-            <>
-              <div className="bg-white rounded-xl p-4 mb-4">
-                <h3 className="text-sm font-semibold text-slate-900 mb-3">This Week</h3>
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div>
-                    <p className="text-xl font-bold text-slate-900">12.4</p>
-                    <p className="text-[10px] text-slate-500">Gallons</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold text-emerald-500">$43.20</p>
-                    <p className="text-[10px] text-slate-500">Spent</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold text-blue-500">28.4</p>
-                    <p className="text-[10px] text-slate-500">MPG Avg</p>
-                  </div>
-                </div>
-              </div>
-              <button className="w-full bg-blue-500 text-white py-2.5 rounded-xl text-sm font-medium mb-4">
-                <Plus size={16} className="inline mr-1" /> Log Fill-Up
-              </button>
-            </>
-          ) : (
-            <div className="bg-amber-50 rounded-xl p-4 text-center">
-              <Fuel className="mx-auto text-amber-500 mb-2" size={32} />
-              <h3 className="font-semibold text-slate-900 mb-1">Premium Feature</h3>
-              <p className="text-xs text-slate-500 mb-3">Track fuel usage & optimize routes</p>
-              <button className="bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                Upgrade to Pro
+              <button onClick={() => { setActiveTab('profile'); setProfileTab('score') }} data-testid="score-details-btn"
+                className="w-full bg-blue-500 text-white text-[10px] font-medium py-1 rounded-lg hover:bg-blue-600">
+                Details
               </button>
             </div>
           )}
         </div>
       )}
 
-      {/* Settings Tab */}
-      {profileTab === 'settings' && (
-        <div className="p-4 space-y-2">
-          {[
-            { icon: User, label: 'Account', desc: 'Personal info, email' },
-            { icon: CreditCard, label: 'Subscription', desc: userData.isPremium ? 'Premium Active' : 'Free Plan' },
-            { icon: Car, label: 'My Vehicles', desc: '2 vehicles saved' },
-            { icon: Bell, label: 'Notifications', desc: 'Push, email settings' },
-            { icon: Shield, label: 'Privacy', desc: 'Location, data sharing' },
-            { icon: HelpCircle, label: 'Help & Support', desc: 'FAQ, contact us' },
-          ].map((item, i) => (
-            <button key={i} onClick={() => toast(`Opening ${item.label}...`)}
-              className="w-full bg-white rounded-xl p-3 flex items-center gap-3">
-              <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
-                <item.icon className="text-slate-600" size={18} />
-              </div>
-              <div className="flex-1 text-left">
-                <p className="text-sm font-medium text-slate-900">{item.label}</p>
-                <p className="text-[10px] text-slate-500">{item.desc}</p>
-              </div>
-              <ChevronRight className="text-slate-400" size={16} />
+      {/* Moveable Gems Widget */}
+      {widgets.gems.visible && (
+        <div 
+          className="absolute bg-slate-900/95 backdrop-blur rounded-xl transition-all cursor-move select-none z-[5]"
+          style={{ left: widgets.gems.position.x, top: widgets.gems.position.y, width: widgets.gems.collapsed ? 100 : 110 }}
+          data-testid="widget-gems"
+        >
+          <div 
+            className="flex items-center justify-between px-2 py-1.5 border-b border-slate-700/50"
+            onMouseDown={(e) => handleWidgetDragStart('gems', e)}
+            onTouchStart={(e) => handleWidgetDragStart('gems', e)}
+          >
+            <GripVertical size={12} className="text-slate-500" />
+            <span className="text-[10px] text-slate-400 font-medium">GEMS</span>
+            <button onClick={() => toggleWidgetCollapse('gems')} data-testid="collapse-gems-widget">
+              {widgets.gems.collapsed ? <Maximize2 size={12} className="text-slate-500" /> : <Minimize2 size={12} className="text-slate-500" />}
             </button>
-          ))}
-          <button onClick={() => { logout(); navigate('/login') }}
-            className="w-full bg-red-50 text-red-500 py-3 rounded-xl text-sm font-medium mt-4">
-            Log Out
-          </button>
+          </div>
+          
+          {!widgets.gems.collapsed && (
+            <div className="p-2 text-center">
+              <div className="flex items-center justify-center gap-1 mb-1">
+                <Gem className="text-emerald-400" size={16} />
+                <span className="text-white font-bold">{(userData.gems / 1000).toFixed(1)}K</span>
+              </div>
+              <p className="text-[10px] text-emerald-400">+2,450 this month</p>
+              <button onClick={() => setActiveTab('rewards')} data-testid="earn-gems-btn"
+                className="w-full mt-1 bg-emerald-500/20 text-emerald-400 text-[10px] py-1 rounded-lg hover:bg-emerald-500/30">
+                Earn More
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Road Status Markers - Hidden by default for cleaner map */}
+      {/* <RoadStatusMarkers 
+        roads={MOCK_ROAD_SEGMENTS} 
+        onSelectRoad={setSelectedRoadStatus} 
+      /> */}
+
+      {/* Road Status Overlay (when road selected) */}
+      <RoadStatusOverlay 
+        selectedRoad={selectedRoadStatus}
+        onClose={() => setSelectedRoadStatus(null)}
+      />
+
+      {/* Note: Offer gems and user marker are rendered in InteractiveMap component */}
+
+      {/* Floating Action Button - Bottom Right (Camera only, cleaner look) */}
+      <div className="absolute right-3 bottom-24 flex flex-col gap-2 z-20">
+        <button onClick={() => setShowQuickPhotoReport(true)} data-testid="report-btn"
+          className="w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
+          <Camera className="text-white" size={18} />
+        </button>
+      </div>
+
+      {/* Speed Display (when navigating) */}
+      {isNavigating && (
+        <div className="absolute left-3 bottom-24 bg-slate-900/95 backdrop-blur rounded-xl p-3 text-center z-20">
+          <p className="text-2xl font-bold text-white">{currentSpeed}</p>
+          <p className="text-[10px] text-slate-400">MPH</p>
+          <div className="flex items-center justify-center gap-1 mt-1">
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="text-[10px] text-emerald-400">Safe</span>
+          </div>
         </div>
       )}
     </div>
   )
 
+  // Rewards Tab - Combines Offers, Challenges, Badges, Skins
+  const renderRewards = () => (
+    <div className="flex-1 bg-slate-100 overflow-auto">
+      {/* Header with Gems */}
+      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-4 pt-3 pb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h1 className="text-white text-lg font-bold">Rewards</h1>
+          <button onClick={() => setShowGemHistory(true)} data-testid="gem-balance-btn"
+            className="bg-white/20 rounded-full px-3 py-1.5 flex items-center gap-1.5">
+            <Gem className="text-white" size={16} />
+            <span className="text-white font-bold">{(userData.gems / 1000).toFixed(1)}K</span>
+          </button>
+        </div>
+        
+        {/* Rewards Sub-tabs */}
+        <div className="flex gap-1 bg-white/10 rounded-xl p-1">
+          {(['offers', 'challenges', 'badges', 'carstudio'] as const).map(tab => (
+            <button key={tab} onClick={() => setRewardsTab(tab)} data-testid={`rewards-tab-${tab}`}
+              className={`flex-1 py-2 rounded-lg text-xs font-medium ${rewardsTab === tab ? 'bg-white text-emerald-600' : 'text-white'}`}>
+              {tab === 'carstudio' ? 'Car Studio' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Offers Sub-tab */}
+      {rewardsTab === 'offers' && (
+        <div className="p-4">
+          {/* Leaderboard Preview */}
+          <button onClick={() => setShowLeaderboard(true)} data-testid="leaderboard-preview"
+            className="w-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl p-4 mb-4 text-left">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/80 text-xs">Your Rank</p>
+                <p className="text-white text-2xl font-bold">#{userData.rank || 42}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Trophy className="text-yellow-300" size={24} />
+                <ChevronRight className="text-white" size={20} />
+              </div>
+            </div>
+          </button>
+
+          {/* View All Offers Button */}
+          <button onClick={() => setShowOffersModal(true)} data-testid="view-all-offers"
+            className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl p-4 mb-4 text-left">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/80 text-xs">
+                  {userPlan === 'premium' ? '🌟 Premium: 18% off all offers' : '📍 Basic: 6% off all offers'}
+                </p>
+                <p className="text-white text-lg font-bold">View All Offers</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Gift className="text-white" size={24} />
+                <ChevronRight className="text-white" size={20} />
+              </div>
+            </div>
+          </button>
+
+          {/* Nearby Offers Preview */}
+          <h3 className="text-slate-900 font-semibold mb-3 flex items-center gap-2">
+            <Gift size={16} className="text-emerald-500" /> Nearby Offers
+          </h3>
+          <div className="space-y-2">
+            {offers.length === 0 ? (
+              <div className="bg-white rounded-xl p-6 text-center shadow-sm">
+                <Gift className="text-slate-300 mx-auto mb-2" size={32} />
+                <p className="text-slate-500 text-sm">No offers available nearby</p>
+                <p className="text-slate-400 text-xs mt-1">Check back later for deals!</p>
+              </div>
+            ) : (
+              offers.slice(0, 4).map(offer => (
+                <div key={offer.id} data-testid={`offer-${offer.id}`}
+                  className="bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                    offer.business_type === 'gas' ? 'bg-blue-500' : 
+                    offer.business_type === 'cafe' ? 'bg-orange-500' :
+                    offer.business_type === 'carwash' ? 'bg-cyan-500' : 'bg-emerald-500'
+                  }`}>
+                    {offer.business_type === 'gas' ? <Fuel className="text-white" size={18} /> : 
+                     offer.business_type === 'cafe' ? <Coffee className="text-white" size={18} /> :
+                     offer.business_type === 'carwash' ? <Car className="text-white" size={18} /> :
+                     <Gift className="text-white" size={18} />}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-slate-900 font-medium text-sm">{offer.business_name || offer.name}</p>
+                    <p className="text-emerald-600 text-xs">{offer.discount_percent || offer.discount}% off</p>
+                  </div>
+                  <div className="text-right flex items-center gap-2">
+                    <div>
+                      <p className="text-emerald-500 font-bold text-sm">+{offer.gems_reward || offer.gems}💎</p>
+                      {offer.redeemed && (
+                        <span className="text-emerald-400 text-[10px] flex items-center gap-0.5">
+                          <Check size={10} /> Redeemed
+                        </span>
+                      )}
+                    </div>
+                    {!offer.redeemed && (
+                      <button
+                        onClick={() => handleDirectRedemption(offer)}
+                        className="px-3 py-1.5 bg-emerald-500 text-white text-xs font-medium rounded-lg hover:bg-emerald-600"
+                        data-testid={`redeem-${offer.id}`}
+                      >
+                        Redeem
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Challenges Sub-tab */}
+      {rewardsTab === 'challenges' && (
+        <div className="p-4">
+          {/* Challenge History Button */}
+          <button 
+            onClick={() => setShowChallengeHistory(true)}
+            className="w-full bg-gradient-to-r from-red-500 to-orange-500 rounded-xl p-4 mb-4 flex items-center gap-3 shadow-lg"
+            data-testid="view-challenge-history"
+          >
+            <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+              <Swords className="text-white" size={20} />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-white font-semibold text-sm">Challenge History</p>
+              <p className="text-red-100 text-xs">View past battles & badges</p>
+            </div>
+            <ChevronRight className="text-white/80" size={18} />
+          </button>
+
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-slate-900 font-semibold">Weekly Challenges</h3>
+              <p className="text-slate-500 text-xs">{challenges.filter(c => c.completed).length}/{challenges.length} completed</p>
+            </div>
+            <button onClick={loadData} className="text-blue-500 text-xs">Refresh</button>
+          </div>
+
+          <div className="space-y-3">
+            {challenges.map(challenge => (
+              <div key={challenge.id} className={`bg-white rounded-xl p-4 shadow-sm ${challenge.claimed ? 'opacity-60' : ''}`}>
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <h4 className="text-slate-900 font-medium">{challenge.title}</h4>
+                    <p className="text-slate-500 text-xs">{challenge.description}</p>
+                  </div>
+                  <span className="text-emerald-500 font-bold">+{challenge.gems}💎</span>
+                </div>
+                
+                <div className="mb-3">
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-slate-500">{challenge.progress}/{challenge.target}</span>
+                    <span className="text-slate-400">{challenge.expires} left</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2">
+                    <div className={`h-2 rounded-full transition-all ${challenge.completed ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                      style={{ width: `${Math.min((challenge.progress / challenge.target) * 100, 100)}%` }} />
+                  </div>
+                </div>
+
+                {challenge.completed && !challenge.claimed ? (
+                  <button onClick={() => handleClaimChallenge(challenge.id)} data-testid={`claim-${challenge.id}`}
+                    className="w-full bg-emerald-500 text-white py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                    <Gem size={14} /> Claim Reward
+                  </button>
+                ) : challenge.claimed ? (
+                  <div className="text-center text-slate-400 text-sm py-2">
+                    <Check size={14} className="inline mr-1" /> Claimed
+                  </div>
+                ) : (
+                  <div className="text-center text-slate-400 text-sm py-2">
+                    {Math.round((challenge.progress / challenge.target) * 100)}% complete
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Badges Sub-tab */}
+      {rewardsTab === 'badges' && (
+        <div className="p-4">
+          <button onClick={() => setShowBadgesGrid(true)} data-testid="view-all-badges"
+            className="w-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl p-4 mb-4 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/80 text-xs">Badge Collection</p>
+                <p className="text-2xl font-bold">{badges.filter(b => b.earned).length}/160</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Award className="text-yellow-300" size={24} />
+                <span className="text-sm">View All →</span>
+              </div>
+            </div>
+          </button>
+
+          <h3 className="text-slate-900 font-semibold mb-3">Recent Badges</h3>
+          <div className="grid grid-cols-4 gap-2">
+            {badges.filter(b => b.earned).slice(0, 8).map(badge => (
+              <div key={badge.id} className="bg-white rounded-xl p-2 text-center">
+                <div className="w-10 h-10 mx-auto rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-lg mb-1">
+                  {badge.icon}
+                </div>
+                <p className="text-[9px] text-slate-600 line-clamp-1">{badge.name}</p>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="text-slate-900 font-semibold mb-3 mt-4">Almost There!</h3>
+          <div className="space-y-2">
+            {badges.filter(b => !b.earned && b.progress > 50).slice(0, 3).map(badge => (
+              <div key={badge.id} className="bg-white rounded-xl p-3 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-slate-200 flex items-center justify-center">
+                  <Lock size={16} className="text-slate-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-slate-900 text-sm font-medium">{badge.name}</p>
+                  <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1">
+                    <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${badge.progress}%` }} />
+                  </div>
+                </div>
+                <span className="text-slate-400 text-xs">{badge.progress}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Car Studio Sub-tab */}
+      {rewardsTab === 'carstudio' && (
+        <div className="p-4">
+          {/* Current Car Display */}
+          <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl p-4 mb-4 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16" />
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-16 bg-white/20 rounded-xl flex items-center justify-center">
+                <Car className="text-white" size={36} />
+              </div>
+              <div className="flex-1">
+                <p className="text-white/70 text-xs">Current Vehicle</p>
+                <p className="text-white font-bold text-lg capitalize">{userCar.category || 'Sedan'}</p>
+                <p className="text-white/80 text-xs">Color: {userCar.color?.replace('-', ' ') || 'Ocean Blue'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Open Car Studio Button */}
+          <button onClick={() => setShowCarStudio(true)} data-testid="open-car-studio"
+            className="w-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl p-4 mb-4 hover:from-amber-400 hover:to-orange-400 transition-colors shadow-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white font-bold text-lg">Open Car Studio</p>
+                <p className="text-amber-100 text-xs">Customize colors & unlock new styles</p>
+              </div>
+              <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                <ChevronRight className="text-white" size={24} />
+              </div>
+            </div>
+          </button>
+
+          {/* Owned Colors */}
+          <h3 className="text-slate-900 font-semibold mb-3 flex items-center gap-2">
+            <Gem className="text-blue-500" size={16} />
+            Owned Colors
+          </h3>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            {ownedColors.map((color, i) => (
+              <button 
+                key={i}
+                onClick={() => handleCarChange({ ...userCar, color })}
+                className={`relative aspect-square rounded-xl transition-all ${
+                  userCar.color === color ? 'ring-2 ring-amber-500 ring-offset-2' : 'hover:scale-105'
+                }`}
+                style={{ 
+                  background: color === 'ocean-blue' ? '#3b82f6' :
+                             color === 'midnight-black' ? '#1e293b' :
+                             color === 'pearl-white' ? '#f1f5f9' :
+                             color === 'racing-red' ? '#ef4444' :
+                             color === 'forest-green' ? '#22c55e' :
+                             color === 'sunset-gold' ? '#fbbf24' : '#3b82f6'
+                }}
+              >
+                {userCar.color === color && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-xl">
+                    <Check className="text-white" size={20} />
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Unlock More */}
+          <div className="bg-slate-100 rounded-xl p-3 text-center">
+            <p className="text-slate-600 text-sm">💎 Earn gems to unlock more colors!</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  // Routes Tab - More Detailed
+  const renderRoutes = () => (
+    <div className="flex-1 bg-slate-100 overflow-auto">
+      <div className="bg-white px-4 pt-3 pb-3 sticky top-0 z-10 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-slate-900">My Routes</h1>
+            <p className="text-xs text-slate-500">{routes.length} of 20 routes saved</p>
+          </div>
+          <button onClick={() => setShowAddRoute(true)} disabled={routes.length >= 20} data-testid="add-route-btn"
+            className="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 disabled:opacity-50">
+            <Plus size={14} /> Add Route
+          </button>
+        </div>
+        
+        {/* Progress Bar */}
+        <div className="mt-3">
+          <div className="w-full bg-slate-200 rounded-full h-1.5">
+            <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${(routes.length / 20) * 100}%` }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {routes.length === 0 ? (
+          <div className="text-center py-12 bg-white rounded-xl">
+            <Route className="mx-auto text-slate-300 mb-3" size={48} />
+            <p className="text-slate-900 font-medium">No saved routes</p>
+            <p className="text-slate-400 text-sm mt-1">Add your frequent destinations</p>
+            <button onClick={() => setShowAddRoute(true)} data-testid="add-first-route-btn"
+              className="mt-4 bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
+              Add First Route
+            </button>
+          </div>
+        ) : (
+          routes.map(route => (
+            <div key={route.id} data-testid={`route-${route.id}`}
+              className={`bg-white rounded-xl p-4 shadow-sm ${!route.is_active && 'opacity-60'}`}>
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-slate-900">{route.name}</h3>
+                    {route.notifications && <Bell size={12} className="text-blue-500" />}
+                    {!route.is_active && <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">Paused</span>}
+                  </div>
+                  <p className="text-sm text-slate-500 mt-1">{route.origin} → {route.destination}</p>
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => handleToggleRoute(route.id)} data-testid={`toggle-route-${route.id}`}
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center ${route.is_active ? 'bg-emerald-100' : 'bg-slate-100'}`}>
+                    {route.is_active ? <Play className="text-emerald-500" size={14} /> : <Pause className="text-slate-400" size={14} />}
+                  </button>
+                  <button onClick={() => handleDeleteRoute(route.id)} data-testid={`delete-route-${route.id}`}
+                    className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                    <Trash2 className="text-red-500" size={14} />
+                  </button>
+                </div>
+              </div>
+              
+              {/* Route Details */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <div className="bg-slate-50 rounded-lg p-2 text-center">
+                  <Clock className="mx-auto text-blue-500 mb-1" size={14} />
+                  <p className="text-xs font-medium text-slate-900">{route.departure_time}</p>
+                  <p className="text-[10px] text-slate-500">Depart</p>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-2 text-center">
+                  <Timer className="mx-auto text-emerald-500 mb-1" size={14} />
+                  <p className="text-xs font-medium text-slate-900">{route.estimated_time} min</p>
+                  <p className="text-[10px] text-slate-500">Duration</p>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-2 text-center">
+                  <Route className="mx-auto text-purple-500 mb-1" size={14} />
+                  <p className="text-xs font-medium text-slate-900">{route.distance} mi</p>
+                  <p className="text-[10px] text-slate-500">Distance</p>
+                </div>
+              </div>
+
+              {/* Days */}
+              <div className="flex items-center gap-1 mb-3">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+                  <span key={day} className={`text-[10px] px-2 py-1 rounded ${route.days_active.includes(day) ? 'bg-blue-100 text-blue-600 font-medium' : 'bg-slate-100 text-slate-400'}`}>
+                    {day}
+                  </span>
+                ))}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                <button onClick={() => handleToggleRouteNotifications(route.id)} data-testid={`toggle-notif-${route.id}`}
+                  className="text-xs text-slate-500 flex items-center gap-1 hover:text-blue-500">
+                  {route.notifications ? <Bell size={12} className="text-blue-500" /> : <EyeOff size={12} />}
+                  {route.notifications ? 'Alerts on' : 'Alerts off'}
+                </button>
+                <button onClick={() => handleStartNavigation(route.destination)} data-testid={`start-route-${route.id}`}
+                  className="bg-blue-500 text-white px-4 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1">
+                  <Navigation size={12} /> Start
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+
+  // Profile Tab
+  const renderProfile = () => (
+    <div className="flex-1 bg-slate-100 overflow-auto">
+      {/* Header with Car */}
+      <div className="bg-gradient-to-b from-blue-500 to-blue-600 px-4 pt-4 pb-6">
+        <div className="flex items-center gap-3">
+          {/* User Avatar with Car */}
+          <button 
+            onClick={() => setShowCarStudio(true)}
+            className="relative w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center overflow-hidden group"
+          >
+            <ProfileCar 
+              category={userCar.category as any}
+              color={userCar.color as any}
+              size={56}
+            />
+            {/* Edit overlay */}
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <Edit2 className="text-white" size={16} />
+            </div>
+          </button>
+          <div className="flex-1">
+            <h1 className="text-lg font-bold text-white">{userData.name}</h1>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-blue-200">Level {userData.level}</span>
+              {userData.is_premium ? (
+                <span className="text-[10px] bg-gradient-to-r from-amber-400 to-orange-400 text-amber-900 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                  <Zap size={10} /> PREMIUM
+                </span>
+              ) : (
+                <span className="text-[10px] bg-slate-600 text-slate-300 px-2 py-0.5 rounded-full font-medium">
+                  BASIC
+                </span>
+              )}
+            </div>
+            {userData.is_premium && (
+              <p className="text-amber-300 text-[10px] mt-0.5 flex items-center gap-1">
+                <Gem size={10} /> 2× gem multiplier active
+              </p>
+            )}
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-4 gap-2 mt-4">
+          {[
+            { value: `${(userData.gems / 1000).toFixed(1)}K`, label: 'Gems', icon: '💎' },
+            { value: `#${userData.rank}`, label: 'Rank', icon: '🏆' },
+            { value: userData.total_trips, label: 'Trips', icon: '🚗' },
+            { value: `${(userData.total_miles / 1000).toFixed(1)}K`, label: 'Miles', icon: '📍' },
+          ].map((s, i) => (
+            <div key={i} className="bg-white/10 rounded-xl p-2 text-center">
+              <span className="text-sm">{s.icon}</span>
+              <p className="text-white font-bold text-sm">{s.value}</p>
+              <p className="text-blue-200 text-[10px]">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-white px-4 py-2 flex border-b border-slate-200 sticky top-0 z-10">
+        {(['overview', 'score', 'fuel', 'settings'] as const).map(tab => (
+          <button key={tab} onClick={() => setProfileTab(tab)} data-testid={`profile-tab-${tab}`}
+            className={`flex-1 py-2 text-xs font-medium capitalize ${profileTab === tab ? 'text-blue-500 border-b-2 border-blue-500' : 'text-slate-400'}`}>
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {profileTab === 'overview' && (
+        <div className="p-4 space-y-2">
+          {/* Level/XP Card */}
+          <button 
+            onClick={() => setShowLevelProgress(true)}
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 flex items-center gap-4 shadow-lg"
+            data-testid="profile-level"
+          >
+            <div className="w-14 h-14 rounded-full bg-white/20 flex flex-col items-center justify-center">
+              <span className="text-white text-xs font-medium">LVL</span>
+              <span className="text-white text-xl font-bold">{userData.level}</span>
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-white font-semibold">Level {userData.level}</p>
+              <p className="text-blue-200 text-xs">
+                {userData.xp?.toLocaleString() || 0} XP total
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-blue-200 text-xs">View Progress →</span>
+            </div>
+          </button>
+
+          {/* Driving Score Card */}
+          <button 
+            onClick={() => setShowDrivingScore(true)}
+            className={`w-full rounded-xl p-4 flex items-center gap-4 shadow-lg ${
+              userPlan === 'premium' 
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-500' 
+                : 'bg-gradient-to-r from-slate-600 to-slate-700'
+            }`}
+            data-testid="profile-driving-score"
+          >
+            <div className={`w-14 h-14 rounded-full flex flex-col items-center justify-center ${
+              userPlan === 'premium' ? 'bg-white/20' : 'bg-amber-500/30'
+            }`}>
+              <Shield className="text-white" size={24} />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="flex items-center gap-2">
+                <p className="text-white font-semibold">Driving Score</p>
+                {userPlan !== 'premium' && (
+                  <span className="bg-amber-500 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    PREMIUM
+                  </span>
+                )}
+              </div>
+              <p className={`text-xs ${userPlan === 'premium' ? 'text-emerald-200' : 'text-slate-400'}`}>
+                {userPlan === 'premium' ? 'View detailed insights & Orion tips' : 'Unlock with Premium'}
+              </p>
+            </div>
+            <div className="text-right">
+              <span className={`text-xs ${userPlan === 'premium' ? 'text-emerald-200' : 'text-amber-400'}`}>
+                {userPlan === 'premium' ? 'View →' : 'Upgrade →'}
+              </span>
+            </div>
+          </button>
+
+          {/* Weekly Recap Card (Premium) */}
+          <button 
+            onClick={() => setShowWeeklyRecap(true)}
+            className={`w-full rounded-xl p-4 flex items-center gap-4 shadow-lg ${
+              userPlan === 'premium' 
+                ? 'bg-gradient-to-r from-purple-500 to-pink-500' 
+                : 'bg-gradient-to-r from-slate-600 to-slate-700'
+            }`}
+            data-testid="profile-weekly-recap"
+          >
+            <div className={`w-14 h-14 rounded-full flex flex-col items-center justify-center ${
+              userPlan === 'premium' ? 'bg-white/20' : 'bg-amber-500/30'
+            }`}>
+              <Trophy className="text-yellow-300" size={24} />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="flex items-center gap-2">
+                <p className="text-white font-semibold">Weekly Recap</p>
+                {userPlan !== 'premium' && (
+                  <span className="bg-amber-500 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    PREMIUM
+                  </span>
+                )}
+              </div>
+              <p className={`text-xs ${userPlan === 'premium' ? 'text-purple-200' : 'text-slate-400'}`}>
+                {userPlan === 'premium' ? 'View your week in review' : 'Unlock with Premium'}
+              </p>
+            </div>
+            <div className="text-right">
+              <span className={`text-xs ${userPlan === 'premium' ? 'text-purple-200' : 'text-amber-400'}`}>
+                {userPlan === 'premium' ? 'View →' : 'Upgrade →'}
+              </span>
+            </div>
+          </button>
+
+          {/* My Car Card */}
+          <button 
+            onClick={() => setShowCarStudio(true)}
+            className="w-full bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-4 flex items-center gap-4 shadow-lg"
+            data-testid="profile-my-car"
+          >
+            <div className="w-16 h-12 flex items-center justify-center">
+              <ProfileCar 
+                category={userCar.category as any}
+                color={userCar.color as any}
+                size={64}
+              />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-white font-semibold">My Car</p>
+              <p className="text-slate-400 text-xs">
+                {CAR_COLORS[userCar.color as keyof typeof CAR_COLORS]?.name || 'Custom'} {userCar.category}
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-amber-400 text-xs">Customize →</span>
+            </div>
+          </button>
+
+          {[
+            { icon: Trophy, label: 'Achievements', value: `${badges.filter(b => b.earned).length}/160 badges`, action: () => setShowBadgesGrid(true), color: 'bg-amber-100', iconColor: 'text-amber-500' },
+            { icon: Award, label: 'Community Badges', value: 'Help other drivers', action: () => setShowCommunityBadges(true), color: 'bg-purple-100', iconColor: 'text-purple-500' },
+            { icon: AlertTriangle, label: 'Road Reports', value: 'Report hazards', action: () => setShowRoadReports(true), color: 'bg-orange-100', iconColor: 'text-orange-500' },
+            { icon: Route, label: 'My Routes', value: `${routes.length} saved`, action: () => setActiveTab('routes'), color: 'bg-blue-100', iconColor: 'text-blue-500' },
+            { icon: History, label: 'Trip History', value: `${userData.total_trips} trips`, action: () => setShowTripHistory(true), color: 'bg-slate-100', iconColor: 'text-slate-500' },
+            { icon: Gem, label: 'Gem History', value: '+2,450 this month', action: () => setShowGemHistory(true), color: 'bg-cyan-100', iconColor: 'text-cyan-500' },
+            { icon: Users, label: 'Friends', value: `${userData.friends_count || 0} friends`, action: () => setShowFriendsHub(true), color: 'bg-green-100', iconColor: 'text-green-500' },
+          ].map((item, i) => (
+            <button key={i} onClick={item.action} data-testid={`profile-${item.label.toLowerCase().replace(' ', '-')}`}
+              className="w-full bg-white rounded-xl p-4 flex items-center gap-3 shadow-sm hover:shadow-md">
+              <div className={`w-10 h-10 ${item.color} rounded-xl flex items-center justify-center`}>
+                <item.icon className={item.iconColor} size={18} />
+              </div>
+              <div className="flex-1 text-left">
+                <p className="text-sm font-medium text-slate-900">{item.label}</p>
+                <p className="text-xs text-slate-500">{item.value}</p>
+              </div>
+              <ChevronRight className="text-slate-400" size={16} />
+            </button>
+          ))}
+          
+          {/* Share Last Trip Card */}
+          <button 
+            onClick={handleShareTrip} 
+            data-testid="share-trip-score-btn"
+            className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl p-4 flex items-center gap-3 shadow-lg hover:shadow-xl mt-3"
+          >
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+              <Share2 className="text-white" size={18} />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-sm font-semibold text-white">Share Trip Score</p>
+              <p className="text-xs text-blue-200">Show off your safe driving!</p>
+            </div>
+            <ChevronRight className="text-white/80" size={16} />
+          </button>
+        </div>
+      )}
+
+      {profileTab === 'score' && (
+        <div className="p-4">
+          <div className="bg-white rounded-xl p-6 shadow-sm">
+            <div className="flex justify-center mb-6">
+              <div className="relative w-32 h-32">
+                <svg className="w-full h-full -rotate-90">
+                  <circle cx="64" cy="64" r="56" stroke="#e2e8f0" strokeWidth="10" fill="none" />
+                  <circle cx="64" cy="64" r="56" 
+                    stroke={userData.safety_score >= 90 ? '#22c55e' : userData.safety_score >= 70 ? '#eab308' : '#ef4444'}
+                    strokeWidth="10" fill="none" strokeDasharray={`${(userData.safety_score / 100) * 352} 352`} strokeLinecap="round" />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-4xl font-bold text-slate-900">{userData.safety_score}</span>
+                  <span className="text-xs text-slate-500">Safety Score</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {[
+                { label: 'Speed', score: 92 },
+                { label: 'Braking', score: 85 },
+                { label: 'Acceleration', score: 88 },
+                { label: 'Phone Use', score: 78 },
+              ].map((cat, i) => (
+                <div key={i}>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-sm text-slate-600">{cat.label}</span>
+                    <span className="text-sm font-medium text-slate-900">{cat.score}</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2">
+                    <div className={`h-2 rounded-full ${cat.score >= 90 ? 'bg-emerald-500' : cat.score >= 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                      style={{ width: `${cat.score}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {profileTab === 'fuel' && (
+        <div className="p-4">
+          {userData.is_premium ? (
+            <div className="bg-white rounded-xl p-6 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4">This Week</h3>
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-2xl font-bold text-slate-900">12.4</p>
+                  <p className="text-xs text-slate-500">Gallons</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-emerald-500">$43.20</p>
+                  <p className="text-xs text-slate-500">Spent</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-blue-500">28.4</p>
+                  <p className="text-xs text-slate-500">MPG</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl p-6 text-center">
+              <Lock className="mx-auto text-slate-400 mb-3" size={40} />
+              <h3 className="text-lg font-bold text-slate-900">Premium Feature</h3>
+              <p className="text-sm text-slate-500 mt-1">Upgrade to track fuel usage</p>
+              <button data-testid="upgrade-btn" onClick={() => toast('Upgrading...')}
+                className="mt-4 bg-blue-500 text-white px-6 py-2 rounded-lg text-sm font-medium">
+                Upgrade Now
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {profileTab === 'settings' && (
+        <div className="p-4 space-y-2">
+          {/* Plan Management Card */}
+          <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-4 mb-2">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-white font-semibold text-sm">Your Plan</p>
+                <div className="flex items-center gap-2 mt-1">
+                  {userData.is_premium ? (
+                    <span className="text-xs bg-gradient-to-r from-amber-400 to-orange-400 text-amber-900 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                      <Zap size={10} /> PREMIUM
+                    </span>
+                  ) : (
+                    <span className="text-xs bg-slate-600 text-slate-300 px-2 py-0.5 rounded-full font-medium">
+                      BASIC
+                    </span>
+                  )}
+                  <span className="text-slate-400 text-xs">
+                    {userData.is_premium ? '2× gems' : '1× gems'}
+                  </span>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowPlanSelection(true)}
+                data-testid="change-plan-btn"
+                className="bg-blue-500 hover:bg-blue-400 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+              >
+                {userData.is_premium ? 'Manage' : 'Upgrade'}
+              </button>
+            </div>
+          </div>
+          
+          {[
+            { icon: Bell, label: 'Notifications', id: 'notifications', desc: 'Manage alerts', action: () => setShowNotificationSettings(true) },
+            { icon: Volume2, label: 'Voice Settings', id: 'voice', desc: isMuted ? 'Muted' : 'Active', action: handleToggleVoice },
+            { icon: Layers, label: 'Map Widgets', id: 'widgets', desc: 'Customize display', action: () => setShowWidgetSettings(true) },
+            { icon: Fuel, label: 'Fuel Tracker', id: 'fuel', desc: 'Log fill-ups', action: () => setShowFuelTracker(true) },
+            { icon: HelpCircle, label: 'Help & Support', id: 'help', desc: 'Get assistance', action: () => setShowHelpSupport(true) },
+          ].map((item, i) => (
+            <button key={i} onClick={item.action} data-testid={`settings-${item.id}`}
+              className="w-full bg-white rounded-xl p-4 flex items-center gap-3 shadow-sm">
+              <item.icon className="text-slate-600" size={20} />
+              <div className="flex-1 text-left">
+                <p className="text-sm font-medium text-slate-900">{item.label}</p>
+                <p className="text-xs text-slate-500">{item.desc}</p>
+              </div>
+              <ChevronRight className="text-slate-400" size={16} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
+  // ==================== MODALS ====================
+
+  // Search Modal - Enhanced with backend API integration
+  const renderSearchModal = () => showSearch && (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-start justify-center pt-4" onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]) }}>
+      <div className="w-[95%] max-w-md bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
+        {/* Search Input */}
+        <div className="flex items-center gap-2 bg-slate-800 rounded-xl px-3 py-3 mb-3">
+          <Search className="text-slate-400" size={18} />
+          <input 
+            type="text" 
+            placeholder="Search destination..." 
+            autoFocus
+            value={searchQuery}
+            onChange={e => handleSearchChange(e.target.value)}
+            data-testid="search-modal-input"
+            className="flex-1 bg-transparent text-white text-sm outline-none" 
+          />
+          {searchQuery && (
+            <button onClick={() => { setSearchQuery(''); setSearchResults([]) }}>
+              <X className="text-slate-400" size={16} />
+            </button>
+          )}
+        </div>
+
+        {/* Loading Indicator */}
+        {isSearching && (
+          <div className="flex items-center justify-center py-4">
+            <div className="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" />
+            <span className="text-slate-400 text-sm ml-2">Searching...</span>
+          </div>
+        )}
+
+        {/* Search Results */}
+        {!isSearching && searchResults.length > 0 && (
+          <div className="space-y-2 max-h-64 overflow-y-auto mb-3">
+            {searchResults.map(result => (
+              <button 
+                key={result.id} 
+                onClick={() => handleSelectDestination(result)} 
+                data-testid={`search-result-${result.id}`}
+                className="w-full p-3 bg-slate-800 rounded-xl text-left hover:bg-slate-700 flex items-start gap-3 transition-colors"
+              >
+                <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <MapPin className="text-blue-400" size={14} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm font-medium truncate">{result.name}</p>
+                  <p className="text-slate-400 text-xs truncate">{result.address}</p>
+                </div>
+                {result.distance_km && (
+                  <span className="text-slate-500 text-xs flex-shrink-0">{result.distance_km} km</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Quick Places (shown when no search query) */}
+        {!searchQuery && (
+          <>
+            <p className="text-slate-400 text-xs mb-2 px-1">Quick Places</p>
+            <div className="space-y-2">
+              {['Home', 'Work', 'Gym', 'School'].map(place => (
+                <button key={place} onClick={() => { handleStartNavigation(place); setShowSearch(false) }} data-testid={`search-${place.toLowerCase()}`}
+                  className="w-full p-3 bg-slate-800 rounded-xl text-left hover:bg-slate-700 flex items-center gap-3 transition-colors">
+                  <div className="w-8 h-8 bg-slate-700 rounded-lg flex items-center justify-center">
+                    {place === 'Home' ? <Home className="text-blue-400" size={14} /> : 
+                     place === 'Work' ? <Briefcase className="text-green-400" size={14} /> :
+                     place === 'Gym' ? <Dumbbell className="text-purple-400" size={14} /> :
+                     <School className="text-amber-400" size={14} />}
+                  </div>
+                  <span className="text-white text-sm">{place}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* No Results */}
+        {!isSearching && searchQuery && searchResults.length === 0 && (
+          <div className="text-center py-4">
+            <p className="text-slate-400 text-sm">No locations found</p>
+            <p className="text-slate-500 text-xs mt-1">Try a different search term</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  // Notifications Modal
+  const renderNotificationsModal = () => showNotifications && (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-start justify-center pt-20" onClick={() => setShowNotifications(false)}>
+      <div className="w-80 bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
+        <h3 className="text-white font-semibold mb-3">Notifications</h3>
+        <div className="space-y-2">
+          {[
+            { title: 'New offer nearby!', desc: 'Shell Gas - 10¢/gal off', time: '2m ago' },
+            { title: 'Safety score up!', desc: 'You reached 87 points', time: '1h ago' },
+            { title: 'Badge earned', desc: 'Night Owl unlocked!', time: '2h ago' },
+          ].map((n, i) => (
+            <div key={i} className="p-3 bg-slate-800 rounded-xl">
+              <p className="text-white text-sm font-medium">{n.title}</p>
+              <p className="text-slate-400 text-xs">{n.desc}</p>
+              <p className="text-slate-500 text-[10px] mt-1">{n.time}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  // Add Location Modal
+  const renderAddLocationModal = () => showAddLocation && (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowAddLocation(false)}>
+      <div className="w-full max-w-sm bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
+        <h3 className="text-white font-semibold mb-4">Add Location</h3>
+        <div className="space-y-3">
+          <input type="text" placeholder="Location name" value={newLocation.name}
+            onChange={e => setNewLocation({ ...newLocation, name: e.target.value })}
+            className="w-full bg-slate-800 rounded-xl px-3 py-2 text-white text-sm outline-none" />
+          <input type="text" placeholder="Address" value={newLocation.address}
+            onChange={e => setNewLocation({ ...newLocation, address: e.target.value })}
+            className="w-full bg-slate-800 rounded-xl px-3 py-2 text-white text-sm outline-none" />
+          <select value={newLocation.category} onChange={e => setNewLocation({ ...newLocation, category: e.target.value })}
+            className="w-full bg-slate-800 rounded-xl px-3 py-2 text-white text-sm outline-none">
+            <option value="home">Home</option>
+            <option value="work">Work</option>
+            <option value="gym">Gym</option>
+            <option value="school">School</option>
+            <option value="shopping">Shopping</option>
+            <option value="favorite">Favorite</option>
+          </select>
+        </div>
+        <div className="flex gap-2 mt-4">
+          <button onClick={() => setShowAddLocation(false)} className="flex-1 bg-slate-700 text-white py-2 rounded-xl text-sm">Cancel</button>
+          <button onClick={handleAddLocation} data-testid="save-location-btn" className="flex-1 bg-blue-500 text-white py-2 rounded-xl text-sm">Save</button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // Add Route Modal
+  const renderAddRouteModal = () => showAddRoute && (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowAddRoute(false)}>
+      <div className="w-full max-w-sm bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
+        <h3 className="text-white font-semibold mb-4">Add Route</h3>
+        <div className="space-y-3">
+          <input type="text" placeholder="Route name" value={newRoute.name}
+            onChange={e => setNewRoute({ ...newRoute, name: e.target.value })}
+            className="w-full bg-slate-800 rounded-xl px-3 py-2 text-white text-sm outline-none" />
+          <input type="text" placeholder="Origin" value={newRoute.origin}
+            onChange={e => setNewRoute({ ...newRoute, origin: e.target.value })}
+            className="w-full bg-slate-800 rounded-xl px-3 py-2 text-white text-sm outline-none" />
+          <input type="text" placeholder="Destination" value={newRoute.destination}
+            onChange={e => setNewRoute({ ...newRoute, destination: e.target.value })}
+            className="w-full bg-slate-800 rounded-xl px-3 py-2 text-white text-sm outline-none" />
+          <input type="time" value={newRoute.departure_time}
+            onChange={e => setNewRoute({ ...newRoute, departure_time: e.target.value })}
+            className="w-full bg-slate-800 rounded-xl px-3 py-2 text-white text-sm outline-none" />
+        </div>
+        <div className="flex gap-2 mt-4">
+          <button onClick={() => setShowAddRoute(false)} className="flex-1 bg-slate-700 text-white py-2 rounded-xl text-sm">Cancel</button>
+          <button onClick={handleAddRoute} data-testid="save-route-btn" className="flex-1 bg-blue-500 text-white py-2 rounded-xl text-sm">Save</button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // Widget Settings Modal
+  const renderWidgetSettingsModal = () => showWidgetSettings && (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowWidgetSettings(false)}>
+      <div className="w-full max-w-sm bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
+        <h3 className="text-white font-semibold mb-4">Map Widgets</h3>
+        <div className="space-y-3">
+          {Object.entries(widgets).map(([key, widget]) => (
+            <div key={key} className="flex items-center justify-between bg-slate-800 rounded-xl p-3">
+              <span className="text-white text-sm capitalize">{key} Widget</span>
+              <button onClick={() => toggleWidgetVisibility(key)} data-testid={`toggle-widget-${key}`}
+                className={`w-12 h-6 rounded-full transition-colors ${widget.visible ? 'bg-blue-500' : 'bg-slate-600'}`}>
+                <div className={`w-5 h-5 bg-white rounded-full transition-transform ${widget.visible ? 'translate-x-6' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <p className="text-slate-400 text-xs mt-3">💡 Tip: Drag widgets on the map to reposition them</p>
+        <button onClick={() => setShowWidgetSettings(false)} className="w-full bg-blue-500 text-white py-2 rounded-xl text-sm mt-4">Done</button>
+      </div>
+    </div>
+  )
+
+  // Offer Detail Modal
+  const renderOfferDetailModal = () => showOfferDetail && (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-end justify-center" onClick={() => setShowOfferDetail(null)}>
+      <div className="w-full max-w-md bg-white rounded-t-3xl p-4 animate-slide-up" onClick={e => e.stopPropagation()}>
+        <div className="w-12 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
+        <div className="flex items-center gap-3 mb-4">
+          <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${showOfferDetail.type === 'gas' ? 'bg-blue-500' : 'bg-orange-500'}`}>
+            {showOfferDetail.type === 'gas' ? <Fuel className="text-white" size={24} /> : <Coffee className="text-white" size={24} />}
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-slate-900">{showOfferDetail.name}</h3>
+            <p className="text-emerald-600 font-medium">{showOfferDetail.discount}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          <div className="bg-slate-100 rounded-xl p-2 text-center">
+            <p className="text-sm font-bold text-slate-900">{showOfferDetail.distance}</p>
+            <p className="text-[10px] text-slate-500">Distance</p>
+          </div>
+          <div className="bg-slate-100 rounded-xl p-2 text-center">
+            <p className="text-sm font-bold text-slate-900">⭐ {showOfferDetail.rating}</p>
+            <p className="text-[10px] text-slate-500">Rating</p>
+          </div>
+          <div className="bg-slate-100 rounded-xl p-2 text-center">
+            <p className="text-sm font-bold text-slate-900">{showOfferDetail.expires}</p>
+            <p className="text-[10px] text-slate-500">Expires</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => { handleStartNavigation(showOfferDetail.name); setShowOfferDetail(null) }} data-testid="navigate-to-offer"
+            className="flex-1 bg-slate-100 text-slate-900 py-3 rounded-xl font-medium flex items-center justify-center gap-2">
+            <Navigation size={16} /> Navigate
+          </button>
+          <button onClick={() => handleRedeemOffer(showOfferDetail.id)} data-testid="redeem-offer-btn"
+            className="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-medium">
+            Redeem for {showOfferDetail.gems}💎
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // Report Modal
+  const renderReportModal = () => showReportModal && (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-end justify-center" onClick={() => setShowReportModal(false)}>
+      <div className="w-full max-w-md bg-white rounded-t-3xl p-4 animate-slide-up" onClick={e => e.stopPropagation()}>
+        <div className="w-12 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
+        <h3 className="text-lg font-bold text-slate-900 mb-4">Report Hazard</h3>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { type: 'pothole', icon: '🕳️', gems: 15 },
+            { type: 'accident', icon: '🚗', gems: 50 },
+            { type: 'construction', icon: '🚧', gems: 10 },
+            { type: 'hazard', icon: '⚠️', gems: 25 },
+          ].map(r => (
+            <button key={r.type} onClick={() => handleReportIncident(r.type, r.gems)} data-testid={`report-${r.type}`}
+              className="bg-slate-100 rounded-xl p-4 text-center hover:bg-slate-200">
+              <span className="text-2xl">{r.icon}</span>
+              <p className="text-sm font-medium text-slate-900 capitalize mt-1">{r.type}</p>
+              <p className="text-xs text-emerald-500">+{r.gems}💎</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  // Family Member Modal
+  const renderFamilyMemberModal = () => showFamilyMember && (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowFamilyMember(null)}>
+      <div className="w-full max-w-sm bg-white rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
+        <div className="text-center mb-4">
+          <div className="w-16 h-16 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-2xl mx-auto mb-2">
+            {showFamilyMember.name[0]}
+          </div>
+          <h3 className="text-lg font-bold text-slate-900">{showFamilyMember.name}</h3>
+          <p className="text-sm text-slate-500">{showFamilyMember.location}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <div className="bg-slate-100 rounded-xl p-3 text-center">
+            <Battery size={16} className={`mx-auto ${showFamilyMember.battery < 30 ? 'text-red-500' : 'text-emerald-500'}`} />
+            <p className="text-sm font-bold text-slate-900 mt-1">{showFamilyMember.battery}%</p>
+          </div>
+          <div className="bg-slate-100 rounded-xl p-3 text-center">
+            <MapPin size={16} className="mx-auto text-blue-500" />
+            <p className="text-sm font-bold text-slate-900 mt-1">{showFamilyMember.distance}</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => handleCallMember(showFamilyMember)} data-testid="call-member-btn"
+            className="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2">
+            <Phone size={16} /> Call
+          </button>
+          <button onClick={() => handleMessageMember(showFamilyMember)} data-testid="message-member-btn"
+            className="flex-1 bg-blue-500 text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2">
+            <MessageCircle size={16} /> Message
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ==================== MAIN RENDER ====================
   return (
-    <div className="h-screen bg-slate-900 flex flex-col">
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
       {/* iPhone Frame */}
-      <div className="flex-1 flex items-center justify-center p-3">
-        <div className="w-full max-w-[390px] h-[calc(100vh-24px)] max-h-[844px] bg-black rounded-[44px] p-2 shadow-2xl flex flex-col">
-          {/* Notch */}
-          <div className="h-8 flex items-center justify-center relative">
-            <div className="w-28 h-6 bg-black rounded-full" />
-            <div className="absolute left-6 text-white text-[11px] font-medium">9:41</div>
-            <div className="absolute right-6 flex items-center gap-1">
-              <div className="text-white text-[10px]">5G</div>
-              <Battery className="text-white" size={16} />
+      <div className="w-full max-w-[390px] h-[844px] bg-black rounded-[55px] p-3 shadow-2xl relative overflow-hidden">
+        {/* Dynamic Island */}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 w-32 h-8 bg-black rounded-full z-50" />
+        
+        {/* Screen */}
+        <div className="w-full h-full bg-slate-900 rounded-[45px] overflow-hidden flex flex-col relative">
+          {/* Status Bar */}
+          <div className="h-12 bg-slate-900 flex items-end justify-between px-6 pb-1 text-white text-xs font-medium">
+            <span>9:41</span>
+            <div className="flex items-center gap-1">
+              <span>5G</span>
+              <Battery size={16} />
             </div>
           </div>
 
           {/* Content */}
-          <div className="flex-1 bg-white rounded-[36px] overflow-hidden flex flex-col">
-            {activeTab === 'map' && renderMap()}
-            {activeTab === 'offers' && renderOffers()}
-            {activeTab === 'engagement' && renderEngagement()}
-            {activeTab === 'live' && renderLive()}
-            {activeTab === 'profile' && renderProfile()}
+          {activeTab === 'map' && renderMap()}
+          {activeTab === 'routes' && renderRoutes()}
+          {activeTab === 'rewards' && renderRewards()}
+          {activeTab === 'profile' && renderProfile()}
 
-            {/* Bottom Nav */}
-            <div className="bg-white border-t border-slate-200 px-2 py-1.5 pb-5">
-              <div className="flex justify-around">
-                {([
-                  { key: 'map', icon: MapPin, label: 'Map' },
-                  { key: 'offers', icon: Gift, label: 'Offers' },
-                  { key: 'engagement', icon: Trophy, label: 'Engage' },
-                  { key: 'live', icon: Users, label: 'Live' },
-                  { key: 'profile', icon: User, label: 'Profile' },
-                ] as const).map(({ key, icon: Icon, label }) => (
-                  <button key={key} onClick={() => setActiveTab(key)}
-                    className={`flex flex-col items-center gap-0.5 min-w-[56px] ${activeTab === key ? 'text-blue-500' : 'text-slate-400'}`}>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${activeTab === key ? 'bg-blue-100' : ''}`}>
-                      <Icon size={18} />
-                    </div>
-                    <span className="text-[10px]">{label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* Bottom Navigation - 4 Tabs */}
+          <div className="h-20 bg-white border-t border-slate-200 flex items-start pt-2 px-4">
+            {[
+              { id: 'map', icon: MapPin, label: 'Map' },
+              { id: 'routes', icon: Route, label: 'Routes' },
+              { id: 'rewards', icon: Gift, label: 'Rewards' },
+              { id: 'profile', icon: Settings, label: 'Profile' },
+            ].map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id as TabType)} data-testid={`nav-${tab.id}`}
+                className={`flex-1 flex flex-col items-center py-1 ${activeTab === tab.id ? 'text-blue-500' : 'text-slate-400'}`}>
+                <tab.icon size={22} />
+                <span className="text-[11px] mt-0.5 font-medium">{tab.label}</span>
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
       {/* Modals */}
-      {/* Search Modal */}
-      {showSearch && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-start pt-20">
-          <div className="mx-4 w-full max-w-[358px] mx-auto bg-slate-800 rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-4">
-              <button onClick={() => setShowSearch(false)}><X className="text-white" size={24} /></button>
-              <input autoFocus placeholder="Search destination..." className="flex-1 bg-slate-700 text-white px-3 py-2 rounded-xl text-sm" />
-            </div>
-            <div className="space-y-2">
-              {['Home - 123 Main St', 'Work - Downtown Office', 'Gym - FitLife Center'].map((p, i) => (
-                <button key={i} onClick={() => { setShowSearch(false); handleStartNavigation(p.split(' - ')[0]) }}
-                  className="w-full flex items-center gap-2 p-2 rounded-xl hover:bg-slate-700 text-white text-sm">
-                  <MapPinned size={16} className="text-emerald-400" /> {p}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {showMenu && renderMenu()}
+      {renderSearchModal()}
+      {renderNotificationsModal()}
+      {renderAddLocationModal()}
+      {renderAddRouteModal()}
+      {renderWidgetSettingsModal()}
+      {renderOfferDetailModal()}
+      {renderReportModal()}
+      {renderFamilyMemberModal()}
+      
+      {/* New Feature Modals */}
+      <FriendsHub 
+        isOpen={showFriendsHub} 
+        onClose={() => setShowFriendsHub(false)} 
+        userId={userData.id || '123456'}
+        friendsCount={userData.friends_count || 0}
+      />
+      <Leaderboard 
+        isOpen={showLeaderboard} 
+        onClose={() => setShowLeaderboard(false)}
+        userId={userData.id || '123456'}
+        userGems={userData.gems || 0}
+      />
+      <BadgesGrid 
+        isOpen={showBadgesGrid} 
+        onClose={() => setShowBadgesGrid(false)}
+      />
+      <TripHistory
+        isOpen={showTripHistory}
+        onClose={() => setShowTripHistory(false)}
+      />
+      <GemHistory
+        isOpen={showGemHistory}
+        onClose={() => setShowGemHistory(false)}
+      />
+      <NotificationSettings
+        isOpen={showNotificationSettings}
+        onClose={() => setShowNotificationSettings(false)}
+      />
+      <HelpSupport
+        isOpen={showHelpSupport}
+        onClose={() => setShowHelpSupport(false)}
+      />
+      <FuelTracker
+        isOpen={showFuelTracker}
+        onClose={() => setShowFuelTracker(false)}
+        isPremium={userData.is_premium}
+      />
 
-      {/* Notifications Modal */}
-      {showNotifications && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-start pt-20">
-          <div className="mx-4 w-full max-w-[358px] mx-auto bg-slate-800 rounded-2xl p-4 max-h-96 overflow-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-semibold">Notifications</h3>
-              <button onClick={() => setShowNotifications(false)}><X className="text-white" size={24} /></button>
-            </div>
-            <div className="space-y-2">
-              {[
-                { title: 'New Badge!', desc: 'You earned "Night Owl"', icon: Trophy, time: '2m' },
-                { title: '+50 Gems', desc: 'Incident report verified', icon: Gem, time: '1h' },
-                { title: 'Offer Expiring', desc: 'Shell 10¢ off ends today', icon: Clock, time: '3h' },
-              ].map((n, i) => (
-                <button key={i} onClick={() => { toast(n.title); setShowNotifications(false) }}
-                  className="w-full flex items-start gap-2 p-2 rounded-xl hover:bg-slate-700 text-left">
-                  <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                    <n.icon size={14} className="text-emerald-400" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-white text-sm font-medium">{n.title}</p>
-                    <p className="text-slate-400 text-xs">{n.desc}</p>
-                  </div>
-                  <span className="text-slate-500 text-[10px]">{n.time}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Offer Detail Modal */}
-      {showOfferDetail && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-end">
-          <div className="w-full max-w-[390px] mx-auto bg-white rounded-t-3xl p-4 animate-slide-up">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">{showOfferDetail.name}</h3>
-                <p className="text-slate-500 text-sm">{showOfferDetail.distance} away</p>
-              </div>
-              <button onClick={() => setShowOfferDetail(null)}><X size={24} className="text-slate-400" /></button>
-            </div>
-            <div className="bg-gradient-to-r from-emerald-500 to-blue-500 rounded-xl p-3 text-white mb-4">
-              <p className="font-bold">{showOfferDetail.discount}</p>
-              <p className="text-xs opacity-80">Valid for {showOfferDetail.expires}</p>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => handleRedeem(showOfferDetail)}
-                className="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-medium flex items-center justify-center gap-1.5">
-                <Gem size={16} /> Redeem for {showOfferDetail.gems}
-              </button>
-              <button onClick={() => { handleStartNavigation(showOfferDetail.name); setShowOfferDetail(null) }}
-                className="bg-blue-500 text-white px-4 rounded-xl">
-                <Navigation size={18} />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Badge Detail Modal */}
-      {showBadgeDetail && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-6">
-          <div className="w-full max-w-[320px] bg-white rounded-2xl p-4">
-            <div className="flex justify-end"><button onClick={() => setShowBadgeDetail(null)}><X size={24} className="text-slate-400" /></button></div>
-            <div className={`w-20 h-20 mx-auto rounded-2xl flex items-center justify-center mb-3 ${showBadgeDetail.earned ? 'bg-blue-500' : 'bg-slate-200'}`}>
-              <Shield className={showBadgeDetail.earned ? 'text-white' : 'text-slate-400'} size={40} />
-            </div>
-            <h3 className="text-lg font-bold text-center text-slate-900">{showBadgeDetail.name}</h3>
-            <p className="text-sm text-slate-500 text-center mt-1">{showBadgeDetail.desc}</p>
-            <div className="mt-4">
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-600">Progress</span>
-                <span className="text-blue-500 font-medium">{showBadgeDetail.progress}%</span>
-              </div>
-              <div className="w-full bg-slate-100 rounded-full h-2">
-                <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${showBadgeDetail.progress}%` }} />
-              </div>
-            </div>
-            <p className="text-center text-emerald-500 text-sm font-medium mt-3">+{showBadgeDetail.gems} Gems</p>
-          </div>
-        </div>
-      )}
-
-      {/* Family Member Modal */}
-      {showFamilyMember && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-6">
-          <div className="w-full max-w-[320px] bg-white rounded-2xl p-4">
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-lg">
-                  {showFamilyMember.avatar}
-                </div>
+      {/* Comprehensive Analytics Dashboard */}
+      {showFuelDashboard && (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setShowFuelDashboard(false)}>
+          <div className="w-full max-w-md max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden animate-scale-in flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Header - Fixed */}
+            <div className="flex-shrink-0 bg-gradient-to-r from-emerald-600 to-teal-500 p-4 relative overflow-hidden">
+              <div className="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full" />
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-slate-900">{showFamilyMember.name}</h3>
-                  <span className={`text-xs ${showFamilyMember.status === 'driving' ? 'text-emerald-500' : showFamilyMember.status === 'parked' ? 'text-blue-500' : 'text-slate-400'}`}>
-                    {showFamilyMember.status === 'driving' ? `Driving ${showFamilyMember.speed} mph` : showFamilyMember.status === 'parked' ? 'Parked' : 'Offline'}
-                  </span>
+                  <h2 className="text-white font-bold text-xl">Driver Analytics</h2>
+                  <p className="text-emerald-100 text-sm">Your complete driving stats</p>
+                </div>
+                <button onClick={() => setShowFuelDashboard(false)} className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30" data-testid="fuel-dashboard-close">
+                  <X className="text-white" size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {/* Nearby Gas Prices */}
+              <div className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 rounded-xl p-4 mb-4 border border-amber-500/20">
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <Fuel className="text-amber-400" size={18} />
+                  Nearby Gas Prices
+                </h3>
+                <div className="space-y-2">
+                  {[
+                    { name: 'Shell - Polaris', price: 3.29, distance: '0.3 mi', isFavorite: true },
+                    { name: 'BP - Downtown', price: 3.35, distance: '0.8 mi', isFavorite: false },
+                    { name: 'Speedway - Campus', price: 3.19, distance: '1.2 mi', isFavorite: true },
+                  ].map((station, i) => (
+                    <div key={i} className="flex items-center justify-between bg-slate-800/50 rounded-lg p-2">
+                      <div className="flex items-center gap-2">
+                        {station.isFavorite && <Star className="text-amber-400" size={12} fill="#fbbf24" />}
+                        <div>
+                          <p className="text-white text-sm font-medium">{station.name}</p>
+                          <p className="text-slate-400 text-xs">{station.distance}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-emerald-400">${station.price.toFixed(2)}</p>
+                        <p className="text-slate-500 text-[10px]">/gal</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-slate-500 text-[10px] mt-2 text-center">⭐ Prices from your frequent stations</p>
+              </div>
+
+              {/* Main Stats Grid */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-xl p-3 border border-blue-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Shield className="text-blue-400" size={18} />
+                    <span className="text-slate-400 text-xs">Driver Score</span>
+                  </div>
+                  <p className="text-2xl font-bold text-white">{userData.safety_score || 85}</p>
+                  <p className="text-blue-400 text-xs">{(userData.safety_score || 85) >= 90 ? 'Excellent' : (userData.safety_score || 85) >= 70 ? 'Good' : 'Needs Work'}</p>
+                </div>
+                <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-600/20 rounded-xl p-3 border border-emerald-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <DollarSign className="text-emerald-400" size={18} />
+                    <span className="text-slate-400 text-xs">Money Saved</span>
+                  </div>
+                  <p className="text-2xl font-bold text-white">${(((userData.total_miles || 0) / 28.5) * 3.29 * 0.15).toFixed(0)}</p>
+                  <p className="text-emerald-400 text-xs">Eco driving @ $3.29/gal</p>
+                </div>
+                <div className="bg-gradient-to-br from-amber-500/20 to-amber-600/20 rounded-xl p-3 border border-amber-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Droplets className="text-amber-400" size={18} />
+                    <span className="text-slate-400 text-xs">Gallons Saved</span>
+                  </div>
+                  <p className="text-2xl font-bold text-white">{((userData.total_miles || 0) / 28.5 * 0.15).toFixed(1)}</p>
+                  <p className="text-amber-400 text-xs">15% eco bonus</p>
+                </div>
+                <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-xl p-3 border border-purple-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Leaf className="text-purple-400" size={18} />
+                    <span className="text-slate-400 text-xs">CO₂ Reduced</span>
+                  </div>
+                  <p className="text-2xl font-bold text-white">{((userData.total_miles || 0) * 0.41 * 0.15).toFixed(0)} lb</p>
+                  <p className="text-purple-400 text-xs">Environmental impact</p>
                 </div>
               </div>
-              <button onClick={() => setShowFamilyMember(null)}><X size={24} className="text-slate-400" /></button>
-            </div>
-            <div className="bg-slate-100 rounded-xl p-3 mb-4">
-              <p className="text-xs text-slate-500">Location</p>
-              <p className="text-sm font-medium text-slate-900">{showFamilyMember.location}</p>
-            </div>
-            <div className="flex gap-2 mb-4">
-              <div className="flex-1 bg-slate-100 rounded-xl p-2 text-center">
-                <Battery size={16} className={`mx-auto ${showFamilyMember.battery < 30 ? 'text-red-500' : 'text-slate-600'}`} />
-                <p className="text-xs font-medium text-slate-900">{showFamilyMember.battery}%</p>
+
+              {/* Driving Habits */}
+              <div className="bg-slate-800 rounded-xl p-4 mb-4">
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <Target className="text-blue-400" size={18} />
+                  Driving Habits
+                </h3>
+                <div className="space-y-3">
+                  {[
+                    { label: 'Smooth Braking', score: 92, color: 'bg-emerald-500' },
+                    { label: 'Steady Speed', score: 88, color: 'bg-blue-500' },
+                    { label: 'Safe Following', score: 95, color: 'bg-emerald-500' },
+                    { label: 'Night Driving', score: 78, color: 'bg-amber-500' },
+                    { label: 'Weather Driving', score: 85, color: 'bg-blue-500' },
+                  ].map((habit, i) => (
+                    <div key={i}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-slate-400 text-sm">{habit.label}</span>
+                        <span className="text-white text-sm font-medium">{habit.score}%</span>
+                      </div>
+                      <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div className={`h-full ${habit.color} rounded-full transition-all`} style={{ width: `${habit.score}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="flex-1 bg-slate-100 rounded-xl p-2 text-center">
-                <MapPin size={16} className="mx-auto text-slate-600" />
-                <p className="text-xs font-medium text-slate-900">{showFamilyMember.distance}</p>
+
+              {/* Trip Summary */}
+              <div className="bg-slate-800 rounded-xl p-4 mb-4">
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <Route className="text-emerald-400" size={18} />
+                  Trip Summary
+                </h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-white">{userData.total_trips || 0}</p>
+                    <p className="text-slate-400 text-xs">Total Trips</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-white">{userData.total_miles || 0}</p>
+                    <p className="text-slate-400 text-xs">Miles Driven</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-white">{((userData.total_miles || 0) / Math.max(userData.total_trips || 1, 1)).toFixed(1)}</p>
+                    <p className="text-slate-400 text-xs">Avg Distance</p>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="flex gap-2">
-              <button className="flex-1 bg-blue-500 text-white py-2 rounded-xl text-sm font-medium flex items-center justify-center gap-1">
-                <Phone size={14} /> Call
-              </button>
-              <button onClick={() => { handleStartNavigation(showFamilyMember.name + "'s location"); setShowFamilyMember(null) }}
-                className="flex-1 bg-emerald-500 text-white py-2 rounded-xl text-sm font-medium flex items-center justify-center gap-1">
-                <Navigation size={14} /> Navigate
-              </button>
+
+              {/* Fuel Stats */}
+              <div className="bg-slate-800 rounded-xl p-4">
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <Fuel className="text-amber-400" size={18} />
+                  Fuel Efficiency
+                </h3>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <p className="text-3xl font-bold text-white">28.5</p>
+                    <p className="text-slate-400 text-xs">Avg MPG</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-emerald-400 text-sm font-medium">+15% better</p>
+                    <p className="text-slate-500 text-xs">than avg driver</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => { setShowFuelDashboard(false); setShowFuelTracker(true) }}
+                  className="w-full bg-amber-500 text-white py-3 rounded-lg font-medium hover:bg-amber-400 transition-colors"
+                >
+                  Log Fuel Fill-Up
+                </button>
+              </div>
             </div>
           </div>
         </div>
+      )}
+      
+      {/* Road Reports & Community Features */}
+      <RoadReports
+        isOpen={showRoadReports}
+        onClose={() => setShowRoadReports(false)}
+        onCreateReport={handleCreateReport}
+        onUpvote={handleUpvoteReport}
+        currentUserId={userData.id || '123456'}
+      />
+      <CommunityBadges
+        isOpen={showCommunityBadges}
+        onClose={() => setShowCommunityBadges(false)}
+      />
+      <LevelProgress
+        isOpen={showLevelProgress}
+        onClose={() => setShowLevelProgress(false)}
+      />
+      
+      {/* Orion Voice & Quick Photo */}
+      <OrionVoice
+        isOpen={showOrionVoice}
+        onClose={() => setShowOrionVoice(false)}
+        onReportCreated={handleOrionReport}
+        isNavigating={isNavigating}
+        currentLocation={userLocation}
+      />
+      <QuickPhotoReport
+        isOpen={showQuickPhotoReport}
+        onClose={() => setShowQuickPhotoReport(false)}
+        onSubmit={handleQuickPhotoReport}
+        currentLocation={userLocation}
+        isMoving={isNavigating}
+        currentSpeed={currentSpeed}
+      />
+      
+      {/* Onboarding Modals */}
+      {showPlanSelection && (
+        <PlanSelection
+          onSelectPlan={handlePlanSelect}
+        />
+      )}
+      
+      {/* Car Customization Modals */}
+      {showCarOnboarding && (
+        <CarOnboarding
+          onComplete={handleCarOnboardingComplete}
+          onSkip={() => setShowCarOnboarding(false)}
+        />
       )}
 
-      {/* Report Modal */}
-      {showReportModal && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-end">
-          <div className="w-full max-w-[390px] mx-auto bg-white rounded-t-3xl p-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-slate-900">Report Incident</h3>
-              <button onClick={() => setShowReportModal(false)}><X size={24} className="text-slate-400" /></button>
+      {/* App Tour for New Users */}
+      {showAppTour && (
+        <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={() => setShowAppTour(false)}>
+          <div className="w-full max-w-sm max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden animate-scale-in flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Tour Header - Fixed */}
+            <div className="flex-shrink-0 bg-gradient-to-r from-blue-600 to-purple-600 p-5 relative">
+              <button 
+                onClick={() => setShowAppTour(false)}
+                className="absolute top-3 right-3 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30"
+                data-testid="tour-close-btn"
+              >
+                <X className="text-white" size={16} />
+              </button>
+              <div className="text-center">
+                <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-2">
+                  <Navigation className="text-white" size={28} />
+                </div>
+                <h2 className="text-white text-lg font-bold">Welcome to SnapRoad!</h2>
+                <p className="text-white/80 text-xs mt-1">Let's take a quick tour</p>
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+
+            {/* Tour Steps - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {[
-                { type: 'Accident', icon: '🚗', gems: 50 },
-                { type: 'Pothole', icon: '🕳️', gems: 15 },
-                { type: 'Police', icon: '👮', gems: 25 },
-                { type: 'Construction', icon: '🚧', gems: 20 },
-                { type: 'Hazard', icon: '⚠️', gems: 30 },
-                { type: 'Closure', icon: '🚫', gems: 40 },
-              ].map(r => (
-                <button key={r.type} onClick={() => handleReport(r.type)}
-                  className="bg-slate-100 rounded-xl p-3 text-center hover:bg-slate-200">
-                  <span className="text-2xl block mb-1">{r.icon}</span>
-                  <span className="text-xs font-medium text-slate-900">{r.type}</span>
-                  <span className="text-[10px] text-emerald-500 block">+{r.gems} 💎</span>
-                </button>
+                { icon: MapPin, title: 'Interactive Map', desc: 'Pinch to zoom, drag to pan. Find nearby offers!' },
+                { icon: Gem, title: 'Collect Gems', desc: 'Tap glowing gems on the map to redeem discounts' },
+                { icon: Mic, title: 'Meet Orion', desc: 'Your voice assistant - tap the purple mic button' },
+                { icon: Shield, title: 'Drive Safe', desc: 'Earn points for smooth braking and safe driving' },
+                { icon: Fuel, title: 'Track Analytics', desc: 'Monitor fuel, savings, and your driver score' },
+                { icon: Car, title: 'Customize Your Ride', desc: 'Unlock new colors and car styles as you level up' },
+                { icon: Trophy, title: 'Compete & Win', desc: 'Challenge friends and climb the leaderboard' },
+              ].map((step, i) => (
+                <div key={i} className="flex items-center gap-3 bg-slate-800 rounded-xl p-3">
+                  <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <step.icon className="text-blue-400" size={18} />
+                  </div>
+                  <div>
+                    <p className="text-white font-medium text-sm">{step.title}</p>
+                    <p className="text-slate-400 text-xs">{step.desc}</p>
+                  </div>
+                </div>
               ))}
+            </div>
+
+            {/* Start Button - Fixed */}
+            <div className="flex-shrink-0 p-4 border-t border-slate-800 bg-slate-900/95">
+              <button
+                onClick={() => setShowAppTour(false)}
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg"
+                data-testid="tour-start-btn"
+              >
+                <Check size={20} />
+                Start Driving!
+              </button>
             </div>
           </div>
         </div>
       )}
+      
+      <CarStudio
+        isOpen={showCarStudio}
+        onClose={() => setShowCarStudio(false)}
+        currentCar={userCar}
+        gems={userData.gems}
+        ownedColors={ownedColors}
+        onPurchaseColor={handlePurchaseColor}
+        onChangeCar={handleCarChange}
+      />
+      
+      {/* Offers Modal */}
+      <OffersModal
+        isOpen={showOffersModal}
+        onClose={() => {
+          setShowOffersModal(false)
+          setSelectedOfferId(null)
+        }}
+        userPlan={userPlan}
+        onRedeem={handleRedeemOffer}
+        selectedOfferId={selectedOfferId}
+      />
+      
+      {/* Share Trip Score Modal */}
+      <ShareTripScore
+        isOpen={showShareTrip}
+        onClose={() => setShowShareTrip(false)}
+        tripData={lastTripData}
+        userName={userData.name || 'Driver'}
+        userLevel={userData.level || 1}
+      />
+      
+      {/* Driving Score Modal (Premium Feature) */}
+      <DrivingScore
+        isOpen={showDrivingScore}
+        onClose={() => setShowDrivingScore(false)}
+        isPremium={userPlan === 'premium'}
+        onUpgrade={() => {
+          setShowDrivingScore(false)
+          setShowPlanSelection(true)
+        }}
+      />
+      
+      {/* Challenge History Modal */}
+      <ChallengeHistory
+        isOpen={showChallengeHistory}
+        onClose={() => setShowChallengeHistory(false)}
+      />
+      
+      {/* Redemption Popup with Geofenced QR */}
+      <RedemptionPopup
+        isOpen={showRedemptionPopup}
+        onClose={() => {
+          setShowRedemptionPopup(false)
+          setSelectedOfferForRedemption(null)
+        }}
+        offer={selectedOfferForRedemption}
+        userPlan={userPlan}
+        userLocation={userLocation}
+        onRedeem={handleRedeemOffer}
+      />
+      
+      {/* Weekly Recap (Premium) */}
+      <WeeklyRecap
+        isOpen={showWeeklyRecap}
+        onClose={() => setShowWeeklyRecap(false)}
+        isPremium={userPlan === 'premium'}
+      />
+      
+      {/* Orion Offer Alerts (during navigation) */}
+      <OrionOfferAlerts
+        isNavigating={isNavigating}
+        userLocation={userLocation}
+        offers={offers}
+        onOfferSelect={handleDirectRedemption}
+        isPremium={userPlan === 'premium'}
+      />
     </div>
   )
 }
