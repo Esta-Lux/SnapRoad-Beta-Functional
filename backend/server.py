@@ -448,20 +448,105 @@ def reset_session():
         }
     }
 
+# ==================== AUTH MODELS ====================
+class SignupRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+# Simple user credentials store (mock - replace with real DB)
+user_credentials = {
+    "driver@snaproad.com": {"password": "password123", "user_id": "123456"}
+}
+
+@app.post("/api/auth/signup")
+def signup(request: SignupRequest):
+    """Register a new user account"""
+    global next_user_id
+    
+    # Check if email already exists
+    if request.email.lower() in user_credentials:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Validate email format (basic check)
+    if "@" not in request.email or "." not in request.email:
+        raise HTTPException(status_code=400, detail="Invalid email format")
+    
+    # Validate password length
+    if len(request.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
+    # Create new user
+    new_id = str(next_user_id)
+    next_user_id += 1
+    
+    # Store credentials
+    user_credentials[request.email.lower()] = {
+        "password": request.password,
+        "user_id": new_id
+    }
+    
+    # Create user profile
+    users_db[new_id] = create_new_user(new_id, request.name, request.email)
+    
+    return {
+        "success": True,
+        "message": "Account created successfully",
+        "data": {
+            "user_id": new_id,
+            "email": request.email,
+            "name": request.name,
+            "token": f"mock_token_{new_id}"  # Mock token - replace with JWT in production
+        }
+    }
+
 @app.post("/api/auth/login")
-def mock_login(role: str = "driver"):
-    """Mock login - resets driver state for clean testing experience"""
-    # Always reset driver user for fresh experience
+def login(request: LoginRequest = None, role: str = None):
+    """Login with email/password or role-based mock login"""
+    global current_user_id
+    
+    # If request body provided, do actual login
+    if request and request.email:
+        email_lower = request.email.lower()
+        
+        if email_lower not in user_credentials:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+        stored = user_credentials[email_lower]
+        if stored["password"] != request.password:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+        user_id = stored["user_id"]
+        current_user_id = user_id
+        user = users_db.get(user_id, {})
+        
+        return {
+            "success": True,
+            "message": "Login successful",
+            "data": {
+                "user_id": user_id,
+                "name": user.get("name", "Driver"),
+                "email": request.email,
+                "token": f"mock_token_{user_id}",
+                "is_premium": user.get("is_premium", False)
+            }
+        }
+    
+    # Legacy mock login for testing
     if role == "driver":
         reset_default_user()
     
     return {
         "success": True,
-        "message": f"Logged in as {role}",
+        "message": f"Logged in as {role or 'driver'}",
         "data": {
-            "role": role,
-            "user_id": current_user_id if role == "driver" else f"{role}_user",
-            "fresh_state": role == "driver"
+            "role": role or "driver",
+            "user_id": current_user_id if (role == "driver" or not role) else f"{role}_user",
+            "fresh_state": role == "driver" or not role
         }
     }
 
