@@ -1,4 +1,5 @@
 // SnapRoad Mobile - Offers Screen
+// Browse and filter local offers
 
 import React, { useState } from 'react';
 import {
@@ -8,15 +9,22 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useOffersStore, useUserStore } from '../store';
 import { Colors, Spacing, BorderRadius, FontSizes, FontWeights } from '../utils/theme';
-import { Card, Badge, GemDisplay } from '../components/ui';
+import { Card, GemDisplay, Badge } from '../components/ui';
+import { useOffersStore, useUserStore } from '../store';
 import { Offer } from '../types';
 
-const OFFER_CATEGORIES = [
+const { width } = Dimensions.get('window');
+
+interface OffersScreenProps {
+  navigation: any;
+}
+
+const categories = [
   { id: 'all', label: 'All', icon: 'grid' },
   { id: 'gas', label: 'Gas', icon: 'car' },
   { id: 'cafe', label: 'Cafe', icon: 'cafe' },
@@ -25,16 +33,16 @@ const OFFER_CATEGORIES = [
   { id: 'retail', label: 'Retail', icon: 'bag' },
 ];
 
-export const OffersScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+export const OffersScreen: React.FC<OffersScreenProps> = ({ navigation }) => {
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const { offers } = useOffersStore();
   const { user } = useUserStore();
-  const [selectedCategory, setSelectedCategory] = useState('all');
 
   const filteredOffers = selectedCategory === 'all'
     ? offers
-    : offers.filter((o) => o.businessType === selectedCategory);
+    : offers.filter(o => o.businessType === selectedCategory);
 
-  const getOfferIcon = (type: string): keyof typeof Ionicons.glyphMap => {
+  const getOfferIcon = (type: string) => {
     const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
       gas: 'car',
       cafe: 'cafe',
@@ -56,127 +64,135 @@ export const OffersScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     return colors[type] || Colors.primary;
   };
 
-  const renderOffer = ({ item }: { item: Offer }) => (
-    <TouchableOpacity
-      style={styles.offerCard}
-      onPress={() => navigation.navigate('OfferDetail', { offer: item })}
-    >
-      <View style={styles.offerCardContent}>
-        <View style={[styles.offerIcon, { backgroundColor: `${getOfferColor(item.businessType)}20` }]}>
-          <Ionicons name={getOfferIcon(item.businessType)} size={24} color={getOfferColor(item.businessType)} />
+  const renderCategory = ({ item }: { item: typeof categories[0] }) => {
+    const isSelected = selectedCategory === item.id;
+    return (
+      <TouchableOpacity
+        style={[styles.categoryTab, isSelected && styles.categoryTabActive]}
+        onPress={() => setSelectedCategory(item.id)}
+      >
+        <View style={[styles.categoryIcon, isSelected && styles.categoryIconActive]}>
+          <Ionicons
+            name={item.icon as any}
+            size={20}
+            color={isSelected ? Colors.primary : Colors.textSecondary}
+          />
         </View>
+        <Text style={[styles.categoryLabel, isSelected && styles.categoryLabelActive]}>
+          {item.label}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
-        <View style={styles.offerInfo}>
-          <View style={styles.offerHeader}>
-            <Text style={styles.offerName} numberOfLines={1}>{item.businessName}</Text>
-            {user.isPremium && (
-              <View style={styles.premiumBadge}>
-                <Ionicons name="star" size={10} color={Colors.gold} />
+  const renderOffer = ({ item }: { item: Offer }) => {
+    const gemsCost = user.isPremium ? item.premiumGems : item.baseGems;
+    const color = getOfferColor(item.businessType);
+
+    return (
+      <TouchableOpacity
+        style={styles.offerCard}
+        onPress={() => navigation.navigate('OfferDetail', { offer: item })}
+        activeOpacity={0.8}
+      >
+        <View style={styles.offerContent}>
+          <View style={[styles.offerIcon, { backgroundColor: `${color}20` }]}>
+            <Ionicons name={getOfferIcon(item.businessType)} size={28} color={color} />
+          </View>
+          
+          <View style={styles.offerInfo}>
+            <Text style={styles.offerName}>{item.businessName}</Text>
+            <Text style={styles.offerDescription} numberOfLines={1}>
+              {item.description}
+            </Text>
+            <View style={styles.offerMeta}>
+              <View style={styles.distanceTag}>
+                <Ionicons name="location" size={12} color={Colors.textSecondary} />
+                <Text style={styles.distanceText}>{item.distance}</Text>
               </View>
-            )}
-          </View>
-          <Text style={styles.offerDescription} numberOfLines={1}>{item.description}</Text>
-          <View style={styles.offerMeta}>
-            <View style={styles.distanceBadge}>
-              <Ionicons name="location" size={12} color={Colors.textSecondary} />
-              <Text style={styles.distanceText}>{item.distance}</Text>
-            </View>
-            <View style={styles.gemBadge}>
-              <Ionicons name="diamond" size={12} color={Colors.gem} />
-              <Text style={styles.gemText}>
-                {user.isPremium ? item.premiumGems : item.baseGems}
-              </Text>
+              <View style={styles.gemsTag}>
+                <Ionicons name="diamond" size={12} color={Colors.gem} />
+                <Text style={styles.gemsText}>{gemsCost}</Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        <View style={styles.discountContainer}>
-          <LinearGradient
-            colors={[getOfferColor(item.businessType), `${getOfferColor(item.businessType)}cc`]}
-            style={styles.discountBadge}
-          >
-            <Text style={styles.discountText}>{item.discountPercent}%</Text>
-            <Text style={styles.discountLabel}>OFF</Text>
-          </LinearGradient>
+          <View style={styles.discountContainer}>
+            <LinearGradient colors={[color, `${color}cc`]} style={styles.discountBadge}>
+              <Text style={styles.discountText}>{item.discountPercent}%</Text>
+              <Text style={styles.discountLabel}>OFF</Text>
+            </LinearGradient>
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Nearby Offers</Text>
+        <View>
+          <Text style={styles.headerTitle}>Local Offers</Text>
+          <Text style={styles.headerSubtitle}>
+            {filteredOffers.length} offers near you
+          </Text>
+        </View>
         <GemDisplay amount={user.gems} />
       </View>
 
-      {/* Premium Banner */}
-      {!user.isPremium && (
-        <TouchableOpacity style={styles.premiumBanner}>
-          <LinearGradient
-            colors={Colors.gradientGold}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.premiumGradient}
-          >
-            <View style={styles.premiumContent}>
-              <Ionicons name="star" size={24} color={Colors.background} />
-              <View style={styles.premiumText}>
-                <Text style={styles.premiumTitle}>Upgrade to Premium</Text>
-                <Text style={styles.premiumSubtitle}>Get 2x gems on every offer!</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color={Colors.background} />
-          </LinearGradient>
-        </TouchableOpacity>
-      )}
+      {/* Search Bar */}
+      <TouchableOpacity style={styles.searchBar}>
+        <Ionicons name="search" size={20} color={Colors.textSecondary} />
+        <Text style={styles.searchPlaceholder}>Search offers...</Text>
+        <View style={styles.filterButton}>
+          <Ionicons name="options" size={18} color={Colors.primary} />
+        </View>
+      </TouchableOpacity>
 
       {/* Categories */}
-      <ScrollView
+      <FlatList
+        data={categories}
+        renderItem={renderCategory}
+        keyExtractor={(item) => item.id}
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={styles.categoriesContainer}
-        contentContainerStyle={styles.categoriesContent}
-      >
-        {OFFER_CATEGORIES.map((category) => (
-          <TouchableOpacity
-            key={category.id}
-            style={[
-              styles.categoryButton,
-              selectedCategory === category.id && styles.categoryButtonActive,
-            ]}
-            onPress={() => setSelectedCategory(category.id)}
-          >
-            <Ionicons
-              name={category.icon as any}
-              size={18}
-              color={selectedCategory === category.id ? Colors.text : Colors.textSecondary}
-            />
-            <Text
-              style={[
-                styles.categoryText,
-                selectedCategory === category.id && styles.categoryTextActive,
-              ]}
-            >
-              {category.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+        contentContainerStyle={styles.categoriesList}
+      />
+
+      {/* Featured Banner */}
+      <TouchableOpacity style={styles.featuredBanner}>
+        <LinearGradient
+          colors={Colors.gradientPrimary}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.featuredGradient}
+        >
+          <View style={styles.featuredContent}>
+            <Ionicons name="flash" size={24} color={Colors.gold} />
+            <View style={styles.featuredText}>
+              <Text style={styles.featuredTitle}>Premium Members Save More!</Text>
+              <Text style={styles.featuredSubtitle}>Get 2x gems on every offer</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color={Colors.text} />
+        </LinearGradient>
+      </TouchableOpacity>
 
       {/* Offers List */}
       <FlatList
         data={filteredOffers}
         renderItem={renderOffer}
         keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.offersList}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="search" size={48} color={Colors.textMuted} />
+            <Ionicons name="gift-outline" size={48} color={Colors.textMuted} />
             <Text style={styles.emptyTitle}>No offers found</Text>
-            <Text style={styles.emptySubtitle}>Try a different category</Text>
+            <Text style={styles.emptyDescription}>
+              Try changing the category or check back later
+            </Text>
           </View>
         }
       />
@@ -191,82 +207,117 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingTop: 60,
     paddingBottom: Spacing.md,
   },
-  title: {
+  headerTitle: {
     color: Colors.text,
-    fontSize: FontSizes.xxl,
+    fontSize: 24,
     fontWeight: FontWeights.bold,
   },
-
-  // Premium Banner
-  premiumBanner: {
+  headerSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.sm,
+    marginTop: 2,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    gap: Spacing.sm,
+  },
+  searchPlaceholder: {
+    flex: 1,
+    color: Colors.textSecondary,
+    fontSize: FontSizes.md,
+  },
+  filterButton: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    backgroundColor: `${Colors.primary}15`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoriesList: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  categoryTab: {
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.surface,
+    marginRight: Spacing.sm,
+  },
+  categoryTabActive: {
+    backgroundColor: `${Colors.primary}15`,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  categoryIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  categoryIconActive: {
+    backgroundColor: `${Colors.primary}20`,
+  },
+  categoryLabel: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.xs,
+    fontWeight: FontWeights.medium,
+  },
+  categoryLabelActive: {
+    color: Colors.primary,
+  },
+  featuredBanner: {
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
   },
-  premiumGradient: {
+  featuredGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: Spacing.md,
   },
-  premiumContent: {
+  featuredContent: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
   },
-  premiumText: {},
-  premiumTitle: {
-    color: Colors.background,
-    fontSize: FontSizes.md,
-    fontWeight: FontWeights.bold,
+  featuredText: {
+    flex: 1,
   },
-  premiumSubtitle: {
-    color: Colors.background,
+  featuredTitle: {
+    color: Colors.text,
+    fontSize: FontSizes.md,
+    fontWeight: FontWeights.semibold,
+  },
+  featuredSubtitle: {
+    color: Colors.text,
     fontSize: FontSizes.sm,
     opacity: 0.8,
   },
-
-  // Categories
-  categoriesContainer: {
-    marginBottom: Spacing.md,
-  },
-  categoriesContent: {
+  offersList: {
     paddingHorizontal: Spacing.lg,
-    gap: Spacing.sm,
-  },
-  categoryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.full,
-    marginRight: Spacing.sm,
-    gap: 6,
-  },
-  categoryButtonActive: {
-    backgroundColor: Colors.primary,
-  },
-  categoryText: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.sm,
-    fontWeight: FontWeights.medium,
-  },
-  categoryTextActive: {
-    color: Colors.text,
-  },
-
-  // Offers List
-  listContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.xxl,
+    paddingBottom: 100,
   },
   offerCard: {
     backgroundColor: Colors.surface,
@@ -274,54 +325,39 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     overflow: 'hidden',
   },
-  offerCardContent: {
+  offerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.md,
   },
   offerIcon: {
-    width: 52,
-    height: 52,
+    width: 56,
+    height: 56,
     borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: Spacing.md,
   },
   offerInfo: {
     flex: 1,
-    marginRight: Spacing.md,
-  },
-  offerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    marginLeft: Spacing.md,
   },
   offerName: {
     color: Colors.text,
     fontSize: FontSizes.md,
     fontWeight: FontWeights.semibold,
-    flex: 1,
-  },
-  premiumBadge: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: `${Colors.gold}30`,
-    alignItems: 'center',
-    justifyContent: 'center',
+    marginBottom: 2,
   },
   offerDescription: {
     color: Colors.textSecondary,
     fontSize: FontSizes.sm,
-    marginTop: 2,
+    marginBottom: 8,
   },
   offerMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
     gap: Spacing.md,
   },
-  distanceBadge: {
+  distanceTag: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -330,25 +366,28 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: FontSizes.xs,
   },
-  gemBadge: {
+  gemsTag: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    backgroundColor: `${Colors.gem}15`,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
   },
-  gemText: {
+  gemsText: {
     color: Colors.gem,
     fontSize: FontSizes.xs,
-    fontWeight: FontWeights.semibold,
+    fontWeight: FontWeights.medium,
   },
   discountContainer: {
-    alignItems: 'flex-end',
+    marginLeft: Spacing.sm,
   },
   discountBadge: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.md,
+    alignItems: 'center',
   },
   discountText: {
     color: Colors.text,
@@ -358,10 +397,8 @@ const styles = StyleSheet.create({
   discountLabel: {
     color: Colors.text,
     fontSize: FontSizes.xs,
-    opacity: 0.8,
+    opacity: 0.9,
   },
-
-  // Empty State
   emptyState: {
     alignItems: 'center',
     paddingVertical: Spacing.xxl,
@@ -372,9 +409,12 @@ const styles = StyleSheet.create({
     fontWeight: FontWeights.semibold,
     marginTop: Spacing.md,
   },
-  emptySubtitle: {
+  emptyDescription: {
     color: Colors.textSecondary,
     fontSize: FontSizes.md,
+    textAlign: 'center',
     marginTop: 4,
   },
 });
+
+export default OffersScreen;
