@@ -19,6 +19,7 @@ import BusinessDashboard from './pages/BusinessDashboard'
 import WelcomePage from './pages/WelcomePage'
 import PartnerDashboard from './pages/PartnerDashboard'
 import AdminDashboard from './pages/AdminDashboard'
+import DriverApp from './pages/DriverApp'
 
 // Protected route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -41,9 +42,8 @@ function App() {
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
         
-        {/* Driver App - Now a native mobile app (React Native) */}
-        {/* The /driver route is no longer needed - redirect to home */}
-        <Route path="/driver" element={<Navigate to="/" replace />} />
+        {/* Driver App - Web Preview (Full Flutter-style UI) */}
+        <Route path="/driver" element={<DriverApp />} />
         <Route path="/driver/auth" element={<AuthFlow />} />
         
         {/* Partner Portal - Separate URL for custom domain */}
