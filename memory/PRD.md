@@ -1,7 +1,7 @@
 # SnapRoad - Privacy-First Gamified Navigation App
 
 ## Product Overview
-SnapRoad is a privacy-first navigation app with gamified safety rewards. The project consists of a web preview/prototype with plans for native iOS migration, plus React Native mobile app scaffolding.
+SnapRoad is a privacy-first navigation app with gamified safety rewards. The project consists of a web preview/prototype, React Native mobile app, and reference Flutter/Node.js code.
 
 ## Current Architecture
 ```
@@ -13,50 +13,44 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. The pro
 │       ├── PartnerDashboard.tsx # Partner portal
 │       ├── AdminDashboard.tsx   # Admin console
 │       └── DriverApp/           # Full driver experience (27 components)
-├── snaproad-mobile/    # React Native (Expo) - UI scaffolding
+├── snaproad-mobile/    # React Native (Expo) - CONVERTED FROM FLUTTER ✅
+│   └── src/screens/    # 10 screens matching Flutter UI
 ├── snaproad-beta/      # Reference code (Flutter, Node.js)
 └── memory/             # Documentation
 ```
 
 ## Tech Stack
+### Web
 - **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS + Recharts
 - **Backend:** FastAPI (Python) with in-memory mock data
-- **Mobile:** React Native (Expo) - UI only with Zustand stores
 - **Maps:** OpenStreetMap/Carto dark tiles
 
-## App Routes
+### Mobile (React Native)
+- **Framework:** Expo SDK 52
+- **Navigation:** @react-navigation (Stack + Tabs)
+- **State:** Zustand stores
+- **UI:** Custom components + expo-linear-gradient
+- **Icons:** @expo/vector-icons (Ionicons)
+
+## Mobile App Screens (Flutter → React Native)
+| Screen | Description | Status |
+|--------|-------------|--------|
+| SplashScreen | Animated logo with pulsing rings | ✅ |
+| WelcomeScreen | 4-slide feature carousel | ✅ |
+| PlanSelectionScreen | Basic/Premium selection | ✅ |
+| CarSetupScreen | Vehicle type + color | ✅ |
+| MapScreen | Placeholder map (Expo Go compatible) | ✅ |
+| OffersScreen | Categorized offers with filters | ✅ |
+| RewardsScreen | Challenges/Badges/Car Studio tabs | ✅ |
+| ProfileScreen | Stats, trips, gas prices, settings | ✅ |
+| OfferDetailScreen | Redemption flow with QR code | ✅ |
+| LeaderboardScreen | Global/State/Friends rankings | ✅ |
+
+## Web App Routes
 - `/` - Welcome page with auth
 - `/driver` - Full Driver App experience
 - `/portal/partner` - Partner dashboard
-- `/portal/admin-sr2025secure` - Admin console (secret)
-
-## Completed Features
-
-### Driver App (Web)
-- ✅ Plan Selection (Basic/Premium)
-- ✅ Interactive Map with gems/offers
-- ✅ Car customization (Car Studio, 3D cars)
-- ✅ Orion Voice Assistant
-- ✅ Leaderboard with rankings
-- ✅ Badges & Challenges system
-- ✅ Road Reports & Status overlay
-- ✅ Fuel Tracker with gas prices
-- ✅ Weekly Recap & Trip History
-- ✅ QR Redemption popup
-- ✅ Friends Hub
-- ✅ Notification Settings
-- ✅ Help & Support
-
-### Partner Dashboard
-- ✅ Real-time analytics
-- ✅ Boost system with pricing
-- ✅ AI image generation for offers
-- ✅ Location management (multi-store)
-
-### Admin Dashboard
-- ✅ Platform analytics
-- ✅ Export/Import (JSON/CSV)
-- ✅ Create offers for businesses
+- `/portal/admin-sr2025secure` - Admin console
 
 ## API Endpoints
 
@@ -82,23 +76,43 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. The pro
 ## Remaining Work
 
 ### High Priority
-1. Database Integration (Supabase/PostgreSQL)
-2. Real Authentication (JWT)
-3. Stripe Payment Integration
-4. Real Maps/Navigation (Mapbox)
+1. Connect mobile app to real backend APIs
+2. Database Integration (Supabase/PostgreSQL)
+3. Real Authentication (JWT)
+4. Real Maps (Mapbox/Google Maps via EAS builds)
 
 ### Medium Priority
-5. Push Notifications (Firebase)
-6. Email Service (SendGrid)
-7. Real Analytics
+5. Stripe Payment Integration
+6. Push Notifications (Firebase)
+7. Email Service (SendGrid)
 
 ### Low Priority
-8. Native iOS Migration
-9. Android Build
-10. Performance optimization
+8. Native iOS/Android builds via EAS
+9. Performance optimization
+10. Offline mode
 
-## Sync History
-- **Feb 16, 2026:** Synced 27 components + 13 test files from `SnapRoad/SnapRoad-Functional`
+## Development Commands
+
+### Web App
+```bash
+# Frontend runs on port 3000
+cd /app/frontend && yarn start
+
+# Backend runs on port 8001
+cd /app/backend && python server.py
+```
+
+### Mobile App
+```bash
+cd /app/snaproad-mobile
+yarn install
+yarn start  # Scan QR with Expo Go
+```
+
+## Changelog
+- **Feb 16, 2026:** Converted Flutter UI to React Native (10 screens)
+- **Feb 16, 2026:** Synced 27 components + 13 test files from GitHub repo
+- **Feb 2026:** Initial web driver app with Partner/Admin dashboards
 
 ## Test Credentials
 - No real auth - any email/password works for mock login
