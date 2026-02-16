@@ -3,93 +3,51 @@
 ## Project Overview
 SnapRoad is a privacy-first, gamified navigation app. The project consists of:
 - **Web Frontend** (`/app/frontend`): React + Vite web application with full Driver App UI
-- **Mobile App** (`/app/snaproad-mobile`): React Native (Expo) mobile application
-- **Backend** (`/app/backend`): FastAPI server with mocked endpoints
+- **Mobile App** (`/app/snaproad-mobile`): React Native (Expo) mobile application - **COMPLETE UI REPLICA**
+- **Backend** (`/app/backend`): FastAPI server with comprehensive mocked endpoints
 - **Reference Code** (`/app/snaproad-beta`): PostgreSQL schema and Flutter specs
 
-## Core Features
+## What Was Completed (Dec 2025)
 
-### Implemented Features
+### Mobile App Complete UI Conversion
+All screens and modals from the web Driver App have been replicated in React Native:
 
-#### 1. Plan Selection Screen
-- Basic Plan ($0/mo): Manual rerouting, privacy navigation, auto-blur photos, local offers (6%), 1x gems
-- Premium Plan ($10.99/mo): Everything in Basic + auto rerouting, premium offers (18%), 2x gems, analytics, priority support
-- "Most Popular" badge on Premium
-- Founders pricing with 35% discount
-- Radio button selection UI
+#### Core Screens
+1. **Plan Selection Screen** - Basic/Premium plan selection with pricing, features
+2. **Car Onboarding Screen** - Vehicle type and color selection with progress indicators
+3. **Main App** - 4-tab navigation (Map, Routes, Rewards, Profile)
 
-#### 2. Car Onboarding Screen
-- Vehicle type selection (Sedan, SUV, Truck)
-- Color selection with free/locked colors
-- Progress bar (Step 1/2, Step 2/2)
-- Car preview with selected color
-- Gem pricing for locked colors
+#### Modals Implemented (`/app/snaproad-mobile/src/components/Modals.tsx`)
+1. **Road Reports Modal** - Create/view road hazard reports with upvoting
+2. **Quick Photo Modal** - Safety-aware photo reporting with passenger mode
+3. **Offers Full Modal** - Complete offers list with redemption flow
+4. **Trip History Modal** - Past trips with stats and filtering
+5. **Leaderboard Modal** - Rankings with podium, filters, and challenge buttons
+6. **Friends Hub Modal** - Friend list and search by 6-digit ID
 
-#### 3. Main Driver App (4 Tabs)
+#### Sub-Screens
+- **Map Tab**: Search bar, favorites/nearby pills, gem markers, Orion voice FAB
+- **Routes Tab**: Saved routes with day-of-week scheduling
+- **Rewards Tab**: Offers, Challenges, Badges, Car Studio sub-tabs
+- **Profile Tab**: Overview, Score, Fuel, Settings sub-tabs
+- **Side Menu**: Full navigation menu with user stats
 
-**Map Tab:**
-- Search bar with menu button and voice (Orion) button
-- Filter pills: Favorites, Nearby, Report, Photo
-- Quick locations: Home, Work, Add More
-- Dark themed map with street grid
-- Gem markers showing discount percentages
-- Car marker showing user location
-- Orion voice FAB (purple)
-- Camera FAB
-
-**Routes Tab:**
-- Saved routes list (max 20)
-- Route cards with name, time, distance
-- Day-of-week indicators
-- Active route badge
-- Add new route button
-
-**Rewards Tab (4 Sub-tabs):**
-- Offers: Leaderboard preview, View All Offers, nearby offers list
-- Challenges: Progress bars, gem/XP rewards, join button
-- Badges: Stats (earned/total), badge grid with icons
-- Car Studio: Current car preview, change color/vehicle options
-
-**Profile Tab (4 Sub-tabs):**
-- Overview: Avatar, level badge, premium tag, stats grid (gems, safety, miles, trips)
-- Score: Safety score circle, streak stats
-- Fuel: Fuel tracker card
-- Settings: Notifications, Privacy, Subscription, Help, About, Logout
-
-#### 4. Side Menu
-- User header with car icon, name, level, plan status
-- User ID card with friends count
-- Stats row (Gems, Score, Rank)
-- Menu sections: Social, Navigation, Rewards, Settings
-- Logout button
-
-#### 5. Modals
-- Search Modal: Location search
-- Orion Voice Modal: Voice command interface with quick commands
-
-### Backend Endpoints (Mocked)
-- `/api/auth/signup` - User registration
-- `/api/auth/login` - User login (driver@snaproad.com / password123)
-- `/api/user/profile` - User profile data
-- `/api/user/car` - Car customization
-- `/api/user/plan` - Plan selection
-- `/api/locations` - Saved locations CRUD
-- `/api/routes` - Saved routes CRUD
-- `/api/offers` - Nearby offers
-- `/api/badges` - User badges
-- `/api/challenges` - Active challenges
-- `/api/reports` - Road reports
+### Backend Endpoints (All Functional - Mocked Data)
+The backend has 80+ endpoints covering:
+- Authentication: `/api/auth/signup`, `/api/auth/login`
+- User: `/api/user/profile`, `/api/user/stats`, `/api/user/car`
+- Social: `/api/friends`, `/api/friends/search`, `/api/friends/add`
+- Rewards: `/api/badges`, `/api/offers`, `/api/challenges`
+- Navigation: `/api/routes`, `/api/locations`, `/api/navigation/*`
+- Reports: `/api/reports`, `/api/reports/my`, `/api/reports/{id}/upvote`
+- Leaderboard: `/api/leaderboard`
+- Analytics: `/api/analytics/*`
+- Partner Portal: `/api/partner/*`
+- Admin: `/api/admin/*`
 
 ## Technical Stack
 
-### Frontend (Web)
-- React 18 with TypeScript
-- Vite build tool
-- TailwindCSS styling
-- Lucide React icons
-- React Hot Toast notifications
-
-### Mobile (React Native)
+### Mobile (React Native - Expo)
 - Expo SDK 50
 - React Navigation 6
 - Expo Linear Gradient
@@ -97,42 +55,72 @@ SnapRoad is a privacy-first, gamified navigation app. The project consists of:
 - React Native Safe Area Context
 - Zustand state management
 
+### Frontend (Web)
+- React 18 with TypeScript
+- Vite build tool
+- TailwindCSS styling
+- Lucide React icons
+
 ### Backend
 - FastAPI (Python)
-- MongoDB (connection ready, currently mocked)
-- JWT token authentication (mocked)
+- MongoDB ready (currently mocked)
+- 160 badges, 100+ mock users
+- Comprehensive offer system
 
-## What Was Completed (Dec 2025)
+## File Structure
+```
+/app
+├── backend/
+│   ├── server.py          # FastAPI with 80+ endpoints
+│   └── requirements.txt
+├── frontend/
+│   └── src/pages/DriverApp/  # Web UI source
+├── snaproad-mobile/
+│   ├── App.tsx
+│   └── src/
+│       ├── screens/
+│       │   └── DriverApp.tsx  # Main app (1300+ lines)
+│       └── components/
+│           ├── Modals.tsx     # All modal components (1200+ lines)
+│           └── ui.tsx
+└── snaproad-beta/
+    └── database/schema.sql    # PostgreSQL reference schema
+```
 
-### Mobile App Complete Rewrite
-- Replicated entire web Driver App UI in React Native
-- Implemented Plan Selection screen matching web exactly
-- Implemented Car Onboarding screen with type/color selection
-- Implemented all 4 main tabs (Map, Routes, Rewards, Profile)
-- Implemented all sub-tabs within Rewards and Profile
-- Implemented Side Menu with full feature parity
-- Implemented Search Modal and Orion Voice Modal
-- Applied consistent dark theme styling
-- Added all test IDs for testing
+## Database Schema (Reference: `/app/snaproad-beta/database/schema.sql`)
+Key tables:
+- `users` - User accounts with subscription info
+- `vehicles` - User vehicle information
+- `trips` - Trip history with safety scores
+- `trip_events` - Driving events (speeding, braking, etc.)
+- `incidents` - Road reports with photos
+- `rewards` - User gems and streaks
+- `reward_transactions` - Gem earning/spending history
+- `business_partners` - Local business accounts
+- `offers` - Partner offers with redemption tracking
+- `offer_redemptions` - User redemption history
+
+## Test Credentials
+- Email: `driver@snaproad.com`
+- Password: `password123`
+- User ID: `123456`
 
 ## Pending Tasks
 
 ### P1 - Backend Database Integration
-- Connect FastAPI to MongoDB
-- Implement real user authentication with JWT
-- Migrate from mock data to database queries
-- Use schema from `/app/snaproad-beta/database/schema.sql` as reference
+- Connect FastAPI to MongoDB/PostgreSQL
+- Migrate from mock data to real database queries
+- Implement proper JWT authentication
 
 ### P2 - Mobile ↔ Backend Connection
-- Wire up React Native app to live backend APIs
-- Implement API service layer with proper error handling
-- Add offline support / caching
+- Create API service layer in React Native
+- Connect all modals to live endpoints
+- Add offline support/caching
 
 ### P3 - Additional Features
-- Implement remaining modals (Road Reports, Quick Photo, Offers, etc.)
 - Real map integration (Mapbox/Google Maps)
+- Camera integration for photo reports
 - Push notifications
-- Trip tracking and safety scoring
 
 ## Future / Backlog
 
@@ -144,75 +132,60 @@ SnapRoad is a privacy-first, gamified navigation app. The project consists of:
 - Push notification service
 
 ### Features
-- Real-time navigation
+- Real-time navigation with turn-by-turn
 - Driver safety scoring algorithm
-- Social features (friends, leaderboards)
-- Achievement system
+- Live road condition updates
 - Fuel price tracking
-- Community road reports
+- Community moderation tools
 
-## File Structure
+## API Endpoints Summary
 
-```
-/app
-├── backend/
-│   ├── server.py          # FastAPI server (mocked endpoints)
-│   └── requirements.txt
-├── frontend/
-│   └── src/
-│       └── pages/
-│           └── DriverApp/  # Web UI source of truth
-│               ├── index.tsx
-│               └── components/
-│                   ├── BadgesGrid.tsx
-│                   ├── Car3D.tsx
-│                   ├── CarOnboarding.tsx
-│                   ├── CarStudioNew.tsx
-│                   ├── ChallengeHistory.tsx
-│                   ├── CommunityBadges.tsx
-│                   ├── DrivingScore.tsx
-│                   ├── FriendsHub.tsx
-│                   ├── FuelTracker.tsx
-│                   ├── GemHistory.tsx
-│                   ├── HelpSupport.tsx
-│                   ├── InteractiveMap.tsx
-│                   ├── Leaderboard.tsx
-│                   ├── LevelProgress.tsx
-│                   ├── NotificationSettings.tsx
-│                   ├── OffersModal.tsx
-│                   ├── OrionOfferAlerts.tsx
-│                   ├── OrionVoice.tsx
-│                   ├── PlanSelection.tsx
-│                   ├── QuickPhotoReport.tsx
-│                   ├── RedemptionPopup.tsx
-│                   ├── RoadReports.tsx
-│                   ├── RoadStatusOverlay.tsx
-│                   ├── ShareTripScore.tsx
-│                   ├── TripHistory.tsx
-│                   └── WeeklyRecap.tsx
-├── snaproad-mobile/
-│   ├── App.tsx
-│   ├── src/
-│   │   ├── screens/
-│   │   │   └── DriverApp.tsx  # Main mobile app (complete rewrite)
-│   │   ├── components/
-│   │   │   └── ui.tsx
-│   │   └── utils/
-│   │       └── theme.ts
-│   └── package.json
-└── snaproad-beta/
-    ├── database/
-    │   └── schema.sql      # PostgreSQL schema reference
-    └── mobile/             # Flutter specs (reference only)
-```
+### Core User APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/auth/signup | User registration |
+| POST | /api/auth/login | User login |
+| GET | /api/user/profile | Get user profile |
+| PUT | /api/user/profile | Update profile |
+| GET | /api/user/car | Get car config |
+| POST | /api/user/car | Update car |
 
-## Test Credentials
-- Email: `driver@snaproad.com`
-- Password: `password123`
-- User ID: `123456`
+### Social APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/friends | List friends |
+| GET | /api/friends/search | Search by ID |
+| POST | /api/friends/add | Add friend |
+| DELETE | /api/friends/{id} | Remove friend |
+| GET | /api/leaderboard | Rankings |
+
+### Rewards APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/badges | All badges |
+| GET | /api/offers | Nearby offers |
+| GET | /api/challenges | Active challenges |
+| POST | /api/challenges/{id}/accept | Join challenge |
+
+### Navigation APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/routes | Saved routes |
+| POST | /api/routes | Create route |
+| GET | /api/locations | Saved locations |
+| POST | /api/locations | Save location |
+
+### Reports APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/reports | Nearby reports |
+| POST | /api/reports | Create report |
+| POST | /api/reports/{id}/upvote | Upvote report |
+| GET | /api/reports/my | My reports |
 
 ## Notes
-- All backend endpoints return mock data
+- All backend endpoints return mock data but follow real API structure
 - Premium discount is 18%, Basic is 6%
-- Color unlock prices range from 100-500 gems
-- Maximum 20 saved routes per user
+- 160 badges across 8 categories
+- Leaderboard supports state and time filtering
+- Road reports expire after 24-48 hours
