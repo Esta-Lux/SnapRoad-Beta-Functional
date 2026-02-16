@@ -19,13 +19,17 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. The pro
 │       ├── store/      # Zustand state (mock data)
 │       ├── components/ # Shared UI components
 │       └── navigation/ # React Navigation config
+├── snaproad-flutter/   # Flutter Driver App (Design Reference)
+│   └── lib/
+│       ├── core/       # Config, theme, router
+│       ├── features/   # Feature modules (auth, navigation, offers, etc.)
+│       └── shared/     # Models, providers, widgets
 └── memory/             # Handover documentation
 ```
 
-**Cleanup Completed (December 2025)**:
-- Removed old web-based driver app (`/frontend/src/pages/DriverApp/`)
-- Removed Flutter mobile scaffolding (`/snaproad-beta/`)
-- Updated routes - `/driver` now redirects to home (native app replaces web)
+**Mobile Options**:
+- **React Native (Expo)**: Full UI implemented with mock data, ready for API integration
+- **Flutter**: Scaffolding with theme, routing, and feature structure - use as design reference or alternative implementation
 
 ## Tech Stack
 
