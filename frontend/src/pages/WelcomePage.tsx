@@ -49,9 +49,9 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
       const data = await response.json()
       
       if (data.success) {
-        // Show success message - driver app is mobile only
-        alert(`${mode === 'signup' ? 'Account created!' : 'Login successful!'}\n\nThe SnapRoad driver app is mobile-only.\nPlease download the app from the App Store or Google Play to start driving.\n\nYour credentials:\nEmail: ${email}`)
+        // Navigate to driver app preview
         onClose()
+        navigate('/driver')
       } else {
         alert(data.message || data.detail || 'Authentication failed')
       }
