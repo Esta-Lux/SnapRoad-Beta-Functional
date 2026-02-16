@@ -135,6 +135,51 @@ Update `app.json`:
 
 ---
 
+## Phase 2: Apple Maps Setup (iOS Native Maps)
+
+### Why Apple Maps?
+- **Works with Expo Go** - No custom build needed for development
+- **No API key for map display** - Free map tiles on iOS
+- **Native performance** - Uses iOS MapKit under the hood
+- **Users stay in-app** - Map renders inside SnapRoad, not opening Apple Maps app
+
+### How It Works
+```
+┌─────────────────────────────────────────┐
+│           SnapRoad App                   │
+│  ┌─────────────────────────────────┐    │
+│  │     react-native-maps           │    │
+│  │     (Apple MapKit)              │    │
+│  │                                 │    │
+│  │  [Your custom UI overlays]      │    │
+│  │  [Custom markers]               │    │
+│  │  [Route polylines]              │    │
+│  └─────────────────────────────────┘    │
+│                                         │
+│  [Navigation Panel - Your Design]       │
+│  [Hazard Button - Your Design]          │
+└─────────────────────────────────────────┘
+```
+
+### For Directions & Search: Apple MapKit JS API
+
+To get turn-by-turn directions and search, you need the **Apple Maps Server API**.
+
+**PM Setup Required**:
+1. Go to https://developer.apple.com/account/
+2. Navigate to **Certificates, Identifiers & Profiles**
+3. Go to **Keys** → Create a new key
+4. Enable **MapKit JS**
+5. Download the key file (.p8)
+6. Note your:
+   - **Team ID** (from Membership page)
+   - **Key ID** (shown after creating key)
+   - **Private Key** (contents of .p8 file)
+
+These are used to generate JWT tokens for API requests.
+
+---
+
 ## Phase 2: API Service Layer
 
 ### Create `/app/snaproad-mobile/src/services/api.ts`:
