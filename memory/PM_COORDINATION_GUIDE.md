@@ -353,12 +353,14 @@ SNAPROAD:REDEEM:{offer_id}:{user_id}:{expiry_timestamp}:{signature}
 | Stripe Publishable Key | | ✅ | |
 | Stripe Webhook Secret | ✅ | | |
 | Stripe Price IDs | ✅ | | |
-| Mapbox Token | | ✅ | ✅ |
+| Apple MapKit JS Creds | | | ✅ (optional*) |
 | Expo Project ID | | | ✅ |
 | Gas Price API Key | ✅ | | |
 | SendGrid API Key | ✅ | | |
 | Apple Developer Creds | | | ✅ |
 | Google Play Creds | | | ✅ |
+
+*Apple MapKit JS credentials are only needed for directions/search APIs. Basic map display works without them.
 
 ---
 
