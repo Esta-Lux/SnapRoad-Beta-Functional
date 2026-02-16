@@ -57,12 +57,12 @@ export const Colors = {
   retail: '#D946EF',
   
   // Gradients (as arrays for LinearGradient)
-  gradientPrimary: ['#0EA5E9', '#06B6D4'] as const,
-  gradientAccent: ['#D946EF', '#EC4899'] as const,
-  gradientGold: ['#FBBF24', '#F59E0B'] as const,
-  gradientDark: ['#1E293B', '#0F172A'] as const,
-  gradientSuccess: ['#22C55E', '#10B981'] as const,
-};
+  gradientPrimary: ['#0EA5E9', '#06B6D4'],
+  gradientAccent: ['#D946EF', '#EC4899'],
+  gradientGold: ['#FBBF24', '#F59E0B'],
+  gradientDark: ['#1E293B', '#0F172A'],
+  gradientSuccess: ['#22C55E', '#10B981'],
+} as const;
 
 export const Spacing = {
   xs: 4,
