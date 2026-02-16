@@ -41,8 +41,9 @@ function App() {
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
         
-        {/* Driver App - Full mobile experience */}
-        <Route path="/driver" element={<DriverApp />} />
+        {/* Driver App - Now a native mobile app (React Native) */}
+        {/* The /driver route is no longer needed - redirect to home */}
+        <Route path="/driver" element={<Navigate to="/" replace />} />
         <Route path="/driver/auth" element={<AuthFlow />} />
         
         {/* Partner Portal - Separate URL for custom domain */}
