@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import toast from 'react-hot-toast'
+import { Toaster, toast } from 'sonner'
 import {
   MapPin, Gift, Trophy, Users, User, Search, Home, Briefcase, Bell, Menu, Mic,
   Navigation, ChevronRight, ChevronDown, Shield, Target, Settings, Camera,
