@@ -33,14 +33,34 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
     e.preventDefault()
     setLoading(true)
     
-    // Reset user state for fresh driver experience
-    await resetUserSession()
-    
-    // Navigate to driver app
-    navigate('/driver')
+    try {
+      // Actually call the signup/login API
+      const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login'
+      const body = mode === 'signup' 
+        ? { name, email, password }
+        : { email, password }
+      
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        // Show success message - driver app is mobile only
+        alert(`${mode === 'signup' ? 'Account created!' : 'Login successful!'}\n\nThe SnapRoad driver app is mobile-only.\nPlease download the app from the App Store or Google Play to start driving.\n\nYour credentials:\nEmail: ${email}`)
+        onClose()
+      } else {
+        alert(data.message || data.detail || 'Authentication failed')
+      }
+    } catch (error) {
+      console.error('Auth error:', error)
+      alert('Connection error. Please try again.')
+    }
     
     setLoading(false)
-    onClose()
   }
 
   if (!isOpen) return null
