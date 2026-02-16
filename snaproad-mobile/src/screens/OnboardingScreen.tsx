@@ -546,7 +546,6 @@ const styles = StyleSheet.create({
     backgroundColor: `${Colors.primary}10`,
   },
   carTypeEmoji: {
-    fontSize: 40,
     marginBottom: 8,
   },
   carTypeName: {
