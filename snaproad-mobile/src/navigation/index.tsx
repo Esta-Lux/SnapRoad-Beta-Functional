@@ -1,29 +1,34 @@
-// SnapRoad Mobile - Navigation
+// SnapRoad Mobile - Navigation Configuration
+// Stack + Tab navigation with Flutter-style flow
 
-import React from 'react';
+import React, { useState } from 'react';
+import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
-import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-
-import { Colors, BorderRadius } from '../utils/theme';
-import { useAppStore, useUserStore } from '../store';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors, BorderRadius, FontSizes, FontWeights } from '../utils/theme';
 
 // Screens
-import { OnboardingScreen } from '../screens/OnboardingScreen';
+import { SplashScreen } from '../screens/SplashScreen';
+import { WelcomeScreen } from '../screens/WelcomeScreen';
+import { PlanSelectionScreen } from '../screens/PlanSelectionScreen';
+import { CarSetupScreen } from '../screens/CarSetupScreen';
 import { MapScreen } from '../screens/MapScreen';
 import { OffersScreen } from '../screens/OffersScreen';
 import { RewardsScreen } from '../screens/RewardsScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
+import { OfferDetailScreen } from '../screens/OfferDetailScreen';
+import { LeaderboardScreen } from '../screens/LeaderboardScreen';
 
-// Create navigators
+import { useUserStore } from '../store';
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 // Custom theme
-const MyTheme = {
+const CustomTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
@@ -35,184 +40,170 @@ const MyTheme = {
   },
 };
 
-// Tab Bar Icon Component
-const TabIcon = ({ focused, icon }: { focused: boolean; icon: string }) => {
-  if (focused) {
-    return (
-      <LinearGradient
-        colors={Colors.gradientPrimary}
-        style={styles.activeTab}
-      >
-        <Ionicons name={icon as any} size={24} color={Colors.text} />
-      </LinearGradient>
-    );
-  }
-  return <Ionicons name={icon as any} size={24} color={Colors.textSecondary} />;
+// Custom Tab Bar
+const CustomTabBar = ({ state, descriptors, navigation }: any) => {
+  return (
+    <View style={tabStyles.container}>
+      <View style={tabStyles.tabBar}>
+        {state.routes.map((route: any, index: number) => {
+          const { options } = descriptors[route.key];
+          const isFocused = state.index === index;
+
+          const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
+            Map: 'map',
+            Offers: 'gift',
+            Rewards: 'trophy',
+            Profile: 'person',
+          };
+
+          const onPress = () => {
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              onPress={onPress}
+              style={tabStyles.tab}
+              activeOpacity={0.7}
+            >
+              {isFocused ? (
+                <LinearGradient
+                  colors={Colors.gradientPrimary}
+                  style={tabStyles.activeTab}
+                >
+                  <Ionicons name={icons[route.name]} size={22} color={Colors.text} />
+                  <Text style={tabStyles.activeLabel}>{route.name}</Text>
+                </LinearGradient>
+              ) : (
+                <View style={tabStyles.inactiveTab}>
+                  <Ionicons
+                    name={icons[route.name]}
+                    size={22}
+                    color={Colors.textSecondary}
+                  />
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
 };
 
-// Main Tab Navigator (matching Flutter structure)
+// Main Tabs Navigator
 const MainTabs = () => {
   return (
     <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarShowLabel: true,
-        tabBarLabelStyle: styles.tabLabel,
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.textSecondary,
       }}
     >
-      <Tab.Screen
-        name="Navigate"
-        component={MapScreen}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} icon={focused ? "map" : "map-outline"} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Trips"
-        component={OffersScreen}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} icon={focused ? "car" : "car-outline"} />
-          ),
-          tabBarLabel: 'Trips',
-        }}
-      />
-      <Tab.Screen
-        name="Rewards"
-        component={RewardsScreen}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} icon={focused ? "diamond" : "diamond-outline"} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} icon={focused ? "person" : "person-outline"} />
-          ),
-        }}
-      />
+      <Tab.Screen name="Map" component={MapScreen} />
+      <Tab.Screen name="Offers" component={OffersScreen} />
+      <Tab.Screen name="Rewards" component={RewardsScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
 };
 
-// Placeholder screens for navigation
-const OfferDetailScreen = () => <View style={{ flex: 1, backgroundColor: Colors.background }} />;
-const BadgeDetailScreen = () => <View style={{ flex: 1, backgroundColor: Colors.background }} />;
-const ChallengeDetailScreen = () => <View style={{ flex: 1, backgroundColor: Colors.background }} />;
-const TripDetailScreen = () => <View style={{ flex: 1, backgroundColor: Colors.background }} />;
-const SettingsScreen = () => <View style={{ flex: 1, backgroundColor: Colors.background }} />;
-const CarStudioScreen = () => <View style={{ flex: 1, backgroundColor: Colors.background }} />;
-const LeaderboardScreen = () => <View style={{ flex: 1, backgroundColor: Colors.background }} />;
-
-// Root Navigation
+// Main Navigation
 export const Navigation = () => {
-  const { showOnboarding } = useAppStore();
+  const [showSplash, setShowSplash] = useState(true);
   const { user } = useUserStore();
 
-  // Check if user needs onboarding
-  const needsOnboarding = showOnboarding && !user.onboardingComplete;
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
 
   return (
-    <NavigationContainer theme={MyTheme}>
+    <NavigationContainer theme={CustomTheme}>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: Colors.background },
+          animation: 'slide_from_right',
         }}
+        initialRouteName={user.onboardingComplete ? 'MainTabs' : 'Welcome'}
       >
-        {needsOnboarding ? (
-          <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-        ) : (
-          <>
-            <Stack.Screen name="MainApp" component={MainTabs} />
-            <Stack.Screen 
-              name="OfferDetail" 
-              component={OfferDetailScreen}
-              options={{
-                presentation: 'modal',
-                animation: 'slide_from_bottom',
-              }}
-            />
-            <Stack.Screen 
-              name="BadgeDetail" 
-              component={BadgeDetailScreen}
-              options={{
-                presentation: 'modal',
-                animation: 'slide_from_bottom',
-              }}
-            />
-            <Stack.Screen 
-              name="ChallengeDetail" 
-              component={ChallengeDetailScreen}
-              options={{
-                presentation: 'modal',
-              }}
-            />
-            <Stack.Screen 
-              name="TripDetail" 
-              component={TripDetailScreen}
-              options={{
-                presentation: 'modal',
-              }}
-            />
-            <Stack.Screen 
-              name="Settings" 
-              component={SettingsScreen}
-              options={{
-                animation: 'slide_from_right',
-              }}
-            />
-            <Stack.Screen 
-              name="CarStudio" 
-              component={CarStudioScreen}
-              options={{
-                presentation: 'modal',
-                animation: 'slide_from_bottom',
-              }}
-            />
-            <Stack.Screen 
-              name="Leaderboard" 
-              component={LeaderboardScreen}
-              options={{
-                presentation: 'modal',
-                animation: 'slide_from_bottom',
-              }}
-            />
-          </>
-        )}
+        {/* Onboarding Flow */}
+        <Stack.Screen name="Welcome" component={WelcomeScreen} />
+        <Stack.Screen name="PlanSelection" component={PlanSelectionScreen} />
+        <Stack.Screen name="CarSetup" component={CarSetupScreen} />
+        
+        {/* Main App */}
+        <Stack.Screen name="MainTabs" component={MainTabs} />
+        
+        {/* Detail Screens */}
+        <Stack.Screen 
+          name="OfferDetail" 
+          component={OfferDetailScreen}
+          options={{ animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen 
+          name="Leaderboard" 
+          component={LeaderboardScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
 };
 
-const styles = StyleSheet.create({
+const tabStyles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingBottom: 30,
+    paddingTop: 10,
+    backgroundColor: 'transparent',
+  },
   tabBar: {
+    flexDirection: 'row',
     backgroundColor: Colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: Colors.surfaceLight,
-    paddingTop: 8,
-    paddingBottom: 24,
-    height: 80,
+    borderRadius: BorderRadius.xl,
+    padding: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 10,
   },
-  tabLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    marginTop: 4,
-  },
-  activeTab: {
-    width: 48,
-    height: 32,
-    borderRadius: BorderRadius.md,
+  tab: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  activeTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: BorderRadius.lg,
+    gap: 6,
+  },
+  activeLabel: {
+    color: Colors.text,
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.semibold,
+  },
+  inactiveTab: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
 });
+
+export default Navigation;
