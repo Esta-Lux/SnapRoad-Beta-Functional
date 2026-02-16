@@ -50,7 +50,7 @@ const TabIcon = ({ focused, icon }: { focused: boolean; icon: string }) => {
   return <Ionicons name={icon as any} size={24} color={Colors.textSecondary} />;
 };
 
-// Main Tab Navigator
+// Main Tab Navigator (matching Flutter structure)
 const MainTabs = () => {
   return (
     <Tab.Navigator
@@ -64,31 +64,40 @@ const MainTabs = () => {
       }}
     >
       <Tab.Screen
-        name="Map"
+        name="Navigate"
         component={MapScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="map" />,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon focused={focused} icon={focused ? "map" : "map-outline"} />
+          ),
         }}
       />
       <Tab.Screen
-        name="Offers"
+        name="Trips"
         component={OffersScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="pricetag" />,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon focused={focused} icon={focused ? "car" : "car-outline"} />
+          ),
+          tabBarLabel: 'Trips',
         }}
       />
       <Tab.Screen
         name="Rewards"
         component={RewardsScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="trophy" />,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon focused={focused} icon={focused ? "diamond" : "diamond-outline"} />
+          ),
         }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="person" />,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon focused={focused} icon={focused ? "person" : "person-outline"} />
+          ),
         }}
       />
     </Tab.Navigator>
