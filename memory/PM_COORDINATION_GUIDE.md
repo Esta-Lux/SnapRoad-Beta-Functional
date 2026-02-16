@@ -400,14 +400,16 @@ SNAPROAD:REDEEM:{offer_id}:{user_id}:{expiry_timestamp}:{signature}
 |---------|-----------|---------------|
 | Supabase | 500MB DB, 1GB storage | $0 (dev) / $25 (prod) |
 | Stripe | No monthly fee | 2.9% + $0.30 per transaction |
-| Mapbox | 50K map loads | $0 (dev) / ~$50 (prod) |
+| Apple Maps | Unlimited map display | $0 (included in Dev Program) |
+| Apple MapKit JS | 250K service calls/day | $0 (included in Dev Program) |
 | Expo/EAS | Limited builds | $0 (dev) / ~$30 (prod) |
 | Apple Developer | N/A | $99/year |
 | Google Play | N/A | $25 one-time |
 | SendGrid | 100 emails/day | $0 (dev) / $15 (prod) |
 | CollectAPI | 100 requests/day | $0 (dev) / $10 (prod) |
 
-**Estimated Monthly (Production)**: ~$130 + transaction fees
+**Estimated Monthly (Production)**: ~$80 + transaction fees
+*(Lower than before since Apple Maps is included with Developer Program!)*
 
 ---
 
