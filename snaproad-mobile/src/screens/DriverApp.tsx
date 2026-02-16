@@ -1,5 +1,5 @@
-// SnapRoad Mobile - COMPLETE Flutter/Web UI Recreation
-// All screens matching the web app exactly
+// SnapRoad Mobile - Complete Driver App
+// Exact replica of web UI at /app/frontend/src/pages/DriverApp
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -12,33 +12,38 @@ import {
   TextInput,
   Modal,
   Animated,
-  StatusBar,
   FlatList,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');
 
 // ============================================
-// THEME - EXACT Colors from Flutter/Web UI
+// COLORS - Exact match from web UI
 // ============================================
 const Colors = {
   // Primary
   primary: '#3B82F6',
   primaryDark: '#2563EB',
   
-  // Accent  
+  // Accent colors
+  emerald: '#10B981',
+  teal: '#14B8A6',
   amber: '#F59E0B',
   orange: '#F97316',
   purple: '#8B5CF6',
+  pink: '#EC4899',
   green: '#22C55E',
   red: '#EF4444',
+  yellow: '#FBBF24',
   
-  // Dark theme backgrounds
+  // Dark theme
   background: '#0F172A',
-  backgroundDark: '#0B1120',
+  backgroundDark: '#020617',
   surface: '#1E293B',
   surfaceLight: '#334155',
   surfaceLighter: '#475569',
@@ -49,13 +54,13 @@ const Colors = {
   textSecondary: '#94A3B8',
   textMuted: '#64748B',
   
-  // Tab bar (white/light)
-  tabBarBg: '#F8FAFC',
+  // Tab bar
+  tabBarBg: '#FFFFFF',
   tabInactive: '#94A3B8',
   
   // Gems
   gem: '#A855F7',
-  gemBlue: '#3B82F6',
+  gemGreen: '#22C55E',
 };
 
 // ============================================
@@ -65,59 +70,147 @@ type AppScreen = 'planSelection' | 'carOnboarding' | 'main';
 type TabType = 'map' | 'routes' | 'rewards' | 'profile';
 type RewardsTab = 'offers' | 'challenges' | 'badges' | 'carstudio';
 type ProfileTab = 'overview' | 'score' | 'fuel' | 'settings';
-type LocationFilter = 'favorites' | 'nearby' | 'report';
+type LocationCategory = 'favorites' | 'nearby';
 
 interface UserData {
+  id: string;
   name: string;
   gems: number;
   level: number;
   xp: number;
   safety_score: number;
+  streak: number;
   total_miles: number;
   total_trips: number;
+  badges_earned_count: number;
+  rank: number;
   is_premium: boolean;
-  gem_multiplier: number;
+  member_since: string;
+  friends_count: number;
+  state: string;
   plan: 'basic' | 'premium' | null;
-  car: { category: string; variant: string; color: string };
+  gem_multiplier: number;
+  safe_drive_streak: number;
+  reports_posted: number;
+  reports_upvotes_received: number;
+}
+
+interface CarData {
+  category: string;
+  variant: string;
+  color: string;
+}
+
+interface SavedLocation {
+  id: number;
+  name: string;
+  address: string;
+  category: string;
+}
+
+interface SavedRoute {
+  id: number;
+  name: string;
+  origin: string;
+  destination: string;
+  departure_time: string;
+  days_active: string[];
+  estimated_time: number;
+  distance: number;
+  is_active: boolean;
+  notifications: boolean;
+}
+
+interface Offer {
+  id: number;
+  business_name: string;
+  business_type: string;
+  description: string;
+  discount_percent: number;
+  gems_reward: number;
+  distance: string;
+  expires_at: string;
+  is_premium_offer: boolean;
+  redeemed: boolean;
+}
+
+interface Challenge {
+  id: number;
+  title: string;
+  description: string;
+  progress: number;
+  goal: number;
+  gems: number;
+  xp: number;
+  type: string;
+  joined: boolean;
+  claimed: boolean;
+}
+
+interface Badge {
+  id: number;
+  name: string;
+  icon: string;
+  earned: boolean;
+  color: string;
+  description: string;
 }
 
 // ============================================
 // MOCK DATA
 // ============================================
 const initialUserData: UserData = {
+  id: '123456',
   name: 'Driver',
   gems: 0,
   level: 1,
   xp: 0,
   safety_score: 100,
+  streak: 0,
   total_miles: 0,
   total_trips: 0,
+  badges_earned_count: 0,
+  rank: 0,
   is_premium: false,
-  gem_multiplier: 1,
+  member_since: 'Dec 2025',
+  friends_count: 0,
+  state: 'OH',
   plan: null,
-  car: { category: 'sedan', variant: 'sedan-classic', color: 'ocean-blue' },
+  gem_multiplier: 1,
+  safe_drive_streak: 0,
+  reports_posted: 0,
+  reports_upvotes_received: 0,
 };
 
-const mockOffers = [
-  { id: 1, name: 'Shell', type: 'Gas Station', discount: 15, gems: 50, distance: '0.3 mi', color: 'blue' },
-  { id: 2, name: 'Starbucks', type: 'Coffee', discount: 100, gems: 75, distance: '0.5 mi', color: 'blue' },
-  { id: 3, name: 'Quick Clean', type: 'Car Wash', discount: 20, gems: 40, distance: '0.8 mi', color: 'green' },
-  { id: 4, name: 'Chipotle', type: 'Restaurant', discount: 25, gems: 60, distance: '1.2 mi', color: 'blue' },
+const mockOffers: Offer[] = [
+  { id: 1, business_name: 'Shell', business_type: 'gas', description: '15¢ off per gallon', discount_percent: 6, gems_reward: 50, distance: '0.3 mi', expires_at: '2025-12-31', is_premium_offer: false, redeemed: false },
+  { id: 2, business_name: 'Starbucks', business_type: 'cafe', description: 'Free drink upgrade', discount_percent: 18, gems_reward: 75, distance: '0.5 mi', expires_at: '2025-12-31', is_premium_offer: true, redeemed: false },
+  { id: 3, business_name: 'Quick Clean', business_type: 'carwash', description: '20% off wash', discount_percent: 6, gems_reward: 40, distance: '0.8 mi', expires_at: '2025-12-31', is_premium_offer: false, redeemed: false },
+  { id: 4, business_name: 'Chipotle', business_type: 'restaurant', description: 'Free chips & guac', discount_percent: 6, gems_reward: 60, distance: '1.2 mi', expires_at: '2025-12-31', is_premium_offer: false, redeemed: false },
 ];
 
-const mockChallenges = [
-  { id: 1, title: 'Safe Week', description: 'Complete 7 trips with 90+ safety', progress: 3, goal: 7, gems: 100, xp: 500, joined: true },
-  { id: 2, title: 'Mile Marker', description: 'Drive 50 miles this week', progress: 23, goal: 50, gems: 75, xp: 300, joined: true },
-  { id: 3, title: 'Early Bird', description: 'Complete 5 trips before 8am', progress: 0, goal: 5, gems: 50, xp: 200, joined: false },
+const mockChallenges: Challenge[] = [
+  { id: 1, title: 'Safe Week', description: 'Complete 7 trips with 90+ safety score', progress: 3, goal: 7, gems: 100, xp: 500, type: 'safety', joined: true, claimed: false },
+  { id: 2, title: 'Mile Marker', description: 'Drive 50 miles this week', progress: 23, goal: 50, gems: 75, xp: 300, type: 'distance', joined: true, claimed: false },
+  { id: 3, title: 'Early Bird', description: 'Complete 5 trips before 8am', progress: 0, goal: 5, gems: 50, xp: 200, type: 'time', joined: false, claimed: false },
 ];
 
-const mockBadges = [
-  { id: 1, name: 'Safe Driver', icon: 'shield-checkmark', earned: true, color: Colors.green },
-  { id: 2, name: 'Mile Master', icon: 'speedometer', earned: true, color: Colors.primary },
-  { id: 3, name: 'Early Bird', icon: 'sunny', earned: false, color: Colors.amber },
-  { id: 4, name: 'Night Owl', icon: 'moon', earned: false, color: Colors.purple },
-  { id: 5, name: 'Eco Warrior', icon: 'leaf', earned: false, color: Colors.green },
-  { id: 6, name: 'Social Star', icon: 'people', earned: true, color: Colors.primary },
+const mockBadges: Badge[] = [
+  { id: 1, name: 'Safe Driver', icon: 'shield-checkmark', earned: true, color: Colors.green, description: 'Complete 10 trips with 95+ safety' },
+  { id: 2, name: 'Mile Master', icon: 'speedometer', earned: true, color: Colors.primary, description: 'Drive 100 miles' },
+  { id: 3, name: 'Early Bird', icon: 'sunny', earned: false, color: Colors.amber, description: 'Complete 5 morning trips' },
+  { id: 4, name: 'Night Owl', icon: 'moon', earned: false, color: Colors.purple, description: 'Complete 5 night trips' },
+  { id: 5, name: 'Eco Warrior', icon: 'leaf', earned: false, color: Colors.green, description: 'Save 10 gallons of fuel' },
+  { id: 6, name: 'Social Star', icon: 'people', earned: true, color: Colors.primary, description: 'Add 5 friends' },
+  { id: 7, name: 'Reporter', icon: 'alert-circle', earned: false, color: Colors.orange, description: 'Post 10 road reports' },
+  { id: 8, name: 'Gem Collector', icon: 'diamond', earned: false, color: Colors.gem, description: 'Earn 1000 gems' },
+];
+
+const mockLocations: SavedLocation[] = [];
+
+const mockRoutes: SavedRoute[] = [
+  { id: 1, name: 'Home → Work', origin: 'Home', destination: 'Work', departure_time: '08:00', days_active: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], estimated_time: 25, distance: 12, is_active: true, notifications: true },
+  { id: 2, name: 'Work → Gym', origin: 'Work', destination: 'Gym', departure_time: '17:30', days_active: ['Mon', 'Wed', 'Fri'], estimated_time: 10, distance: 4, is_active: false, notifications: true },
 ];
 
 const carTypes = [
@@ -128,19 +221,20 @@ const carTypes = [
 
 const carColors = [
   { id: 'ocean-blue', name: 'Ocean Blue', hex: '#3B82F6', free: true },
-  { id: 'midnight-black', name: 'Midnight Black', hex: '#1E293B', free: false },
-  { id: 'pearl-white', name: 'Pearl White', hex: '#F8FAFC', free: false },
-  { id: 'racing-red', name: 'Racing Red', hex: '#EF4444', free: false },
-  { id: 'forest-green', name: 'Forest Green', hex: '#22C55E', free: false },
-  { id: 'sunset-gold', name: 'Sunset Gold', hex: '#FBBF24', free: false },
+  { id: 'midnight-black', name: 'Midnight Black', hex: '#1E293B', price: 100 },
+  { id: 'pearl-white', name: 'Pearl White', hex: '#F8FAFC', price: 100 },
+  { id: 'racing-red', name: 'Racing Red', hex: '#EF4444', price: 150 },
+  { id: 'forest-green', name: 'Forest Green', hex: '#22C55E', price: 150 },
+  { id: 'sunset-gold', name: 'Sunset Gold', hex: '#FBBF24', price: 200 },
 ];
 
+// Map gem markers for the map view
 const gemMarkers = [
-  { id: 1, percent: 6, top: 0.25, left: 0.7, color: 'blue' },
-  { id: 2, percent: 6, top: 0.38, left: 0.55, color: 'blue' },
-  { id: 3, percent: 6, top: 0.52, left: 0.4, color: 'blue' },
-  { id: 4, percent: 18, top: 0.65, left: 0.25, color: 'green' },
-  { id: 5, percent: 6, top: 0.72, left: 0.65, color: 'blue' },
+  { id: 1, percent: 6, top: 0.25, left: 0.7 },
+  { id: 2, percent: 6, top: 0.38, left: 0.55 },
+  { id: 3, percent: 6, top: 0.52, left: 0.4 },
+  { id: 4, percent: 18, top: 0.65, left: 0.25, isPremium: true },
+  { id: 5, percent: 6, top: 0.72, left: 0.65 },
 ];
 
 // ============================================
@@ -149,9 +243,9 @@ const gemMarkers = [
 export default function DriverAppMain() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('planSelection');
   const [userData, setUserData] = useState<UserData>(initialUserData);
-  const insets = useSafeAreaInsets();
+  const [userCar, setUserCar] = useState<CarData>({ category: 'sedan', variant: 'sedan-classic', color: 'ocean-blue' });
+  const [ownedColors, setOwnedColors] = useState<string[]>(['ocean-blue']);
 
-  // Plan selection handler
   const handlePlanSelect = (plan: 'basic' | 'premium') => {
     setUserData(prev => ({
       ...prev,
@@ -162,26 +256,33 @@ export default function DriverAppMain() {
     setCurrentScreen('carOnboarding');
   };
 
-  // Car selection handler
-  const handleCarComplete = (car: { category: string; variant: string; color: string }) => {
-    setUserData(prev => ({ ...prev, car }));
+  const handleCarComplete = (car: CarData) => {
+    setUserCar(car);
     setCurrentScreen('main');
   };
 
-  // Render based on current screen
   if (currentScreen === 'planSelection') {
     return <PlanSelectionScreen onSelect={handlePlanSelect} />;
   }
 
   if (currentScreen === 'carOnboarding') {
-    return <CarOnboardingScreen onComplete={handleCarComplete} />;
+    return <CarOnboardingScreen onComplete={handleCarComplete} ownedColors={ownedColors} />;
   }
 
-  return <MainApp userData={userData} setUserData={setUserData} />;
+  return (
+    <MainApp 
+      userData={userData} 
+      setUserData={setUserData} 
+      userCar={userCar}
+      setUserCar={setUserCar}
+      ownedColors={ownedColors}
+      setOwnedColors={setOwnedColors}
+    />
+  );
 }
 
 // ============================================
-// PLAN SELECTION SCREEN - Exact Match
+// PLAN SELECTION SCREEN - Exact Web Match
 // ============================================
 function PlanSelectionScreen({ onSelect }: { onSelect: (plan: 'basic' | 'premium') => void }) {
   const [selected, setSelected] = useState<'basic' | 'premium' | null>(null);
@@ -191,14 +292,14 @@ function PlanSelectionScreen({ onSelect }: { onSelect: (plan: 'basic' | 'premium
     { icon: 'navigate', text: 'Manual rerouting' },
     { icon: 'shield-checkmark', text: 'Privacy-first navigation' },
     { icon: 'camera', text: 'Auto-blur photos' },
-    { icon: 'location', text: 'Local offers' },
+    { icon: 'location', text: 'Local offers (6% off)' },
     { icon: 'diamond', text: 'Earn Gems (1×)' },
   ];
 
   const premiumFeatures = [
     { icon: 'checkmark', text: 'Everything in Basic', highlight: true },
     { icon: 'navigate', text: 'Automatic rerouting' },
-    { icon: 'gift', text: 'Advanced local offers' },
+    { icon: 'gift', text: 'Premium offers (18% off)', highlight: true },
     { icon: 'diamond', text: 'Gem multiplier (2×)', highlight: true },
     { icon: 'analytics', text: 'Smart commute analytics' },
     { icon: 'headset', text: 'Priority support' },
@@ -206,28 +307,29 @@ function PlanSelectionScreen({ onSelect }: { onSelect: (plan: 'basic' | 'premium
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <LinearGradient colors={[Colors.background, Colors.backgroundDark, Colors.background]} style={styles.fullScreen}>
+      <LinearGradient colors={[Colors.background, Colors.backgroundDark, Colors.background]} style={styles.flex1}>
         {/* Header */}
         <View style={styles.planHeader}>
-          <View style={styles.planHeaderIconRow}>
-            <Ionicons name="sparkles" size={18} color={Colors.amber} />
-            <Text style={styles.planHeaderLabel}>CHOOSE YOUR PLAN</Text>
+          <View style={styles.labelRow}>
+            <Ionicons name="sparkles" size={16} color={Colors.amber} />
+            <Text style={styles.labelText}>CHOOSE YOUR PLAN</Text>
           </View>
-          <Text style={styles.planTitle}>Start Your Journey</Text>
-          <Text style={styles.planSubtitle}>Drive safer. Earn rewards. Privacy guaranteed.</Text>
+          <Text style={styles.titleText}>Start Your Journey</Text>
+          <Text style={styles.subtitleText}>Drive safer. Earn rewards. Privacy guaranteed.</Text>
         </View>
 
-        <ScrollView style={styles.planScroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.planScrollContent}>
-          {/* Basic Plan Card */}
+        <ScrollView style={styles.flex1} showsVerticalScrollIndicator={false} contentContainerStyle={styles.planContent}>
+          {/* Basic Plan */}
           <TouchableOpacity
             style={[styles.planCard, selected === 'basic' && styles.planCardSelected]}
             onPress={() => setSelected('basic')}
             activeOpacity={0.8}
+            testID="plan-basic"
           >
             <View style={styles.planCardHeader}>
               <View>
                 <Text style={styles.planName}>BASIC</Text>
-                <View style={styles.planPriceRow}>
+                <View style={styles.priceRow}>
                   <Text style={styles.planPrice}>$0</Text>
                   <Text style={styles.planPeriod}>/mo</Text>
                 </View>
@@ -247,15 +349,15 @@ function PlanSelectionScreen({ onSelect }: { onSelect: (plan: 'basic' | 'premium
             </View>
           </TouchableOpacity>
 
-          {/* Premium Plan Card */}
+          {/* Premium Plan */}
           <TouchableOpacity
             style={[styles.planCard, styles.planCardPremium, selected === 'premium' && styles.planCardPremiumSelected]}
             onPress={() => setSelected('premium')}
             activeOpacity={0.8}
+            testID="plan-premium"
           >
-            {/* Most Popular Badge */}
             <View style={styles.popularBadge}>
-              <Text style={styles.popularBadgeText}>MOST POPULAR</Text>
+              <Text style={styles.popularText}>MOST POPULAR</Text>
             </View>
 
             <View style={styles.planCardHeader}>
@@ -264,9 +366,11 @@ function PlanSelectionScreen({ onSelect }: { onSelect: (plan: 'basic' | 'premium
                   <Ionicons name="flash" size={16} color={Colors.amber} />
                   <Text style={[styles.planName, { color: Colors.amber }]}>PREMIUM</Text>
                 </View>
-                <View style={styles.planPriceRow}>
+                <View style={styles.priceRow}>
                   <Text style={styles.planPrice}>$10.99</Text>
                   <Text style={styles.planPeriod}>/mo</Text>
+                </View>
+                <View style={styles.priceRow}>
                   <Text style={styles.originalPrice}>$16.99/mo</Text>
                   <View style={styles.discountBadge}>
                     <Text style={styles.discountText}>35% OFF</Text>
@@ -284,9 +388,8 @@ function PlanSelectionScreen({ onSelect }: { onSelect: (plan: 'basic' | 'premium
 
             <Text style={styles.planDesc}>Auto-routing, insights, and faster rewards.</Text>
 
-            {/* Lock in price */}
             <View style={styles.lockInBox}>
-              <Text style={styles.lockInText}>🎉 Lock in $10.99/month for life!</Text>
+              <Text style={styles.lockInText}>Lock in $10.99/month for life!</Text>
             </View>
 
             <View style={styles.featuresList}>
@@ -301,15 +404,12 @@ function PlanSelectionScreen({ onSelect }: { onSelect: (plan: 'basic' | 'premium
         </ScrollView>
 
         {/* Footer */}
-        <View style={styles.planFooter}>
+        <View style={[styles.planFooter, { paddingBottom: insets.bottom + 16 }]}>
           <TouchableOpacity
-            style={[
-              styles.continueBtn,
-              selected === 'premium' && styles.continueBtnPremium,
-              !selected && styles.continueBtnDisabled,
-            ]}
+            style={styles.continueBtn}
             onPress={() => selected && onSelect(selected)}
             disabled={!selected}
+            testID="continue-btn"
           >
             <LinearGradient
               colors={selected === 'premium' ? [Colors.amber, Colors.orange] : selected === 'basic' ? [Colors.primary, Colors.primaryDark] : [Colors.surfaceLight, Colors.surface]}
@@ -338,13 +438,21 @@ function PlanSelectionScreen({ onSelect }: { onSelect: (plan: 'basic' | 'premium
 }
 
 // ============================================
-// CAR ONBOARDING SCREEN - Exact Match
+// CAR ONBOARDING SCREEN - Exact Web Match
 // ============================================
-function CarOnboardingScreen({ onComplete }: { onComplete: (car: { category: string; variant: string; color: string }) => void }) {
+function CarOnboardingScreen({ 
+  onComplete, 
+  ownedColors 
+}: { 
+  onComplete: (car: CarData) => void;
+  ownedColors: string[];
+}) {
   const [step, setStep] = useState<'type' | 'color'>('type');
   const [selectedType, setSelectedType] = useState('sedan');
   const [selectedColor, setSelectedColor] = useState('ocean-blue');
   const insets = useSafeAreaInsets();
+
+  const selectedColorData = carColors.find(c => c.id === selectedColor);
 
   const handleContinue = () => {
     if (step === 'type') {
@@ -354,40 +462,36 @@ function CarOnboardingScreen({ onComplete }: { onComplete: (car: { category: str
     }
   };
 
-  const selectedColorData = carColors.find(c => c.id === selectedColor);
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <LinearGradient colors={[Colors.background, Colors.backgroundDark, Colors.background]} style={styles.fullScreen}>
+      <LinearGradient colors={[Colors.background, Colors.backgroundDark, Colors.background]} style={styles.flex1}>
         {/* Header */}
         <View style={styles.carHeader}>
-          <View style={styles.carHeaderRow}>
-            <View style={styles.planHeaderIconRow}>
-              <Ionicons name="sparkles" size={18} color={Colors.amber} />
-              <Text style={styles.planHeaderLabel}>{step === 'type' ? 'STEP 1 OF 2' : 'STEP 2 OF 2'}</Text>
-            </View>
+          <View style={styles.labelRow}>
+            <Ionicons name="sparkles" size={16} color={Colors.amber} />
+            <Text style={styles.labelText}>{step === 'type' ? 'STEP 1 OF 2' : 'STEP 2 OF 2'}</Text>
           </View>
-          <Text style={styles.carTitle}>{step === 'type' ? 'Choose your ride' : 'Pick your color'}</Text>
-          <Text style={styles.carSubtitle}>
+          <Text style={styles.titleText}>{step === 'type' ? 'Choose your ride' : 'Pick your color'}</Text>
+          <Text style={styles.subtitleText}>
             {step === 'type' ? 'Select the type of vehicle you drive' : 'Blue is free! Earn gems to unlock more'}
           </Text>
 
           {/* Progress Bar */}
-          <View style={styles.progressBarRow}>
-            <View style={[styles.progressBarSegment, styles.progressBarActive]} />
-            <View style={[styles.progressBarSegment, step === 'color' && styles.progressBarActive]} />
+          <View style={styles.progressRow}>
+            <View style={[styles.progressSegment, styles.progressActive]} />
+            <View style={[styles.progressSegment, step === 'color' && styles.progressActive]} />
           </View>
         </View>
 
-        <ScrollView style={styles.carContent} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.flex1} showsVerticalScrollIndicator={false} contentContainerStyle={styles.carContent}>
           {step === 'type' ? (
-            /* Car Type Selection */
             <View style={styles.carTypesList}>
               {carTypes.map((type) => (
                 <TouchableOpacity
                   key={type.id}
                   style={[styles.carTypeCard, selectedType === type.id && styles.carTypeCardSelected]}
                   onPress={() => setSelectedType(type.id)}
+                  testID={`car-type-${type.id}`}
                 >
                   <View style={[styles.carTypePreview, selectedType === type.id && styles.carTypePreviewSelected]}>
                     <Ionicons name="car-sport" size={36} color={selectedType === type.id ? Colors.primary : Colors.textSecondary} />
@@ -403,11 +507,10 @@ function CarOnboardingScreen({ onComplete }: { onComplete: (car: { category: str
               ))}
             </View>
           ) : (
-            /* Color Selection */
-            <View style={styles.colorContent}>
+            <View>
               {/* Car Preview */}
               <View style={styles.carPreviewBox}>
-                <View style={styles.carPreviewGlow} />
+                <View style={[styles.carPreviewGlow, { backgroundColor: `${selectedColorData?.hex}30` }]} />
                 <View style={[styles.carPreviewIcon, { backgroundColor: selectedColorData?.hex || Colors.primary }]}>
                   <Ionicons name="car-sport" size={64} color={selectedColorData?.hex === '#F8FAFC' ? '#000' : '#fff'} />
                 </View>
@@ -416,34 +519,44 @@ function CarOnboardingScreen({ onComplete }: { onComplete: (car: { category: str
               </View>
 
               {/* Color Grid */}
-              <Text style={styles.colorGridLabel}>Select a color</Text>
+              <Text style={styles.colorLabel}>Select a color</Text>
               <View style={styles.colorGrid}>
-                {carColors.map((color) => (
-                  <TouchableOpacity
-                    key={color.id}
-                    style={[styles.colorSwatch, selectedColor === color.id && styles.colorSwatchSelected]}
-                    onPress={() => color.free && setSelectedColor(color.id)}
-                    disabled={!color.free}
-                  >
-                    <View style={[styles.colorSwatchInner, { backgroundColor: color.hex }, !color.free && styles.colorSwatchLocked]}>
-                      {!color.free && <Text style={styles.lockEmoji}>🔒</Text>}
-                      {selectedColor === color.id && color.free && (
-                        <View style={styles.colorCheckmark}>
-                          <Ionicons name="checkmark" size={16} color={color.hex === '#F8FAFC' ? '#000' : '#fff'} />
+                {carColors.map((color) => {
+                  const isOwned = color.free || ownedColors.includes(color.id);
+                  return (
+                    <TouchableOpacity
+                      key={color.id}
+                      style={[styles.colorSwatch, selectedColor === color.id && styles.colorSwatchSelected]}
+                      onPress={() => isOwned && setSelectedColor(color.id)}
+                      disabled={!isOwned}
+                      testID={`color-${color.id}`}
+                    >
+                      <View style={[styles.colorSwatchInner, { backgroundColor: color.hex }, !isOwned && styles.colorSwatchLocked]}>
+                        {!isOwned && <Ionicons name="lock-closed" size={16} color={Colors.white} />}
+                        {selectedColor === color.id && isOwned && (
+                          <View style={styles.colorCheckmark}>
+                            <Ionicons name="checkmark" size={16} color={color.hex === '#F8FAFC' ? '#000' : '#fff'} />
+                          </View>
+                        )}
+                      </View>
+                      {!isOwned && color.price && (
+                        <View style={styles.colorPrice}>
+                          <Ionicons name="diamond" size={10} color={Colors.gem} />
+                          <Text style={styles.colorPriceText}>{color.price}</Text>
                         </View>
                       )}
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
-              <Text style={styles.colorHint}>💎 Drive safely to earn gems and unlock more colors!</Text>
+              <Text style={styles.colorHint}>Drive safely to earn gems and unlock more colors!</Text>
             </View>
           )}
         </ScrollView>
 
         {/* Footer */}
-        <View style={styles.carFooter}>
-          <TouchableOpacity style={styles.carContinueBtn} onPress={handleContinue}>
+        <View style={[styles.carFooter, { paddingBottom: insets.bottom + 16 }]}>
+          <TouchableOpacity style={styles.carContinueBtn} onPress={handleContinue} testID="car-continue-btn">
             <LinearGradient colors={[Colors.amber, Colors.orange]} style={styles.carContinueGradient}>
               {step === 'type' ? (
                 <>
@@ -458,10 +571,10 @@ function CarOnboardingScreen({ onComplete }: { onComplete: (car: { category: str
               )}
             </LinearGradient>
           </TouchableOpacity>
-          
+
           {step === 'color' && (
             <TouchableOpacity style={styles.backBtn} onPress={() => setStep('type')}>
-              <Text style={styles.backBtnText}>← Back to vehicle selection</Text>
+              <Text style={styles.backBtnText}>Back to vehicle selection</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -471,185 +584,400 @@ function CarOnboardingScreen({ onComplete }: { onComplete: (car: { category: str
 }
 
 // ============================================
-// MAIN APP - With all 4 Tabs
+// MAIN APP WITH ALL TABS
 // ============================================
-function MainApp({ userData, setUserData }: { userData: UserData; setUserData: any }) {
+function MainApp({ 
+  userData, 
+  setUserData, 
+  userCar, 
+  setUserCar, 
+  ownedColors, 
+  setOwnedColors 
+}: { 
+  userData: UserData; 
+  setUserData: React.Dispatch<React.SetStateAction<UserData>>;
+  userCar: CarData;
+  setUserCar: React.Dispatch<React.SetStateAction<CarData>>;
+  ownedColors: string[];
+  setOwnedColors: React.Dispatch<React.SetStateAction<string[]>>;
+}) {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<TabType>('map');
   const [rewardsTab, setRewardsTab] = useState<RewardsTab>('offers');
   const [profileTab, setProfileTab] = useState<ProfileTab>('overview');
+  const [locationCategory, setLocationCategory] = useState<LocationCategory>('favorites');
+  
+  // Modal states
   const [showMenu, setShowMenu] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showAddLocation, setShowAddLocation] = useState(false);
+  const [showAddRoute, setShowAddRoute] = useState(false);
+  const [showOrionVoice, setShowOrionVoice] = useState(false);
+  const [showRoadReports, setShowRoadReports] = useState(false);
+  const [showQuickPhoto, setShowQuickPhoto] = useState(false);
+  const [showOffersModal, setShowOffersModal] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showFriendsHub, setShowFriendsHub] = useState(false);
+  const [showBadgesGrid, setShowBadgesGrid] = useState(false);
+  const [showCarStudio, setShowCarStudio] = useState(false);
+  const [showGemHistory, setShowGemHistory] = useState(false);
+  const [showTripHistory, setShowTripHistory] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  
+  // Data states
+  const [locations, setLocations] = useState<SavedLocation[]>(mockLocations);
+  const [routes, setRoutes] = useState<SavedRoute[]>(mockRoutes);
+  const [offers, setOffers] = useState<Offer[]>(mockOffers);
+  const [challenges, setChallenges] = useState<Challenge[]>(mockChallenges);
+  const [badges, setBadges] = useState<Badge[]>(mockBadges);
+  
+  // Navigation states
+  const [isNavigating, setIsNavigating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const insets = useSafeAreaInsets();
+
+  const getHomeLocation = () => locations.find(l => l.category === 'home');
+  const getWorkLocation = () => locations.find(l => l.category === 'work');
+  const getFavoriteLocations = () => locations.filter(l => !['home', 'work'].includes(l.category));
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      
-      {/* Status Bar Area */}
-      <View style={[styles.statusBarArea, { paddingTop: insets.top }]}>
-        <Text style={styles.statusTime}>9:41</Text>
-        <View style={styles.statusRight}>
-          <Text style={styles.statusText}>5G</Text>
-          <Ionicons name="cellular" size={14} color={Colors.white} />
-          <Ionicons name="battery-full" size={18} color={Colors.white} />
-        </View>
-      </View>
+      {/* Status Bar Padding */}
+      <View style={[styles.statusBarPadding, { paddingTop: insets.top }]} />
 
-      {/* Header with Search */}
-      <View style={styles.mainHeader}>
-        <TouchableOpacity style={styles.menuBtn} onPress={() => setShowMenu(true)}>
-          <Ionicons name="menu" size={26} color={Colors.white} />
-        </TouchableOpacity>
-        
-        <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={20} color={Colors.textSecondary} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search here"
-            placeholderTextColor={Colors.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-        
-        <TouchableOpacity style={styles.micBtn}>
-          <Ionicons name="mic-outline" size={22} color={Colors.textSecondary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Tab Content */}
+      {/* Main Content */}
       <View style={styles.mainContent}>
-        {activeTab === 'map' && <MapTab userData={userData} />}
-        {activeTab === 'routes' && <RoutesTab />}
-        {activeTab === 'rewards' && <RewardsTabContent activeSubTab={rewardsTab} onSubTabChange={setRewardsTab} userData={userData} />}
-        {activeTab === 'profile' && <ProfileTabContent activeSubTab={profileTab} onSubTabChange={setProfileTab} userData={userData} />}
+        {activeTab === 'map' && (
+          <MapTab
+            userData={userData}
+            userCar={userCar}
+            locationCategory={locationCategory}
+            setLocationCategory={setLocationCategory}
+            onMenuPress={() => setShowMenu(true)}
+            onSearchPress={() => setShowSearch(true)}
+            onOrionPress={() => setShowOrionVoice(true)}
+            onReportPress={() => setShowRoadReports(true)}
+            onPhotoPress={() => setShowQuickPhoto(true)}
+            onOfferPress={(offer) => {/* handle offer click */}}
+            getHomeLocation={getHomeLocation}
+            getWorkLocation={getWorkLocation}
+            getFavoriteLocations={getFavoriteLocations}
+            onAddLocation={() => setShowAddLocation(true)}
+            isNavigating={isNavigating}
+          />
+        )}
+        {activeTab === 'routes' && (
+          <RoutesTab
+            routes={routes}
+            onAddRoute={() => setShowAddRoute(true)}
+            onToggleRoute={(id) => setRoutes(routes.map(r => r.id === id ? { ...r, is_active: !r.is_active } : r))}
+            onDeleteRoute={(id) => setRoutes(routes.filter(r => r.id !== id))}
+          />
+        )}
+        {activeTab === 'rewards' && (
+          <RewardsTab
+            userData={userData}
+            rewardsTab={rewardsTab}
+            setRewardsTab={setRewardsTab}
+            offers={offers}
+            challenges={challenges}
+            badges={badges}
+            userCar={userCar}
+            onViewAllOffers={() => setShowOffersModal(true)}
+            onLeaderboard={() => setShowLeaderboard(true)}
+            onGemHistory={() => setShowGemHistory(true)}
+            onCarStudio={() => setShowCarStudio(true)}
+          />
+        )}
+        {activeTab === 'profile' && (
+          <ProfileTab
+            userData={userData}
+            profileTab={profileTab}
+            setProfileTab={setProfileTab}
+            userCar={userCar}
+            onTripHistory={() => setShowTripHistory(true)}
+            onLeaderboard={() => setShowLeaderboard(true)}
+            onFriends={() => setShowFriendsHub(true)}
+            onHelp={() => setShowHelp(true)}
+          />
+        )}
       </View>
 
-      {/* Bottom Tab Bar - WHITE BACKGROUND */}
+      {/* Bottom Tab Bar - White Background */}
       <View style={[styles.tabBar, { paddingBottom: insets.bottom + 8 }]}>
         <TabBarItem icon="location" label="Map" active={activeTab === 'map'} onPress={() => setActiveTab('map')} />
         <TabBarItem icon="git-branch" label="Routes" active={activeTab === 'routes'} onPress={() => setActiveTab('routes')} />
         <TabBarItem icon="gift" label="Rewards" active={activeTab === 'rewards'} onPress={() => setActiveTab('rewards')} />
-        <TabBarItem icon="settings" label="Profile" active={activeTab === 'profile'} onPress={() => setActiveTab('profile')} />
+        <TabBarItem icon="person" label="Profile" active={activeTab === 'profile'} onPress={() => setActiveTab('profile')} />
       </View>
 
-      {/* Side Menu */}
-      <SideMenuModal visible={showMenu} onClose={() => setShowMenu(false)} userData={userData} />
+      {/* Side Menu Modal */}
+      <SideMenuModal
+        visible={showMenu}
+        onClose={() => setShowMenu(false)}
+        userData={userData}
+        userCar={userCar}
+        routes={routes}
+        locations={locations}
+        offers={offers}
+        badges={badges}
+        onNavigate={(tab) => { setActiveTab(tab); setShowMenu(false); }}
+        onFriendsHub={() => { setShowFriendsHub(true); setShowMenu(false); }}
+        onLeaderboard={() => { setShowLeaderboard(true); setShowMenu(false); }}
+        onBadges={() => { setShowBadgesGrid(true); setShowMenu(false); }}
+        onCarStudio={() => { setShowCarStudio(true); setShowMenu(false); }}
+        onGemHistory={() => { setShowGemHistory(true); setShowMenu(false); }}
+        onHelp={() => { setShowHelp(true); setShowMenu(false); }}
+      />
+
+      {/* Search Modal */}
+      <SearchModal
+        visible={showSearch}
+        onClose={() => setShowSearch(false)}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        onSelectDestination={(dest) => {
+          setIsNavigating(true);
+          setShowSearch(false);
+        }}
+      />
+
+      {/* Orion Voice Modal */}
+      <OrionVoiceModal
+        visible={showOrionVoice}
+        onClose={() => setShowOrionVoice(false)}
+      />
     </View>
   );
 }
 
-// Tab Bar Item
+// ============================================
+// TAB BAR ITEM
+// ============================================
 function TabBarItem({ icon, label, active, onPress }: { icon: string; label: string; active: boolean; onPress: () => void }) {
   return (
-    <TouchableOpacity style={styles.tabBarItem} onPress={onPress}>
-      <Ionicons name={active ? icon as any : `${icon}-outline` as any} size={24} color={active ? Colors.primary : Colors.tabInactive} />
+    <TouchableOpacity style={styles.tabBarItem} onPress={onPress} testID={`tab-${label.toLowerCase()}`}>
+      <Ionicons
+        name={active ? icon as any : `${icon}-outline` as any}
+        size={24}
+        color={active ? Colors.primary : Colors.tabInactive}
+      />
       <Text style={[styles.tabBarLabel, active && styles.tabBarLabelActive]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 // ============================================
-// MAP TAB - Exact Flutter/Web UI Match
+// MAP TAB - Exact Web Match
 // ============================================
-function MapTab({ userData }: { userData: UserData }) {
-  const [filter, setFilter] = useState<LocationFilter>('favorites');
-
+function MapTab({
+  userData,
+  userCar,
+  locationCategory,
+  setLocationCategory,
+  onMenuPress,
+  onSearchPress,
+  onOrionPress,
+  onReportPress,
+  onPhotoPress,
+  onOfferPress,
+  getHomeLocation,
+  getWorkLocation,
+  getFavoriteLocations,
+  onAddLocation,
+  isNavigating,
+}: {
+  userData: UserData;
+  userCar: CarData;
+  locationCategory: LocationCategory;
+  setLocationCategory: (cat: LocationCategory) => void;
+  onMenuPress: () => void;
+  onSearchPress: () => void;
+  onOrionPress: () => void;
+  onReportPress: () => void;
+  onPhotoPress: () => void;
+  onOfferPress: (offer: Offer) => void;
+  getHomeLocation: () => SavedLocation | undefined;
+  getWorkLocation: () => SavedLocation | undefined;
+  getFavoriteLocations: () => SavedLocation[];
+  onAddLocation: () => void;
+  isNavigating: boolean;
+}) {
   return (
     <View style={styles.mapContainer}>
-      {/* Filter Buttons */}
-      <View style={styles.filterRow}>
-        <TouchableOpacity
-          style={[styles.filterBtn, filter === 'favorites' && styles.filterBtnActive]}
-          onPress={() => setFilter('favorites')}
-        >
-          <Ionicons name="star" size={16} color={Colors.white} />
-          <Text style={styles.filterBtnText}>Favorites</Text>
-        </TouchableOpacity>
+      {/* Top Bar */}
+      <View style={styles.mapTopBar}>
+        {/* Search Bar Row */}
+        <View style={styles.searchRow}>
+          <TouchableOpacity style={styles.menuBtn} onPress={onMenuPress} testID="menu-btn">
+            <Ionicons name="menu" size={22} color={Colors.white} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.searchBar} onPress={onSearchPress} testID="search-btn">
+            <Ionicons name="search" size={18} color={Colors.textSecondary} />
+            <Text style={styles.searchPlaceholder}>{isNavigating ? 'Navigating...' : 'Search here'}</Text>
+            <TouchableOpacity onPress={onOrionPress} testID="orion-btn">
+              <Ionicons name="mic" size={18} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          style={[styles.filterBtn, styles.filterBtnInactive]}
-          onPress={() => setFilter('nearby')}
-        >
-          <Ionicons name="location-outline" size={16} color={Colors.textSecondary} />
-          <Text style={styles.filterBtnTextInactive}>Nearby</Text>
-        </TouchableOpacity>
+        {/* Quick Action Pills */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillsScroll}>
+          <View style={styles.pillsRow}>
+            <TouchableOpacity
+              style={[styles.pill, locationCategory === 'favorites' && styles.pillActive]}
+              onPress={() => setLocationCategory('favorites')}
+              testID="tab-favorites"
+            >
+              <Ionicons name="star" size={16} color={locationCategory === 'favorites' ? Colors.white : Colors.yellow} />
+              <Text style={[styles.pillText, locationCategory === 'favorites' && styles.pillTextActive]}>Favorites</Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.filterBtn, styles.filterBtnOrange]}
-          onPress={() => setFilter('report')}
-        >
-          <Ionicons name="warning" size={16} color={Colors.white} />
-          <Text style={styles.filterBtnText}>Report</Text>
-        </TouchableOpacity>
-      </View>
+            <TouchableOpacity
+              style={[styles.pill, locationCategory === 'nearby' && styles.pillActive]}
+              onPress={() => setLocationCategory('nearby')}
+              testID="tab-nearby"
+            >
+              <Ionicons name="location" size={16} color={Colors.white} />
+              <Text style={[styles.pillText, locationCategory === 'nearby' && styles.pillTextActive]}>Nearby</Text>
+            </TouchableOpacity>
 
-      {/* Quick Locations */}
-      <View style={styles.quickLocRow}>
-        <TouchableOpacity style={styles.quickLocCard}>
-          <View style={styles.quickLocIcon}>
-            <Ionicons name="home-outline" size={20} color={Colors.textSecondary} />
+            <TouchableOpacity style={[styles.pill, styles.pillOrange]} onPress={onReportPress} testID="report-hazard-btn">
+              <Ionicons name="warning" size={16} color={Colors.white} />
+              <Text style={styles.pillText}>Report</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.pill, styles.pillBlue]} onPress={onPhotoPress} testID="quick-photo-btn">
+              <Ionicons name="camera" size={16} color={Colors.white} />
+              <Text style={styles.pillText}>Photo</Text>
+            </TouchableOpacity>
           </View>
-          <View>
-            <Text style={styles.quickLocName}>Home</Text>
-            <Text style={styles.quickLocAction}>Set location</Text>
-          </View>
-        </TouchableOpacity>
+        </ScrollView>
 
-        <TouchableOpacity style={styles.quickLocCard}>
-          <View style={styles.quickLocIcon}>
-            <Ionicons name="briefcase-outline" size={20} color={Colors.textSecondary} />
-          </View>
-          <View>
-            <Text style={styles.quickLocName}>Work</Text>
-            <Text style={styles.quickLocAction}>Set location</Text>
-          </View>
-        </TouchableOpacity>
+        {/* Favorites Content */}
+        {locationCategory === 'favorites' && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.locationsScroll}>
+            <View style={styles.locationsRow}>
+              {/* Home */}
+              {getHomeLocation() ? (
+                <TouchableOpacity style={styles.locationCard} testID="quick-home">
+                  <View style={styles.locationIcon}>
+                    <Ionicons name="home" size={18} color={Colors.textSecondary} />
+                  </View>
+                  <View>
+                    <Text style={styles.locationName}>Home</Text>
+                    <Text style={styles.locationAddress} numberOfLines={1}>{getHomeLocation()?.address}</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.locationCard} onPress={onAddLocation} testID="add-home">
+                  <View style={styles.locationIcon}>
+                    <Ionicons name="home" size={18} color={Colors.textSecondary} />
+                  </View>
+                  <View>
+                    <Text style={styles.locationName}>Home</Text>
+                    <Text style={styles.locationAction}>Set location</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
 
-        <TouchableOpacity style={styles.addLocBtn}>
-          <Ionicons name="add" size={24} color={Colors.textSecondary} />
-        </TouchableOpacity>
+              {/* Work */}
+              {getWorkLocation() ? (
+                <TouchableOpacity style={styles.locationCard} testID="quick-work">
+                  <View style={styles.locationIcon}>
+                    <Ionicons name="briefcase" size={18} color={Colors.textSecondary} />
+                  </View>
+                  <View>
+                    <Text style={styles.locationName}>Work</Text>
+                    <Text style={styles.locationAddress} numberOfLines={1}>{getWorkLocation()?.address}</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.locationCard} onPress={onAddLocation} testID="add-work">
+                  <View style={styles.locationIcon}>
+                    <Ionicons name="briefcase" size={18} color={Colors.textSecondary} />
+                  </View>
+                  <View>
+                    <Text style={styles.locationName}>Work</Text>
+                    <Text style={styles.locationAction}>Set location</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {/* Add More */}
+              <TouchableOpacity style={styles.locationCard} onPress={onAddLocation} testID="add-favorite">
+                <View style={styles.locationIcon}>
+                  <Ionicons name="add" size={20} color={Colors.textSecondary} />
+                </View>
+                <Text style={styles.locationName}>More</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        )}
+
+        {/* Nearby Content */}
+        {locationCategory === 'nearby' && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.locationsScroll}>
+            <View style={styles.locationsRow}>
+              {[
+                { icon: 'flame', label: 'Gas', color: Colors.primary },
+                { icon: 'cafe', label: 'Coffee', color: Colors.orange },
+                { icon: 'cart', label: 'Shopping', color: Colors.pink },
+                { icon: 'fitness', label: 'Gym', color: Colors.purple },
+              ].map((item, i) => (
+                <TouchableOpacity key={i} style={styles.nearbyCard} testID={`nearby-${item.label.toLowerCase()}`}>
+                  <Ionicons name={item.icon as any} size={16} color={item.color} />
+                  <Text style={styles.nearbyText}>{item.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        )}
       </View>
 
       {/* Map Area */}
       <View style={styles.mapArea}>
-        {/* Dark map background */}
+        {/* Dark map background with grid */}
         <View style={styles.mapBg}>
-          {/* Street grid lines */}
-          {[1,2,3,4,5,6,7].map(i => <View key={`h${i}`} style={[styles.mapLine, { top: `${i * 12}%` }]} />)}
-          {[1,2,3,4,5].map(i => <View key={`v${i}`} style={[styles.mapLineV, { left: `${i * 18}%` }]} />)}
+          {[1, 2, 3, 4, 5, 6, 7].map(i => (
+            <View key={`h${i}`} style={[styles.mapLineH, { top: `${i * 12}%` }]} />
+          ))}
+          {[1, 2, 3, 4, 5].map(i => (
+            <View key={`v${i}`} style={[styles.mapLineV, { left: `${i * 18}%` }]} />
+          ))}
           
           {/* Street labels */}
-          <Text style={[styles.mapLabel, { top: '15%', left: '5%' }]}>West Spring Street</Text>
-          <Text style={[styles.mapLabel, { top: '38%', left: '8%' }]}>West Broad Street</Text>
-          <Text style={[styles.mapLabel, { top: '72%', right: '5%' }]}>South Innerbelt</Text>
+          <Text style={[styles.mapLabel, { top: '15%', left: 16 }]}>West Spring Street</Text>
+          <Text style={[styles.mapLabel, { top: '38%', left: 24 }]}>West Broad Street</Text>
+          <Text style={[styles.mapLabel, { top: '72%', right: 16 }]}>South Innerbelt</Text>
         </View>
 
         {/* Gem Markers */}
-        {gemMarkers.map(m => (
-          <View key={m.id} style={[styles.gemMarker, { top: `${m.top * 100}%`, left: `${m.left * 100}%` }]}>
-            <View style={[styles.gemCircle, m.color === 'green' && styles.gemCircleGreen]}>
+        {gemMarkers.map((m) => (
+          <TouchableOpacity key={m.id} style={[styles.gemMarker, { top: `${m.top * 100}%`, left: `${m.left * 100}%` }]}>
+            <View style={[styles.gemCircle, m.isPremium && styles.gemCirclePremium]}>
               <Ionicons name="diamond" size={16} color={Colors.white} />
             </View>
             <Text style={styles.gemPercent}>{m.percent}%</Text>
-          </View>
+          </TouchableOpacity>
         ))}
 
-        {/* Car Icon */}
+        {/* Car Marker */}
         <View style={styles.carMarker}>
-          <Text style={styles.carEmoji}>🚙</Text>
+          <View style={[styles.carIcon, { backgroundColor: carColors.find(c => c.id === userCar.color)?.hex || Colors.primary }]}>
+            <Ionicons name="car-sport" size={20} color={Colors.white} />
+          </View>
         </View>
 
-        {/* Orion Voice Button - Purple */}
-        <TouchableOpacity style={styles.orionBtn}>
-          <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.orionGradient}>
+        {/* Orion Voice Button */}
+        <TouchableOpacity style={styles.orionFab} onPress={onOrionPress} testID="orion-fab">
+          <LinearGradient colors={[Colors.purple, '#7C3AED']} style={styles.orionGradient}>
             <Ionicons name="mic" size={28} color={Colors.white} />
           </LinearGradient>
         </TouchableOpacity>
 
         {/* Camera Button */}
-        <TouchableOpacity style={styles.cameraBtn}>
-          <Ionicons name="camera-outline" size={24} color={Colors.white} />
+        <TouchableOpacity style={styles.cameraFab} onPress={onPhotoPress} testID="camera-fab">
+          <Ionicons name="camera" size={22} color={Colors.white} />
         </TouchableOpacity>
       </View>
     </View>
@@ -659,35 +987,53 @@ function MapTab({ userData }: { userData: UserData }) {
 // ============================================
 // ROUTES TAB
 // ============================================
-function RoutesTab() {
+function RoutesTab({
+  routes,
+  onAddRoute,
+  onToggleRoute,
+  onDeleteRoute,
+}: {
+  routes: SavedRoute[];
+  onAddRoute: () => void;
+  onToggleRoute: (id: number) => void;
+  onDeleteRoute: (id: number) => void;
+}) {
   return (
     <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
       <Text style={styles.tabTitle}>Saved Routes</Text>
-      
-      <TouchableOpacity style={styles.routeCard}>
-        <View style={styles.routeIconBox}>
-          <Ionicons name="navigate" size={22} color={Colors.primary} />
-        </View>
-        <View style={styles.routeInfo}>
-          <Text style={styles.routeName}>Home → Work</Text>
-          <Text style={styles.routeMeta}>25 min • 12 mi</Text>
-        </View>
-        <View style={styles.activeBadge}>
-          <Text style={styles.activeBadgeText}>Active</Text>
-        </View>
-      </TouchableOpacity>
+      <Text style={styles.tabSubtitle}>{routes.length}/20 routes saved</Text>
 
-      <TouchableOpacity style={styles.routeCard}>
-        <View style={styles.routeIconBox}>
-          <Ionicons name="navigate" size={22} color={Colors.primary} />
-        </View>
-        <View style={styles.routeInfo}>
-          <Text style={styles.routeName}>Work → Gym</Text>
-          <Text style={styles.routeMeta}>10 min • 4 mi</Text>
-        </View>
-      </TouchableOpacity>
+      {routes.map((route) => (
+        <TouchableOpacity key={route.id} style={styles.routeCard} testID={`route-${route.id}`}>
+          <View style={styles.routeIconBox}>
+            <Ionicons name="navigate" size={22} color={Colors.primary} />
+          </View>
+          <View style={styles.routeInfo}>
+            <Text style={styles.routeName}>{route.name}</Text>
+            <Text style={styles.routeMeta}>{route.estimated_time} min • {route.distance} mi</Text>
+            <View style={styles.routeDays}>
+              {['M', 'T', 'W', 'T', 'F'].map((day, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.routeDay,
+                    route.days_active.includes(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'][i]) && styles.routeDayActive,
+                  ]}
+                >
+                  <Text style={[styles.routeDayText, route.days_active.includes(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'][i]) && styles.routeDayTextActive]}>{day}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+          {route.is_active && (
+            <View style={styles.activeBadge}>
+              <Text style={styles.activeBadgeText}>Active</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      ))}
 
-      <TouchableOpacity style={styles.addRouteBtn}>
+      <TouchableOpacity style={styles.addRouteBtn} onPress={onAddRoute} testID="add-route-btn">
         <Ionicons name="add-circle-outline" size={22} color={Colors.primary} />
         <Text style={styles.addRouteText}>Add New Route</Text>
       </TouchableOpacity>
@@ -696,85 +1042,160 @@ function RoutesTab() {
 }
 
 // ============================================
-// REWARDS TAB CONTENT
+// REWARDS TAB
 // ============================================
-function RewardsTabContent({ activeSubTab, onSubTabChange, userData }: { activeSubTab: RewardsTab; onSubTabChange: (t: RewardsTab) => void; userData: UserData }) {
-  const subTabs = [
-    { id: 'offers', label: 'Offers', icon: 'gift-outline' },
-    { id: 'challenges', label: 'Challenges', icon: 'trophy-outline' },
-    { id: 'badges', label: 'Badges', icon: 'ribbon-outline' },
-    { id: 'carstudio', label: 'Car Studio', icon: 'color-palette-outline' },
-  ];
-
+function RewardsTab({
+  userData,
+  rewardsTab,
+  setRewardsTab,
+  offers,
+  challenges,
+  badges,
+  userCar,
+  onViewAllOffers,
+  onLeaderboard,
+  onGemHistory,
+  onCarStudio,
+}: {
+  userData: UserData;
+  rewardsTab: RewardsTab;
+  setRewardsTab: (tab: RewardsTab) => void;
+  offers: Offer[];
+  challenges: Challenge[];
+  badges: Badge[];
+  userCar: CarData;
+  onViewAllOffers: () => void;
+  onLeaderboard: () => void;
+  onGemHistory: () => void;
+  onCarStudio: () => void;
+}) {
   return (
     <View style={styles.tabContent}>
-      {/* Sub Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subTabsScroll}>
-        <View style={styles.subTabsRow}>
-          {subTabs.map(t => (
+      {/* Header with Gems */}
+      <LinearGradient colors={[Colors.emerald, Colors.teal]} style={styles.rewardsHeader}>
+        <View style={styles.rewardsHeaderContent}>
+          <Text style={styles.rewardsTitle}>Rewards</Text>
+          <TouchableOpacity style={styles.gemsBtn} onPress={onGemHistory} testID="gem-balance-btn">
+            <Ionicons name="diamond" size={16} color={Colors.white} />
+            <Text style={styles.gemsText}>{(userData.gems / 1000).toFixed(1)}K</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Sub-tabs */}
+        <View style={styles.subTabsContainer}>
+          {(['offers', 'challenges', 'badges', 'carstudio'] as RewardsTab[]).map((tab) => (
             <TouchableOpacity
-              key={t.id}
-              style={[styles.subTab, activeSubTab === t.id && styles.subTabActive]}
-              onPress={() => onSubTabChange(t.id as RewardsTab)}
+              key={tab}
+              style={[styles.subTab, rewardsTab === tab && styles.subTabActive]}
+              onPress={() => setRewardsTab(tab)}
+              testID={`rewards-tab-${tab}`}
             >
-              <Ionicons name={t.icon as any} size={16} color={activeSubTab === t.id ? Colors.primary : Colors.textSecondary} />
-              <Text style={[styles.subTabText, activeSubTab === t.id && styles.subTabTextActive]}>{t.label}</Text>
+              <Text style={[styles.subTabText, rewardsTab === tab && styles.subTabTextActive]}>
+                {tab === 'carstudio' ? 'Car Studio' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
-      </ScrollView>
+      </LinearGradient>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {activeSubTab === 'offers' && <OffersContent userData={userData} />}
-        {activeSubTab === 'challenges' && <ChallengesContent />}
-        {activeSubTab === 'badges' && <BadgesContent />}
-        {activeSubTab === 'carstudio' && <CarStudioContent userData={userData} />}
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.rewardsContent}>
+        {rewardsTab === 'offers' && (
+          <OffersContent
+            userData={userData}
+            offers={offers}
+            onViewAll={onViewAllOffers}
+            onLeaderboard={onLeaderboard}
+          />
+        )}
+        {rewardsTab === 'challenges' && (
+          <ChallengesContent challenges={challenges} />
+        )}
+        {rewardsTab === 'badges' && (
+          <BadgesContent badges={badges} />
+        )}
+        {rewardsTab === 'carstudio' && (
+          <CarStudioContent userCar={userCar} onCarStudio={onCarStudio} />
+        )}
       </ScrollView>
     </View>
   );
 }
 
-function OffersContent({ userData }: { userData: UserData }) {
+function OffersContent({ userData, offers, onViewAll, onLeaderboard }: { userData: UserData; offers: Offer[]; onViewAll: () => void; onLeaderboard: () => void }) {
   return (
-    <>
-      <View style={styles.gemsBox}>
-        <Ionicons name="diamond" size={22} color={Colors.primary} />
-        <Text style={styles.gemsAmount}>{userData.gems}</Text>
-        <Text style={styles.gemsLabel}>gems available</Text>
-      </View>
+    <View style={styles.offersContent}>
+      {/* Leaderboard Preview */}
+      <TouchableOpacity onPress={onLeaderboard} testID="leaderboard-preview">
+        <LinearGradient colors={[Colors.purple, Colors.pink]} style={styles.leaderboardCard}>
+          <View>
+            <Text style={styles.leaderboardLabel}>Your Rank</Text>
+            <Text style={styles.leaderboardRank}>#{userData.rank || 42}</Text>
+          </View>
+          <View style={styles.leaderboardRight}>
+            <Ionicons name="trophy" size={24} color={Colors.yellow} />
+            <Ionicons name="chevron-forward" size={20} color={Colors.white} />
+          </View>
+        </LinearGradient>
+      </TouchableOpacity>
 
-      {mockOffers.map(offer => (
-        <TouchableOpacity key={offer.id} style={styles.offerCard}>
+      {/* View All Offers */}
+      <TouchableOpacity onPress={onViewAll} testID="view-all-offers">
+        <LinearGradient colors={[Colors.emerald, Colors.teal]} style={styles.allOffersCard}>
+          <View>
+            <Text style={styles.allOffersLabel}>
+              {userData.is_premium ? 'Premium: 18% off' : 'Basic: 6% off'}
+            </Text>
+            <Text style={styles.allOffersTitle}>View All Offers</Text>
+          </View>
+          <View style={styles.allOffersRight}>
+            <Ionicons name="gift" size={24} color={Colors.white} />
+            <Ionicons name="chevron-forward" size={20} color={Colors.white} />
+          </View>
+        </LinearGradient>
+      </TouchableOpacity>
+
+      {/* Nearby Offers */}
+      <Text style={styles.sectionTitle}>Nearby Offers</Text>
+      {offers.slice(0, 4).map((offer) => (
+        <TouchableOpacity key={offer.id} style={styles.offerCard} testID={`offer-${offer.id}`}>
           <View style={styles.offerIcon}>
-            <Ionicons name="location" size={24} color={Colors.primary} />
+            <Ionicons
+              name={
+                offer.business_type === 'gas' ? 'flame' :
+                offer.business_type === 'cafe' ? 'cafe' :
+                offer.business_type === 'carwash' ? 'car' : 'gift'
+              }
+              size={22}
+              color={Colors.primary}
+            />
           </View>
           <View style={styles.offerInfo}>
-            <Text style={styles.offerName}>{offer.name}</Text>
-            <Text style={styles.offerType}>{offer.type}</Text>
+            <Text style={styles.offerName}>{offer.business_name}</Text>
+            <Text style={styles.offerDesc}>{offer.description}</Text>
             <View style={styles.offerMeta}>
-              <Ionicons name="location-outline" size={12} color={Colors.textSecondary} />
+              <Ionicons name="location" size={12} color={Colors.textMuted} />
               <Text style={styles.offerDist}>{offer.distance}</Text>
-              <View style={styles.offerGemsBadge}>
-                <Ionicons name="diamond" size={10} color={Colors.primary} />
-                <Text style={styles.offerGemsText}>{offer.gems}</Text>
+              <View style={styles.offerGems}>
+                <Ionicons name="diamond" size={10} color={Colors.gem} />
+                <Text style={styles.offerGemsText}>{offer.gems_reward}</Text>
               </View>
             </View>
           </View>
-          <View style={styles.offerDiscount}>
-            <Text style={styles.offerDiscountVal}>{offer.discount}%</Text>
+          <View style={[styles.offerDiscount, offer.is_premium_offer && styles.offerDiscountPremium]}>
+            <Text style={styles.offerDiscountVal}>{offer.discount_percent}%</Text>
             <Text style={styles.offerDiscountLabel}>OFF</Text>
           </View>
         </TouchableOpacity>
       ))}
-    </>
+    </View>
   );
 }
 
-function ChallengesContent() {
+function ChallengesContent({ challenges }: { challenges: Challenge[] }) {
   return (
-    <>
-      {mockChallenges.map(ch => (
-        <View key={ch.id} style={styles.challengeCard}>
+    <View style={styles.challengesContent}>
+      {challenges.map((ch) => (
+        <View key={ch.id} style={styles.challengeCard} testID={`challenge-${ch.id}`}>
           <View style={styles.challengeHeader}>
             <View style={styles.challengeIcon}>
               <Ionicons name="trophy" size={20} color={Colors.amber} />
@@ -784,9 +1205,9 @@ function ChallengesContent() {
               <Text style={styles.challengeDesc}>{ch.description}</Text>
             </View>
           </View>
-          
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${(ch.progress / ch.goal) * 100}%` }]} />
+
+          <View style={styles.progressBarBg}>
+            <View style={[styles.progressBarFill, { width: `${(ch.progress / ch.goal) * 100}%` }]} />
           </View>
           <Text style={styles.progressText}>{ch.progress}/{ch.goal}</Text>
 
@@ -808,14 +1229,14 @@ function ChallengesContent() {
           )}
         </View>
       ))}
-    </>
+    </View>
   );
 }
 
-function BadgesContent() {
-  const earned = mockBadges.filter(b => b.earned).length;
+function BadgesContent({ badges }: { badges: Badge[] }) {
+  const earned = badges.filter(b => b.earned).length;
   return (
-    <>
+    <View style={styles.badgesContent}>
       <View style={styles.badgeStats}>
         <View style={styles.badgeStat}>
           <Text style={styles.badgeStatVal}>{earned}</Text>
@@ -823,14 +1244,14 @@ function BadgesContent() {
         </View>
         <View style={styles.badgeStatDivider} />
         <View style={styles.badgeStat}>
-          <Text style={styles.badgeStatVal}>{mockBadges.length}</Text>
+          <Text style={styles.badgeStatVal}>{badges.length}</Text>
           <Text style={styles.badgeStatLabel}>Total</Text>
         </View>
       </View>
 
-      <Text style={styles.sectionLabel}>Available Badges</Text>
+      <Text style={styles.sectionTitle}>Available Badges</Text>
       <View style={styles.badgesGrid}>
-        {mockBadges.map(badge => (
+        {badges.map((badge) => (
           <View key={badge.id} style={styles.badgeItem}>
             <View style={[styles.badgeIcon, badge.earned && { backgroundColor: `${badge.color}30` }]}>
               <Ionicons name={badge.icon as any} size={24} color={badge.earned ? badge.color : Colors.textMuted} />
@@ -839,21 +1260,24 @@ function BadgesContent() {
           </View>
         ))}
       </View>
-    </>
+    </View>
   );
 }
 
-function CarStudioContent({ userData }: { userData: UserData }) {
+function CarStudioContent({ userCar, onCarStudio }: { userCar: CarData; onCarStudio: () => void }) {
+  const colorData = carColors.find(c => c.id === userCar.color);
   return (
     <View style={styles.carStudioContent}>
       <View style={styles.carStudioPreview}>
-        <Ionicons name="car-sport" size={80} color={Colors.primary} />
+        <View style={[styles.carStudioIcon, { backgroundColor: colorData?.hex || Colors.primary }]}>
+          <Ionicons name="car-sport" size={64} color={colorData?.hex === '#F8FAFC' ? '#000' : '#fff'} />
+        </View>
         <Text style={styles.carStudioName}>
-          {userData.car.category.charAt(0).toUpperCase() + userData.car.category.slice(1)} - {userData.car.color.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+          {userCar.category.charAt(0).toUpperCase() + userCar.category.slice(1)} - {colorData?.name || 'Blue'}
         </Text>
       </View>
 
-      <TouchableOpacity style={styles.studioOption}>
+      <TouchableOpacity style={styles.studioOption} onPress={onCarStudio}>
         <View style={[styles.studioOptionIcon, { backgroundColor: `${Colors.primary}20` }]}>
           <Ionicons name="color-palette" size={20} color={Colors.primary} />
         </View>
@@ -861,7 +1285,7 @@ function CarStudioContent({ userData }: { userData: UserData }) {
         <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.studioOption}>
+      <TouchableOpacity style={styles.studioOption} onPress={onCarStudio}>
         <View style={[styles.studioOptionIcon, { backgroundColor: `${Colors.purple}20` }]}>
           <Ionicons name="car" size={20} color={Colors.purple} />
         </View>
@@ -873,10 +1297,28 @@ function CarStudioContent({ userData }: { userData: UserData }) {
 }
 
 // ============================================
-// PROFILE TAB CONTENT
+// PROFILE TAB
 // ============================================
-function ProfileTabContent({ activeSubTab, onSubTabChange, userData }: { activeSubTab: ProfileTab; onSubTabChange: (t: ProfileTab) => void; userData: UserData }) {
-  const subTabs = [
+function ProfileTab({
+  userData,
+  profileTab,
+  setProfileTab,
+  userCar,
+  onTripHistory,
+  onLeaderboard,
+  onFriends,
+  onHelp,
+}: {
+  userData: UserData;
+  profileTab: ProfileTab;
+  setProfileTab: (tab: ProfileTab) => void;
+  userCar: CarData;
+  onTripHistory: () => void;
+  onLeaderboard: () => void;
+  onFriends: () => void;
+  onHelp: () => void;
+}) {
+  const subTabs: { id: ProfileTab; label: string; icon: string }[] = [
     { id: 'overview', label: 'Overview', icon: 'person-outline' },
     { id: 'score', label: 'Score', icon: 'shield-checkmark-outline' },
     { id: 'fuel', label: 'Fuel', icon: 'flame-outline' },
@@ -885,32 +1327,62 @@ function ProfileTabContent({ activeSubTab, onSubTabChange, userData }: { activeS
 
   return (
     <View style={styles.tabContent}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subTabsScroll}>
-        <View style={styles.subTabsRow}>
-          {subTabs.map(t => (
+      {/* Sub-tabs */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.profileSubTabs}>
+        <View style={styles.profileSubTabsRow}>
+          {subTabs.map((tab) => (
             <TouchableOpacity
-              key={t.id}
-              style={[styles.subTab, activeSubTab === t.id && styles.subTabActive]}
-              onPress={() => onSubTabChange(t.id as ProfileTab)}
+              key={tab.id}
+              style={[styles.profileSubTab, profileTab === tab.id && styles.profileSubTabActive]}
+              onPress={() => setProfileTab(tab.id)}
+              testID={`profile-tab-${tab.id}`}
             >
-              <Ionicons name={t.icon as any} size={16} color={activeSubTab === t.id ? Colors.primary : Colors.textSecondary} />
-              <Text style={[styles.subTabText, activeSubTab === t.id && styles.subTabTextActive]}>{t.label}</Text>
+              <Ionicons name={tab.icon as any} size={16} color={profileTab === tab.id ? Colors.primary : Colors.textSecondary} />
+              <Text style={[styles.profileSubTabText, profileTab === tab.id && styles.profileSubTabTextActive]}>{tab.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
       </ScrollView>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {activeSubTab === 'overview' && <ProfileOverview userData={userData} />}
-        {activeSubTab === 'settings' && <ProfileSettings />}
+        {profileTab === 'overview' && (
+          <ProfileOverview
+            userData={userData}
+            userCar={userCar}
+            onTripHistory={onTripHistory}
+            onLeaderboard={onLeaderboard}
+            onFriends={onFriends}
+            onHelp={onHelp}
+          />
+        )}
+        {profileTab === 'score' && <ProfileScore userData={userData} />}
+        {profileTab === 'fuel' && <ProfileFuel userData={userData} />}
+        {profileTab === 'settings' && <ProfileSettings />}
       </ScrollView>
     </View>
   );
 }
 
-function ProfileOverview({ userData }: { userData: UserData }) {
+function ProfileOverview({
+  userData,
+  userCar,
+  onTripHistory,
+  onLeaderboard,
+  onFriends,
+  onHelp,
+}: {
+  userData: UserData;
+  userCar: CarData;
+  onTripHistory: () => void;
+  onLeaderboard: () => void;
+  onFriends: () => void;
+  onHelp: () => void;
+}) {
+  const colorData = carColors.find(c => c.id === userCar.color);
+  
   return (
-    <>
+    <View style={styles.profileOverview}>
+      {/* Header */}
       <View style={styles.profileHeader}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{userData.name.charAt(0)}</Text>
@@ -919,7 +1391,7 @@ function ProfileOverview({ userData }: { userData: UserData }) {
           </View>
         </View>
         <Text style={styles.profileName}>{userData.name}</Text>
-        <Text style={styles.profileMeta}>Member since Dec 2025</Text>
+        <Text style={styles.profileMeta}>Member since {userData.member_since}</Text>
         {userData.is_premium && (
           <View style={styles.premiumTag}>
             <Ionicons name="star" size={12} color={Colors.amber} />
@@ -928,9 +1400,10 @@ function ProfileOverview({ userData }: { userData: UserData }) {
         )}
       </View>
 
+      {/* Stats Grid */}
       <View style={styles.statsGrid}>
         <View style={styles.statCard}>
-          <Ionicons name="diamond" size={20} color={Colors.primary} />
+          <Ionicons name="diamond" size={20} color={Colors.gem} />
           <Text style={styles.statVal}>{userData.gems}</Text>
           <Text style={styles.statLabel}>Gems</Text>
         </View>
@@ -951,13 +1424,14 @@ function ProfileOverview({ userData }: { userData: UserData }) {
         </View>
       </View>
 
+      {/* Menu Items */}
       {[
-        { icon: 'car-outline', label: 'Trip History', color: Colors.primary },
-        { icon: 'trophy-outline', label: 'Leaderboard', color: Colors.orange },
-        { icon: 'people-outline', label: 'Friends', color: Colors.purple },
-        { icon: 'help-circle-outline', label: 'Help & Support', color: Colors.green },
+        { icon: 'car-outline', label: 'Trip History', color: Colors.primary, onPress: onTripHistory },
+        { icon: 'trophy-outline', label: 'Leaderboard', color: Colors.orange, onPress: onLeaderboard },
+        { icon: 'people-outline', label: 'Friends', color: Colors.purple, onPress: onFriends },
+        { icon: 'help-circle-outline', label: 'Help & Support', color: Colors.green, onPress: onHelp },
       ].map((item, i) => (
-        <TouchableOpacity key={i} style={styles.menuItem}>
+        <TouchableOpacity key={i} style={styles.menuItem} onPress={item.onPress} testID={`menu-${item.label.toLowerCase().replace(/\s/g, '-')}`}>
           <View style={[styles.menuItemIcon, { backgroundColor: `${item.color}20` }]}>
             <Ionicons name={item.icon as any} size={22} color={item.color} />
           </View>
@@ -965,13 +1439,49 @@ function ProfileOverview({ userData }: { userData: UserData }) {
           <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
         </TouchableOpacity>
       ))}
-    </>
+    </View>
+  );
+}
+
+function ProfileScore({ userData }: { userData: UserData }) {
+  return (
+    <View style={styles.profileScore}>
+      <View style={styles.scoreCircle}>
+        <Text style={styles.scoreValue}>{userData.safety_score}</Text>
+        <Text style={styles.scoreLabel}>Safety Score</Text>
+      </View>
+      <View style={styles.scoreStats}>
+        <View style={styles.scoreStat}>
+          <Text style={styles.scoreStatVal}>{userData.safe_drive_streak}</Text>
+          <Text style={styles.scoreStatLabel}>Safe Drive Streak</Text>
+        </View>
+        <View style={styles.scoreStat}>
+          <Text style={styles.scoreStatVal}>{userData.total_trips}</Text>
+          <Text style={styles.scoreStatLabel}>Total Trips</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ProfileFuel({ userData }: { userData: UserData }) {
+  return (
+    <View style={styles.profileFuel}>
+      <View style={styles.fuelCard}>
+        <Ionicons name="flame" size={32} color={Colors.orange} />
+        <Text style={styles.fuelTitle}>Fuel Tracker</Text>
+        <Text style={styles.fuelDesc}>Track your fuel efficiency and costs</Text>
+        <TouchableOpacity style={styles.fuelBtn}>
+          <Text style={styles.fuelBtnText}>Add Fuel Entry</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 function ProfileSettings() {
   return (
-    <>
+    <View style={styles.profileSettings}>
       {[
         { icon: 'notifications-outline', label: 'Notifications' },
         { icon: 'lock-closed-outline', label: 'Privacy' },
@@ -979,62 +1489,282 @@ function ProfileSettings() {
         { icon: 'help-circle-outline', label: 'Help & Support' },
         { icon: 'information-circle-outline', label: 'About' },
       ].map((item, i) => (
-        <TouchableOpacity key={i} style={styles.settingsItem}>
+        <TouchableOpacity key={i} style={styles.settingsItem} testID={`settings-${item.label.toLowerCase()}`}>
           <Ionicons name={item.icon as any} size={22} color={Colors.textSecondary} />
           <Text style={styles.settingsLabel}>{item.label}</Text>
           <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
         </TouchableOpacity>
       ))}
 
-      <TouchableOpacity style={styles.logoutBtn}>
+      <TouchableOpacity style={styles.logoutBtn} testID="logout-btn">
         <Ionicons name="log-out-outline" size={20} color={Colors.red} />
         <Text style={styles.logoutText}>Sign Out</Text>
       </TouchableOpacity>
-    </>
+    </View>
   );
 }
 
 // ============================================
 // SIDE MENU MODAL
 // ============================================
-function SideMenuModal({ visible, onClose, userData }: { visible: boolean; onClose: () => void; userData: UserData }) {
+function SideMenuModal({
+  visible,
+  onClose,
+  userData,
+  userCar,
+  routes,
+  locations,
+  offers,
+  badges,
+  onNavigate,
+  onFriendsHub,
+  onLeaderboard,
+  onBadges,
+  onCarStudio,
+  onGemHistory,
+  onHelp,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  userData: UserData;
+  userCar: CarData;
+  routes: SavedRoute[];
+  locations: SavedLocation[];
+  offers: Offer[];
+  badges: Badge[];
+  onNavigate: (tab: TabType) => void;
+  onFriendsHub: () => void;
+  onLeaderboard: () => void;
+  onBadges: () => void;
+  onCarStudio: () => void;
+  onGemHistory: () => void;
+  onHelp: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const colorData = carColors.find(c => c.id === userCar.color);
+
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={styles.menuContainer}>
-          <View style={styles.menuHeader}>
-            <View style={styles.menuAvatar}>
-              <Text style={styles.menuAvatarText}>{userData.name.charAt(0)}</Text>
-            </View>
+        <View style={[styles.menuContainer, { paddingTop: insets.top }]}>
+          {/* Header */}
+          <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.menuHeader}>
+            <TouchableOpacity style={styles.menuCarIcon} onPress={onCarStudio}>
+              <View style={[styles.menuCarBg, { backgroundColor: colorData?.hex || Colors.primary }]}>
+                <Ionicons name="car-sport" size={24} color={Colors.white} />
+              </View>
+            </TouchableOpacity>
             <View style={styles.menuUserInfo}>
               <Text style={styles.menuUserName}>{userData.name}</Text>
-              <Text style={styles.menuUserEmail}>driver@snaproad.com</Text>
+              <Text style={styles.menuUserMeta}>Level {userData.level} • {userData.is_premium ? 'PRO' : 'Free'}</Text>
             </View>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={28} color={Colors.white} />
+
+            {/* User ID Card */}
+            <View style={styles.menuIdCard}>
+              <View>
+                <Text style={styles.menuIdLabel}>Your ID</Text>
+                <Text style={styles.menuIdValue}>{userData.id}</Text>
+              </View>
+              <View>
+                <Text style={styles.menuIdLabel}>Friends</Text>
+                <Text style={styles.menuIdValue}>{userData.friends_count}</Text>
+              </View>
+            </View>
+
+            {/* Stats Row */}
+            <View style={styles.menuStatsRow}>
+              <View style={styles.menuStat}>
+                <Text style={styles.menuStatVal}>{(userData.gems / 1000).toFixed(1)}K</Text>
+                <Text style={styles.menuStatLabel}>Gems</Text>
+              </View>
+              <View style={styles.menuStat}>
+                <Text style={styles.menuStatVal}>{userData.safety_score}</Text>
+                <Text style={styles.menuStatLabel}>Score</Text>
+              </View>
+              <View style={styles.menuStat}>
+                <Text style={styles.menuStatVal}>#{userData.rank}</Text>
+                <Text style={styles.menuStatLabel}>Rank</Text>
+              </View>
+            </View>
+          </LinearGradient>
+
+          {/* Menu Items */}
+          <ScrollView style={styles.menuContent}>
+            <Text style={styles.menuSection}>SOCIAL</Text>
+            <TouchableOpacity style={styles.menuRow} onPress={onFriendsHub} testID="menu-friends-hub">
+              <Ionicons name="people-outline" size={18} color={Colors.textSecondary} />
+              <Text style={styles.menuRowText}>Friends Hub</Text>
+              <View style={styles.menuRowBadge}>
+                <Text style={styles.menuRowBadgeText}>{userData.friends_count}</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuRow} onPress={onLeaderboard} testID="menu-leaderboard">
+              <Ionicons name="bar-chart-outline" size={18} color={Colors.textSecondary} />
+              <Text style={styles.menuRowText}>Leaderboard</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.menuSection}>NAVIGATION</Text>
+            <TouchableOpacity style={styles.menuRow} onPress={() => onNavigate('map')} testID="menu-map">
+              <Ionicons name="location-outline" size={18} color={Colors.textSecondary} />
+              <Text style={styles.menuRowText}>Map</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuRow} onPress={() => onNavigate('routes')} testID="menu-routes">
+              <Ionicons name="git-branch-outline" size={18} color={Colors.textSecondary} />
+              <Text style={styles.menuRowText}>My Routes</Text>
+              <View style={styles.menuRowBadge}>
+                <Text style={styles.menuRowBadgeText}>{routes.length}/20</Text>
+              </View>
+            </TouchableOpacity>
+
+            <Text style={styles.menuSection}>REWARDS</Text>
+            <TouchableOpacity style={styles.menuRow} onPress={() => onNavigate('rewards')} testID="menu-offers">
+              <Ionicons name="gift-outline" size={18} color={Colors.textSecondary} />
+              <Text style={styles.menuRowText}>Offers</Text>
+              <View style={styles.menuRowBadge}>
+                <Text style={styles.menuRowBadgeText}>{offers.length}</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuRow} onPress={onBadges} testID="menu-badges">
+              <Ionicons name="ribbon-outline" size={18} color={Colors.textSecondary} />
+              <Text style={styles.menuRowText}>All Badges</Text>
+              <View style={styles.menuRowBadge}>
+                <Text style={styles.menuRowBadgeText}>{badges.filter(b => b.earned).length}/{badges.length}</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuRow} onPress={onCarStudio} testID="menu-car-studio">
+              <Ionicons name="car-outline" size={18} color={Colors.textSecondary} />
+              <Text style={styles.menuRowText}>Car Studio</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.menuSection}>SETTINGS</Text>
+            <TouchableOpacity style={styles.menuRow} onPress={() => onNavigate('profile')} testID="menu-settings">
+              <Ionicons name="settings-outline" size={18} color={Colors.textSecondary} />
+              <Text style={styles.menuRowText}>Settings</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuRow} onPress={onHelp} testID="menu-help">
+              <Ionicons name="help-circle-outline" size={18} color={Colors.textSecondary} />
+              <Text style={styles.menuRowText}>Help</Text>
+            </TouchableOpacity>
+          </ScrollView>
+
+          {/* Logout */}
+          <View style={styles.menuFooter}>
+            <TouchableOpacity style={styles.menuLogout} testID="menu-logout">
+              <Ionicons name="log-out-outline" size={18} color={Colors.red} />
+              <Text style={styles.menuLogoutText}>Log Out</Text>
             </TouchableOpacity>
           </View>
-
-          <ScrollView style={styles.menuContent}>
-            {[
-              { icon: 'person-outline', label: 'Profile' },
-              { icon: 'car-outline', label: 'Trip History' },
-              { icon: 'diamond-outline', label: 'Gem History' },
-              { icon: 'trophy-outline', label: 'Leaderboard' },
-              { icon: 'people-outline', label: 'Friends' },
-              { icon: 'ribbon-outline', label: 'Badges' },
-              { icon: 'notifications-outline', label: 'Notifications' },
-              { icon: 'settings-outline', label: 'Settings' },
-              { icon: 'help-circle-outline', label: 'Help & Support' },
-            ].map((item, i) => (
-              <TouchableOpacity key={i} style={styles.menuRow}>
-                <Ionicons name={item.icon as any} size={22} color={Colors.textSecondary} />
-                <Text style={styles.menuRowText}>{item.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
         </View>
       </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// ============================================
+// SEARCH MODAL
+// ============================================
+function SearchModal({
+  visible,
+  onClose,
+  searchQuery,
+  setSearchQuery,
+  onSelectDestination,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  onSelectDestination: (dest: any) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [results, setResults] = useState<any[]>([]);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={[styles.searchModal, { paddingTop: insets.top }]}>
+        <View style={styles.searchModalHeader}>
+          <TouchableOpacity onPress={onClose} testID="search-close">
+            <Ionicons name="arrow-back" size={24} color={Colors.white} />
+          </TouchableOpacity>
+          <TextInput
+            style={styles.searchModalInput}
+            placeholder="Search for a place"
+            placeholderTextColor={Colors.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoFocus
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={20} color={Colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <ScrollView style={styles.searchResults}>
+          {results.length === 0 && searchQuery.length === 0 && (
+            <View style={styles.searchEmpty}>
+              <Ionicons name="search" size={48} color={Colors.textMuted} />
+              <Text style={styles.searchEmptyText}>Search for places, addresses, or businesses</Text>
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+// ============================================
+// ORION VOICE MODAL
+// ============================================
+function OrionVoiceModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const insets = useSafeAreaInsets();
+  const [isListening, setIsListening] = useState(false);
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent>
+      <View style={styles.orionModal}>
+        <TouchableOpacity style={styles.orionClose} onPress={onClose} testID="orion-close">
+          <Ionicons name="close" size={28} color={Colors.white} />
+        </TouchableOpacity>
+
+        <View style={styles.orionContent}>
+          <Text style={styles.orionTitle}>Orion Voice Assistant</Text>
+          <Text style={styles.orionSubtitle}>Tap the mic and speak</Text>
+
+          <TouchableOpacity
+            style={[styles.orionMicBtn, isListening && styles.orionMicBtnActive]}
+            onPress={() => setIsListening(!isListening)}
+            testID="orion-mic"
+          >
+            <LinearGradient
+              colors={isListening ? [Colors.green, Colors.emerald] : [Colors.purple, '#7C3AED']}
+              style={styles.orionMicGradient}
+            >
+              <Ionicons name={isListening ? 'radio' : 'mic'} size={48} color={Colors.white} />
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <Text style={styles.orionHint}>
+            {isListening ? 'Listening...' : 'Try "Report pothole ahead"'}
+          </Text>
+
+          <View style={styles.orionCommands}>
+            <Text style={styles.orionCommandsTitle}>Quick Commands</Text>
+            {[
+              'Report pothole ahead',
+              'Navigate to home',
+              'Find gas stations',
+              'Share my trip',
+            ].map((cmd, i) => (
+              <TouchableOpacity key={i} style={styles.orionCommandItem}>
+                <Ionicons name="mic" size={14} color={Colors.purple} />
+                <Text style={styles.orionCommandText}>{cmd}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -1044,26 +1774,25 @@ function SideMenuModal({ visible, onClose, userData }: { visible: boolean; onClo
 // ============================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  fullScreen: { flex: 1 },
-
+  flex1: { flex: 1 },
+  
   // Plan Selection
   planHeader: { alignItems: 'center', paddingTop: 32, paddingHorizontal: 20, paddingBottom: 16 },
-  planHeaderIconRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  planHeaderLabel: { color: Colors.amber, fontSize: 12, fontWeight: '600', letterSpacing: 1 },
-  planTitle: { color: Colors.white, fontSize: 24, fontWeight: 'bold' },
-  planSubtitle: { color: Colors.textSecondary, fontSize: 14, marginTop: 6 },
-  planScroll: { flex: 1 },
-  planScrollContent: { padding: 16, paddingBottom: 24 },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  labelText: { color: Colors.amber, fontSize: 12, fontWeight: '600', letterSpacing: 1 },
+  titleText: { color: Colors.white, fontSize: 24, fontWeight: 'bold', textAlign: 'center' },
+  subtitleText: { color: Colors.textSecondary, fontSize: 14, marginTop: 6, textAlign: 'center' },
+  planContent: { padding: 16, paddingBottom: 24 },
   planCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 18, marginBottom: 14, borderWidth: 2, borderColor: 'transparent' },
   planCardSelected: { borderColor: Colors.primary, backgroundColor: `${Colors.primary}15` },
   planCardPremium: { backgroundColor: 'rgba(180, 83, 9, 0.15)' },
   planCardPremiumSelected: { borderColor: Colors.amber, backgroundColor: 'rgba(245, 158, 11, 0.2)' },
-  popularBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: Colors.amber, paddingHorizontal: 12, paddingVertical: 4, borderBottomLeftRadius: 12 },
-  popularBadgeText: { color: Colors.white, fontSize: 10, fontWeight: 'bold' },
+  popularBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: Colors.amber, paddingHorizontal: 12, paddingVertical: 4, borderBottomLeftRadius: 12, borderTopRightRadius: 18 },
+  popularText: { color: Colors.white, fontSize: 10, fontWeight: 'bold' },
   planCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
   planName: { color: Colors.white, fontSize: 16, fontWeight: 'bold' },
   premiumNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  planPriceRow: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  priceRow: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   planPrice: { color: Colors.white, fontSize: 28, fontWeight: 'bold' },
   planPeriod: { color: Colors.textSecondary, fontSize: 14 },
   originalPrice: { color: Colors.textMuted, fontSize: 12, textDecorationLine: 'line-through', marginLeft: 8 },
@@ -1081,23 +1810,18 @@ const styles = StyleSheet.create({
   featuresList: { gap: 8 },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   featureText: { color: Colors.textSecondary, fontSize: 13 },
-  planFooter: { padding: 16, borderTopWidth: 1, borderTopColor: Colors.surface, backgroundColor: 'rgba(15, 23, 42, 0.9)' },
+  planFooter: { padding: 16, borderTopWidth: 1, borderTopColor: Colors.surface },
   continueBtn: { borderRadius: 16, overflow: 'hidden' },
-  continueBtnPremium: {},
-  continueBtnDisabled: {},
   continueBtnGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
   continueBtnText: { color: Colors.white, fontSize: 16, fontWeight: 'bold' },
   footerNote: { color: Colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: 10 },
 
   // Car Onboarding
   carHeader: { paddingHorizontal: 20, paddingTop: 32, paddingBottom: 16 },
-  carHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  carTitle: { color: Colors.white, fontSize: 24, fontWeight: 'bold', marginTop: 16 },
-  carSubtitle: { color: Colors.textSecondary, fontSize: 14, marginTop: 4 },
-  progressBarRow: { flexDirection: 'row', gap: 8, marginTop: 16 },
-  progressBarSegment: { flex: 1, height: 6, borderRadius: 3, backgroundColor: Colors.surfaceLight },
-  progressBarActive: { backgroundColor: Colors.amber },
-  carContent: { flex: 1, paddingHorizontal: 20 },
+  progressRow: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  progressSegment: { flex: 1, height: 6, borderRadius: 3, backgroundColor: Colors.surfaceLight },
+  progressActive: { backgroundColor: Colors.amber },
+  carContent: { padding: 20 },
   carTypesList: { gap: 14 },
   carTypeCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, padding: 16, borderRadius: 16, borderWidth: 2, borderColor: 'transparent' },
   carTypeCardSelected: { borderColor: Colors.primary, backgroundColor: `${Colors.primary}15` },
@@ -1106,22 +1830,22 @@ const styles = StyleSheet.create({
   carTypeInfo: { flex: 1, marginLeft: 14 },
   carTypeName: { color: Colors.white, fontSize: 16, fontWeight: 'bold' },
   carTypeDesc: { color: Colors.textSecondary, fontSize: 13, marginTop: 2 },
-  colorContent: {},
   carPreviewBox: { alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 24, padding: 24, marginBottom: 24, position: 'relative' },
-  carPreviewGlow: { position: 'absolute', top: 20, width: 150, height: 150, borderRadius: 75, backgroundColor: `${Colors.primary}20` },
+  carPreviewGlow: { position: 'absolute', top: 20, width: 150, height: 150, borderRadius: 75 },
   carPreviewIcon: { width: 140, height: 100, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   carPreviewName: { color: Colors.white, fontSize: 18, fontWeight: '600', marginTop: 16 },
   carPreviewType: { color: Colors.textSecondary, fontSize: 14, marginTop: 2 },
-  colorGridLabel: { color: Colors.textSecondary, fontSize: 13, marginBottom: 12 },
+  colorLabel: { color: Colors.textSecondary, fontSize: 13, marginBottom: 12 },
   colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' },
   colorSwatch: { padding: 4 },
   colorSwatchSelected: { transform: [{ scale: 1.15 }] },
   colorSwatchInner: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   colorSwatchLocked: { opacity: 0.4 },
-  lockEmoji: { fontSize: 20 },
   colorCheckmark: { backgroundColor: 'rgba(255,255,255,0.9)', width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  colorPrice: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 4, gap: 2 },
+  colorPriceText: { color: Colors.gem, fontSize: 10, fontWeight: '600' },
   colorHint: { color: Colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: 20 },
-  carFooter: { padding: 16, borderTopWidth: 1, borderTopColor: Colors.surface, backgroundColor: 'rgba(15, 23, 42, 0.95)' },
+  carFooter: { padding: 16, borderTopWidth: 1, borderTopColor: Colors.surface },
   carContinueBtn: { borderRadius: 16, overflow: 'hidden' },
   carContinueGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
   carContinueText: { color: Colors.white, fontSize: 16, fontWeight: 'bold' },
@@ -1129,15 +1853,7 @@ const styles = StyleSheet.create({
   backBtnText: { color: Colors.textSecondary, fontSize: 14 },
 
   // Main App
-  statusBarArea: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 8, backgroundColor: Colors.background },
-  statusTime: { color: Colors.white, fontSize: 15, fontWeight: '600' },
-  statusRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  statusText: { color: Colors.white, fontSize: 13, fontWeight: '500' },
-  mainHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: Colors.background, gap: 12 },
-  menuBtn: { padding: 8 },
-  searchBar: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 24, paddingHorizontal: 16, height: 46, gap: 10 },
-  searchInput: { flex: 1, color: Colors.white, fontSize: 16 },
-  micBtn: { padding: 8 },
+  statusBarPadding: { backgroundColor: Colors.background },
   mainContent: { flex: 1 },
   tabBar: { flexDirection: 'row', backgroundColor: Colors.tabBarBg, paddingTop: 12, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
   tabBarItem: { flex: 1, alignItems: 'center', gap: 4 },
@@ -1146,81 +1862,110 @@ const styles = StyleSheet.create({
 
   // Map Tab
   mapContainer: { flex: 1 },
-  filterRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, gap: 10 },
-  filterBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.primary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, gap: 8 },
-  filterBtnActive: {},
-  filterBtnInactive: { backgroundColor: Colors.surface },
-  filterBtnOrange: { backgroundColor: Colors.orange },
-  filterBtnText: { color: Colors.white, fontSize: 14, fontWeight: '600' },
-  filterBtnTextInactive: { color: Colors.textSecondary, fontSize: 14, fontWeight: '500' },
-  quickLocRow: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 10, gap: 12 },
-  quickLocCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14, gap: 12 },
-  quickLocIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: Colors.surfaceLight, alignItems: 'center', justifyContent: 'center' },
-  quickLocName: { color: Colors.white, fontSize: 15, fontWeight: '600' },
-  quickLocAction: { color: Colors.primary, fontSize: 12, fontWeight: '500' },
-  addLocBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
-  mapArea: { flex: 1, backgroundColor: '#151922', position: 'relative' },
+  mapTopBar: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, padding: 12, paddingTop: 8 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  menuBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(15,23,42,0.95)', alignItems: 'center', justifyContent: 'center' },
+  searchBar: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(15,23,42,0.95)', borderRadius: 24, paddingHorizontal: 16, height: 46, gap: 10 },
+  searchPlaceholder: { flex: 1, color: Colors.textSecondary, fontSize: 15 },
+  pillsScroll: { marginTop: 10 },
+  pillsRow: { flexDirection: 'row', gap: 8 },
+  pill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(15,23,42,0.9)', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, gap: 6 },
+  pillActive: { backgroundColor: Colors.primary },
+  pillOrange: { backgroundColor: Colors.orange },
+  pillBlue: { backgroundColor: Colors.primary },
+  pillText: { color: Colors.white, fontSize: 14, fontWeight: '500' },
+  pillTextActive: { color: Colors.white },
+  locationsScroll: { marginTop: 10 },
+  locationsRow: { flexDirection: 'row', gap: 10 },
+  locationCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(15,23,42,0.9)', paddingLeft: 10, paddingRight: 14, paddingVertical: 10, borderRadius: 14, gap: 10 },
+  locationIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.surfaceLight, alignItems: 'center', justifyContent: 'center' },
+  locationName: { color: Colors.white, fontSize: 14, fontWeight: '600' },
+  locationAddress: { color: Colors.textMuted, fontSize: 11, maxWidth: 80 },
+  locationAction: { color: Colors.primary, fontSize: 11, fontWeight: '500' },
+  nearbyCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(15,23,42,0.9)', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, gap: 8 },
+  nearbyText: { color: Colors.white, fontSize: 14 },
+  mapArea: { flex: 1, backgroundColor: '#151922' },
   mapBg: { ...StyleSheet.absoluteFillObject },
-  mapLine: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: '#2a3040' },
+  mapLineH: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: '#2a3040' },
   mapLineV: { position: 'absolute', top: 0, bottom: 0, width: 1, backgroundColor: '#2a3040' },
   mapLabel: { position: 'absolute', color: '#4a5568', fontSize: 10, fontStyle: 'italic' },
   gemMarker: { position: 'absolute', alignItems: 'center' },
   gemCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', shadowColor: Colors.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 8, elevation: 8 },
-  gemCircleGreen: { backgroundColor: Colors.green, shadowColor: Colors.green },
+  gemCirclePremium: { backgroundColor: Colors.green, shadowColor: Colors.green },
   gemPercent: { color: Colors.white, fontSize: 11, fontWeight: '600', marginTop: 4 },
   carMarker: { position: 'absolute', top: '45%', left: '48%' },
-  carEmoji: { fontSize: 24 },
-  orionBtn: { position: 'absolute', bottom: 80, right: 16 },
+  carIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  orionFab: { position: 'absolute', bottom: 80, right: 16 },
   orionGradient: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', shadowColor: Colors.purple, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, elevation: 10 },
-  cameraBtn: { position: 'absolute', bottom: 80, right: 86, width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
+  cameraFab: { position: 'absolute', bottom: 80, right: 86, width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
 
   // Tab Content
-  tabContent: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
-  tabTitle: { color: Colors.white, fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
-  subTabsScroll: { marginBottom: 16, maxHeight: 44 },
-  subTabsRow: { flexDirection: 'row', gap: 10 },
-  subTab: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, gap: 6 },
-  subTabActive: { backgroundColor: `${Colors.primary}20`, borderWidth: 1, borderColor: Colors.primary },
-  subTabText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '500' },
-  subTabTextActive: { color: Colors.primary, fontWeight: '600' },
+  tabContent: { flex: 1, backgroundColor: Colors.background },
+  tabTitle: { color: Colors.white, fontSize: 22, fontWeight: 'bold', paddingHorizontal: 16, paddingTop: 16 },
+  tabSubtitle: { color: Colors.textSecondary, fontSize: 13, paddingHorizontal: 16, marginBottom: 16 },
 
   // Routes
-  routeCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, padding: 14, borderRadius: 14, marginBottom: 12, gap: 12 },
+  routeCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, marginHorizontal: 16, marginBottom: 12, padding: 14, borderRadius: 14, gap: 12 },
   routeIconBox: { width: 44, height: 44, borderRadius: 22, backgroundColor: `${Colors.primary}20`, alignItems: 'center', justifyContent: 'center' },
   routeInfo: { flex: 1 },
   routeName: { color: Colors.white, fontSize: 15, fontWeight: '600' },
   routeMeta: { color: Colors.textSecondary, fontSize: 13, marginTop: 2 },
+  routeDays: { flexDirection: 'row', gap: 4, marginTop: 6 },
+  routeDay: { width: 22, height: 22, borderRadius: 11, backgroundColor: Colors.surfaceLight, alignItems: 'center', justifyContent: 'center' },
+  routeDayActive: { backgroundColor: Colors.primary },
+  routeDayText: { color: Colors.textMuted, fontSize: 10, fontWeight: '600' },
+  routeDayTextActive: { color: Colors.white },
   activeBadge: { backgroundColor: `${Colors.green}20`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   activeBadgeText: { color: Colors.green, fontSize: 11, fontWeight: '600' },
-  addRouteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 14, marginTop: 8, gap: 8 },
+  addRouteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginHorizontal: 16, marginTop: 8, paddingVertical: 14, borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 14, gap: 8 },
   addRouteText: { color: Colors.primary, fontSize: 14, fontWeight: '600' },
 
-  // Offers
-  gemsBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, padding: 16, borderRadius: 14, marginBottom: 16, gap: 10 },
-  gemsAmount: { color: Colors.primary, fontSize: 26, fontWeight: 'bold' },
-  gemsLabel: { color: Colors.textSecondary, fontSize: 14 },
-  offerCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, padding: 14, borderRadius: 14, marginBottom: 12, gap: 12 },
-  offerIcon: { width: 50, height: 50, borderRadius: 12, backgroundColor: `${Colors.primary}20`, alignItems: 'center', justifyContent: 'center' },
+  // Rewards
+  rewardsHeader: { padding: 16, paddingBottom: 0 },
+  rewardsHeaderContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  rewardsTitle: { color: Colors.white, fontSize: 20, fontWeight: 'bold' },
+  gemsBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, gap: 6 },
+  gemsText: { color: Colors.white, fontSize: 14, fontWeight: 'bold' },
+  subTabsContainer: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 14, padding: 4, marginBottom: 16 },
+  subTab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
+  subTabActive: { backgroundColor: Colors.white },
+  subTabText: { color: Colors.white, fontSize: 12, fontWeight: '500' },
+  subTabTextActive: { color: Colors.emerald, fontWeight: '600' },
+  rewardsContent: { flex: 1, paddingHorizontal: 16 },
+  offersContent: {},
+  leaderboardCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderRadius: 16, padding: 16, marginBottom: 12 },
+  leaderboardLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 12 },
+  leaderboardRank: { color: Colors.white, fontSize: 28, fontWeight: 'bold' },
+  leaderboardRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  allOffersCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderRadius: 16, padding: 16, marginBottom: 16 },
+  allOffersLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 12 },
+  allOffersTitle: { color: Colors.white, fontSize: 18, fontWeight: 'bold' },
+  allOffersRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sectionTitle: { color: Colors.white, fontSize: 16, fontWeight: '600', marginBottom: 12, marginTop: 8 },
+  offerCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, padding: 14, borderRadius: 14, marginBottom: 10, gap: 12 },
+  offerIcon: { width: 48, height: 48, borderRadius: 12, backgroundColor: `${Colors.primary}20`, alignItems: 'center', justifyContent: 'center' },
   offerInfo: { flex: 1 },
   offerName: { color: Colors.white, fontSize: 15, fontWeight: '600' },
-  offerType: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
+  offerDesc: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
   offerMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 4 },
-  offerDist: { color: Colors.textSecondary, fontSize: 11, marginRight: 10 },
-  offerGemsBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: `${Colors.primary}20`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, gap: 4 },
-  offerGemsText: { color: Colors.primary, fontSize: 10, fontWeight: '600' },
-  offerDiscount: { backgroundColor: Colors.green, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, alignItems: 'center' },
+  offerDist: { color: Colors.textMuted, fontSize: 11, marginRight: 10 },
+  offerGems: { flexDirection: 'row', alignItems: 'center', backgroundColor: `${Colors.gem}20`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, gap: 4 },
+  offerGemsText: { color: Colors.gem, fontSize: 10, fontWeight: '600' },
+  offerDiscount: { backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, alignItems: 'center' },
+  offerDiscountPremium: { backgroundColor: Colors.green },
   offerDiscountVal: { color: Colors.white, fontSize: 18, fontWeight: 'bold' },
   offerDiscountLabel: { color: Colors.white, fontSize: 9, fontWeight: '500', opacity: 0.9 },
 
   // Challenges
+  challengesContent: {},
   challengeCard: { backgroundColor: Colors.surface, padding: 16, borderRadius: 14, marginBottom: 12 },
   challengeHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12, gap: 12 },
   challengeIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: `${Colors.amber}20`, alignItems: 'center', justifyContent: 'center' },
   challengeInfo: { flex: 1 },
   challengeTitle: { color: Colors.white, fontSize: 15, fontWeight: '600' },
   challengeDesc: { color: Colors.textSecondary, fontSize: 13, marginTop: 2 },
-  progressBar: { height: 6, backgroundColor: Colors.surfaceLight, borderRadius: 3, marginBottom: 4 },
-  progressFill: { height: '100%', backgroundColor: Colors.primary, borderRadius: 3 },
+  progressBarBg: { height: 6, backgroundColor: Colors.surfaceLight, borderRadius: 3, marginBottom: 4 },
+  progressBarFill: { height: '100%', backgroundColor: Colors.primary, borderRadius: 3 },
   progressText: { color: Colors.textSecondary, fontSize: 11, textAlign: 'right', marginBottom: 12 },
   rewardsRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   rewardItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -1229,12 +1974,12 @@ const styles = StyleSheet.create({
   joinBtnText: { color: Colors.primary, fontSize: 13, fontWeight: '600' },
 
   // Badges
+  badgesContent: {},
   badgeStats: { flexDirection: 'row', backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 20 },
   badgeStat: { flex: 1, alignItems: 'center' },
   badgeStatVal: { color: Colors.white, fontSize: 24, fontWeight: 'bold' },
   badgeStatLabel: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
   badgeStatDivider: { width: 1, backgroundColor: Colors.surfaceLight, marginHorizontal: 16 },
-  sectionLabel: { color: Colors.white, fontSize: 16, fontWeight: '600', marginBottom: 12 },
   badgesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   badgeItem: { width: (width - 64) / 3, alignItems: 'center' },
   badgeIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.surfaceLight, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
@@ -1243,12 +1988,20 @@ const styles = StyleSheet.create({
   // Car Studio
   carStudioContent: {},
   carStudioPreview: { alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 20, padding: 32, marginBottom: 20 },
+  carStudioIcon: { width: 120, height: 80, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   carStudioName: { color: Colors.white, fontSize: 16, fontWeight: '600', marginTop: 16 },
   studioOption: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, padding: 14, borderRadius: 14, marginBottom: 10, gap: 12 },
   studioOptionIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   studioOptionText: { flex: 1, color: Colors.white, fontSize: 14, fontWeight: '500' },
 
   // Profile
+  profileSubTabs: { padding: 16, paddingBottom: 0 },
+  profileSubTabsRow: { flexDirection: 'row', gap: 10 },
+  profileSubTab: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, gap: 6 },
+  profileSubTabActive: { backgroundColor: `${Colors.primary}20`, borderWidth: 1, borderColor: Colors.primary },
+  profileSubTabText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '500' },
+  profileSubTabTextActive: { color: Colors.primary, fontWeight: '600' },
+  profileOverview: { padding: 16 },
   profileHeader: { alignItems: 'center', paddingVertical: 24 },
   avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   avatarText: { color: Colors.white, fontSize: 32, fontWeight: 'bold' },
@@ -1265,6 +2018,21 @@ const styles = StyleSheet.create({
   menuItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, padding: 14, borderRadius: 14, marginBottom: 10, gap: 12 },
   menuItemIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   menuItemLabel: { flex: 1, color: Colors.white, fontSize: 15, fontWeight: '500' },
+  profileScore: { padding: 16, alignItems: 'center' },
+  scoreCircle: { width: 150, height: 150, borderRadius: 75, borderWidth: 8, borderColor: Colors.green, alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
+  scoreValue: { color: Colors.white, fontSize: 48, fontWeight: 'bold' },
+  scoreLabel: { color: Colors.textSecondary, fontSize: 14, marginTop: 4 },
+  scoreStats: { flexDirection: 'row', gap: 24 },
+  scoreStat: { alignItems: 'center' },
+  scoreStatVal: { color: Colors.white, fontSize: 24, fontWeight: 'bold' },
+  scoreStatLabel: { color: Colors.textSecondary, fontSize: 12, marginTop: 4 },
+  profileFuel: { padding: 16 },
+  fuelCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 24, alignItems: 'center' },
+  fuelTitle: { color: Colors.white, fontSize: 18, fontWeight: 'bold', marginTop: 12 },
+  fuelDesc: { color: Colors.textSecondary, fontSize: 14, marginTop: 4, textAlign: 'center' },
+  fuelBtn: { backgroundColor: Colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 16 },
+  fuelBtnText: { color: Colors.white, fontSize: 14, fontWeight: '600' },
+  profileSettings: { padding: 16 },
   settingsItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, padding: 14, borderRadius: 14, marginBottom: 10, gap: 12 },
   settingsLabel: { flex: 1, color: Colors.white, fontSize: 15 },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderWidth: 1.5, borderColor: Colors.red, borderRadius: 14, marginTop: 16, marginBottom: 40, gap: 8 },
@@ -1273,13 +2041,49 @@ const styles = StyleSheet.create({
   // Side Menu
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   menuContainer: { width: width * 0.8, height: '100%', backgroundColor: Colors.background },
-  menuHeader: { flexDirection: 'row', alignItems: 'center', padding: 20, paddingTop: 60, backgroundColor: Colors.surface, gap: 12 },
-  menuAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
-  menuAvatarText: { color: Colors.white, fontSize: 22, fontWeight: 'bold' },
-  menuUserInfo: { flex: 1 },
-  menuUserName: { color: Colors.white, fontSize: 18, fontWeight: '600' },
-  menuUserEmail: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
-  menuContent: { flex: 1, paddingVertical: 16 },
-  menuRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 16 },
-  menuRowText: { color: Colors.white, fontSize: 15, fontWeight: '500' },
+  menuHeader: { padding: 16, paddingTop: 20 },
+  menuCarIcon: { marginBottom: 12 },
+  menuCarBg: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  menuUserInfo: { marginBottom: 12 },
+  menuUserName: { color: Colors.white, fontSize: 16, fontWeight: '600' },
+  menuUserMeta: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 },
+  menuIdCard: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12, padding: 12, marginBottom: 12 },
+  menuIdLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 10 },
+  menuIdValue: { color: Colors.white, fontSize: 16, fontWeight: 'bold', marginTop: 2 },
+  menuStatsRow: { flexDirection: 'row', justifyContent: 'space-around' },
+  menuStat: { alignItems: 'center' },
+  menuStatVal: { color: Colors.white, fontSize: 14, fontWeight: 'bold' },
+  menuStatLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 10, marginTop: 2 },
+  menuContent: { flex: 1, paddingVertical: 8 },
+  menuSection: { color: Colors.textMuted, fontSize: 10, fontWeight: '600', letterSpacing: 1, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+  menuRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 14 },
+  menuRowText: { flex: 1, color: Colors.white, fontSize: 14, fontWeight: '500' },
+  menuRowBadge: { backgroundColor: Colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  menuRowBadgeText: { color: Colors.textSecondary, fontSize: 11 },
+  menuFooter: { padding: 16, borderTopWidth: 1, borderTopColor: Colors.surface },
+  menuLogout: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, gap: 8 },
+  menuLogoutText: { color: Colors.red, fontSize: 14, fontWeight: '500' },
+
+  // Search Modal
+  searchModal: { flex: 1, backgroundColor: Colors.background },
+  searchModalHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12, borderBottomWidth: 1, borderBottomColor: Colors.surface },
+  searchModalInput: { flex: 1, color: Colors.white, fontSize: 16 },
+  searchResults: { flex: 1 },
+  searchEmpty: { alignItems: 'center', paddingVertical: 48 },
+  searchEmptyText: { color: Colors.textMuted, fontSize: 14, marginTop: 16, textAlign: 'center' },
+
+  // Orion Voice Modal
+  orionModal: { flex: 1, backgroundColor: 'rgba(15,23,42,0.98)', alignItems: 'center', justifyContent: 'center' },
+  orionClose: { position: 'absolute', top: 60, right: 20 },
+  orionContent: { alignItems: 'center', padding: 24 },
+  orionTitle: { color: Colors.white, fontSize: 24, fontWeight: 'bold', marginBottom: 8 },
+  orionSubtitle: { color: Colors.textSecondary, fontSize: 14, marginBottom: 32 },
+  orionMicBtn: {},
+  orionMicBtnActive: {},
+  orionMicGradient: { width: 120, height: 120, borderRadius: 60, alignItems: 'center', justifyContent: 'center', shadowColor: Colors.purple, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 15 },
+  orionHint: { color: Colors.textSecondary, fontSize: 14, marginTop: 24 },
+  orionCommands: { marginTop: 40, width: '100%' },
+  orionCommandsTitle: { color: Colors.white, fontSize: 16, fontWeight: '600', marginBottom: 16 },
+  orionCommandItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, marginBottom: 8, gap: 10 },
+  orionCommandText: { color: Colors.textSecondary, fontSize: 14 },
 });
