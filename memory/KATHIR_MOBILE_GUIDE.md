@@ -49,17 +49,16 @@
 ```env
 # /app/snaproad-mobile/.env
 API_URL=https://api.snaproad.com/api
-MAPBOX_ACCESS_TOKEN=pk.xxxxx
 EXPO_PUBLIC_PUSH_NOTIFICATION_PROJECT_ID=xxxxx
+APPLE_MAPKIT_TOKEN=xxxxx
 ```
 
 ### Step 2: Install additional dependencies
 ```bash
 cd /app/snaproad-mobile
 
-# Maps & Navigation
-yarn add react-native-mapbox-navigation
-yarn add @mapbox/mapbox-sdk
+# Maps - Using react-native-maps with Apple Maps (already installed)
+# No additional map package needed - works with Expo Go!
 
 # QR Code
 yarn add react-native-qrcode-svg
@@ -78,6 +77,9 @@ yarn add expo-haptics
 
 # Async Storage (for tokens)
 yarn add @react-native-async-storage/async-storage
+
+# JWT decode (for Apple MapKit token)
+yarn add jwt-encode
 ```
 
 ### Step 3: Configure Expo plugins
