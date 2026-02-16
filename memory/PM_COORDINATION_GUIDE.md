@@ -60,22 +60,24 @@
 
 ---
 
-### 1.3 Mapbox (For Kathir & Brian)
-**What**: Maps, navigation, geocoding
-**URL**: https://mapbox.com
+### 1.3 Apple MapKit JS (For Kathir - Directions & Search)
+**What**: Turn-by-turn directions and place search via Apple Maps
+**URL**: https://developer.apple.com/account/
 **Action**:
-1. Create account at mapbox.com
-2. Go to **Account > Tokens**
-3. Create new token with these scopes:
-   - `styles:read`
-   - `fonts:read`
-   - `datasets:read`
-   - `vision:read`
-   - `directions:read` (for navigation)
-   - `geocoding:read` (for search)
-4. Copy the token → Give to **Kathir** as `MAPBOX_ACCESS_TOKEN` and **Brian** as `VITE_MAPBOX_TOKEN`
+1. You need an **Apple Developer Account** ($99/year) - you'll need this for App Store anyway
+2. Go to **Certificates, Identifiers & Profiles**
+3. Navigate to **Keys** → Click **+** to create a new key
+4. Check **MapKit JS** and give it a name like "SnapRoad MapKit"
+5. Click **Continue** → **Register**
+6. **Download the key file** (.p8) - you can only download once!
+7. Note these values → Give to **Kathir**:
+   - **Team ID**: Found on the Membership page
+   - **Key ID**: Shown on the key details page
+   - **Private Key**: Contents of the .p8 file
 
-**Cost**: Free for 50,000 map loads/month. ~$5 per 1,000 after.
+**Note**: For basic map display (showing the map, user location, custom markers), **no API key is needed** - Apple Maps works free via `react-native-maps`. The MapKit JS credentials are only needed for directions/routing and place search APIs.
+
+**Cost**: Part of Apple Developer Program ($99/year)
 
 ---
 
