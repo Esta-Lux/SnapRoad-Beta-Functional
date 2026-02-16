@@ -1,0 +1,178 @@
+<analysis>**original_problem_statement:**
+The user is building SnapRoad, a privacy-first, gamified navigation app. The project has evolved significantly. The initial goal of a web-based driver app simulation has been replaced by a request for a native iOS app. The user now wants the entire codebase prepared for export to their in-house team, with all Emergent AI dependencies removed. The core task has shifted from direct implementation to creating comprehensive documentation and scaffolding to ensure a smooth handover for the user's backend lead (Andrew) and web/integration lead (Brian).
+
+PRODUCT REQUIREMENTS:
+- **Driver App (Native iOS):** A React Native application with all UI and core functionality working with mock data. The user's team will be responsible for wiring up the APIs.
+- **Web Platform (Web-based):**
+    - **Partner Dashboard:** A premium web portal for businesses to manage locations, create/manage offers (with location selection), view analytics, and handle payments (Stripe). The UI should be functional, ready for API integration.
+    - **Admin Dashboard:** A portal for platform management.
+- **Handover & Deployment Readiness:**
+    - The entire codebase must be free of any Emergent-specific dependencies or hardcoded keys.
+    - Create comprehensive guides for the user's team, detailing the remaining work, required API keys, and implementation steps for backend (Supabase, Stripe, etc.) and frontend (Stripe flow, QR code scanning).
+    - Create  files for all parts of the project (backend, frontend, mobile).
+
+**User's preferred language**: English
+
+**what currently exists?**
+The project consists of three separate parts:
+1.  **Backend ():** A monolithic FastAPI server. All mock data logic is in . Emergent dependencies have been removed, and it's prepared for integration with a real database and third-party services.
+2.  **Frontend ():** A React/TypeScript web app containing the Welcome Page, the Partner Dashboard (which now includes location management UI), and a placeholder for the Admin Dashboard.
+3.  **Mobile ():** A brand new React Native (Expo) project for the driver app. It includes a complete UI structure, navigation, and mock data management via a Zustand store. It is not connected to any backend.
+4.  **Documentation ():** A suite of detailed markdown guides has been created to facilitate the handover to the user's team, including setup instructions, API integration TODOs, and specific guides for their backend and web developers.
+
+**Last working item**:
+    - Last item agent was working: Creating handover documentation for the user's team. The agent had just finished creating a detailed guide for Brian (the Web/Integration lead) at  and was about to create a complementary guide for the Project Manager on how to support Brian.
+    - Status: IN PROGRESS
+    - Agent Testing Done: N/A
+    - Which testing method agent to use? NA
+    - User Testing Done: N
+
+**All Pending/In progress Issue list**:
+  - Issue 1: Finalize Handover Documentation (P0)
+
+  Issues Detail:
+  - Issue 1: 
+     - Attempted fixes: The agent successfully created the guide for the web developer, Brian.
+     - Next debug checklist: 
+        1. Create the complementary guide for the PM, detailing the accounts they need to create and the credentials they need to provide to Brian (e.g., Stripe keys).
+        2. Review all created guides (, , etc.) for completeness and clarity.
+     - Why fix this issue and what will be achieved with the fix? To complete the user's request for a full set of handover documents, ensuring their team is set up for success.
+     - Status:  IN PROGRESS
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? N/A
+     - Blocked on other issue: None
+
+**In progress Task List**:
+- The main in-progress task is to complete the full suite of handover documentation as described in the issue above.
+
+**Upcoming and Future Tasks**
+Upcoming Tasks:
+- **P0: Address User's Folder Structure Preference:** The agent previously offered to rename project folders to match the user's expected structure (e.g., ). The next agent should confirm with the user if this is still desired and perform the renaming if so.
+- **P1: Archive old Web Driver App:** The code for the old web-based driver app simulation at  is now obsolete. It should be removed to avoid confusion for the user's team.
+
+Future Tasks:
+*(These are tasks for the user's team, as documented in the handover guides)*
+- **Backend Migration:** Migrate the entire backend from mock data to a persistent Supabase/PostgreSQL database.
+- **API Implementation:** Implement all real APIs for authentication, payments (Stripe), mapping (Mapbox), gas prices, etc., as detailed in .
+- **Connect Mobile App:** Wire up the React Native mobile app in  to the newly implemented backend APIs.
+- **Connect Web App:** Wire up the React Partner Dashboard to the backend APIs for offer management and Stripe payments.
+- **Implement QR Code Scanning:** Add webcam-based QR code scanning to the Partner Dashboard for offer redemption.
+
+**Completed work in this session**
+- **Car Studio Fix:** Resolved the UI inconsistency between the two Car Studio components in the original driver app by unifying them and deleting the old code.
+- **Partner Location Management:** Implemented a full-stack feature allowing partners to add, manage, and assign locations to offers based on their subscription plan limits.
+- **Dependency Removal:** Successfully removed all Emergent-specific dependencies from the backend and frontend, preparing the project for export. Image generation was updated to use a standard placeholder.
+- **React Native App Creation:** Built a complete, standalone React Native (Expo) project for the driver app from scratch, including UI, navigation, and a mock data store (Zustand).
+- **Comprehensive Handover Documentation:**
+    - Created  files for all three project parts (backend, frontend, mobile).
+    - Fixed the root  file to ensure  files are included in git commits.
+    - Authored several critical guides in :
+        - 
+        - 
+        - 
+        - 
+        -  (for the backend lead)
+        -  (for the web lead)
+
+**Earlier issues found/mentioned but not fixed**
+   - **ESLint Configuration**: ESLint is not configured for TypeScript, which may cause non-blocking parsing error warnings in the logs. This is a known, low-priority issue.
+
+**Known issue recurrence from previous fork**
+  - None.
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+- **Handover Focus:** The project's goal has pivoted from implementation to creating a well-documented, clean-slate project for an external team to take over.
+- **Code Scaffolding:** The React Native app and various guides serve as skeletons and instructions for the user's team.
+- **Mobile Development:** A new React Native/Expo stack has been introduced for the driver app, using Zustand for state management.
+- **Decoupling:** The project has been decoupled from the Emergent platform's specific integrations.
+
+**key DB schema**
+  - No live database is connected. However, a complete 12-table SQL schema for Supabase/PostgreSQL has been designed and documented in .
+
+**changes in tech stack**
+  - **Mobile App:** The driver app implementation has been completely changed from a **React web simulation** to a **React Native (Expo)** native app.
+  - **State Management (Mobile):** **Zustand** was introduced for state management in the new mobile app.
+  - **Third-Party Integrations:** All  have been removed. The plan is to use standard, direct SDKs for services like Supabase, Stripe, and Mapbox.
+
+**All files of reference**
+- **New Directory:**  (Entire React Native project)
+- **New Documentation Suite:**
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+- **New Config Examples:**
+  - 
+  - 
+  - 
+- **Modified Files:**
+  -  (Dependencies removed)
+  -  (Location management UI added)
+  -  (Fixed to include  files)
+
+**Areas that need refactoring**:
+- The backend in  is still a single monolithic file. The  suggests a more robust structure with  and  folders, which should be implemented.
+- The old web-based driver app code at  is now obsolete and should be deleted to prevent confusion.
+
+**key api endpoints**
+- The focus is now on the endpoints *to be built* by the user's team, as documented in . These include routes for auth, payments, offers, and user data, all connected to a real database.
+
+**Critical Info for New Agent**
+- **The mission has changed.** You are no longer building the app directly. Your primary role is to act as a consultant, preparing the codebase and documentation for a smooth handover to the user's external team.
+- **Focus on Documentation.** The user's latest requests have all been about creating guides for their team members (Andrew, Brian, PM). Your next actions should be to complete and refine this documentation.
+- **Three Separate Codebases.** Remember you are dealing with three distinct projects: the FastAPI backend, the React web frontend, and the React Native mobile app. They are currently decoupled.
+- **Confirm Folder Structure.** Before finishing, ask the user if they want you to rename the project folders to match their desired structure. This was offered but not confirmed.
+
+**documents and test reports created in this job**
+- 
+-  (Updated)
+-  (New)
+-  (New)
+-  (New)
+-  (New)
+-  (New)
+-  (New)
+
+**Last 10 User Messages and any pending HUMAN messages** 
+1. **User:** Asked for an API integration TODO list. (COMPLETED)
+2. **User:** Was confused about how to view a file he couldn't see. (RESOLVED - Agent displayed the content)
+3. **User:** Couldn't find  files in his GitHub repo. (RESOLVED - Agent identified folder structure and gitignore issues)
+4. **User:** Still couldn't see the files after a push. (RESOLVED - Agent fixed the  file)
+5. **User:** Asked if the mobile app uses React Native or Flutter. (RESOLVED - Agent confirmed React Native)
+6. **User:** Asked what he, as PM, needs to set up for his Backend Lead (Andrew). (COMPLETED - Agent created a guide)
+7. **User:** Asked for a detailed guide for Andrew. (COMPLETED - Agent created )
+8. **User:** Asked for a guide for his Web/Integration lead (Brian) and what the PM needs to do to help. (IN PROGRESS)
+9. **Agent:** Created the guide for Brian. (IN PROGRESS - Still needs to create the PM part)
+10. **(PENDING HUMAN MESSAGE):** The agent was about to create the PM guide for helping Brian when the session ended.
+
+**Project Health Check:**
+- **Working**: The web and backend projects are running with mock data. The new React Native project is scaffolded and ready for development.
+- **Mocked**: The entire application suite is dependent on mock data. The backend uses in-memory Python dictionaries, and the mobile app uses a Zustand store. The primary task for the user's team is to replace these mocks.
+- **Broken**: No part of the application is functionally broken. The main broken aspect is the lack of a persistent database and real-world API integrations, which is by design for the handover.
+
+**3rd Party Integrations**
+- No active integrations.  has been removed.
+- **Planned Integrations (for user's team):**
+    - **Supabase:** Database & Auth (requires User API Key)
+    - **Stripe:** Payments (requires User API Key)
+    - **Mapbox:** Maps (requires User API Key)
+    - **CollectAPI:** Gas Prices (requires User API Key)
+    - **SendGrid:** Transactional Emails (requires User API Key)
+    - **OpenAI-compatible Service:** For AI image generation (requires User API Key)
+
+**Testing status**
+  - Testing agent used after significant changes: YES, for the Partner Location Management feature.
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: []
+  - Known regressions: None.
+
+**Credentials to test flow:**
+- No credentials are required for the current mock setup. The various handover guides in  detail the API keys the user will need to acquire and provide to their team.
+
+**What agent forgot to execute**
+- The agent was mid-task when the session ended. It had created the guide for the web developer () but had not yet created the promised complementary guide for the PM on how to support the web developer.</analysis>
