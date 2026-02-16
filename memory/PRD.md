@@ -1,253 +1,104 @@
 # SnapRoad - Privacy-First Gamified Navigation App
 
 ## Product Overview
-SnapRoad is a privacy-first navigation app with gamified safety rewards. The project consists of three separate codebases ready for handover to external development teams.
+SnapRoad is a privacy-first navigation app with gamified safety rewards. The project consists of a web preview/prototype with plans for native iOS migration, plus React Native mobile app scaffolding.
 
-## Project Structure
+## Current Architecture
 ```
 /app
-├── backend/            # FastAPI server (mocked, prepped for integration)
-├── frontend/           # React Web App (Partner/Admin Dashboards)
+├── backend/            # FastAPI server (Python) - Mock data
+├── frontend/           # React Web App (TypeScript)
 │   └── src/pages/
-│       ├── WelcomePage.tsx      # Landing page
-│       ├── PartnerDashboard.tsx # Partner business portal
+│       ├── WelcomePage.tsx      # Landing + Auth
+│       ├── PartnerDashboard.tsx # Partner portal
 │       ├── AdminDashboard.tsx   # Admin console
-│       └── Auth/                # Authentication flows
-├── snaproad-mobile/    # React Native (Expo) Driver App
-│   └── src/
-│       ├── screens/    # App screens (Map, Offers, Rewards, Profile)
-│       ├── store/      # Zustand state (mock data)
-│       ├── components/ # Shared UI components
-│       └── navigation/ # React Navigation config
-├── snaproad-flutter/   # Flutter Driver App (Design Reference)
-│   └── lib/
-│       ├── core/       # Config, theme, router
-│       ├── features/   # Feature modules (auth, navigation, offers, etc.)
-│       └── shared/     # Models, providers, widgets
-└── memory/             # Handover documentation
+│       └── DriverApp/           # Full driver experience (27 components)
+├── snaproad-mobile/    # React Native (Expo) - UI scaffolding
+├── snaproad-beta/      # Reference code (Flutter, Node.js)
+└── memory/             # Documentation
 ```
 
-**Mobile Options**:
-- **React Native (Expo)**: Full UI implemented with mock data, ready for API integration
-- **Flutter**: Scaffolding with theme, routing, and feature structure - use as design reference or alternative implementation
-
 ## Tech Stack
+- **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS + Recharts
+- **Backend:** FastAPI (Python) with in-memory mock data
+- **Mobile:** React Native (Expo) - UI only with Zustand stores
+- **Maps:** OpenStreetMap/Carto dark tiles
 
-### Backend (FastAPI)
-- **Runtime:** Python 3.10+ + FastAPI
-- **Database:** Ready for Supabase/PostgreSQL (currently mock data)
-- **Payments:** Ready for Stripe integration
+## App Routes
+- `/` - Welcome page with auth
+- `/driver` - Full Driver App experience
+- `/portal/partner` - Partner dashboard
+- `/portal/admin-sr2025secure` - Admin console (secret)
 
-### Web Frontend (React)
-- **Framework:** React 18 + TypeScript + Vite + Tailwind CSS
-- **Charts:** Recharts for analytics
-- **Components:** Shadcn UI
+## Completed Features
 
-### Mobile App (React Native)
-- **Framework:** React Native (Expo SDK 50)
-- **Navigation:** React Navigation
-- **State:** Zustand (mock data store)
-- **Maps:** Ready for Mapbox integration
-- **UI Theme:** Updated to match Flutter design system
-  - Primary: Sky Blue (#0EA5E9)
-  - Accent: Fuchsia (#D946EF)
-  - Dark theme with Slate backgrounds
+### Driver App (Web)
+- ✅ Plan Selection (Basic/Premium)
+- ✅ Interactive Map with gems/offers
+- ✅ Car customization (Car Studio, 3D cars)
+- ✅ Orion Voice Assistant
+- ✅ Leaderboard with rankings
+- ✅ Badges & Challenges system
+- ✅ Road Reports & Status overlay
+- ✅ Fuel Tracker with gas prices
+- ✅ Weekly Recap & Trip History
+- ✅ QR Redemption popup
+- ✅ Friends Hub
+- ✅ Notification Settings
+- ✅ Help & Support
 
-## ⚠️ IMPORTANT: All Emergent AI Dependencies Removed
-- Logo now served from `/assets/logo.png` (local)
-- Image generation API is a stub ready for your preferred AI provider
-- No external Emergent dependencies remain in codebase
+### Partner Dashboard
+- ✅ Real-time analytics
+- ✅ Boost system with pricing
+- ✅ AI image generation for offers
+- ✅ Location management (multi-store)
 
-## App Routes & URLs
+### Admin Dashboard
+- ✅ Platform analytics
+- ✅ Export/Import (JSON/CSV)
+- ✅ Create offers for businesses
 
-### Driver App
-- `/` - Welcome page (Driver only - Start Driving button)
-- `/driver` - Driver mobile app experience with interactive map
-
-### Business Portal (For Custom Domain)
-- `/portal/partner` - Partner business dashboard
-
-### Admin Console (SECRET)
-- `/portal/admin-sr2025secure` - Admin console (direct link only)
-- `/admin` → Redirects to home (not searchable)
-
-## ✅ Completed Features (This Session)
-
-### Interactive Map (NEW)
-- Real OpenStreetMap tiles (Carto dark theme)
-- Draggable/pannable map
-- Zoom in/out controls
-- User location marker (blue car icon)
-- Glowing gem markers with discount percentages
-- Click gem → Opens RedemptionPopup directly (FIXED)
-- Recenter button
-
-### Simplified Welcome Page (NEW)
-- Driver-only authentication (no Partner/Admin in auth modal)
-- "Business Portal" link moved to footer
-- Clean, focused onboarding for drivers
-
-### Improved RedemptionPopup (NEW)
-- Cleaner two-step flow: Details → QR Code
-- Clear discount and gems display
-- In-range indicator
-- 2-minute QR expiry countdown
-- Navigate button
-- No confusion with offers tab (FIXED)
-
-### Premium Partner Dashboard
-- Real-time analytics charts (Recharts)
-- Boost system with pricing calculator
-- AI image generation for offers
-- 4-step onboarding walkthrough
-- **NEW: Location Management System**
-  - Partner plans with location limits (Starter: 5, Growth: 25, Enterprise: unlimited)
-  - Locations tab to add/edit/delete store locations
-  - Quick address selection for Columbus area
-  - Adjustable map coordinates for precise gem placement
-  - Primary location designation
-  - Location dropdown in Create Offer modal
-  - Plan limit enforcement with upgrade prompts
-
-### Premium Admin Dashboard
-- Platform-wide analytics
-- Create offers on behalf of businesses
-- Export/Import functionality (JSON/CSV)
-- AI image generation
-- 4-step onboarding walkthrough
-
-### Boost System
-- Duration: $25/day base + $20/extra day
-- Reach: $5 for 100 + $10 per 100 increment
-- Full customization sliders
-
-## 📋 API Endpoints
+## API Endpoints
 
 ### Working (Real)
-- `POST /api/boosts/calculate` - Calculate boost cost
-- `POST /api/images/generate` - AI image generation
+- `POST /api/auth/signup` - User registration
+- `POST /api/auth/login` - User authentication
+- `POST /api/boosts/calculate` - Boost cost calculator
 - `GET /api/admin/export/offers` - Export offers
-- `GET /api/admin/export/users` - Export users
-- `POST /api/admin/import/offers` - Import offers
 - `GET /api/analytics/dashboard` - Business analytics
 
 ### Working (Mock Data)
-- `GET /api/offers` - Mock offers
+- `GET /api/offers` - Mock offers list
 - `POST /api/offers/{id}/redeem` - Mock redemption
 - `GET /api/user/profile` - Mock user data
-- `POST /api/auth/login` - Session reset (mock auth)
 
-## ⚠️ MOCKED DATA
-- All user data (gems, XP, level, safety score)
+## ⚠️ MOCKED Components
+- User data (gems, XP, level, safety score)
 - Navigation (no real routing)
-- Offers (hardcoded mock data)
-- Analytics (random generated data)
-- Authentication (no real auth)
-- Payments (no real transactions)
+- Payments (no Stripe)
+- Push notifications
+- Database (in-memory only)
 
-## 📄 Full Remaining Work
-See `/app/memory/REMAINING_WORK.md` for comprehensive list of:
-- Native iOS migration tasks
-- All backend APIs needed
-- Third-party integrations required
-- Database schema
-- Security requirements
-- Testing requirements
-- DevOps & deployment checklist
+## Remaining Work
 
-## Summary of What's NOT Functioning Yet
+### High Priority
+1. Database Integration (Supabase/PostgreSQL)
+2. Real Authentication (JWT)
+3. Stripe Payment Integration
+4. Real Maps/Navigation (Mapbox)
 
-### Navigation
-- No real turn-by-turn navigation
-- No real routing (Mapbox/Google Maps needed)
-- No real traffic data
-- No ETA calculations
+### Medium Priority
+5. Push Notifications (Firebase)
+6. Email Service (SendGrid)
+7. Real Analytics
 
-### Safety/Driving
-- No real driving telemetry
-- Safety score is mock (always 100)
-- No hard brake detection
-- No speeding detection
+### Low Priority
+8. Native iOS Migration
+9. Android Build
+10. Performance optimization
 
-### Payments
-- No Stripe integration
-- Premium subscriptions are mock
-- Boost payments are mock
+## Sync History
+- **Feb 16, 2026:** Synced 27 components + 13 test files from `SnapRoad/SnapRoad-Functional`
 
-### Authentication  
-- No real JWT authentication
-- No password hashing
-- No email verification
-- No 2FA
-
-### Database
-- All data is in-memory
-- Lost on server restart
-- No PostgreSQL/Redis setup
-
-### Push Notifications
-- No Firebase/APNs integration
-- No real-time alerts
-
-## Portal URLs
-- **Partner Portal:** `yourdomain.com/portal/partner`
-- **Admin Console:** `yourdomain.com/portal/admin-sr2025secure`
-
----
-
-## ✅ Latest Updates (December 2025)
-
-### UI Fixes & Improvements (LATEST)
-- **Car Studio Unified:** Fixed inconsistency where hamburger menu and profile page opened different Car Studio components. Both now use the premium CarStudioNew component with 3D car preview, Paint Shop, and color selection.
-- **App Tour:** Fixed scroll and close button (X), 7 tour steps now scrollable
-- **Fuel Dashboard:** Added nearby gas prices from favorite stations (Shell $3.29, BP $3.35, Speedway $3.19 - MOCKED)
-- **Car Studio:** Renamed "Skins" to "Car Studio" in Rewards tab, shows current vehicle and colors
-- **Leaderboard:** Premium podium display for top 3 (gold/silver/bronze), time filters (All Time/Week/Month), state filter
-- **Challenge Modal:** Fixed scrolling and close button
-
-### UI Improvements - Premium Feel
-- **Scrollable modals:** Car onboarding and Challenge modal now have proper scrolling
-- **3D Car markers:** SVG-based 3D cars (sedan/SUV/truck) without white background circles
-- **Improved onboarding:** 2-step flow: 1) Vehicle type, 2) Color selection
-- **Hamburger menu:** Profile shows user's car icon instead of initials
-- **Badge count:** Consistent X/160 format across all views
-- **Map controls:** Pinch-to-zoom, drag-to-pan, Orion button, recenter button
-
-### Map UI Cleanup
-- **Fixed map tile rendering** - Tiles now display correctly with proper positioning
-- **Map is draggable** - Mouse and touch drag support for panning
-- **Gems spread out** - Only 5 gems shown, spread in a wider circle around user
-- **Hidden scrollbars** - Global CSS to hide scrollbars for premium feel
-- **3D car marker** - Shows actual car type (sedan/SUV/truck) without white background
-
-### Map Search & Navigation
-- **Backend endpoints:**
-  - `GET /api/map/search?q=<query>&lat=<lat>&lng=<lng>` - Search locations with relevance scoring
-  - `GET /api/map/directions` - Get mock turn-by-turn directions
-- **Frontend features:**
-  - Enhanced search modal with API integration
-  - Turn-by-turn navigation UI panel
-
----
-
-## Handover Documentation Suite
-
-Complete guides created for team handover:
-
-| Guide | File | For | Covers |
-|-------|------|-----|--------|
-| **PM Guide** | `PM_COORDINATION_GUIDE.md` | PM | Account setup, credentials, team coordination, timeline |
-| Backend Guide | `ANDREW_BACKEND_GUIDE.md` | Andrew (Backend Lead) | Supabase, Stripe, Auth, Database Schema |
-| Web Guide | `BRIAN_WEB_GUIDE.md` | Brian (Web Lead) | API layer, Stripe flow, QR scanning, Leaderboard |
-| Mobile Guide | `KATHIR_MOBILE_GUIDE.md` | Kathir (Mobile Lead) | Maps/Nav, Trip flow, QR, Push, Hazard button |
-| API TODO | `API_INTEGRATION_TODO.md` | All Developers | Complete API endpoint specifications |
-| Quick Reference | `QUICK_REFERENCE.md` | All Developers | Credentials, URLs, quick commands |
-
-### Environment Templates
-- `/app/backend/.env.example` - Backend environment variables
-- `/app/frontend/.env.example` - Web frontend environment variables  
-- `/app/snaproad-mobile/.env.example` - Mobile app environment variables
-
----
-**Last Updated:** December 2025 (Kathir Mobile Guide Added)
-
+## Test Credentials
+- No real auth - any email/password works for mock login
