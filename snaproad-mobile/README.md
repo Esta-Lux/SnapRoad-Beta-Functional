@@ -1,276 +1,164 @@
 # SnapRoad Mobile - React Native Driver App
 
-A React Native (Expo) implementation of the SnapRoad Driver App, converted from Flutter design patterns. This is a **UI-complete implementation** with mock data stores - ready for API integration.
+A complete React Native (Expo) implementation of the SnapRoad Driver App, matching the web UI design and features.
 
-## 📱 Screenshots Preview
+## 📱 Features
 
-The app includes a full mobile experience matching the Flutter UI design:
+### Onboarding Flow
+- **Plan Selection** - Basic (free) vs Premium ($10.99/mo with 35% discount)
+- **Car Setup** - Choose vehicle type (Sedan/SUV/Truck) and color
 
-- **Splash Screen** - Animated logo with pulsing effect
-- **Welcome/Onboarding** - Feature carousel with 4 slides
-- **Plan Selection** - Basic (free) vs Premium ($10.99/mo)
-- **Car Setup** - Vehicle type and color selection
-- **Map Screen** - Interactive map with offer markers
-- **Offers Screen** - Categorized local offers
-- **Rewards Screen** - Challenges, badges, and car studio
-- **Profile Screen** - Stats, trips, settings
+### Main App (4 Tabs)
+1. **Map Tab**
+   - Interactive map with offer markers
+   - Favorites/Nearby/Report location buttons
+   - Quick access to Home & Work locations
+   - Orion Voice Assistant button
+   - Quick Photo Report button
 
-## 🎨 Design System (Flutter-aligned)
+2. **Routes Tab**
+   - Saved routes list
+   - Add new routes
 
-### Colors
+3. **Rewards Tab**
+   - **Offers** - Local business discounts (gas, cafe, restaurant)
+   - **Challenges** - Weekly goals with XP/gem rewards
+   - **Badges** - Achievement collection
+   - **Car Studio** - Vehicle customization
+
+4. **Profile Tab**
+   - **Overview** - Stats (gems, safety, miles, trips)
+   - **Score** - Driving score details
+   - **Fuel** - Gas prices tracker
+   - **Settings** - App preferences
+
+### UI Components
+- Custom gradient tab bar
+- Side menu with navigation
+- Offer cards with discount badges
+- Challenge progress bars
+- Badge grid with earned/locked states
+
+## 🎨 Design System
+
+### Colors (matching web app)
 ```typescript
-// Primary - Sky Blue
-primary: '#0EA5E9'
-
-// Accent - Fuchsia  
-accent: '#D946EF'
-
-// Background - Slate Dark
-background: '#0F172A'
-surface: '#1E293B'
-
-// Status Colors
-success: '#22C55E'
-warning: '#F59E0B'
-error: '#EF4444'
+primary: '#0EA5E9'     // Sky blue
+accent: '#D946EF'      // Fuchsia
+success: '#22C55E'     // Green
+warning: '#F59E0B'     // Amber
+error: '#EF4444'       // Red
+background: '#0F172A'  // Dark slate
+surface: '#1E293B'     // Lighter slate
 ```
 
 ### Typography
-- Display: 48px
-- Heading (XXL): 32px
-- Title (XL): 24px
-- Body (MD): 14px
-- Caption (SM): 12px
+- Headers: Bold, 22-26px
+- Body: Regular, 13-14px
+- Labels: Medium, 11-12px
 
 ## 🚀 Quick Start
-
-### Prerequisites
-- Node.js 18+
-- Yarn (recommended) or npm
-- Expo CLI: `npm install -g expo-cli`
-- iOS Simulator (Mac) or Android Emulator
-- Expo Go app on your phone
-
-### Installation
 
 ```bash
 cd snaproad-mobile
 yarn install
-```
-
-### Run the App
-
-```bash
-# Start Expo dev server
 yarn start
-
-# Or run directly
-yarn ios     # iOS Simulator (Mac only)
-yarn android # Android Emulator
 ```
 
-### Scan QR Code
-Use the **Expo Go** app on your phone to scan the QR code from the terminal.
+Scan QR code with **Expo Go** app on your phone.
 
 ## 📁 Project Structure
 
 ```
 snaproad-mobile/
-├── App.tsx                 # App entry point
-├── app.json               # Expo configuration
-├── package.json           # Dependencies
-├── tsconfig.json          # TypeScript config
-│
-└── src/
-    ├── components/
-    │   └── ui.tsx          # Reusable UI components
-    │                       # Button, Card, Badge, ProgressBar,
-    │                       # StatCard, GemDisplay, Avatar
-    │
-    ├── navigation/
-    │   └── index.tsx       # React Navigation + Custom Tab Bar
-    │                       # Stack: Splash → Welcome → Plan → Car → Tabs
-    │                       # Tabs: Map, Offers, Rewards, Profile
-    │
-    ├── screens/
-    │   ├── SplashScreen.tsx       # Animated splash
-    │   ├── WelcomeScreen.tsx      # Feature carousel
-    │   ├── PlanSelectionScreen.tsx # Subscription selection
-    │   ├── CarSetupScreen.tsx     # Vehicle customization
-    │   ├── MapScreen.tsx          # Main map view
-    │   ├── OffersScreen.tsx       # Browse offers
-    │   ├── RewardsScreen.tsx      # Badges/Challenges/CarStudio
-    │   ├── ProfileScreen.tsx      # User profile & settings
-    │   ├── OfferDetailScreen.tsx  # Individual offer + redemption
-    │   ├── LeaderboardScreen.tsx  # Rankings
-    │   └── OnboardingScreen.tsx   # Legacy onboarding (backup)
-    │
-    ├── store/
-    │   └── index.ts        # Zustand stores (MOCK DATA)
-    │                       # UserStore, OffersStore, BadgesStore,
-    │                       # ChallengesStore, LeaderboardStore,
-    │                       # TripsStore, GasStationsStore
-    │
-    ├── types/
-    │   └── index.ts        # TypeScript interfaces
-    │
-    └── utils/
-        └── theme.ts        # Design system tokens
-                            # Colors, Spacing, BorderRadius,
-                            # CarCategories, CarColors, etc.
+├── App.tsx                    # Entry point
+├── src/
+│   ├── screens/
+│   │   └── DriverApp.tsx      # Complete app (all screens)
+│   ├── components/
+│   │   └── ui.tsx             # Reusable components
+│   ├── store/
+│   │   └── index.ts           # Zustand stores (mock data)
+│   ├── types/
+│   │   └── index.ts           # TypeScript interfaces
+│   └── utils/
+│       └── theme.ts           # Design tokens
+└── package.json
 ```
 
 ## 🔄 Navigation Flow
 
 ```
-┌─────────────┐
-│   Splash    │ (2.5s auto-advance)
-└──────┬──────┘
-       ▼
-┌─────────────┐
-│   Welcome   │ (4-slide carousel)
-└──────┬──────┘
-       ▼
-┌─────────────┐
-│    Plan     │ (Basic/Premium)
-│  Selection  │
-└──────┬──────┘
-       ▼
-┌─────────────┐
-│  Car Setup  │ (Type → Color)
-└──────┬──────┘
-       ▼
-┌─────────────────────────────────────┐
-│           Main Tab Bar              │
-├─────────┬─────────┬────────┬────────┤
-│   Map   │ Offers  │ Rewards│ Profile│
-└─────────┴─────────┴────────┴────────┘
+Plan Selection → Car Setup → Main App (4 Tabs)
+                              ├── Map
+                              ├── Routes  
+                              ├── Rewards (4 sub-tabs)
+                              │   ├── Offers
+                              │   ├── Challenges
+                              │   ├── Badges
+                              │   └── Car Studio
+                              └── Profile (4 sub-tabs)
+                                  ├── Overview
+                                  ├── Score
+                                  ├── Fuel
+                                  └── Settings
 ```
 
-## 🎮 State Management
+## 📝 Data (Mock)
 
-Using **Zustand** for lightweight state management with mock data:
+All data is currently mocked in `DriverApp.tsx`:
+- `mockUserData` - User profile, gems, level, stats
+- `mockOffers` - Local business offers
+- `mockChallenges` - Weekly challenges
 
+## 🔌 API Integration
+
+To connect to real backend:
+
+1. Replace mock data with API calls:
 ```typescript
-// Example: Access user data
-import { useUserStore } from '../store';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
-const { user, addGems, spendGems } = useUserStore();
+// Fetch offers
+const response = await fetch(`${API_URL}/api/offers`);
+const offers = await response.json();
 ```
 
-### Available Stores:
-- `useUserStore` - User profile, XP, gems, car selection
-- `useOffersStore` - Nearby offers
-- `useBadgesStore` - Badge collection
-- `useChallengesStore` - Active challenges
-- `useLeaderboardStore` - Rankings
-- `useTripsStore` - Trip history
-- `useGasStationsStore` - Fuel prices
-- `useAppStore` - App state (loading, current tab)
-
-## 🔌 API Integration Guide
-
-All mock data is in `/src/store/index.ts`. To connect APIs:
-
-### 1. Create API Service
-
-```typescript
-// src/services/api.ts
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.snaproad.com';
-
-export const api = {
-  getUser: () => fetch(`${API_URL}/api/user`).then(r => r.json()),
-  getOffers: () => fetch(`${API_URL}/api/offers`).then(r => r.json()),
-  redeemOffer: (id: number, gems: number) => 
-    fetch(`${API_URL}/api/offers/${id}/redeem`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gems })
-    }),
-};
+2. Create `.env` file:
 ```
-
-### 2. Update Store
-
-```typescript
-export const useOffersStore = create<OffersState>((set) => ({
-  offers: [],
-  isLoading: false,
-  
-  fetchOffers: async () => {
-    set({ isLoading: true });
-    const data = await api.getOffers();
-    set({ offers: data, isLoading: false });
-  },
-}));
+EXPO_PUBLIC_API_URL=https://your-api.com
 ```
 
 ## 📲 Building for Production
 
-### EAS Build Setup
-
+### EAS Build
 ```bash
 # Install EAS CLI
 npm install -g eas-cli
 
-# Login to Expo
-eas login
-
-# Configure project
+# Configure
 eas build:configure
-```
 
-### Build Commands
-
-```bash
-# iOS (requires Apple Developer account)
+# Build for iOS
 eas build --platform ios
 
-# Android APK (for testing)
+# Build for Android
 eas build --platform android --profile preview
-
-# Android AAB (for Play Store)
-eas build --platform android --profile production
 ```
 
-## 📝 TODO for Your Team
+## ⚠️ Known Limitations
 
-### High Priority
-- [ ] Implement API service layer
-- [ ] Replace mock stores with API calls
-- [ ] Add real authentication (JWT)
-- [ ] Integrate real maps (Mapbox/Google Maps)
+1. **Map** - Uses placeholder (real maps require development build)
+2. **Data** - All mock data (no API connection)
+3. **Auth** - No real authentication
 
-### Medium Priority
-- [ ] Add loading states/skeletons
-- [ ] Implement error handling with toasts
-- [ ] Add pull-to-refresh on list screens
+## 📋 TODO
+
+- [ ] Connect to real backend APIs
+- [ ] Add real maps (Mapbox/Google Maps via EAS)
 - [ ] Implement push notifications
-
-### Low Priority
-- [ ] Add offline mode with caching
-- [ ] Implement deep linking
-- [ ] Add analytics tracking
+- [ ] Add offline mode
 - [ ] Write unit tests
-
-## 🛠 Development Notes
-
-### Map Implementation
-The current MapScreen uses a placeholder. For real maps:
-
-1. Use development builds (not Expo Go)
-2. Install `react-native-maps` or Mapbox SDK
-3. Run `eas build --profile development`
-
-### Environment Variables
-Create `.env` file:
-```
-EXPO_PUBLIC_API_URL=https://your-api.com
-EXPO_PUBLIC_MAPBOX_TOKEN=pk.xxx
-```
-
-### Custom Fonts
-Add custom fonts to `assets/fonts/` and configure in `app.json`.
 
 ---
 
