@@ -39,7 +39,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "SnapRoad needs your location for navigation and nearby offers."
         }
-      ]
+      ],
+      "expo-font"
     ]
   }
 }
