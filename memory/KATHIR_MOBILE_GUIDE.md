@@ -1015,7 +1015,7 @@ export default useNavigation;
 
 ---
 
-## Phase 4: Trip Flow Implementation
+## Phase 4: Trip Flow Implementation (Apple Maps UI)
 
 ### Create `/app/snaproad-mobile/src/screens/TripScreen.tsx`:
 ```typescript
@@ -1124,8 +1124,8 @@ export const TripScreen: React.FC<TripScreenProps> = ({ route, navigation: nav }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
       const result = await hazardAPI.report({
-        lat: currentLocation.lat,
-        lng: currentLocation.lng,
+        lat: currentLocation.latitude,
+        lng: currentLocation.longitude,
         type,
       });
 
@@ -1173,30 +1173,29 @@ export const TripScreen: React.FC<TripScreenProps> = ({ route, navigation: nav }
 
   return (
     <View style={styles.container}>
-      {/* Map */}
+      {/* Apple Maps via react-native-maps */}
       <MapView
         ref={mapRef}
         style={styles.map}
-        provider={PROVIDER_DEFAULT}
+        provider={PROVIDER_DEFAULT} // Uses Apple Maps on iOS
         initialRegion={{
-          latitude: currentLocation?.lat || destination.lat,
-          longitude: currentLocation?.lng || destination.lng,
+          latitude: currentLocation?.latitude || destination.lat,
+          longitude: currentLocation?.longitude || destination.lng,
           latitudeDelta: 0.01,
           longitudeDelta: 0.01,
         }}
         showsUserLocation
         followsUserLocation
         showsCompass={false}
+        showsTraffic={true} // Show traffic on Apple Maps
+        mapType="mutedStandard" // Clean look for navigation
         pitchEnabled
         rotateEnabled
       >
-        {/* Route Line */}
-        {currentRoute && (
+        {/* Route Polyline - Custom SnapRoad styling */}
+        {currentRoute?.polyline && (
           <Polyline
-            coordinates={currentRoute.geometry.coordinates.map(([lng, lat]) => ({
-              latitude: lat,
-              longitude: lng,
-            }))}
+            coordinates={currentRoute.polyline}
             strokeColor={Colors.primary}
             strokeWidth={6}
             lineCap="round"
@@ -1204,7 +1203,7 @@ export const TripScreen: React.FC<TripScreenProps> = ({ route, navigation: nav }
           />
         )}
 
-        {/* Destination Marker */}
+        {/* Destination Marker - Custom SnapRoad design */}
         <Marker coordinate={{ latitude: destination.lat, longitude: destination.lng }}>
           <View style={styles.destinationMarker}>
             <Ionicons name="flag" size={24} color="#fff" />
@@ -1212,11 +1211,11 @@ export const TripScreen: React.FC<TripScreenProps> = ({ route, navigation: nav }
         </Marker>
       </MapView>
 
-      {/* Top Navigation Card */}
+      {/* Top Navigation Card - SnapRoad Custom UI */}
       <View style={styles.navigationCard}>
         <View style={styles.maneuverIcon}>
           <Ionicons
-            name={getManeuverIcon(currentStep?.maneuver?.type)}
+            name={getManeuverIcon(currentStep?.maneuver)}
             size={32}
             color={Colors.text}
           />
@@ -1231,7 +1230,7 @@ export const TripScreen: React.FC<TripScreenProps> = ({ route, navigation: nav }
         </View>
       </View>
 
-      {/* Bottom Stats Bar */}
+      {/* Bottom Stats Bar - SnapRoad Custom UI */}
       <View style={styles.bottomBar}>
         <View style={styles.statsRow}>
           <View style={styles.stat}>
@@ -1256,7 +1255,7 @@ export const TripScreen: React.FC<TripScreenProps> = ({ route, navigation: nav }
             <Ionicons name="close" size={24} color={Colors.error} />
           </TouchableOpacity>
 
-          {/* Hazard Button */}
+          {/* Hazard Button - SnapRoad Signature Feature */}
           <TouchableOpacity style={styles.hazardButton} onPress={toggleHazardMenu}>
             <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.hazardGradient}>
               <Ionicons name="warning" size={32} color="#fff" />
@@ -1270,7 +1269,7 @@ export const TripScreen: React.FC<TripScreenProps> = ({ route, navigation: nav }
         </View>
       </View>
 
-      {/* Hazard Menu */}
+      {/* Hazard Menu - SnapRoad Custom UI */}
       {showHazardMenu && (
         <View style={styles.hazardMenuOverlay}>
           <TouchableOpacity
@@ -1317,27 +1316,26 @@ export const TripScreen: React.FC<TripScreenProps> = ({ route, navigation: nav }
 };
 
 // Helper functions
-function getManeuverIcon(type?: string): keyof typeof Ionicons.glyphMap {
+function getManeuverIcon(maneuver?: string): keyof typeof Ionicons.glyphMap {
   const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
-    turn: 'arrow-forward',
     'turn-right': 'arrow-forward',
     'turn-left': 'arrow-back',
     'slight-right': 'arrow-forward',
     'slight-left': 'arrow-back',
-    straight: 'arrow-up',
-    merge: 'git-merge',
-    'off-ramp': 'exit',
-    'on-ramp': 'enter',
-    fork: 'git-branch',
-    roundabout: 'refresh',
-    arrive: 'flag',
+    'straight': 'arrow-up',
+    'merge': 'git-merge',
+    'ramp': 'exit',
+    'fork': 'git-branch',
+    'roundabout': 'refresh',
+    'arrive': 'flag',
+    'depart': 'navigate',
   };
-  return icons[type || ''] || 'arrow-up';
+  return icons[maneuver || ''] || 'arrow-up';
 }
 
 function formatDistance(meters: number): string {
   if (meters < 1000) {
-    return `${Math.round(meters)} ft`;
+    return `${Math.round(meters * 3.281)} ft`; // Convert to feet
   }
   const miles = meters / 1609.34;
   return miles < 10 ? `${miles.toFixed(1)} mi` : `${Math.round(miles)} mi`;
