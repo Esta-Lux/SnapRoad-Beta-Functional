@@ -170,14 +170,17 @@ JWT_SECRET=[generate a random 64-char string]
 === BRIAN (Web) ===
 VITE_API_URL=/api
 VITE_STRIPE_PUBLISHABLE_KEY=pk_test_xxxxx
-VITE_MAPBOX_TOKEN=pk.xxxxx
 SUPABASE_ANON_KEY=eyJhbGc... (for client-side if needed)
 
 === KATHIR (Mobile) ===
 API_URL=https://api.snaproad.com/api
-MAPBOX_ACCESS_TOKEN=pk.xxxxx
 EXPO_PUBLIC_PUSH_NOTIFICATION_PROJECT_ID=xxxxx
+APPLE_TEAM_ID=XXXXXXXXXX (from Apple Developer Membership page)
+APPLE_KEY_ID=XXXXXXXXXX (from MapKit JS key)
+APPLE_PRIVATE_KEY=[contents of .p8 file - for directions API]
 ```
+
+**Note on Apple Maps**: Basic map display works without any credentials. The Apple MapKit JS credentials are only needed if Kathir implements turn-by-turn directions and place search. This can be added later.
 
 **Security Note**: Never commit these to git. Use `.env` files locally.
 
