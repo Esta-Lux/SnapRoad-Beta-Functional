@@ -20,6 +20,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+// Import additional modals
+import {
+  RoadReportsModal,
+  QuickPhotoModal,
+  OffersFullModal,
+  TripHistoryModal,
+  LeaderboardModal,
+  FriendsHubModal,
+} from '../components/Modals';
+
 const { width, height } = Dimensions.get('window');
 
 // ============================================
