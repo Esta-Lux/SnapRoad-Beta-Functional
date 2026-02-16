@@ -56,13 +56,13 @@ export const Colors = {
   carwash: '#3B82F6',
   retail: '#D946EF',
   
-  // Gradients (as arrays for LinearGradient)
-  gradientPrimary: ['#0EA5E9', '#06B6D4'],
-  gradientAccent: ['#D946EF', '#EC4899'],
-  gradientGold: ['#FBBF24', '#F59E0B'],
-  gradientDark: ['#1E293B', '#0F172A'],
-  gradientSuccess: ['#22C55E', '#10B981'],
-} as const;
+  // Gradients (as arrays for LinearGradient) - using mutable arrays for compatibility
+  gradientPrimary: ['#0EA5E9', '#06B6D4'] as string[],
+  gradientAccent: ['#D946EF', '#EC4899'] as string[],
+  gradientGold: ['#FBBF24', '#F59E0B'] as string[],
+  gradientDark: ['#1E293B', '#0F172A'] as string[],
+  gradientSuccess: ['#22C55E', '#10B981'] as string[],
+};
 
 export const Spacing = {
   xs: 4,
