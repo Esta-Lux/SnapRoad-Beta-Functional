@@ -158,7 +158,7 @@ export const OnboardingScreen: React.FC<{ navigation: any }> = ({ navigation }) 
             style={[styles.carTypeCard, selectedCarType === car.id && styles.carTypeCardSelected]}
             onPress={() => setSelectedCarType(car.id)}
           >
-            <Text style={styles.carTypeEmoji}>{car.icon}</Text>
+            <Ionicons name={car.icon as any} size={40} color={selectedCarType === car.id ? Colors.primary : Colors.textSecondary} />
             <Text style={styles.carTypeName}>{car.name}</Text>
             {selectedCarType === car.id && (
               <View style={styles.carTypeCheck}>
