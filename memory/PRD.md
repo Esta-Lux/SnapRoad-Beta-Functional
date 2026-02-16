@@ -213,6 +213,7 @@ Complete guides created for team handover:
 
 | Guide | File | For | Covers |
 |-------|------|-----|--------|
+| **PM Guide** | `PM_COORDINATION_GUIDE.md` | PM | Account setup, credentials, team coordination, timeline |
 | Backend Guide | `ANDREW_BACKEND_GUIDE.md` | Andrew (Backend Lead) | Supabase, Stripe, Auth, Database Schema |
 | Web Guide | `BRIAN_WEB_GUIDE.md` | Brian (Web Lead) | API layer, Stripe flow, QR scanning, Leaderboard |
 | Mobile Guide | `KATHIR_MOBILE_GUIDE.md` | Kathir (Mobile Lead) | Maps/Nav, Trip flow, QR, Push, Hazard button |
