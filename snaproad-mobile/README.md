@@ -1,207 +1,214 @@
 # SnapRoad Mobile - React Native Driver App
 
-A React Native (Expo) implementation of the SnapRoad Driver App. This is a **UI-only implementation** with mock data stores - no API connections. Your team will need to implement the API integration.
+A React Native (Expo) implementation of the SnapRoad Driver App, converted from Flutter design patterns. This is a **UI-complete implementation** with mock data stores - ready for API integration.
 
-## 📱 Features Implemented
+## 📱 Screenshots Preview
 
-### Screens
-- ✅ **Onboarding Flow** - Welcome, Plan Selection, Car Type, Car Color, Complete
-- ✅ **Map Screen** - Interactive map with offer markers, search bar, stats bar
-- ✅ **Offers Screen** - Category filters, offer list with discounts and gems
-- ✅ **Rewards Screen** - Badges (earned/in-progress), Challenges, Car Studio link
-- ✅ **Profile Screen** - User stats, savings, gas prices, trips, quick actions
+The app includes a full mobile experience matching the Flutter UI design:
 
-### Components
-- ✅ **Button** - Primary, outline, ghost variants with loading state
-- ✅ **Card** - Touchable card component
-- ✅ **Badge** - Status badges with variants
-- ✅ **ProgressBar** - Animated progress with gradient
-- ✅ **StatCard** - Stats display with icon
-- ✅ **GemDisplay** - Gem count display
-- ✅ **Avatar** - User avatar with level badge
+- **Splash Screen** - Animated logo with pulsing effect
+- **Welcome/Onboarding** - Feature carousel with 4 slides
+- **Plan Selection** - Basic (free) vs Premium ($10.99/mo)
+- **Car Setup** - Vehicle type and color selection
+- **Map Screen** - Interactive map with offer markers
+- **Offers Screen** - Categorized local offers
+- **Rewards Screen** - Challenges, badges, and car studio
+- **Profile Screen** - Stats, trips, settings
 
-### State Management (Zustand)
-- ✅ **UserStore** - User profile, XP, gems, car, plan
-- ✅ **OffersStore** - Offers list, selection
-- ✅ **BadgesStore** - Badge collection, claiming
-- ✅ **ChallengesStore** - Challenges, joining, progress
-- ✅ **LeaderboardStore** - Rankings, filters
-- ✅ **TripsStore** - Trip history
-- ✅ **GasStationsStore** - Nearby gas prices
+## 🎨 Design System (Flutter-aligned)
+
+### Colors
+```typescript
+// Primary - Sky Blue
+primary: '#0EA5E9'
+
+// Accent - Fuchsia  
+accent: '#D946EF'
+
+// Background - Slate Dark
+background: '#0F172A'
+surface: '#1E293B'
+
+// Status Colors
+success: '#22C55E'
+warning: '#F59E0B'
+error: '#EF4444'
+```
+
+### Typography
+- Display: 48px
+- Heading (XXL): 32px
+- Title (XL): 24px
+- Body (MD): 14px
+- Caption (SM): 12px
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Node.js 18+
-- Yarn or npm
+- Yarn (recommended) or npm
 - Expo CLI: `npm install -g expo-cli`
 - iOS Simulator (Mac) or Android Emulator
+- Expo Go app on your phone
 
 ### Installation
+
 ```bash
 cd snaproad-mobile
 yarn install
 ```
 
 ### Run the App
+
 ```bash
-# Start Expo development server
+# Start Expo dev server
 yarn start
 
-# Or run directly on platform
+# Or run directly
 yarn ios     # iOS Simulator (Mac only)
 yarn android # Android Emulator
 ```
 
 ### Scan QR Code
-Use the Expo Go app on your phone to scan the QR code from the terminal.
+Use the **Expo Go** app on your phone to scan the QR code from the terminal.
 
 ## 📁 Project Structure
 
 ```
 snaproad-mobile/
 ├── App.tsx                 # App entry point
-├── index.js                # Expo entry
-├── app.json                # Expo config
-├── package.json            # Dependencies
-├── tsconfig.json           # TypeScript config
+├── app.json               # Expo configuration
+├── package.json           # Dependencies
+├── tsconfig.json          # TypeScript config
 │
 └── src/
     ├── components/
     │   └── ui.tsx          # Reusable UI components
+    │                       # Button, Card, Badge, ProgressBar,
+    │                       # StatCard, GemDisplay, Avatar
     │
     ├── navigation/
-    │   └── index.tsx       # React Navigation setup
+    │   └── index.tsx       # React Navigation + Custom Tab Bar
+    │                       # Stack: Splash → Welcome → Plan → Car → Tabs
+    │                       # Tabs: Map, Offers, Rewards, Profile
     │
     ├── screens/
-    │   ├── OnboardingScreen.tsx
-    │   ├── MapScreen.tsx
-    │   ├── OffersScreen.tsx
-    │   ├── RewardsScreen.tsx
-    │   └── ProfileScreen.tsx
+    │   ├── SplashScreen.tsx       # Animated splash
+    │   ├── WelcomeScreen.tsx      # Feature carousel
+    │   ├── PlanSelectionScreen.tsx # Subscription selection
+    │   ├── CarSetupScreen.tsx     # Vehicle customization
+    │   ├── MapScreen.tsx          # Main map view
+    │   ├── OffersScreen.tsx       # Browse offers
+    │   ├── RewardsScreen.tsx      # Badges/Challenges/CarStudio
+    │   ├── ProfileScreen.tsx      # User profile & settings
+    │   ├── OfferDetailScreen.tsx  # Individual offer + redemption
+    │   ├── LeaderboardScreen.tsx  # Rankings
+    │   └── OnboardingScreen.tsx   # Legacy onboarding (backup)
     │
     ├── store/
     │   └── index.ts        # Zustand stores (MOCK DATA)
+    │                       # UserStore, OffersStore, BadgesStore,
+    │                       # ChallengesStore, LeaderboardStore,
+    │                       # TripsStore, GasStationsStore
     │
     ├── types/
     │   └── index.ts        # TypeScript interfaces
     │
     └── utils/
-        └── theme.ts        # Colors, spacing, constants
+        └── theme.ts        # Design system tokens
+                            # Colors, Spacing, BorderRadius,
+                            # CarCategories, CarColors, etc.
 ```
+
+## 🔄 Navigation Flow
+
+```
+┌─────────────┐
+│   Splash    │ (2.5s auto-advance)
+└──────┬──────┘
+       ▼
+┌─────────────┐
+│   Welcome   │ (4-slide carousel)
+└──────┬──────┘
+       ▼
+┌─────────────┐
+│    Plan     │ (Basic/Premium)
+│  Selection  │
+└──────┬──────┘
+       ▼
+┌─────────────┐
+│  Car Setup  │ (Type → Color)
+└──────┬──────┘
+       ▼
+┌─────────────────────────────────────┐
+│           Main Tab Bar              │
+├─────────┬─────────┬────────┬────────┤
+│   Map   │ Offers  │ Rewards│ Profile│
+└─────────┴─────────┴────────┴────────┘
+```
+
+## 🎮 State Management
+
+Using **Zustand** for lightweight state management with mock data:
+
+```typescript
+// Example: Access user data
+import { useUserStore } from '../store';
+
+const { user, addGems, spendGems } = useUserStore();
+```
+
+### Available Stores:
+- `useUserStore` - User profile, XP, gems, car selection
+- `useOffersStore` - Nearby offers
+- `useBadgesStore` - Badge collection
+- `useChallengesStore` - Active challenges
+- `useLeaderboardStore` - Rankings
+- `useTripsStore` - Trip history
+- `useGasStationsStore` - Fuel prices
+- `useAppStore` - App state (loading, current tab)
 
 ## 🔌 API Integration Guide
 
 All mock data is in `/src/store/index.ts`. To connect APIs:
 
 ### 1. Create API Service
+
 ```typescript
 // src/services/api.ts
-const API_URL = 'https://your-api.com/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.snaproad.com';
 
 export const api = {
-  // User
-  getUser: () => fetch(`${API_URL}/user`).then(r => r.json()),
-  updatePlan: (plan: string) => fetch(`${API_URL}/user/plan`, {
-    method: 'POST',
-    body: JSON.stringify({ plan })
-  }),
-  
-  // Offers
-  getOffers: () => fetch(`${API_URL}/offers`).then(r => r.json()),
-  redeemOffer: (id: number) => fetch(`${API_URL}/offers/${id}/redeem`, {
-    method: 'POST'
-  }),
-  
-  // etc...
+  getUser: () => fetch(`${API_URL}/api/user`).then(r => r.json()),
+  getOffers: () => fetch(`${API_URL}/api/offers`).then(r => r.json()),
+  redeemOffer: (id: number, gems: number) => 
+    fetch(`${API_URL}/api/offers/${id}/redeem`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gems })
+    }),
 };
 ```
 
-### 2. Update Store to Use API
+### 2. Update Store
+
 ```typescript
-// In store/index.ts
-export const useUserStore = create<UserState>((set, get) => ({
-  user: initialUser,
+export const useOffersStore = create<OffersState>((set) => ({
+  offers: [],
   isLoading: false,
   
-  fetchUser: async () => {
+  fetchOffers: async () => {
     set({ isLoading: true });
-    try {
-      const response = await api.getUser();
-      set({ user: response.data, isLoading: false });
-    } catch (error) {
-      set({ isLoading: false });
-      // Handle error
-    }
+    const data = await api.getOffers();
+    set({ offers: data, isLoading: false });
   },
-  
-  // ... other actions
 }));
-```
-
-### 3. API Endpoints to Implement
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/user` | GET | Get current user |
-| `/api/user/plan` | POST | Update user plan |
-| `/api/user/car` | POST | Update car selection |
-| `/api/offers` | GET | List offers |
-| `/api/offers/:id/redeem` | POST | Redeem offer |
-| `/api/badges` | GET | List badges |
-| `/api/badges/:id/claim` | POST | Claim badge |
-| `/api/challenges` | GET | List challenges |
-| `/api/challenges/:id/join` | POST | Join challenge |
-| `/api/leaderboard` | GET | Get leaderboard |
-| `/api/trips` | GET | Get trip history |
-
-## 🎨 Customization
-
-### Colors
-Edit `/src/utils/theme.ts`:
-```typescript
-export const Colors = {
-  primary: '#10b981',     // Change primary color
-  background: '#0f172a',  // Dark background
-  // ...
-};
-```
-
-### Car Options
-Edit `/src/utils/theme.ts`:
-```typescript
-export const CarCategories = [
-  { id: 'sedan', name: 'Sedan', icon: '🚗' },
-  // Add more...
-];
-
-export const CarColors = [
-  { id: 'ocean-blue', name: 'Ocean Blue', hex: '#3b82f6', tier: 'standard', gems: 0 },
-  // Add more...
-];
 ```
 
 ## 📲 Building for Production
 
-### iOS (requires Mac + Apple Developer account)
-```bash
-# Build for iOS
-eas build --platform ios
+### EAS Build Setup
 
-# Submit to App Store
-eas submit --platform ios
-```
-
-### Android
-```bash
-# Build APK
-eas build --platform android --profile preview
-
-# Build for Play Store
-eas build --platform android
-```
-
-### Configure EAS
 ```bash
 # Install EAS CLI
 npm install -g eas-cli
@@ -213,25 +220,60 @@ eas login
 eas build:configure
 ```
 
+### Build Commands
+
+```bash
+# iOS (requires Apple Developer account)
+eas build --platform ios
+
+# Android APK (for testing)
+eas build --platform android --profile preview
+
+# Android AAB (for Play Store)
+eas build --platform android --profile production
+```
+
 ## 📝 TODO for Your Team
 
-1. **[ ] Implement API Service** - Create `/src/services/api.ts`
-2. **[ ] Update Stores** - Replace mock data with API calls
-3. **[ ] Add Authentication** - Implement login/register screens
-4. **[ ] Add Loading States** - Show spinners during API calls
-5. **[ ] Add Error Handling** - Toast/alert for API errors
-6. **[ ] Implement Detail Screens** - OfferDetail, BadgeDetail, etc.
-7. **[ ] Add Push Notifications** - Firebase Cloud Messaging
-8. **[ ] Add Real Maps** - Replace mock map markers with real locations
-9. **[ ] Testing** - Add Jest/React Native Testing Library tests
-10. **[ ] App Icons & Splash** - Replace placeholder assets
+### High Priority
+- [ ] Implement API service layer
+- [ ] Replace mock stores with API calls
+- [ ] Add real authentication (JWT)
+- [ ] Integrate real maps (Mapbox/Google Maps)
 
-## 🔗 Web Dashboard Links
+### Medium Priority
+- [ ] Add loading states/skeletons
+- [ ] Implement error handling with toasts
+- [ ] Add pull-to-refresh on list screens
+- [ ] Implement push notifications
 
-The web dashboards remain at:
-- **Partner Dashboard:** `/partner`
-- **Admin Console:** `/portal/admin-sr2025secure`
+### Low Priority
+- [ ] Add offline mode with caching
+- [ ] Implement deep linking
+- [ ] Add analytics tracking
+- [ ] Write unit tests
+
+## 🛠 Development Notes
+
+### Map Implementation
+The current MapScreen uses a placeholder. For real maps:
+
+1. Use development builds (not Expo Go)
+2. Install `react-native-maps` or Mapbox SDK
+3. Run `eas build --profile development`
+
+### Environment Variables
+Create `.env` file:
+```
+EXPO_PUBLIC_API_URL=https://your-api.com
+EXPO_PUBLIC_MAPBOX_TOKEN=pk.xxx
+```
+
+### Custom Fonts
+Add custom fonts to `assets/fonts/` and configure in `app.json`.
 
 ---
 
 **Built with ❤️ for SnapRoad**
+
+Last Updated: December 2025
