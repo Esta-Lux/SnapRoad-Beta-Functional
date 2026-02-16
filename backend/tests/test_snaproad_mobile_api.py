@@ -531,7 +531,14 @@ class TestReports:
                 "lng": -82.9988
             })
             assert response.status_code == 200
-            report_id = response.json()["data"]["id"]
+            data = response.json()
+            
+            # Get report ID from nested structure
+            if "report" in data["data"]:
+                report_id = data["data"]["report"]["id"]
+            else:
+                report_id = data["data"]["id"]
+            
             print(f"✓ Report type '{rtype}' works")
             
             # Cleanup
