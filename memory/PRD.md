@@ -1,58 +1,65 @@
-# SnapRoad - Privacy-First Gamified Navigation App
+# SnapRoad Mobile - Complete Flutter/Web UI in React Native
 
-## Product Overview
-SnapRoad is a privacy-first navigation app with gamified safety rewards.
+## Overview
+Complete React Native (Expo) implementation matching the Flutter/Web Driver App UI exactly.
 
-## Mobile App - EXACT Flutter/Web UI Match
+## Screens Implemented
 
-### Design System (Flutter/Web → React Native)
+### Onboarding
+1. **Plan Selection** - Basic ($0) vs Premium ($10.99/mo with 35% discount)
+2. **Car Onboarding** - Vehicle type + color selection
+
+### Main App (4 Tabs)
+1. **Map** - Filters, quick locations, gem markers, Orion voice, camera
+2. **Routes** - Saved routes list
+3. **Rewards** - Offers, Challenges, Badges, Car Studio sub-tabs
+4. **Profile** - Overview, Score, Fuel, Settings sub-tabs
+
+## Design System
+
+### Colors (Exact Flutter/Web Match)
 ```
-Tab Bar Background:  #F8FAFC (WHITE/Light)
+Tab Bar Background:  #F8FAFC (WHITE)
 Primary Blue:        #3B82F6
-Orange (Report):     #F97316  
+Orange (Report):     #F97316
 Purple (Orion):      #8B5CF6
+Amber (Premium):     #F59E0B
 Green (Success):     #22C55E
 Background Dark:     #0F172A
 Surface:             #1E293B
 ```
 
-### UI Elements Matched
-- ✅ White tab bar with outline icons
-- ✅ Blue Favorites button (pill shape)
-- ✅ Dark Nearby button (outlined)
-- ✅ Orange Report button
-- ✅ Home/Work quick location cards
-- ✅ Blue gem markers with glow + percentage
-- ✅ Green high-value gem marker (18%)
-- ✅ Purple Orion voice button
-- ✅ Dark camera button
-- ✅ Car emoji icon on map
+### UI Elements
+- White bottom tab bar with outline icons
+- Blue Favorites button (pill shape)
+- Dark Nearby button (outlined)
+- Orange Report button
+- Blue/green gem markers with glow effect
+- Purple Orion voice button
+- Car emoji icon on map
 
-### Screens Implemented
-- Map (main navigation)
-- Routes (saved routes)
-- Rewards (offers, challenges, badges, car studio)
-- Profile (stats, settings)
-
-### File Structure
+## Project Structure
 ```
 /app/snaproad-mobile/
-├── App.tsx                    # Entry point
+├── App.tsx                         # Entry point
 ├── src/screens/
-│   └── DriverApp.tsx          # Complete app (~800 lines)
+│   └── DriverApp.tsx               # Complete app (1,285 lines)
 └── package.json
 ```
 
-## Development
-
-### Run Mobile App
+## Run the App
 ```bash
 cd /app/snaproad-mobile
 yarn install
 yarn start
-# Scan QR with Expo Go app
+# Scan QR with Expo Go
 ```
 
 ## Changelog
-- **Feb 16, 2026:** Rewrote React Native UI to match Flutter/Web exactly
-- **Feb 16, 2026:** Fixed tab bar (white bg), colors, markers, buttons
+- **Feb 16, 2026:** Complete Flutter/Web UI recreation (1,285 lines)
+  - Plan Selection screen
+  - Car Onboarding screen  
+  - All 4 main tabs with sub-tabs
+  - Exact color matching
+  - White tab bar
+  - All interactive elements
