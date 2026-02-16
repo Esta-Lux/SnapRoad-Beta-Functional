@@ -1,6 +1,7 @@
 // SnapRoad Mobile - Map Screen
+// Compatible with Expo Go - uses placeholder map until development builds are configured
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,10 +9,12 @@ import {
   TouchableOpacity,
   Dimensions,
   Animated,
+  Platform,
+  ScrollView,
 } from 'react-native';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useUserStore, useOffersStore } from '../store';
 import { Colors, Spacing, BorderRadius, FontSizes, FontWeights, MapConfig } from '../utils/theme';
 import { GemDisplay } from '../components/ui';
@@ -19,13 +22,47 @@ import { Offer } from '../types';
 
 const { width, height } = Dimensions.get('window');
 
+// NOTE FOR TEAM: To use real maps with react-native-maps, you need to:
+// 1. Use development builds instead of Expo Go: npx expo run:ios or npx expo run:android
+// 2. Or use EAS Build: npx eas build --profile development --platform ios
+// The placeholder below works with Expo Go for UI development
+
 export const MapScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const { user } = useUserStore();
   const { offers, selectOffer } = useOffersStore();
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
-  const [showSearch, setShowSearch] = useState(false);
-  const mapRef = useRef<MapView>(null);
+  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const slideAnim = useRef(new Animated.Value(300)).current;
+
+  useEffect(() => {
+    (async () => {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocationError('Location permission denied');
+        return;
+      }
+      
+      try {
+        let loc = await Location.getCurrentPositionAsync({});
+        setLocation(loc);
+      } catch (e) {
+        // Use default location if can't get current
+        setLocation({
+          coords: {
+            latitude: MapConfig.defaultLocation.latitude,
+            longitude: MapConfig.defaultLocation.longitude,
+            altitude: null,
+            accuracy: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        });
+      }
+    })();
+  }, []);
 
   const handleOfferPress = (offer: Offer) => {
     setSelectedOffer(offer);
@@ -41,10 +78,6 @@ export const MapScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       duration: 200,
       useNativeDriver: true,
     }).start(() => setSelectedOffer(null));
-  };
-
-  const handleRecenter = () => {
-    mapRef.current?.animateToRegion(MapConfig.initialRegion, 500);
   };
 
   const getOfferIcon = (type: string) => {
@@ -71,37 +104,67 @@ export const MapScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      {/* Map */}
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        provider={PROVIDER_DEFAULT}
-        initialRegion={MapConfig.initialRegion}
-        showsUserLocation
-        showsMyLocationButton={false}
-        customMapStyle={darkMapStyle}
-      >
-        {/* Offer Markers */}
-        {offers.map((offer) => (
-          <Marker
-            key={offer.id}
-            coordinate={{ latitude: offer.lat, longitude: offer.lng }}
-            onPress={() => handleOfferPress(offer)}
-          >
-            <View style={[styles.markerContainer, { borderColor: getOfferColor(offer.businessType) }]}>
-              <LinearGradient
-                colors={[getOfferColor(offer.businessType), `${getOfferColor(offer.businessType)}cc`]}
-                style={styles.marker}
-              >
-                <Ionicons name={getOfferIcon(offer.businessType)} size={16} color="#fff" />
-              </LinearGradient>
-              <View style={styles.discountBadge}>
-                <Text style={styles.discountText}>{offer.discountPercent}%</Text>
-              </View>
+      {/* Placeholder Map - Works with Expo Go */}
+      <View style={styles.mapPlaceholder}>
+        <LinearGradient
+          colors={['#1a3a5c', '#0d1f33', '#0a1929']}
+          style={styles.mapGradient}
+        >
+          {/* Grid lines to simulate map */}
+          <View style={styles.gridOverlay}>
+            {[...Array(10)].map((_, i) => (
+              <View key={`h${i}`} style={[styles.gridLineH, { top: `${i * 10}%` }]} />
+            ))}
+            {[...Array(10)].map((_, i) => (
+              <View key={`v${i}`} style={[styles.gridLineV, { left: `${i * 10}%` }]} />
+            ))}
+          </View>
+          
+          {/* Current Location Indicator */}
+          <View style={styles.locationPulse}>
+            <View style={styles.locationDot}>
+              <Ionicons name="navigate" size={16} color={Colors.text} />
             </View>
-          </Marker>
-        ))}
-      </MapView>
+            <View style={styles.locationRing} />
+          </View>
+          
+          {/* Offer Markers */}
+          {offers.slice(0, 5).map((offer, index) => {
+            const positions = [
+              { top: '25%', left: '30%' },
+              { top: '35%', left: '60%' },
+              { top: '50%', left: '20%' },
+              { top: '60%', left: '70%' },
+              { top: '70%', left: '45%' },
+            ];
+            const pos = positions[index] || positions[0];
+            
+            return (
+              <TouchableOpacity
+                key={offer.id}
+                style={[styles.markerContainer, { position: 'absolute', ...pos }]}
+                onPress={() => handleOfferPress(offer)}
+              >
+                <LinearGradient
+                  colors={[getOfferColor(offer.businessType), `${getOfferColor(offer.businessType)}cc`]}
+                  style={styles.marker}
+                >
+                  <Ionicons name={getOfferIcon(offer.businessType)} size={14} color="#fff" />
+                </LinearGradient>
+                <View style={styles.discountBadge}>
+                  <Text style={styles.discountText}>{offer.discountPercent}%</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+          
+          {/* Map Provider Notice */}
+          <View style={styles.mapNotice}>
+            <Ionicons name="map-outline" size={14} color={Colors.textMuted} />
+            <Text style={styles.mapNoticeText}>Map preview mode</Text>
+          </View>
+        </LinearGradient>
+      </View>
 
       {/* Top Bar */}
       <View style={styles.topBar}>
@@ -109,7 +172,7 @@ export const MapScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <Ionicons name="menu" size={24} color={Colors.text} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.searchBar} onPress={() => setShowSearch(true)}>
+        <TouchableOpacity style={styles.searchBar}>
           <Ionicons name="search" size={20} color={Colors.textSecondary} />
           <Text style={styles.searchText}>Search destination...</Text>
         </TouchableOpacity>
@@ -119,7 +182,7 @@ export const MapScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
       {/* Bottom Controls */}
       <View style={styles.bottomControls}>
-        <TouchableOpacity style={styles.controlButton} onPress={handleRecenter}>
+        <TouchableOpacity style={styles.controlButton}>
           <Ionicons name="locate" size={24} color={Colors.text} />
         </TouchableOpacity>
 
@@ -211,24 +274,79 @@ export const MapScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   );
 };
 
-// Dark map style for better visibility
-const darkMapStyle = [
-  { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#255763' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
-];
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
   },
-  map: {
+  
+  // Placeholder Map
+  mapPlaceholder: {
     width,
     height,
+  },
+  mapGradient: {
+    flex: 1,
+    position: 'relative',
+  },
+  gridOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.1,
+  },
+  gridLineH: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: Colors.primary,
+  },
+  gridLineV: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: Colors.primary,
+  },
+  locationPulse: {
+    position: 'absolute',
+    top: '45%',
+    left: '48%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationDot: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  locationRing: {
+    position: 'absolute',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: `${Colors.primary}20`,
+    borderWidth: 2,
+    borderColor: `${Colors.primary}40`,
+  },
+  mapNotice: {
+    position: 'absolute',
+    bottom: 120,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${Colors.background}cc`,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    gap: 6,
+  },
+  mapNoticeText: {
+    color: Colors.textMuted,
+    fontSize: FontSizes.xs,
   },
   
   // Top Bar
@@ -329,9 +447,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   marker: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -339,10 +457,10 @@ const styles = StyleSheet.create({
   },
   discountBadge: {
     position: 'absolute',
-    top: -8,
-    right: -8,
+    top: -6,
+    right: -6,
     backgroundColor: Colors.background,
-    paddingHorizontal: 6,
+    paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
@@ -350,7 +468,7 @@ const styles = StyleSheet.create({
   },
   discountText: {
     color: Colors.primary,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: FontWeights.bold,
   },
 
