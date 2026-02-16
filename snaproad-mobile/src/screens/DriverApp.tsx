@@ -756,6 +756,51 @@ function MainApp({
         visible={showOrionVoice}
         onClose={() => setShowOrionVoice(false)}
       />
+
+      {/* Road Reports Modal */}
+      <RoadReportsModal
+        visible={showRoadReports}
+        onClose={() => setShowRoadReports(false)}
+        currentUserId={userData.id}
+      />
+
+      {/* Quick Photo Modal */}
+      <QuickPhotoModal
+        visible={showQuickPhoto}
+        onClose={() => setShowQuickPhoto(false)}
+        currentLocation={{ lat: 39.9612, lng: -82.9988 }}
+        isMoving={false}
+        currentSpeed={0}
+      />
+
+      {/* Full Offers Modal */}
+      <OffersFullModal
+        visible={showOffersModal}
+        onClose={() => setShowOffersModal(false)}
+        userPlan={userData.plan}
+      />
+
+      {/* Trip History Modal */}
+      <TripHistoryModal
+        visible={showTripHistory}
+        onClose={() => setShowTripHistory(false)}
+      />
+
+      {/* Leaderboard Modal */}
+      <LeaderboardModal
+        visible={showLeaderboard}
+        onClose={() => setShowLeaderboard(false)}
+        userId={userData.id}
+        userGems={userData.gems}
+      />
+
+      {/* Friends Hub Modal */}
+      <FriendsHubModal
+        visible={showFriendsHub}
+        onClose={() => setShowFriendsHub(false)}
+        userId={userData.id}
+        friendsCount={userData.friends_count}
+      />
     </View>
   );
 }
