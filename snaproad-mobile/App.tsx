@@ -1,15 +1,16 @@
 // SnapRoad Mobile - Main App Entry Point
+// Complete Driver App matching web UI
 
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Navigation } from './src/navigation';
+import DriverAppMain from './src/screens/DriverApp';
 
 export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
-      <Navigation />
+      <DriverAppMain />
     </SafeAreaProvider>
   );
 }
