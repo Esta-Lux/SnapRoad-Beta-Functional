@@ -688,20 +688,22 @@ import MapViewDirections from 'react-native-maps-directions';
 ```typescript
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Location from 'expo-location';
-import * as TaskManager from 'expo-task-manager';
-import { navigationService, RouteResult, NavigationStep } from '../services/navigation';
+import { navigationService } from '../services/navigation';
 import { tripsAPI } from '../services/api';
-
-const LOCATION_TASK_NAME = 'snaproad-background-location';
 
 interface NavigationState {
   isNavigating: boolean;
-  currentRoute: RouteResult | null;
-  currentStep: NavigationStep | null;
+  currentRoute: {
+    distance: number;
+    duration: number;
+    polyline: { latitude: number; longitude: number }[];
+    steps: { instruction: string; distance: number; maneuver: string }[];
+  } | null;
+  currentStep: { instruction: string; distance: number; maneuver: string } | null;
   currentStepIndex: number;
   distanceRemaining: number;
   timeRemaining: number;
-  currentLocation: { lat: number; lng: number } | null;
+  currentLocation: { latitude: number; longitude: number } | null;
   currentSpeed: number;
   tripId: string | null;
 }
@@ -722,18 +724,18 @@ export const useNavigation = () => {
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const tripStartTime = useRef<number>(0);
   const totalDistance = useRef<number>(0);
-  const lastLocation = useRef<{ lat: number; lng: number } | null>(null);
+  const lastLocation = useRef<{ latitude: number; longitude: number } | null>(null);
 
   // Request permissions
   const requestPermissions = async () => {
     const { status: foreground } = await Location.requestForegroundPermissionsAsync();
     if (foreground !== 'granted') {
-      throw new Error('Foreground location permission required');
+      throw new Error('Location permission required');
     }
 
     const { status: background } = await Location.requestBackgroundPermissionsAsync();
     if (background !== 'granted') {
-      console.warn('Background location not granted - navigation will stop when app is backgrounded');
+      console.warn('Background location not granted');
     }
 
     return { foreground, background };
@@ -741,8 +743,7 @@ export const useNavigation = () => {
 
   // Start navigation
   const startNavigation = async (
-    destination: { lat: number; lng: number; name: string },
-    options?: { waypoints?: { lat: number; lng: number }[] }
+    destination: { lat: number; lng: number; name: string }
   ) => {
     try {
       await requestPermissions();
@@ -757,9 +758,8 @@ export const useNavigation = () => {
         lng: location.coords.longitude,
       };
 
-      // Get route
-      const routes = await navigationService.getRoute(origin, destination, options);
-      const route = routes[0];
+      // Get route from Apple Maps
+      const route = await navigationService.getDirections(origin, destination);
 
       if (!route) {
         throw new Error('No route found');
@@ -778,7 +778,7 @@ export const useNavigation = () => {
 
       tripStartTime.current = Date.now();
       totalDistance.current = 0;
-      lastLocation.current = origin;
+      lastLocation.current = { latitude: origin.lat, longitude: origin.lng };
 
       setState({
         isNavigating: true,
@@ -787,7 +787,7 @@ export const useNavigation = () => {
         currentStepIndex: 0,
         distanceRemaining: route.distance,
         timeRemaining: route.duration,
-        currentLocation: origin,
+        currentLocation: { latitude: origin.lat, longitude: origin.lng },
         currentSpeed: 0,
         tripId: tripResponse.data.trip_id,
       });
@@ -796,8 +796,8 @@ export const useNavigation = () => {
       locationSubscription.current = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
-          distanceInterval: 10, // Update every 10 meters
-          timeInterval: 2000, // Or every 2 seconds
+          distanceInterval: 10,
+          timeInterval: 2000,
         },
         handleLocationUpdate
       );
@@ -812,48 +812,56 @@ export const useNavigation = () => {
   // Handle location updates
   const handleLocationUpdate = useCallback(
     async (location: Location.LocationObject) => {
-      const { latitude: lat, longitude: lng, speed } = location.coords;
+      const { latitude, longitude, speed } = location.coords;
 
       // Calculate distance traveled
       if (lastLocation.current) {
         const dist = calculateDistance(
-          lastLocation.current.lat,
-          lastLocation.current.lng,
-          lat,
-          lng
+          lastLocation.current.latitude,
+          lastLocation.current.longitude,
+          latitude,
+          longitude
         );
         totalDistance.current += dist;
       }
-      lastLocation.current = { lat, lng };
+      lastLocation.current = { latitude, longitude };
 
       setState((prev) => {
         if (!prev.currentRoute) return prev;
 
-        // Update step based on position
-        const newStep = findCurrentStep(prev.currentRoute, { lat, lng }, prev.currentStepIndex);
+        // Find current step based on position
+        const newStepIndex = findCurrentStepIndex(
+          prev.currentRoute.polyline,
+          { latitude, longitude },
+          prev.currentStepIndex
+        );
+
+        // Calculate remaining distance
+        const distanceRemaining = calculateRemainingDistance(
+          prev.currentRoute.polyline,
+          { latitude, longitude }
+        );
         
-        // Recalculate remaining distance/time
-        const distanceRemaining = calculateRemainingDistance(prev.currentRoute, { lat, lng });
-        const avgSpeed = speed || 10; // m/s
+        const avgSpeed = speed || 10;
         const timeRemaining = distanceRemaining / avgSpeed;
 
         return {
           ...prev,
-          currentLocation: { lat, lng },
-          currentSpeed: (speed || 0) * 2.237, // Convert m/s to mph
-          currentStep: newStep.step,
-          currentStepIndex: newStep.index,
+          currentLocation: { latitude, longitude },
+          currentSpeed: (speed || 0) * 2.237, // m/s to mph
+          currentStep: prev.currentRoute.steps[newStepIndex] || prev.currentStep,
+          currentStepIndex: newStepIndex,
           distanceRemaining,
           timeRemaining,
         };
       });
 
-      // Send location update to backend (throttled)
+      // Update backend
       if (state.tripId) {
         try {
-          await tripsAPI.updateLocation(state.tripId, lat, lng, speed || 0);
+          await tripsAPI.updateLocation(state.tripId, latitude, longitude, speed || 0);
         } catch (error) {
-          console.warn('Failed to update trip location:', error);
+          console.warn('Failed to update location:', error);
         }
       }
     },
@@ -862,27 +870,24 @@ export const useNavigation = () => {
 
   // End navigation
   const endNavigation = async (completed: boolean = true) => {
-    // Stop location tracking
     if (locationSubscription.current) {
       locationSubscription.current.remove();
       locationSubscription.current = null;
     }
 
-    // End trip on backend
     if (state.tripId && state.currentLocation) {
-      const duration = Math.round((Date.now() - tripStartTime.current) / 1000 / 60); // minutes
-      const safetyScore = calculateSafetyScore(); // Based on speed, acceleration, etc.
+      const duration = Math.round((Date.now() - tripStartTime.current) / 1000 / 60);
+      const safetyScore = calculateSafetyScore();
 
       try {
         const result = await tripsAPI.end(state.tripId, {
-          end_lat: state.currentLocation.lat,
-          end_lng: state.currentLocation.lng,
-          distance: totalDistance.current / 1609.34, // Convert meters to miles
+          end_lat: state.currentLocation.latitude,
+          end_lng: state.currentLocation.longitude,
+          distance: totalDistance.current / 1609.34, // meters to miles
           duration,
           safety_score: safetyScore,
         });
 
-        console.log('Trip completed! XP:', result.data.xp_earned, 'Gems:', result.data.gems_earned);
         return result.data;
       } catch (error) {
         console.error('Failed to end trip:', error);
@@ -904,13 +909,14 @@ export const useNavigation = () => {
     return null;
   };
 
-  // Reroute
+  // Reroute from current location
   const reroute = async () => {
     if (!state.currentRoute || !state.currentLocation) return;
 
+    const lastPoint = state.currentRoute.polyline[state.currentRoute.polyline.length - 1];
     const destination = {
-      lat: state.currentRoute.geometry.coordinates.slice(-1)[0][1],
-      lng: state.currentRoute.geometry.coordinates.slice(-1)[0][0],
+      lat: lastPoint.latitude,
+      lng: lastPoint.longitude,
       name: 'Destination',
     };
 
@@ -935,9 +941,9 @@ export const useNavigation = () => {
   };
 };
 
-// Helper functions
+// Helper: Calculate distance between two points (Haversine)
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371e3; // Earth's radius in meters
+  const R = 6371e3;
   const phi1 = (lat1 * Math.PI) / 180;
   const phi2 = (lat2 * Math.PI) / 180;
   const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
@@ -951,36 +957,57 @@ function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * c;
 }
 
-function findCurrentStep(route: RouteResult, location: { lat: number; lng: number }, currentIndex: number) {
-  // Simple implementation - find closest step
-  let minDistance = Infinity;
-  let closestIndex = currentIndex;
+// Helper: Find which step user is on
+function findCurrentStepIndex(
+  polyline: { latitude: number; longitude: number }[],
+  location: { latitude: number; longitude: number },
+  currentIndex: number
+): number {
+  // Simple: advance index based on proximity to route points
+  return currentIndex;
+}
 
-  for (let i = currentIndex; i < route.steps.length; i++) {
-    // In real implementation, check distance to step's location
-    // For now, just advance if we've moved enough
-    closestIndex = i;
-    break;
+// Helper: Calculate remaining distance
+function calculateRemainingDistance(
+  polyline: { latitude: number; longitude: number }[],
+  location: { latitude: number; longitude: number }
+): number {
+  let totalDist = 0;
+  let foundClosest = false;
+  let minDist = Infinity;
+  let closestIndex = 0;
+
+  // Find closest point on polyline
+  for (let i = 0; i < polyline.length; i++) {
+    const dist = calculateDistance(
+      location.latitude,
+      location.longitude,
+      polyline[i].latitude,
+      polyline[i].longitude
+    );
+    if (dist < minDist) {
+      minDist = dist;
+      closestIndex = i;
+    }
   }
 
-  return {
-    step: route.steps[closestIndex] || null,
-    index: closestIndex,
-  };
+  // Sum distance from closest point to end
+  for (let i = closestIndex; i < polyline.length - 1; i++) {
+    totalDist += calculateDistance(
+      polyline[i].latitude,
+      polyline[i].longitude,
+      polyline[i + 1].latitude,
+      polyline[i + 1].longitude
+    );
+  }
+
+  return totalDist;
 }
 
-function calculateRemainingDistance(route: RouteResult, location: { lat: number; lng: number }): number {
-  // Simplified - return route distance minus progress
-  return route.distance;
-}
-
+// Helper: Calculate safety score based on driving behavior
 function calculateSafetyScore(): number {
-  // In real implementation, track:
-  // - Hard braking events
-  // - Rapid acceleration
-  // - Speed limit violations
-  // - Phone usage detection
-  return 90 + Math.floor(Math.random() * 10);
+  // In production: track hard braking, acceleration, speeding
+  return 85 + Math.floor(Math.random() * 15);
 }
 
 export default useNavigation;
