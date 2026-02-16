@@ -43,11 +43,15 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. The pro
 - **Charts:** Recharts for analytics
 - **Components:** Shadcn UI
 
-### Mobile App (React Native - NEW)
+### Mobile App (React Native)
 - **Framework:** React Native (Expo SDK 50)
 - **Navigation:** React Navigation
 - **State:** Zustand (mock data store)
 - **Maps:** Ready for Mapbox integration
+- **UI Theme:** Updated to match Flutter design system
+  - Primary: Sky Blue (#0EA5E9)
+  - Accent: Fuchsia (#D946EF)
+  - Dark theme with Slate backgrounds
 
 ## ⚠️ IMPORTANT: All Emergent AI Dependencies Removed
 - Logo now served from `/assets/logo.png` (local)
