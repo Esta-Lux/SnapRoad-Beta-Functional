@@ -327,11 +327,13 @@ class TestChallenges:
         
         if len(data["data"]) > 0:
             challenge = data["data"][0]
-            # Check actual API field names
-            required_fields = ["id", "title", "description", "type", "progress", "goal"]
+            # Check actual API field names - uses 'target' not 'goal'
+            required_fields = ["id", "title", "description", "type", "progress"]
             for field in required_fields:
                 assert field in challenge, f"Missing field in challenge: {field}"
-            # May have gems or gems_reward depending on API version
+            # May have 'target' or 'goal' depending on API version
+            assert "target" in challenge or "goal" in challenge
+            # May have 'gems' or 'gems_reward' depending on API version
             assert "gems" in challenge or "gems_reward" in challenge
             print(f"✓ Challenge structure verified: {challenge['title']}")
 
