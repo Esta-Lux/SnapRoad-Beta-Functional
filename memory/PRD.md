@@ -13,8 +13,9 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. The pro
 │       ├── PartnerDashboard.tsx # Partner portal
 │       ├── AdminDashboard.tsx   # Admin console
 │       └── DriverApp/           # Full driver experience (27 components)
-├── snaproad-mobile/    # React Native (Expo) - CONVERTED FROM FLUTTER ✅
-│   └── src/screens/    # 10 screens matching Flutter UI
+├── snaproad-mobile/    # React Native (Expo) - COMPLETE DRIVER APP ✅
+│   └── src/screens/
+│       └── DriverApp.tsx        # Complete app (63KB, all screens)
 ├── snaproad-beta/      # Reference code (Flutter, Node.js)
 └── memory/             # Documentation
 ```
@@ -26,25 +27,26 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. The pro
 - **Maps:** OpenStreetMap/Carto dark tiles
 
 ### Mobile (React Native)
-- **Framework:** Expo SDK 52
-- **Navigation:** @react-navigation (Stack + Tabs)
-- **State:** Zustand stores
+- **Framework:** Expo SDK 50
+- **Entry:** `App.tsx` → `DriverApp.tsx`
 - **UI:** Custom components + expo-linear-gradient
 - **Icons:** @expo/vector-icons (Ionicons)
 
-## Mobile App Screens (Flutter → React Native)
+## Mobile App Screens (Complete Implementation)
+
+### Onboarding
 | Screen | Description | Status |
 |--------|-------------|--------|
-| SplashScreen | Animated logo with pulsing rings | ✅ |
-| WelcomeScreen | 4-slide feature carousel | ✅ |
-| PlanSelectionScreen | Basic/Premium selection | ✅ |
-| CarSetupScreen | Vehicle type + color | ✅ |
-| MapScreen | Placeholder map (Expo Go compatible) | ✅ |
-| OffersScreen | Categorized offers with filters | ✅ |
-| RewardsScreen | Challenges/Badges/Car Studio tabs | ✅ |
-| ProfileScreen | Stats, trips, gas prices, settings | ✅ |
-| OfferDetailScreen | Redemption flow with QR code | ✅ |
-| LeaderboardScreen | Global/State/Friends rankings | ✅ |
+| PlanSelectionScreen | Basic/Premium with pricing | ✅ |
+| CarOnboardingScreen | Vehicle type + color | ✅ |
+
+### Main App (4 Tabs)
+| Tab | Sub-tabs | Features |
+|-----|----------|----------|
+| Map | - | Location buttons, quick locations, offer markers, Orion voice |
+| Routes | - | Saved routes, add new route |
+| Rewards | Offers, Challenges, Badges, Car Studio | Full reward system |
+| Profile | Overview, Score, Fuel, Settings | User stats & settings |
 
 ## Web App Routes
 - `/` - Welcome page with auth
@@ -58,8 +60,6 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. The pro
 - `POST /api/auth/signup` - User registration
 - `POST /api/auth/login` - User authentication
 - `POST /api/boosts/calculate` - Boost cost calculator
-- `GET /api/admin/export/offers` - Export offers
-- `GET /api/analytics/dashboard` - Business analytics
 
 ### Working (Mock Data)
 - `GET /api/offers` - Mock offers list
@@ -70,36 +70,49 @@ SnapRoad is a privacy-first navigation app with gamified safety rewards. The pro
 - User data (gems, XP, level, safety score)
 - Navigation (no real routing)
 - Payments (no Stripe)
-- Push notifications
 - Database (in-memory only)
+
+## Mobile App Design System
+
+### Colors
+```typescript
+primary: '#0EA5E9'     // Sky blue
+accent: '#D946EF'      // Fuchsia  
+success: '#22C55E'     // Green
+background: '#0F172A'  // Dark slate
+surface: '#1E293B'     // Lighter slate
+```
+
+### UI Components
+- Custom gradient tab bar
+- Side menu navigation
+- Offer cards with discount badges
+- Challenge progress bars
+- Plan selection cards
 
 ## Remaining Work
 
 ### High Priority
 1. Connect mobile app to real backend APIs
-2. Database Integration (Supabase/PostgreSQL)
-3. Real Authentication (JWT)
-4. Real Maps (Mapbox/Google Maps via EAS builds)
+2. Real Maps integration (Mapbox via EAS builds)
+3. Database Integration (Supabase/PostgreSQL)
 
 ### Medium Priority
-5. Stripe Payment Integration
-6. Push Notifications (Firebase)
-7. Email Service (SendGrid)
+4. Real Authentication (JWT)
+5. Push Notifications (Firebase)
+6. Stripe Payment Integration
 
 ### Low Priority
-8. Native iOS/Android builds via EAS
-9. Performance optimization
-10. Offline mode
+7. Native iOS/Android builds via EAS
+8. Performance optimization
+9. Offline mode
 
 ## Development Commands
 
 ### Web App
 ```bash
-# Frontend runs on port 3000
-cd /app/frontend && yarn start
-
-# Backend runs on port 8001
-cd /app/backend && python server.py
+cd /app/frontend && yarn start  # Port 3000
+cd /app/backend && python server.py  # Port 8001
 ```
 
 ### Mobile App
@@ -110,8 +123,8 @@ yarn start  # Scan QR with Expo Go
 ```
 
 ## Changelog
-- **Feb 16, 2026:** Converted Flutter UI to React Native (10 screens)
-- **Feb 16, 2026:** Synced 27 components + 13 test files from GitHub repo
+- **Feb 16, 2026:** Complete rebuild of React Native app to match web UI
+- **Feb 16, 2026:** Synced web driver app components from GitHub
 - **Feb 2026:** Initial web driver app with Partner/Admin dashboards
 
 ## Test Credentials
