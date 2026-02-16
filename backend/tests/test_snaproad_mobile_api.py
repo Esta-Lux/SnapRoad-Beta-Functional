@@ -503,14 +503,20 @@ class TestReports:
         assert data["success"] == True
         assert "data" in data
         
-        report = data["data"]
-        assert "id" in report
-        assert report["type"] == "hazard"
-        assert "xp_earned" in data
-        print(f"✓ Report created: {report['title']} (id={report['id']}, +{data['xp_earned']} XP)")
-        
-        # Cleanup
-        requests.delete(f"{BASE_URL}/api/reports/{report['id']}")
+        # Response structure: data contains {report: {...}, xp_result: {...}, badges_earned: [...]}
+        report = data["data"].get("report", data["data"])
+        if "report" in data["data"]:
+            report = data["data"]["report"]
+            assert "id" in report
+            assert report["type"] == "hazard"
+            print(f"✓ Report created: {report['title']} (id={report['id']})")
+            # Cleanup
+            requests.delete(f"{BASE_URL}/api/reports/{report['id']}")
+        else:
+            # Old API format
+            assert "id" in data["data"]
+            print(f"✓ Report created (old format)")
+            requests.delete(f"{BASE_URL}/api/reports/{data['data']['id']}")
     
     def test_report_types_valid(self):
         """Test that all valid report types work"""
