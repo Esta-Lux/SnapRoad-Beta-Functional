@@ -1,14 +1,34 @@
-# SnapRoad - Privacy-First Navigation App
+# SnapRoad - Privacy-First Gamified Navigation App
 
 ## Product Overview
-SnapRoad is a privacy-first navigation app with gamified safety rewards. Currently a web preview/prototype with plans for native iOS migration.
+SnapRoad is a privacy-first navigation app with gamified safety rewards. The project consists of three separate codebases ready for handover to external development teams.
+
+## Project Structure
+```
+/app
+├── backend/            # FastAPI server (mocked, prepped for integration)
+├── frontend/           # React Web App (Partner/Admin Dashboards)
+├── snaproad-mobile/    # React Native (Expo) Driver App (NEW)
+└── memory/             # Handover documentation
+```
 
 ## Tech Stack
-- **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS + Recharts
-- **Backend:** FastAPI (Python) with in-memory mock data
-- **AI Integration:** Stub ready for OpenAI DALL-E / Stability AI (configure in .env)
-- **Maps:** Custom tile-based map using OpenStreetMap/Carto dark tiles
-- **Target:** Native iOS (Swift/SwiftUI) - not yet migrated
+
+### Backend (FastAPI)
+- **Runtime:** Python 3.10+ + FastAPI
+- **Database:** Ready for Supabase/PostgreSQL (currently mock data)
+- **Payments:** Ready for Stripe integration
+
+### Web Frontend (React)
+- **Framework:** React 18 + TypeScript + Vite + Tailwind CSS
+- **Charts:** Recharts for analytics
+- **Components:** Shadcn UI
+
+### Mobile App (React Native - NEW)
+- **Framework:** React Native (Expo SDK 50)
+- **Navigation:** React Navigation
+- **State:** Zustand (mock data store)
+- **Maps:** Ready for Mapbox integration
 
 ## ⚠️ IMPORTANT: All Emergent AI Dependencies Removed
 - Logo now served from `/assets/logo.png` (local)
