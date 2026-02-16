@@ -1,65 +1,67 @@
 // SnapRoad Mobile - Theme & Constants
+// Updated to match Flutter UI design system
 
 export const Colors = {
-  // Primary
-  primary: '#10b981', // Emerald
-  primaryLight: '#34d399',
-  primaryDark: '#059669',
+  // Primary (Sky Blue - matching Flutter)
+  primary: '#0EA5E9',
+  primaryLight: '#38BDF8',
+  primaryDark: '#0284C7',
   
-  // Secondary
-  secondary: '#14b8a6', // Teal
+  // Secondary (Teal)
+  secondary: '#14b8a6',
   secondaryLight: '#2dd4bf',
   secondaryDark: '#0d9488',
   
-  // Accent
-  accent: '#8b5cf6', // Purple
-  accentLight: '#a78bfa',
-  accentDark: '#7c3aed',
+  // Accent (Fuchsia - matching Flutter)
+  accent: '#D946EF',
+  accentLight: '#E879F9',
+  accentDark: '#C026D3',
   
-  // Background
-  background: '#0f172a', // Slate 900
-  backgroundLight: '#1e293b', // Slate 800
-  backgroundLighter: '#334155', // Slate 700
+  // Background (Slate - matching Flutter)
+  background: '#0F172A',
+  backgroundLight: '#1E293B',
+  backgroundLighter: '#334155',
   
-  // Surface
-  surface: '#1e293b',
+  // Surface (matching Flutter)
+  surface: '#1E293B',
   surfaceLight: '#334155',
   
   // Text
-  text: '#ffffff',
-  textSecondary: '#94a3b8', // Slate 400
-  textMuted: '#64748b', // Slate 500
+  text: '#FFFFFF',
+  textSecondary: '#94A3B8',
+  textMuted: '#64748B',
   
-  // Status
-  success: '#10b981',
-  warning: '#f59e0b',
-  error: '#ef4444',
-  info: '#3b82f6',
+  // Status (matching Flutter)
+  success: '#22C55E',
+  warning: '#F59E0B',
+  error: '#EF4444',
+  info: '#3B82F6',
   
   // Gems & Gold
-  gem: '#8b5cf6',
-  gold: '#fbbf24',
-  silver: '#9ca3af',
-  bronze: '#f97316',
+  gem: '#D946EF',
+  gold: '#FBBF24',
+  silver: '#9CA3AF',
+  bronze: '#F97316',
   
   // Rarity Colors
-  common: '#94a3b8',
-  rare: '#3b82f6',
-  epic: '#8b5cf6',
-  legendary: '#fbbf24',
+  common: '#94A3B8',
+  rare: '#3B82F6',
+  epic: '#D946EF',
+  legendary: '#FBBF24',
   
   // Offer Types
-  gas: '#ef4444',
-  cafe: '#f59e0b',
-  restaurant: '#10b981',
-  carwash: '#3b82f6',
-  retail: '#8b5cf6',
+  gas: '#EF4444',
+  cafe: '#F59E0B',
+  restaurant: '#22C55E',
+  carwash: '#3B82F6',
+  retail: '#D946EF',
   
   // Gradients (as arrays for LinearGradient)
-  gradientPrimary: ['#10b981', '#14b8a6'],
-  gradientAccent: ['#8b5cf6', '#ec4899'],
-  gradientGold: ['#fbbf24', '#f59e0b'],
-  gradientDark: ['#1e293b', '#0f172a'],
+  gradientPrimary: ['#0EA5E9', '#06B6D4'] as const,
+  gradientAccent: ['#D946EF', '#EC4899'] as const,
+  gradientGold: ['#FBBF24', '#F59E0B'] as const,
+  gradientDark: ['#1E293B', '#0F172A'] as const,
+  gradientSuccess: ['#22C55E', '#10B981'] as const,
 };
 
 export const Spacing = {
@@ -97,30 +99,55 @@ export const FontWeights = {
   bold: '700' as const,
 };
 
+// Shadows for cards (matching Flutter elevation)
+export const Shadows = {
+  sm: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  md: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  lg: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+};
+
 // Car Options
 export const CarCategories = [
-  { id: 'sedan', name: 'Sedan', icon: '🚗' },
-  { id: 'suv', name: 'SUV', icon: '🚙' },
-  { id: 'truck', name: 'Truck', icon: '🛻' },
+  { id: 'sedan', name: 'Sedan', icon: 'car-sport' },
+  { id: 'suv', name: 'SUV', icon: 'car' },
+  { id: 'truck', name: 'Truck', icon: 'bus' },
 ];
 
 export const CarColors = [
   // Standard
-  { id: 'midnight-black', name: 'Midnight Black', hex: '#1a1a2e', tier: 'standard', gems: 0 },
-  { id: 'arctic-white', name: 'Arctic White', hex: '#f8fafc', tier: 'standard', gems: 0 },
-  { id: 'ocean-blue', name: 'Ocean Blue', hex: '#3b82f6', tier: 'standard', gems: 0 },
-  { id: 'forest-green', name: 'Forest Green', hex: '#22c55e', tier: 'standard', gems: 0 },
-  { id: 'sunset-red', name: 'Sunset Red', hex: '#ef4444', tier: 'standard', gems: 0 },
+  { id: 'midnight-black', name: 'Midnight Black', hex: '#1A1A2E', tier: 'standard', gems: 0 },
+  { id: 'arctic-white', name: 'Arctic White', hex: '#F8FAFC', tier: 'standard', gems: 0 },
+  { id: 'ocean-blue', name: 'Ocean Blue', hex: '#0EA5E9', tier: 'standard', gems: 0 },
+  { id: 'forest-green', name: 'Forest Green', hex: '#22C55E', tier: 'standard', gems: 0 },
+  { id: 'sunset-red', name: 'Sunset Red', hex: '#EF4444', tier: 'standard', gems: 0 },
   
   // Metallic
-  { id: 'silver-metallic', name: 'Silver Metallic', hex: '#cbd5e1', tier: 'metallic', gems: 100 },
-  { id: 'gold-metallic', name: 'Gold Metallic', hex: '#fbbf24', tier: 'metallic', gems: 150 },
-  { id: 'bronze-metallic', name: 'Bronze Metallic', hex: '#f97316', tier: 'metallic', gems: 150 },
+  { id: 'silver-metallic', name: 'Silver Metallic', hex: '#CBD5E1', tier: 'metallic', gems: 100 },
+  { id: 'gold-metallic', name: 'Gold Metallic', hex: '#FBBF24', tier: 'metallic', gems: 150 },
+  { id: 'bronze-metallic', name: 'Bronze Metallic', hex: '#F97316', tier: 'metallic', gems: 150 },
   
   // Premium
-  { id: 'neon-purple', name: 'Neon Purple', hex: '#a855f7', tier: 'premium', gems: 300 },
-  { id: 'electric-cyan', name: 'Electric Cyan', hex: '#06b6d4', tier: 'premium', gems: 300 },
-  { id: 'rose-gold', name: 'Rose Gold', hex: '#fb7185', tier: 'premium', gems: 500 },
+  { id: 'neon-purple', name: 'Neon Purple', hex: '#D946EF', tier: 'premium', gems: 300 },
+  { id: 'electric-cyan', name: 'Electric Cyan', hex: '#06B6D4', tier: 'premium', gems: 300 },
+  { id: 'rose-gold', name: 'Rose Gold', hex: '#FB7185', tier: 'premium', gems: 500 },
 ];
 
 // Level XP Requirements
@@ -160,6 +187,13 @@ export const MapConfig = {
   },
 };
 
+// Subscription Tiers (matching Flutter constants)
+export const SubscriptionTiers = {
+  free: 'free',
+  premium: 'premium',
+  family: 'family',
+};
+
 // Plan Features
 export const PlanFeatures = {
   basic: {
@@ -184,4 +218,28 @@ export const PlanFeatures = {
       'Early access to features',
     ],
   },
+};
+
+// Incident Types (matching Flutter constants)
+export const IncidentTypes = {
+  accident: 'accident',
+  hazard: 'hazard',
+  violation: 'violation',
+  construction: 'construction',
+  other: 'other',
+};
+
+// Rewards Constants (matching Flutter)
+export const RewardsConfig = {
+  baseGemsPerTrip: 5,
+  gemsPerKm: 1,
+  perfectScoreBonus: 10,
+  streakBonusMultiplier: 2,
+};
+
+// Driving Event Thresholds (matching Flutter)
+export const DrivingThresholds = {
+  speedingThresholdKmh: 10.0,
+  hardBrakeThresholdG: 0.5,
+  rapidAccelThresholdG: 0.4,
 };
