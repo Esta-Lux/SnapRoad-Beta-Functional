@@ -417,25 +417,27 @@ export default {
 
 ---
 
-## Phase 3: Maps & Navigation (Mapbox)
+## Phase 3: Apple Maps Navigation Service
 
 ### Create `/app/snaproad-mobile/src/services/navigation.ts`:
 ```typescript
-import MapboxGL from '@mapbox/mapbox-sdk';
-import Directions from '@mapbox/mapbox-sdk/services/directions';
-import Geocoding from '@mapbox/mapbox-sdk/services/geocoding';
-import { MAPBOX_ACCESS_TOKEN } from '@env';
+import { APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY } from '@env';
 
-const mapboxClient = MapboxGL({ accessToken: MAPBOX_ACCESS_TOKEN });
-const directionsClient = Directions(mapboxClient);
-const geocodingClient = Geocoding(mapboxClient);
+// Apple Maps API base URL
+const APPLE_MAPS_API = 'https://maps-api.apple.com/v1';
+
+// Generate JWT token for Apple Maps API (do this on backend in production!)
+// For development, you can generate tokens manually
+let mapKitToken: string | null = null;
+
+export const setMapKitToken = (token: string) => {
+  mapKitToken = token;
+};
 
 export interface RouteResult {
   distance: number; // meters
   duration: number; // seconds
-  geometry: {
-    coordinates: [number, number][];
-  };
+  polyline: { latitude: number; longitude: number }[];
   steps: NavigationStep[];
 }
 
@@ -443,103 +445,244 @@ export interface NavigationStep {
   instruction: string;
   distance: number;
   duration: number;
-  maneuver: {
-    type: string;
-    modifier?: string;
-    bearing_after: number;
-  };
+  maneuver: string;
+}
+
+export interface SearchResult {
+  id: string;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  category?: string;
 }
 
 export const navigationService = {
-  // Get route between two points
-  getRoute: async (
+  // Get directions between two points using Apple Maps API
+  getDirections: async (
     origin: { lat: number; lng: number },
-    destination: { lat: number; lng: number },
-    options?: { alternatives?: boolean; waypoints?: { lat: number; lng: number }[] }
-  ): Promise<RouteResult[]> => {
-    const waypoints = [
-      { coordinates: [origin.lng, origin.lat] },
-      ...(options?.waypoints?.map(w => ({ coordinates: [w.lng, w.lat] })) || []),
-      { coordinates: [destination.lng, destination.lat] },
-    ];
-
-    const response = await directionsClient
-      .getDirections({
-        profile: 'driving-traffic',
-        waypoints,
-        geometries: 'geojson',
-        steps: true,
-        alternatives: options?.alternatives ?? true,
-        annotations: ['distance', 'duration', 'speed'],
-        voice_instructions: true,
-        banner_instructions: true,
-      })
-      .send();
-
-    return response.body.routes.map((route: any) => ({
-      distance: route.distance,
-      duration: route.duration,
-      geometry: route.geometry,
-      steps: route.legs.flatMap((leg: any) =>
-        leg.steps.map((step: any) => ({
-          instruction: step.maneuver.instruction,
-          distance: step.distance,
-          duration: step.duration,
-          maneuver: {
-            type: step.maneuver.type,
-            modifier: step.maneuver.modifier,
-            bearing_after: step.maneuver.bearing_after,
+    destination: { lat: number; lng: number }
+  ): Promise<RouteResult | null> => {
+    try {
+      const response = await fetch(
+        `${APPLE_MAPS_API}/directions?` +
+        `origin=${origin.lat},${origin.lng}&` +
+        `destination=${destination.lat},${destination.lng}&` +
+        `transportType=automobile`,
+        {
+          headers: {
+            'Authorization': `Bearer ${mapKitToken}`,
           },
-        }))
-      ),
-    }));
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Directions request failed');
+      }
+
+      const data = await response.json();
+      const route = data.routes?.[0];
+
+      if (!route) return null;
+
+      return {
+        distance: route.distanceMeters,
+        duration: route.expectedTravelTimeSeconds,
+        polyline: decodePolyline(route.polyline),
+        steps: route.steps?.map((step: any) => ({
+          instruction: step.instructions,
+          distance: step.distanceMeters,
+          duration: step.expectedTravelTimeSeconds,
+          maneuver: step.maneuverType,
+        })) || [],
+      };
+    } catch (error) {
+      console.error('Apple Maps directions error:', error);
+      return null;
+    }
   },
 
-  // Search for places
-  searchPlaces: async (query: string, proximity?: { lat: number; lng: number }) => {
-    const response = await geocodingClient
-      .forwardGeocode({
-        query,
-        limit: 5,
-        types: ['poi', 'address', 'place'],
-        ...(proximity && { proximity: [proximity.lng, proximity.lat] }),
-      })
-      .send();
+  // Search for places using Apple Maps API
+  searchPlaces: async (
+    query: string,
+    location?: { lat: number; lng: number }
+  ): Promise<SearchResult[]> => {
+    try {
+      let url = `${APPLE_MAPS_API}/search?q=${encodeURIComponent(query)}`;
+      
+      if (location) {
+        url += `&searchLocation=${location.lat},${location.lng}`;
+      }
 
-    return response.body.features.map((feature: any) => ({
-      id: feature.id,
-      name: feature.text,
-      address: feature.place_name,
-      lat: feature.center[1],
-      lng: feature.center[0],
-      category: feature.properties?.category,
-    }));
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${mapKitToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Search request failed');
+      }
+
+      const data = await response.json();
+
+      return (data.results || []).map((place: any) => ({
+        id: place.id,
+        name: place.name,
+        address: place.formattedAddressLines?.join(', ') || '',
+        lat: place.coordinate.latitude,
+        lng: place.coordinate.longitude,
+        category: place.poiCategory,
+      }));
+    } catch (error) {
+      console.error('Apple Maps search error:', error);
+      return [];
+    }
   },
 
   // Reverse geocode (coordinates to address)
-  reverseGeocode: async (lat: number, lng: number) => {
-    const response = await geocodingClient
-      .reverseGeocode({
-        query: [lng, lat],
-        limit: 1,
-        types: ['address', 'poi'],
-      })
-      .send();
-
-    const feature = response.body.features[0];
-    return feature
-      ? {
-          name: feature.text,
-          address: feature.place_name,
-          lat: feature.center[1],
-          lng: feature.center[0],
+  reverseGeocode: async (lat: number, lng: number): Promise<SearchResult | null> => {
+    try {
+      const response = await fetch(
+        `${APPLE_MAPS_API}/reverseGeocode?loc=${lat},${lng}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${mapKitToken}`,
+          },
         }
-      : null;
+      );
+
+      if (!response.ok) {
+        throw new Error('Reverse geocode request failed');
+      }
+
+      const data = await response.json();
+      const result = data.results?.[0];
+
+      if (!result) return null;
+
+      return {
+        id: result.id || `${lat},${lng}`,
+        name: result.name || result.formattedAddressLines?.[0] || 'Unknown',
+        address: result.formattedAddressLines?.join(', ') || '',
+        lat,
+        lng,
+      };
+    } catch (error) {
+      console.error('Reverse geocode error:', error);
+      return null;
+    }
+  },
+
+  // Calculate ETA
+  getETA: async (
+    origin: { lat: number; lng: number },
+    destination: { lat: number; lng: number }
+  ): Promise<{ duration: number; distance: number } | null> => {
+    try {
+      const response = await fetch(
+        `${APPLE_MAPS_API}/etas?` +
+        `origin=${origin.lat},${origin.lng}&` +
+        `destinations=${destination.lat},${destination.lng}&` +
+        `transportType=automobile`,
+        {
+          headers: {
+            'Authorization': `Bearer ${mapKitToken}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('ETA request failed');
+      }
+
+      const data = await response.json();
+      const eta = data.etas?.[0];
+
+      if (!eta) return null;
+
+      return {
+        duration: eta.expectedTravelTimeSeconds,
+        distance: eta.distanceMeters,
+      };
+    } catch (error) {
+      console.error('ETA error:', error);
+      return null;
+    }
   },
 };
 
+// Decode Apple's polyline format to coordinate array
+function decodePolyline(encoded: string): { latitude: number; longitude: number }[] {
+  const points: { latitude: number; longitude: number }[] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte: number;
+
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    points.push({
+      latitude: lat / 1e5,
+      longitude: lng / 1e5,
+    });
+  }
+
+  return points;
+}
+
 export default navigationService;
 ```
+
+### Alternative: Use Built-in iOS Routing (No API Key Needed!)
+
+For simpler setup without MapKit JS credentials, use `react-native-maps` built-in directions:
+
+```typescript
+// Simple directions using react-native-maps-directions
+// Install: yarn add react-native-maps-directions
+
+import MapViewDirections from 'react-native-maps-directions';
+
+// In your component:
+<MapView>
+  <MapViewDirections
+    origin={{ latitude: 39.96, longitude: -82.99 }}
+    destination={{ latitude: 39.98, longitude: -83.01 }}
+    strokeWidth={4}
+    strokeColor={Colors.primary}
+    onReady={(result) => {
+      console.log(`Distance: ${result.distance} km`);
+      console.log(`Duration: ${result.duration} min`);
+    }}
+  />
+</MapView>
+```
+
+**Note**: This uses Apple Maps on iOS automatically - no API key needed for basic routing!
 
 ### Create `/app/snaproad-mobile/src/hooks/useNavigation.ts`:
 ```typescript
