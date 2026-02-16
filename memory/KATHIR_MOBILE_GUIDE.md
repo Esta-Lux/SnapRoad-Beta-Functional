@@ -2254,10 +2254,10 @@ export default useNotifications;
 - Ensure background location is enabled in `app.json`
 - Test on physical device (simulators have limited GPS)
 
-**Mapbox not rendering:**
-- Verify `MAPBOX_ACCESS_TOKEN` is set
-- Check token has proper scopes enabled
-- Ensure iOS/Android SDK is properly linked
+**Map not rendering:**
+- `react-native-maps` uses Apple Maps on iOS by default - no API key needed
+- Ensure `PROVIDER_DEFAULT` is set (not Google)
+- Check that location permissions are granted
 
 **Push notifications not received:**
 - Test on physical device (not simulator)
@@ -2270,20 +2270,26 @@ export default useNotifications;
 - Check camera permission is granted
 - Verify `expo-camera` is properly installed
 
+**Apple Maps Directions API errors:**
+- Ensure you have MapKit JS credentials (Team ID, Key ID, Private Key)
+- Token must be generated correctly (JWT format)
+- For development without API: use the simpler `react-native-maps-directions` package
+
 **Navigation instructions not showing:**
-- Verify Mapbox Directions API is enabled
-- Check route response contains steps
-- Ensure coordinates are valid
+- Check Apple Maps Server API is returning data
+- Verify JWT token hasn't expired (tokens are time-limited)
+- Fallback: Use basic point-to-point routing without turn-by-turn
 
 ---
 
 ## Resources
 
+- [react-native-maps Documentation](https://github.com/react-native-maps/react-native-maps)
+- [Apple MapKit JS Documentation](https://developer.apple.com/documentation/mapkitjs)
+- [Apple Maps Server API](https://developer.apple.com/documentation/applemapsserverapi)
 - [Expo Location Docs](https://docs.expo.dev/versions/latest/sdk/location/)
 - [Expo Camera Docs](https://docs.expo.dev/versions/latest/sdk/camera/)
 - [Expo Notifications Docs](https://docs.expo.dev/versions/latest/sdk/notifications/)
-- [Mapbox Navigation SDK](https://docs.mapbox.com/android/navigation/guides/)
-- [React Native Maps](https://github.com/react-native-maps/react-native-maps)
 - [react-native-qrcode-svg](https://github.com/awesomejerry/react-native-qrcode-svg)
 
 ---
