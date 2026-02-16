@@ -7,6 +7,32 @@
 
 ---
 
+## ⚠️ IMPORTANT: Running with Expo Go
+
+**A detailed guide is available at `/app/snaproad-mobile/EXPO_GO_SETUP.md`**
+
+### Quick Start
+```bash
+cd /app/snaproad-mobile
+yarn install
+npx expo start
+```
+
+### What Was Fixed for Expo Go Compatibility:
+1. **Added missing assets** - placeholder icon.png, splash.png, adaptive-icon.png (replace with real assets)
+2. **Installed expo-font** - required peer dependency for @expo/vector-icons
+3. **Updated react-native** - from 0.73.2 to 0.73.6 for SDK 50 compatibility
+4. **Replaced react-native-maps** - with a placeholder map UI (react-native-maps doesn't work well with Expo Go SDK 50+)
+
+### For Real Maps
+When ready for production maps, use **development builds** instead of Expo Go:
+```bash
+eas build --profile development --platform ios
+```
+Then you can restore react-native-maps or use expo-maps.
+
+---
+
 ## Project Structure
 
 ```
@@ -18,6 +44,7 @@
 ├── tsconfig.json              # TypeScript config
 ├── .env                       # Environment variables
 ├── .env.example               # Template
+├── EXPO_GO_SETUP.md           # Expo Go setup guide
 └── src/
     ├── assets/                # Images, fonts
     ├── components/
@@ -27,7 +54,7 @@
     │   └── index.tsx          # Navigation config
     ├── screens/
     │   ├── index.ts           # Screen exports
-    │   ├── MapScreen.tsx      # Main map view
+    │   ├── MapScreen.tsx      # Main map view (placeholder for Expo Go)
     │   ├── OffersScreen.tsx   # Offers list
     │   ├── OnboardingScreen.tsx
     │   ├── ProfileScreen.tsx
@@ -57,8 +84,8 @@ APPLE_MAPKIT_TOKEN=xxxxx
 ```bash
 cd /app/snaproad-mobile
 
-# Maps - Using react-native-maps with Apple Maps (already installed)
-# No additional map package needed - works with Expo Go!
+# Maps - NOTE: react-native-maps was removed for Expo Go compatibility
+# When using development builds, reinstall: yarn add react-native-maps
 
 # QR Code
 yarn add react-native-qrcode-svg
