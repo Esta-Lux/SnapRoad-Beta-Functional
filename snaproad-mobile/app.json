@@ -41,6 +41,12 @@
         }
       ],
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "YOUR_PROJECT_ID_HERE"
+      }
+    },
+    "owner": "YOUR_EXPO_USERNAME"
   }
 }
