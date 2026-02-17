@@ -12,10 +12,14 @@ SnapRoad is a privacy-first, gamified navigation app. The project consists of:
 ### Mobile App Complete UI Conversion
 All screens and modals from the web Driver App have been replicated in React Native:
 
+#### Onboarding Flow
+1. **Welcome Screen** - Landing page with Golden Gate Bridge background, "Safe journeys, smart rewards" headline, feature highlights (Safety Score, Earn Gems, Leaderboards, Premium Perks), "Start Driving" CTA
+2. **Auth Modal** - Sign In/Sign Up form with email, password, name fields, password visibility toggle, error handling
+3. **Plan Selection Screen** - Basic/Premium plan selection with pricing, features
+4. **Car Onboarding Screen** - Vehicle type and color selection with progress indicators
+
 #### Core Screens
-1. **Plan Selection Screen** - Basic/Premium plan selection with pricing, features
-2. **Car Onboarding Screen** - Vehicle type and color selection with progress indicators
-3. **Main App** - 4-tab navigation (Map, Routes, Rewards, Profile)
+5. **Main App** - 4-tab navigation (Map, Routes, Rewards, Profile)
 
 #### Modals Implemented (`/app/snaproad-mobile/src/components/Modals.tsx`)
 1. **Road Reports Modal** - Create/view road hazard reports with upvoting
