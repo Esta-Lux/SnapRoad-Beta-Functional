@@ -333,6 +333,312 @@ export default function DriverAppMain() {
 }
 
 // ============================================
+// WELCOME SCREEN - Exact Web Match
+// ============================================
+function WelcomeScreen({ 
+  onGetStarted, 
+  onSignIn 
+}: { 
+  onGetStarted: () => void; 
+  onSignIn: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+
+  const features = [
+    { icon: 'shield-checkmark', label: 'Safety Score', desc: 'Track your driving' },
+    { icon: 'diamond', label: 'Earn Gems', desc: 'Redeem rewards' },
+    { icon: 'trophy', label: 'Leaderboards', desc: 'Compete locally' },
+    { icon: 'flash', label: 'Premium Perks', desc: '2x gem multiplier' },
+  ];
+
+  return (
+    <View style={styles.welcomeContainer}>
+      {/* Background Image */}
+      <Image
+        source={{ uri: 'https://images.unsplash.com/photo-1449034446853-66c86144b0ad?w=1920&q=80' }}
+        style={styles.welcomeBgImage}
+        blurRadius={2}
+      />
+      
+      {/* Gradient Overlays */}
+      <LinearGradient 
+        colors={['rgba(15,23,42,0.7)', 'rgba(15,23,42,0.5)', 'rgba(15,23,42,0.9)']} 
+        style={styles.welcomeOverlay} 
+      />
+      
+      {/* Content */}
+      <View style={[styles.welcomeContent, { paddingTop: insets.top }]}>
+        {/* Header */}
+        <View style={styles.welcomeHeader}>
+          <View style={styles.logoRow}>
+            <View style={styles.logoIcon}>
+              <Ionicons name="car-sport" size={24} color={Colors.primary} />
+            </View>
+            <Text style={styles.logoText}>SnapRoad</Text>
+          </View>
+          <TouchableOpacity onPress={onSignIn} testID="welcome-signin">
+            <Text style={styles.signInText}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Main Content */}
+        <View style={styles.welcomeMain}>
+          {/* Badge */}
+          <View style={styles.welcomeBadge}>
+            <Ionicons name="star" size={14} color={Colors.yellow} />
+            <Text style={styles.welcomeBadgeText}>Join 50,000+ safe drivers</Text>
+          </View>
+
+          {/* Headline */}
+          <Text style={styles.welcomeHeadline}>Safe journeys,</Text>
+          <Text style={styles.welcomeHeadlineGradient}>smart rewards</Text>
+
+          {/* Subheadline */}
+          <Text style={styles.welcomeSubheadline}>
+            Join thousands of drivers making roads safer while earning premium rewards. Where safety becomes the ultimate status symbol.
+          </Text>
+
+          {/* CTA Button */}
+          <TouchableOpacity style={styles.welcomeCta} onPress={onGetStarted} testID="get-started-btn">
+            <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.welcomeCtaGradient}>
+              <Text style={styles.welcomeCtaText}>Start Driving</Text>
+              <Ionicons name="arrow-forward" size={20} color={Colors.white} />
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* Login Link */}
+          <View style={styles.welcomeLoginRow}>
+            <Text style={styles.welcomeLoginText}>Already have an account? </Text>
+            <TouchableOpacity onPress={onSignIn}>
+              <Text style={styles.welcomeLoginLink}>Log In</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Features Strip */}
+        <View style={styles.featuresStrip}>
+          <View style={styles.featuresGrid}>
+            {features.map((feature, i) => (
+              <View key={i} style={styles.featureItem}>
+                <View style={styles.featureIconBox}>
+                  <Ionicons name={feature.icon as any} size={20} color={Colors.primary} />
+                </View>
+                <Text style={styles.featureLabel}>{feature.label}</Text>
+                <Text style={styles.featureDesc}>{feature.desc}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Footer */}
+        <View style={[styles.welcomeFooter, { paddingBottom: insets.bottom + 16 }]}>
+          <Text style={styles.footerText}>© 2025 SnapRoad. Making roads safer, one drive at a time.</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ============================================
+// AUTH MODAL - Exact Web Match
+// ============================================
+function AuthModal({
+  visible,
+  onClose,
+  mode,
+  onModeChange,
+  onSuccess,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  mode: AuthMode;
+  onModeChange: (mode: AuthMode) => void;
+  onSuccess: (user: any) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const API_URL = 'https://mobile-ui-sync-1.preview.emergentagent.com';
+
+  const handleSubmit = async () => {
+    if (!email || !password || (mode === 'signup' && !name)) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
+      const body = mode === 'signup' 
+        ? { name, email, password }
+        : { email, password };
+
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        onSuccess(data.data || data);
+      } else {
+        setError(data.message || data.detail || 'Authentication failed');
+      }
+    } catch (err) {
+      setError('Connection error. Please try again.');
+    }
+
+    setLoading(false);
+  };
+
+  const resetForm = () => {
+    setEmail('');
+    setPassword('');
+    setName('');
+    setError('');
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent testID="auth-modal">
+      <View style={styles.authOverlay}>
+        <TouchableOpacity style={styles.authBackdrop} activeOpacity={1} onPress={onClose} />
+        
+        <View style={styles.authCard}>
+          {/* Close Button */}
+          <TouchableOpacity style={styles.authClose} onPress={onClose} testID="auth-close">
+            <Ionicons name="close" size={16} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
+
+          {/* Header */}
+          <View style={styles.authHeader}>
+            <View style={styles.authIconBox}>
+              <Ionicons name="car-sport" size={28} color={Colors.white} />
+            </View>
+            <Text style={styles.authTitle}>
+              {mode === 'signin' ? 'Welcome back, Driver' : 'Start Your Journey'}
+            </Text>
+            <Text style={styles.authSubtitle}>
+              {mode === 'signin' 
+                ? 'Log in to continue earning rewards' 
+                : 'Create your driver account'}
+            </Text>
+          </View>
+
+          {/* Form */}
+          <View style={styles.authForm}>
+            {mode === 'signup' && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Full Name</Text>
+                <TextInput
+                  style={styles.authInput}
+                  placeholder="John Doe"
+                  placeholderTextColor={Colors.textMuted}
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                  testID="auth-name"
+                />
+              </View>
+            )}
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Email</Text>
+              <TextInput
+                style={styles.authInput}
+                placeholder="driver@example.com"
+                placeholderTextColor={Colors.textMuted}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                testID="auth-email"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Password</Text>
+              <View style={styles.passwordRow}>
+                <TextInput
+                  style={[styles.authInput, styles.passwordInput]}
+                  placeholder="••••••••"
+                  placeholderTextColor={Colors.textMuted}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  testID="auth-password"
+                />
+                <TouchableOpacity 
+                  style={styles.passwordToggle} 
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  <Ionicons 
+                    name={showPassword ? 'eye-off' : 'eye'} 
+                    size={18} 
+                    color={Colors.textMuted} 
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity 
+              style={styles.authSubmitBtn} 
+              onPress={handleSubmit}
+              disabled={loading}
+              testID="auth-submit"
+            >
+              <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.authSubmitGradient}>
+                {loading ? (
+                  <ActivityIndicator size="small" color={Colors.white} />
+                ) : (
+                  <>
+                    <Text style={styles.authSubmitText}>
+                      {mode === 'signin' ? 'Sign In' : 'Create Account'}
+                    </Text>
+                    <Ionicons name="arrow-forward" size={18} color={Colors.white} />
+                  </>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+
+          {/* Footer */}
+          <View style={styles.authFooter}>
+            <Text style={styles.authFooterText}>
+              {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
+            </Text>
+            <TouchableOpacity 
+              onPress={() => { 
+                onModeChange(mode === 'signin' ? 'signup' : 'signin');
+                resetForm();
+              }}
+            >
+              <Text style={styles.authFooterLink}>
+                {mode === 'signin' ? 'Create account' : 'Log in'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ============================================
 // PLAN SELECTION SCREEN - Exact Web Match
 // ============================================
 function PlanSelectionScreen({ onSelect }: { onSelect: (plan: 'basic' | 'premium') => void }) {
