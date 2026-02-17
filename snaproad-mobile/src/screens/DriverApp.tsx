@@ -252,10 +252,32 @@ const gemMarkers = [
 // MAIN APP COMPONENT
 // ============================================
 export default function DriverAppMain() {
-  const [currentScreen, setCurrentScreen] = useState<AppScreen>('planSelection');
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>('welcome');
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>('signin');
   const [userData, setUserData] = useState<UserData>(initialUserData);
   const [userCar, setUserCar] = useState<CarData>({ category: 'sedan', variant: 'sedan-classic', color: 'ocean-blue' });
   const [ownedColors, setOwnedColors] = useState<string[]>(['ocean-blue']);
+
+  const handleGetStarted = () => {
+    setAuthMode('signup');
+    setShowAuthModal(true);
+  };
+
+  const handleSignIn = () => {
+    setAuthMode('signin');
+    setShowAuthModal(true);
+  };
+
+  const handleAuthSuccess = (user: any) => {
+    setUserData(prev => ({
+      ...prev,
+      id: user.user_id || prev.id,
+      name: user.name || prev.name,
+    }));
+    setShowAuthModal(false);
+    setCurrentScreen('planSelection');
+  };
 
   const handlePlanSelect = (plan: 'basic' | 'premium') => {
     setUserData(prev => ({
@@ -271,6 +293,24 @@ export default function DriverAppMain() {
     setUserCar(car);
     setCurrentScreen('main');
   };
+
+  if (currentScreen === 'welcome') {
+    return (
+      <>
+        <WelcomeScreen 
+          onGetStarted={handleGetStarted} 
+          onSignIn={handleSignIn} 
+        />
+        <AuthModal
+          visible={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+          mode={authMode}
+          onModeChange={setAuthMode}
+          onSuccess={handleAuthSuccess}
+        />
+      </>
+    );
+  }
 
   if (currentScreen === 'planSelection') {
     return <PlanSelectionScreen onSelect={handlePlanSelect} />;
