@@ -76,7 +76,8 @@ const Colors = {
 // ============================================
 // TYPES
 // ============================================
-type AppScreen = 'planSelection' | 'carOnboarding' | 'main';
+type AppScreen = 'welcome' | 'auth' | 'planSelection' | 'carOnboarding' | 'main';
+type AuthMode = 'signin' | 'signup';
 type TabType = 'map' | 'routes' | 'rewards' | 'profile';
 type RewardsTab = 'offers' | 'challenges' | 'badges' | 'carstudio';
 type ProfileTab = 'overview' | 'score' | 'fuel' | 'settings';
