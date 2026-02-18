@@ -61,7 +61,9 @@ type MobileScreen =
   | 'support'
   | 'terms'
   | 'privacy'
-  | 'onboarding';
+  | 'onboarding'
+  | 'analytics'
+  | 'report-incident';
 
 type AdminPage = 
   | 'dashboard' 
