@@ -60,10 +60,13 @@ export function PhotoCapture({ isOpen, onClose, onSubmit }: PhotoCaptureProps) {
   const [description, setDescription] = useState('');
   const [privacyBlurEnabled, setPrivacyBlurEnabled] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [blurRegions, setBlurRegions] = useState<BlurRegion[]>([]);
   const [detectedElements, setDetectedElements] = useState<{
     faces: number;
     plates: number;
-  }>({ faces: 0, plates: 0 });
+    description: string;
+  }>({ faces: 0, plates: 0, description: '' });
+  const [imageSize, setImageSize] = useState({ width: 1920, height: 1080 });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
