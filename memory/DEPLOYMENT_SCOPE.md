@@ -43,7 +43,7 @@
 |---------|----------|--------|-------------|
 | Database Integration | P0 | 2-3 days | PostgreSQL/MongoDB for all data |
 | Authentication | P0 | 2-3 days | JWT + OAuth (Auth0/Firebase) |
-| Real Maps API | P0 | 1-2 days | Mapbox/Google Maps for geocoding, routing |
+| Real Maps API | P0 | 1-2 days | Apple Maps MapKit JS for geocoding, routing |
 | Payment Processing | P1 | 2-3 days | Stripe for subscriptions & boosts |
 | AI Image Generation | P1 | 1 day | OpenAI DALL-E or Stability AI |
 | Push Notifications | P2 | 1-2 days | Firebase Cloud Messaging |
@@ -384,12 +384,12 @@ CREATE TABLE boosts (
 - Custom JWT (more work, full control)
 
 #### 3. Maps & Geocoding
-**Options:**
-- Mapbox (recommended - great SDK, competitive pricing)
-- Google Maps Platform
-- HERE Maps
+**Decision: Apple Maps MapKit JS**
+- Free with Apple Developer Program ($99/year)
+- 250K service calls/day included
+- Backend generates JWT tokens for API access
 
-**Required APIs:**
+**Required APIs (via Apple Maps Server API):**
 - Geocoding (address → lat/lng)
 - Reverse Geocoding (lat/lng → address)
 - Directions/Routing
@@ -465,8 +465,10 @@ AUTH0_API_AUDIENCE=https://api.snaproad.com
 AUTH0_CLIENT_ID=your-client-id
 AUTH0_CLIENT_SECRET=your-client-secret
 
-# Maps
-MAPBOX_ACCESS_TOKEN=pk.your-mapbox-token
+# Maps (Apple MapKit JS)
+APPLE_MAPKIT_TEAM_ID=your-team-id
+APPLE_MAPKIT_KEY_ID=your-key-id
+APPLE_MAPKIT_PRIVATE_KEY=your-p8-private-key-contents
 
 # Payments
 STRIPE_SECRET_KEY=sk_live_your-stripe-key
@@ -495,8 +497,8 @@ GAS_PRICE_API_KEY=your-gas-api-key
 VITE_API_URL=/api
 REACT_APP_BACKEND_URL=https://api.snaproad.com
 
-# Maps
-VITE_MAPBOX_TOKEN=pk.your-mapbox-public-token
+# Maps - No MapKit credentials needed in frontend
+# Apple MapKit tokens are fetched from backend /api/maps/token
 
 # Analytics
 VITE_MIXPANEL_TOKEN=your-mixpanel-token
