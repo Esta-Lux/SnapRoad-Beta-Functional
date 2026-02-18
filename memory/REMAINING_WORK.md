@@ -139,7 +139,7 @@ This document outlines ALL remaining work required to transform SnapRoad from a 
 ### Maps & Navigation
 | Service | Purpose | Status |
 |---------|---------|--------|
-| **Mapbox** or **Google Maps** | Turn-by-turn navigation, routing | ❌ NOT INTEGRATED |
+| **Apple Maps MapKit JS** | Turn-by-turn navigation, routing, search | ❌ NOT INTEGRATED |
 | **HERE Maps** | Traffic data, speed limits | ❌ NOT INTEGRATED |
 | **TomTom** | Alternative routing provider | ❌ NOT INTEGRATED |
 

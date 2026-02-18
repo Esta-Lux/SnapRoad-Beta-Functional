@@ -143,9 +143,11 @@ GAS_PRICE_API_KEY=[your-api-key]
 GAS_PRICE_API_URL=https://api.collectapi.com/gasPrice/
 
 # ===========================================
-# MAPBOX (Maps)
+# APPLE MAPS MapKit JS (Backend Token Generation)
 # ===========================================
-MAPBOX_ACCESS_TOKEN=pk.[your-token]
+APPLE_MAPKIT_TEAM_ID=[your-team-id]
+APPLE_MAPKIT_KEY_ID=[your-key-id]
+APPLE_MAPKIT_PRIVATE_KEY=[your-p8-private-key-contents]
 
 # ===========================================
 # SENDGRID (Emails)
