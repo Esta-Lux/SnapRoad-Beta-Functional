@@ -104,7 +104,17 @@ The backend has 80+ endpoints covering:
 │   ├── server.py          # FastAPI with 80+ endpoints
 │   └── requirements.txt
 ├── frontend/
-│   └── src/pages/DriverApp/  # Web UI source
+│   └── src/
+│       ├── components/
+│       │   └── figma-ui/      # NEW: Figma design system integration
+│       │       ├── mobile/    # Welcome, Login, SignUp, MapScreen, Profile, Gems, Family
+│       │       ├── admin/     # AdminLayout, AdminLogin, AdminDashboard, AdminUsers
+│       │       ├── partner/   # (Placeholder for partner components)
+│       │       └── primitives/ # GradientButton, GemIcon, ImageWithFallback
+│       ├── contexts/
+│       │   └── SnaproadThemeContext.tsx  # Theme provider
+│       ├── assets/images/     # Design system images
+│       └── pages/DriverApp/   # Original web UI source
 ├── snaproad-mobile/
 │   ├── App.tsx
 │   └── src/
@@ -113,6 +123,10 @@ The backend has 80+ endpoints covering:
 │       └── components/
 │           ├── Modals.tsx     # All modal components (1200+ lines)
 │           └── ui.tsx
+├── snaproad-figma-ui/         # Cloned Figma UI repository
+│   ├── *.tsx                  # 100+ component files
+│   ├── *.md                   # Design documentation
+│   └── *.png                  # Design assets
 └── snaproad-beta/
     └── database/schema.sql    # PostgreSQL reference schema
 ```
