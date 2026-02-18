@@ -149,6 +149,26 @@ export function SnapRoadApp() {
     }
   };
 
+  // Render Partner Content
+  const renderPartnerContent = () => {
+    switch (partnerPage) {
+      case 'dashboard':
+        return <PartnerDashboard />;
+      case 'scan':
+        return <QRScanner onNavigate={handlePartnerNavigate} />;
+      case 'offers':
+        return <PartnerOffers onNavigate={handlePartnerNavigate} />;
+      case 'analytics':
+        return <PartnerAnalyticsDetailed onNavigate={handlePartnerNavigate} />;
+      case 'team':
+        return <PartnerTeam onNavigate={handlePartnerNavigate} />;
+      case 'referrals':
+        return <PartnerReferrals onNavigate={handlePartnerNavigate} />;
+      default:
+        return <PartnerDashboard />;
+    }
+  };
+
   // Render Mobile Content
   const renderMobileContent = () => {
     switch (mobileScreen) {
