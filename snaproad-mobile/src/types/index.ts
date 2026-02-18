@@ -1,50 +1,148 @@
-// SnapRoad Mobile - Type Definitions
+// SnapRoad Mobile - TypeScript Types
+// Aligned with /app/frontend/src/types/api.ts for consistency
 
+// ==================== AUTH ====================
 export interface User {
   id: string;
   name: string;
   email: string;
   avatar?: string;
-  plan: 'basic' | 'premium';
-  
-  // Gamification
-  xp: number;
-  level: number;
+  plan: 'basic' | 'premium' | 'family';
   gems: number;
+  level: number;
+  xp: number;
   safetyScore: number;
-  
-  // Car
-  carCategory: 'sedan' | 'suv' | 'truck';
-  carVariant: string;
-  carColor: string;
-  
-  // Stats
-  totalMiles: number;
   totalTrips: number;
-  totalSavings: number;
-  
-  // Location
-  state: string;
-  city: string;
-  
-  // Flags
-  onboardingComplete: boolean;
-  isPremium: boolean;
+  totalMiles: number;
+  streak: number;
+  createdAt: string;
+  lastActive?: string;
 }
 
+export interface UserStats {
+  totalTrips: number;
+  totalMiles: number;
+  totalGems: number;
+  avgSafetyScore: number;
+  streak: number;
+  badgesEarned: number;
+  challengesCompleted: number;
+  offersRedeemed: number;
+}
+
+export interface Vehicle {
+  id: string;
+  userId: string;
+  type: 'sedan' | 'suv' | 'truck' | 'sports' | 'electric';
+  make: string;
+  model: string;
+  year: number;
+  color: string;
+  skinId?: string;
+  isDefault: boolean;
+}
+
+// ==================== AUTH REQUESTS ====================
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface SignupRequest {
+  name: string;
+  email: string;
+  password: string;
+  plan?: 'basic' | 'premium';
+}
+
+export interface AuthResponse {
+  success: boolean;
+  token: string;
+  user: User;
+}
+
+// ==================== TRIPS ====================
+export interface Trip {
+  id: string;
+  userId: string;
+  startLocation: string;
+  endLocation: string;
+  startTime: string;
+  endTime?: string;
+  distance: number;
+  duration: number;
+  safetyScore: number;
+  gemsEarned: number;
+  events: DrivingEvent[];
+  status: 'active' | 'completed' | 'cancelled';
+}
+
+export interface DrivingEvent {
+  type: 'speeding' | 'hard_brake' | 'rapid_accel' | 'phone_use' | 'distraction';
+  timestamp: string;
+  severity: 'low' | 'medium' | 'high';
+  location?: { lat: number; lng: number };
+}
+
+// ==================== FAMILY ====================
+export interface FamilyMember {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  relation: 'parent' | 'spouse' | 'child' | 'other';
+  avatar?: string;
+  isOnline: boolean;
+  lastLocation?: {
+    lat: number;
+    lng: number;
+    timestamp: string;
+  };
+  privacyMode: boolean;
+  safetyScore: number;
+}
+
+export interface FamilyGroup {
+  id: string;
+  name: string;
+  ownerId: string;
+  members: FamilyMember[];
+  createdAt: string;
+}
+
+// ==================== REWARDS ====================
 export interface Offer {
-  id: number;
-  businessName: string;
-  businessType: 'gas' | 'cafe' | 'restaurant' | 'carwash' | 'retail';
+  id: string;
+  partnerId: string;
+  partnerName: string;
+  partnerLogo?: string;
+  title: string;
   description: string;
-  discountPercent: number;
-  baseGems: number;
-  premiumGems?: number;
-  lat: number;
-  lng: number;
-  distance?: string;
-  expiresAt: string;
-  imageUrl?: string;
+  discount: string;
+  gemCost: number;
+  category: 'gas' | 'food' | 'retail' | 'service' | 'entertainment';
+  expiresAt?: string;
+  isExclusive: boolean;
+  redemptionCount: number;
+  location?: {
+    address: string;
+    lat: number;
+    lng: number;
+  };
+}
+
+export interface Challenge {
+  id: string;
+  title: string;
+  description: string;
+  type: 'daily' | 'weekly' | 'monthly' | 'special';
+  goal: number;
+  progress: number;
+  reward: number;
+  startDate: string;
+  endDate: string;
+  status: 'active' | 'completed' | 'expired';
+  icon: string;
 }
 
 export interface Badge {
@@ -52,105 +150,190 @@ export interface Badge {
   name: string;
   description: string;
   icon: string;
-  category: 'driving' | 'social' | 'exploration' | 'safety';
+  category: string;
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
-  earned: boolean;
-  earnedAt?: string;
+  unlockedAt?: string;
   progress?: number;
   requirement?: number;
 }
 
-export interface Challenge {
-  id: string;
-  title: string;
-  description: string;
-  type: 'weekly' | 'head_to_head' | 'community';
-  goalType: 'miles' | 'trips' | 'score';
-  goalValue: number;
-  currentProgress: number;
-  rewardXp: number;
-  rewardGems: number;
-  startsAt: string;
-  endsAt: string;
-  participants?: number;
-  joined: boolean;
-}
-
+// ==================== LEADERBOARD ====================
 export interface LeaderboardEntry {
   rank: number;
   userId: string;
   name: string;
   avatar?: string;
-  score: number;
-  level: number;
-  state: string;
-  isCurrentUser?: boolean;
-}
-
-export interface Trip {
-  id: string;
-  startLocation: string;
-  endLocation: string;
-  distance: number;
-  duration: number;
   safetyScore: number;
-  xpEarned: number;
-  gemsEarned: number;
+  gems: number;
+  streak: number;
+  level: number;
+}
+
+export interface Leaderboard {
+  type: 'global' | 'regional' | 'friends';
+  region?: string;
+  entries: LeaderboardEntry[];
+  currentUserRank?: number;
+  totalParticipants: number;
+  updatedAt: string;
+}
+
+// ==================== FUEL ====================
+export interface FuelEntry {
+  id: string;
+  userId: string;
   date: string;
+  gallons: number;
+  pricePerGallon: number;
+  totalCost: number;
+  odometer: number;
+  mpg?: number;
+  station?: string;
+  notes?: string;
 }
 
-export interface CarOption {
-  id: string;
-  category: 'sedan' | 'suv' | 'truck';
-  name: string;
-  colors: CarColor[];
+export interface FuelStats {
+  totalGallons: number;
+  totalSpent: number;
+  avgMpg: number;
+  avgPricePerGallon: number;
+  monthlySpend: number;
+  savingsEstimate: number;
+  efficiency: 'excellent' | 'good' | 'average' | 'poor';
 }
 
-export interface CarColor {
+// ==================== NOTIFICATIONS ====================
+export interface Notification {
   id: string;
-  name: string;
-  hex: string;
-  tier: 'standard' | 'metallic' | 'premium';
-  gemsRequired: number;
-  owned: boolean;
+  type: 'offer' | 'badge' | 'challenge' | 'friend' | 'system' | 'safety';
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+  actionUrl?: string;
+  data?: Record<string, unknown>;
 }
 
-export interface GasStation {
+// ==================== INCIDENTS ====================
+export interface Incident {
   id: string;
-  name: string;
-  address: string;
-  price: number;
-  distance: string;
-  lat: number;
-  lng: number;
-}
-
-export interface RoadReport {
-  id: string;
-  type: 'pothole' | 'construction' | 'accident' | 'hazard' | 'police';
+  type: 'accident' | 'hazard' | 'construction' | 'police' | 'weather' | 'other';
   description: string;
-  lat: number;
-  lng: number;
+  severity: 'low' | 'medium' | 'high';
+  location: {
+    lat: number;
+    lng: number;
+    address?: string;
+  };
+  reportedBy: string;
   reportedAt: string;
-  confirmedCount: number;
+  upvotes: number;
+  status: 'active' | 'resolved' | 'expired';
+  photoUrl?: string;
 }
 
-// Navigation Types
+// ==================== PARTNER ====================
+export interface Partner {
+  id: string;
+  businessName: string;
+  category: string;
+  logo?: string;
+  description: string;
+  address: string;
+  location: {
+    lat: number;
+    lng: number;
+  };
+  rating: number;
+  offerCount: number;
+  totalRedemptions: number;
+}
+
+export interface PartnerAnalytics {
+  totalRedemptions: number;
+  totalRevenue: number;
+  avgRedemptionsPerDay: number;
+  topOffers: Offer[];
+  recentRedemptions: {
+    date: string;
+    count: number;
+    revenue: number;
+  }[];
+  demographics: {
+    ageGroup: string;
+    percentage: number;
+  }[];
+}
+
+// ==================== ADMIN ====================
+export interface AdminStats {
+  totalUsers: number;
+  activeUsers: number;
+  totalTrips: number;
+  totalIncidents: number;
+  totalPartners: number;
+  revenue: {
+    thisMonth: number;
+    lastMonth: number;
+    growth: number;
+  };
+  safetyStats: {
+    avgScore: number;
+    improvement: number;
+  };
+}
+
+// ==================== API RESPONSES ====================
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+// ==================== NAVIGATION ====================
 export type RootStackParamList = {
+  Splash: undefined;
+  Welcome: undefined;
+  Login: undefined;
+  SignUp: undefined;
+  ForgotPassword: undefined;
   Onboarding: undefined;
-  MainApp: undefined;
-  OfferDetail: { offer: Offer };
-  BadgeDetail: { badge: Badge };
-  ChallengeDetail: { challenge: Challenge };
-  TripDetail: { trip: Trip };
-  Settings: undefined;
-  CarStudio: undefined;
+  PlanSelection: undefined;
+  CarSetup: undefined;
+  Main: undefined;
+  Map: undefined;
+  Gems: undefined;
+  GemMarketplace: undefined;
+  Family: undefined;
+  LiveLocations: undefined;
+  Profile: undefined;
+  FuelDashboard: undefined;
+  TripLogs: undefined;
   Leaderboard: undefined;
+  Settings: undefined;
+  AccountInfo: undefined;
+  PrivacyCenter: undefined;
+  NotificationSettings: undefined;
+  Support: undefined;
+  OfferDetail: { offerId: string };
+  TripDetail: { tripId: string };
+  BadgeDetail: { badgeId: string };
+  ChallengeDetail: { challengeId: string };
+  PartnerDetail: { partnerId: string };
 };
 
-export type MainTabParamList = {
-  Map: undefined;
-  Offers: undefined;
-  Rewards: undefined;
-  Profile: undefined;
+export type BottomTabParamList = {
+  MapTab: undefined;
+  GemsTab: undefined;
+  FamilyTab: undefined;
+  ProfileTab: undefined;
 };
