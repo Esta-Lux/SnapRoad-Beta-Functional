@@ -36,7 +36,7 @@ const NEARBY_OFFERS = [
   { id: 3, name: 'Gas Station', discount: '$0.10/gal', gems: 25, distance: '0.2 mi' },
 ];
 
-export function MapScreen({ onNavigate }: MapScreenProps) {
+export function MapScreen({ onNavigate, onOpenOrion, onOpenPhotoCapture }: MapScreenProps) {
   const [activeTab, setActiveTab] = useState<'map' | 'gems' | 'family' | 'profile'>('map');
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
