@@ -100,8 +100,10 @@ type PartnerPage =
 export function SnapRoadApp() {
   const [mode, setMode] = useState<AppMode>('mobile');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [isPartnerAuthenticated, setIsPartnerAuthenticated] = useState(false);
   const [mobileScreen, setMobileScreen] = useState<MobileScreen>('welcome');
   const [adminPage, setAdminPage] = useState<AdminPage>('dashboard');
+  const [partnerPage, setPartnerPage] = useState<PartnerPage>('dashboard');
   
   // New state for Orion Coach and Photo Capture
   const [showOrionCoach, setShowOrionCoach] = useState(false);
