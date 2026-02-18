@@ -120,6 +120,16 @@ export function SnapRoadApp() {
         return <Gems onNavigate={handleMobileNavigate} />;
       case 'family':
         return <Family onNavigate={handleMobileNavigate} />;
+      case 'fuel-dashboard':
+        return <FuelDashboard onNavigate={handleMobileNavigate} />;
+      case 'trip-logs':
+        return <TripLogs onNavigate={handleMobileNavigate} />;
+      case 'leaderboard':
+        return <Leaderboard onNavigate={handleMobileNavigate} />;
+      case 'settings':
+        return <Settings onNavigate={handleMobileNavigate} />;
+      case 'live-locations':
+        return <LiveLocations onNavigate={handleMobileNavigate} />;
       default:
         return <Welcome onNavigate={handleMobileNavigate} onSetMode={handleSetMode} />;
     }
