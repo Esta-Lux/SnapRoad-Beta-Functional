@@ -1084,6 +1084,27 @@ export default function DriverApp() {
         onRecenter={() => toast.success('Centered on your location')}
       />
 
+      {/* Collapsible Offers Panel - On Map */}
+      {activeTab === 'map' && showOffersPanel && (
+        <CollapsibleOffersPanel
+          offers={offers}
+          userLocation={userLocation}
+          onOfferSelect={(offer) => {
+            setSelectedOfferForRedemption(offer)
+            setShowRedemptionPopup(true)
+          }}
+          onNavigateToOffer={(offer) => {
+            setSelectedDestination({
+              name: offer.business_name,
+              lat: offer.lat,
+              lng: offer.lng
+            })
+            toast.success(`Navigating to ${offer.business_name}`)
+          }}
+          isPremium={userPlan === 'premium'}
+        />
+      )}
+
       {/* Turn-by-Turn Navigation Panel */}
       {showTurnByTurn && navigationData && (
         <div className="absolute top-0 left-0 right-0 z-30">
