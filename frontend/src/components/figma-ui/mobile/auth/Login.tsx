@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft, Mail, Lock, Eye, EyeOff } from 'lucide-react';
-import { GradientButton } from '../primitives/GradientButton';
+import { GradientButton } from '../../primitives/GradientButton';
 import { motion } from 'motion/react';
 
 import logoImage from '@/assets/images/eafa66e5310c9d83d31a61740098111eaa2e86f7.png';

@@ -1,5 +1,5 @@
 import { ArrowLeft, Mail, Lock, User, Store } from 'lucide-react';
-import { GradientButton } from '../primitives/GradientButton';
+import { GradientButton } from '../../primitives/GradientButton';
 import { motion } from 'motion/react';
 
 // Import images from assets
