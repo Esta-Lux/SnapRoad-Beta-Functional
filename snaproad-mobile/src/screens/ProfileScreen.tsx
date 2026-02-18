@@ -31,11 +31,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const xpProgress = (user.xp % 500) / 500; // XP to next level
 
   const menuItems = [
-    { id: 'trips', icon: 'car', label: 'Trip History', color: Colors.primary },
+    { id: 'analytics', icon: 'analytics', label: 'Trip Analytics', color: Colors.accent, screen: 'TripAnalytics' },
+    { id: 'routes', icon: 'map', label: 'Route History', color: '#7c3aed', screen: 'RouteHistory3D' },
+    { id: 'trips', icon: 'car', label: 'Trip Logs', color: Colors.primary, screen: 'TripLogs' },
+    { id: 'fuel', icon: 'water', label: 'Fuel Dashboard', color: Colors.warning, screen: 'FuelDashboard' },
     { id: 'leaderboard', icon: 'trophy', label: 'Leaderboard', color: Colors.gold, screen: 'Leaderboard' },
-    { id: 'friends', icon: 'people', label: 'Friends', color: Colors.info },
-    { id: 'settings', icon: 'settings', label: 'Settings', color: Colors.textSecondary },
-    { id: 'help', icon: 'help-circle', label: 'Help & Support', color: Colors.success },
+    { id: 'orion', icon: 'chatbubble-ellipses', label: 'Orion AI Coach', color: Colors.success, screen: 'OrionCoach' },
+    { id: 'offers', icon: 'gift', label: 'My Offers', color: Colors.info, screen: 'MyOffers' },
+    { id: 'friends', icon: 'people', label: 'Family & Friends', color: '#f472b6', screen: 'Family' },
+    { id: 'settings', icon: 'settings', label: 'Settings', color: Colors.textSecondary, screen: 'Settings' },
+    { id: 'help', icon: 'help-circle', label: 'Help & Support', color: Colors.textMuted },
   ];
 
   return (
