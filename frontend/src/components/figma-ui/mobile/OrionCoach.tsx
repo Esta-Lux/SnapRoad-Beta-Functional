@@ -155,7 +155,7 @@ export function OrionCoach({ isOpen, onClose, currentRoute, userContext }: Orion
     }
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!message.trim()) return;
     
     const userMessage: ChatMessage = {
@@ -166,23 +166,46 @@ export function OrionCoach({ isOpen, onClose, currentRoute, userContext }: Orion
     };
     
     setConversation(prev => [...prev, userMessage]);
+    const userText = message;
     setMessage('');
     setIsTyping(true);
 
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      // Call real AI backend
+      const response = await fetch(`${API_URL}/orion/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userText,
+          session_id: sessionId,
+          context: userContext || { safety_score: 85, gems: 500 }
+        })
+      });
+
+      const data = await response.json();
+      
       const orionResponse: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'orion',
-        text: getAIResponse(message),
+        text: data.success ? data.response : 'Sorry, I had trouble processing that. Please try again.',
         timestamp: new Date(),
       };
       setConversation(prev => [...prev, orionResponse]);
+    } catch (error) {
+      // Fallback to local response if API fails
+      const orionResponse: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'orion',
+        text: getLocalResponse(userText),
+        timestamp: new Date(),
+      };
+      setConversation(prev => [...prev, orionResponse]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
-  const getAIResponse = (query: string): string => {
+  const getLocalResponse = (query: string): string => {
     const q = query.toLowerCase();
     if (q.includes('traffic') || q.includes('route')) {
       return "Based on current traffic data, your route looks clear. There's light congestion on I-71 near Exit 42, but it should add only 3-4 minutes. Would you like me to find an alternative route?";
