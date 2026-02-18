@@ -20,6 +20,8 @@ import { GemIcon } from '../primitives/GemIcon';
 
 interface MapScreenProps {
   onNavigate: (screen: string) => void;
+  onOpenOrion?: () => void;
+  onOpenPhotoCapture?: () => void;
 }
 
 const QUICK_LOCATIONS = [
