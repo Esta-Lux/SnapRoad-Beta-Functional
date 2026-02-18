@@ -27,11 +27,11 @@ interface PartnerLayoutProps {
 
 const NAV_ITEMS = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { id: 'analytics', icon: BarChart3, label: 'Analytics' },
+  { id: 'scan', icon: QrCode, label: 'Scan QR Code' },
   { id: 'offers', icon: Gift, label: 'Offers & Campaigns' },
-  { id: 'referrals', icon: Users, label: 'Referrals' },
-  { id: 'payouts', icon: DollarSign, label: 'Payouts' },
-  { id: 'qr-codes', icon: QrCode, label: 'QR Codes' },
+  { id: 'analytics', icon: BarChart3, label: 'Analytics' },
+  { id: 'team', icon: Users, label: 'Team Management' },
+  { id: 'referrals', icon: DollarSign, label: 'Referrals & Credits' },
   { id: 'profile', icon: Store, label: 'Business Profile' },
   { id: 'support', icon: HelpCircle, label: 'Support' },
   { id: 'settings', icon: Settings, label: 'Settings' },
