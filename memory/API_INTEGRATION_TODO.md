@@ -72,25 +72,26 @@ GET  /api/auth/me
 
 ---
 
-### 3. Maps & Geocoding API
-- [ ] Choose maps provider (Mapbox recommended, or Google Maps)
-- [ ] Get API keys and set up billing
-- [ ] Implement address geocoding (address → lat/lng)
-- [ ] Implement reverse geocoding (lat/lng → address)
-- [ ] Implement place autocomplete for search
-- [ ] Implement directions/routing API
-- [ ] Add real-time traffic data (optional)
+### 3. Maps & Geocoding API (Apple Maps MapKit JS)
+- [ ] Get Apple MapKit JS credentials from PM (Team ID, Key ID, .p8 private key)
+- [ ] Create backend `/api/maps/token` endpoint to generate signed JWTs
+- [ ] Implement address geocoding via Apple Maps Server API (address → lat/lng)
+- [ ] Implement reverse geocoding via Apple Maps Server API (lat/lng → address)
+- [ ] Implement place search via Apple Maps Server API
+- [ ] Implement directions/routing via Apple Maps Server API
+- [ ] Mobile app uses `react-native-maps` with `PROVIDER_DEFAULT` (Apple Maps on iOS)
 
 **Files to modify:**
-- `/app/backend/server.py` - Replace mock `/api/map/search` and `/api/map/directions`
-- `/app/backend/.env` - Add MAPBOX_ACCESS_TOKEN
-- `/app/snaproad-mobile/src/screens/MapScreen.tsx` - Use real MapView
+- `/app/backend/server.py` - Add `/api/maps/token` endpoint, proxy Apple Maps API
+- `/app/backend/.env` - Add APPLE_MAPKIT_TEAM_ID, APPLE_MAPKIT_KEY_ID, APPLE_MAPKIT_PRIVATE_KEY
+- `/app/snaproad-mobile/src/screens/MapScreen.tsx` - Use real MapView with Apple Maps
 
-**Endpoints to update:**
+**Endpoints to create/update:**
 ```
-GET /api/map/search?q={query}           → Real geocoding
-GET /api/map/directions?from=&to=       → Real routing
-GET /api/map/reverse?lat=&lng=          → Reverse geocoding
+GET /api/maps/token                     → Generate Apple MapKit JWT
+GET /api/map/search?q={query}           → Proxy Apple Maps search
+GET /api/map/directions?from=&to=       → Proxy Apple Maps directions
+GET /api/map/reverse?lat=&lng=          → Proxy Apple Maps reverse geocode
 ```
 
 ---

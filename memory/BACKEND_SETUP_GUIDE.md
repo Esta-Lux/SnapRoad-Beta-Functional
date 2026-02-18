@@ -80,18 +80,20 @@ GAS_PRICE_API_URL=https://api.collectapi.com/gasPrice/
 
 ---
 
-### 4. Mapbox (Maps & Geocoding)
+### 4. Apple Maps MapKit JS (Directions & Search)
 **PM Action:**
-- [ ] Go to [mapbox.com](https://mapbox.com) → Sign up
-- [ ] Create access token
+- [ ] Go to [developer.apple.com](https://developer.apple.com) → Certificates, Identifiers & Profiles → Keys
+- [ ] Create a key with MapKit JS enabled
+- [ ] Download the .p8 key file (one-time download!)
 
-**Credentials to share:**
+**Credentials to share (to Andrew for backend token generation):**
 ```
-MAPBOX_ACCESS_TOKEN=pk.eyJ1Ijoi... (public token)
+APPLE_MAPKIT_TEAM_ID=XXXXXXXXXX       # From Membership page
+APPLE_MAPKIT_KEY_ID=XXXXXXXXXX        # From key details
+APPLE_MAPKIT_PRIVATE_KEY=[.p8 contents]  # For JWT signing
 ```
 
-**Where to find:**
-- Mapbox Dashboard → Account → Access Tokens
+**Note:** Basic map display works FREE on iOS (no credentials needed). These are only for directions/search/ETA APIs.
 
 ---
 

@@ -9,7 +9,7 @@ This document outlines ALL remaining work required to transform SnapRoad from a 
 
 ### Required Technologies
 - **Swift/SwiftUI** for native iOS development
-- **MapKit** or **Mapbox SDK** for native maps
+- **Apple Maps MapKit** for native maps (NOT Mapbox)
 - **Core Location** for GPS tracking
 - **AVFoundation** for voice/audio
 - **StoreKit** for in-app purchases
@@ -24,7 +24,7 @@ This document outlines ALL remaining work required to transform SnapRoad from a 
    - Support for Dynamic Island on iPhone 14+
 
 2. **Map Integration**
-   - Replace web map with MapKit or Mapbox
+   - Replace web map with Apple Maps MapKit
    - Implement real turn-by-turn navigation
    - Real-time traffic overlay
    - Lane guidance and speed limits
