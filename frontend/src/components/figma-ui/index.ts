@@ -10,6 +10,11 @@ export { Profile } from './mobile/Profile';
 export { Gems } from './mobile/Gems';
 export { Family } from './mobile/Family';
 export { BottomNav } from './mobile/BottomNav';
+export { FuelDashboard } from './mobile/FuelDashboard';
+export { TripLogs } from './mobile/TripLogs';
+export { Leaderboard } from './mobile/Leaderboard';
+export { Settings } from './mobile/Settings';
+export { LiveLocations } from './mobile/LiveLocations';
 
 // Admin Components
 export { AdminLayout } from './admin/AdminLayout';
