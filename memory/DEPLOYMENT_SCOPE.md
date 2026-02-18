@@ -520,7 +520,7 @@ VITE_ENABLE_CHALLENGES=true
 - [ ] Implement database connection pooling
 - [ ] Set up authentication provider (Auth0/Firebase)
 - [ ] Configure Stripe products and subscriptions
-- [ ] Obtain Mapbox/Google Maps API keys
+- [ ] Obtain Apple MapKit JS credentials (Team ID, Key ID, .p8 private key)
 - [ ] Set up email service (SendGrid)
 - [ ] Configure AI image generation API
 - [ ] Set up error monitoring (Sentry)
@@ -651,7 +651,7 @@ The current web app is designed for eventual native iOS migration. Key considera
 1. **UI Components** → SwiftUI equivalents
 2. **State Management** → Combine/SwiftUI @State
 3. **API Calls** → URLSession/Alamofire
-4. **Maps** → MapKit or Mapbox iOS SDK
+4. **Maps** → Apple MapKit (native, included with iOS)
 5. **Push Notifications** → APNs
 6. **Local Storage** → CoreData/UserDefaults
 7. **Animations** → SwiftUI animations
