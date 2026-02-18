@@ -99,13 +99,42 @@ const QUICK_ACTIONS = [
   { id: 'rewards', label: 'Nearby rewards', icon: Sparkles },
 ];
 
-export function OrionCoach({ isOpen, onClose, currentRoute }: OrionCoachProps) {
+export function OrionCoach({ isOpen, onClose, currentRoute, userContext }: OrionCoachProps) {
   const [mode, setMode] = useState<'tips' | 'chat'>('tips');
   const [message, setMessage] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [sessionId] = useState(() => `session_${Date.now()}`);
+  const [quickTips, setQuickTips] = useState<{id: string; text: string; icon: string}[]>([]);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Fetch quick tips on mount
+  useEffect(() => {
+    if (isOpen) {
+      fetchQuickTips();
+    }
+  }, [isOpen]);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [conversation, isTyping]);
+
+  const fetchQuickTips = async () => {
+    try {
+      const response = await fetch(`${API_URL}/orion/tips`);
+      const data = await response.json();
+      if (data.success) {
+        setQuickTips(data.tips);
+      }
+    } catch (error) {
+      console.error('Failed to fetch tips:', error);
+    }
+  };
 
   const getTipIcon = (type: string) => {
     switch (type) {
