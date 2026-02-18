@@ -17,7 +17,8 @@ import {
   Sun,
   Moon,
   ChevronLeft,
-  Menu
+  Menu,
+  Tag
 } from 'lucide-react';
 import { useState } from 'react';
 import { useSnaproadTheme } from '@/contexts/SnaproadThemeContext';
@@ -32,6 +33,7 @@ interface AdminLayoutProps {
 const NAV_ITEMS = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { id: 'users', icon: Users, label: 'Users & Families' },
+  { id: 'offers', icon: Tag, label: 'Offer Management' },
   { id: 'incidents', icon: AlertTriangle, label: 'Incidents' },
   { id: 'ai-moderation', icon: Shield, label: 'AI Moderation' },
   { id: 'partner-analytics', icon: BarChart3, label: 'Partner Analytics' },
