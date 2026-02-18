@@ -117,10 +117,15 @@ export function SnapRoadApp() {
     setAdminPage(page as AdminPage);
   };
 
+  const handlePartnerNavigate = (page: string) => {
+    setPartnerPage(page as PartnerPage);
+  };
+
   const handleLogout = () => {
     setMode('mobile');
     setMobileScreen('welcome');
     setIsAdminAuthenticated(false);
+    setIsPartnerAuthenticated(false);
   };
 
   const handleSetMode = (newMode: 'mobile' | 'admin' | 'partner') => {
