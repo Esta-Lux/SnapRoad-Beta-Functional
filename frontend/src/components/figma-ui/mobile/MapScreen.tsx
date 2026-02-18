@@ -153,20 +153,26 @@ export function MapScreen({ onNavigate, onOpenOrion, onOpenPhotoCapture }: MapSc
       {/* Floating Action Buttons */}
       <div className="absolute right-4 bottom-32 space-y-3 z-10">
         <button 
-          className="w-14 h-14 rounded-2xl bg-[#1A1F2E]/90 backdrop-blur-xl border border-white/10 flex items-center justify-center shadow-lg"
+          onClick={onOpenPhotoCapture}
+          className="w-14 h-14 rounded-2xl bg-[#1A1F2E]/90 backdrop-blur-xl border border-white/10 flex items-center justify-center shadow-lg hover:border-[#FFB800]/50 transition-colors"
           data-testid="map-report-btn"
+          title="Report Incident"
         >
           <AlertTriangle size={22} className="text-[#FFB800]" />
         </button>
         <button 
-          className="w-14 h-14 rounded-2xl bg-[#1A1F2E]/90 backdrop-blur-xl border border-white/10 flex items-center justify-center shadow-lg"
+          onClick={onOpenPhotoCapture}
+          className="w-14 h-14 rounded-2xl bg-[#1A1F2E]/90 backdrop-blur-xl border border-white/10 flex items-center justify-center shadow-lg hover:border-white/30 transition-colors"
           data-testid="map-camera-btn"
+          title="Take Photo"
         >
           <Camera size={22} className="text-white" />
         </button>
         <button 
-          className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#0084FF] to-[#00FFD7] flex items-center justify-center shadow-lg"
-          data-testid="map-voice-btn"
+          onClick={onOpenOrion}
+          className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#0084FF] to-[#00FFD7] flex items-center justify-center shadow-lg hover:scale-105 transition-transform"
+          data-testid="map-orion-btn"
+          title="Orion AI Coach"
         >
           <Mic size={22} className="text-white" />
         </button>
