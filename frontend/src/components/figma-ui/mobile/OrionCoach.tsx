@@ -1,7 +1,7 @@
 // SnapRoad - Orion AI Coach Component
 // Voice-enabled AI driving coach with real-time tips
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, 
@@ -17,8 +17,11 @@ import {
   Fuel,
   AlertTriangle,
   Zap,
-  TrendingUp
+  TrendingUp,
+  Loader2
 } from 'lucide-react';
+
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 interface OrionCoachProps {
   isOpen: boolean;
@@ -27,6 +30,12 @@ interface OrionCoachProps {
     distance: number;
     duration: number;
     destination: string;
+  };
+  userContext?: {
+    safety_score?: number;
+    gems?: number;
+    current_speed?: number;
+    weather?: string;
   };
 }
 
