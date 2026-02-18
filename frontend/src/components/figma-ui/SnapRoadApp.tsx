@@ -180,7 +180,11 @@ export function SnapRoadApp() {
       case 'signup':
         return <SignUp onNavigate={handleMobileNavigate} />;
       case 'map':
-        return <MapScreen onNavigate={handleMobileNavigate} />;
+        return <MapScreen 
+          onNavigate={handleMobileNavigate} 
+          onOpenOrion={() => setShowOrionCoach(true)}
+          onOpenPhotoCapture={() => setShowPhotoCapture(true)}
+        />;
       case 'profile':
         return <Profile onNavigate={handleMobileNavigate} />;
       case 'gems':
