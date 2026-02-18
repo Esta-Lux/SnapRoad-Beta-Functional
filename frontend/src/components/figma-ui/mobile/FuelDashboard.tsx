@@ -257,7 +257,7 @@ export function FuelDashboard({ onNavigate }: FuelDashboardProps) {
           <div className={`h-56 sm:h-64 w-full p-3 sm:p-4 rounded-2xl sm:rounded-3xl border ${
             theme === 'dark' ? 'bg-[#1A1F2E] border-white/10' : 'bg-white border-slate-200'
           }`}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={200}>
               <AreaChart data={CHART_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorSaved" x1="0" y1="0" x2="0" y2="1">
