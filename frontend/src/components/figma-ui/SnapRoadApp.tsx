@@ -78,7 +78,8 @@ type AdminPage =
   | 'finance' 
   | 'legal' 
   | 'settings' 
-  | 'audit';
+  | 'audit'
+  | 'offers';
 
 export function SnapRoadApp() {
   const [mode, setMode] = useState<AppMode>('mobile');
