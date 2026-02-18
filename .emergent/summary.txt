@@ -1,63 +1,78 @@
 <analysis>**original_problem_statement:**
-The user wants to build SnapRoad, a privacy-first, gamified navigation app. The project's core task is to integrate a comprehensive UI/Design System from a Figma-generated repository () into the existing React frontend.
+The user wants to build SnapRoad, a privacy-first, gamified navigation app. The initial task was to integrate a complete UI/Design System from a Figma-generated repository () into the existing React frontend, ensuring a clean, team-ready architecture aligned for a future React Native mobile app.
 
-After an initial integration, the user clarified their requirements, demanding a more professional and complete implementation. The new mandate is to integrate *all* screens from the source repository, establish a clean, team-ready architecture, and prepare the codebase for seamless integration with the React Native mobile app and a live backend.
+The project scope has significantly expanded. The user has now requested a series of advanced, functional features to be built across the driver, admin, and partner sections of the application.
 
 PRODUCT REQUIREMENTS:
-- **Complete UI Integration:** Integrate *all* 97 components and screens from the  repository into the primary React frontend ().
-- **Clean Architecture:** Refactor the frontend to have a professional, scalable structure that is easy for a team to maintain. This includes creating a shared service layer for API calls.
-- **React Native Alignment:** Ensure the new web architecture can be cleanly adapted and ported to the React Native mobile app ().
+- **Complete UI Integration:** Integrate all 97 components and screens from the  repository into the primary React frontend.
+- **Clean Architecture:** Establish a professional, scalable frontend structure.
+- **React Native Alignment:** Ensure the web architecture can be cleanly adapted to the React Native mobile app ().
+- **Functional Features (New):**
+    - **Orion AI Coach:** An in-app assistant for drivers.
+    - **Privacy-Enhanced Photo Capture:** A feature for taking pictures with automatic blurring of faces and license plates.
+    - **Premium Driver Analytics:** Advanced, visually rich dashboards for drivers to track their performance.
+    - **Admin Offer Management:** A system for admins to create offers for users.
+    - **Dynamic Gem Pricing:** A rule-based system to automatically price offers in gems based on the offer's value. The logic should be shared across the driver, admin, and partner views.
+    - **Partner Portal:** A dedicated section for business partners to manage their offers, view analytics, and track payouts.
 - **Functional Backend:** The backend, currently using mock data, will eventually need to be connected to a persistent database to support the full UI.
-- **Responsive Design:** All integrated screens must be responsive and adapt cleanly to mobile, tablet, and desktop viewports.
+- **Responsive Design:** All integrated screens must be responsive.
 
 **User's preferred language**: English
 
 **what currently exists?**
-- **Backend ():** A FastAPI server with a comprehensive but fully mocked set of API endpoints.
-- **Frontend ():** A React web application that has undergone a massive integration of components from the  repository. It features a new, organized directory structure under  and a new shared API service layer at .
-- **Mobile App ():** A React Native (Expo) app that is now significantly out-of-date and does not reflect the new architecture or component set.
-- **New UI Source ():** A local clone of the repository containing all 97 source components.
+- **Backend ():** A FastAPI server with a comprehensive but fully mocked set of API endpoints. No database is connected.
+- **Frontend ():** A feature-rich React application. It includes the new architecture, a shared API service, and numerous functional screens for Drivers, Admins, and Partners. Recently added features include a premium Driver Analytics dashboard and an Admin Offer Management page with automatic gem pricing.
+- **Mobile App ():** A React Native (Expo) app that has undergone initial alignment with the web app's architecture (new screens, services, navigation) but is significantly behind in functionality.
+- **New UI Source ():** A local clone of the repository containing all source UI components.
 
 **Last working item**:
-    - Last item agent was working: The agent was executing a major refactor and final integration pass based on user feedback. It just finished creating the Partner Dashboard components and updated the main application router () to include these new routes. This latest batch of changes is extensive and has not been tested.
+    - Last item agent was working: Building the **Partner Portal**. The agent created the file structure and placeholder components for the three main pages of the portal: , , and .
     - Status: IN PROGRESS
     - Agent Testing Done: N
-    - Which testing method agent to use? Frontend testing agent. Given the large number of newly added components and changes to the application's routing structure, a full run of the testing agent is required to verify the integration, check for rendering errors, and ensure all navigation paths work as expected.
+    - Which testing method agent to use? Frontend testing agent. After integrating these new components into the application's routing and layout, the testing agent should be used to validate the entire Partner Portal flow.
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-There are no outstanding bugs, but the primary task is incomplete.
+There are no outstanding bugs. The work is focused on implementing new features.
 
 **In progress Task List**:
-  - Task 1: Complete the Team-Ready UI/Architecture Integration (P0)
-     - Where to resume: The agent has just added the Partner Dashboard components and updated the main router in . The immediate next step is to test this massive final wave of integrations. Start by checking the frontend logs and then taking screenshots of the new Partner Portal screens.
-     - What will be achieved with this? A complete, well-structured frontend with *all* 97 components from the Figma repo, a shared API service layer, and a clean architecture ready for backend integration and the subsequent React Native port.
-     - Status:  IN PROGRESS
+  - Task 1: Complete the Partner Portal Implementation (P0)
+     - Where to resume: The component files have been created in . The next steps are:
+        1.  Integrate these new components into the main router in .
+        2.  Update the  to include navigation links to the new Offers, Analytics, and Payouts pages.
+        3.  Populate the new components with UI elements based on the Figma designs and user requirements.
+     - What will be achieved with this? A functional portal for business partners to manage their involvement in the SnapRoad ecosystem, completing a major user request.
+     - Status: IN PROGRESS
      - Should Test frontend/backend/both after fix? Frontend
      - Blocked on something: No.
 
 **Upcoming and Future Tasks**
 Upcoming Tasks:
-- **P0: Full Frontend Verification:** After the current integration work is complete, run the  to perform a comprehensive validation of the entire web application, including all new screens and responsive layouts.
-- **P1: Adapt and Integrate New Architecture into Mobile App:** This is a high-priority task based on the user's feedback. The entire structure of the  app needs to be refactored to align with the new web architecture, and all relevant components must be ported and adapted for React Native.
-- **P2: Backend Database Integration:** Connect the FastAPI backend to a real database (PostgreSQL schema is available) and replace all mock API logic with real database operations.
-- **P3: Connect UI to Live Backend:** Wire up all UI components in both the web and mobile apps to the live backend APIs, using the newly created shared service layer ().
+- **P0: Implement Orion AI Coach:** The placeholder component  exists. It needs to be built out with a UI and integrated into the driver-side experience.
+- **P0: Implement Photo Capture with Privacy Blur:** The placeholder component  exists. This needs to be developed into a functional feature that can access a device's camera. The blur faces and car tags functionality will likely require a 3rd-party library or a placeholder for a future backend service.
+- **P1: Implement Widgets for Driver Dashboard:** User requested widgets. This requires clarification but likely involves creating small, customizable components for the main driver dashboard.
+- **P1: Continue React Native App Alignment:** Port the newly added web features (Driver Analytics, Offer views, etc.) to the  application to bring it up to parity.
+- **P2: Connect UI to Live Backend:** Replace all mock data and client-side logic in the UI with live API calls to the backend for all features (offers, analytics, user data, etc.).
 
 Future Tasks:
-- Configure ESLint for TypeScript in the frontend project.
-- Implement 3rd-party integrations (Stripe, Mapbox, Supabase).
-- Perform full end-to-end system testing.
+- **Backend Database Integration:** Connect the FastAPI backend to a real database (PostgreSQL schema is available) and replace all mock API logic with real database operations.
+- **3rd Party Integrations:** Implement planned integrations for Stripe (payments), Mapbox (maps), and Supabase/OpenAI (AI features).
+- **Configure ESLint for TypeScript:** Set up ESLint in the frontend project to improve code quality and catch errors.
 
 **Completed work in this session**
-- **Full UI Repository Integration:** Located the  repository and integrated all 97 components into the React frontend.
-- **Architectural Refactoring:** Created a new, professionally organized directory structure at  for all new UI components and features.
-- **Shared Service Layer:** Implemented a shared API service layer at  to create a clean abstraction for future backend communication.
-- **Responsive Design:** Ensured all integrated screens are responsive for mobile, tablet, and desktop views.
-- **Comprehensive Testing (Initial Wave):** Successfully used the testing agent to verify the initial batch of integrated components, achieving a 100% pass rate.
-- **Bug Fix:** Proactively fixed a console warning related to the  library in the admin dashboard.
+- **Web Frontend Stabilization:** Fixed multiple critical import errors in the React app, making it runnable.
+- **Manual E2E Test:** Verified the core user flows of the web app (Login, Signup, Map Navigation) via screenshots.
+- **Mobile App Initial Alignment:** Started refactoring the  app by creating new screens, a shared API service, type definitions, and a navigation structure to match the web app.
+- **Implemented Admin Offer Management:** Built a complete UI for admins to create and view offers, including a dynamic gem pricing guide.
+- **Implemented Premium Driver Analytics:** Created a detailed, multi-section analytics dashboard for drivers with metrics on safety, driving behavior, and performance.
+- **Created Business Logic for Gem Pricing:** Implemented the user's specified rules for automatic gem pricing in a shared library file ().
+- **Comprehensive Feature Testing:** Used the  to successfully validate all newly implemented features (Admin Offers, Driver Analytics), achieving a 100% pass rate.
+- **Created Placeholders for Future Work:** Created empty components (, ) to stage upcoming tasks.
+- **Began Partner Portal:** Created the file structure and components for the Partner Portal.
 
 **Earlier issues found/mentioned but not fixed**
-   - **ESLint Configuration**: ESLint is not configured for TypeScript in the frontend project, which may cause non-blocking parsing error warnings in the logs. This is a low-priority technical debt item.
+   - **ESLint Configuration**: ESLint is not configured for TypeScript in the frontend project.
+   - **Vague Flutter file Reference**: The user mentioned implementing features in a flutter file, which is inconsistent with the React/React-Native stack. The agent has proceeded by building features in React, but this point may need future clarification with the user.
 
 **Known issue recurrence from previous fork**
   - None.
@@ -66,65 +81,80 @@ Future Tasks:
 
 
 **Key Technical Concepts**
-- **Large-Scale Code Integration:** Merging a large, independent repository of React components into an existing frontend codebase.
-- **Architectural Refactoring:** Reorganizing the codebase into a more scalable and maintainable structure based on user feedback.
-- **Shared Service Layer:** Abstracting data-fetching logic into a reusable service to be shared between web and mobile, promoting DRY principles.
-- **Responsive Web Design:** Using CSS and modern layout techniques to ensure the UI adapts across different screen sizes.
-- **React vs. React Native Adaptation:** The future challenge of translating web-native React components and styles into mobile-native ones for the Expo app.
+- **Large-Scale Code Integration & Refactoring:** Merging a large UI repository and reorganizing the codebase for scalability.
+- **Shared Service Layer:** Abstracting data-fetching logic into a reusable  service.
+- **Multi-Role SPA:** Building distinct, feature-rich UIs for three different user roles (Driver, Admin, Partner) within a single-page application.
+- **Client-Side Business Logic:** Implementing dynamic rules (e.g., gem pricing) directly in the frontend codebase for rapid prototyping.
+- **Component-Driven Development:** Creating placeholder components to stage and plan for future complex features like  and .
 
 **key DB schema**
   - No active database. A PostgreSQL schema is available for reference at .
 
 **changes in tech stack**
-  - None.
+  -  was added as a dependency for the mobile app.
 
 **All files of reference**
-- **Primary Integration Target:** 
-- **New Core Architecture:** 
-- **New Service Layer:** 
+- **Core Application Logic:** 
+- **New Feature Components:**
+    - 
+    - 
+- **In-Progress Feature Components:**
+    -  (contains , , )
+- **Shared Business Logic:** 
+- **Layouts for Integration:**
+    - 
+    - 
 - **Mobile App (to be updated):** 
-- **Source of All UI:** 
-- **Project Requirements:** 
 
 **Areas that need refactoring**:
-- The  directory is now critically outdated. It needs a complete overhaul to adopt the new component structure, routing, and service layer established in the web frontend.
+- The  directory requires a major effort to port all the new functionality from the web app.
+- The  and  components are currently empty placeholders and need full implementation.
 
 **key api endpoints**
 - All API endpoints are defined and mocked in . They are not yet connected to the frontend.
 
 **Critical Info for New Agent**
-- **User Mandate is Key:** The user's last message () is the most important directive. They are not just looking for a file copy; they want a complete, professional, and well-architected solution that is easy for their team to maintain and extend to React Native. The current task is the final step in fulfilling this for the web application.
-- **Finish the Current Task First:** The immediate priority is to finish and thoroughly test the current large-scale integration of the Partner Portal and other remaining components. Do not move on to the React Native app or backend work until the web frontend is stable and fully verified.
-- **Test, Test, Test:** After this final integration, a comprehensive test of the entire frontend is non-negotiable. Use the frontend testing agent.
+- **Follow User Direction:** The user's requests have become very specific and feature-driven (e.g., ). The priority is to build out these functional components as described.
+- **Finish Partner Portal First:** The immediate task is to complete the implementation of the Partner Portal. Integrate the newly created components into the router and layout, then test them thoroughly.
+- **Backend is Mocked:** Remember that all data is hardcoded or generated on the client-side. The app is not yet connected to a persistent backend.
+- **Interpret Vague Requests:** The user may use imprecise terms (e.g., flutter file, widgets). Interpret these requests within the context of the existing React/React Native stack and proceed logically.
 
 **documents and test reports created in this job**
+-  (updated)
 - 
 - 
 
 **Last 10 User Messages and any pending HUMAN messages**
-- User requested to continue integrating screens, with a focus on responsive design for various devices (iPhone 16, tablet, laptop).
-- The agent proceeded to integrate a second wave of components (FuelDashboard, Leaderboard, etc.) and verified the responsive layouts with screenshots.
-- The agent called the testing agent, which passed all tests, and then fixed a minor console warning.
-- **Most Importantly (Message 145):** The user expressed dissatisfaction, stating the work felt incomplete (half files). They issued a new, strong directive to integrate *all* screens, create a clean layout that my team can work with, and ensure the architecture aligns with both React Native and the backend.
-- The agent acknowledged this and began the current, more comprehensive integration and refactoring effort.
+- User confirmed the plan to first test the web frontend and then align the mobile app.
+- Agent fixed web app, performed manual testing, started mobile alignment, and ran a successful test suite on the web app.
+- User requested screenshots of the driver, admin, and partner dashboards.
+- ** (CRITICAL):** User provided a large list of new, complex features to be implemented: Orion AI, photo blurring, widgets, premium driver analytics, and a detailed admin offer system with dynamic gem pricing.
+- Agent successfully implemented the Admin Offer Management and Driver Analytics features.
+- Agent ran a new test suite which passed, validating the new features.
+- ** (CURRENT):** User asked the agent to continue with enhancements, specifically requesting the creation of a Partner Portal for businesses.
+- Agent acknowledged and began creating the files for the Partner Portal.
 
 **Project Health Check:**
-- **Broken**: Nothing is broken, but the frontend is in the middle of a major refactor and is untested in its latest state.
-- **Mocked**: The entire backend relies on mock data.
-- **Healthy/In-Progress**: The frontend web app is nearly complete from a UI perspective but requires verification. The mobile app is functional but outdated.
+- **Broken**: The  app is functional but severely out-of-date and lacks all the new features present in the web app.
+- **Mocked**: The entire backend is mocked. All new features (Admin Offers, Driver Analytics) are UI-only with hardcoded data.
+- **Healthy/In-Progress**: The web frontend is in a healthy state but has features in progress. The newly-added Partner Portal is incomplete.
 
 **3rd Party Integrations**
 - No active integrations.
 - **Planned:** Supabase, Stripe, Mapbox, OpenAI.
 
 **Testing status**
-  - Testing agent used after significant changes: YES (on the first wave of integrations). It needs to be run again after the current work is finished.
+  - Testing agent used after significant changes: YES. The agent was used twice to validate two major feature pushes, with all tests passing.
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: []
   - Known regressions: None.
 
 **Credentials to test flow:**
 - Mock login:  / 
+- Admin login:  / 
+- Partner login:  / 
 
 **What agent forgot to execute**
-- The agent correctly pivoted based on critical user feedback. It did not forget to execute anything, but rather restarted a task to meet a higher quality bar. The current work-in-progress (the final integration wave) is the result of that pivot and is not yet complete or tested.</analysis>
+- The agent has not yet addressed the user's request for widgets. This requirement is vague and needs clarification or a concrete implementation plan.
+- The agent created placeholders for Orion AI Coach and Photo Capture but has not started their implementation. These remain on the upcoming task list.
+- The agent did not explicitly clarify the user's flutter file comment but correctly proceeded with the React implementation.</analysis>

@@ -171,5 +171,5 @@ Updated `/app/snaproad-mobile/` with:
 
 ## Notes
 - All backend endpoints return mock data
-- Web frontend: https://snaproad-preview-2.preview.emergentagent.com/app
+- Web frontend: https://gem-offers-admin.preview.emergentagent.com/app
 - All new features tested and working
