@@ -16,6 +16,7 @@ export { MapScreen } from './MapScreen';
 export { OffersScreen } from './OffersScreen';
 export { RewardsScreen } from './RewardsScreen';
 export { OfferDetailScreen } from './OfferDetailScreen';
+export { MyOffersScreen } from './MyOffersScreen';
 
 // Profile & Account
 export { ProfileScreen } from './ProfileScreen';
@@ -26,3 +27,6 @@ export { TripLogsScreen } from './TripLogsScreen';
 // Family & Social
 export { FamilyScreen } from './FamilyScreen';
 export { LeaderboardScreen } from './LeaderboardScreen';
+
+// AI Features
+export { OrionCoachScreen } from './OrionCoachScreen';
