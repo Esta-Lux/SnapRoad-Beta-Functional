@@ -1,5 +1,5 @@
 // SnapRoad - Photo Capture with Privacy Blur
-// Face and license plate detection with automatic blurring
+// Face and license plate detection with automatic blurring using AI
 
 import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,6 +18,19 @@ import {
   Clock
 } from 'lucide-react';
 
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+
+interface BlurRegion {
+  id: string;
+  type: 'face' | 'license_plate';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+  blur_intensity: number;
+}
+
 interface PhotoCaptureProps {
   isOpen: boolean;
   onClose: () => void;
@@ -27,6 +40,7 @@ interface PhotoCaptureProps {
     location: string;
     description: string;
     privacyBlurEnabled: boolean;
+    blurRegions?: BlurRegion[];
   }) => void;
 }
 
