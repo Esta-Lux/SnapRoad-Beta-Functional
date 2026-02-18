@@ -144,7 +144,7 @@ All analytics data is currently mocked and returns random values. Production imp
 1. **P0 (Week 1-2):**
    - Database integration (PostgreSQL)
    - User authentication (Auth0/Firebase)
-   - Real maps API (Mapbox geocoding)
+   - Real maps API (Apple Maps MapKit JS)
 
 2. **P1 (Week 3-4):**
    - Stripe payments integration
