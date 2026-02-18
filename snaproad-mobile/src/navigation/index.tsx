@@ -21,11 +21,16 @@ import { RewardsScreen } from '../screens/RewardsScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { OfferDetailScreen } from '../screens/OfferDetailScreen';
 import { LeaderboardScreen } from '../screens/LeaderboardScreen';
-// New aligned screens
+// New Aligned Screens
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { FuelDashboardScreen } from '../screens/FuelDashboardScreen';
 import { TripLogsScreen } from '../screens/TripLogsScreen';
 import { FamilyScreen } from '../screens/FamilyScreen';
+// Analytics & AI Screens
+import { TripAnalyticsScreen } from '../screens/TripAnalyticsScreen';
+import { RouteHistory3DScreen } from '../screens/RouteHistory3DScreen';
+import { OrionCoachScreen } from '../screens/OrionCoachScreen';
+import { MyOffersScreen } from '../screens/MyOffersScreen';
 
 import { useUserStore } from '../store';
 
@@ -179,6 +184,26 @@ export const Navigation = () => {
         <Stack.Screen 
           name="Family" 
           component={FamilyScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="TripAnalytics" 
+          component={TripAnalyticsScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="RouteHistory3D" 
+          component={RouteHistory3DScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="OrionCoach" 
+          component={OrionCoachScreen}
+          options={{ animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen 
+          name="MyOffers" 
+          component={MyOffersScreen}
           options={{ animation: 'slide_from_right' }}
         />
       </Stack.Navigator>
