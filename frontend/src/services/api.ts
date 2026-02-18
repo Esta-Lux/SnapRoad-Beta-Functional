@@ -1,94 +1,307 @@
-import axios, { AxiosInstance } from 'axios'
-import { useAuthStore } from '../store/authStore'
+/**
+ * SnapRoad API Service
+ * Centralized API calls matching backend endpoints in /app/backend/server.py
+ */
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'
+import type {
+  User,
+  UserStats,
+  Vehicle,
+  LoginRequest,
+  SignupRequest,
+  AuthResponse,
+  Trip,
+  FamilyMember,
+  FamilyGroup,
+  Offer,
+  Challenge,
+  Badge,
+  Leaderboard,
+  Partner,
+  PartnerAnalytics,
+  AdminStats,
+  Incident,
+  FuelEntry,
+  FuelStats,
+  Notification,
+  ApiResponse,
+  PaginatedResponse,
+} from '@/types/api';
 
-// Create axios instance
-const apiClient: AxiosInstance = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-})
+const API_URL = import.meta.env.VITE_API_URL || '';
 
-// Request interceptor to add auth token
-apiClient.interceptors.request.use(
-  (config) => {
-    const token = useAuthStore.getState().token
+class ApiService {
+  private token: string | null = null;
+
+  setToken(token: string | null) {
+    this.token = token;
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+      localStorage.setItem('snaproad_token', token);
+    } else {
+      localStorage.removeItem('snaproad_token');
     }
-    return config
-  },
-  (error) => Promise.reject(error)
-)
-
-// Response interceptor for error handling
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Clear auth on unauthorized
-      useAuthStore.getState().logout()
-      window.location.href = '/login'
-    }
-    return Promise.reject(error)
   }
-)
 
-export default apiClient
+  getToken(): string | null {
+    if (!this.token) {
+      this.token = localStorage.getItem('snaproad_token');
+    }
+    return this.token;
+  }
 
-// API service methods (placeholders for implementation)
-export const authService = {
-  login: (email: string, password: string) =>
-    apiClient.post('/auth/login', { email, password }),
-  logout: () => apiClient.post('/auth/logout'),
-  me: () => apiClient.get('/auth/me'),
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    const token = this.getToken();
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...options.headers,
+    };
+
+    try {
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { success: false, error: data.detail || 'Request failed' };
+      }
+
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: 'Network error' };
+    }
+  }
+
+  // ==================== AUTH ====================
+  async login(credentials: LoginRequest): Promise<ApiResponse<AuthResponse>> {
+    const result = await this.request<AuthResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials),
+    });
+    if (result.success && result.data?.token) {
+      this.setToken(result.data.token);
+    }
+    return result;
+  }
+
+  async signup(data: SignupRequest): Promise<ApiResponse<AuthResponse>> {
+    const result = await this.request<AuthResponse>('/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (result.success && result.data?.token) {
+      this.setToken(result.data.token);
+    }
+    return result;
+  }
+
+  async logout(): Promise<void> {
+    this.setToken(null);
+  }
+
+  // ==================== USER ====================
+  async getProfile(): Promise<ApiResponse<User>> {
+    return this.request<User>('/api/user/profile');
+  }
+
+  async updateProfile(data: Partial<User>): Promise<ApiResponse<User>> {
+    return this.request<User>('/api/user/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getUserStats(): Promise<ApiResponse<UserStats>> {
+    return this.request<UserStats>('/api/user/stats');
+  }
+
+  async getVehicles(): Promise<ApiResponse<Vehicle[]>> {
+    return this.request<Vehicle[]>('/api/user/vehicles');
+  }
+
+  async addVehicle(vehicle: Omit<Vehicle, 'id' | 'userId'>): Promise<ApiResponse<Vehicle>> {
+    return this.request<Vehicle>('/api/user/vehicles', {
+      method: 'POST',
+      body: JSON.stringify(vehicle),
+    });
+  }
+
+  // ==================== TRIPS ====================
+  async getTrips(page = 1, limit = 20): Promise<ApiResponse<PaginatedResponse<Trip>>> {
+    return this.request<PaginatedResponse<Trip>>(`/api/trips?page=${page}&limit=${limit}`);
+  }
+
+  async getTripById(id: string): Promise<ApiResponse<Trip>> {
+    return this.request<Trip>(`/api/trips/${id}`);
+  }
+
+  async startTrip(data: { startLocation: string }): Promise<ApiResponse<Trip>> {
+    return this.request<Trip>('/api/trips/start', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async endTrip(tripId: string, data: { endLocation: string }): Promise<ApiResponse<Trip>> {
+    return this.request<Trip>(`/api/trips/${tripId}/end`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ==================== FAMILY ====================
+  async getFamilyMembers(): Promise<ApiResponse<FamilyMember[]>> {
+    return this.request<FamilyMember[]>('/api/family/members');
+  }
+
+  async getFamilyGroup(): Promise<ApiResponse<FamilyGroup>> {
+    return this.request<FamilyGroup>('/api/family/group');
+  }
+
+  async addFamilyMember(data: { email: string; relation: string }): Promise<ApiResponse<FamilyMember>> {
+    return this.request<FamilyMember>('/api/family/members', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateMemberPrivacy(memberId: string, privacyMode: boolean): Promise<ApiResponse<FamilyMember>> {
+    return this.request<FamilyMember>(`/api/family/members/${memberId}/privacy`, {
+      method: 'PUT',
+      body: JSON.stringify({ privacyMode }),
+    });
+  }
+
+  // ==================== REWARDS ====================
+  async getOffers(category?: string): Promise<ApiResponse<Offer[]>> {
+    const query = category ? `?category=${category}` : '';
+    return this.request<Offer[]>(`/api/offers${query}`);
+  }
+
+  async getOfferById(id: string): Promise<ApiResponse<Offer>> {
+    return this.request<Offer>(`/api/offers/${id}`);
+  }
+
+  async redeemOffer(offerId: string): Promise<ApiResponse<{ success: boolean; code: string }>> {
+    return this.request<{ success: boolean; code: string }>(`/api/offers/${offerId}/redeem`, {
+      method: 'POST',
+    });
+  }
+
+  async getChallenges(): Promise<ApiResponse<Challenge[]>> {
+    return this.request<Challenge[]>('/api/challenges');
+  }
+
+  async getBadges(): Promise<ApiResponse<Badge[]>> {
+    return this.request<Badge[]>('/api/badges');
+  }
+
+  // ==================== LEADERBOARD ====================
+  async getLeaderboard(type: 'global' | 'regional' | 'friends' = 'global', region?: string): Promise<ApiResponse<Leaderboard>> {
+    const query = region ? `?type=${type}&region=${region}` : `?type=${type}`;
+    return this.request<Leaderboard>(`/api/leaderboard${query}`);
+  }
+
+  // ==================== FUEL ====================
+  async getFuelStats(): Promise<ApiResponse<FuelStats>> {
+    return this.request<FuelStats>('/api/fuel/stats');
+  }
+
+  async getFuelEntries(page = 1, limit = 20): Promise<ApiResponse<PaginatedResponse<FuelEntry>>> {
+    return this.request<PaginatedResponse<FuelEntry>>(`/api/fuel/entries?page=${page}&limit=${limit}`);
+  }
+
+  async addFuelEntry(entry: Omit<FuelEntry, 'id' | 'userId'>): Promise<ApiResponse<FuelEntry>> {
+    return this.request<FuelEntry>('/api/fuel/entries', {
+      method: 'POST',
+      body: JSON.stringify(entry),
+    });
+  }
+
+  // ==================== NOTIFICATIONS ====================
+  async getNotifications(): Promise<ApiResponse<Notification[]>> {
+    return this.request<Notification[]>('/api/notifications');
+  }
+
+  async markNotificationRead(id: string): Promise<ApiResponse<Notification>> {
+    return this.request<Notification>(`/api/notifications/${id}/read`, {
+      method: 'PUT',
+    });
+  }
+
+  async markAllNotificationsRead(): Promise<ApiResponse<{ count: number }>> {
+    return this.request<{ count: number }>('/api/notifications/read-all', {
+      method: 'PUT',
+    });
+  }
+
+  // ==================== INCIDENTS ====================
+  async getIncidents(bounds?: { north: number; south: number; east: number; west: number }): Promise<ApiResponse<Incident[]>> {
+    const query = bounds ? `?north=${bounds.north}&south=${bounds.south}&east=${bounds.east}&west=${bounds.west}` : '';
+    return this.request<Incident[]>(`/api/incidents${query}`);
+  }
+
+  async reportIncident(incident: Omit<Incident, 'id' | 'reportedBy' | 'upvotes' | 'reportedAt' | 'status'>): Promise<ApiResponse<Incident>> {
+    return this.request<Incident>('/api/incidents', {
+      method: 'POST',
+      body: JSON.stringify(incident),
+    });
+  }
+
+  async upvoteIncident(id: string): Promise<ApiResponse<Incident>> {
+    return this.request<Incident>(`/api/incidents/${id}/upvote`, {
+      method: 'POST',
+    });
+  }
+
+  // ==================== PARTNER ====================
+  async getPartnerProfile(): Promise<ApiResponse<Partner>> {
+    return this.request<Partner>('/api/partner/profile');
+  }
+
+  async getPartnerAnalytics(period: 'week' | 'month' | 'year' = 'month'): Promise<ApiResponse<PartnerAnalytics>> {
+    return this.request<PartnerAnalytics>(`/api/partner/analytics?period=${period}`);
+  }
+
+  async getPartnerOffers(): Promise<ApiResponse<Offer[]>> {
+    return this.request<Offer[]>('/api/partner/offers');
+  }
+
+  async createPartnerOffer(offer: Omit<Offer, 'id' | 'partnerId' | 'redemptionCount'>): Promise<ApiResponse<Offer>> {
+    return this.request<Offer>('/api/partner/offers', {
+      method: 'POST',
+      body: JSON.stringify(offer),
+    });
+  }
+
+  // ==================== ADMIN ====================
+  async getAdminStats(): Promise<ApiResponse<AdminStats>> {
+    return this.request<AdminStats>('/api/admin/stats');
+  }
+
+  async getAdminUsers(page = 1, limit = 20, filters?: { plan?: string; status?: string }): Promise<ApiResponse<PaginatedResponse<User>>> {
+    const query = new URLSearchParams({ page: String(page), limit: String(limit), ...filters }).toString();
+    return this.request<PaginatedResponse<User>>(`/api/admin/users?${query}`);
+  }
+
+  async getAdminIncidents(status?: string): Promise<ApiResponse<Incident[]>> {
+    const query = status ? `?status=${status}` : '';
+    return this.request<Incident[]>(`/api/admin/incidents${query}`);
+  }
+
+  async updateIncidentStatus(id: string, status: Incident['status']): Promise<ApiResponse<Incident>> {
+    return this.request<Incident>(`/api/admin/incidents/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  }
 }
 
-export const usersService = {
-  list: (params?: { page?: number; limit?: number; status?: string }) =>
-    apiClient.get('/admin/users', { params }),
-  get: (id: string) => apiClient.get(`/admin/users/${id}`),
-  updateStatus: (id: string, status: string, reason?: string) =>
-    apiClient.put(`/admin/users/${id}/status`, { status, reason }),
-}
-
-export const tripsService = {
-  list: (params?: { page?: number; limit?: number; userId?: string }) =>
-    apiClient.get('/admin/trips', { params }),
-  get: (id: string) => apiClient.get(`/admin/trips/${id}`),
-  getActive: () => apiClient.get('/admin/trips/status/active'),
-}
-
-export const incidentsService = {
-  list: (params?: { page?: number; limit?: number; status?: string }) =>
-    apiClient.get('/admin/incidents', { params }),
-  get: (id: string) => apiClient.get(`/admin/incidents/${id}`),
-  moderate: (id: string, action: string, notes?: string) =>
-    apiClient.put(`/admin/incidents/${id}`, { action, notes }),
-}
-
-export const rewardsService = {
-  getMonitoring: (period?: string) =>
-    apiClient.get('/admin/rewards', { params: { period } }),
-  adjust: (userId: string, gemsAmount: number, reason: string) =>
-    apiClient.post('/admin/rewards/adjust', { userId, gemsAmount, reason }),
-  getLeaderboard: (period?: string, limit?: number) =>
-    apiClient.get('/admin/leaderboard', { params: { period, limit } }),
-}
-
-export const partnersService = {
-  list: (params?: { page?: number; limit?: number; status?: string }) =>
-    apiClient.get('/admin/partners', { params }),
-  get: (id: string) => apiClient.get(`/admin/partners/${id}`),
-  updateStatus: (id: string, status: string, reason?: string) =>
-    apiClient.put(`/admin/partners/${id}/status`, { status, reason }),
-  getOffers: (id: string) => apiClient.get(`/admin/partners/${id}/offers`),
-}
-
-export const dashboardService = {
-  get: () => apiClient.get('/admin/dashboard'),
-  getAnalytics: (params?: { metric?: string; period?: string }) =>
-    apiClient.get('/admin/analytics', { params }),
-}
+export const api = new ApiService();
+export default api;
