@@ -153,6 +153,8 @@ export function SnapRoadApp() {
         return <Settings onNavigate={handleMobileNavigate} />;
       case 'live-locations':
         return <LiveLocations onNavigate={handleMobileNavigate} />;
+      case 'analytics':
+        return <DriverAnalytics onNavigate={handleMobileNavigate} />;
       default:
         return <Welcome onNavigate={handleMobileNavigate} onSetMode={handleSetMode} />;
     }
