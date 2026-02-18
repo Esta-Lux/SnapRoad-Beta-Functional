@@ -1018,6 +1018,8 @@ export default function DriverApp() {
           {[
             { icon: Fuel, label: 'Fuel Tracker', action: () => { setShowFuelDashboard(true); setShowMenu(false) } },
             { icon: Shield, label: 'Driver Score', action: () => { setActiveTab('profile'); setProfileTab('score'); setShowMenu(false) } },
+            { icon: BarChart3, label: 'Trip Analytics', action: () => { setShowTripAnalytics(true); setShowMenu(false) } },
+            { icon: Map, label: 'Route History', action: () => { setShowRouteHistory3D(true); setShowMenu(false) } },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white">
