@@ -125,8 +125,8 @@ The backend has 80+ endpoints covering:
 ├── frontend/
 │   └── src/
 │       ├── components/
-│       │   └── figma-ui/      # NEW: Figma design system integration
-│       │       ├── mobile/    # Welcome, Login, SignUp, MapScreen, Profile, Gems, Family
+│       │   └── figma-ui/      # Figma design system integration
+│       │       ├── mobile/    # Welcome, Login, SignUp, MapScreen, Profile, Gems, Family, FuelDashboard, TripLogs, Leaderboard, Settings, LiveLocations
 │       │       ├── admin/     # AdminLayout, AdminLogin, AdminDashboard, AdminUsers
 │       │       ├── partner/   # (Placeholder for partner components)
 │       │       └── primitives/ # GradientButton, GemIcon, ImageWithFallback
