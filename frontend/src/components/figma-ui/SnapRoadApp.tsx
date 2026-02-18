@@ -29,6 +29,11 @@ import { AdminOfferManagement } from './admin/AdminOfferManagement';
 // Partner Components
 import { PartnerLayout } from './partner/PartnerLayout';
 import { PartnerDashboard } from './partner/PartnerDashboard';
+import { PartnerOffers } from './partner/PartnerOffers';
+import { PartnerReferrals } from './partner/PartnerReferrals';
+import { PartnerTeam } from './partner/PartnerTeam';
+import { QRScanner } from './partner/QRScanner';
+import { PartnerAnalyticsDetailed } from './partner/PartnerAnalyticsDetailed';
 
 // New Enhanced Components
 import { OrionCoach } from './mobile/OrionCoach';
