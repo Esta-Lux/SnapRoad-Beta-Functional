@@ -86,6 +86,17 @@ type AdminPage =
   | 'audit'
   | 'offers';
 
+type PartnerPage =
+  | 'dashboard'
+  | 'scan'
+  | 'offers'
+  | 'analytics'
+  | 'team'
+  | 'referrals'
+  | 'profile'
+  | 'support'
+  | 'settings';
+
 export function SnapRoadApp() {
   const [mode, setMode] = useState<AppMode>('mobile');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
