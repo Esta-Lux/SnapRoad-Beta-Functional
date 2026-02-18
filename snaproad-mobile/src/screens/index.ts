@@ -24,6 +24,10 @@ export { SettingsScreen } from './SettingsScreen';
 export { FuelDashboardScreen } from './FuelDashboardScreen';
 export { TripLogsScreen } from './TripLogsScreen';
 
+// Analytics - NEW
+export { TripAnalyticsScreen } from './TripAnalyticsScreen';
+export { RouteHistory3DScreen } from './RouteHistory3DScreen';
+
 // Family & Social
 export { FamilyScreen } from './FamilyScreen';
 export { LeaderboardScreen } from './LeaderboardScreen';
