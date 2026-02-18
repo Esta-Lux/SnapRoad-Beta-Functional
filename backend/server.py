@@ -3468,6 +3468,241 @@ def update_partner_profile(business_name: Optional[str] = None, email: Optional[
     
     return {"success": True, "message": "Profile updated", "data": partner}
 
+# ==================== OFFER BOOSTING ====================
+
+# Boost pricing configuration
+BOOST_PRICING = {
+    "basic": {
+        "name": "Basic Boost",
+        "duration_hours": 24,
+        "price": 9.99,
+        "multiplier": 1.5,  # 50% more visibility
+        "description": "24-hour visibility boost"
+    },
+    "standard": {
+        "name": "Standard Boost",
+        "duration_hours": 72,
+        "price": 19.99,
+        "multiplier": 2.0,  # 2x visibility
+        "description": "3-day boost with featured placement"
+    },
+    "premium": {
+        "name": "Premium Boost",
+        "duration_hours": 168,
+        "price": 39.99,
+        "multiplier": 3.0,  # 3x visibility
+        "description": "7-day featured boost with priority placement"
+    }
+}
+
+# Active boosts storage
+active_boosts = {}
+
+class BoostRequest(BaseModel):
+    offer_id: int
+    boost_type: str  # basic, standard, premium
+    use_credits: bool = False
+
+class BoostCreditsRequest(BaseModel):
+    amount: float
+
+@app.get("/api/partner/boosts/pricing")
+def get_boost_pricing():
+    """Get available boost packages and pricing."""
+    return {
+        "success": True,
+        "data": {
+            "packages": BOOST_PRICING,
+            "currency": "USD"
+        }
+    }
+
+@app.post("/api/partner/boosts/create")
+def create_offer_boost(boost_req: BoostRequest, partner_id: str = "default_partner"):
+    """Create a boost for an offer."""
+    partner = partners_db.get(partner_id)
+    if not partner:
+        return {"success": False, "message": "Partner not found"}
+    
+    # Verify boost type
+    if boost_req.boost_type not in BOOST_PRICING:
+        return {"success": False, "message": "Invalid boost type"}
+    
+    boost_config = BOOST_PRICING[boost_req.boost_type]
+    
+    # Find the offer
+    offer = next((o for o in offers_db if o["id"] == boost_req.offer_id), None)
+    if not offer:
+        return {"success": False, "message": "Offer not found"}
+    
+    # Check if partner owns this offer
+    if offer.get("created_by") != partner_id and not offer.get("is_admin_offer"):
+        return {"success": False, "message": "You don't own this offer"}
+    
+    # Check for existing active boost
+    existing_boost = active_boosts.get(boost_req.offer_id)
+    if existing_boost and datetime.fromisoformat(existing_boost["expires_at"]) > datetime.now():
+        return {"success": False, "message": "Offer already has an active boost"}
+    
+    # Handle payment (mocked - would integrate with Stripe)
+    if boost_req.use_credits:
+        partner_credits = partner.get("credits", 0)
+        if partner_credits < boost_config["price"]:
+            return {"success": False, "message": f"Insufficient credits. Need ${boost_config['price']}, have ${partner_credits}"}
+        partner["credits"] = partner_credits - boost_config["price"]
+        payment_method = "credits"
+    else:
+        # In production, would process payment via Stripe
+        payment_method = "card"
+    
+    # Create the boost
+    boost_id = f"boost_{boost_req.offer_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    boost_expires = datetime.now() + timedelta(hours=boost_config["duration_hours"])
+    
+    boost_record = {
+        "id": boost_id,
+        "offer_id": boost_req.offer_id,
+        "boost_type": boost_req.boost_type,
+        "boost_name": boost_config["name"],
+        "multiplier": boost_config["multiplier"],
+        "price_paid": boost_config["price"],
+        "payment_method": payment_method,
+        "created_at": datetime.now().isoformat(),
+        "expires_at": boost_expires.isoformat(),
+        "partner_id": partner_id,
+        "status": "active"
+    }
+    
+    active_boosts[boost_req.offer_id] = boost_record
+    
+    # Update offer with boost info
+    offer["is_boosted"] = True
+    offer["boost_multiplier"] = boost_config["multiplier"]
+    offer["boost_expires"] = boost_expires.isoformat()
+    
+    return {
+        "success": True,
+        "message": f"{boost_config['name']} applied! Your offer will get {boost_config['multiplier']}x visibility for {boost_config['duration_hours']} hours.",
+        "data": boost_record
+    }
+
+@app.get("/api/partner/boosts/active")
+def get_active_boosts(partner_id: str = "default_partner"):
+    """Get all active boosts for a partner."""
+    partner_boosts = []
+    current_time = datetime.now()
+    
+    for offer_id, boost in active_boosts.items():
+        if boost["partner_id"] == partner_id:
+            # Check if still active
+            if datetime.fromisoformat(boost["expires_at"]) > current_time:
+                boost["is_active"] = True
+                remaining = datetime.fromisoformat(boost["expires_at"]) - current_time
+                boost["hours_remaining"] = remaining.total_seconds() / 3600
+            else:
+                boost["is_active"] = False
+                boost["hours_remaining"] = 0
+            partner_boosts.append(boost)
+    
+    return {
+        "success": True,
+        "data": partner_boosts,
+        "active_count": sum(1 for b in partner_boosts if b["is_active"])
+    }
+
+@app.delete("/api/partner/boosts/{offer_id}")
+def cancel_boost(offer_id: int, partner_id: str = "default_partner"):
+    """Cancel an active boost (no refund)."""
+    boost = active_boosts.get(offer_id)
+    if not boost:
+        return {"success": False, "message": "No active boost found for this offer"}
+    
+    if boost["partner_id"] != partner_id:
+        return {"success": False, "message": "Unauthorized"}
+    
+    # Mark as cancelled
+    boost["status"] = "cancelled"
+    boost["cancelled_at"] = datetime.now().isoformat()
+    
+    # Remove boost from offer
+    offer = next((o for o in offers_db if o["id"] == offer_id), None)
+    if offer:
+        offer["is_boosted"] = False
+        offer.pop("boost_multiplier", None)
+        offer.pop("boost_expires", None)
+    
+    return {"success": True, "message": "Boost cancelled"}
+
+@app.post("/api/partner/credits/add")
+def add_partner_credits(credits_req: BoostCreditsRequest, partner_id: str = "default_partner"):
+    """Add credits to partner account (mocked - would integrate with Stripe)."""
+    if partner_id not in partners_db:
+        return {"success": False, "message": "Partner not found"}
+    
+    partner = partners_db[partner_id]
+    current_credits = partner.get("credits", 0)
+    partner["credits"] = current_credits + credits_req.amount
+    
+    return {
+        "success": True,
+        "message": f"Added ${credits_req.amount} in credits",
+        "data": {
+            "previous_balance": current_credits,
+            "added": credits_req.amount,
+            "new_balance": partner["credits"]
+        }
+    }
+
+@app.get("/api/partner/credits")
+def get_partner_credits(partner_id: str = "default_partner"):
+    """Get partner's credit balance."""
+    partner = partners_db.get(partner_id)
+    if not partner:
+        return {"success": False, "message": "Partner not found"}
+    
+    return {
+        "success": True,
+        "data": {
+            "balance": partner.get("credits", 0),
+            "currency": "USD"
+        }
+    }
+
+# Admin boost endpoint
+@app.post("/api/admin/boosts/create")
+def admin_create_boost(offer_id: int, boost_type: str = "premium"):
+    """Admin can boost any offer for free."""
+    if boost_type not in BOOST_PRICING:
+        return {"success": False, "message": "Invalid boost type"}
+    
+    offer = next((o for o in offers_db if o["id"] == offer_id), None)
+    if not offer:
+        return {"success": False, "message": "Offer not found"}
+    
+    boost_config = BOOST_PRICING[boost_type]
+    boost_expires = datetime.now() + timedelta(hours=boost_config["duration_hours"])
+    
+    boost_record = {
+        "id": f"admin_boost_{offer_id}",
+        "offer_id": offer_id,
+        "boost_type": boost_type,
+        "boost_name": boost_config["name"],
+        "multiplier": boost_config["multiplier"],
+        "price_paid": 0,
+        "payment_method": "admin",
+        "created_at": datetime.now().isoformat(),
+        "expires_at": boost_expires.isoformat(),
+        "partner_id": "admin",
+        "status": "active"
+    }
+    
+    active_boosts[offer_id] = boost_record
+    offer["is_boosted"] = True
+    offer["boost_multiplier"] = boost_config["multiplier"]
+    offer["boost_expires"] = boost_expires.isoformat()
+    
+    return {"success": True, "message": f"Admin boost applied to offer {offer_id}", "data": boost_record}
+
 
 
 # ==================== TRIP HISTORY & FUEL ANALYTICS ====================
