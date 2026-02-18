@@ -24,10 +24,16 @@ import { AdminLayout } from './admin/AdminLayout';
 import { AdminLogin } from './admin/AdminLogin';
 import { AdminDashboard } from './admin/AdminDashboard';
 import { AdminUsers } from './admin/AdminUsers';
+import { AdminOfferManagement } from './admin/AdminOfferManagement';
 
 // Partner Components
 import { PartnerLayout } from './partner/PartnerLayout';
 import { PartnerDashboard } from './partner/PartnerDashboard';
+
+// New Enhanced Components
+import { OrionCoach } from './mobile/OrionCoach';
+import { PhotoCapture } from './mobile/PhotoCapture';
+import { DriverAnalytics } from './mobile/DriverAnalytics';
 
 type AppMode = 'mobile' | 'admin' | 'partner';
 type MobileScreen = 
