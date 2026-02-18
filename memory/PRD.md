@@ -193,7 +193,7 @@ curl -X POST http://localhost:8001/api/orion/chat \
 curl http://localhost:8001/api/partner/v2/team/partner_001
 
 # Web App
-open https://gem-offers-admin.preview.emergentagent.com/app
+open https://route-history-3d.preview.emergentagent.com/app
 ```
 
 ---
