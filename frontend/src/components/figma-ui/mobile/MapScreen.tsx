@@ -151,7 +151,7 @@ export function MapScreen({ onNavigate, onOpenOrion, onOpenPhotoCapture }: MapSc
       </div>
 
       {/* Floating Action Buttons */}
-      <div className="absolute right-4 bottom-32 space-y-3 z-10">
+      <div className="absolute right-4 top-1/3 space-y-3 z-20">
         <button 
           onClick={onOpenPhotoCapture}
           className="w-14 h-14 rounded-2xl bg-[#1A1F2E]/90 backdrop-blur-xl border border-white/10 flex items-center justify-center shadow-lg hover:border-[#FFB800]/50 transition-colors"
