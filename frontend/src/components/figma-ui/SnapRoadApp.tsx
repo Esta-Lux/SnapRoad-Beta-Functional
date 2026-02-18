@@ -166,6 +166,23 @@ export function SnapRoadApp() {
       {mode === 'mobile' && (
         <div className="relative" data-testid="snaproad-mobile-app">
           {renderMobileContent()}
+          
+          {/* Orion Coach Overlay */}
+          <OrionCoach 
+            isOpen={showOrionCoach} 
+            onClose={() => setShowOrionCoach(false)}
+            currentRoute={{ distance: 12.4, duration: 28, destination: 'Downtown Office' }}
+          />
+          
+          {/* Photo Capture Overlay */}
+          <PhotoCapture
+            isOpen={showPhotoCapture}
+            onClose={() => setShowPhotoCapture(false)}
+            onSubmit={(data) => {
+              console.log('Incident reported:', data);
+              setShowPhotoCapture(false);
+            }}
+          />
         </div>
       )}
 
