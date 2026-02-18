@@ -12,7 +12,8 @@ import {
   CreditCard,
   Bell,
   HelpCircle,
-  LogOut
+  LogOut,
+  BarChart3
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { GemIcon } from '../primitives/GemIcon';
@@ -23,6 +24,7 @@ interface ProfileProps {
 }
 
 const MENU_ITEMS = [
+  { id: 'analytics', icon: BarChart3, label: 'Analytics', subtitle: 'Performance insights' },
   { id: 'account-info', icon: Settings, label: 'Account Info', subtitle: 'Personal details' },
   { id: 'trip-logs', icon: Clock, label: 'Trip History', subtitle: 'View past trips' },
   { id: 'fuel-dashboard', icon: Fuel, label: 'Fuel Dashboard', subtitle: 'Track expenses' },
