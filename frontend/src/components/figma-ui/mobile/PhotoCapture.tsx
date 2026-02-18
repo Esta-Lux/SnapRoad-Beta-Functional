@@ -205,6 +205,7 @@ export function PhotoCapture({ isOpen, onClose, onSubmit }: PhotoCaptureProps) {
         location: 'Current Location', // Would be actual GPS location
         description,
         privacyBlurEnabled,
+        blurRegions: privacyBlurEnabled ? blurRegions : undefined
       });
       resetState();
       onClose();
@@ -217,7 +218,8 @@ export function PhotoCapture({ isOpen, onClose, onSubmit }: PhotoCaptureProps) {
     setSelectedType('');
     setDescription('');
     setPrivacyBlurEnabled(true);
-    setDetectedElements({ faces: 0, plates: 0 });
+    setDetectedElements({ faces: 0, plates: 0, description: '' });
+    setBlurRegions([]);
     setStep('capture');
     stopCamera();
   };
