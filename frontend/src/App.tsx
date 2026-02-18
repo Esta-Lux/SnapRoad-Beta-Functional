@@ -21,6 +21,9 @@ import PartnerDashboard from './pages/PartnerDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import DriverApp from './pages/DriverApp'
 
+// New Figma UI Components
+import { SnapRoadApp } from './components/figma-ui'
+
 // Protected route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuthStore()
