@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Gift } from 'lucide-react';
 import { SnaproadThemeProvider } from '@/contexts/SnaproadThemeContext';
 
 // Mobile Components - Auth
