@@ -14,12 +14,20 @@ import { TripLogs } from './mobile/TripLogs';
 import { Leaderboard } from './mobile/Leaderboard';
 import { Settings } from './mobile/Settings';
 import { LiveLocations } from './mobile/LiveLocations';
+import { AccountInfo } from './mobile/AccountInfo';
+import { PrivacyCenter } from './mobile/PrivacyCenter';
+import { NotificationSettings } from './mobile/NotificationSettings';
+import { Onboarding } from './mobile/Onboarding';
 
 // Admin Components
 import { AdminLayout } from './admin/AdminLayout';
 import { AdminLogin } from './admin/AdminLogin';
 import { AdminDashboard } from './admin/AdminDashboard';
 import { AdminUsers } from './admin/AdminUsers';
+
+// Partner Components
+import { PartnerLayout } from './partner/PartnerLayout';
+import { PartnerDashboard } from './partner/PartnerDashboard';
 
 type AppMode = 'mobile' | 'admin' | 'partner';
 type MobileScreen = 
