@@ -2932,6 +2932,18 @@ export default function DriverApp() {
         onOfferSelect={handleDirectRedemption}
         isPremium={userPlan === 'premium'}
       />
+      
+      {/* Trip Analytics Modal */}
+      <TripAnalytics
+        isOpen={showTripAnalytics}
+        onClose={() => setShowTripAnalytics(false)}
+      />
+      
+      {/* Route History 3D Map Modal */}
+      <RouteHistory3D
+        isOpen={showRouteHistory3D}
+        onClose={() => setShowRouteHistory3D(false)}
+      />
     </div>
   )
 }
