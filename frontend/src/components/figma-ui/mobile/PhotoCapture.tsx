@@ -343,7 +343,32 @@ export function PhotoCapture({ isOpen, onClose, onSubmit }: PhotoCaptureProps) {
               )}
               
               {/* Privacy Blur Overlay Indicator */}
-              {privacyBlurEnabled && !isProcessing && (
+              {privacyBlurEnabled && !isProcessing && blurRegions.length > 0 && (
+                <div className="absolute inset-0 pointer-events-none">
+                  {/* AI-detected blur regions */}
+                  {blurRegions.map((region) => (
+                    <div
+                      key={region.id}
+                      className={`absolute bg-black/60 backdrop-blur-lg border-2 ${
+                        region.type === 'face' ? 'rounded-full border-[#00DFA2]' : 'rounded-lg border-[#9D4EDD]'
+                      } flex items-center justify-center`}
+                      style={{
+                        left: `${(region.x / imageSize.width) * 100}%`,
+                        top: `${(region.y / imageSize.height) * 100}%`,
+                        width: `${(region.width / imageSize.width) * 100}%`,
+                        height: `${(region.height / imageSize.height) * 100}%`,
+                        minWidth: '40px',
+                        minHeight: '40px'
+                      }}
+                    >
+                      <Shield size={16} className={region.type === 'face' ? 'text-[#00DFA2]' : 'text-[#9D4EDD]'} />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Fallback blur indicators when no AI regions available */}
+              {privacyBlurEnabled && !isProcessing && blurRegions.length === 0 && (detectedElements.faces > 0 || detectedElements.plates > 0) && (
                 <div className="absolute inset-0 pointer-events-none">
                   {/* Simulated blur regions */}
                   {detectedElements.faces > 0 && (
@@ -352,8 +377,8 @@ export function PhotoCapture({ isOpen, onClose, onSubmit }: PhotoCaptureProps) {
                     </div>
                   )}
                   {detectedElements.plates > 0 && (
-                    <div className="absolute bottom-1/3 right-1/4 w-24 h-10 rounded-lg bg-black/50 backdrop-blur-md border-2 border-[#00DFA2] flex items-center justify-center">
-                      <Shield size={16} className="text-[#00DFA2]" />
+                    <div className="absolute bottom-1/3 right-1/4 w-24 h-10 rounded-lg bg-black/50 backdrop-blur-md border-2 border-[#9D4EDD] flex items-center justify-center">
+                      <Shield size={16} className="text-[#9D4EDD]" />
                     </div>
                   )}
                 </div>
