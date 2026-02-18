@@ -2792,6 +2792,15 @@ export default function DriverApp() {
         onReportCreated={handleOrionReport}
         isNavigating={isNavigating}
         currentLocation={userLocation}
+        onNavigateToOffer={(offer) => {
+          setSelectedDestination({
+            name: offer.business_name,
+            lat: offer.lat,
+            lng: offer.lng
+          })
+          setShowOrionVoice(false)
+          toast.success(`Navigating to ${offer.business_name}`)
+        }}
       />
       <QuickPhotoReport
         isOpen={showQuickPhotoReport}
