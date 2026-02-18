@@ -1,0 +1,181 @@
+import { useState } from 'react';
+import { SnaproadThemeProvider } from '@/contexts/SnaproadThemeContext';
+
+// Mobile Components
+import { Welcome } from './mobile/Welcome';
+import { Login } from './mobile/Login';
+import { SignUp } from './mobile/SignUp';
+import { MapScreen } from './mobile/MapScreen';
+import { Profile } from './mobile/Profile';
+import { Gems } from './mobile/Gems';
+import { Family } from './mobile/Family';
+
+// Admin Components
+import { AdminLayout } from './admin/AdminLayout';
+import { AdminLogin } from './admin/AdminLogin';
+import { AdminDashboard } from './admin/AdminDashboard';
+import { AdminUsers } from './admin/AdminUsers';
+
+type AppMode = 'mobile' | 'admin' | 'partner';
+type MobileScreen = 
+  | 'welcome' 
+  | 'signup' 
+  | 'login' 
+  | 'forgot-password'
+  | 'map' 
+  | 'gems'
+  | 'gem-marketplace'
+  | 'family' 
+  | 'live-locations'
+  | 'profile'
+  | 'favorite-routes'
+  | 'pricing'
+  | 'fuel-dashboard'
+  | 'engagement'
+  | 'car-skin-showcase'
+  | 'leaderboard'
+  | 'trip-logs'
+  | 'settings'
+  | 'account-info'
+  | 'privacy-center'
+  | 'notifications-settings'
+  | 'support'
+  | 'terms'
+  | 'privacy'
+  | 'onboarding';
+
+type AdminPage = 
+  | 'dashboard' 
+  | 'users' 
+  | 'incidents' 
+  | 'ai-moderation'
+  | 'partner-analytics'
+  | 'rewards' 
+  | 'partners' 
+  | 'notifications' 
+  | 'analytics' 
+  | 'finance' 
+  | 'legal' 
+  | 'settings' 
+  | 'audit';
+
+export function SnapRoadApp() {
+  const [mode, setMode] = useState<AppMode>('mobile');
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [mobileScreen, setMobileScreen] = useState<MobileScreen>('welcome');
+  const [adminPage, setAdminPage] = useState<AdminPage>('dashboard');
+
+  const handleMobileNavigate = (screen: string) => {
+    setMobileScreen(screen as MobileScreen);
+  };
+
+  const handleAdminNavigate = (page: string) => {
+    setAdminPage(page as AdminPage);
+  };
+
+  const handleLogout = () => {
+    setMode('mobile');
+    setMobileScreen('welcome');
+    setIsAdminAuthenticated(false);
+  };
+
+  const handleSetMode = (newMode: 'mobile' | 'admin' | 'partner') => {
+    setMode(newMode);
+    if (newMode === 'mobile') {
+      setMobileScreen('map');
+    }
+  };
+
+  // Render Admin Content
+  const renderAdminContent = () => {
+    switch (adminPage) {
+      case 'dashboard':
+        return <AdminDashboard />;
+      case 'users':
+        return <AdminUsers />;
+      default:
+        return <AdminDashboard />;
+    }
+  };
+
+  // Render Mobile Content
+  const renderMobileContent = () => {
+    switch (mobileScreen) {
+      case 'welcome':
+        return <Welcome onNavigate={handleMobileNavigate} onSetMode={handleSetMode} />;
+      case 'login':
+        return <Login onNavigate={handleMobileNavigate} onSetMode={handleSetMode} />;
+      case 'signup':
+        return <SignUp onNavigate={handleMobileNavigate} />;
+      case 'map':
+        return <MapScreen onNavigate={handleMobileNavigate} />;
+      case 'profile':
+        return <Profile onNavigate={handleMobileNavigate} />;
+      case 'gems':
+        return <Gems onNavigate={handleMobileNavigate} />;
+      case 'family':
+        return <Family onNavigate={handleMobileNavigate} />;
+      default:
+        return <Welcome onNavigate={handleMobileNavigate} onSetMode={handleSetMode} />;
+    }
+  };
+
+  return (
+    <SnaproadThemeProvider>
+      {/* Mobile App */}
+      {mode === 'mobile' && (
+        <div className="relative" data-testid="snaproad-mobile-app">
+          {renderMobileContent()}
+        </div>
+      )}
+
+      {/* Admin Panel */}
+      {mode === 'admin' && (
+        <div className="relative" data-testid="snaproad-admin-app">
+          {isAdminAuthenticated ? (
+            <>
+              {/* Mode Switcher */}
+              <button
+                onClick={() => handleSetMode('mobile')}
+                className="fixed bottom-4 right-4 z-[100] px-4 py-2 bg-white border border-[#E6ECF5] rounded-lg text-[#0B1220] text-[13px] hover:bg-[#F5F8FA] transition-colors shadow-lg"
+                data-testid="switch-to-mobile-btn"
+              >
+                Switch to Mobile App
+              </button>
+              <AdminLayout
+                currentPage={adminPage}
+                onNavigate={handleAdminNavigate}
+                onLogout={handleLogout}
+              >
+                {renderAdminContent()}
+              </AdminLayout>
+            </>
+          ) : (
+            <AdminLogin 
+              onLoginSuccess={() => setIsAdminAuthenticated(true)} 
+              onBack={() => handleSetMode('mobile')} 
+            />
+          )}
+        </div>
+      )}
+
+      {/* Partner Panel - Placeholder */}
+      {mode === 'partner' && (
+        <div className="min-h-screen bg-[#0A0E16] flex items-center justify-center" data-testid="snaproad-partner-app">
+          <div className="text-center">
+            <h1 className="text-white text-2xl font-bold mb-4">Partner Portal</h1>
+            <p className="text-white/60 mb-6">Coming soon...</p>
+            <button
+              onClick={() => handleSetMode('mobile')}
+              className="px-6 py-3 bg-[#0084FF] text-white rounded-xl"
+            >
+              Back to App
+            </button>
+          </div>
+        </div>
+      )}
+    </SnaproadThemeProvider>
+  );
+}
+
+export default SnapRoadApp;
