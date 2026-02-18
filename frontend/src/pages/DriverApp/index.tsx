@@ -11,7 +11,7 @@ import {
   Building, Compass, Layers, GripVertical, Minimize2, Maximize2,
   Phone, MessageCircle, Battery, ChevronLeft, Shield, Zap, TrendingUp,
   History, Download, BarChart3, HelpCircle, Lock, Edit2, UserPlus, Share2, Swords,
-  DollarSign, Droplets, Leaf, Target
+  DollarSign, Droplets, Leaf, Target, Map
 } from 'lucide-react'
 import FriendsHub from './components/FriendsHub'
 import Leaderboard from './components/Leaderboard'
@@ -39,6 +39,10 @@ import WeeklyRecap from './components/WeeklyRecap'
 import OrionOfferAlerts from './components/OrionOfferAlerts'
 import InteractiveMap from './components/InteractiveMap'
 import { NavMarker, ProfileCar, CAR_COLORS } from './components/Car3D'
+// New enhanced components
+import TripAnalytics from './components/TripAnalytics'
+import RouteHistory3D from './components/RouteHistory3D'
+import CollapsibleOffersPanel from './components/CollapsibleOffersPanel'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
