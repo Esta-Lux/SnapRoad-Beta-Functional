@@ -284,7 +284,7 @@ ENVIRONMENT=development
 |---------|--------------|
 | Supabase | https://app.supabase.com |
 | Stripe | https://dashboard.stripe.com |
-| Mapbox | https://account.mapbox.com |
+| Apple Developer | https://developer.apple.com |
 | SendGrid | https://app.sendgrid.com |
 | CollectAPI | https://collectapi.com/dashboard |
 
