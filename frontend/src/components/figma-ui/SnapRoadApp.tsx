@@ -119,6 +119,8 @@ export function SnapRoadApp() {
         return <AdminDashboard />;
       case 'users':
         return <AdminUsers />;
+      case 'offers':
+        return <AdminOfferManagement onNavigate={handleAdminNavigate} />;
       default:
         return <AdminDashboard />;
     }
