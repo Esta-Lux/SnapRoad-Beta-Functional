@@ -170,6 +170,11 @@ export default function DriverApp() {
   const [selectedOfferForRedemption, setSelectedOfferForRedemption] = useState<any>(null)
   const [showWeeklyRecap, setShowWeeklyRecap] = useState(false)
   
+  // New feature states
+  const [showTripAnalytics, setShowTripAnalytics] = useState(false)
+  const [showRouteHistory3D, setShowRouteHistory3D] = useState(false)
+  const [showOffersPanel, setShowOffersPanel] = useState(true)
+  
   // Search and navigation states
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
