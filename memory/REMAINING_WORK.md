@@ -59,7 +59,7 @@ This document outlines ALL remaining work required to transform SnapRoad from a 
 ### Navigation & Routing
 | Endpoint | Status | Description |
 |----------|--------|-------------|
-| `GET /api/routes/calculate` | ❌ NOT BUILT | Route calculation (needs Mapbox/Google) |
+| `GET /api/routes/calculate` | ❌ NOT BUILT | Route calculation (needs Apple Maps MapKit) |
 | `GET /api/routes/traffic` | ❌ NOT BUILT | Real-time traffic data |
 | `GET /api/routes/eta` | ❌ NOT BUILT | Estimated time of arrival |
 | `POST /api/routes/start` | ❌ NOT BUILT | Start navigation session |
