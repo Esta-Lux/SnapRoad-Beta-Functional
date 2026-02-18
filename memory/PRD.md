@@ -151,6 +151,12 @@ Key tables:
 
 ## Pending Tasks
 
+### P0 - Continue Figma UI Integration (IN PROGRESS)
+- [ ] Integrate remaining mobile screens (FuelDashboard, TripLogs, Leaderboard, etc.)
+- [ ] Integrate Partner Portal components
+- [ ] Add Onboarding flow
+- [ ] Add all Settings and Support screens
+
 ### P1 - Backend Database Integration
 - Connect FastAPI to MongoDB/PostgreSQL
 - Migrate from mock data to real database queries
