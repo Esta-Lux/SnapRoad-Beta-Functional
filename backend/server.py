@@ -3470,6 +3470,339 @@ def update_partner_profile(business_name: Optional[str] = None, email: Optional[
 
 
 
+# ==================== TRIP HISTORY & FUEL ANALYTICS ====================
+
+# Trip history database - stores detailed trip records
+trips_db = []
+
+# Generate sample trip history for demo
+def generate_sample_trips():
+    trips = []
+    base_date = datetime.now()
+    
+    routes = [
+        {"origin": "Home", "destination": "Work", "distance": 12.5, "duration": 25},
+        {"origin": "Work", "destination": "Home", "distance": 12.5, "duration": 28},
+        {"origin": "Home", "destination": "Grocery Store", "distance": 3.2, "duration": 8},
+        {"origin": "Home", "destination": "Gym", "distance": 5.1, "duration": 12},
+        {"origin": "Home", "destination": "Downtown", "distance": 8.7, "duration": 18},
+        {"origin": "Work", "destination": "Lunch Spot", "distance": 2.3, "duration": 6},
+        {"origin": "Home", "destination": "Mall", "distance": 15.2, "duration": 22},
+    ]
+    
+    for i in range(60):
+        trip_date = base_date - timedelta(days=i // 3, hours=random.randint(6, 20))
+        route = random.choice(routes)
+        safety_score = random.randint(82, 100)
+        
+        # Calculate fuel usage (avg 30 mpg)
+        fuel_used = route["distance"] / random.uniform(28, 35)
+        
+        trips.append({
+            "id": i + 1,
+            "date": trip_date.strftime("%Y-%m-%d"),
+            "time": trip_date.strftime("%I:%M %p"),
+            "origin": route["origin"],
+            "destination": route["destination"],
+            "distance_miles": route["distance"],
+            "duration_minutes": route["duration"] + random.randint(-3, 5),
+            "safety_score": safety_score,
+            "gems_earned": (route["distance"] * 0.5 + (10 if safety_score >= 90 else 0)),
+            "xp_earned": int(route["distance"] * 100 + safety_score * 5),
+            "fuel_used_gallons": round(fuel_used, 3),
+            "avg_speed_mph": round(route["distance"] / (route["duration"] / 60), 1),
+            "route_coordinates": [
+                {"lat": 39.9612 + random.uniform(-0.05, 0.05), "lng": -82.9988 + random.uniform(-0.05, 0.05)},
+                {"lat": 39.9612 + random.uniform(-0.05, 0.05), "lng": -82.9988 + random.uniform(-0.05, 0.05)},
+                {"lat": 39.9612 + random.uniform(-0.05, 0.05), "lng": -82.9988 + random.uniform(-0.05, 0.05)},
+            ],
+            "events": [],
+        })
+    
+    return trips
+
+# Initialize trip data
+trips_db = generate_sample_trips()
+
+# Fuel price data (mock - would integrate with Gas Buddy API)
+FUEL_PRICES = {
+    "regular": 3.29,
+    "midgrade": 3.59,
+    "premium": 3.89,
+    "diesel": 3.79,
+    "last_updated": datetime.now().isoformat(),
+    "source": "local_average"
+}
+
+@app.get("/api/trips/history/detailed")
+def get_detailed_trip_history(
+    days: int = 30, 
+    limit: int = 50,
+    sort_by: str = "date"
+):
+    """Get detailed trip history with fuel analytics"""
+    user = users_db.get(current_user_id, {})
+    
+    # Filter trips by date range
+    cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    filtered_trips = [t for t in trips_db if t["date"] >= cutoff_date][:limit]
+    
+    # Calculate analytics
+    total_distance = sum(t["distance_miles"] for t in filtered_trips)
+    total_fuel = sum(t["fuel_used_gallons"] for t in filtered_trips)
+    total_duration = sum(t["duration_minutes"] for t in filtered_trips)
+    avg_safety = sum(t["safety_score"] for t in filtered_trips) / max(len(filtered_trips), 1)
+    total_gems = sum(t["gems_earned"] for t in filtered_trips)
+    
+    # Calculate fuel savings (compared to avg 25 mpg vehicle)
+    baseline_fuel = total_distance / 25  # Average car
+    fuel_saved = baseline_fuel - total_fuel
+    money_saved = fuel_saved * FUEL_PRICES["regular"]
+    
+    return {
+        "success": True,
+        "data": {
+            "trips": filtered_trips,
+            "analytics": {
+                "total_trips": len(filtered_trips),
+                "total_distance_miles": round(total_distance, 1),
+                "total_fuel_gallons": round(total_fuel, 2),
+                "total_duration_minutes": total_duration,
+                "total_duration_hours": round(total_duration / 60, 1),
+                "avg_safety_score": round(avg_safety, 1),
+                "total_gems_earned": round(total_gems),
+                "avg_mpg": round(total_distance / max(total_fuel, 0.1), 1),
+                "fuel_saved_gallons": round(max(fuel_saved, 0), 2),
+                "money_saved_dollars": round(max(money_saved, 0), 2),
+                "co2_saved_lbs": round(max(fuel_saved, 0) * 19.6, 1),  # ~19.6 lbs CO2 per gallon
+            }
+        }
+    }
+
+@app.get("/api/fuel/prices")
+def get_fuel_prices(lat: float = 39.9612, lng: float = -82.9988):
+    """Get current fuel prices (mock - would integrate with real API)"""
+    # In production, would call Gas Buddy API or similar
+    return {
+        "success": True,
+        "data": {
+            "prices": FUEL_PRICES,
+            "nearby_stations": [
+                {"name": "Shell", "address": "123 Main St", "regular": 3.19, "distance_miles": 0.5},
+                {"name": "BP", "address": "456 Oak Ave", "regular": 3.29, "distance_miles": 0.8},
+                {"name": "Speedway", "address": "789 Elm Rd", "regular": 3.25, "distance_miles": 1.2},
+            ],
+            "location": {"lat": lat, "lng": lng}
+        }
+    }
+
+@app.get("/api/fuel/analytics")
+def get_fuel_analytics(months: int = 3):
+    """Get fuel usage analytics over time"""
+    user = users_db.get(current_user_id, {})
+    
+    # Generate monthly breakdown
+    monthly_data = []
+    for i in range(months):
+        month_date = datetime.now() - timedelta(days=30 * i)
+        month_trips = [t for t in trips_db if t["date"].startswith(month_date.strftime("%Y-%m"))]
+        
+        distance = sum(t["distance_miles"] for t in month_trips)
+        fuel = sum(t["fuel_used_gallons"] for t in month_trips)
+        
+        monthly_data.append({
+            "month": month_date.strftime("%B %Y"),
+            "trips": len(month_trips),
+            "distance_miles": round(distance, 1),
+            "fuel_gallons": round(fuel, 2),
+            "avg_mpg": round(distance / max(fuel, 0.1), 1),
+            "cost_estimate": round(fuel * FUEL_PRICES["regular"], 2)
+        })
+    
+    return {
+        "success": True,
+        "data": {
+            "monthly_breakdown": monthly_data,
+            "current_fuel_price": FUEL_PRICES["regular"],
+            "vehicle_efficiency": {
+                "your_avg_mpg": 31.2,
+                "national_avg_mpg": 25.4,
+                "efficiency_rating": "Excellent"
+            }
+        }
+    }
+
+# ==================== PERSONALIZED OFFERS (ORION VOICE) ====================
+
+# Track driver location history for personalization
+driver_location_history = {}
+
+class LocationVisit(BaseModel):
+    lat: float
+    lng: float
+    business_name: Optional[str] = None
+    business_type: Optional[str] = None
+    timestamp: Optional[str] = None
+
+@app.post("/api/driver/location-visit")
+def record_location_visit(visit: LocationVisit):
+    """Record a driver's visit to a location for personalization"""
+    if current_user_id not in driver_location_history:
+        driver_location_history[current_user_id] = []
+    
+    driver_location_history[current_user_id].append({
+        "lat": visit.lat,
+        "lng": visit.lng,
+        "business_name": visit.business_name,
+        "business_type": visit.business_type,
+        "timestamp": visit.timestamp or datetime.now().isoformat()
+    })
+    
+    # Keep only last 100 visits
+    driver_location_history[current_user_id] = driver_location_history[current_user_id][-100:]
+    
+    return {"success": True}
+
+@app.get("/api/offers/personalized")
+def get_personalized_offers(lat: float = 39.9612, lng: float = -82.9988, limit: int = 2):
+    """Get personalized offers based on driver's location history and preferences"""
+    user = users_db.get(current_user_id, {})
+    history = driver_location_history.get(current_user_id, [])
+    
+    # Find frequently visited business types
+    visited_types = {}
+    for visit in history:
+        if visit.get("business_type"):
+            visited_types[visit["business_type"]] = visited_types.get(visit["business_type"], 0) + 1
+    
+    # Sort offers by relevance
+    scored_offers = []
+    for offer in offers_db:
+        if datetime.fromisoformat(offer["expires_at"]) < datetime.now():
+            continue
+        if offer["id"] in user.get("redeemed_offers", []):
+            continue
+        
+        # Calculate distance
+        dlat = abs(offer["lat"] - lat)
+        dlng = abs(offer["lng"] - lng)
+        dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+        
+        # Score based on distance and visit history
+        score = 100 - (dist * 10)  # Closer is better
+        if offer["business_type"] in visited_types:
+            score += visited_types[offer["business_type"]] * 5  # Bonus for frequently visited types
+        
+        # Premium users get higher value offers
+        if user.get("is_premium"):
+            discount = OFFER_CONFIG["premium_discount_percent"]
+        else:
+            discount = OFFER_CONFIG["free_discount_percent"]
+        
+        scored_offers.append({
+            **offer,
+            "score": score,
+            "distance_km": round(dist, 2),
+            "discount_percent": discount,
+            "personalization_reason": f"Based on your visits to {offer['business_type']} locations" if offer["business_type"] in visited_types else "Popular nearby"
+        })
+    
+    # Sort by score and return top offers
+    scored_offers.sort(key=lambda x: x["score"], reverse=True)
+    
+    return {
+        "success": True,
+        "data": scored_offers[:limit],
+        "voice_prompt": f"I found {len(scored_offers[:limit])} great offers for you nearby!"
+    }
+
+@app.post("/api/offers/{offer_id}/accept-voice")
+def accept_offer_via_voice(offer_id: int, add_as_stop: bool = True):
+    """Accept an offer via voice command (Orion)"""
+    offer = next((o for o in offers_db if o["id"] == offer_id), None)
+    if not offer:
+        return {"success": False, "message": "Offer not found"}
+    
+    return {
+        "success": True,
+        "message": f"Great! I'll add {offer['business_name']} as a stop on your route.",
+        "data": {
+            "offer": offer,
+            "navigation_action": "add_waypoint" if add_as_stop else "show_details",
+            "waypoint": {
+                "lat": offer["lat"],
+                "lng": offer["lng"],
+                "name": offer["business_name"]
+            }
+        }
+    }
+
+# ==================== 3D ROUTE HISTORY MAP ====================
+
+@app.get("/api/routes/history-3d")
+def get_route_history_3d(days: int = 90, limit: int = 100):
+    """Get route history data formatted for 3D visualization"""
+    user = users_db.get(current_user_id, {})
+    
+    # Filter trips
+    cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    filtered_trips = [t for t in trips_db if t["date"] >= cutoff_date][:limit]
+    
+    # Group by route (origin-destination pairs)
+    route_groups = {}
+    for trip in filtered_trips:
+        route_key = f"{trip['origin']}→{trip['destination']}"
+        if route_key not in route_groups:
+            route_groups[route_key] = {
+                "route_name": route_key,
+                "origin": trip["origin"],
+                "destination": trip["destination"],
+                "trips": [],
+                "total_distance": 0,
+                "total_trips": 0,
+                "avg_safety": 0,
+                "coordinates": trip.get("route_coordinates", [])
+            }
+        route_groups[route_key]["trips"].append(trip)
+        route_groups[route_key]["total_distance"] += trip["distance_miles"]
+        route_groups[route_key]["total_trips"] += 1
+    
+    # Calculate averages
+    routes_3d = []
+    for route_key, data in route_groups.items():
+        avg_safety = sum(t["safety_score"] for t in data["trips"]) / len(data["trips"])
+        data["avg_safety"] = round(avg_safety, 1)
+        
+        # Color based on frequency (more trips = brighter)
+        intensity = min(data["total_trips"] / 10, 1)
+        
+        routes_3d.append({
+            "id": route_key,
+            "route_name": data["route_name"],
+            "origin": data["origin"],
+            "destination": data["destination"],
+            "total_trips": data["total_trips"],
+            "total_distance_miles": round(data["total_distance"], 1),
+            "avg_safety_score": data["avg_safety"],
+            "coordinates": data["coordinates"],
+            "color_intensity": intensity,
+            "last_traveled": data["trips"][0]["date"] if data["trips"] else None
+        })
+    
+    # Sort by frequency
+    routes_3d.sort(key=lambda x: x["total_trips"], reverse=True)
+    
+    return {
+        "success": True,
+        "data": {
+            "routes": routes_3d,
+            "center": {"lat": 39.9612, "lng": -82.9988},
+            "total_unique_routes": len(routes_3d),
+            "total_trips": sum(r["total_trips"] for r in routes_3d),
+            "total_distance": round(sum(r["total_distance_miles"] for r in routes_3d), 1)
+        }
+    }
+
 # ==================== ORION AI COACH ENDPOINTS ====================
 
 class OrionMessageRequest(BaseModel):
