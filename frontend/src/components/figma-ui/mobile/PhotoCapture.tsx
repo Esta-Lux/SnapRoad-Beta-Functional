@@ -185,7 +185,8 @@ export function PhotoCapture({ isOpen, onClose, onSubmit }: PhotoCaptureProps) {
   // Retake photo
   const retakePhoto = () => {
     setCapturedImage(null);
-    setDetectedElements({ faces: 0, plates: 0 });
+    setDetectedElements({ faces: 0, plates: 0, description: '' });
+    setBlurRegions([]);
     setStep('capture');
     startCamera();
   };
