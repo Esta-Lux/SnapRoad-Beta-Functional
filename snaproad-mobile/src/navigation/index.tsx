@@ -159,6 +159,28 @@ export const Navigation = () => {
           component={LeaderboardScreen}
           options={{ animation: 'slide_from_right' }}
         />
+        
+        {/* New Aligned Screens */}
+        <Stack.Screen 
+          name="Settings" 
+          component={SettingsScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="FuelDashboard" 
+          component={FuelDashboardScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="TripLogs" 
+          component={TripLogsScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="Family" 
+          component={FamilyScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
