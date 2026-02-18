@@ -86,6 +86,10 @@ export function SnapRoadApp() {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [mobileScreen, setMobileScreen] = useState<MobileScreen>('welcome');
   const [adminPage, setAdminPage] = useState<AdminPage>('dashboard');
+  
+  // New state for Orion Coach and Photo Capture
+  const [showOrionCoach, setShowOrionCoach] = useState(false);
+  const [showPhotoCapture, setShowPhotoCapture] = useState(false);
 
   const handleMobileNavigate = (screen: string) => {
     setMobileScreen(screen as MobileScreen);
