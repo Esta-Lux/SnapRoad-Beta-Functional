@@ -45,6 +45,9 @@ function App() {
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
         
+        {/* New SnapRoad UI - Figma Design System */}
+        <Route path="/app/*" element={<SnapRoadApp />} />
+        
         {/* Driver App - Web Preview (Full Flutter-style UI) */}
         <Route path="/driver" element={<DriverApp />} />
         <Route path="/driver/auth" element={<AuthFlow />} />
