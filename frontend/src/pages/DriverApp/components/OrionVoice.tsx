@@ -42,7 +42,7 @@ const SpeechRecognition = typeof window !== 'undefined'
   ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition 
   : null
 
-export default function OrionVoice({ isOpen, onClose, onReportCreated, isNavigating, currentLocation }: OrionVoiceProps) {
+export default function OrionVoice({ isOpen, onClose, onReportCreated, isNavigating, currentLocation, onNavigateToOffer }: OrionVoiceProps) {
   const [isListening, setIsListening] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [detectedCommand, setDetectedCommand] = useState<{ type: string; direction: string } | null>(null)
@@ -50,6 +50,71 @@ export default function OrionVoice({ isOpen, onClose, onReportCreated, isNavigat
   const [showQuickActions, setShowQuickActions] = useState(false)
   const [speechSupported, setSpeechSupported] = useState(false)
   const recognitionRef = useRef<any>(null)
+  
+  // Personalized offers state
+  const [mode, setMode] = useState<'report' | 'offers'>('report')
+  const [personalizedOffers, setPersonalizedOffers] = useState<PersonalizedOffer[]>([])
+  const [currentOfferIndex, setCurrentOfferIndex] = useState(0)
+  const [loadingOffers, setLoadingOffers] = useState(false)
+
+  // Load personalized offers when opened
+  useEffect(() => {
+    if (isOpen) {
+      loadPersonalizedOffers()
+    }
+  }, [isOpen, currentLocation])
+
+  const loadPersonalizedOffers = async () => {
+    setLoadingOffers(true)
+    try {
+      const res = await fetch(`${API_URL}/api/offers/personalized?lat=${currentLocation.lat}&lng=${currentLocation.lng}&limit=2`)
+      const data = await res.json()
+      if (data.success && data.data.length > 0) {
+        setPersonalizedOffers(data.data)
+      }
+    } catch (e) {
+      console.log('Could not load personalized offers')
+    }
+    setLoadingOffers(false)
+  }
+
+  const handleAcceptOffer = async (offer: PersonalizedOffer) => {
+    try {
+      const res = await fetch(`${API_URL}/api/offers/${offer.id}/accept-voice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ add_as_stop: true })
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`Adding ${offer.business_name} as a stop!`)
+        setOrionMessage(`Great! I've added ${offer.business_name} to your route.`)
+        onNavigateToOffer?.(offer)
+        
+        // Move to next offer or close
+        if (currentOfferIndex < personalizedOffers.length - 1) {
+          setCurrentOfferIndex(prev => prev + 1)
+        } else {
+          setTimeout(() => {
+            setMode('report')
+            setOrionMessage("Offer added! What else can I help with?")
+          }, 2000)
+        }
+      }
+    } catch (e) {
+      toast.error('Could not add stop')
+    }
+  }
+
+  const handleSkipOffer = () => {
+    if (currentOfferIndex < personalizedOffers.length - 1) {
+      setCurrentOfferIndex(prev => prev + 1)
+      setOrionMessage("No problem! Here's another one...")
+    } else {
+      setMode('report')
+      setOrionMessage("No worries! What else can I help with?")
+    }
+  }
 
   useEffect(() => {
     // Check speech support
