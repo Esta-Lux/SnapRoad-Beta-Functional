@@ -3,7 +3,40 @@
 
 > **Tech Stack**: React Native (Expo) + TypeScript + Zustand + React Navigation
 > **Focus Areas**: Maps/Navigation, Trip Flow, QR Code Generate/Scan, Push Notifications, Hazard Button
-> **Current State**: UI complete with mock data (Zustand store) - needs real API integration
+> **Current State**: NEW screens added - TripAnalyticsScreen & RouteHistory3DScreen ready for integration
+
+---
+
+## ⚠️ LATEST UPDATE (Feb 18, 2025)
+
+### NEW SCREENS ADDED - Ready for Integration:
+1. **TripAnalyticsScreen** (`/app/snaproad-mobile/src/screens/TripAnalyticsScreen.tsx`)
+   - Trip history with fuel savings calculator
+   - 3 tabs: Trips, Savings, Stats
+   - Date range filters (7/30/90 days)
+   - Connects to `/api/trips/history/detailed` endpoint
+   - Shows fuel efficiency, CO2 avoided, money saved
+
+2. **RouteHistory3DScreen** (`/app/snaproad-mobile/src/screens/RouteHistory3DScreen.tsx`)
+   - Pseudo-3D route visualization with PanResponder for rotation
+   - SVG-based route rendering with color coding
+   - Route list sorted by trips/distance/recent
+   - Connects to `/api/routes/history-3d` endpoint
+
+### TODO for Kathir:
+- [ ] Add these screens to navigation stack in `/app/snaproad-mobile/src/navigation/index.tsx`
+- [ ] Add menu items in ProfileScreen to access these new screens
+- [ ] Test on physical device for performance
+- [ ] Add animated transitions between screens
+
+### API Endpoints Ready (Backend Complete):
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/trips/history/detailed` | GET | Trip history with fuel analytics |
+| `/api/fuel/prices` | GET | Current fuel prices |
+| `/api/fuel/analytics` | GET | Monthly fuel breakdown |
+| `/api/routes/history-3d` | GET | Route data for 3D visualization |
+| `/api/offers/personalized` | GET | Personalized offers based on location history |
 
 ---
 
