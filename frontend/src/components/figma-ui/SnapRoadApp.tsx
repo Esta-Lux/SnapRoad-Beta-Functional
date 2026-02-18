@@ -9,6 +9,11 @@ import { MapScreen } from './mobile/MapScreen';
 import { Profile } from './mobile/Profile';
 import { Gems } from './mobile/Gems';
 import { Family } from './mobile/Family';
+import { FuelDashboard } from './mobile/FuelDashboard';
+import { TripLogs } from './mobile/TripLogs';
+import { Leaderboard } from './mobile/Leaderboard';
+import { Settings } from './mobile/Settings';
+import { LiveLocations } from './mobile/LiveLocations';
 
 // Admin Components
 import { AdminLayout } from './admin/AdminLayout';
