@@ -321,7 +321,7 @@ PUT  /api/email/preferences
 |---------|---------|--------------|
 | Database | Data persistence | AWS RDS, Supabase, DigitalOcean |
 | Auth0/Firebase | Authentication | auth0.com, firebase.google.com |
-| Mapbox | Maps & Geocoding | mapbox.com |
+| Apple Maps MapKit JS | Maps & Navigation | developer.apple.com |
 | Stripe | Payments | stripe.com |
 | OpenAI/Stability | AI Images | platform.openai.com, stability.ai |
 | SendGrid | Emails | sendgrid.com |
