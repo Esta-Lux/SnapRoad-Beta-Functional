@@ -1,5 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Mic, MicOff, X, Volume2, AlertTriangle, Shield, Car, Construction, Cloud, MapPin, Check } from 'lucide-react'
+import { Mic, MicOff, X, Volume2, AlertTriangle, Shield, Car, Construction, Cloud, MapPin, Check, Gift, Navigation, Gem, Star, SkipForward } from 'lucide-react'
+import toast from 'react-hot-toast'
+
+const API_URL = import.meta.env.VITE_BACKEND_URL || ''
+
+interface PersonalizedOffer {
+  id: number
+  business_name: string
+  business_type: string
+  description: string
+  discount_percent: number
+  gems_reward: number
+  lat: number
+  lng: number
+  distance_km: number
+  personalization_reason: string
+}
 
 interface OrionVoiceProps {
   isOpen: boolean
@@ -7,6 +23,7 @@ interface OrionVoiceProps {
   onReportCreated: (report: { type: string; direction: string; lat: number; lng: number }) => void
   isNavigating: boolean
   currentLocation: { lat: number; lng: number }
+  onNavigateToOffer?: (offer: PersonalizedOffer) => void
 }
 
 // Voice commands mapping
