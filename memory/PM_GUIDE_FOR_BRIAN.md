@@ -89,18 +89,12 @@ PORTAL_RETURN_URL=https://snaproad.com/partner/settings
 
 ---
 
-### 4. Mapbox Token (For Maps)
+### 4. Apple Maps MapKit JS (For Maps)
 
-If not already done for Andrew:
-
-1. Go to [mapbox.com](https://mapbox.com) → Sign up
-2. Go to **Account** → **Access Tokens**
-3. Create a new token or use default
-
-**Share with Brian:**
-```
-VITE_MAPBOX_TOKEN=pk.xxxxx
-```
+Apple Maps credentials are handled by the backend (Andrew). Brian does NOT need MapKit credentials.
+- Backend generates JWT tokens via `/api/maps/token`
+- Frontend fetches tokens at runtime
+- No frontend env variable needed for maps
 
 ---
 
@@ -125,8 +119,8 @@ VITE_STRIPE_PRICE_DRIVER_PREMIUM=price_xxxxx
 VITE_STRIPE_PRICE_PARTNER_STARTER=price_xxxxx
 VITE_STRIPE_PRICE_PARTNER_GROWTH=price_xxxxx
 
-# Maps
-VITE_MAPBOX_TOKEN=pk.xxxxx
+# Maps - No credentials needed in frontend
+# Apple MapKit tokens are fetched from backend /api/maps/token
 
 # Feature Flags
 VITE_ENABLE_PREMIUM=true
