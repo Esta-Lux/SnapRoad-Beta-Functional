@@ -3,142 +3,143 @@
 ## Project Overview
 SnapRoad is a privacy-first, gamified navigation app with:
 - **Web Frontend** (`/app/frontend`): React + Vite web application
-- **Mobile App** (`/app/snaproad-mobile`): React Native (Expo) - Architecture aligned
-- **Backend** (`/app/backend`): FastAPI server with mocked endpoints
+- **Mobile App** (`/app/snaproad-mobile`): React Native (Expo)
+- **Backend** (`/app/backend`): FastAPI server with AI integrations
 
 ---
 
-## What Was Completed (Feb 18, 2025) - Latest Session
+## What Was Completed (Feb 18, 2025) - Session 2
 
-### Complete Partner Portal with QR Redemption System
+### 1. Backend AI Services Connected
 
-#### 1. QR Code Redemption System (`/app/frontend/src/components/figma-ui/partner/QRScanner.tsx`)
-- **Browser-based QR scanner** for staff to validate customer offers
-- Start Scanner / Upload Image controls
-- Staff info bar showing logged-in user, role, and daily stats
-- Real-time redemption feedback (success/error states)
-- Recent redemptions list
-- How to Scan instructions
-- Important notice about customer proximity validation
+#### Orion AI Coach (`/app/backend/services/orion_coach.py`)
+- **Real GPT-5.2 integration** via Emergent LLM key
+- Conversational AI driving assistant
+- Context-aware responses (safety score, gems, speed, weather)
+- Session-based chat history
+- Quick tips endpoint for UI suggestions
 
-#### 2. Multi-User Team Management with RBAC (`/app/frontend/src/components/figma-ui/partner/PartnerTeam.tsx`)
-- **Three role types**: Owner, Manager, Staff
-  - **Owner**: Full access - create offers, view analytics, manage team, billing access, scan & redeem
-  - **Manager**: Can manage offers, view analytics, and redeem codes
-  - **Staff**: Can only scan and redeem customer QR codes
-- Team members table with role badges, status, last active, redemptions count
-- Invite team member modal with two methods:
-  - Email-based invitation (magic link)
-  - Code-based invitation (shareable code)
-- Roles Guide expandable section
-- Quick action to open QR Scanner
-- Revoke access and change role actions
+#### Photo Analysis with Privacy Blur (`/app/backend/services/photo_analysis.py`)
+- **AI-powered face and license plate detection** via GPT-5.2 Vision
+- Returns bounding box coordinates for blur regions
+- Generates blur masks with adjustable intensity
+- Fallback handling when AI unavailable
 
-#### 3. Business Referral System (`/app/frontend/src/components/figma-ui/partner/PartnerReferrals.tsx`)
-- **$5 credit for every business referred** when they become active
-- **Credit usage options**:
-  - Subscription Discount - Apply credits to monthly bill
-  - Offer Boosting - Get featured placement for more visibility
-- Referral code and shareable link with copy functionality
-- Referrals tracking table (Business, Email, Status, Credit Earned)
-- Invite Business modal with email and personal message
+#### Partner Portal Backend (`/app/backend/services/partner_service.py`)
+- Team management (invite, roles, revoke access)
+- Referral tracking ($5 credit system)
+- QR redemption validation
+- Analytics endpoints
 
-#### 4. Customer Offer QR Flow (`/app/frontend/src/components/figma-ui/partner/CustomerOfferQR.tsx`)
-- Customer purchases offer with gems
-- QR code **unlocks only when near store** (geolocation check)
-- Shows QR code for staff to scan when in proximity
-- Proximity status: Checking, Near (shows QR), Far (shows directions)
-- **Repeat purchase**: Same offer costs 50% less gems
-- Purchase info (gems spent, date)
+#### WebSocket Real-time Notifications (`/app/backend/services/websocket_manager.py`)
+- Live redemption alerts for partner staff
+- Customer proximity notifications
+- Connection management with ping/pong keep-alive
 
-#### 5. Updated Partner Layout (`/app/frontend/src/components/figma-ui/partner/PartnerLayout.tsx`)
-- **Removed Payouts** from navigation (no funds flowing through app)
-- **Added new navigation items**:
-  - Scan QR Code
-  - Team Management
-  - Referrals & Credits
+### 2. New API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/orion/chat` | AI chat with Orion |
+| GET | `/api/orion/tips` | Quick tip suggestions |
+| GET | `/api/orion/history/{session_id}` | Chat history |
+| POST | `/api/photo/analyze` | AI face/plate detection |
+| POST | `/api/partner/v2/login` | Partner auth |
+| GET | `/api/partner/v2/team/{id}` | Team members |
+| POST | `/api/partner/v2/team/{id}/invite` | Invite staff |
+| GET | `/api/partner/v2/referrals/{id}` | Referrals + stats |
+| POST | `/api/partner/v2/redeem` | QR redemption |
+| WS | `/ws/partner/{partner_id}` | Real-time notifications |
+
+### 3. Frontend Integrations
+
+#### Orion AI Coach (`OrionCoach.tsx`)
+- Connected to real `/api/orion/chat` endpoint
+- Fetches quick tips from backend
+- Auto-scroll chat history
+- Fallback local responses if API fails
+
+#### Photo Capture (`PhotoCapture.tsx`)
+- Connected to `/api/photo/analyze`
+- Displays AI-detected blur regions with bounding boxes
+- Different colors for faces (green) vs plates (purple)
+- Fallback to simulated detection
+
+#### Map Screen FAB Buttons
+- Repositioned FAB buttons for visibility (top-1/3)
+- Report, Camera, and Orion buttons functional
+- Opens Photo Capture and Orion Coach modals
+
+### 4. Mobile App Screens
+
+#### My Offers Screen (`/app/snaproad-mobile/src/screens/MyOffersScreen.tsx`)
+- Customer purchased offers list
+- Geolocation proximity check for QR unlock
+- QR code display when near store
+- 50% gem discount for repeat purchases
+- Get Directions integration
+
+#### Orion Coach Screen (`/app/snaproad-mobile/src/screens/OrionCoachScreen.tsx`)
+- Mobile chat interface with Orion AI
+- Quick question buttons
+- Connected to same backend API
 
 ---
 
-## Previous Session Completions
+## Test Results (Feb 18, 2025)
 
-### Orion AI Coach (`/app/frontend/src/components/figma-ui/mobile/OrionCoach.tsx`)
-- Voice-enabled AI driving assistant
-- Live driving tips (fuel saving, traffic, safety, rewards)
-- Interactive chat with quick action buttons
+### Test Report: `/app/test_reports/iteration_25.json`
 
-### Photo Capture with Privacy Blur (`/app/frontend/src/components/figma-ui/mobile/PhotoCapture.tsx`)
-- Camera/upload functionality for incident reporting
-- Face and license plate detection (simulated AI)
-- Automatic privacy blur toggle
+**Backend Tests: 100% Pass (18/18)**
+- All API endpoints functional
+- Orion AI chat responses working
+- Partner portal APIs working
 
-### Admin Offer Management (`/app/frontend/src/components/figma-ui/admin/AdminOfferManagement.tsx`)
-- Complete offer management interface
-- Source URL field for offer verification
-- Automatic gem pricing guide
-
-### Automatic Gem Pricing System (`/app/frontend/src/lib/offer-pricing.ts`)
-| Discount Tier | Free Users | Premium Users | Label |
-|--------------|------------|---------------|-------|
-| ≤ 10% off | 50 gems | 40 gems | Standard Offer |
-| > 10% off | 80 gems | 65 gems | Premium Offer |
-| Free Items | 100 gems | 80 gems | Exclusive Offer |
-
-### Enhanced Driver Analytics (`/app/frontend/src/components/figma-ui/mobile/DriverAnalytics.tsx`)
-- Premium analytics dashboard with safety score, driving behavior analysis
+**Frontend Tests: 95% Pass**
+- All major features working
+- FAB buttons now visible and functional
+- Modals opening correctly
 
 ---
 
 ## File Structure
 
 ```
+/app/backend/
+├── server.py                     # Main FastAPI server (updated with new endpoints)
+└── services/
+    ├── __init__.py
+    ├── orion_coach.py           # NEW: AI driving coach service
+    ├── photo_analysis.py        # NEW: Face/plate detection service
+    ├── partner_service.py       # NEW: Partner business logic
+    └── websocket_manager.py     # NEW: Real-time notifications
+
 /app/frontend/src/
 ├── components/figma-ui/
-│   ├── SnapRoadApp.tsx           # Main router (updated with Partner pages)
 │   ├── mobile/
-│   │   ├── OrionCoach.tsx
-│   │   ├── PhotoCapture.tsx
-│   │   ├── DriverAnalytics.tsx
-│   │   └── ...
-│   ├── admin/
-│   │   ├── AdminLayout.tsx
-│   │   ├── AdminOfferManagement.tsx
-│   │   └── ...
+│   │   ├── OrionCoach.tsx       # UPDATED: Real AI integration
+│   │   ├── PhotoCapture.tsx     # UPDATED: Real AI blur detection
+│   │   └── MapScreen.tsx        # UPDATED: FAB button positioning
 │   └── partner/
-│       ├── PartnerLayout.tsx         # Updated navigation
-│       ├── PartnerDashboard.tsx
-│       ├── PartnerOffers.tsx
-│       ├── PartnerAnalyticsDetailed.tsx
-│       ├── PartnerTeam.tsx           # NEW: Team management with RBAC
-│       ├── PartnerReferrals.tsx      # NEW: Business referral system
-│       ├── QRScanner.tsx             # NEW: Browser-based QR scanner
-│       └── CustomerOfferQR.tsx       # NEW: Customer QR display component
-├── lib/
-│   └── offer-pricing.ts
+│       └── ... (existing Partner Portal)
 └── services/
-    └── api.ts
+    └── partnerApi.ts            # NEW: Partner API service
+
+/app/snaproad-mobile/src/screens/
+├── MyOffersScreen.tsx           # NEW: Customer QR offer screen
+├── OrionCoachScreen.tsx         # NEW: Mobile AI coach
+└── index.ts                     # UPDATED: exports
 ```
 
 ---
 
-## Testing Results (Feb 18, 2025)
+## Environment Variables
 
-### Test Report: `/app/test_reports/iteration_24.json`
-**Success Rate: 100% (All 11 features passed)**
-
-| Feature | Status |
-|---------|--------|
-| Partner login flow | ✅ PASS |
-| Partner Dashboard | ✅ PASS |
-| QR Scanner page | ✅ PASS |
-| Team Management with RBAC | ✅ PASS |
-| Referrals & Credits | ✅ PASS |
-| Sidebar navigation | ✅ PASS |
-| Invite Business modal | ✅ PASS |
-| Invite Team Member modal | ✅ PASS |
-| Roles Guide | ✅ PASS |
-| Partner Offers with gem pricing | ✅ PASS |
-| Partner Analytics | ✅ PASS |
+```env
+# /app/backend/.env
+EMERGENT_LLM_KEY=sk-emergent-xxx  # For AI services
+MONGO_URL=...                     # Database
+```
 
 ---
 
@@ -151,49 +152,50 @@ SnapRoad is a privacy-first, gamified navigation app with:
 
 ## Pending Tasks
 
-### P1 - Mobile App Alignment
-- Port Partner Portal features to React Native app
-- Implement customer QR code display in mobile app
+### P1 - High Priority
+- [ ] Connect mobile app to backend (currently uses local API_URL)
+- [ ] Deploy mobile app to Expo
+- [ ] Add real geolocation testing for QR proximity
 
-### P1 - Backend Integration
-- Connect Partner Portal to real backend APIs
-- Implement authentication and data persistence
-- Store team members, referrals, redemptions in database
+### P2 - Medium Priority  
+- [ ] Connect MongoDB for persistent data storage
+- [ ] Add Stripe for subscription/credit payments
+- [ ] Implement offer boosting with credits
 
-### P2 - Orion AI Coach & Photo Capture
-- Build out placeholder components with real functionality
-- Integrate camera access for mobile
-
-### P2 - Backend Database Integration
-- Connect FastAPI to MongoDB/PostgreSQL
-- Replace mock data with real queries
-
-### P3 - 3rd Party Integrations
-- Stripe for payments/subscriptions
-- Mapbox for real maps
-- Geolocation API for proximity detection
+### P3 - Low Priority
+- [ ] Add voice recognition to Orion AI
+- [ ] Implement real camera in Photo Capture
+- [ ] Add push notifications for redemptions
 
 ---
 
-## API Endpoints (All Mocked)
+## Known Limitations
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /api/auth/signup | User registration |
-| POST | /api/auth/login | User login |
-| GET | /api/user/profile | Get user profile |
-| GET | /api/offers | Get available offers |
-| POST | /api/offers | Create offer (admin) |
-| GET | /api/partner/offers | Partner's offers |
-| POST | /api/partner/team | Invite team member |
-| POST | /api/partner/redeem | Validate & redeem QR |
-| GET | /api/partner/referrals | Get referrals |
-| POST | /api/partner/referrals | Send referral invite |
+1. **AI Timeouts**: External requests to `/api/orion/chat` may timeout via Cloudflare (60s limit). Test locally with `curl http://localhost:8001/api/orion/chat`
+
+2. **Partner Data**: All partner data stored in memory. Resets on backend restart.
+
+3. **Mobile App**: Not deployed. Screens created but not running in Expo.
+
+4. **Photo Analysis**: AI detection returns simulated coordinates. Real blur requires image processing library.
 
 ---
 
-## Notes
-- **All backend endpoints return mock data**
-- **Partner Portal data is client-side mocked**
-- Web frontend: https://gem-offers-admin.preview.emergentagent.com/app
-- All new features tested and working
+## Quick Start
+
+```bash
+# Test Orion AI locally
+curl -X POST http://localhost:8001/api/orion/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"How can I improve my safety score?","session_id":"test"}'
+
+# Test Partner API
+curl http://localhost:8001/api/partner/v2/team/partner_001
+
+# Web App
+open https://gem-offers-admin.preview.emergentagent.com/app
+```
+
+---
+
+Last Updated: February 18, 2025
