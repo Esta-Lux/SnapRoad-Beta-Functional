@@ -1,10 +1,10 @@
 // Main App Export
 export { SnapRoadApp, default } from './SnapRoadApp';
 
-// Mobile Components
-export { Welcome } from './mobile/Welcome';
-export { Login } from './mobile/Login';
-export { SignUp } from './mobile/SignUp';
+// Mobile Components - Auth
+export { Welcome } from './mobile/auth/Welcome';
+export { Login } from './mobile/auth/Login';
+export { SignUp } from './mobile/auth/SignUp';
 export { MapScreen } from './mobile/MapScreen';
 export { Profile } from './mobile/Profile';
 export { Gems } from './mobile/Gems';

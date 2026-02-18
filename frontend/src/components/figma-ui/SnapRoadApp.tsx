@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { SnaproadThemeProvider } from '@/contexts/SnaproadThemeContext';
 
-// Mobile Components
-import { Welcome } from './mobile/Welcome';
-import { Login } from './mobile/Login';
-import { SignUp } from './mobile/SignUp';
+// Mobile Components - Auth
+import { Welcome } from './mobile/auth/Welcome';
+import { Login } from './mobile/auth/Login';
+import { SignUp } from './mobile/auth/SignUp';
 import { MapScreen } from './mobile/MapScreen';
 import { Profile } from './mobile/Profile';
 import { Gems } from './mobile/Gems';
