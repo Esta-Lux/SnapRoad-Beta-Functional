@@ -5,14 +5,21 @@ import os
 import base64
 import asyncio
 import uuid
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
+import json
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# Import services
+from services.orion_coach import orion_service
+from services.photo_analysis import photo_service
+from services.partner_service import partner_service
+from services.websocket_manager import ws_manager
 
 app = FastAPI(title="SnapRoad API")
 
