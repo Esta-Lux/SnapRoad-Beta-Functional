@@ -467,7 +467,9 @@ class LoginRequest(BaseModel):
 
 # Simple user credentials store (mock - replace with real DB)
 user_credentials = {
-    "driver@snaproad.com": {"password": "password123", "user_id": "123456"}
+    "driver@snaproad.com": {"password": "password123", "user_id": "123456"},
+    "partner@snaproad.com": {"password": "password123", "user_id": "200001"},
+    "admin@snaproad.com": {"password": "password123", "user_id": "300001"},
 }
 
 @app.post("/api/auth/signup")
