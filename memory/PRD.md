@@ -170,11 +170,16 @@ Key tables:
 
 ## Pending Tasks
 
-### P0 - Continue Figma UI Integration (IN PROGRESS)
-- [ ] Integrate remaining mobile screens (FuelDashboard, TripLogs, Leaderboard, etc.)
-- [ ] Integrate Partner Portal components
-- [ ] Add Onboarding flow
-- [ ] Add all Settings and Support screens
+### P0 - Continue Partner Portal (Next Priority)
+- [ ] Partner Dashboard with analytics
+- [ ] Partner Offer Management
+- [ ] Partner Business Profile screens
+
+### P0 - Remaining Mobile Screens
+- [ ] CarSkinShowcase (Car customization)
+- [ ] Onboarding flow screens
+- [ ] Support/Help screens
+- [ ] Account Info / Privacy Center
 
 ### P1 - Backend Database Integration
 - Connect FastAPI to MongoDB/PostgreSQL
