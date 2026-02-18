@@ -247,6 +247,8 @@ export default function OrionVoice({ isOpen, onClose, onReportCreated, isNavigat
 
   if (!isOpen) return null
 
+  const currentOffer = personalizedOffers[currentOfferIndex]
+
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex flex-col">
       {/* Header */}
@@ -265,6 +267,29 @@ export default function OrionVoice({ isOpen, onClose, onReportCreated, isNavigat
         </button>
       </div>
 
+      {/* Mode Tabs */}
+      <div className="px-4 mb-4">
+        <div className="flex gap-1 bg-slate-800 rounded-xl p-1">
+          <button
+            onClick={() => setMode('report')}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 ${mode === 'report' ? 'bg-blue-500 text-white' : 'text-slate-400'}`}
+            data-testid="mode-report"
+          >
+            <AlertTriangle size={14} /> Report
+          </button>
+          <button
+            onClick={() => setMode('offers')}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 ${mode === 'offers' ? 'bg-emerald-500 text-white' : 'text-slate-400'}`}
+            data-testid="mode-offers"
+          >
+            <Gift size={14} /> Offers
+            {personalizedOffers.length > 0 && (
+              <span className="bg-white/20 text-xs px-1.5 rounded-full">{personalizedOffers.length}</span>
+            )}
+          </button>
+        </div>
+      </div>
+
       {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center px-6">
         {/* Orion Message */}
@@ -272,56 +297,137 @@ export default function OrionVoice({ isOpen, onClose, onReportCreated, isNavigat
           <p className="text-white text-center">{orionMessage}</p>
         </div>
 
-        {/* Transcript Display */}
-        {transcript && (
-          <div className="bg-blue-500/20 border border-blue-500/30 rounded-xl px-4 py-2 mb-4">
-            <p className="text-blue-300 text-sm">"{transcript}"</p>
-          </div>
-        )}
+        {/* REPORT MODE */}
+        {mode === 'report' && (
+          <>
+            {/* Transcript Display */}
+            {transcript && (
+              <div className="bg-blue-500/20 border border-blue-500/30 rounded-xl px-4 py-2 mb-4">
+                <p className="text-blue-300 text-sm">"{transcript}"</p>
+              </div>
+            )}
 
-        {/* Detected Command */}
-        {detectedCommand && (
-          <div className="bg-emerald-500/20 border border-emerald-500/30 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
-            <Check className="text-emerald-400" size={20} />
-            <span className="text-emerald-300">
-              {detectedCommand.type.charAt(0).toUpperCase() + detectedCommand.type.slice(1)} {detectedCommand.direction}
-            </span>
-          </div>
-        )}
+            {/* Detected Command */}
+            {detectedCommand && (
+              <div className="bg-emerald-500/20 border border-emerald-500/30 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
+                <Check className="text-emerald-400" size={20} />
+                <span className="text-emerald-300">
+                  {detectedCommand.type.charAt(0).toUpperCase() + detectedCommand.type.slice(1)} {detectedCommand.direction}
+                </span>
+              </div>
+            )}
 
-        {/* Mic Button */}
-        <button
-          onClick={isListening ? stopListening : startListening}
-          className={`w-24 h-24 rounded-full flex items-center justify-center transition-all ${
-            isListening 
-              ? 'bg-red-500 animate-pulse scale-110' 
-              : 'bg-gradient-to-br from-blue-500 to-indigo-600 hover:scale-105'
-          }`}
-          data-testid="orion-mic-btn"
-        >
-          {isListening ? (
-            <MicOff className="text-white" size={36} />
-          ) : (
-            <Mic className="text-white" size={36} />
-          )}
-        </button>
+            {/* Mic Button */}
+            <button
+              onClick={isListening ? stopListening : startListening}
+              className={`w-24 h-24 rounded-full flex items-center justify-center transition-all ${
+                isListening 
+                  ? 'bg-red-500 animate-pulse scale-110' 
+                  : 'bg-gradient-to-br from-blue-500 to-indigo-600 hover:scale-105'
+              }`}
+              data-testid="orion-mic-btn"
+            >
+              {isListening ? (
+                <MicOff className="text-white" size={36} />
+              ) : (
+                <Mic className="text-white" size={36} />
+              )}
+            </button>
 
-        <p className="text-slate-400 text-sm mt-4">
-          {isListening ? 'Tap to stop' : speechSupported ? 'Tap to speak' : 'Voice not available'}
-        </p>
-
-        {/* Speech Not Supported Notice */}
-        {!speechSupported && (
-          <div className="bg-amber-500/20 border border-amber-500/30 rounded-xl px-4 py-2 mt-4">
-            <p className="text-amber-300 text-xs text-center">
-              Voice recognition requires Chrome/Safari. Use quick actions below.
+            <p className="text-slate-400 text-sm mt-4">
+              {isListening ? 'Tap to stop' : speechSupported ? 'Tap to speak' : 'Voice not available'}
             </p>
-          </div>
+
+            {/* Speech Not Supported Notice */}
+            {!speechSupported && (
+              <div className="bg-amber-500/20 border border-amber-500/30 rounded-xl px-4 py-2 mt-4">
+                <p className="text-amber-300 text-xs text-center">
+                  Voice recognition requires Chrome/Safari. Use quick actions below.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* OFFERS MODE */}
+        {mode === 'offers' && (
+          <>
+            {loadingOffers ? (
+              <div className="text-slate-400">Finding personalized offers...</div>
+            ) : personalizedOffers.length === 0 ? (
+              <div className="text-center">
+                <Gift className="mx-auto text-slate-600 mb-3" size={48} />
+                <p className="text-slate-400">No personalized offers right now</p>
+                <p className="text-slate-500 text-sm mt-1">Keep driving to unlock more!</p>
+              </div>
+            ) : currentOffer ? (
+              <div className="w-full max-w-sm">
+                {/* Offer Card */}
+                <div className="bg-gradient-to-br from-emerald-600/20 to-teal-600/20 border border-emerald-500/30 rounded-2xl p-4 mb-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                        <Gift className="text-emerald-400" size={24} />
+                      </div>
+                      <div>
+                        <p className="text-white font-bold">{currentOffer.business_name}</p>
+                        <p className="text-emerald-300 text-xs">{currentOffer.personalization_reason}</p>
+                      </div>
+                    </div>
+                    <div className="bg-emerald-500 text-white text-sm font-bold px-2 py-1 rounded-lg">
+                      {currentOffer.discount_percent}% off
+                    </div>
+                  </div>
+
+                  <p className="text-slate-300 text-sm mb-3">{currentOffer.description}</p>
+
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-3 text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <MapPin size={14} /> {currentOffer.distance_km.toFixed(1)} km
+                      </span>
+                      <span className="flex items-center gap-1 text-emerald-400">
+                        <Gem size={14} /> +{currentOffer.gems_reward}
+                      </span>
+                    </div>
+                    <span className="text-slate-500 text-xs">
+                      {currentOfferIndex + 1} of {personalizedOffers.length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Voice prompt */}
+                <div className="bg-slate-800/60 rounded-xl p-3 mb-4 text-center">
+                  <p className="text-blue-300 text-sm">
+                    Say <span className="text-white font-medium">"Take me there"</span> or <span className="text-white font-medium">"Skip"</span>
+                  </p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleSkipOffer}
+                    className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2"
+                    data-testid="skip-offer"
+                  >
+                    <SkipForward size={18} /> Skip
+                  </button>
+                  <button
+                    onClick={() => handleAcceptOffer(currentOffer)}
+                    className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2"
+                    data-testid="accept-offer"
+                  >
+                    <Navigation size={18} /> Take me there
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
 
-      {/* Quick Actions */}
-      {(showQuickActions || !speechSupported) && (
+      {/* Quick Actions - Only in Report Mode */}
+      {mode === 'report' && (showQuickActions || !speechSupported) && (
         <div className="bg-slate-900 border-t border-slate-800 p-4">
           <p className="text-slate-400 text-xs text-center mb-3">Quick Report</p>
           
