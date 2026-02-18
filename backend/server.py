@@ -3468,3 +3468,286 @@ def update_partner_profile(business_name: Optional[str] = None, email: Optional[
     
     return {"success": True, "message": "Profile updated", "data": partner}
 
+
+
+# ==================== ORION AI COACH ENDPOINTS ====================
+
+class OrionMessageRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+
+@app.post("/api/orion/chat")
+async def orion_chat(request: OrionMessageRequest):
+    """Send a message to Orion AI Coach and get a response"""
+    session_id = request.session_id or f"session_{uuid.uuid4().hex[:8]}"
+    
+    result = await orion_service.send_message(
+        session_id=session_id,
+        user_text=request.message,
+        context=request.context
+    )
+    
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result.get("error", "AI service error"))
+    
+    return result
+
+@app.get("/api/orion/history/{session_id}")
+async def get_orion_history(session_id: str):
+    """Get conversation history for a session"""
+    history = orion_service.get_history(session_id)
+    return {"success": True, "history": history, "count": len(history)}
+
+@app.delete("/api/orion/session/{session_id}")
+async def clear_orion_session(session_id: str):
+    """Clear a chat session"""
+    success = orion_service.clear_session(session_id)
+    return {"success": success}
+
+@app.get("/api/orion/tips")
+async def get_quick_tips():
+    """Get quick tip suggestions for the UI"""
+    return {"success": True, "tips": orion_service.get_quick_tips()}
+
+# ==================== PHOTO ANALYSIS ENDPOINTS ====================
+
+class PhotoAnalysisRequest(BaseModel):
+    image_base64: str
+    image_type: Optional[str] = "image/jpeg"
+    image_width: Optional[int] = 1920
+    image_height: Optional[int] = 1080
+
+@app.post("/api/photo/analyze")
+async def analyze_photo(request: PhotoAnalysisRequest):
+    """Analyze a photo for faces and license plates to blur"""
+    result = await photo_service.analyze_image(
+        image_base64=request.image_base64,
+        image_type=request.image_type
+    )
+    
+    if result["success"] and result["needs_blur"]:
+        # Generate blur mask regions
+        blur_regions = photo_service.generate_blur_mask(
+            result["detections"],
+            request.image_width,
+            request.image_height
+        )
+        result["blur_regions"] = blur_regions
+    
+    return result
+
+# ==================== PARTNER PORTAL V2 ENDPOINTS ====================
+
+class PartnerLoginRequest(BaseModel):
+    email: str
+    password: str
+
+class TeamInviteRequest(BaseModel):
+    email: Optional[str] = None
+    role: str
+    method: str = "email"  # "email" or "code"
+
+class ReferralRequest(BaseModel):
+    email: str
+    message: Optional[str] = ""
+
+class CreditUseRequest(BaseModel):
+    amount: float
+    purpose: str  # "subscription" or "boosting"
+
+class QRRedemptionRequest(BaseModel):
+    qr_data: Dict[str, Any]
+    staff_id: str
+
+@app.post("/api/partner/v2/login")
+async def partner_login_v2(request: PartnerLoginRequest):
+    """Partner portal login"""
+    result = partner_service.authenticate(request.email, request.password)
+    if not result:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return result
+
+@app.get("/api/partner/v2/profile/{partner_id}")
+async def get_partner_profile_v2(partner_id: str):
+    """Get partner profile"""
+    partner = partner_service.get_partner(partner_id)
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    
+    # Remove sensitive data
+    return {
+        "success": True,
+        "data": {
+            "id": partner["id"],
+            "business_name": partner["business_name"],
+            "email": partner["email"],
+            "credits": partner["credits"],
+            "subscription_plan": partner["subscription_plan"],
+            "location": partner["location"]
+        }
+    }
+
+# Team Management
+@app.get("/api/partner/v2/team/{partner_id}")
+async def get_team_members(partner_id: str):
+    """Get all team members for a partner"""
+    team = partner_service.get_team_members(partner_id)
+    return {"success": True, "data": team, "count": len(team)}
+
+@app.post("/api/partner/v2/team/{partner_id}/invite")
+async def invite_team_member(partner_id: str, request: TeamInviteRequest):
+    """Invite a new team member"""
+    result = partner_service.invite_team_member(
+        partner_id=partner_id,
+        email=request.email or "",
+        role=request.role,
+        method=request.method
+    )
+    return result
+
+@app.put("/api/partner/v2/team/{member_id}/role")
+async def update_member_role(member_id: str, role: str):
+    """Update a team member's role"""
+    success = partner_service.update_team_member_role(member_id, role)
+    if not success:
+        raise HTTPException(status_code=404, detail="Member not found")
+    return {"success": True}
+
+@app.delete("/api/partner/v2/team/{member_id}")
+async def revoke_team_access(member_id: str):
+    """Revoke a team member's access"""
+    success = partner_service.revoke_team_access(member_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Member not found")
+    return {"success": True}
+
+# Referrals
+@app.get("/api/partner/v2/referrals/{partner_id}")
+async def get_referrals(partner_id: str):
+    """Get all referrals for a partner"""
+    referrals = partner_service.get_referrals(partner_id)
+    stats = partner_service.get_referral_stats(partner_id)
+    return {"success": True, "data": referrals, "stats": stats}
+
+@app.post("/api/partner/v2/referrals/{partner_id}")
+async def send_referral(partner_id: str, request: ReferralRequest):
+    """Send a referral invitation"""
+    result = partner_service.send_referral(partner_id, request.email, request.message)
+    return result
+
+@app.post("/api/partner/v2/credits/{partner_id}/use")
+async def use_credits(partner_id: str, request: CreditUseRequest):
+    """Use referral credits"""
+    result = partner_service.use_credits(partner_id, request.amount, request.purpose)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+# QR Redemption
+@app.post("/api/partner/v2/redeem")
+async def redeem_offer(request: QRRedemptionRequest, background_tasks: BackgroundTasks):
+    """Validate and redeem a customer's offer QR code"""
+    result = partner_service.validate_redemption(request.qr_data, request.staff_id)
+    
+    if result["success"]:
+        # Get partner ID from offer
+        offer_id = request.qr_data.get("offerId")
+        # Notify connected partner staff via WebSocket
+        background_tasks.add_task(
+            ws_manager.notify_partner_redemption,
+            "partner_001",  # In production, get from offer
+            result
+        )
+        
+        # Notify customer their offer was redeemed
+        customer_id = request.qr_data.get("customerId")
+        if customer_id:
+            background_tasks.add_task(
+                ws_manager.notify_customer_redeemed,
+                customer_id,
+                result
+            )
+    
+    return result
+
+@app.get("/api/partner/v2/redemptions/{partner_id}")
+async def get_recent_redemptions(partner_id: str, limit: int = 10):
+    """Get recent redemptions for a partner"""
+    redemptions = partner_service.get_recent_redemptions(partner_id, limit)
+    return {"success": True, "data": redemptions, "count": len(redemptions)}
+
+# Analytics
+@app.get("/api/partner/v2/analytics/{partner_id}")
+async def get_partner_analytics(partner_id: str):
+    """Get partner analytics data"""
+    analytics = partner_service.get_analytics(partner_id)
+    return {"success": True, "data": analytics}
+
+# ==================== WEBSOCKET ENDPOINTS ====================
+
+@app.websocket("/ws/partner/{partner_id}")
+async def partner_websocket(websocket: WebSocket, partner_id: str):
+    """WebSocket endpoint for real-time partner notifications"""
+    connection_id = f"conn_{uuid.uuid4().hex[:8]}"
+    
+    try:
+        await ws_manager.connect_partner(websocket, partner_id, connection_id)
+        
+        while True:
+            # Keep connection alive and handle incoming messages
+            data = await websocket.receive_text()
+            
+            try:
+                message = json.loads(data)
+                
+                # Handle ping/pong for keep-alive
+                if message.get("type") == "ping":
+                    await websocket.send_json({"type": "pong", "timestamp": datetime.now().isoformat()})
+                
+                # Handle customer proximity notification
+                elif message.get("type") == "customer_nearby":
+                    # Broadcast to all partner connections
+                    await ws_manager.notify_customer_nearby(
+                        partner_id,
+                        message.get("customer_id"),
+                        message.get("offer")
+                    )
+                    
+            except json.JSONDecodeError:
+                pass  # Ignore malformed messages
+                
+    except WebSocketDisconnect:
+        await ws_manager.disconnect_partner(partner_id, connection_id)
+    except Exception as e:
+        await ws_manager.disconnect_partner(partner_id, connection_id)
+
+@app.websocket("/ws/customer/{customer_id}")
+async def customer_websocket(websocket: WebSocket, customer_id: str):
+    """WebSocket endpoint for customer notifications (offer redemption alerts)"""
+    try:
+        await ws_manager.connect_customer(websocket, customer_id)
+        
+        while True:
+            data = await websocket.receive_text()
+            
+            try:
+                message = json.loads(data)
+                
+                if message.get("type") == "ping":
+                    await websocket.send_json({"type": "pong", "timestamp": datetime.now().isoformat()})
+                    
+            except json.JSONDecodeError:
+                pass
+                
+    except WebSocketDisconnect:
+        await ws_manager.disconnect_customer(customer_id)
+    except Exception:
+        await ws_manager.disconnect_customer(customer_id)
+
+@app.get("/api/ws/status/{partner_id}")
+async def get_ws_status(partner_id: str):
+    """Get WebSocket connection status for a partner"""
+    count = ws_manager.get_partner_connection_count(partner_id)
+    return {"success": True, "active_connections": count, "partner_id": partner_id}
+
