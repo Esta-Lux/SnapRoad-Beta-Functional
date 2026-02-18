@@ -21,6 +21,11 @@ import { RewardsScreen } from '../screens/RewardsScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { OfferDetailScreen } from '../screens/OfferDetailScreen';
 import { LeaderboardScreen } from '../screens/LeaderboardScreen';
+// New aligned screens
+import { SettingsScreen } from '../screens/SettingsScreen';
+import { FuelDashboardScreen } from '../screens/FuelDashboardScreen';
+import { TripLogsScreen } from '../screens/TripLogsScreen';
+import { FamilyScreen } from '../screens/FamilyScreen';
 
 import { useUserStore } from '../store';
 
