@@ -130,32 +130,53 @@ function OnboardingWalkthrough({ onComplete, onSkip }: { onComplete: () => void;
 }
 
 // Boost Modal Component
-function BoostModal({ offer, onClose, onBoost }: { offer: Offer; onClose: () => void; onBoost: (config: BoostConfig) => void }) {
-  const [duration, setDuration] = useState(1)
-  const [reach, setReach] = useState(100)
-  const [cost, setCost] = useState({ duration_cost: 25, reach_cost: 5, total_cost: 30 })
+function BoostModal({ offer, onClose, onBoost }: { offer: Offer; onClose: () => void; onBoost: (boostType: string) => Promise<void> }) {
+  const [selectedBoost, setSelectedBoost] = useState<string>('standard')
   const [loading, setLoading] = useState(false)
+  const [credits, setCredits] = useState(0)
+  const [useCredits, setUseCredits] = useState(false)
 
-  const calculateCost = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/boosts/calculate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ duration_days: duration, reach_target: reach })
-      })
-      const data = await res.json()
-      if (data.success) setCost(data.data)
-    } catch (e) { console.error(e) }
-  }, [duration, reach])
+  const boostPackages = {
+    basic: { name: 'Basic Boost', duration: '24 hours', price: 9.99, multiplier: '1.5x', color: 'from-blue-500 to-cyan-500' },
+    standard: { name: 'Standard Boost', duration: '3 days', price: 19.99, multiplier: '2x', color: 'from-orange-500 to-red-500' },
+    premium: { name: 'Premium Boost', duration: '7 days', price: 39.99, multiplier: '3x', color: 'from-purple-500 to-pink-500' },
+  }
 
-  useEffect(() => { calculateCost() }, [calculateCost])
+  useEffect(() => {
+    // Load partner credits
+    const loadCredits = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/partner/credits`)
+        const data = await res.json()
+        if (data.success) setCredits(data.data.balance)
+      } catch (e) { console.log('Could not load credits') }
+    }
+    loadCredits()
+  }, [])
 
   const handleBoost = async () => {
     setLoading(true)
-    onBoost({ duration_days: duration, reach_target: reach, total_cost: cost.total_cost })
+    try {
+      const res = await fetch(`${API_URL}/api/partner/boosts/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ offer_id: offer.id, boost_type: selectedBoost, use_credits: useCredits })
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(data.message)
+        onClose()
+      } else {
+        toast.error(data.message)
+      }
+    } catch (e) {
+      toast.error('Failed to create boost')
+    }
     setLoading(false)
-    onClose()
   }
+
+  const selectedPkg = boostPackages[selectedBoost as keyof typeof boostPackages]
+  const canUseCredits = credits >= selectedPkg.price
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -173,46 +194,56 @@ function BoostModal({ offer, onClose, onBoost }: { offer: Offer; onClose: () => 
               <p className="text-slate-400 text-sm">{offer.description}</p>
             </div>
 
-            <div className="space-y-6">
-              {/* Duration Slider */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-slate-300 text-sm font-medium">Duration</label>
-                  <span className="text-orange-400 font-bold">{duration} day{duration > 1 ? 's' : ''}</span>
-                </div>
-                <input type="range" min="1" max="30" value={duration} onChange={(e) => setDuration(Number(e.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500" />
-                <div className="flex justify-between text-xs text-slate-500 mt-1"><span>1 day</span><span>30 days</span></div>
-              </div>
-
-              {/* Reach Slider */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-slate-300 text-sm font-medium">Target Reach</label>
-                  <span className="text-cyan-400 font-bold">{reach.toLocaleString()} people</span>
-                </div>
-                <input type="range" min="100" max="2000" step="100" value={reach} onChange={(e) => setReach(Number(e.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
-                <div className="flex justify-between text-xs text-slate-500 mt-1"><span>100</span><span>2,000</span></div>
-              </div>
-
-              {/* Cost Breakdown */}
-              <div className="bg-gradient-to-br from-emerald-500/10 to-teal-500/10 rounded-xl p-4 border border-emerald-500/20">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-slate-400">Duration Cost</span>
-                  <span className="text-white font-medium">${cost.duration_cost}</span>
-                </div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-slate-400">Reach Cost</span>
-                  <span className="text-white font-medium">${cost.reach_cost}</span>
-                </div>
-                <div className="border-t border-white/10 pt-3 flex items-center justify-between">
-                  <span className="text-white font-semibold">Total</span>
-                  <span className="text-emerald-400 font-bold text-2xl">${cost.total_cost}</span>
-                </div>
-              </div>
+            {/* Boost Package Selection */}
+            <div className="space-y-3 mb-6">
+              {Object.entries(boostPackages).map(([key, pkg]) => (
+                <button
+                  key={key}
+                  onClick={() => setSelectedBoost(key)}
+                  className={`w-full p-4 rounded-xl border transition-all text-left ${
+                    selectedBoost === key
+                      ? `bg-gradient-to-r ${pkg.color} border-white/20`
+                      : 'bg-slate-700/30 border-white/5 hover:border-white/10'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-white font-semibold">{pkg.name}</p>
+                      <p className="text-sm text-white/70">{pkg.duration} • {pkg.multiplier} visibility</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-white font-bold text-lg">${pkg.price}</p>
+                      {selectedBoost === key && <Check size={16} className="inline text-white" />}
+                    </div>
+                  </div>
+                </button>
+              ))}
             </div>
 
-            <button onClick={handleBoost} disabled={loading} className="w-full mt-6 bg-gradient-to-r from-orange-500 to-red-500 text-white font-semibold py-3.5 rounded-xl hover:from-orange-400 hover:to-red-400 flex items-center justify-center gap-2">
-              {loading ? <RefreshCw className="animate-spin" size={20} /> : <><Rocket size={20} />Activate Boost</>}
+            {/* Credits Option */}
+            <div className="bg-slate-700/30 rounded-xl p-4 mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-slate-300">Your Credits</span>
+                <span className="text-emerald-400 font-bold">${credits.toFixed(2)}</span>
+              </div>
+              {canUseCredits && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useCredits}
+                    onChange={(e) => setUseCredits(e.target.checked)}
+                    className="w-4 h-4 rounded accent-emerald-500"
+                  />
+                  <span className="text-slate-300 text-sm">Use credits for this boost</span>
+                </label>
+              )}
+              {!canUseCredits && (
+                <p className="text-slate-500 text-xs">Add more credits to pay with your balance</p>
+              )}
+            </div>
+
+            <button onClick={handleBoost} disabled={loading} className={`w-full bg-gradient-to-r ${selectedPkg.color} text-white font-semibold py-3.5 rounded-xl hover:opacity-90 flex items-center justify-center gap-2`}>
+              {loading ? <RefreshCw className="animate-spin" size={20} /> : <><Rocket size={20} />Activate {selectedPkg.name} - ${selectedPkg.price}</>}
             </button>
           </div>
         </div>
