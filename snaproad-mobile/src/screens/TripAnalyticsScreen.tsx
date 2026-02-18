@@ -68,7 +68,7 @@ export const TripAnalyticsScreen: React.FC<TripAnalyticsScreenProps> = ({ naviga
     setLoading(true);
     try {
       const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL || 'https://route-history-3d.preview.emergentagent.com'}/api/trips/history/detailed?days=${dateRange}`
+        `${process.env.EXPO_PUBLIC_API_URL || 'https://snaproad-boost.preview.emergentagent.com'}/api/trips/history/detailed?days=${dateRange}`
       );
       const data = await response.json();
       if (data.success) {

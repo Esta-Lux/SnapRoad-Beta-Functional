@@ -1,107 +1,86 @@
 <analysis>**original_problem_statement:**
 The user wants to build SnapRoad, a privacy-first, gamified navigation app. The initial goal was to integrate a Figma UI design and establish a clean architecture.
 
-The project scope has massively expanded. The user has requested a series of interconnected, advanced features for the driver, partner, and admin sections, as detailed in .
+The project has since evolved into a large-scale application with three distinct parts: a driver-facing mobile/web app, a partner portal for businesses, and an admin dashboard.
 
-PRODUCT REQUIREMENTS (New & In-Progress):
--   **Enhanced Driver Map Page:**
-    -   Make the Nearby Offers tab collapsible to improve map visibility.
-    -   Integrate OpenStreetMap.
-    -   Add essential driver utilities found in other navigation apps, maintaining a clean UI.
-    -   Implement automatic light/dark mode based on the time of day.
--   **Plan-Based Partner Dashboard (RBAC):**
-    -   Implement feature gating based on subscription plans (Starter, Growth, Enterprise).
-    -   Allow partners to add and manage up to 5 store locations on the Starter plan.
-    -   Offers created by partners should be associated with a specific location and appear on the map for drivers.
--   **Admin/Partner Offer Boosting:**
-    -   Create a boost feature for offers.
--   **Driver Trip & Fuel Analytics:**
-    -   Create a driver-facing feature to see past trips, fuel usage, fuel savings, and the monetary value of those savings.
-    -   Integrate a fuel price API (e.g., Gas Buddy's free tier) to power this.
--   **Personalized, Voice-Driven Offer Boosting:**
-    -   Proactively boost two personalized offers to each driver based on their location history (e.g., stores they've visited).
-    -   Use Orion AI's voice to present the offer.
-    -   Allow the driver to accept (take me there) or decline (skip) via voice command. Accepting adds the location as a stop without overriding the final destination.
--   **Gamified Route History Map:**
-    -   Create a new 3D map view where drivers can explore a visual representation of all their past routes.
-    -   Include a filterable list of trips below this map.
+PRODUCT REQUIREMENTS (New & In-Progress from ):
+-   **P1: Port to Mobile App:** Port the new Trip Analytics and Route History features to the  React Native application.
+-   **P2: Offer Boosting:** Implement an offer boosting feature for partners to pay for increased visibility.
+-   **Update Team Guides:** After implementing the features, review and update the role-specific guide files for Kathir, Andrew, Brian, and the PM located in .
 
 **User's preferred language**: English
 
 **what currently exists?**
--   **Backend ():** A FastAPI server. Initially all mocked, but now has several functional, live endpoints powered by AI.
-    -   : A real service connecting to GPT-5.2 via the Emergent LLM Key for the Orion AI Coach.
-    -   : A real service using OpenAI's Vision API for face/license plate detection.
-    -   : A new but still mocked service for partner data.
-    -   : Updated with new routers for the live AI services.
+-   **Backend ():** A FastAPI server with a hybrid of live and mocked services.
+    -   Live AI Services:  (GPT-5.2) and  (OpenAI Vision) are functional and use the Emergent LLM Key.
+    -   Mocked Services: The entire partner portal () and the newly added driver analytics () are fully mocked, returning hardcoded data. Endpoints for the new offer boosting feature have been added but are also mocked.
 -   **Frontend ():** A feature-rich React application.
-    -   A fully functional Partner Portal with QR code scanning, team management (RBAC), and a referral/credits system. All data is currently mocked on the frontend.
-    -   An integrated Orion AI Coach modal that connects to the live backend.
-    -   An integrated Photo Capture modal with live AI-powered analysis for blurring.
-    -   Placeholder files for the new major feature push: , , and .
--   **Mobile App ():** A React Native app that is significantly behind the web app in features. It has placeholders for Orion and Photo Capture but needs to be brought to parity.
+    -   **Driver App:** Contains a fully implemented and visually verified set of new features, including a  modal, a 3D  map, and a map screen with a collapsible offers panel. These components are connected to the mocked backend endpoints.
+    -   **Partner Portal:** A comprehensive dashboard with plan-based RBAC, location management, and a new (partially implemented) Boosts tab. All data is mocked.
+-   **Mobile App ():** A significantly outdated React Native app. Placeholder files (, ) have been created to begin porting features.
+-   **Memory Files ():** Contains role-specific guides for team members (Andrew, Brian, Kathir, PM).
 
 **Last working item**:
-    - Last item agent was working: Kicking off the large set of new features requested by the user in . The agent created the initial files for the theme context, plan configuration, and the new enhanced map screen.
+    - Last item agent was working: The agent was in the process of fulfilling a multi-part request from the user (). It has added the backend endpoints and frontend UI for the partner Offer Boosting feature and created placeholder files to port the driver analytics features to the mobile app. The agent's last action was to view the team guide files in  in preparation for updating them.
     - Status: IN PROGRESS
-    - Agent Testing Done: N
-    - Which testing method agent to use? Frontend testing agent. Due to the scale of the changes, the testing agent should be used after implementing the core UI for the new map screen and the plan-based RBAC on the partner dashboard.
+    - Agent Testing Done: N (for the offer boosting and mobile features)
+    - Which testing method agent to use? both. The new backend endpoints for offer boosting should be tested with . The Partner Dashboard UI for boosting should be validated with the  tool. The mobile app will require separate testing once implemented.
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  There are no outstanding bugs. The work is focused on implementing new features.
+  - Issue 1: Complete the Update Team Guides task (P0)
+  - Issue 2: Test the newly implemented Offer Boosting feature (P1)
+
+  **Issues Detail:**
+  - **Issue 1: Complete the Update Team Guides task**
+     - Attempted fixes: The agent has viewed the files (, etc.).
+     - Next debug checklist: The next step is to use  or  to update the content of these files to reflect the new Driver Analytics, Route History, and Offer Boosting features, assigning responsibilities as appropriate for each role (e.g., PM, frontend, backend).
+     - Why fix this issue and what will be achieved with the fix? This fulfills the final part of the user's request from  and ensures project documentation is aligned with the current state of the application.
+     - Status: IN PROGRESS
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? NA
+     - Blocked on other issue: None.
+  - **Issue 2: Test the newly implemented Offer Boosting feature**
+     - Attempted fixes: None. The feature was just built.
+     - Next debug checklist:
+         1.  Use  to test the new backend endpoints:  and .
+         2.  Use the  tool to navigate to the Partner Portal (), go to the Boosts tab, and verify that the UI correctly displays boost packages and allows a user to purchase a boost.
+     - Why fix this issue and what will be achieved with the fix? To ensure the new offer boosting feature is working end-to-end (from a mocked perspective) before moving on.
+     - Status: NOT STARTED
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? Both.
+     - Blocked on other issue: None.
 
 **In progress Task List**:
-  - Task 1: Complete New Feature Implementation from User Request (P0)
-     - Where to resume: The agent has created three new files: , , and . The next step is to flesh out these components and integrate them into the application.
-     - What will be achieved with this? This will address the user's comprehensive list of new features, transforming the application's core driver and partner experiences.
+  - Task 1: Port Driver Analytics Features to Mobile App (P1)
+     - Where to resume: The agent has created placeholder files:  and . The next step is to implement the UI and logic within these files, mirroring the functionality of the web components. This will involve fetching data from the existing mocked backend endpoints.
+     - What will be achieved with this? This will bring the mobile app closer to feature parity with the web application, providing a consistent user experience.
      - Status: IN PROGRESS
-     - Should Test frontend/backend/both after fix? Both. The frontend UI will require extensive testing, and new backend endpoints will need to be created and tested.
-     - Blocked on something: No.
+     - Should Test frontend/backend/both after fix? Frontend (mobile).
+     - Blocked on something: None.
 
 **Upcoming and Future Tasks**
 Upcoming Tasks:
--   **P0: Break down and implement the user's massive feature request ():**
-    1.  **Implement Theme/Dark Mode:** Integrate  into the root of the app and apply theme variables.
-    2.  **Build Enhanced Map Screen:** Replace the current map with , implementing the collapsible offer list, OpenStreetMap, and new driver utilities.
-    3.  **Implement Plan-Based RBAC:** Use  to gate features in the Partner Dashboard (e.g., limit locations for Starter plan).
-    4.  **Implement Driver Trip History:**
-        -   Create new backend endpoints to store and retrieve trip data.
-        -   Integrate a free fuel price API.
-        -   Build the Past Trips UI for drivers.
-    5.  **Implement Personalized Voice Offers:**
-        -   Enhance the backend to track driver location history.
-        -   Update  service to include the voice-driven offer flow.
-        -   Integrate this flow into the driver's map view.
--   **P1: Connect Partner Portal to Backend:** Replace all mocked data in the Partner Portal components with live API calls to new backend endpoints.
--   **P1: Port New Features to Mobile App:** Bring the  app to parity with the web app, including the QR scanner, Orion AI, Photo Capture, and new map features.
+-   **P1: Backend Database Integration (Partner & Trips):** Replace all mocked data in  and  with live API calls to a real PostgreSQL database. This is a critical step to make the application functional.
+-   **P2: Configure ESLint for TypeScript:** Properly set up ESLint in the frontend project to resolve persistent linting errors.
 
 Future Tasks:
--   **Backend Database Integration:** Fully connect the FastAPI backend to a real database (PostgreSQL), replacing all remaining mock logic.
--   **Configure ESLint for TypeScript:** Properly set up ESLint in the frontend project to resolve persistent linting errors.
+-   **Full Mobile App Parity:** Port all remaining web features (Partner Portal, AI Coach, Photo Capture, etc.) to the  app.
 
 **Completed work in this session**
-- **Partner Portal Implementation:** Successfully built and tested a complete Partner Portal with:
-    - QR Code Scanner for offer redemption ().
-    - Team Management with role-based access control.
-    - A Referrals & Credits system (replacing the Payouts feature).
-- **Backend AI Services:**
-    - Created and integrated a backend service for **Orion AI Coach** using the **Emergent LLM Key** and GPT-5.2.
-    - Created and integrated a backend service for **Photo Capture privacy blurring** using OpenAI's Vision API.
-- **Frontend AI Integration:**
-    - Connected the  component to the live backend API.
-    - Connected the  component to the live backend for AI analysis.
-- **UI/UX Fixes:**
-    - Fixed the positioning of the Floating Action Buttons (FABs) on the driver's map screen, making the Orion and Photo Capture features accessible.
-- **Comprehensive Testing:**
-    - Ran the testing agent () to validate the Partner Portal, achieving a 100% pass rate.
-    - Ran the testing agent again to validate the new backend APIs and frontend AI integrations, achieving a 100% pass rate on the backend and 95% on the frontend (with the only issues being missing UI triggers, which were subsequently fixed).
-- **File Cleanup:** Deleted the obsolete  component.
-- **Initiated New Feature Development:** Created placeholder files for the next major set of features (theming, plan config, enhanced map).
+-   **Massive Driver App Feature Implementation:**
+    -   **Trip & Fuel Analytics:** Created a comprehensive, multi-tab modal () to display trip history, fuel savings, and performance stats, connected to a new mocked .
+    -   **3D Route History Map:** Built a  component to visualize a driver's most frequent routes in a pseudo-3D map interface.
+    -   **Enhanced Map Screen:** Integrated a  into the main driver map view.
+-   **Verification & Testing:**
+    -   Visually verified all new driver features end-to-end using the  tool, navigating through the entire onboarding and application flow.
+    -   Successfully ran the , which confirmed the backend APIs were working (100% pass) and the frontend was 95% functional.
+-   **Began New Feature Implementation:**
+    -   Added backend endpoints and frontend UI for the new **Partner Offer Boosting** feature.
+    -   Created placeholder files in the  directory to begin porting analytics features.
 
 **Earlier issues found/mentioned but not fixed**
-   - **ESLint Configuration**: ESLint is not configured for TypeScript, causing persistent but non-blocking parsing errors during linting checks.
-   - **Vague Flutter file Reference**: A user comment from a previous session mentioned flutter, which is inconsistent with the React/React-Native stack. The agent has correctly ignored this and continued with React.
+   - **ESLint Configuration**: ESLint is not configured for TypeScript, causing persistent but non-blocking parsing errors during linting checks. This is a known issue from the previous handoff.
 
 **Known issue recurrence from previous fork**
   - None.
@@ -110,81 +89,87 @@ Future Tasks:
 
 
 **Key Technical Concepts**
--   **Live AI Integration:** Using the  to connect to and consume live LLM services (OpenAI GPT-5.2 for text, OpenAI Vision for image analysis) from the backend.
--   **Client-Side QR Scanning:** Implemented a browser-based QR code scanner using the  library.
--   **Component-Based RBAC:** Implemented role-based access control for the Partner Portal directly within the frontend components, staged for backend connection.
--   **Dynamic Theming:** A theme context has been created to support automatic light/dark mode switching.
--   **Plan-Based Feature Gating:** A configuration file () has been created to define subscription tiers, laying the groundwork for plan-based RBAC.
+-   **Mocked Backend Services:** Extensive use of service-layer mocking (, ) to enable parallel frontend development before the database is ready.
+-   **Complex Data Visualization:** Implementation of UI components for analytics, including charts, stats, and a pseudo-3D map for route visualization.
+-   **Cross-Platform Development:** Initiated the process of porting React web components to a React Native mobile application.
 
 **key DB schema**
-  - No active database. A PostgreSQL schema is available for reference at .
+  - No active database. All new features are powered by mocked services. A reference schema exists at .
 
 **changes in tech stack**
-  - : Installed in the backend to handle LLM API calls via the Emergent LLM Key.
-  - : Added to the frontend for the partner QR code scanner.
+  - No new dependencies were added in this session.
 
 **All files of reference**
--   **New Feature Request Source:** 
--   **New Backend Services:** 
--   **New Frontend Components:**
+-   **Core Logic:**
     -   
     -   
     -   
--   **New In-Progress Files:**
+-   **New Web Components:**
     -   
     -   
     -   
--   **Main Application Files:**
+-   **New Mobile Placeholders:**
     -   
     -   
+-   **Documentation:**
+    -    (directory containing team guides to be updated)
 
 **Areas that need refactoring**:
-- The  directory is severely outdated and needs to be updated with all the new web features (Partner Portal, AI Coach, Photo Capture, new Map screen).
+-   **Backend Mocking:** The biggest technical debt is the entirely mocked backend for all partner and driver analytics features. This needs to be replaced with a real database implementation.
+-   **Mobile App ():** The app is severely outdated and requires a significant effort to reach feature parity with the web version.
 
 **key api endpoints**
--   ****: (Live) Sends a message to the Orion AI coach.
--   ****: (Live) Sends an image for face/license plate detection.
--   The Partner Portal endpoints are defined in the frontend but not yet created in the backend.
+-    (Mocked)
+-    (Mocked)
+-    (Mocked)
+-    (Mocked, New)
+-    (Mocked, New)
+-    (Mocked, New)
+-    (Live)
+-    (Live)
 
 **Critical Info for New Agent**
--   **PRIORITIZE THE LATEST USER REQUEST:** The user has provided a very large and detailed list of new features in . Your primary goal is to systematically implement this entire list. Start by fleshing out the placeholder files created by the previous agent (, , ).
--   **Backend is a Hybrid:** The backend is no longer fully mocked. The Orion AI and Photo Analysis services are live and use the . The Partner Portal data, however, is still mocked. You will need to build out the backend services and database integration for the partner features and new driver analytics.
--   **Break Down the Task:** The user's request is too large to complete in one step. Break it down into logical chunks: 1. Theme, 2. Map Screen UI, 3. Partner Plan Gating, 4. Driver Trip History, etc. Provide updates to the user after completing each major chunk.
+-   **Resume the Current Task:** Your first priority is to complete the user's request from . This means you must first **update the team guide files** in .
+-   **Test New Features:** After updating the guides, you must thoroughly test the new **Offer Boosting** feature on both the backend () and frontend ().
+-   **Implement Mobile Screens:** Once the above is done, proceed to implement the UI and logic for the placeholder mobile screens:  and .
+-   **Backend is Mocked:** Do not attempt to connect to a database for the trip or partner features. All backend logic for these features should be contained within the mocked service files (, ). The next major task will be to replace this mocking.
 
 **documents and test reports created in this job**
+-   
 -    (updated)
--   
--   
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  ****: Agent confirms that the FAB buttons and Orion AI Coach modal are now working correctly after a UI fix.
-2.  ****: Agent updates the PRD and finishes the task of implementing the AI features.
-3.  ** (CRITICAL):** The user provides a massive, detailed list of new requirements, including an enhanced map screen, plan-based partner features, driver trip analytics, voice-driven personalized offers, a 3D route map, and light/dark mode.
-4.  ****: Agent acknowledges the request and asks clarifying questions about the map UI, fuel API, and partner plan details.
-5.  ****: User provides answers: Prefers a collapsible Nearby Offers tab, approves using a free fuel API, and provides the full details of the Starter/Growth/Enterprise plans.
-6.  ****: Agent confirms understanding and states it will begin implementation.
-7.  ** - **: Agent begins implementation by creating the foundational files:  for partner plans,  for light/dark mode, and  as a placeholder for the new driver map view. This is the current state.
+1.  ****: Agent confirms the Route History 3D map is working.
+2.  ****: Agent confirms the Partner Dashboard Plan-Based RBAC is working.
+3.  ****: Agent plans to run the testing agent.
+4.  ****: User confirms to proceed with tests.
+5.  ****: Agent confirms backend tests passed.
+6.  ****: Agent summarizes successful test results and plans to finish.
+7.  ****: Agent calls the finish tool.
+8.  ** (CRITICAL):** User provides the next set of tasks: Port analytics to mobile (P1), implement offer boosting (P2), and then update the team files for Kathir, Andrew, Brian, and the PM.
+9.  ****: Agent confirms it will start working on these new tasks.
+10. ** - **: Agent views the team files in  in preparation for updating them. This is the last action taken.
 
 **Project Health Check:**
--   **Broken**: The  app is severely out-of-date.
--   **Mocked**: The Partner Portal features (Team, Referrals, Analytics) and the upcoming Driver Trip History are UI-only and require backend implementation.
--   **Healthy/In-Progress**: The web frontend is healthy but undergoing a major overhaul based on new requirements. The backend has live, functional AI services but needs significant expansion for other features.
+-   **Broken**: The  app is non-functional for new features and severely out-of-date.
+-   **Mocked**: The entire backend for the Partner Portal and Driver Analytics is mocked. The application is not yet saving any state or user data for these features.
+-   **Healthy/In-Progress**: The web frontend is visually complete for a vast number of features and is ready for backend integration. The core AI services are live.
 
 **3rd Party Integrations**
 -   **OpenAI GPT-5.2 (via )**: Actively used for the Orion AI Coach. Uses Emergent LLM Key.
 -   **OpenAI Vision (via )**: Actively used for the Photo Capture blurring feature. Uses Emergent LLM Key.
--   **Planned**: Gas Buddy (or similar free fuel price API), OpenStreetMap.
+-   **Planned**: Gas Buddy (or similar free fuel price API), OpenStreetMap (already integrated via CartoDB tiles).
 
 **Testing status**
-  - Testing agent used after significant changes: YES. The agent was successfully used to validate the entire Partner Portal and the new AI features. The last run passed with 100% on the backend and 95% on the frontend, with the only issues being UI triggers that were subsequently fixed and verified via screenshot.
+  - Testing agent used after significant changes: YES. The testing agent was used to validate the driver analytics features, with a 100% backend pass rate and 95% frontend success.
   - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: []
+  - Test files created:  was created by the testing agent.
   - Known regressions: None.
 
 **Credentials to test flow:**
-- Mock login:  / 
+- Driver login:  / 
 - Admin login:  / 
 - Partner login:  / 
 
 **What agent forgot to execute**
-- The agent has just begun the latest set of large tasks from the user and has not forgotten anything from that request. The previous vague request for widgets has been superseded by the user's much more specific requirements for the .</analysis>
+- The agent has not forgotten any tasks. It is currently in the middle of executing the user's latest multi-step request and should resume where it left off.</analysis>
