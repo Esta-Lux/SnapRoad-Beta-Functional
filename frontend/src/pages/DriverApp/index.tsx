@@ -43,6 +43,8 @@ import { NavMarker, ProfileCar, CAR_COLORS } from './components/Car3D'
 import TripAnalytics from './components/TripAnalytics'
 import RouteHistory3D from './components/RouteHistory3D'
 import CollapsibleOffersPanel from './components/CollapsibleOffersPanel'
+import InAppBrowser from './components/InAppBrowser'
+import GemOverlay from './components/GemOverlay'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
