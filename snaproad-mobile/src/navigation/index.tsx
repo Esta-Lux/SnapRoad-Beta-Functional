@@ -228,6 +228,42 @@ export const Navigation = () => {
           component={NotificationSettingsScreen}
           options={{ animation: 'slide_from_right' }}
         />
+        {/* Navigation & Safety Screens */}
+        <Stack.Screen 
+          name="SearchDestination" 
+          component={SearchDestinationScreen}
+          options={{ animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen 
+          name="RoutePreview" 
+          component={RoutePreviewScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="ActiveNavigation" 
+          component={ActiveNavigationScreen}
+          options={{ animation: 'fade' }}
+        />
+        <Stack.Screen 
+          name="HazardFeed" 
+          component={HazardFeedScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="CommuteScheduler" 
+          component={CommuteSchedulerScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="InsuranceReport" 
+          component={InsuranceReportScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="Help" 
+          component={HelpScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
