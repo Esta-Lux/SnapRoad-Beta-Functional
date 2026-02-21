@@ -177,6 +177,15 @@ export default function DriverApp() {
   const [showRouteHistory3D, setShowRouteHistory3D] = useState(false)
   const [showOffersPanel, setShowOffersPanel] = useState(true)
   
+  // In-app browser state
+  const [browserUrl, setBrowserUrl] = useState('')
+  const [browserTitle, setBrowserTitle] = useState('')
+  const [showBrowser, setShowBrowser] = useState(false)
+  
+  // Gem overlay state
+  const [activeTripId, setActiveTripId] = useState<string | null>(null)
+  const [isNavigating, setIsNavigating] = useState(false)
+  
   // Search and navigation states
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
