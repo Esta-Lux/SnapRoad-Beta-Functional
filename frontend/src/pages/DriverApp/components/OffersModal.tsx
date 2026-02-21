@@ -211,6 +211,11 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                       )}
                     </div>
                     <p className="text-slate-400 text-sm truncate">{offer.description}</p>
+                    {offer.address && (
+                      <p className="text-slate-500 text-xs truncate flex items-center gap-1 mt-0.5">
+                        <MapPin size={10} /> {offer.address}
+                      </p>
+                    )}
                     
                     <div className="flex items-center gap-3 mt-2">
                       <span className={`font-bold ${offer.redeemed ? 'text-slate-500' : 'text-emerald-400'}`}>
