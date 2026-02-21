@@ -2921,6 +2921,25 @@ export default function DriverApp() {
         userPlan={userPlan}
         onRedeem={handleRedeemOffer}
         selectedOfferId={selectedOfferId}
+        onOpenUrl={(url, title) => {
+          setBrowserUrl(url)
+          setBrowserTitle(title)
+          setShowBrowser(true)
+        }}
+      />
+
+      {/* In-App Browser for third-party offer links */}
+      <InAppBrowser
+        url={browserUrl}
+        title={browserTitle}
+        isOpen={showBrowser}
+        onClose={() => setShowBrowser(false)}
+      />
+
+      {/* Gem Overlay - shows during navigation and trip summary at end */}
+      <GemOverlay
+        tripId={activeTripId}
+        isNavigating={isNavigating}
       />
       
       {/* Share Trip Score Modal */}
