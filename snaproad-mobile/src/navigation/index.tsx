@@ -133,7 +133,7 @@ export const Navigation = () => {
   }
 
   return (
-    <NavigationContainer theme={CustomTheme}>
+    <NavigationContainer theme={CustomTheme} navigationInChildEnabled>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
