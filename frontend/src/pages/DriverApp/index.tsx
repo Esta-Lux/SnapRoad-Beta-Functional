@@ -619,6 +619,7 @@ export default function DriverApp() {
       try {
         const w = widgets[draggingWidget]
         await api.put(`/api/widgets/${draggingWidget}/position?x=${w.position.x}&y=${w.position.y}`)
+      } catch (_e) { /* silently ignore */ }
     }
     setDraggingWidget(null)
   }
