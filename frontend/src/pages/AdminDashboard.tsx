@@ -979,6 +979,92 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* Bulk CSV Upload Modal */}
+      {showBulkUpload && <BulkUploadModal onClose={() => setShowBulkUpload(false)} />}
+    </div>
+  )
+}
+
+function BulkUploadModal({ onClose }: { onClose: () => void }) {
+  const [csvText, setCsvText] = useState('')
+  const [result, setResult] = useState<any>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const sampleCsv = `business_name,address,offer_url,description,business_type,base_gems
+"Groupon: Pizza Palace","200 S High St, Columbus OH","https://groupon.com/deals/pizza","50% off large pizza","restaurant",50
+"Groupon: Spa Day","780 Nationwide Blvd, Columbus OH","https://groupon.com/deals/spa","60-min massage $39","service",40
+"Local Auto Shop","567 Cleveland Ave, Columbus OH","","Free tire rotation","auto",25`
+
+  const handleUpload = async () => {
+    if (!csvText.trim()) return
+    setUploading(true)
+    try {
+      const lines = csvText.trim().split('\n')
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
+      const offers = lines.slice(1).map(line => {
+        const parts = line.match(/(".*?"|[^,]+)/g)?.map(p => p.trim().replace(/^"|"$/g, '')) || []
+        const obj: any = {}
+        headers.forEach((h, i) => { obj[h] = parts[i] || '' })
+        return {
+          business_name: obj.business_name || '',
+          address: obj.address || '',
+          offer_url: obj.offer_url || null,
+          description: obj.description || '',
+          business_type: obj.business_type || 'other',
+          base_gems: parseInt(obj.base_gems) || 25,
+          expires_days: 30,
+        }
+      }).filter(o => o.business_name)
+
+      const res = await fetch(`${API_URL}/api/admin/offers/bulk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ offers }),
+      })
+      const data = await res.json()
+      setResult(data)
+    } catch { setResult({ success: false, message: 'Upload failed' }) }
+    setUploading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" data-testid="bulk-upload-modal">
+      <div className="w-full max-w-2xl bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl border border-white/10 shadow-2xl">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-white font-bold text-xl flex items-center gap-2"><Upload className="text-emerald-400" size={22} />Bulk Upload Offers (CSV)</h2>
+            <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
+          </div>
+          <p className="text-slate-400 text-sm mb-3">Paste CSV with columns: <span className="text-emerald-400">business_name, address, offer_url, description, business_type, base_gems</span></p>
+          
+          <button onClick={() => setCsvText(sampleCsv)} className="text-xs text-blue-400 hover:text-blue-300 mb-2" data-testid="load-sample-csv">Load sample CSV</button>
+          
+          <textarea
+            value={csvText}
+            onChange={e => setCsvText(e.target.value)}
+            rows={8}
+            placeholder="Paste your CSV here..."
+            className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 text-sm font-mono resize-none mb-4"
+            data-testid="csv-textarea"
+          />
+
+          {result && (
+            <div className={`mb-4 p-3 rounded-xl text-sm ${result.success ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`} data-testid="upload-result">
+              {result.message}
+              {result.data && <span className="ml-2">({result.data.length} offers created)</span>}
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button onClick={onClose} className="flex-1 bg-slate-700/50 text-white py-3 rounded-xl hover:bg-slate-700">Cancel</button>
+            <button onClick={handleUpload} disabled={uploading || !csvText.trim()} className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl font-semibold disabled:opacity-50 flex items-center justify-center gap-2" data-testid="upload-csv-btn">
+              {uploading ? <RefreshCw size={16} className="animate-spin" /> : <Upload size={16} />}
+              {uploading ? 'Uploading...' : 'Upload Offers'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
