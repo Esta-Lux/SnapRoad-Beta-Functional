@@ -291,6 +291,26 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                 </div>
               )}
 
+              {/* Address */}
+              {selectedOffer.address && (
+                <div className="flex items-center gap-2 text-slate-400 text-xs">
+                  <MapPin size={12} className="text-emerald-400 shrink-0" />
+                  <span className="truncate">{selectedOffer.address}</span>
+                </div>
+              )}
+
+              {/* View Deal Button for third-party offers */}
+              {selectedOffer.offer_url && (
+                <button
+                  onClick={() => onOpenUrl?.(selectedOffer.offer_url!, selectedOffer.business_name)}
+                  className="w-full py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 text-sm bg-blue-500/20 border border-blue-500/30 text-blue-400 hover:bg-blue-500/30 transition"
+                  data-testid="view-deal-btn"
+                >
+                  <Star size={14} />
+                  View Deal
+                </button>
+              )}
+
               {/* Redeem Button */}
               <button
                 onClick={handleRedeem}
