@@ -31,6 +31,12 @@ import { TripAnalyticsScreen } from '../screens/TripAnalyticsScreen';
 import { RouteHistory3DScreen } from '../screens/RouteHistory3DScreen';
 import { OrionCoachScreen } from '../screens/OrionCoachScreen';
 import { MyOffersScreen } from '../screens/MyOffersScreen';
+// New Figma UI Screens
+import { DriverAnalyticsScreen } from '../screens/DriverAnalyticsScreen';
+import { GemsScreen } from '../screens/GemsScreen';
+import { PhotoCaptureScreen } from '../screens/PhotoCaptureScreen';
+import { PrivacyCenterScreen } from '../screens/PrivacyCenterScreen';
+import { NotificationSettingsScreen } from '../screens/NotificationSettingsScreen';
 
 import { useUserStore } from '../store';
 
