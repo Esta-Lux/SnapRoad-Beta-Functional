@@ -659,6 +659,8 @@ export default function DriverApp() {
 
   // Navigation handlers
   const handleStartNavigation = async (dest?: string) => {
+    const tripId = `trip_${Date.now()}`
+    setActiveTripId(tripId)
     setIsNavigating(true)
     setShowMenu(false)
     setShowSearch(false)
@@ -668,12 +670,13 @@ export default function DriverApp() {
       setTimeout(() => {
         toast.success(res.message || `Navigating to ${dest || 'destination'}`)
       }, 1500)
-    } catch (e) {
+    } catch (_e) {
       setTimeout(() => toast.success(`Navigating to ${dest || 'destination'}`), 1500)
     }
   }
 
   const handleStopNavigation = async () => {
+    const tripIdToEnd = activeTripId
     setIsNavigating(false)
     setShowTurnByTurn(false)
     setNavigationData(null)
@@ -682,9 +685,10 @@ export default function DriverApp() {
     try {
       await api.post('/api/navigation/stop')
       toast.success('Navigation stopped')
-    } catch (e) {
+    } catch (_e) {
       toast.success('Navigation stopped')
     }
+    // Gem summary will be shown by GemOverlay when isNavigating goes false
   }
 
   // Search location with API
