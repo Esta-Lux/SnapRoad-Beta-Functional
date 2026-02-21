@@ -120,26 +120,17 @@ export const MapScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <TouchableOpacity style={styles.glassBtn} onPress={() => navigation.navigate('Profile')}>
             <Ionicons name="menu" size={20} color={Colors.text} />
           </TouchableOpacity>
-          <View style={styles.searchBox}>
+          <TouchableOpacity style={styles.searchBox} onPress={() => navigation.navigate('SearchDestination')} activeOpacity={0.8}>
             <Ionicons name="search" size={18} color={Colors.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Where to?"
-              placeholderTextColor={Colors.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              data-testid="map-search-input"
-            />
-            <TouchableOpacity>
-              <Ionicons name="mic-outline" size={20} color={Colors.primaryLight} />
-            </TouchableOpacity>
-          </View>
+            <Text style={styles.searchPlaceholder}>Where to?</Text>
+            <Ionicons name="mic-outline" size={20} color={Colors.primaryLight} />
+          </TouchableOpacity>
         </View>
 
         {/* Quick Destinations */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }} contentContainerStyle={{ gap: 8, paddingRight: 16 }}>
           {QUICK_LOCATIONS.map((loc) => (
-            <TouchableOpacity key={loc.id} style={styles.quickPill}>
+            <TouchableOpacity key={loc.id} style={styles.quickPill} onPress={() => navigation.navigate('RoutePreview', { destination: loc.label })}>
               <Ionicons name={loc.icon} size={15} color={Colors.primaryLight} />
               <Text style={styles.quickLabel}>{loc.label}</Text>
               <Text style={styles.quickEta}>{loc.eta}</Text>
@@ -166,7 +157,7 @@ export const MapScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         <TouchableOpacity style={styles.glassBtn} onPress={() => navigation.navigate('PhotoCapture')} data-testid="map-camera-btn">
           <Ionicons name="camera-outline" size={21} color={Colors.textSecondary} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.glassBtn} data-testid="map-report-btn">
+        <TouchableOpacity style={styles.glassBtn} onPress={() => navigation.navigate('HazardFeed')} data-testid="map-report-btn">
           <Ionicons name="alert-circle-outline" size={21} color="#F59E0B" />
         </TouchableOpacity>
         <TouchableOpacity style={styles.orionFab} onPress={() => navigation.navigate('OrionCoach')} data-testid="map-orion-btn">
