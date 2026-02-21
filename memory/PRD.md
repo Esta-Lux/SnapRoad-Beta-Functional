@@ -1,68 +1,98 @@
 # SnapRoad - Product Requirements Document
 
-## Problem Statement
-Build "SnapRoad," a privacy-first, gamified navigation app with three parts:
-1. **Driver App** - Mobile/web for safe driving with rewards
-2. **Partner Portal** - Business dashboard for offers and analytics
+## Product Overview
+SnapRoad is a privacy-first, gamified navigation app with three parts:
+1. **Driver App** - Mobile/web navigation app with safety scoring, gem rewards, and local offers
+2. **Partner Portal** - Business dashboard for managing offers and viewing analytics
 3. **Admin Dashboard** - System management and oversight
 
 ## Tech Stack
-- **Frontend**: React + TypeScript + Vite + Tailwind + Shadcn/UI
-- **Backend**: FastAPI + Python + MongoDB (via MONGO_URL)
-- **Mobile**: React Native (Expo) + TypeScript + Zustand
-- **AI**: GPT-5.2 (Orion Coach) + OpenAI Vision (Photo Analysis) via Emergent LLM Key
-- **Maps**: Apple Maps MapKit JS (NOT Mapbox) - backend generates JWT tokens
+- **Frontend**: React (Vite) web app at `/app/frontend`
+- **Backend**: FastAPI at `/app/backend`
+- **Mobile App**: React Native (Expo) at `/app/snaproad-mobile`
+- **Database**: MongoDB (currently using mocked data for trips/partners)
 
-## Design System (Mobile - Feb 2026 Refresh)
-- **Theme**: Premium neon blue glass-morphism
-- **Primary**: #2563EB (neon blue), #38BDF8 (electric blue accent)
-- **Background**: #070E1B (deep navy), #111D32 (surface)
-- **Glass**: rgba(17,29,50,0.85) with border rgba(56,189,248,0.12)
-- **Typography**: SF Pro (iOS system font), semibold/bold weights, 0.2-0.5 letter-spacing
-- **iPhone 17 compatible**: Safe area insets, Dynamic Island support
+## AI Integrations
+- **OpenAI GPT-5.2**: Orion AI Coach (uses Emergent LLM Key)
+- **OpenAI Vision**: Photo Capture blurring (uses Emergent LLM Key)
+- **Apple Maps MapKit**: Designated mapping technology (not yet implemented)
 
-## What's Implemented
+## Implemented Features
 
-### Driver Mobile App (25 screens - ALL updated with premium UI)
-Core screens refreshed Feb 2026:
-- **MapScreen** - Route SVG, quick locations, safety badge, FABs, nearby offers
-- **ProfileScreen** - Gradient header, glass cards, grouped menus, stats row
-- **DriverAnalyticsScreen** - Stats grid, weekly chart, driving breakdown metrics
-- **GemsScreen** - Hero balance, offers/challenges/badges tabs
-- **OrionCoachScreen** - Chat UI with quick prompts, gradient bubbles
-- **PhotoCaptureScreen** - Camera frame, privacy shield banner, incident types
-- **FuelDashboardScreen** - Hero stats, monthly chart, efficiency metrics, tips
-- **PrivacyCenterScreen** - Protection banner, privacy toggles, data management
-- **NotificationSettingsScreen** - Toggle cards per notification type
-- **TripAnalyticsScreen** - 3-tab analytics (Trips, Savings, Stats)
-- **RouteHistory3DScreen** - Interactive 3D route visualization
-- Also: Splash, Welcome, PlanSelection, CarSetup, Offers, Rewards, Settings, Family, Leaderboard, TripLogs, MyOffers, OfferDetail
+### Web Frontend (Stable)
+- Landing page with premium UI
+- Driver login/signup flow
+- Driver dashboard with map, offers, gems, family tabs
+- Onboarding flow (plan → car → color selection)
+- Partner portal with dashboard, offers, analytics, boosts
+- Admin portal access
 
-### Driver App (Web)
-- Same features as mobile, connected to mocked backend
-- Trip Analytics, Route History 3D, Collapsible Offers Panel
+### Mobile App (React Native - Complete Build)
+- **Design System**: Neon blue premium theme (`/app/snaproad-mobile/src/utils/theme.ts`)
+- **Onboarding**: Splash → Welcome → Plan → Car → Main tabs
+- **Core Tabs**: Map, Offers, Rewards, Profile
+- **Navigation Screens** (NEW Feb 2026):
+  - `SearchDestinationScreen` - Destination search with recent/saved locations
+  - `RoutePreviewScreen` - Route preview with ETA and distance
+  - `ActiveNavigationScreen` - Turn-by-turn navigation view
+  - `HazardFeedScreen` - Road hazard reporting and viewing
+  - `CommuteSchedulerScreen` - Scheduled route management
+  - `InsuranceReportScreen` - 90-day safe driving report export
+  - `HelpScreen` - FAQ, guides, and support contacts
+- **Feature Screens**: DriverAnalytics, Gems, PhotoCapture, PrivacyCenter, NotificationSettings, TripAnalytics, RouteHistory3D, OrionCoach, MyOffers, FuelDashboard, TripLogs, Family, Leaderboard, Settings
+- **All screens wired into navigation stack** in `navigation/index.tsx`
 
-### Partner Portal (Web)
-- Dashboard overview, Offer CRUD, Location management
-- Plan-based RBAC, Boost Center, Credits system
+### Backend (FastAPI)
+- Auth endpoints (login/signup) with mock user credentials
+- Trip history API (mocked - 50 trips with full analytics)
+- Partner service (mocked - offers, boosts, analytics)
+- Orion AI Coach (live - GPT-5.2)
+- Photo analysis (live - OpenAI Vision)
 
-### Admin Dashboard (Web)
-- User management, offer moderation, system analytics
+## Test Credentials
+- Driver: `driver@snaproad.com` / `password123`
+- Partner: `partner@snaproad.com` / `password123`
+- Admin: `admin@snaproad.com` / `password123`
+- Partner Portal: `/portal/partner` loads without auth
 
-## API Status
-| Endpoint | Status | Notes |
-|----------|--------|-------|
-| POST /api/orion/chat | LIVE | GPT-5.2 via Emergent |
-| POST /api/photos/analyze | LIVE | OpenAI Vision |
-| GET /api/trips/history/detailed | MOCKED | Needs MongoDB |
-| GET /api/routes/history-3d | MOCKED | Needs MongoDB |
-| GET /api/partner/boosts/pricing | MOCKED | Static data |
-| POST /api/partner/boosts/create | MOCKED | Needs Stripe |
+## What's MOCKED
+- ALL trip data (in-memory, resets on restart)
+- ALL partner/offer data
+- User authentication (no real DB persistence)
 
-## Credentials
-- Driver: driver@snaproad.com / password123
-- Partner: partner@snaproad.com / password123
-- Admin: admin@snaproad.com / password123
+## Architecture
+```
+/app
+├── backend/         # FastAPI server
+│   ├── server.py
+│   ├── services/    # partner_service.py, trip_service.py (mocked)
+│   └── user_credentials.py
+├── frontend/        # React web app (Vite)
+│   └── src/
+├── snaproad-mobile/ # React Native (Expo)
+│   └── src/
+│       ├── components/   # Reusable UI components
+│       ├── navigation/   # Stack + Tab navigation
+│       ├── screens/      # 30+ screens
+│       ├── services/     # API client
+│       ├── store/        # Zustand state
+│       └── utils/        # Theme system
+└── memory/          # Documentation files
+```
+
+## Backlog (Prioritized)
+
+### P1 - Backend Database Integration
+Replace mocked trip/partner services with real MongoDB persistence
+
+### P2 - Fix Remaining Issues
+- Standardize UI components in mobile app (native-base vs custom)
+- Configure ESLint for TypeScript in frontend
+
+### P3 - Future
+- Apple Maps MapKit integration
+- Gas Buddy / fuel price API
+- Full mobile app parity with web features
 
 ---
-Last Updated: February 2026
+Last Updated: February 21, 2026
