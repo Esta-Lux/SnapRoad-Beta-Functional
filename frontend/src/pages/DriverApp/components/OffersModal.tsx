@@ -27,6 +27,7 @@ interface OffersModalProps {
   userPlan: 'basic' | 'premium' | null
   onRedeem: (offerId: number) => Promise<any>
   selectedOfferId?: number | null
+  onOpenUrl?: (url: string, title: string) => void
 }
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
@@ -39,7 +40,7 @@ const BUSINESS_ICONS: Record<string, any> = {
   default: Gift,
 }
 
-export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selectedOfferId }: OffersModalProps) {
+export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selectedOfferId, onOpenUrl }: OffersModalProps) {
   const [offers, setOffers] = useState<Offer[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null)
