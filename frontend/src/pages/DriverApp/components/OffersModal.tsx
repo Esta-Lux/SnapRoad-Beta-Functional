@@ -11,8 +11,10 @@ interface Offer {
   description: string
   discount_percent: number
   gems_reward: number
+  address?: string
   lat: number
   lng: number
+  offer_url?: string | null
   expires_at: string
   is_admin_offer: boolean
   is_premium_offer: boolean
