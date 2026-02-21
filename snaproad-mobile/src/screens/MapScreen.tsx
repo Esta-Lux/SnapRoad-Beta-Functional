@@ -220,6 +220,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.glassBorder, paddingHorizontal: 14, ...Shadows.md,
   },
   searchInput: { flex: 1, color: Colors.text, fontSize: FontSizes.md, fontWeight: FontWeights.medium, letterSpacing: 0.2 },
+  searchPlaceholder: { flex: 1, color: Colors.textMuted, fontSize: FontSizes.md, fontWeight: FontWeights.medium, letterSpacing: 0.2 },
   quickPill: {
     flexDirection: 'row', alignItems: 'center', gap: 6, height: 38, paddingHorizontal: 14,
     backgroundColor: Colors.glass, borderRadius: BorderRadius.full,
