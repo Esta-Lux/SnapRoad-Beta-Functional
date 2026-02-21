@@ -56,56 +56,38 @@ const CustomTheme = {
   },
 };
 
-// Custom Tab Bar
+// Custom Tab Bar — Premium neon blue
 const CustomTabBar = ({ state, descriptors, navigation }: any) => {
   return (
     <View style={tabStyles.container}>
       <View style={tabStyles.tabBar}>
         {state.routes.map((route: any, index: number) => {
-          const { options } = descriptors[route.key];
           const isFocused = state.index === index;
 
-          const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
-            Map: 'map',
-            Offers: 'gift',
-            Rewards: 'trophy',
-            Profile: 'person',
+          const iconMap: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
+            Map: { active: 'map', inactive: 'map-outline' },
+            Offers: { active: 'gift', inactive: 'gift-outline' },
+            Rewards: { active: 'trophy', inactive: 'trophy-outline' },
+            Profile: { active: 'person', inactive: 'person-outline' },
           };
 
-          const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
+          const icons = iconMap[route.name] || { active: 'ellipse', inactive: 'ellipse-outline' };
 
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
-            }
+          const onPress = () => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name);
           };
 
           return (
-            <TouchableOpacity
-              key={route.key}
-              onPress={onPress}
-              style={tabStyles.tab}
-              activeOpacity={0.7}
-            >
+            <TouchableOpacity key={route.key} onPress={onPress} style={tabStyles.tab} activeOpacity={0.7}>
               {isFocused ? (
-                <LinearGradient
-                  colors={Colors.gradientPrimary}
-                  style={tabStyles.activeTab}
-                >
-                  <Ionicons name={icons[route.name]} size={22} color={Colors.text} />
+                <LinearGradient colors={Colors.gradientPrimary} style={tabStyles.activeTab}>
+                  <Ionicons name={icons.active} size={20} color="#fff" />
                   <Text style={tabStyles.activeLabel}>{route.name}</Text>
                 </LinearGradient>
               ) : (
                 <View style={tabStyles.inactiveTab}>
-                  <Ionicons
-                    name={icons[route.name]}
-                    size={22}
-                    color={Colors.textSecondary}
-                  />
+                  <Ionicons name={icons.inactive} size={20} color={Colors.textMuted} />
                 </View>
               )}
             </TouchableOpacity>
