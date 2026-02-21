@@ -10,8 +10,6 @@ import {
   Dimensions,
   Animated,
   ScrollView,
-  TextInput,
-  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,7 +39,6 @@ const offerColors: Record<string, string> = {
 export const MapScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useUserStore();
-  const [searchQuery, setSearchQuery] = useState('');
   const pulseAnim = useRef(new Animated.Value(0.3)).current;
   const cardSlide = useRef(new Animated.Value(30)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
