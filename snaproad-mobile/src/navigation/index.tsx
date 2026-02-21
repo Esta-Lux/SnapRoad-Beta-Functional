@@ -37,6 +37,14 @@ import { GemsScreen } from '../screens/GemsScreen';
 import { PhotoCaptureScreen } from '../screens/PhotoCaptureScreen';
 import { PrivacyCenterScreen } from '../screens/PrivacyCenterScreen';
 import { NotificationSettingsScreen } from '../screens/NotificationSettingsScreen';
+// Navigation & Safety Screens
+import { ActiveNavigationScreen } from '../screens/ActiveNavigationScreen';
+import { SearchDestinationScreen } from '../screens/SearchDestinationScreen';
+import { RoutePreviewScreen } from '../screens/RoutePreviewScreen';
+import { HazardFeedScreen } from '../screens/HazardFeedScreen';
+import { CommuteSchedulerScreen } from '../screens/CommuteSchedulerScreen';
+import { InsuranceReportScreen } from '../screens/InsuranceReportScreen';
+import { HelpScreen } from '../screens/HelpScreen';
 
 import { useUserStore } from '../store';
 
