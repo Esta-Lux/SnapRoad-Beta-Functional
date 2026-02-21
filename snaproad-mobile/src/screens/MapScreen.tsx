@@ -1,5 +1,6 @@
 // SnapRoad Mobile - Map Screen
-// Compatible with Expo Go - uses placeholder map until development builds are configured
+// Aligned with Figma UI: /app/frontend/src/components/figma-ui/mobile/MapScreen.tsx
+// Uses placeholder map compatible with Expo Go
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -9,600 +10,355 @@ import {
   TouchableOpacity,
   Dimensions,
   Animated,
-  Platform,
   ScrollView,
+  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import * as Location from 'expo-location';
+import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop, Circle } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserStore, useOffersStore } from '../store';
-import { Colors, Spacing, BorderRadius, FontSizes, FontWeights, MapConfig } from '../utils/theme';
-import { GemDisplay } from '../components/ui';
-import { Offer } from '../types';
+import { Colors, Spacing, BorderRadius, FontSizes, FontWeights } from '../utils/theme';
 
-const { width, height } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// NOTE FOR TEAM: To use real maps with react-native-maps, you need to:
-// 1. Use development builds instead of Expo Go: npx expo run:ios or npx expo run:android
-// 2. Or use EAS Build: npx eas build --profile development --platform ios
-// The placeholder below works with Expo Go for UI development
+const QUICK_LOCATIONS = [
+  { id: 1, icon: 'home' as const, label: 'Home', subtitle: '2.3 mi' },
+  { id: 2, icon: 'business' as const, label: 'Work', subtitle: '5.1 mi' },
+  { id: 3, icon: 'heart' as const, label: "Mom's", subtitle: '8.7 mi' },
+];
 
-export const MapScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+const NEARBY_OFFERS = [
+  { id: 1, name: 'Coffee House', discount: '15% off', gems: 50, distance: '0.3 mi' },
+  { id: 2, name: 'Auto Spa', discount: 'Free wash', gems: 100, distance: '0.8 mi' },
+  { id: 3, name: 'Gas Station', discount: '$0.10/gal', gems: 25, distance: '0.2 mi' },
+];
+
+interface MapScreenProps {
+  navigation: any;
+}
+
+export const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const { user } = useUserStore();
-  const { offers, selectOffer } = useOffersStore();
-  const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
-  const [locationError, setLocationError] = useState<string | null>(null);
-  const slideAnim = useRef(new Animated.Value(300)).current;
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const pulseAnim = useRef(new Animated.Value(0.4)).current;
+  const bounceAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setLocationError('Location permission denied');
-        return;
-      }
-      
-      try {
-        let loc = await Location.getCurrentPositionAsync({});
-        setLocation(loc);
-      } catch (e) {
-        // Use default location if can't get current
-        setLocation({
-          coords: {
-            latitude: MapConfig.defaultLocation.latitude,
-            longitude: MapConfig.defaultLocation.longitude,
-            altitude: null,
-            accuracy: null,
-            altitudeAccuracy: null,
-            heading: null,
-            speed: null,
-          },
-          timestamp: Date.now(),
-        });
-      }
-    })();
+    // Pulse animation for user location
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.4, duration: 1500, useNativeDriver: true }),
+      ])
+    ).start();
+
+    // Bounce for gem markers
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(bounceAnim, { toValue: -8, duration: 800, useNativeDriver: true }),
+        Animated.timing(bounceAnim, { toValue: 0, duration: 800, useNativeDriver: true }),
+      ])
+    ).start();
   }, []);
 
-  const handleOfferPress = (offer: Offer) => {
-    setSelectedOffer(offer);
-    Animated.spring(slideAnim, {
-      toValue: 0,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const closeOfferPanel = () => {
-    Animated.timing(slideAnim, {
-      toValue: 300,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => setSelectedOffer(null));
-  };
-
-  const getOfferIcon = (type: string) => {
-    const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
-      gas: 'car',
-      cafe: 'cafe',
-      restaurant: 'restaurant',
-      carwash: 'water',
-      retail: 'bag',
-    };
-    return icons[type] || 'location';
-  };
-
-  const getOfferColor = (type: string) => {
-    const colors: Record<string, string> = {
-      gas: Colors.gas,
-      cafe: Colors.cafe,
-      restaurant: Colors.restaurant,
-      carwash: Colors.carwash,
-      retail: Colors.retail,
-    };
-    return colors[type] || Colors.primary;
-  };
-
   return (
-    <View style={styles.container}>
-      {/* Placeholder Map - Works with Expo Go */}
-      <View style={styles.mapPlaceholder}>
-        <LinearGradient
-          colors={['#1a3a5c', '#0d1f33', '#0a1929']}
-          style={styles.mapGradient}
-        >
-          {/* Grid lines to simulate map */}
-          <View style={styles.gridOverlay}>
-            {[...Array(10)].map((_, i) => (
-              <View key={`h${i}`} style={[styles.gridLineH, { top: `${i * 10}%` }]} />
-            ))}
-            {[...Array(10)].map((_, i) => (
-              <View key={`v${i}`} style={[styles.gridLineV, { left: `${i * 10}%` }]} />
-            ))}
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Map Background with Placeholder */}
+      <View style={styles.mapBackground}>
+        {/* Grid overlay to simulate map */}
+        <View style={styles.gridOverlay}>
+          {[...Array(16)].map((_, i) => (
+            <View key={`h-${i}`} style={[styles.gridLineH, { top: (i * SCREEN_HEIGHT) / 16 }]} />
+          ))}
+          {[...Array(10)].map((_, i) => (
+            <View key={`v-${i}`} style={[styles.gridLineV, { left: (i * SCREEN_WIDTH) / 10 }]} />
+          ))}
+        </View>
+
+        {/* Simulated Route Path */}
+        <Svg width={SCREEN_WIDTH} height={SCREEN_HEIGHT} style={StyleSheet.absoluteFill}>
+          <Defs>
+            <SvgGradient id="routeGrad" x1="0" y1="1" x2="0" y2="0">
+              <Stop offset="0" stopColor="#0084FF" />
+              <Stop offset="1" stopColor="#00FFD7" />
+            </SvgGradient>
+          </Defs>
+          <Path
+            d={`M ${SCREEN_WIDTH * 0.5} ${SCREEN_HEIGHT * 0.85} Q ${SCREEN_WIDTH * 0.35} ${SCREEN_HEIGHT * 0.6} ${SCREEN_WIDTH * 0.5} ${SCREEN_HEIGHT * 0.5} Q ${SCREEN_WIDTH * 0.65} ${SCREEN_HEIGHT * 0.35} ${SCREEN_WIDTH * 0.5} ${SCREEN_HEIGHT * 0.2} Q ${SCREEN_WIDTH * 0.45} ${SCREEN_HEIGHT * 0.15} ${SCREEN_WIDTH * 0.5} ${SCREEN_HEIGHT * 0.1}`}
+            fill="none"
+            stroke="url(#routeGrad)"
+            strokeWidth={4}
+            strokeLinecap="round"
+          />
+          {/* Route glow */}
+          <Path
+            d={`M ${SCREEN_WIDTH * 0.5} ${SCREEN_HEIGHT * 0.85} Q ${SCREEN_WIDTH * 0.35} ${SCREEN_HEIGHT * 0.6} ${SCREEN_WIDTH * 0.5} ${SCREEN_HEIGHT * 0.5} Q ${SCREEN_WIDTH * 0.65} ${SCREEN_HEIGHT * 0.35} ${SCREEN_WIDTH * 0.5} ${SCREEN_HEIGHT * 0.2} Q ${SCREEN_WIDTH * 0.45} ${SCREEN_HEIGHT * 0.15} ${SCREEN_WIDTH * 0.5} ${SCREEN_HEIGHT * 0.1}`}
+            fill="none"
+            stroke="#0084FF"
+            strokeWidth={12}
+            strokeLinecap="round"
+            opacity={0.15}
+          />
+        </Svg>
+
+        {/* User Location Marker */}
+        <View style={styles.userMarkerContainer}>
+          <Animated.View style={[styles.userMarkerPulse, { opacity: pulseAnim }]} />
+          <View style={styles.userMarkerOuter}>
+            <LinearGradient
+              colors={['#0084FF', '#00FFD7']}
+              style={styles.userMarkerInner}
+            >
+              <Ionicons name="navigate" size={16} color="#fff" />
+            </LinearGradient>
           </View>
-          
-          {/* Current Location Indicator */}
-          <View style={styles.locationPulse}>
-            <View style={styles.locationDot}>
-              <Ionicons name="navigate" size={16} color={Colors.text} />
-            </View>
-            <View style={styles.locationRing} />
+        </View>
+
+        {/* Gem Marker on Map */}
+        <Animated.View style={[styles.gemMarker, { transform: [{ translateY: bounceAnim }] }]}>
+          <LinearGradient
+            colors={['#FFB800', '#FF6B00']}
+            style={styles.gemMarkerInner}
+          >
+            <Ionicons name="diamond" size={18} color="#fff" />
+          </LinearGradient>
+        </Animated.View>
+
+        {/* Destination Marker */}
+        <View style={styles.destinationMarker}>
+          <View style={styles.destinationDot}>
+            <Ionicons name="flag" size={14} color="#fff" />
           </View>
-          
-          {/* Offer Markers */}
-          {offers.slice(0, 5).map((offer, index) => {
-            const positions = [
-              { top: '25%', left: '30%' },
-              { top: '35%', left: '60%' },
-              { top: '50%', left: '20%' },
-              { top: '60%', left: '70%' },
-              { top: '70%', left: '45%' },
-            ];
-            const pos = positions[index] || positions[0];
-            
-            return (
-              <TouchableOpacity
-                key={offer.id}
-                style={[styles.markerContainer, { position: 'absolute', ...pos }]}
-                onPress={() => handleOfferPress(offer)}
-              >
-                <LinearGradient
-                  colors={[getOfferColor(offer.businessType), `${getOfferColor(offer.businessType)}cc`]}
-                  style={styles.marker}
-                >
-                  <Ionicons name={getOfferIcon(offer.businessType)} size={14} color="#fff" />
-                </LinearGradient>
-                <View style={styles.discountBadge}>
-                  <Text style={styles.discountText}>{offer.discountPercent}%</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-          
-          {/* Map Provider Notice */}
-          <View style={styles.mapNotice}>
-            <Ionicons name="map-outline" size={14} color={Colors.textMuted} />
-            <Text style={styles.mapNoticeText}>Map preview mode</Text>
-          </View>
-        </LinearGradient>
+        </View>
       </View>
 
       {/* Top Bar */}
-      <View style={styles.topBar}>
-        <TouchableOpacity style={styles.menuButton} onPress={() => navigation.openDrawer?.()}>
-          <Ionicons name="menu" size={24} color={Colors.text} />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.searchBar}>
-          <Ionicons name="search" size={20} color={Colors.textSecondary} />
-          <Text style={styles.searchText}>Search destination...</Text>
-        </TouchableOpacity>
-
-        <GemDisplay amount={user.gems} size="sm" />
-      </View>
-
-      {/* Bottom Controls */}
-      <View style={styles.bottomControls}>
-        <TouchableOpacity style={styles.controlButton}>
-          <Ionicons name="locate" size={24} color={Colors.text} />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.orionButton}>
-          <LinearGradient colors={Colors.gradientAccent} style={styles.orionGradient}>
-            <Ionicons name="mic" size={28} color={Colors.text} />
-          </LinearGradient>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.controlButton}>
-          <Ionicons name="layers" size={24} color={Colors.text} />
-        </TouchableOpacity>
-      </View>
-
-      {/* User Stats Bar */}
-      <View style={styles.statsBar}>
-        <View style={styles.statItem}>
-          <Ionicons name="shield-checkmark" size={16} color={Colors.success} />
-          <Text style={styles.statText}>{user.safetyScore}</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Ionicons name="star" size={16} color={Colors.gold} />
-          <Text style={styles.statText}>Lvl {user.level}</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Ionicons name="speedometer" size={16} color={Colors.info} />
-          <Text style={styles.statText}>{user.totalMiles.toFixed(0)} mi</Text>
-        </View>
-      </View>
-
-      {/* Offer Panel */}
-      {selectedOffer && (
-        <Animated.View style={[styles.offerPanel, { transform: [{ translateY: slideAnim }] }]}>
-          <View style={styles.panelHandle} />
-          
-          <TouchableOpacity style={styles.closeButton} onPress={closeOfferPanel}>
-            <Ionicons name="close" size={24} color={Colors.textSecondary} />
+      <View style={[styles.topBar, { top: insets.top + 8 }]}>
+        {/* Menu & Search Row */}
+        <View style={styles.topRow}>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => navigation.navigate('Settings')}
+            data-testid="map-menu-btn"
+          >
+            <Ionicons name="menu" size={20} color="#fff" />
           </TouchableOpacity>
 
-          <View style={styles.offerHeader}>
-            <View style={[styles.offerIcon, { backgroundColor: `${getOfferColor(selectedOffer.businessType)}20` }]}>
-              <Ionicons name={getOfferIcon(selectedOffer.businessType)} size={28} color={getOfferColor(selectedOffer.businessType)} />
-            </View>
-            <View style={styles.offerInfo}>
-              <Text style={styles.offerName}>{selectedOffer.businessName}</Text>
-              <Text style={styles.offerDistance}>{selectedOffer.distance}</Text>
-            </View>
-            <View style={styles.discountTag}>
-              <Text style={styles.discountTagText}>{selectedOffer.discountPercent}% OFF</Text>
-            </View>
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={20} color="rgba(255,255,255,0.4)" style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Where to?"
+              placeholderTextColor="rgba(255,255,255,0.4)"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onFocus={() => setShowSearch(true)}
+              data-testid="map-search-input"
+            />
           </View>
+        </View>
 
-          <Text style={styles.offerDescription}>{selectedOffer.description}</Text>
+        {/* Quick Location Pills */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickLocations}>
+          {QUICK_LOCATIONS.map((loc) => (
+            <TouchableOpacity key={loc.id} style={styles.locationPill} data-testid={`quick-location-${loc.label.toLowerCase()}`}>
+              <Ionicons name={loc.icon} size={16} color="#0084FF" />
+              <Text style={styles.locationLabel}>{loc.label}</Text>
+              <Text style={styles.locationSubtitle}>{loc.subtitle}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
-          <View style={styles.rewardRow}>
-            <View style={styles.rewardItem}>
-              <Ionicons name="diamond" size={20} color={Colors.gem} />
-              <Text style={styles.rewardText}>
-                {user.isPremium ? selectedOffer.premiumGems : selectedOffer.baseGems} gems
-              </Text>
-            </View>
-            {user.isPremium && (
-              <View style={styles.premiumBadge}>
-                <Ionicons name="star" size={12} color={Colors.gold} />
-                <Text style={styles.premiumText}>Premium Bonus</Text>
+      {/* Floating Action Buttons (Right Side) */}
+      <View style={[styles.fabColumn, { top: SCREEN_HEIGHT * 0.3 }]}>
+        <TouchableOpacity
+          style={styles.fabButton}
+          onPress={() => {/* Report incident */}}
+          data-testid="map-report-btn"
+        >
+          <Ionicons name="alert-circle" size={22} color="#FFB800" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.fabButton}
+          onPress={() => {/* Photo capture */}}
+          data-testid="map-camera-btn"
+        >
+          <Ionicons name="camera" size={22} color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.fabOrion}
+          onPress={() => navigation.navigate('OrionCoach')}
+          data-testid="map-orion-btn"
+        >
+          <LinearGradient
+            colors={['#0084FF', '#00FFD7']}
+            style={styles.fabOrionGradient}
+          >
+            <Ionicons name="mic" size={22} color="#fff" />
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+
+      {/* Nearby Offers Card */}
+      <View style={styles.nearbyOffersCard}>
+        <View style={styles.nearbyHeader}>
+          <Text style={styles.nearbyTitle}>Nearby Offers</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Offers')} style={styles.viewAllBtn}>
+            <Text style={styles.viewAllText}>View all</Text>
+            <Ionicons name="chevron-forward" size={14} color="#0084FF" />
+          </TouchableOpacity>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.offersRow}>
+          {NEARBY_OFFERS.map((offer) => (
+            <View key={offer.id} style={styles.offerChip}>
+              <View style={styles.offerChipTop}>
+                <Text style={styles.offerDiscount}>{offer.discount}</Text>
+                <View style={styles.offerGemsRow}>
+                  <Ionicons name="diamond" size={12} color="#FFB800" />
+                  <Text style={styles.offerGems}>{offer.gems}</Text>
+                </View>
               </View>
-            )}
-          </View>
-
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.navigateButton}>
-              <LinearGradient colors={Colors.gradientPrimary} style={styles.navigateGradient}>
-                <Ionicons name="navigate" size={20} color={Colors.text} />
-                <Text style={styles.navigateText}>Navigate</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.detailsButton} onPress={() => {
-              closeOfferPanel();
-              navigation.navigate('OfferDetail', { offer: selectedOffer });
-            }}>
-              <Text style={styles.detailsText}>View Details</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
-      )}
+              <Text style={styles.offerName}>{offer.name}</Text>
+              <Text style={styles.offerDistance}>{offer.distance}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  
-  // Placeholder Map
-  mapPlaceholder: {
-    width,
-    height,
-  },
-  mapGradient: {
-    flex: 1,
-    position: 'relative',
-  },
-  gridOverlay: {
+  container: { flex: 1, backgroundColor: '#0A0E16' },
+  mapBackground: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.1,
+    backgroundColor: '#121822',
   },
+  gridOverlay: { ...StyleSheet.absoluteFillObject },
   gridLineH: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: Colors.primary,
+    position: 'absolute', left: 0, right: 0, height: 1,
+    backgroundColor: 'rgba(0,132,255,0.06)',
   },
   gridLineV: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 1,
-    backgroundColor: Colors.primary,
+    position: 'absolute', top: 0, bottom: 0, width: 1,
+    backgroundColor: 'rgba(0,132,255,0.06)',
   },
-  locationPulse: {
-    position: 'absolute',
-    top: '45%',
-    left: '48%',
-    alignItems: 'center',
-    justifyContent: 'center',
+  // User marker
+  userMarkerContainer: {
+    position: 'absolute', left: '50%', bottom: '30%',
+    marginLeft: -32, alignItems: 'center', justifyContent: 'center',
   },
-  locationDot: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2,
+  userMarkerPulse: {
+    position: 'absolute', width: 64, height: 64, borderRadius: 32,
+    backgroundColor: 'rgba(0,132,255,0.2)',
   },
-  locationRing: {
-    position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: `${Colors.primary}20`,
-    borderWidth: 2,
-    borderColor: `${Colors.primary}40`,
+  userMarkerOuter: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: 'rgba(0,132,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  mapNotice: {
-    position: 'absolute',
-    bottom: 120,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: `${Colors.background}cc`,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.sm,
-    gap: 6,
+  userMarkerInner: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#0084FF', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
   },
-  mapNoticeText: {
-    color: Colors.textMuted,
-    fontSize: FontSizes.xs,
+  // Gem marker
+  gemMarker: {
+    position: 'absolute', left: '25%', top: '33%',
   },
-  
-  // Top Bar
-  topBar: {
-    position: 'absolute',
-    top: 50,
-    left: Spacing.md,
-    right: Spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
+  gemMarkerInner: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#FFB800', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4, shadowRadius: 6, elevation: 4,
   },
+  // Destination marker
+  destinationMarker: {
+    position: 'absolute', left: '50%', top: '10%', marginLeft: -14,
+  },
+  destinationDot: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: '#00DFA2', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 3, borderColor: '#fff',
+    shadowColor: '#00DFA2', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5, shadowRadius: 6, elevation: 4,
+  },
+  // Top bar
+  topBar: { position: 'absolute', left: 0, right: 0, paddingHorizontal: 16, zIndex: 10 },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   menuButton: {
-    width: 44,
-    height: 44,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 48, height: 48, borderRadius: 16,
+    backgroundColor: 'rgba(26,31,46,0.9)', borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  searchBar: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md,
-    height: 44,
-    gap: Spacing.sm,
+  searchContainer: {
+    flex: 1, height: 48, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(26,31,46,0.9)', borderRadius: 16,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 12,
   },
-  searchText: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.md,
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, color: '#fff', fontSize: 15 },
+  quickLocations: { marginTop: 12 },
+  locationPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    height: 40, paddingHorizontal: 16,
+    backgroundColor: 'rgba(26,31,46,0.9)', borderRadius: 20,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    marginRight: 8,
   },
-
-  // Bottom Controls
-  bottomControls: {
-    position: 'absolute',
-    bottom: 100,
-    right: Spacing.md,
-    alignItems: 'center',
-    gap: Spacing.md,
+  locationLabel: { color: '#fff', fontSize: 14 },
+  locationSubtitle: { color: 'rgba(255,255,255,0.4)', fontSize: 12 },
+  // FABs
+  fabColumn: { position: 'absolute', right: 16, gap: 12, zIndex: 20 },
+  fabButton: {
+    width: 56, height: 56, borderRadius: 16,
+    backgroundColor: 'rgba(26,31,46,0.9)', borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3, shadowRadius: 6, elevation: 4,
   },
-  controlButton: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+  fabOrion: { overflow: 'hidden', borderRadius: 16 },
+  fabOrionGradient: {
+    width: 56, height: 56, alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#0084FF', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
   },
-  orionButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    overflow: 'hidden',
+  // Nearby offers
+  nearbyOffersCard: {
+    position: 'absolute', left: 16, right: 16, bottom: 100,
+    backgroundColor: 'rgba(26,31,46,0.95)', borderRadius: 16,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    padding: 16, zIndex: 10,
   },
-  orionGradient: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
+  nearbyHeader: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 12,
   },
-
-  // Stats Bar
-  statsBar: {
-    position: 'absolute',
-    bottom: 40,
-    left: Spacing.md,
-    right: Spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+  nearbyTitle: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  viewAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  viewAllText: { color: '#0084FF', fontSize: 14 },
+  offersRow: { gap: 12 },
+  offerChip: {
+    width: 160, backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12, padding: 12,
   },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: Spacing.md,
+  offerChipTop: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 8,
   },
-  statText: {
-    color: Colors.text,
-    fontSize: FontSizes.sm,
-    fontWeight: FontWeights.medium,
-  },
-  statDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: Colors.surfaceLight,
-  },
-
-  // Markers
-  markerContainer: {
-    alignItems: 'center',
-  },
-  marker: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  discountBadge: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: Colors.background,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  discountText: {
-    color: Colors.primary,
-    fontSize: 9,
-    fontWeight: FontWeights.bold,
-  },
-
-  // Offer Panel
-  offerPanel: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    paddingTop: Spacing.md,
-  },
-  panelHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: Spacing.md,
-  },
-  closeButton: {
-    position: 'absolute',
-    top: Spacing.md,
-    right: Spacing.md,
-    padding: 4,
-  },
-  offerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  offerIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: BorderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.md,
-  },
-  offerInfo: {
-    flex: 1,
-  },
-  offerName: {
-    color: Colors.text,
-    fontSize: FontSizes.lg,
-    fontWeight: FontWeights.bold,
-  },
-  offerDistance: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.sm,
-    marginTop: 2,
-  },
-  discountTag: {
-    backgroundColor: `${Colors.success}20`,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.sm,
-  },
-  discountTagText: {
-    color: Colors.success,
-    fontSize: FontSizes.sm,
-    fontWeight: FontWeights.bold,
-  },
-  offerDescription: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.md,
-    marginBottom: Spacing.md,
-  },
-  rewardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.lg,
-  },
-  rewardItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  rewardText: {
-    color: Colors.gem,
-    fontSize: FontSizes.md,
-    fontWeight: FontWeights.semibold,
-  },
-  premiumBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: `${Colors.gold}20`,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.sm,
-    marginLeft: Spacing.md,
-    gap: 4,
-  },
-  premiumText: {
-    color: Colors.gold,
-    fontSize: FontSizes.xs,
-    fontWeight: FontWeights.medium,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-  },
-  navigateButton: {
-    flex: 1,
-    borderRadius: BorderRadius.md,
-    overflow: 'hidden',
-  },
-  navigateGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    gap: 8,
-  },
-  navigateText: {
-    color: Colors.text,
-    fontSize: FontSizes.md,
-    fontWeight: FontWeights.semibold,
-  },
-  detailsButton: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.surfaceLight,
-    borderRadius: BorderRadius.md,
-  },
-  detailsText: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.md,
-    fontWeight: FontWeights.medium,
-  },
+  offerDiscount: { color: '#00FFD7', fontSize: 12, fontWeight: '500' },
+  offerGemsRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  offerGems: { color: 'rgba(255,255,255,0.6)', fontSize: 12 },
+  offerName: { color: '#fff', fontSize: 14, fontWeight: '500' },
+  offerDistance: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
 });
+
+export default MapScreen;
