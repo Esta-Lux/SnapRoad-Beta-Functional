@@ -203,6 +203,9 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="text-white font-semibold truncate">{offer.business_name}</h3>
+                      {offer.offer_url && (
+                        <span className="text-blue-400 bg-blue-500/10 text-[10px] px-1.5 py-0.5 rounded-full">Deal</span>
+                      )}
                       {offer.is_premium_offer && !isPremium && (
                         <span className="text-amber-400 text-xs flex items-center gap-0.5">
                           <Lock size={10} />
