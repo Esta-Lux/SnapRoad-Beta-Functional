@@ -212,6 +212,32 @@ export const Navigation = () => {
           component={MyOffersScreen}
           options={{ animation: 'slide_from_right' }}
         />
+        {/* Figma UI Screens */}
+        <Stack.Screen 
+          name="DriverAnalytics" 
+          component={DriverAnalyticsScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="Gems" 
+          component={GemsScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="PhotoCapture" 
+          component={PhotoCaptureScreen}
+          options={{ animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen 
+          name="PrivacyCenter" 
+          component={PrivacyCenterScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="NotificationSettings" 
+          component={NotificationSettingsScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
