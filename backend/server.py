@@ -1273,6 +1273,186 @@ def get_nearby_offers(lat: float, lng: float, radius: float = 5.0):
     
     return {"success": True, "data": nearby}
 
+# ==================== ADMIN BULK OFFER UPLOAD ====================
+class BulkOfferItem(BaseModel):
+    business_name: str
+    address: str
+    description: str = ""
+    offer_url: Optional[str] = None
+    business_type: str = "other"
+    base_gems: int = 25
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    expires_days: int = 30
+
+class BulkOfferUpload(BaseModel):
+    offers: List[BulkOfferItem]
+
+# Simple geocoding mock for addresses (Columbus, OH area)
+def mock_geocode(address: str):
+    base_lat, base_lng = 39.9612, -82.9988
+    h = hash(address) % 1000
+    return base_lat + (h % 50 - 25) * 0.001, base_lng + (h % 50 - 25) * 0.001
+
+@app.post("/api/admin/offers/bulk")
+def admin_bulk_upload_offers(upload: BulkOfferUpload):
+    """Admin bulk upload of third-party offers (Groupon, etc.)"""
+    created = []
+    for item in upload.offers:
+        new_id = max([o["id"] for o in offers_db], default=0) + 1
+        lat, lng = item.lat, item.lng
+        if lat is None or lng is None:
+            lat, lng = mock_geocode(item.address)
+        new_offer = {
+            "id": new_id, "business_name": item.business_name,
+            "business_type": item.business_type, "description": item.description,
+            "base_gems": item.base_gems, "address": item.address,
+            "lat": lat, "lng": lng, "offer_url": item.offer_url,
+            "is_admin_offer": True,
+            "created_at": datetime.now().isoformat(),
+            "expires_at": (datetime.now() + timedelta(days=item.expires_days)).isoformat(),
+            "created_by": "admin", "redemption_count": 0,
+        }
+        offers_db.append(new_offer)
+        created.append({"id": new_id, "business_name": item.business_name})
+    return {"success": True, "message": f"{len(created)} offers uploaded", "data": created}
+
+@app.post("/api/admin/offers/bulk-csv")
+def admin_bulk_csv(csv_text: str = ""):
+    """Parse CSV text: business_name,address,offer_url,description,business_type,base_gems"""
+    if not csv_text:
+        return {"success": False, "message": "Empty CSV"}
+    lines = csv_text.strip().split("\n")
+    if len(lines) < 2:
+        return {"success": False, "message": "CSV needs header + at least 1 row"}
+    created = []
+    for line in lines[1:]:
+        parts = [p.strip().strip('"') for p in line.split(",")]
+        if len(parts) < 3:
+            continue
+        bname = parts[0]
+        addr = parts[1]
+        url = parts[2] if len(parts) > 2 and parts[2] else None
+        desc = parts[3] if len(parts) > 3 else f"Deal at {bname}"
+        btype = parts[4] if len(parts) > 4 else "other"
+        gems = int(parts[5]) if len(parts) > 5 and parts[5].isdigit() else 25
+        lat, lng = mock_geocode(addr)
+        new_id = max([o["id"] for o in offers_db], default=0) + 1
+        offers_db.append({
+            "id": new_id, "business_name": bname, "business_type": btype,
+            "description": desc, "base_gems": gems, "address": addr,
+            "lat": lat, "lng": lng, "offer_url": url, "is_admin_offer": True,
+            "created_at": datetime.now().isoformat(),
+            "expires_at": (datetime.now() + timedelta(days=30)).isoformat(),
+            "created_by": "admin", "redemption_count": 0,
+        })
+        created.append({"id": new_id, "business_name": bname})
+    return {"success": True, "message": f"{len(created)} offers imported from CSV", "data": created}
+
+# ==================== GEMS ON ROUTE ====================
+class GemGenerateRequest(BaseModel):
+    trip_id: str
+    route_points: List[Dict[str, float]]  # [{lat, lng}, ...]
+
+class GemCollectRequest(BaseModel):
+    trip_id: str
+    gem_id: str
+
+@app.post("/api/gems/generate-route")
+def generate_route_gems(req: GemGenerateRequest):
+    """Generate gems along a route when navigation starts. Gems appear at intervals."""
+    gems = []
+    points = req.route_points
+    gem_interval = max(1, len(points) // 8)  # ~8 gems per route
+    for i in range(0, len(points), gem_interval):
+        pt = points[i]
+        gem_value = random.choice([5, 10, 15, 20, 25])
+        gems.append({
+            "id": f"gem_{req.trip_id}_{i}",
+            "lat": pt["lat"] + random.uniform(-0.0005, 0.0005),
+            "lng": pt["lng"] + random.uniform(-0.0005, 0.0005),
+            "value": gem_value,
+            "collected": False,
+        })
+    route_gems_db[req.trip_id] = gems
+    collected_gems_db[req.trip_id] = []
+    return {"success": True, "data": {"trip_id": req.trip_id, "gems_count": len(gems), "gems": gems}}
+
+@app.post("/api/gems/collect")
+def collect_gem(req: GemCollectRequest):
+    """Collect a gem by driving over it (proximity check done on frontend)."""
+    gems = route_gems_db.get(req.trip_id, [])
+    gem = next((g for g in gems if g["id"] == req.gem_id and not g["collected"]), None)
+    if not gem:
+        return {"success": False, "message": "Gem not found or already collected"}
+    gem["collected"] = True
+    if req.trip_id not in collected_gems_db:
+        collected_gems_db[req.trip_id] = []
+    collected_gems_db[req.trip_id].append(gem)
+    return {"success": True, "data": {"gem_id": gem["id"], "value": gem["value"]}}
+
+@app.get("/api/gems/trip-summary/{trip_id}")
+def get_trip_gem_summary(trip_id: str):
+    """Get collected gems summary at trip end."""
+    collected = collected_gems_db.get(trip_id, [])
+    total_value = sum(g["value"] for g in collected)
+    total_gems = route_gems_db.get(trip_id, [])
+    # Award to user
+    if current_user_id in users_db and total_value > 0:
+        users_db[current_user_id]["gems"] = users_db[current_user_id].get("gems", 0) + total_value
+    return {
+        "success": True,
+        "data": {
+            "trip_id": trip_id,
+            "gems_collected": len(collected),
+            "gems_total": len(total_gems),
+            "gems_value": total_value,
+            "new_balance": users_db.get(current_user_id, {}).get("gems", 0),
+        }
+    }
+
+# ==================== AUTO-PUSH OFFERS ON ROUTE ====================
+@app.get("/api/offers/on-route")
+def get_offers_on_route(
+    route_lat: str = "", route_lng: str = "",
+    radius_km: float = 1.0
+):
+    """Get offers along a route. Pass comma-separated lat/lng points."""
+    user = users_db.get(current_user_id, {})
+    is_premium = user.get("is_premium", False)
+    
+    lats = [float(x) for x in route_lat.split(",") if x.strip()] if route_lat else []
+    lngs = [float(x) for x in route_lng.split(",") if x.strip()] if route_lng else []
+    
+    if not lats or len(lats) != len(lngs):
+        return {"success": True, "data": []}
+    
+    matched = []
+    seen_ids = set()
+    for i in range(len(lats)):
+        for offer in offers_db:
+            if offer["id"] in seen_ids:
+                continue
+            if datetime.fromisoformat(offer["expires_at"]) < datetime.now():
+                continue
+            dlat = abs(offer["lat"] - lats[i])
+            dlng = abs(offer["lng"] - lngs[i])
+            dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+            if dist <= radius_km:
+                discount = OFFER_CONFIG["premium_discount_percent"] if (is_premium or offer["is_admin_offer"]) else OFFER_CONFIG["free_discount_percent"]
+                matched.append({
+                    "id": offer["id"], "business_name": offer["business_name"],
+                    "business_type": offer["business_type"], "description": offer["description"],
+                    "address": offer.get("address", ""), "offer_url": offer.get("offer_url"),
+                    "discount_percent": discount, "gems_reward": offer["base_gems"],
+                    "lat": offer["lat"], "lng": offer["lng"],
+                    "distance_km": round(dist, 2),
+                    "redeemed": offer["id"] in user.get("redeemed_offers", []),
+                })
+                seen_ids.add(offer["id"])
+    
+    return {"success": True, "data": matched, "count": len(matched)}
+
 # ==================== INCIDENTS ====================
 @app.post("/api/incidents/report")
 def report_incident(report: ReportIncident):
