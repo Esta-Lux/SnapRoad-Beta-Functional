@@ -1035,93 +1035,91 @@ def toggle_widget_collapse(widget_id: str):
 # Offers database - stores all available offers with seed data
 offers_db = [
     {
-        "id": 1,
-        "business_name": "Shell Gas Station",
-        "business_type": "gas",
-        "description": "Save on your next fill-up!",
-        "base_gems": 25,
-        "lat": 39.9650,
-        "lng": -82.9930,
-        "is_admin_offer": False,
+        "id": 1, "business_name": "Shell Gas Station", "business_type": "gas",
+        "description": "Save on your next fill-up!", "base_gems": 25,
+        "address": "1234 High St, Columbus, OH 43201",
+        "lat": 39.9650, "lng": -82.9930,
+        "offer_url": None, "is_admin_offer": False,
         "created_at": datetime.now().isoformat(),
         "expires_at": (datetime.now() + timedelta(days=7)).isoformat(),
-        "created_by": "business",
-        "redemption_count": 0,
+        "created_by": "business", "redemption_count": 0,
     },
     {
-        "id": 2,
-        "business_name": "Starbucks Downtown",
-        "business_type": "cafe",
-        "description": "Get a free size upgrade!",
-        "base_gems": 15,
-        "lat": 39.9580,
-        "lng": -83.0020,
-        "is_admin_offer": False,
+        "id": 2, "business_name": "Starbucks Downtown", "business_type": "cafe",
+        "description": "Get a free size upgrade!", "base_gems": 15,
+        "address": "45 E Broad St, Columbus, OH 43215",
+        "lat": 39.9580, "lng": -83.0020,
+        "offer_url": None, "is_admin_offer": False,
         "created_at": datetime.now().isoformat(),
         "expires_at": (datetime.now() + timedelta(days=5)).isoformat(),
-        "created_by": "business",
-        "redemption_count": 0,
+        "created_by": "business", "redemption_count": 0,
     },
     {
-        "id": 3,
-        "business_name": "Quick Shine Car Wash",
-        "business_type": "carwash",
-        "description": "Premium wash at basic price",
-        "base_gems": 30,
-        "lat": 39.9700,
-        "lng": -82.9850,
-        "is_admin_offer": False,
+        "id": 3, "business_name": "Quick Shine Car Wash", "business_type": "carwash",
+        "description": "Premium wash at basic price", "base_gems": 30,
+        "address": "890 N 4th St, Columbus, OH 43201",
+        "lat": 39.9700, "lng": -82.9850,
+        "offer_url": None, "is_admin_offer": False,
         "created_at": datetime.now().isoformat(),
         "expires_at": (datetime.now() + timedelta(days=10)).isoformat(),
-        "created_by": "business",
-        "redemption_count": 0,
+        "created_by": "business", "redemption_count": 0,
     },
     {
-        "id": 4,
-        "business_name": "SnapRoad Partner Deal",
-        "business_type": "restaurant",
-        "description": "Exclusive SnapRoad member discount!",
-        "base_gems": 50,
-        "lat": 39.9550,
-        "lng": -83.0100,
+        "id": 4, "business_name": "Groupon: Pizza Palace", "business_type": "restaurant",
+        "description": "50% off any large pizza - Groupon Deal", "base_gems": 50,
+        "address": "200 S High St, Columbus, OH 43215",
+        "lat": 39.9550, "lng": -83.0100,
+        "offer_url": "https://www.groupon.com/deals/pizza-palace-columbus",
         "is_admin_offer": True,
         "created_at": datetime.now().isoformat(),
         "expires_at": (datetime.now() + timedelta(days=14)).isoformat(),
-        "created_by": "admin",
-        "redemption_count": 0,
+        "created_by": "admin", "redemption_count": 0,
     },
     {
-        "id": 5,
-        "business_name": "BP Gas Station",
-        "business_type": "gas",
-        "description": "Save 10¢/gallon with SnapRoad",
-        "base_gems": 20,
-        "lat": 39.9480,
-        "lng": -82.9900,
-        "is_admin_offer": False,
+        "id": 5, "business_name": "BP Gas Station", "business_type": "gas",
+        "description": "Save 10c/gallon with SnapRoad", "base_gems": 20,
+        "address": "567 Cleveland Ave, Columbus, OH 43201",
+        "lat": 39.9480, "lng": -82.9900,
+        "offer_url": None, "is_admin_offer": False,
         "created_at": datetime.now().isoformat(),
         "expires_at": (datetime.now() + timedelta(days=3)).isoformat(),
-        "created_by": "business",
-        "redemption_count": 0,
+        "created_by": "business", "redemption_count": 0,
+    },
+    {
+        "id": 6, "business_name": "Groupon: Spa Retreat", "business_type": "service",
+        "description": "60-min massage for $39 - Groupon", "base_gems": 40,
+        "address": "780 Nationwide Blvd, Columbus, OH 43215",
+        "lat": 39.9690, "lng": -83.0050,
+        "offer_url": "https://www.groupon.com/deals/spa-retreat-columbus",
+        "is_admin_offer": True,
+        "created_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now() + timedelta(days=21)).isoformat(),
+        "created_by": "admin", "redemption_count": 0,
     },
 ]
 
+# Gems on route database - active trip gems
+route_gems_db = {}  # trip_id -> list of gems
+collected_gems_db = {}  # trip_id -> list of collected gem ids
+
 # Offer configuration
 OFFER_CONFIG = {
-    "free_discount_percent": 6,    # Free users get 6% discount
-    "premium_discount_percent": 18, # Premium users get 18% discount
-    "gem_reward_multiplier": 1,     # Base gems for redeeming (multiplied by plan)
+    "free_discount_percent": 6,
+    "premium_discount_percent": 18,
+    "gem_reward_multiplier": 1,
 }
 
 class OfferCreate(BaseModel):
     business_name: str
-    business_type: str  # gas, cafe, restaurant, carwash, etc.
+    business_type: str
     description: str
-    base_gems: int  # Gems awarded for redemption
+    base_gems: int
+    address: str = ""
     lat: float
     lng: float
+    offer_url: Optional[str] = None
     expires_hours: int = 24
-    is_admin_offer: bool = False  # True = same discount for all, False = tiered
+    is_admin_offer: bool = False
 
 @app.get("/api/offers")
 def get_offers(offer_type: Optional[str] = None, lat: Optional[float] = None, lng: Optional[float] = None):
