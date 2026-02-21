@@ -451,6 +451,7 @@ export default function AdminDashboard() {
   const [showCreateEventModal, setShowCreateEventModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [showBulkUpload, setShowBulkUpload] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
