@@ -619,7 +619,6 @@ export default function DriverApp() {
       try {
         const w = widgets[draggingWidget]
         await api.put(`/api/widgets/${draggingWidget}/position?x=${w.position.x}&y=${w.position.y}`)
-      } catch (e) {}
     }
     setDraggingWidget(null)
   }
@@ -632,7 +631,7 @@ export default function DriverApp() {
     }))
     try {
       await api.put(`/api/widgets/${widgetId}/collapse`)
-    } catch (e) {}
+    } catch (_e) { /* silently ignore */ }
   }
 
   // Toggle widget visibility
@@ -643,7 +642,7 @@ export default function DriverApp() {
     }))
     try {
       await api.put(`/api/widgets/${widgetId}/toggle`)
-    } catch (e) {}
+    } catch (_e) { /* silently ignore */ }
   }
 
   // Navigation handlers
