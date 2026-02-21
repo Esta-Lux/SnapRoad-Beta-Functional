@@ -442,6 +442,51 @@ function ImportModal({ onClose }: { onClose: () => void }) {
 }
 
 // Main Admin Dashboard
+// Admin Offers List - fetches and displays all offers
+function AdminOffersList() {
+  const [offers, setOffers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { loadOffers() }, [])
+
+  const loadOffers = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/offers`)
+      const data = await res.json()
+      if (data.success) setOffers(data.data)
+    } catch { /* ignore */ }
+    setLoading(false)
+  }
+
+  if (loading) return <div className="text-center py-8"><div className="animate-spin w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full mx-auto" /></div>
+
+  return (
+    <div className="space-y-2">
+      {offers.map(o => (
+        <div key={o.id} className="bg-slate-800/50 rounded-xl border border-white/5 p-4 flex items-center gap-4" data-testid={`admin-offer-${o.id}`}>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${o.offer_url ? 'bg-blue-500/20' : 'bg-emerald-500/20'}`}>
+            {o.offer_url ? <Globe size={18} className="text-blue-400" /> : <Gift size={18} className="text-emerald-400" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-white font-medium truncate">{o.business_name}</p>
+              {o.offer_url && <span className="text-blue-400 bg-blue-500/10 text-[10px] px-1.5 py-0.5 rounded-full shrink-0">3rd Party</span>}
+              {o.is_admin_offer && <span className="text-purple-400 bg-purple-500/10 text-[10px] px-1.5 py-0.5 rounded-full shrink-0">Admin</span>}
+            </div>
+            <p className="text-slate-500 text-xs truncate">{o.description}</p>
+            {o.address && <p className="text-slate-600 text-xs truncate flex items-center gap-1"><MapPin size={10} />{o.address}</p>}
+          </div>
+          <div className="text-right shrink-0">
+            <p className="text-emerald-400 font-bold text-sm">{o.discount_percent}% off</p>
+            <p className="text-slate-500 text-xs flex items-center gap-1"><Gem size={10} className="text-cyan-400" />+{o.gems_reward}</p>
+          </div>
+        </div>
+      ))}
+      {offers.length === 0 && <p className="text-slate-500 text-center py-8">No offers yet</p>}
+    </div>
+  )
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'partners' | 'events' | 'offers'>('overview')
