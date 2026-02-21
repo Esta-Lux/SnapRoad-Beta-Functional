@@ -21,7 +21,10 @@ const MENU_ITEMS = [
   { id: 'RouteHistory3D', icon: 'map-outline' as const, label: 'Route History', sub: '3D visualization', color: Colors.accent },
   { id: 'TripLogs', icon: 'time-outline' as const, label: 'Trip History', sub: 'Past trips', color: Colors.info },
   { id: 'FuelDashboard', icon: 'water-outline' as const, label: 'Fuel Dashboard', sub: 'Expenses & savings', color: '#F59E0B' },
+  { id: 'CommuteScheduler', icon: 'alarm-outline' as const, label: 'Commute', sub: 'Scheduled routes', color: Colors.primary },
+  { id: 'InsuranceReport', icon: 'shield-outline' as const, label: 'Insurance Report', sub: 'Safe driving proof', color: Colors.secondary },
   { id: 'Leaderboard', icon: 'trophy-outline' as const, label: 'Leaderboard', sub: 'Rankings', color: Colors.gold },
+  { id: 'Family', icon: 'people-outline' as const, label: 'Family', sub: 'Track loved ones', color: Colors.primaryLight },
   { id: 'OrionCoach', icon: 'chatbubble-ellipses-outline' as const, label: 'Orion AI', sub: 'Driving coach', color: Colors.primary },
   { id: 'MyOffers', icon: 'gift-outline' as const, label: 'My Offers', sub: 'Saved & QR codes', color: Colors.secondary },
 ];
@@ -30,7 +33,7 @@ const SETTINGS_ITEMS = [
   { id: 'PrivacyCenter', icon: 'shield-checkmark-outline' as const, label: 'Privacy', sub: 'Data & permissions' },
   { id: 'NotificationSettings', icon: 'notifications-outline' as const, label: 'Notifications', sub: 'Alert preferences' },
   { id: 'Settings', icon: 'card-outline' as const, label: 'Subscription', sub: 'Manage plan' },
-  { id: 'Settings', icon: 'help-circle-outline' as const, label: 'Help & Support', sub: 'Get assistance' },
+  { id: 'Help', icon: 'help-circle-outline' as const, label: 'Help & Support', sub: 'Get assistance' },
 ];
 
 export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
