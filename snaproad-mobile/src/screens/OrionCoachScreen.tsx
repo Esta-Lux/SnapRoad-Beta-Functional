@@ -1,415 +1,175 @@
-// SnapRoad Mobile - Orion AI Coach Screen
-// Voice-enabled AI driving assistant
+// SnapRoad Mobile - Premium Orion AI Coach
+// Clean chat UI with neon blue glass design
 
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Colors, Shadows, FontSizes, FontWeights, BorderRadius } from '../utils/theme';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://snaproad-boost.preview.emergentagent.com/api';
+interface Message { id: string; text: string; isUser: boolean; timestamp: Date; }
 
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'orion';
-  text: string;
-  timestamp: Date;
-}
-
-interface OrionCoachScreenProps {
-  navigation?: any;
-  userContext?: {
-    safety_score?: number;
-    gems?: number;
-  };
-}
-
-const QUICK_QUESTIONS = [
-  { id: 'traffic', text: 'Traffic ahead?', icon: 'warning-outline' },
-  { id: 'fuel', text: 'Fuel tips', icon: 'water-outline' },
-  { id: 'safety', text: 'Safety score', icon: 'shield-checkmark-outline' },
-  { id: 'rewards', text: 'Nearby rewards', icon: 'gift-outline' },
+const QUICK_PROMPTS = [
+  'How can I improve my safety score?',
+  'Best fuel-saving tips',
+  'Explain my driving metrics',
+  'Routes to avoid traffic',
 ];
 
-export function OrionCoachScreen({ navigation, userContext }: OrionCoachScreenProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [sessionId] = useState(() => `mobile_${Date.now()}`);
-  const scrollViewRef = useRef<ScrollView>(null);
+const API_URL = '/api';
+
+export const OrionCoachScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([
+    { id: '1', text: "Hey! I'm Orion, your AI driving coach. Ask me anything about driving safety, fuel efficiency, or your performance stats.", isUser: false, timestamp: new Date() },
+  ]);
 
   const sendMessage = async (text: string) => {
-    if (!text.trim()) return;
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      text: text.trim(),
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInputText('');
-    setIsLoading(true);
+    if (!text.trim() || loading) return;
+    const userMsg: Message = { id: Date.now().toString(), text: text.trim(), isUser: true, timestamp: new Date() };
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/orion/chat`, {
+      const res = await fetch(`${API_URL}/orion/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          session_id: sessionId,
-          context: userContext || { safety_score: 85, gems: 500 },
-        }),
+        body: JSON.stringify({ message: text.trim(), session_id: 'mobile-session' }),
       });
-
-      const data = await response.json();
-
-      const orionMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'orion',
-        text: data.success ? data.response : getLocalResponse(text),
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, orionMessage]);
-    } catch (error) {
-      const orionMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'orion',
-        text: getLocalResponse(text),
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, orionMessage]);
-    } finally {
-      setIsLoading(false);
+      const data = await res.json();
+      const aiMsg: Message = { id: (Date.now()+1).toString(), text: data.response || data.message || "I'm thinking...", isUser: false, timestamp: new Date() };
+      setMessages(prev => [...prev, aiMsg]);
+    } catch {
+      setMessages(prev => [...prev, { id: (Date.now()+1).toString(), text: "I couldn't connect right now. Please try again.", isUser: false, timestamp: new Date() }]);
     }
+    setLoading(false);
   };
 
-  const getLocalResponse = (query: string): string => {
-    const q = query.toLowerCase();
-    if (q.includes('traffic') || q.includes('route')) {
-      return "Your route looks clear! Light traffic on I-71 may add 3-4 minutes. Want me to check for alternatives?";
-    }
-    if (q.includes('fuel') || q.includes('gas')) {
-      return "Great fuel efficiency today at 34 MPG! Keep your speed 55-65 mph for best results. There's a partner station 0.8 mi ahead with $0.10/gal off! ⛽";
-    }
-    if (q.includes('safety') || q.includes('score')) {
-      return "Your safety score is 94 - excellent! You've been driving smoothly with consistent speed. Keep it up for the 'Perfect Trip' bonus of 25 gems! 🎯";
-    }
-    if (q.includes('reward') || q.includes('gem')) {
-      return "3 partner offers near you: Coffee House (15% off, 50 gems), Auto Spa (Free wash, 100 gems), Gas Plus ($0.10/gal, 75 gems). Want to add any as a stop?";
-    }
-    return "I can help with traffic, fuel tips, safety scores, and rewards near you. What would you like to know? 🚗";
-  };
-
-  const handleQuickQuestion = (id: string) => {
-    const questions: Record<string, string> = {
-      traffic: "What's the traffic like ahead?",
-      fuel: 'How can I save fuel on this trip?',
-      safety: "How's my safety score?",
-      rewards: 'What rewards are near my route?',
-    };
-    sendMessage(questions[id] || '');
-  };
-
-  useEffect(() => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
-  }, [messages]);
+  useEffect(() => { scrollRef.current?.scrollToEnd({ animated: true }); }, [messages]);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
+    <KeyboardAvoidingView style={[s.container, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation?.goBack()} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={24} color="white" />
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => navigation?.goBack()} style={s.backBtn}>
+          <Ionicons name="chevron-back" size={24} color={Colors.text} />
         </TouchableOpacity>
-        <View style={styles.headerInfo}>
-          <View style={styles.orionAvatar}>
-            <Ionicons name="hardware-chip" size={24} color="white" />
-            <View style={styles.activeIndicator} />
-          </View>
+        <View style={s.headerCenter}>
+          <LinearGradient colors={Colors.gradientPrimary} style={s.orionAvatar}>
+            <Ionicons name="sparkles" size={16} color="#fff" />
+          </LinearGradient>
           <View>
-            <Text style={styles.headerTitle}>Orion AI</Text>
-            <Text style={styles.headerSubtitle}>Your driving assistant</Text>
+            <Text style={s.headerTitle}>Orion</Text>
+            <Text style={s.headerSub}>AI Driving Coach</Text>
           </View>
         </View>
+        <View style={{ width: 40 }} />
       </View>
 
       {/* Messages */}
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.messagesContainer}
-        contentContainerStyle={styles.messagesContent}
-      >
-        {messages.length === 0 ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIcon}>
-              <Ionicons name="hardware-chip" size={48} color="#1B2432" />
-            </View>
-            <Text style={styles.emptyTitle}>Ask Orion anything</Text>
-            <Text style={styles.emptySubtitle}>
-              I can help with traffic, fuel tips, safety, and rewards
-            </Text>
-
-            {/* Quick Questions */}
-            <View style={styles.quickQuestions}>
-              {QUICK_QUESTIONS.map((q) => (
-                <TouchableOpacity
-                  key={q.id}
-                  style={styles.quickButton}
-                  onPress={() => handleQuickQuestion(q.id)}
-                >
-                  <Ionicons name={q.icon as any} size={16} color="#0084FF" />
-                  <Text style={styles.quickText}>{q.text}</Text>
-                </TouchableOpacity>
-              ))}
+      <ScrollView ref={scrollRef} style={s.messages} contentContainerStyle={s.messagesContent} showsVerticalScrollIndicator={false}>
+        {messages.map(msg => (
+          <View key={msg.id} style={[s.bubble, msg.isUser ? s.bubbleUser : s.bubbleAI]}>
+            {!msg.isUser && (
+              <LinearGradient colors={Colors.gradientPrimary} style={s.bubbleAvatar}>
+                <Ionicons name="sparkles" size={11} color="#fff" />
+              </LinearGradient>
+            )}
+            <View style={[s.bubbleBody, msg.isUser ? s.bubbleBodyUser : s.bubbleBodyAI]}>
+              <Text style={[s.bubbleText, msg.isUser && s.bubbleTextUser]}>{msg.text}</Text>
             </View>
           </View>
-        ) : (
-          messages.map((msg) => (
-            <View
-              key={msg.id}
-              style={[
-                styles.messageBubble,
-                msg.role === 'user' ? styles.userBubble : styles.orionBubble,
-              ]}
-            >
-              {msg.role === 'orion' && (
-                <View style={styles.orionLabel}>
-                  <Ionicons name="hardware-chip" size={12} color="#00DFA2" />
-                  <Text style={styles.orionLabelText}>ORION</Text>
-                </View>
-              )}
-              <Text style={styles.messageText}>{msg.text}</Text>
+        ))}
+        {loading && (
+          <View style={[s.bubble, s.bubbleAI]}>
+            <LinearGradient colors={Colors.gradientPrimary} style={s.bubbleAvatar}>
+              <Ionicons name="sparkles" size={11} color="#fff" />
+            </LinearGradient>
+            <View style={s.bubbleBodyAI}>
+              <ActivityIndicator size="small" color={Colors.primaryLight} />
             </View>
-          ))
+          </View>
         )}
 
-        {isLoading && (
-          <View style={styles.loadingContainer}>
-            <Ionicons name="hardware-chip" size={16} color="#00DFA2" />
-            <ActivityIndicator size="small" color="#0084FF" style={styles.loadingIndicator} />
+        {/* Quick Prompts (show only if few messages) */}
+        {messages.length <= 2 && (
+          <View style={s.quickWrap}>
+            <Text style={s.quickTitle}>Try asking</Text>
+            {QUICK_PROMPTS.map((p, i) => (
+              <TouchableOpacity key={i} style={s.quickChip} onPress={() => sendMessage(p)}>
+                <Text style={s.quickChipText}>{p}</Text>
+                <Ionicons name="arrow-forward" size={14} color={Colors.primaryLight} />
+              </TouchableOpacity>
+            ))}
           </View>
         )}
       </ScrollView>
 
-      {/* Input */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Ask Orion..."
-          placeholderTextColor="#4B5C74"
-          value={inputText}
-          onChangeText={setInputText}
-          onSubmitEditing={() => sendMessage(inputText)}
-          returnKeyType="send"
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
-          onPress={() => sendMessage(inputText)}
-          disabled={!inputText.trim() || isLoading}
-        >
-          <Ionicons name="send" size={18} color="white" />
-        </TouchableOpacity>
+      {/* Input Bar */}
+      <View style={[s.inputBar, { paddingBottom: insets.bottom + 8 }]}>
+        <View style={s.inputRow}>
+          <TextInput
+            style={s.textInput}
+            placeholder="Ask Orion..."
+            placeholderTextColor={Colors.textMuted}
+            value={input}
+            onChangeText={setInput}
+            onSubmitEditing={() => sendMessage(input)}
+            returnKeyType="send"
+            data-testid="orion-input"
+          />
+          <TouchableOpacity
+            style={[s.sendBtn, (!input.trim() || loading) && s.sendBtnDim]}
+            onPress={() => sendMessage(input)}
+            disabled={!input.trim() || loading}
+          >
+            <LinearGradient colors={input.trim() ? Colors.gradientPrimary : [Colors.surface, Colors.surface]} style={s.sendGrad}>
+              <Ionicons name="arrow-up" size={20} color={input.trim() ? '#fff' : Colors.textMuted} />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
-}
+};
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0A0E16',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    backgroundColor: '#0A0E16',
-    borderBottomWidth: 1,
-    borderBottomColor: '#1B2432',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#1B2432',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  headerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  orionAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#0084FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  activeIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#00DFA2',
-    borderWidth: 2,
-    borderColor: '#0A0E16',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: '#8A9BB6',
-  },
-  messagesContainer: {
-    flex: 1,
-  },
-  messagesContent: {
-    padding: 16,
-    paddingBottom: 20,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingTop: 60,
-  },
-  emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#1B2432',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: 'white',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#8A9BB6',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  quickQuestions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  quickButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1B2432',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  quickText: {
-    color: 'white',
-    fontSize: 13,
-    marginLeft: 6,
-  },
-  messageBubble: {
-    maxWidth: '85%',
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 12,
-  },
-  userBubble: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#0084FF',
-  },
-  orionBubble: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#1B2432',
-    borderWidth: 1,
-    borderColor: '#2A3544',
-  },
-  orionLabel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  orionLabelText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#00DFA2',
-    marginLeft: 4,
-  },
-  messageText: {
-    color: 'white',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingVertical: 8,
-  },
-  loadingIndicator: {
-    marginLeft: 8,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 12,
-    backgroundColor: '#0A0E16',
-    borderTopWidth: 1,
-    borderTopColor: '#1B2432',
-  },
-  input: {
-    flex: 1,
-    height: 48,
-    backgroundColor: '#1B2432',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    color: 'white',
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#2A3544',
-  },
-  sendButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#0084FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-  },
-  sendButtonDisabled: {
-    opacity: 0.5,
-  },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.glassBorder },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
+  headerCenter: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  orionAvatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { color: Colors.text, fontSize: FontSizes.lg, fontWeight: FontWeights.bold, letterSpacing: 0.3 },
+  headerSub: { color: Colors.textMuted, fontSize: FontSizes.xs, letterSpacing: 0.5 },
+  // Messages
+  messages: { flex: 1 },
+  messagesContent: { padding: 16, gap: 16 },
+  bubble: { flexDirection: 'row', gap: 8, maxWidth: '88%' },
+  bubbleUser: { alignSelf: 'flex-end', flexDirection: 'row-reverse' },
+  bubbleAI: { alignSelf: 'flex-start' },
+  bubbleAvatar: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  bubbleBody: { borderRadius: BorderRadius.xl, padding: 14, maxWidth: '92%' },
+  bubbleBodyUser: { backgroundColor: Colors.primary, borderBottomRightRadius: 6 },
+  bubbleBodyAI: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.glassBorder, borderBottomLeftRadius: 6 },
+  bubbleText: { color: Colors.text, fontSize: FontSizes.md, lineHeight: 22, letterSpacing: 0.2 },
+  bubbleTextUser: { color: '#fff' },
+  // Quick prompts
+  quickWrap: { marginTop: 12, gap: 8 },
+  quickTitle: { color: Colors.textMuted, fontSize: FontSizes.xs, fontWeight: FontWeights.semibold, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 },
+  quickChip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.glassBorder, borderRadius: BorderRadius.lg, paddingVertical: 14, paddingHorizontal: 16 },
+  quickChipText: { color: Colors.text, fontSize: FontSizes.sm, fontWeight: FontWeights.medium, flex: 1 },
+  // Input
+  inputBar: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.glassBorder, backgroundColor: Colors.background },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  textInput: { flex: 1, height: 48, backgroundColor: Colors.surface, borderRadius: BorderRadius.full, borderWidth: 1, borderColor: Colors.glassBorder, paddingHorizontal: 18, color: Colors.text, fontSize: FontSizes.md },
+  sendBtn: { overflow: 'hidden', borderRadius: 24 },
+  sendBtnDim: { opacity: 0.5 },
+  sendGrad: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
 });
 
 export default OrionCoachScreen;
