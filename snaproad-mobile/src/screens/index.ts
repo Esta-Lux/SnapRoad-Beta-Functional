@@ -1,36 +1,39 @@
 // SnapRoad Mobile - Screen Exports
-// Aligned with web frontend architecture
+// All screens aligned with Figma UI
 
 // Onboarding
 export { SplashScreen } from './SplashScreen';
 export { WelcomeScreen } from './WelcomeScreen';
-export { OnboardingScreen } from './OnboardingScreen';
 export { PlanSelectionScreen } from './PlanSelectionScreen';
 export { CarSetupScreen } from './CarSetupScreen';
 
-// Main App
-export { default as DriverAppMain } from './DriverApp';
+// Core Tabs
 export { MapScreen } from './MapScreen';
-
-// Rewards & Offers
 export { OffersScreen } from './OffersScreen';
 export { RewardsScreen } from './RewardsScreen';
-export { OfferDetailScreen } from './OfferDetailScreen';
-export { MyOffersScreen } from './MyOffersScreen';
-
-// Profile & Account
 export { ProfileScreen } from './ProfileScreen';
-export { SettingsScreen } from './SettingsScreen';
-export { FuelDashboardScreen } from './FuelDashboardScreen';
-export { TripLogsScreen } from './TripLogsScreen';
 
-// Analytics - NEW
+// Driver Features
 export { TripAnalyticsScreen } from './TripAnalyticsScreen';
 export { RouteHistory3DScreen } from './RouteHistory3DScreen';
+export { DriverAnalyticsScreen } from './DriverAnalyticsScreen';
+export { TripLogsScreen } from './TripLogsScreen';
+export { FuelDashboardScreen } from './FuelDashboardScreen';
 
-// Family & Social
-export { FamilyScreen } from './FamilyScreen';
-export { LeaderboardScreen } from './LeaderboardScreen';
+// Offers & Detail
+export { OfferDetailScreen } from './OfferDetailScreen';
+export { MyOffersScreen } from './MyOffersScreen';
+export { GemsScreen } from './GemsScreen';
 
-// AI Features
+// AI & Capture
 export { OrionCoachScreen } from './OrionCoachScreen';
+export { PhotoCaptureScreen } from './PhotoCaptureScreen';
+
+// Social
+export { LeaderboardScreen } from './LeaderboardScreen';
+export { FamilyScreen } from './FamilyScreen';
+
+// Settings
+export { SettingsScreen } from './SettingsScreen';
+export { PrivacyCenterScreen } from './PrivacyCenterScreen';
+export { NotificationSettingsScreen } from './NotificationSettingsScreen';
