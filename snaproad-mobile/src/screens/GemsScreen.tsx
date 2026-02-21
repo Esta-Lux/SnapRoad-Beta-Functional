@@ -1,155 +1,130 @@
-// SnapRoad Mobile - Gems & Rewards Screen
-// Aligned with Figma UI: /app/frontend/src/components/figma-ui/mobile/Gems.tsx
+// SnapRoad Mobile - Premium Gems & Rewards
+// Neon blue, glass cards, fluid transitions
 
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Spacing, BorderRadius, FontSizes, FontWeights } from '../utils/theme';
-
-interface GemsScreenProps {
-  navigation?: any;
-  onNavigate?: (screen: string) => void;
-}
+import { Colors, Shadows, FontSizes, FontWeights, BorderRadius } from '../utils/theme';
 
 const OFFERS = [
-  { id: 1, name: 'Coffee House', discount: '15% off any drink', gems: 50, expiry: '3 days' },
-  { id: 2, name: 'Auto Spa Pro', discount: 'Free premium wash', gems: 150, expiry: '5 days' },
-  { id: 3, name: 'Gas Plus', discount: '$0.15 off per gallon', gems: 75, expiry: '2 days' },
+  { id: 1, name: 'Blue Bottle Coffee', discount: '15% off any drink', gems: 50, expiry: '3d' },
+  { id: 2, name: 'Auto Spa Pro', discount: 'Free premium wash', gems: 150, expiry: '5d' },
+  { id: 3, name: 'Gas Plus', discount: '$0.15/gal off', gems: 75, expiry: '2d' },
 ];
 
 const CHALLENGES = [
-  { id: 1, name: 'Safe Driver Week', description: 'No harsh braking for 7 days', reward: 200, progress: 65 },
-  { id: 2, name: 'Early Bird', description: 'Complete 5 morning trips', reward: 100, progress: 40 },
-  { id: 3, name: 'Eco Warrior', description: 'Maintain 30+ MPG average', reward: 150, progress: 80 },
+  { id: 1, name: 'Safe Driver Week', desc: 'No harsh braking for 7 days', reward: 200, progress: 65 },
+  { id: 2, name: 'Early Bird', desc: 'Complete 5 morning trips', reward: 100, progress: 40 },
+  { id: 3, name: 'Eco Warrior', desc: 'Maintain 30+ MPG average', reward: 150, progress: 80 },
 ];
 
 const BADGES = [
-  { id: 1, name: 'First Trip', icon: 'car', earned: true },
-  { id: 2, name: 'Road Warrior', icon: 'trophy', earned: true },
-  { id: 3, name: 'Safety Star', icon: 'star', earned: false },
-  { id: 4, name: 'Night Owl', icon: 'moon', earned: true },
+  { id: 1, name: 'First Trip', icon: 'car-outline' as const, earned: true },
+  { id: 2, name: 'Road Warrior', icon: 'trophy-outline' as const, earned: true },
+  { id: 3, name: 'Safety Star', icon: 'star-outline' as const, earned: false },
+  { id: 4, name: 'Night Owl', icon: 'moon-outline' as const, earned: true },
+  { id: 5, name: 'Eco Driver', icon: 'leaf-outline' as const, earned: false },
+  { id: 6, name: 'Speed King', icon: 'flash-outline' as const, earned: true },
 ];
 
-export const GemsScreen: React.FC<GemsScreenProps> = ({ navigation }) => {
+export const GemsScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const [activeSection, setActiveSection] = useState<'offers' | 'challenges' | 'badges'>('offers');
+  const [tab, setTab] = useState<'offers'|'challenges'|'badges'>('offers');
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[s.container, { paddingTop: insets.top }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Gems & Rewards</Text>
-          <View style={styles.gemBalance}>
-            <Ionicons name="diamond" size={20} color="#FFB800" />
-            <Text style={styles.gemBalanceText}>2,450</Text>
+        <View style={s.header}>
+          <Text style={s.title}>Gems & Rewards</Text>
+          <View style={s.gemBadge}>
+            <Ionicons name="diamond" size={16} color={Colors.accent} />
+            <Text style={s.gemBadgeText}>2,450</Text>
           </View>
         </View>
 
-        {/* Gem Balance Card */}
-        <View style={styles.balanceCard}>
-          <LinearGradient
-            colors={['#9D4EDD', '#6366f1']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.balanceGradient}
-          >
-            <Ionicons name="diamond" size={40} color="#fff" />
-            <Text style={styles.balanceAmount}>2,450</Text>
-            <Text style={styles.balanceSub}>Total Gems Earned</Text>
-            <View style={styles.balanceStats}>
-              <View style={styles.balanceStat}>
-                <Text style={styles.balanceStatValue}>150</Text>
-                <Text style={styles.balanceStatLabel}>This Week</Text>
+        {/* Balance Hero */}
+        <View style={s.heroWrap}>
+          <LinearGradient colors={['#7C3AED', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.heroCard}>
+            <View style={s.heroGlow} />
+            <Ionicons name="diamond" size={36} color="rgba(255,255,255,0.9)" />
+            <Text style={s.heroAmount}>2,450</Text>
+            <Text style={s.heroSub}>Total Gems Earned</Text>
+            <View style={s.heroStats}>
+              <View style={s.heroStat}>
+                <Text style={s.heroStatVal}>150</Text>
+                <Text style={s.heroStatLabel}>This Week</Text>
               </View>
-              <View style={styles.balanceStatDivider} />
-              <View style={styles.balanceStat}>
-                <Text style={styles.balanceStatValue}>450</Text>
-                <Text style={styles.balanceStatLabel}>Redeemed</Text>
+              <View style={s.heroStatDiv} />
+              <View style={s.heroStat}>
+                <Text style={s.heroStatVal}>450</Text>
+                <Text style={s.heroStatLabel}>Redeemed</Text>
               </View>
             </View>
           </LinearGradient>
         </View>
 
-        {/* Section Tabs */}
-        <View style={styles.sectionTabs}>
-          {(['offers', 'challenges', 'badges'] as const).map((section) => (
-            <TouchableOpacity
-              key={section}
-              style={[styles.sectionTab, activeSection === section && styles.sectionTabActive]}
-              onPress={() => setActiveSection(section)}
-            >
-              <Text style={[styles.sectionTabText, activeSection === section && styles.sectionTabTextActive]}>
-                {section.charAt(0).toUpperCase() + section.slice(1)}
-              </Text>
+        {/* Tabs */}
+        <View style={s.tabs}>
+          {(['offers','challenges','badges'] as const).map(t => (
+            <TouchableOpacity key={t} style={[s.tab, tab===t && s.tabActive]} onPress={() => setTab(t)}>
+              <Text style={[s.tabText, tab===t && s.tabTextActive]}>{t.charAt(0).toUpperCase()+t.slice(1)}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
         {/* Offers */}
-        {activeSection === 'offers' && OFFERS.map((offer) => (
-          <View key={offer.id} style={styles.offerCard}>
-            <View style={styles.offerRow}>
-              <View style={styles.offerInfo}>
-                <Text style={styles.offerName}>{offer.name}</Text>
-                <Text style={styles.offerDiscount}>{offer.discount}</Text>
-              </View>
-              <View style={styles.offerGems}>
-                <Ionicons name="diamond" size={16} color="#FFB800" />
-                <Text style={styles.offerGemsText}>{offer.gems}</Text>
-              </View>
+        {tab === 'offers' && OFFERS.map(o => (
+          <View key={o.id} style={s.offerCard}>
+            <View style={s.offerBody}>
+              <Text style={s.offerName}>{o.name}</Text>
+              <Text style={s.offerDisc}>{o.discount}</Text>
             </View>
-            <View style={styles.offerFooter}>
-              <Text style={styles.offerExpiry}>Expires in {offer.expiry}</Text>
-              <TouchableOpacity style={styles.redeemBtn}>
-                <Text style={styles.redeemBtnText}>Redeem</Text>
-              </TouchableOpacity>
+            <View style={s.offerRight}>
+              <View style={s.offerGemRow}>
+                <Ionicons name="diamond" size={14} color={Colors.accent} />
+                <Text style={s.offerGemVal}>{o.gems}</Text>
+              </View>
+              <Text style={s.offerExpiry}>{o.expiry} left</Text>
             </View>
+            <TouchableOpacity style={s.redeemBtn}>
+              <LinearGradient colors={Colors.gradientPrimary} style={s.redeemGrad}>
+                <Text style={s.redeemText}>Redeem</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         ))}
 
         {/* Challenges */}
-        {activeSection === 'challenges' && CHALLENGES.map((challenge) => (
-          <View key={challenge.id} style={styles.challengeCard}>
-            <View style={styles.challengeHeader}>
-              <Text style={styles.challengeName}>{challenge.name}</Text>
-              <View style={styles.challengeReward}>
-                <Ionicons name="diamond" size={14} color="#FFB800" />
-                <Text style={styles.challengeRewardText}>{challenge.reward}</Text>
+        {tab === 'challenges' && CHALLENGES.map(c => (
+          <View key={c.id} style={s.challengeCard}>
+            <View style={s.challengeHead}>
+              <Text style={s.challengeName}>{c.name}</Text>
+              <View style={s.challengeReward}>
+                <Ionicons name="diamond-outline" size={13} color={Colors.accent} />
+                <Text style={s.challengeRewardVal}>{c.reward}</Text>
               </View>
             </View>
-            <Text style={styles.challengeDesc}>{challenge.description}</Text>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${challenge.progress}%` }]} />
+            <Text style={s.challengeDesc}>{c.desc}</Text>
+            <View style={s.progressTrack}>
+              <LinearGradient colors={Colors.gradientPrimary} style={[s.progressFill, { width: `${c.progress}%` }]} />
             </View>
-            <Text style={styles.progressText}>{challenge.progress}% complete</Text>
+            <Text style={s.progressLabel}>{c.progress}% complete</Text>
           </View>
         ))}
 
         {/* Badges */}
-        {activeSection === 'badges' && (
-          <View style={styles.badgeGrid}>
-            {BADGES.map((badge) => (
-              <View key={badge.id} style={[styles.badgeCard, !badge.earned && styles.badgeCardLocked]}>
-                <Ionicons
-                  name={badge.icon as any}
-                  size={32}
-                  color={badge.earned ? '#FFB800' : 'rgba(255,255,255,0.2)'}
-                />
-                <Text style={[styles.badgeName, !badge.earned && styles.badgeNameLocked]}>
-                  {badge.name}
-                </Text>
-                {!badge.earned && (
-                  <Ionicons name="lock-closed" size={12} color="rgba(255,255,255,0.3)" />
-                )}
+        {tab === 'badges' && (
+          <View style={s.badgeGrid}>
+            {BADGES.map(b => (
+              <View key={b.id} style={[s.badgeCard, !b.earned && s.badgeLocked]}>
+                <View style={[s.badgeIconBox, b.earned && { backgroundColor: `${Colors.gold}15` }]}>
+                  <Ionicons name={b.icon} size={28} color={b.earned ? Colors.gold : Colors.textDim} />
+                </View>
+                <Text style={[s.badgeName, !b.earned && { color: Colors.textDim }]}>{b.name}</Text>
+                {!b.earned && <Ionicons name="lock-closed" size={10} color={Colors.textDim} style={{ marginTop: 2 }} />}
               </View>
             ))}
           </View>
@@ -159,75 +134,57 @@ export const GemsScreen: React.FC<GemsScreenProps> = ({ navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0E16' },
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 16,
-  },
-  title: { color: '#fff', fontSize: 24, fontWeight: '700' },
-  gemBalance: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  gemBalanceText: { color: '#FFB800', fontSize: 18, fontWeight: '700' },
-  // Balance card
-  balanceCard: { marginHorizontal: 16, marginBottom: 16 },
-  balanceGradient: { borderRadius: 20, padding: 24, alignItems: 'center' },
-  balanceAmount: { color: '#fff', fontSize: 48, fontWeight: '700', marginTop: 8 },
-  balanceSub: { color: 'rgba(255,255,255,0.7)', fontSize: 14, marginTop: 4 },
-  balanceStats: { flexDirection: 'row', marginTop: 20, gap: 32 },
-  balanceStat: { alignItems: 'center' },
-  balanceStatValue: { color: '#fff', fontSize: 18, fontWeight: '600' },
-  balanceStatLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 2 },
-  balanceStatDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)' },
-  // Section tabs
-  sectionTabs: {
-    flexDirection: 'row', marginHorizontal: 16, backgroundColor: '#1A1F2E',
-    borderRadius: 12, padding: 4, marginBottom: 16,
-  },
-  sectionTab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
-  sectionTabActive: { backgroundColor: '#0084FF' },
-  sectionTabText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '500' },
-  sectionTabTextActive: { color: '#fff' },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
+  title: { color: Colors.text, fontSize: FontSizes.xxl, fontWeight: FontWeights.bold, letterSpacing: -0.3 },
+  gemBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.surface, borderRadius: BorderRadius.full, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: Colors.glassBorder },
+  gemBadgeText: { color: Colors.accent, fontSize: FontSizes.md, fontWeight: FontWeights.bold },
+  // Hero
+  heroWrap: { paddingHorizontal: 16, marginBottom: 20 },
+  heroCard: { borderRadius: BorderRadius.xxl, padding: 28, alignItems: 'center', overflow: 'hidden', ...Shadows.lg },
+  heroGlow: { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.06)', top: -40, right: -40 },
+  heroAmount: { color: '#fff', fontSize: 52, fontWeight: FontWeights.black, marginTop: 8, letterSpacing: -1 },
+  heroSub: { color: 'rgba(255,255,255,0.7)', fontSize: FontSizes.sm, marginTop: 4, letterSpacing: 0.5 },
+  heroStats: { flexDirection: 'row', marginTop: 24, gap: 40 },
+  heroStat: { alignItems: 'center' },
+  heroStatVal: { color: '#fff', fontSize: FontSizes.xl, fontWeight: FontWeights.bold },
+  heroStatLabel: { color: 'rgba(255,255,255,0.5)', fontSize: FontSizes.xs, marginTop: 4, letterSpacing: 0.5 },
+  heroStatDiv: { width: 1, backgroundColor: 'rgba(255,255,255,0.15)' },
+  // Tabs
+  tabs: { flexDirection: 'row', marginHorizontal: 16, backgroundColor: Colors.surface, borderRadius: BorderRadius.md, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: Colors.glassBorder },
+  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
+  tabActive: { backgroundColor: Colors.primary },
+  tabText: { color: Colors.textMuted, fontSize: FontSizes.sm, fontWeight: FontWeights.semibold, letterSpacing: 0.5 },
+  tabTextActive: { color: '#fff' },
   // Offers
-  offerCard: {
-    marginHorizontal: 16, marginBottom: 12, backgroundColor: '#1A1F2E',
-    borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', padding: 16,
-  },
-  offerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  offerInfo: { flex: 1 },
-  offerName: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  offerDiscount: { color: '#00FFD7', fontSize: 14, marginTop: 4 },
-  offerGems: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  offerGemsText: { color: '#FFB800', fontSize: 16, fontWeight: '600' },
-  offerFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
-  offerExpiry: { color: 'rgba(255,255,255,0.4)', fontSize: 12 },
-  redeemBtn: { backgroundColor: '#0084FF', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-  redeemBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  offerCard: { marginHorizontal: 16, marginBottom: 12, backgroundColor: Colors.surface, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.glassBorder, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14, ...Shadows.sm },
+  offerBody: { flex: 1 },
+  offerName: { color: Colors.text, fontSize: FontSizes.md, fontWeight: FontWeights.semibold, letterSpacing: 0.2 },
+  offerDisc: { color: Colors.secondary, fontSize: FontSizes.sm, marginTop: 4, fontWeight: FontWeights.medium },
+  offerRight: { alignItems: 'flex-end', marginRight: 10 },
+  offerGemRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  offerGemVal: { color: Colors.accent, fontSize: FontSizes.md, fontWeight: FontWeights.bold },
+  offerExpiry: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 4 },
+  redeemBtn: { overflow: 'hidden', borderRadius: BorderRadius.md },
+  redeemGrad: { paddingHorizontal: 16, paddingVertical: 10 },
+  redeemText: { color: '#fff', fontSize: FontSizes.sm, fontWeight: FontWeights.semibold },
   // Challenges
-  challengeCard: {
-    marginHorizontal: 16, marginBottom: 12, backgroundColor: '#1A1F2E',
-    borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', padding: 16,
-  },
-  challengeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  challengeName: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  challengeCard: { marginHorizontal: 16, marginBottom: 12, backgroundColor: Colors.surface, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.glassBorder, padding: 18 },
+  challengeHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  challengeName: { color: Colors.text, fontSize: FontSizes.md, fontWeight: FontWeights.semibold },
   challengeReward: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  challengeRewardText: { color: '#FFB800', fontSize: 14, fontWeight: '600' },
-  challengeDesc: { color: 'rgba(255,255,255,0.5)', fontSize: 13, marginTop: 6 },
-  progressTrack: {
-    height: 6, backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 3, overflow: 'hidden', marginTop: 12,
-  },
-  progressFill: { height: '100%', backgroundColor: '#0084FF', borderRadius: 3 },
-  progressText: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 6 },
+  challengeRewardVal: { color: Colors.accent, fontSize: FontSizes.sm, fontWeight: FontWeights.bold },
+  challengeDesc: { color: Colors.textMuted, fontSize: FontSizes.sm, marginTop: 6, letterSpacing: 0.2 },
+  progressTrack: { height: 5, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 3, overflow: 'hidden', marginTop: 14 },
+  progressFill: { height: '100%', borderRadius: 3 },
+  progressLabel: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 8, letterSpacing: 0.3 },
   // Badges
   badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 16 },
-  badgeCard: {
-    width: '47%', backgroundColor: '#1A1F2E', borderRadius: 16,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-    padding: 20, alignItems: 'center', gap: 8,
-  },
-  badgeCardLocked: { opacity: 0.5 },
-  badgeName: { color: '#fff', fontSize: 14, fontWeight: '500' },
-  badgeNameLocked: { color: 'rgba(255,255,255,0.4)' },
+  badgeCard: { width: '47%', backgroundColor: Colors.surface, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.glassBorder, padding: 20, alignItems: 'center', gap: 8, ...Shadows.sm },
+  badgeLocked: { opacity: 0.4 },
+  badgeIconBox: { width: 52, height: 52, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.04)', alignItems: 'center', justifyContent: 'center' },
+  badgeName: { color: Colors.text, fontSize: FontSizes.sm, fontWeight: FontWeights.medium, letterSpacing: 0.2 },
 });
 
 export default GemsScreen;

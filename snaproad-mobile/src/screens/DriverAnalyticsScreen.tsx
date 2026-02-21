@@ -1,224 +1,150 @@
-// SnapRoad Mobile - Driver Analytics Screen
-// Aligned with Figma UI: /app/frontend/src/components/figma-ui/mobile/DriverAnalytics.tsx
+// SnapRoad Mobile - Premium Driver Analytics
+// Neon blue glass-morphism, clean typography
 
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Spacing, BorderRadius, FontSizes, FontWeights } from '../utils/theme';
+import { Colors, Shadows, FontSizes, FontWeights, BorderRadius } from '../utils/theme';
 
-interface DriverAnalyticsScreenProps {
-  navigation?: any;
-  onNavigate?: (screen: string) => void;
-}
+const STATS = [
+  { label: 'Safety Score', value: '94', change: '+3%', icon: 'shield-checkmark-outline', color: Colors.secondary, bg: `${Colors.secondary}12` },
+  { label: 'Total Miles', value: '1,247', change: '+12%', icon: 'navigate-outline', color: Colors.primaryLight, bg: `${Colors.primaryLight}12` },
+  { label: 'Gems Earned', value: '2,450', change: '+8%', icon: 'diamond-outline', color: Colors.accent, bg: `${Colors.accent}12` },
+  { label: 'Day Streak', value: '23', change: '', icon: 'flash-outline', color: Colors.gold, bg: `${Colors.gold}12` },
+];
 
-interface StatCard {
-  label: string;
-  value: string | number;
-  change: number;
-  icon: string;
-  color: string;
-  trend: 'up' | 'down' | 'neutral';
-}
+const METRICS = [
+  { name: 'Smooth Braking', score: 92, color: Colors.secondary, icon: 'pulse-outline' },
+  { name: 'Speed Control', score: 96, color: Colors.primaryLight, icon: 'speedometer-outline' },
+  { name: 'Cornering', score: 88, color: '#F59E0B', icon: 'navigate-outline' },
+  { name: 'Acceleration', score: 90, color: Colors.accent, icon: 'flash-outline' },
+  { name: 'Phone Focus', score: 78, color: Colors.error, icon: 'phone-portrait-outline' },
+  { name: 'Night Driving', score: 85, color: Colors.primaryLight, icon: 'moon-outline' },
+];
 
-interface DrivingMetric {
-  name: string;
-  score: number;
-  color: string;
-  icon: string;
-  tip: string;
-}
+const WEEKLY = [
+  { day: 'M', score: 92 }, { day: 'T', score: 88 }, { day: 'W', score: 95 },
+  { day: 'T', score: 91 }, { day: 'F', score: 94 }, { day: 'S', score: 97 }, { day: 'S', score: 96 },
+];
 
-export const DriverAnalyticsScreen: React.FC<DriverAnalyticsScreenProps> = ({ navigation, onNavigate }) => {
+export const DriverAnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const [timeRange, setTimeRange] = useState<'week' | 'month' | 'year'>('week');
-
-  const stats: StatCard[] = [
-    { label: 'Safety Score', value: 94, change: 3, icon: 'shield-checkmark', color: '#00DFA2', trend: 'up' },
-    { label: 'Total Miles', value: '1,247', change: 12, icon: 'location', color: '#0084FF', trend: 'up' },
-    { label: 'Gems Earned', value: '2,450', change: 8, icon: 'diamond', color: '#9D4EDD', trend: 'up' },
-    { label: 'Streak', value: '23 days', change: 0, icon: 'flash', color: '#FFC24C', trend: 'neutral' },
-  ];
-
-  const drivingMetrics: DrivingMetric[] = [
-    { name: 'Smooth Braking', score: 92, color: '#00DFA2', icon: 'pulse', tip: 'Excellent braking' },
-    { name: 'Speed Control', score: 96, color: '#0084FF', icon: 'trending-up', tip: 'Great speed limits' },
-    { name: 'Cornering', score: 88, color: '#FFC24C', icon: 'navigate', tip: 'Take turns gradually' },
-    { name: 'Acceleration', score: 90, color: '#9D4EDD', icon: 'flash', tip: 'Controlled acceleration' },
-    { name: 'Phone Focus', score: 78, color: '#FF5A5A', icon: 'phone-portrait', tip: 'Reduce phone use' },
-    { name: 'Night Driving', score: 85, color: '#0084FF', icon: 'moon', tip: 'Good night awareness' },
-  ];
-
-  const weeklyData = [
-    { day: 'Mon', score: 92 }, { day: 'Tue', score: 88 }, { day: 'Wed', score: 95 },
-    { day: 'Thu', score: 91 }, { day: 'Fri', score: 94 }, { day: 'Sat', score: 97 },
-    { day: 'Sun', score: 96 },
-  ];
-
-  const handleBack = () => {
-    if (onNavigate) onNavigate('profile');
-    else if (navigation) navigation.goBack();
-  };
+  const [range, setRange] = useState<'week'|'month'|'year'>('week');
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+    <View style={[s.container, { paddingTop: insets.top }]}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => navigation?.goBack()} style={s.backBtn}>
+          <Ionicons name="chevron-back" size={24} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Analytics</Text>
+        <Text style={s.headerTitle}>Analytics</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Time Range Selector */}
-        <View style={styles.timeRange}>
-          {(['week', 'month', 'year'] as const).map((range) => (
-            <TouchableOpacity
-              key={range}
-              style={[styles.timeBtn, timeRange === range && styles.timeBtnActive]}
-              onPress={() => setTimeRange(range)}
-            >
-              <Text style={[styles.timeBtnText, timeRange === range && styles.timeBtnTextActive]}>
-                {range.charAt(0).toUpperCase() + range.slice(1)}
-              </Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+        {/* Range Tabs */}
+        <View style={s.rangeTabs}>
+          {(['week','month','year'] as const).map(r => (
+            <TouchableOpacity key={r} style={[s.rangeTab, range===r && s.rangeTabActive]} onPress={() => setRange(r)}>
+              <Text style={[s.rangeText, range===r && s.rangeTextActive]}>{r.charAt(0).toUpperCase()+r.slice(1)}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
         {/* Stats Grid */}
-        <View style={styles.statsGrid}>
-          {stats.map((stat, i) => (
-            <View key={i} style={styles.statCard}>
-              <View style={[styles.statIconBox, { backgroundColor: `${stat.color}15` }]}>
-                <Ionicons name={stat.icon as any} size={20} color={stat.color} />
+        <View style={s.grid}>
+          {STATS.map((st,i) => (
+            <View key={i} style={s.statCard}>
+              <View style={[s.statIcon, { backgroundColor: st.bg }]}>
+                <Ionicons name={st.icon as any} size={18} color={st.color} />
               </View>
-              <Text style={styles.statCardValue}>{stat.value}</Text>
-              <Text style={styles.statCardLabel}>{stat.label}</Text>
-              {stat.change > 0 && (
-                <View style={styles.statChangeRow}>
-                  <Ionicons name="arrow-up" size={12} color="#00DFA2" />
-                  <Text style={styles.statChangeText}>{stat.change}%</Text>
-                </View>
-              )}
+              <Text style={s.statValue}>{st.value}</Text>
+              <Text style={s.statLabel}>{st.label}</Text>
+              {st.change ? <Text style={s.statChange}>{st.change}</Text> : null}
             </View>
           ))}
         </View>
 
         {/* Weekly Chart */}
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Weekly Performance</Text>
-          <View style={styles.barChart}>
-            {weeklyData.map((day, i) => (
-              <View key={i} style={styles.barColumn}>
-                <View style={styles.barTrack}>
-                  <LinearGradient
-                    colors={day.score >= 95 ? ['#00DFA2', '#00B87A'] : day.score >= 90 ? ['#0084FF', '#0066CC'] : ['#FFC24C', '#FF9F1C']}
-                    style={[styles.barFill, { height: `${day.score}%` }]}
-                  />
+        <View style={s.chartCard}>
+          <Text style={s.cardTitle}>Weekly Performance</Text>
+          <View style={s.barRow}>
+            {WEEKLY.map((d,i) => {
+              const h = ((d.score - 70) / 30) * 100;
+              const clr = d.score >= 95 ? Colors.secondary : d.score >= 90 ? Colors.primaryLight : '#F59E0B';
+              return (
+                <View key={i} style={s.barCol}>
+                  <View style={s.barTrack}>
+                    <LinearGradient colors={[clr, `${clr}88`]} style={[s.barFill, { height: `${h}%` }]} />
+                  </View>
+                  <Text style={s.barDay}>{d.day}</Text>
                 </View>
-                <Text style={styles.barLabel}>{day.day}</Text>
-                <Text style={styles.barValue}>{day.score}</Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </View>
 
-        {/* Driving Metrics */}
-        <View style={styles.metricsCard}>
-          <Text style={styles.metricsTitle}>Driving Breakdown</Text>
-          {drivingMetrics.map((metric, i) => (
-            <View key={i} style={styles.metricRow}>
-              <View style={[styles.metricIconBox, { backgroundColor: `${metric.color}15` }]}>
-                <Ionicons name={metric.icon as any} size={16} color={metric.color} />
+        {/* Driving Breakdown */}
+        <View style={s.metricsCard}>
+          <Text style={s.cardTitle}>Driving Breakdown</Text>
+          {METRICS.map((m,i) => (
+            <View key={i} style={s.metricRow}>
+              <View style={[s.metricIcon, { backgroundColor: `${m.color}12` }]}>
+                <Ionicons name={m.icon as any} size={15} color={m.color} />
               </View>
-              <View style={styles.metricContent}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricName}>{metric.name}</Text>
-                  <Text style={[styles.metricScore, { color: metric.color }]}>{metric.score}</Text>
+              <View style={s.metricBody}>
+                <View style={s.metricHead}>
+                  <Text style={s.metricName}>{m.name}</Text>
+                  <Text style={[s.metricScore, { color: m.color }]}>{m.score}</Text>
                 </View>
-                <View style={styles.metricBarTrack}>
-                  <View style={[styles.metricBarFill, { width: `${metric.score}%`, backgroundColor: metric.color }]} />
+                <View style={s.metricTrack}>
+                  <View style={[s.metricFill, { width: `${m.score}%`, backgroundColor: m.color }]} />
                 </View>
-                <Text style={styles.metricTip}>{metric.tip}</Text>
               </View>
             </View>
           ))}
         </View>
-
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0E16' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12,
-  },
-  backBtn: { padding: 8 },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  scrollContent: { paddingHorizontal: 16 },
-  // Time range
-  timeRange: {
-    flexDirection: 'row', backgroundColor: '#1A1F2E',
-    borderRadius: 12, padding: 4, marginBottom: 16,
-  },
-  timeBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
-  timeBtnActive: { backgroundColor: '#0084FF' },
-  timeBtnText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '500' },
-  timeBtnTextActive: { color: '#fff' },
-  // Stats grid
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
-  statCard: {
-    width: '47%', backgroundColor: '#1A1F2E', borderRadius: 16,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-    padding: 16,
-  },
-  statIconBox: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  statCardValue: { color: '#fff', fontSize: 24, fontWeight: '700' },
-  statCardLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 4 },
-  statChangeRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 8 },
-  statChangeText: { color: '#00DFA2', fontSize: 12, fontWeight: '500' },
-  // Chart
-  chartCard: {
-    backgroundColor: '#1A1F2E', borderRadius: 16,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-    padding: 16, marginBottom: 16,
-  },
-  chartTitle: { color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 16 },
-  barChart: { flexDirection: 'row', justifyContent: 'space-around', height: 140 },
-  barColumn: { alignItems: 'center', flex: 1 },
-  barTrack: { flex: 1, width: 20, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 10, overflow: 'hidden', justifyContent: 'flex-end' },
-  barFill: { width: '100%', borderRadius: 10 },
-  barLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 6 },
-  barValue: { color: 'rgba(255,255,255,0.6)', fontSize: 10, marginTop: 2 },
-  // Metrics
-  metricsCard: {
-    backgroundColor: '#1A1F2E', borderRadius: 16,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-    padding: 16, marginBottom: 16,
-  },
-  metricsTitle: { color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 16 },
-  metricRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  metricIconBox: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  metricContent: { flex: 1 },
-  metricHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  metricName: { color: '#fff', fontSize: 14, fontWeight: '500' },
-  metricScore: { fontSize: 14, fontWeight: '700' },
-  metricBarTrack: { height: 6, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' },
-  metricBarFill: { height: '100%', borderRadius: 3 },
-  metricTip: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 4 },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { color: Colors.text, fontSize: FontSizes.lg, fontWeight: FontWeights.bold, letterSpacing: 0.5 },
+  scroll: { paddingHorizontal: 16 },
+  rangeTabs: { flexDirection: 'row', backgroundColor: Colors.surface, borderRadius: BorderRadius.md, padding: 4, marginBottom: 20, borderWidth: 1, borderColor: Colors.glassBorder },
+  rangeTab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
+  rangeTabActive: { backgroundColor: Colors.primary },
+  rangeText: { color: Colors.textMuted, fontSize: FontSizes.sm, fontWeight: FontWeights.semibold, letterSpacing: 0.5 },
+  rangeTextActive: { color: '#fff' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
+  statCard: { width: '47%', backgroundColor: Colors.surface, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.glassBorder, padding: 18, ...Shadows.md },
+  statIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  statValue: { color: Colors.text, fontSize: FontSizes.xxl, fontWeight: FontWeights.bold, letterSpacing: -0.5 },
+  statLabel: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 4, letterSpacing: 0.6, textTransform: 'uppercase' },
+  statChange: { color: Colors.secondary, fontSize: FontSizes.xs, fontWeight: FontWeights.semibold, marginTop: 8 },
+  chartCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.glassBorder, padding: 20, marginBottom: 20 },
+  cardTitle: { color: Colors.text, fontSize: FontSizes.lg, fontWeight: FontWeights.bold, marginBottom: 20, letterSpacing: 0.3 },
+  barRow: { flexDirection: 'row', justifyContent: 'space-around', height: 130 },
+  barCol: { alignItems: 'center', flex: 1 },
+  barTrack: { flex: 1, width: 18, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 9, overflow: 'hidden', justifyContent: 'flex-end' },
+  barFill: { width: '100%', borderRadius: 9 },
+  barDay: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 8, fontWeight: FontWeights.medium },
+  metricsCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.glassBorder, padding: 20 },
+  metricRow: { flexDirection: 'row', gap: 12, marginBottom: 18 },
+  metricIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  metricBody: { flex: 1 },
+  metricHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  metricName: { color: Colors.text, fontSize: FontSizes.sm, fontWeight: FontWeights.medium, letterSpacing: 0.2 },
+  metricScore: { fontSize: FontSizes.sm, fontWeight: FontWeights.bold },
+  metricTrack: { height: 5, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 3, overflow: 'hidden' },
+  metricFill: { height: '100%', borderRadius: 3 },
 });
 
 export default DriverAnalyticsScreen;
