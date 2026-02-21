@@ -1,152 +1,98 @@
-// SnapRoad Mobile - Privacy Center Screen
-// Aligned with Figma UI: /app/frontend/src/components/figma-ui/mobile/PrivacyCenter.tsx
+// SnapRoad Mobile - Premium Privacy Center
+// Clean glass UI, neon blue accents
 
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Colors, Shadows, FontSizes, FontWeights, BorderRadius } from '../utils/theme';
 
-interface PrivacyCenterScreenProps {
-  navigation?: any;
-  onNavigate?: (screen: string) => void;
-}
-
-export const PrivacyCenterScreen: React.FC<PrivacyCenterScreenProps> = ({ navigation, onNavigate }) => {
+export const PrivacyCenterScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const [settings, setSettings] = useState({
-    incognito: false,
-    shareLogs: true,
-    telemetry: true,
-    localCache: true,
-  });
+  const [settings, setSettings] = useState({ incognito: false, shareLogs: true, telemetry: true, localCache: true });
+  const toggle = (k: keyof typeof settings) => setSettings(p => ({ ...p, [k]: !p[k] }));
 
-  const toggle = (key: keyof typeof settings) => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const handleBack = () => {
-    if (onNavigate) onNavigate('profile');
-    else if (navigation) navigation.goBack();
-  };
-
-  const privacyItems = [
-    { key: 'incognito' as const, icon: 'eye-off', label: 'Incognito Mode', desc: 'Hide your activity from leaderboard', color: '#9D4EDD' },
-    { key: 'shareLogs' as const, icon: 'share', label: 'Share Drive Logs', desc: 'Share anonymous data to improve safety', color: '#0084FF' },
-    { key: 'telemetry' as const, icon: 'analytics', label: 'Telemetry', desc: 'Help us improve SnapRoad', color: '#00DFA2' },
-    { key: 'localCache' as const, icon: 'folder', label: 'Local Cache', desc: 'Store trip data on device', color: '#FFC24C' },
+  const items = [
+    { key: 'incognito' as const, icon: 'eye-off-outline' as const, label: 'Incognito Mode', desc: 'Hide from leaderboard', color: Colors.accent },
+    { key: 'shareLogs' as const, icon: 'share-outline' as const, label: 'Share Drive Logs', desc: 'Anonymous safety data', color: Colors.primaryLight },
+    { key: 'telemetry' as const, icon: 'analytics-outline' as const, label: 'Telemetry', desc: 'Help improve SnapRoad', color: Colors.secondary },
+    { key: 'localCache' as const, icon: 'folder-outline' as const, label: 'Local Cache', desc: 'Store data on device', color: '#F59E0B' },
   ];
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+    <View style={[s.container, { paddingTop: insets.top }]}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => navigation?.goBack()} style={s.backBtn}>
+          <Ionicons name="chevron-back" size={24} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Privacy Center</Text>
+        <Text style={s.headerTitle}>Privacy Center</Text>
         <View style={{ width: 40 }} />
       </View>
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Protection Banner */}
-        <LinearGradient
-          colors={['#0084FF', '#004A93']}
-          style={styles.banner}
-        >
-          <Ionicons name="shield-checkmark" size={40} color="#fff" />
-          <Text style={styles.bannerTitle}>Your Data is Protected</Text>
-          <Text style={styles.bannerSub}>
-            SnapRoad uses end-to-end encryption and never sells your data
-          </Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+        <LinearGradient colors={['#1D4ED8', '#2563EB']} style={s.banner}>
+          <Ionicons name="shield-checkmark" size={36} color="#fff" />
+          <Text style={s.bannerTitle}>Your Data is Protected</Text>
+          <Text style={s.bannerSub}>End-to-end encryption. We never sell your data.</Text>
         </LinearGradient>
 
-        {/* Privacy Settings */}
-        {privacyItems.map((item) => (
-          <View key={item.key} style={styles.settingCard}>
-            <View style={[styles.settingIcon, { backgroundColor: `${item.color}15` }]}>
-              <Ionicons name={item.icon as any} size={22} color={item.color} />
+        {items.map(it => (
+          <View key={it.key} style={s.card}>
+            <View style={[s.icon, { backgroundColor: `${it.color}12` }]}>
+              <Ionicons name={it.icon} size={20} color={it.color} />
             </View>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>{item.label}</Text>
-              <Text style={styles.settingDesc}>{item.desc}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.label}>{it.label}</Text>
+              <Text style={s.desc}>{it.desc}</Text>
             </View>
-            <TouchableOpacity
-              style={[styles.toggleTrack, settings[item.key] && styles.toggleTrackActive]}
-              onPress={() => toggle(item.key)}
-            >
-              <View style={[styles.toggleThumb, settings[item.key] && styles.toggleThumbActive]} />
+            <TouchableOpacity style={[s.toggle, settings[it.key] && s.toggleOn]} onPress={() => toggle(it.key)}>
+              <View style={[s.dot, settings[it.key] && s.dotOn]} />
             </TouchableOpacity>
           </View>
         ))}
 
-        {/* Data Management */}
-        <Text style={styles.sectionTitle}>Data Management</Text>
-        <View style={styles.dataCard}>
-          <TouchableOpacity style={styles.dataItem}>
-            <Ionicons name="download" size={20} color="#0084FF" />
-            <Text style={styles.dataLabel}>Download My Data</Text>
-            <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.3)" />
+        <Text style={s.sectionTitle}>DATA MANAGEMENT</Text>
+        <View style={s.dataCard}>
+          <TouchableOpacity style={s.dataRow}>
+            <Ionicons name="download-outline" size={20} color={Colors.primaryLight} />
+            <Text style={s.dataLabel}>Download My Data</Text>
+            <Ionicons name="chevron-forward" size={18} color={Colors.textDim} />
           </TouchableOpacity>
-          <View style={styles.dataDivider} />
-          <TouchableOpacity style={styles.dataItem}>
-            <Ionicons name="trash" size={20} color="#FF5A5A" />
-            <Text style={[styles.dataLabel, { color: '#FF5A5A' }]}>Delete Account</Text>
-            <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.3)" />
+          <View style={s.dataDiv} />
+          <TouchableOpacity style={s.dataRow}>
+            <Ionicons name="trash-outline" size={20} color={Colors.error} />
+            <Text style={[s.dataLabel, { color: Colors.error }]}>Delete Account</Text>
+            <Ionicons name="chevron-forward" size={18} color={Colors.textDim} />
           </TouchableOpacity>
         </View>
-
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0E16' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12,
-  },
-  backBtn: { padding: 8 },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  scrollContent: { paddingHorizontal: 16 },
-  // Banner
-  banner: { borderRadius: 20, padding: 24, alignItems: 'center', marginBottom: 20 },
-  bannerTitle: { color: '#fff', fontSize: 20, fontWeight: '700', marginTop: 12 },
-  bannerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 14, textAlign: 'center', marginTop: 8 },
-  // Settings
-  settingCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#1A1F2E', borderRadius: 16, borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)', padding: 16, marginBottom: 12,
-  },
-  settingIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  settingInfo: { flex: 1 },
-  settingLabel: { color: '#fff', fontSize: 15, fontWeight: '500' },
-  settingDesc: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
-  toggleTrack: {
-    width: 44, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center', paddingHorizontal: 2,
-  },
-  toggleTrackActive: { backgroundColor: '#0084FF' },
-  toggleThumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.5)' },
-  toggleThumbActive: { backgroundColor: '#fff', alignSelf: 'flex-end' },
-  // Data management
-  sectionTitle: { color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: '500', marginTop: 12, marginBottom: 12 },
-  dataCard: {
-    backgroundColor: '#1A1F2E', borderRadius: 16, borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)', overflow: 'hidden',
-  },
-  dataItem: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
-  dataLabel: { flex: 1, color: '#fff', fontSize: 15 },
-  dataDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginLeft: 48 },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { color: Colors.text, fontSize: FontSizes.lg, fontWeight: FontWeights.bold, letterSpacing: 0.5 },
+  scroll: { paddingHorizontal: 16 },
+  banner: { borderRadius: BorderRadius.xxl, padding: 28, alignItems: 'center', marginBottom: 20, ...Shadows.neon },
+  bannerTitle: { color: '#fff', fontSize: FontSizes.xl, fontWeight: FontWeights.bold, marginTop: 12 },
+  bannerSub: { color: 'rgba(255,255,255,0.7)', fontSize: FontSizes.sm, textAlign: 'center', marginTop: 8, letterSpacing: 0.2 },
+  card: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: Colors.surface, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.glassBorder, padding: 18, marginBottom: 12 },
+  icon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  label: { color: Colors.text, fontSize: FontSizes.md, fontWeight: FontWeights.medium, letterSpacing: 0.2 },
+  desc: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 3, letterSpacing: 0.2 },
+  toggle: { width: 44, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.08)', justifyContent: 'center', paddingHorizontal: 2 },
+  toggleOn: { backgroundColor: Colors.primary },
+  dot: { width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.4)' },
+  dotOn: { backgroundColor: '#fff', alignSelf: 'flex-end' },
+  sectionTitle: { color: Colors.textMuted, fontSize: FontSizes.xs, fontWeight: FontWeights.semibold, letterSpacing: 1.5, marginTop: 12, marginBottom: 12 },
+  dataCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.glassBorder, overflow: 'hidden' },
+  dataRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 18 },
+  dataLabel: { flex: 1, color: Colors.text, fontSize: FontSizes.md, fontWeight: FontWeights.medium },
+  dataDiv: { height: 1, backgroundColor: 'rgba(255,255,255,0.04)', marginLeft: 50 },
 });
 
 export default PrivacyCenterScreen;
