@@ -184,7 +184,6 @@ export default function DriverApp() {
   
   // Gem overlay state
   const [activeTripId, setActiveTripId] = useState<string | null>(null)
-  const [isNavigating, setIsNavigating] = useState(false)
   
   // Search and navigation states
   const [searchQuery, setSearchQuery] = useState('')
