@@ -7,7 +7,7 @@ import requests
 import os
 
 # Use environment variable for BASE_URL
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://snaproad-boost.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://gamified-routes.preview.emergentagent.com').rstrip('/')
 
 class TestTripHistoryDetailed:
     """Test /api/trips/history/detailed endpoint"""
