@@ -273,7 +273,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, onNa
           <SettingItem
             icon="help-circle-outline"
             title="Help Center"
-            onPress={() => handleNavigate('support')}
+            onPress={() => handleNavigate('Help')}
           />
           <SettingItem
             icon="chatbubble-outline"
