@@ -873,11 +873,11 @@ export default function AdminDashboard() {
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-white font-semibold text-lg mb-1">Manage All Platform Offers</h3>
-                      <p className="text-slate-400 text-sm">Create offers on behalf of businesses, export data, or import bulk offers</p>
+                      <p className="text-slate-400 text-sm">Create third-party offers (Groupon, etc.) or import in bulk via CSV</p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <button onClick={() => setShowImportModal(true)} className="bg-slate-800 border border-white/10 text-white px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-slate-700 text-sm">
-                        <Upload size={16} />Import JSON
+                      <button onClick={() => setShowBulkUpload(true)} className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 hover:opacity-90 text-sm font-medium" data-testid="bulk-upload-btn">
+                        <Upload size={16} />Bulk Upload CSV
                       </button>
                       <button onClick={() => setShowExportModal(true)} className="bg-slate-800 border border-white/10 text-white px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-slate-700 text-sm">
                         <Download size={16} />Export
@@ -886,11 +886,8 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/5 p-8 text-center">
-                  <Gift className="text-slate-600 mx-auto mb-4" size={56} />
-                  <p className="text-slate-400 text-lg">All platform offers displayed here</p>
-                  <p className="text-slate-600 text-sm mt-2">Use Export to download current offers or Import to add new ones</p>
-                </div>
+                {/* Live Offers List */}
+                <AdminOffersList />
               </div>
             )}
           </>
