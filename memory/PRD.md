@@ -9,59 +9,47 @@ Build "SnapRoad," a privacy-first, gamified navigation app with three parts:
 ## Tech Stack
 - **Frontend**: React + TypeScript + Vite + Tailwind + Shadcn/UI
 - **Backend**: FastAPI + Python + MongoDB (via MONGO_URL)
-- **Mobile**: React Native (Expo) + TypeScript
+- **Mobile**: React Native (Expo) + TypeScript + Zustand
 - **AI**: GPT-5.2 (Orion Coach) + OpenAI Vision (Photo Analysis) via Emergent LLM Key
 - **Maps**: Apple Maps MapKit JS (NOT Mapbox) - backend generates JWT tokens
 
-## Core Architecture
-```
-/app/backend/server.py          # Main FastAPI server
-/app/backend/services/          # Service layer (orion, photo, partner)
-/app/frontend/src/              # React web app
-/app/snaproad-mobile/src/       # React Native mobile app
-/app/memory/                    # Team guides and documentation
-```
+## Design System (Mobile - Feb 2026 Refresh)
+- **Theme**: Premium neon blue glass-morphism
+- **Primary**: #2563EB (neon blue), #38BDF8 (electric blue accent)
+- **Background**: #070E1B (deep navy), #111D32 (surface)
+- **Glass**: rgba(17,29,50,0.85) with border rgba(56,189,248,0.12)
+- **Typography**: SF Pro (iOS system font), semibold/bold weights, 0.2-0.5 letter-spacing
+- **iPhone 17 compatible**: Safe area insets, Dynamic Island support
 
 ## What's Implemented
 
-### Driver App (Web + Mobile)
-- Onboarding flow (welcome, plan selection, car setup)
-- Map screen with dark theme tiles
-- AI Orion Coach (LIVE - GPT-5.2)
-- Photo capture with face/plate blurring (LIVE - OpenAI Vision)
-- Trip Analytics modal (3 tabs: Trips, Savings, Stats)
-- Route History 3D visualization
-- Collapsible offers panel on map
-- Safety scoring, XP, gems, leaderboards
-- Fuel dashboard
+### Driver Mobile App (25 screens - ALL updated with premium UI)
+Core screens refreshed Feb 2026:
+- **MapScreen** - Route SVG, quick locations, safety badge, FABs, nearby offers
+- **ProfileScreen** - Gradient header, glass cards, grouped menus, stats row
+- **DriverAnalyticsScreen** - Stats grid, weekly chart, driving breakdown metrics
+- **GemsScreen** - Hero balance, offers/challenges/badges tabs
+- **OrionCoachScreen** - Chat UI with quick prompts, gradient bubbles
+- **PhotoCaptureScreen** - Camera frame, privacy shield banner, incident types
+- **FuelDashboardScreen** - Hero stats, monthly chart, efficiency metrics, tips
+- **PrivacyCenterScreen** - Protection banner, privacy toggles, data management
+- **NotificationSettingsScreen** - Toggle cards per notification type
+- **TripAnalyticsScreen** - 3-tab analytics (Trips, Savings, Stats)
+- **RouteHistory3DScreen** - Interactive 3D route visualization
+- Also: Splash, Welcome, PlanSelection, CarSetup, Offers, Rewards, Settings, Family, Leaderboard, TripLogs, MyOffers, OfferDetail
 
-### Partner Portal
-- Dashboard overview with analytics
-- Offer CRUD management
-- Location management
-- Plan-based RBAC (Starter/Growth/Enterprise)
-- Boost Center (Basic $9.99/24h, Standard $19.99/3d, Premium $39.99/7d)
-- Credits system
-- Welcome tour
+### Driver App (Web)
+- Same features as mobile, connected to mocked backend
+- Trip Analytics, Route History 3D, Collapsible Offers Panel
 
-### Admin Dashboard
-- User management, offer moderation
-- System analytics
+### Partner Portal (Web)
+- Dashboard overview, Offer CRUD, Location management
+- Plan-based RBAC, Boost Center, Credits system
 
-### Mobile App (React Native)
-- All core driver screens implemented
-- TripAnalyticsScreen with 3 tabs
-- RouteHistory3DScreen with interactive SVG map
-- Connected to backend mocked APIs
-
-## Maps Decision: Apple Maps MapKit JS
-- Backend generates JWT tokens for MapKit JS API
-- Mobile uses `react-native-maps` with `PROVIDER_DEFAULT` (Apple Maps on iOS)
-- No Mapbox dependency anywhere in the project
-- Free with Apple Developer Program ($99/year, 250K calls/day included)
+### Admin Dashboard (Web)
+- User management, offer moderation, system analytics
 
 ## API Status
-
 | Endpoint | Status | Notes |
 |----------|--------|-------|
 | POST /api/orion/chat | LIVE | GPT-5.2 via Emergent |
@@ -70,18 +58,11 @@ Build "SnapRoad," a privacy-first, gamified navigation app with three parts:
 | GET /api/routes/history-3d | MOCKED | Needs MongoDB |
 | GET /api/partner/boosts/pricing | MOCKED | Static data |
 | POST /api/partner/boosts/create | MOCKED | Needs Stripe |
-| GET /api/partner/boosts/active | MOCKED | Needs MongoDB |
-
-## Team Guide Files (Updated Feb 18, 2026)
-- `/app/memory/ANDREW_BACKEND_GUIDE.md` - Backend: DB migration, Apple MapKit token API, Stripe
-- `/app/memory/BRIAN_WEB_GUIDE.md` - Web: API integration, Stripe UI, Apple Maps
-- `/app/memory/KATHIR_MOBILE_GUIDE.md` - Mobile: Apple Maps, TripAnalytics, RouteHistory3D
-- `/app/memory/PM_COORDINATION_GUIDE.md` - PM: Credentials, team coordination, cost estimates
 
 ## Credentials
-- Driver: driver@snaproad.com / password
-- Partner: partner@snaproad.com / password
-- Admin: admin@snaproad.com / password
+- Driver: driver@snaproad.com / password123
+- Partner: partner@snaproad.com / password123
+- Admin: admin@snaproad.com / password123
 
 ---
-Last Updated: February 18, 2026
+Last Updated: February 2026
