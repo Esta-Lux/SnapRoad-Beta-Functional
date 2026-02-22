@@ -311,3 +311,75 @@ def get_admin_events():
     # Mock fallback
     from services.mock_data import events_db
     return {"success": True, "source": "mock", "data": events_db}
+
+
+@router.post("/admin/supabase/migrate")
+def run_supabase_migration(db_password: str = Body(..., embed=True)):
+    """
+    Run the Supabase migration SQL using a direct PostgreSQL connection.
+    Provide your Supabase database password from:
+    Supabase Dashboard → Project Settings → Database → Database password
+    """
+    import psycopg2
+    from config import SUPABASE_URL
+
+    # Extract project ref from URL
+    # https://cuseezsdaqlbwlxnjsyr.supabase.co -> cuseezsdaqlbwlxnjsyr
+    project_ref = SUPABASE_URL.replace("https://", "").split(".")[0] if SUPABASE_URL else ""
+    if not project_ref:
+        return {"success": False, "error": "SUPABASE_URL not configured"}
+
+    # Read migration SQL
+    migration_file = "/app/backend/sql/supabase_migration.sql"
+    try:
+        with open(migration_file) as f:
+            sql = f.read()
+    except FileNotFoundError:
+        return {"success": False, "error": "Migration file not found"}
+
+    # Try connection formats
+    conn_strings = [
+        f"postgresql://postgres.{project_ref}:{db_password}@aws-0-us-east-1.pooler.supabase.com:5432/postgres",
+        f"postgresql://postgres.{project_ref}:{db_password}@aws-0-us-east-1.pooler.supabase.com:6543/postgres",
+        f"postgresql://postgres:{db_password}@db.{project_ref}.supabase.co:5432/postgres",
+    ]
+
+    last_error = None
+    for conn_str in conn_strings:
+        try:
+            conn = psycopg2.connect(conn_str, connect_timeout=10)
+            conn.autocommit = True
+            cursor = conn.cursor()
+            # Run migration in parts (split on -- ===)
+            statements = [s.strip() for s in sql.split(";") if s.strip() and not s.strip().startswith("--")]
+            executed = 0
+            errors = []
+            for stmt in statements:
+                try:
+                    cursor.execute(stmt)
+                    executed += 1
+                except Exception as e:
+                    err = str(e)
+                    if "already exists" not in err.lower():
+                        errors.append(err[:100])
+            cursor.close()
+            conn.close()
+            logger.info(f"Migration completed: {executed} statements, {len(errors)} errors")
+            return {
+                "success": True,
+                "message": f"Migration completed: {executed} statements executed",
+                "warnings": errors[:5] if errors else [],
+            }
+        except Exception as e:
+            last_error = str(e)[:200]
+            continue
+
+    return {
+        "success": False,
+        "error": f"Could not connect to database: {last_error}",
+        "help": (
+            "Get your database password from: "
+            f"https://supabase.com/dashboard/project/{project_ref}/settings/database "
+            "→ Database password section → Reset or copy your password"
+        ),
+    }
