@@ -1296,6 +1296,11 @@ export default function AdminDashboard() {
             {activeTab === 'aiModeration' && (
               <AIModerationTab theme={theme} />
             )}
+
+            {/* Supabase Migration Panel (shown when on overview tab + status needed) */}
+            {activeTab === 'overview' && (
+              <SupabaseMigrationBanner />
+            )}
           </>
         )}
       </main>
