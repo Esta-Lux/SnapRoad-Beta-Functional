@@ -490,6 +490,103 @@ function AdminOffersList() {
 }
 
 // =============================================
+// SUPABASE MIGRATION BANNER
+// =============================================
+function SupabaseMigrationBanner() {
+  const [expanded, setExpanded] = useState(false)
+  const [dbPassword, setDbPassword] = useState('')
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState<{ success: boolean; message?: string; error?: string; help?: string } | null>(null)
+  const [status, setStatus] = useState<{ connected: boolean; migration_needed: boolean } | null>(null)
+  const API_BASE = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/admin/supabase/status`)
+      .then(r => r.json())
+      .then(d => setStatus(d.data))
+      .catch(() => {})
+  }, [])
+
+  const runMigration = async () => {
+    if (!dbPassword.trim()) return
+    setRunning(true)
+    setResult(null)
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/supabase/migrate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ db_password: dbPassword }),
+      })
+      const data = await res.json()
+      setResult(data)
+      if (data.success) setStatus(prev => prev ? { ...prev, migration_needed: false } : null)
+    } catch {
+      setResult({ success: false, error: 'Network error' })
+    }
+    setRunning(false)
+  }
+
+  // Only show if migration is needed
+  if (!status || !status.migration_needed) return null
+
+  return (
+    <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)} data-testid="migration-banner-toggle"
+        className="w-full flex items-center justify-between p-5 hover:bg-amber-500/5 transition-colors">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+            <AlertTriangle size={16} className="text-amber-400" />
+          </div>
+          <div className="text-left">
+            <p className="text-amber-300 font-semibold text-sm">Supabase Migration Needed</p>
+            <p className="text-amber-400/70 text-xs">The database tables haven't been created yet. Click to set up.</p>
+          </div>
+        </div>
+        <ChevronRight size={16} className={`text-amber-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+      </button>
+
+      {expanded && (
+        <div className="px-5 pb-5 space-y-4">
+          <div className="bg-slate-900/50 rounded-xl p-4 text-xs text-slate-400 space-y-1">
+            <p className="text-white font-medium text-sm mb-2">How to get your database password:</p>
+            <p>1. Go to <a href="https://supabase.com/dashboard/project/cuseezsdaqlbwlxnjsyr/settings/database" target="_blank" rel="noopener noreferrer" className="text-[#0084FF] underline">Supabase Dashboard → Project Settings → Database</a></p>
+            <p>2. Find the <strong className="text-white">"Database password"</strong> section</p>
+            <p>3. Copy or reset your password and paste it below</p>
+          </div>
+
+          <div className="flex gap-3">
+            <input
+              type="password"
+              value={dbPassword}
+              onChange={e => setDbPassword(e.target.value)}
+              placeholder="Enter your Supabase database password..."
+              data-testid="migration-db-password"
+              className="flex-1 bg-slate-800/80 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
+            />
+            <button onClick={runMigration} disabled={running || !dbPassword}
+              data-testid="run-migration-btn"
+              className="px-6 py-3 rounded-xl bg-amber-500 text-slate-900 font-semibold text-sm hover:opacity-90 disabled:opacity-50 flex items-center gap-2">
+              {running ? <><RefreshCw size={14} className="animate-spin" />Running...</> : <><Zap size={14} />Run Migration</>}
+            </button>
+          </div>
+
+          {result && (
+            <div className={`p-4 rounded-xl border ${result.success ? 'border-[#00DFA2]/30 bg-[#00DFA2]/5 text-[#00DFA2]' : 'border-[#FF5A5A]/30 bg-[#FF5A5A]/5 text-[#FF5A5A]'}`}>
+              <div className="flex items-center gap-2 mb-1">
+                {result.success ? <CheckCircle size={16} /> : <XCircle size={16} />}
+                <span className="font-semibold text-sm">{result.success ? 'Migration Successful!' : 'Migration Failed'}</span>
+              </div>
+              <p className="text-xs opacity-80">{result.message || result.error}</p>
+              {result.help && <p className="text-xs mt-2 text-amber-400">{result.help}</p>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// =============================================
 // AI MODERATION TYPES & DATA
 // =============================================
 type IncidentTab = 'new' | 'blurred' | 'review' | 'approved' | 'rejected'
