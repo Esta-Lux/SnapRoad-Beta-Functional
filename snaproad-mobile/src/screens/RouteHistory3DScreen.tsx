@@ -79,7 +79,7 @@ export const RouteHistory3DScreen: React.FC<RouteHistory3DScreenProps> = ({ navi
     setLoading(true);
     try {
       const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL || 'https://mobile-feature-impl.preview.emergentagent.com'}/api/routes/history-3d?days=${dateRange}`
+        `${process.env.EXPO_PUBLIC_API_URL || 'https://gamified-nav.preview.emergentagent.com'}/api/routes/history-3d?days=${dateRange}`
       );
       const data = await response.json();
       if (data.success) {

@@ -1,2 +1,2 @@
 // SnapRoad Mobile - App Configuration
-export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://mobile-feature-impl.preview.emergentagent.com';
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://gamified-nav.preview.emergentagent.com';
