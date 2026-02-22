@@ -28,7 +28,7 @@ import type {
 } from '../types';
 
 // Get API URL from environment
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://gamified-routes.preview.emergentagent.com/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://snaproad-driver-1.preview.emergentagent.com/api';
 
 const TOKEN_KEY = 'snaproad_token';
 

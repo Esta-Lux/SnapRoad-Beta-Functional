@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSizes, FontWeights, BorderRadius, Spacing } from '../utils/theme';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://gamified-routes.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://snaproad-driver-1.preview.emergentagent.com';
 
 // Types
 interface Offer {

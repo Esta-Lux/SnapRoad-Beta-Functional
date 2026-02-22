@@ -123,13 +123,13 @@ VITE_STRIPE_PUBLISHABLE_KEY=pk_test_xxxxx   # From PM
 
 ```bash
 # Test boost pricing
-curl https://gamified-routes.preview.emergentagent.com/api/partner/boosts/pricing
+curl https://snaproad-driver-1.preview.emergentagent.com/api/partner/boosts/pricing
 
 # Test trip analytics
-curl "https://gamified-routes.preview.emergentagent.com/api/trips/history/detailed?days=30"
+curl "https://snaproad-driver-1.preview.emergentagent.com/api/trips/history/detailed?days=30"
 
 # Test route history
-curl "https://gamified-routes.preview.emergentagent.com/api/routes/history-3d?days=90"
+curl "https://snaproad-driver-1.preview.emergentagent.com/api/routes/history-3d?days=90"
 ```
 
 ---
