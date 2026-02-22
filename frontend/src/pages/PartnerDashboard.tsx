@@ -566,6 +566,9 @@ export default function PartnerDashboard() {
               { id: 'locations', icon: Store, label: 'Locations', badge: partnerProfile?.location_count?.toString() || '0' },
               { id: 'analytics', icon: TrendingUp, label: 'Analytics' },
               { id: 'boosts', icon: Rocket, label: 'Boosts' },
+              { id: 'finance', icon: CreditCard, label: 'Credits & Finance' },
+              { id: 'referrals', icon: Share2, label: 'Referrals' },
+              { id: 'pricing', icon: BadgeCheck, label: 'Plan & Pricing' },
             ].map(item => (
               <button key={item.id} onClick={() => setActiveTab(item.id as any)} data-testid={`nav-${item.id}`}
                 className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all ${activeTab === item.id ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
