@@ -517,13 +517,103 @@ const INCIDENTS_MOCK: Incident[] = [
   { id: 9, type: 'Sharp Cornering', confidence: 76, status: 'rejected', blurred: false, location: 'Riverside Dr, Columbus', reportedAt: '3 hrs ago' },
 ]
 
+const WS_BASE = (() => {
+  const b = (import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_BACKEND_URL || '')
+  const httpBase = b.startsWith('http') ? b : window.location.origin
+  return httpBase.replace(/^http/, 'ws')
+})()
+
 function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
   const [activeModTab, setActiveModTab] = useState<IncidentTab>('new')
   const [incidents, setIncidents] = useState<Incident[]>(INCIDENTS_MOCK)
   const [confidenceThreshold, setConfidenceThreshold] = useState(80)
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'live' | 'offline'>('connecting')
+  const [liveToast, setLiveToast] = useState<string | null>(null)
+  const [adminCount, setAdminCount] = useState(1)
+  const wsRef = useRef<WebSocket | null>(null)
+  const pingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // WebSocket connection
+  useEffect(() => {
+    let ws: WebSocket
+    let retryTimeout: ReturnType<typeof setTimeout>
+
+    const connect = () => {
+      try {
+        ws = new WebSocket(`${WS_BASE}/ws/admin/moderation`)
+        wsRef.current = ws
+
+        ws.onopen = () => {
+          setWsStatus('live')
+          pingRef.current = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
+          }, 30000)
+        }
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data)
+            if (msg.type === 'pong') {
+              setAdminCount(msg.admin_count || 1)
+            } else if (msg.type === 'backlog') {
+              // Prepend live incidents to the mock ones
+              if (msg.incidents?.length > 0) {
+                setIncidents(prev => [...msg.incidents.reverse(), ...prev])
+              }
+            } else if (msg.type === 'new_incident') {
+              const inc: Incident = {
+                ...msg.incident,
+                reportedAt: 'just now',
+              }
+              setIncidents(prev => [inc, ...prev])
+              setLiveToast(`New incident: ${inc.type}`)
+              setTimeout(() => setLiveToast(null), 4000)
+              // Auto-switch to new tab if not already there
+              setActiveModTab('new')
+            } else if (msg.type === 'moderation_update') {
+              // Another admin moderated an incident
+              setIncidents(prev => prev.map(i =>
+                i.id === msg.incident_id ? { ...i, status: msg.outcome } : i
+              ))
+            }
+          } catch {}
+        }
+
+        ws.onclose = () => {
+          setWsStatus('offline')
+          if (pingRef.current) clearInterval(pingRef.current)
+          retryTimeout = setTimeout(connect, 5000)
+        }
+
+        ws.onerror = () => {
+          setWsStatus('offline')
+          ws.close()
+        }
+      } catch {
+        setWsStatus('offline')
+        retryTimeout = setTimeout(connect, 5000)
+      }
+    }
+
+    connect()
+    return () => {
+      ws?.close()
+      if (pingRef.current) clearInterval(pingRef.current)
+      clearTimeout(retryTimeout)
+    }
+  }, [])
 
   const handleModeration = (id: number, outcome: 'approved' | 'rejected') => {
-    setIncidents(prev => prev.map(i => i.id === id ? { ...i, status: outcome, blurred: outcome === 'approved' ? false : i.blurred } : i))
+    setIncidents(prev => prev.map(i => i.id === id ? { ...i, status: outcome } : i))
+    // Broadcast to other admins
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'moderate', incident_id: id, outcome }))
+    }
+  }
+
+  const simulateIncident = async () => {
+    const API_BASE = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+    await fetch(`${API_BASE}/api/admin/moderation/simulate`, { method: 'POST' })
   }
 
   const filteredIncidents = useMemo(() => {
@@ -538,6 +628,42 @@ function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
 
   return (
     <div className="space-y-6">
+      {/* Live Toast */}
+      {liveToast && (
+        <div className="fixed top-6 right-6 z-50 flex items-center gap-3 bg-[#0084FF] text-white px-5 py-3 rounded-2xl shadow-2xl animate-slide-up">
+          <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+          <span className="font-medium text-sm">{liveToast}</span>
+        </div>
+      )}
+
+      {/* Header Row with Live Badge + Controls */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {/* WebSocket Status Badge */}
+          <div data-testid="ws-status-badge"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all ${
+              wsStatus === 'live'
+                ? 'border-[#00DFA2]/40 bg-[#00DFA2]/10 text-[#00DFA2]'
+                : wsStatus === 'connecting'
+                  ? 'border-amber-400/40 bg-amber-400/10 text-amber-400'
+                  : 'border-[#FF5A5A]/40 bg-[#FF5A5A]/10 text-[#FF5A5A]'
+            }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              wsStatus === 'live' ? 'bg-[#00DFA2] animate-pulse' :
+              wsStatus === 'connecting' ? 'bg-amber-400 animate-pulse' :
+              'bg-[#FF5A5A]'
+            }`} />
+            {wsStatus === 'live' ? `Live · ${adminCount} admin${adminCount !== 1 ? 's' : ''} online` :
+             wsStatus === 'connecting' ? 'Connecting...' : 'Offline – retrying'}
+          </div>
+        </div>
+        {/* Simulate Incident button */}
+        <button onClick={simulateIncident} data-testid="simulate-incident-btn"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0084FF]/10 border border-[#0084FF]/20 text-[#0084FF] text-sm font-semibold hover:bg-[#0084FF]/20 transition-all">
+          <Zap size={14} />Generate Test Incident
+        </button>
+      </div>
+
       {/* Stats */}
       <div className="grid grid-cols-5 gap-4">
         {(['new', 'blurred', 'review', 'approved', 'rejected'] as IncidentTab[]).map(tab => {
@@ -575,9 +701,16 @@ function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {filteredIncidents.map(incident => {
             const canModerate = incident.status === 'new' || incident.status === 'review'
+            const isNew = incident.reportedAt === 'just now'
             return (
               <div key={incident.id} data-testid={`incident-${incident.id}`}
-                className={`p-5 rounded-2xl border transition-all hover:shadow-lg ${card}`}>
+                className={`p-5 rounded-2xl border transition-all hover:shadow-lg ${card} ${isNew ? 'ring-1 ring-[#0084FF]/40' : ''}`}>
+                {isNew && (
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#0084FF] animate-pulse" />
+                    <span className="text-[#0084FF] text-xs font-semibold">Live</span>
+                  </div>
+                )}
                 {/* Image Preview */}
                 <div className={`relative w-full h-36 rounded-xl mb-4 overflow-hidden ${isDark ? 'bg-slate-700/50' : 'bg-[#F5F8FA]'}`}>
                   <img src={`https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=400&auto=format&fit=crop`}
@@ -622,7 +755,7 @@ function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
         <div className={`p-16 rounded-2xl border text-center ${card}`}>
           <Eye size={32} className={`mx-auto mb-3 ${isDark ? 'text-white/30' : 'text-[#4B5C74]'}`} />
           <p className={isDark ? 'text-white/60' : 'text-[#0B1220]'}>No incidents in this queue</p>
-          <p className={`text-sm mt-1 ${isDark ? 'text-white/30' : 'text-[#8A9BB6]'}`}>Try lowering the confidence threshold or switching tabs</p>
+          <p className={`text-sm mt-1 ${isDark ? 'text-white/30' : 'text-[#8A9BB6]'}`}>Try lowering the confidence threshold, switching tabs, or generating a test incident</p>
         </div>
       )}
     </div>
