@@ -615,9 +615,12 @@ const INCIDENTS_MOCK: Incident[] = [
 ]
 
 const WS_BASE = (() => {
-  const b = (import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_BACKEND_URL || '')
-  const httpBase = b.startsWith('http') ? b : window.location.origin
-  return httpBase.replace(/^http/, 'ws')
+  // Derive the backend WebSocket base URL from the HTTP URL
+  const apiUrl = (import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_BACKEND_URL || '')
+  // If it's a full URL (e.g. https://...) use that; otherwise use window.location.origin
+  const httpBase = apiUrl.startsWith('http') ? apiUrl.replace(/\/$/, '') : window.location.origin
+  // Convert https -> wss, http -> ws
+  return httpBase.replace(/^https/, 'wss').replace(/^http:\/\//, 'ws://')
 })()
 
 function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
