@@ -50,6 +50,11 @@ const SETTINGS_ITEMS = [
   { icon: 'help-circle-outline' as const, label: 'Help', screen: 'Help' },
 ];
 
+const MANAGEMENT_ITEMS = [
+  { icon: 'shield-outline' as const, label: 'Admin Dashboard', screen: 'AdminDashboard' },
+  { icon: 'business-outline' as const, label: 'Partner Dashboard', screen: 'PartnerDashboard' },
+];
+
 export const DrawerMenu: React.FC<DrawerMenuProps> = ({ visible, onClose, navigation }) => {
   const insets = useSafeAreaInsets();
   const { user, logout } = useUserStore();
