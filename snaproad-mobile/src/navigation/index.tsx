@@ -74,8 +74,8 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
 
           const iconMap: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
             Map: { active: 'map', inactive: 'map-outline' },
-            Offers: { active: 'gift', inactive: 'gift-outline' },
-            Rewards: { active: 'trophy', inactive: 'trophy-outline' },
+            Routes: { active: 'git-branch', inactive: 'git-branch-outline' },
+            Rewards: { active: 'gift', inactive: 'gift-outline' },
             Profile: { active: 'person', inactive: 'person-outline' },
           };
 
@@ -116,7 +116,7 @@ const MainTabs = () => {
       }}
     >
       <Tab.Screen name="Map" component={MapScreen} />
-      <Tab.Screen name="Offers" component={OffersScreen} />
+      <Tab.Screen name="Routes" component={TripLogsScreen} />
       <Tab.Screen name="Rewards" component={RewardsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
