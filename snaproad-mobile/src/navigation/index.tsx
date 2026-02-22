@@ -45,6 +45,11 @@ import { HazardFeedScreen } from '../screens/HazardFeedScreen';
 import { CommuteSchedulerScreen } from '../screens/CommuteSchedulerScreen';
 import { InsuranceReportScreen } from '../screens/InsuranceReportScreen';
 import { HelpScreen } from '../screens/HelpScreen';
+// New feature-parity screens
+import { RoutesScreen } from '../screens/RoutesScreen';
+import { FriendsHubScreen } from '../screens/FriendsHubScreen';
+import { BadgesScreen } from '../screens/BadgesScreen';
+import { GemHistoryScreen } from '../screens/GemHistoryScreen';
 
 import { useUserStore } from '../store';
 
@@ -116,7 +121,7 @@ const MainTabs = () => {
       }}
     >
       <Tab.Screen name="Map" component={MapScreen} />
-      <Tab.Screen name="Routes" component={TripLogsScreen} />
+      <Tab.Screen name="Routes" component={RoutesScreen} />
       <Tab.Screen name="Rewards" component={RewardsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
@@ -262,6 +267,27 @@ export const Navigation = () => {
         <Stack.Screen 
           name="Help" 
           component={HelpScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        {/* New feature-parity screens */}
+        <Stack.Screen 
+          name="FriendsHub" 
+          component={FriendsHubScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="Badges" 
+          component={BadgesScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="GemHistory" 
+          component={GemHistoryScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="TripHistory" 
+          component={TripLogsScreen}
           options={{ animation: 'slide_from_right' }}
         />
       </Stack.Navigator>
