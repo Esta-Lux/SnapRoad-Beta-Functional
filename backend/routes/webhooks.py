@@ -15,7 +15,7 @@ async def stripe_webhook(request: Request):
 
 
 # ==================== PARTNER WEBSOCKET ====================
-@router.websocket("/ws/partner/{partner_id}")
+@router.websocket("/api/ws/partner/{partner_id}")
 async def partner_websocket(websocket: WebSocket, partner_id: str):
     from services.websocket_manager import ws_manager
     import uuid
