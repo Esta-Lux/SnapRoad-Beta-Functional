@@ -40,6 +40,7 @@ import { NotificationSettingsScreen } from '../screens/NotificationSettingsScree
 // Navigation & Safety Screens
 import { ActiveNavigationScreen } from '../screens/ActiveNavigationScreen';
 import { SearchDestinationScreen } from '../screens/SearchDestinationScreen';
+import { TripLogsScreen } from '../screens/TripLogsScreen';
 import { RoutePreviewScreen } from '../screens/RoutePreviewScreen';
 import { HazardFeedScreen } from '../screens/HazardFeedScreen';
 import { CommuteSchedulerScreen } from '../screens/CommuteSchedulerScreen';
