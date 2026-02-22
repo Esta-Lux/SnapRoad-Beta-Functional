@@ -12,87 +12,64 @@ SnapRoad is a privacy-first, gamified navigation app with three parts:
 - **Mobile App**: React Native (Expo SDK 54) at `/app/snaproad-mobile`
 - **Database**: MongoDB (currently using mocked in-memory data)
 
-## AI Integrations
-- **OpenAI GPT-5.2**: Orion AI Coach (uses Emergent LLM Key)
-- **OpenAI Vision**: Photo Capture blurring (uses Emergent LLM Key)
-- **Apple Maps MapKit**: Designated mapping technology (not yet implemented)
+## Web Frontend Routes
+| Route | Component | Description |
+|---|---|---|
+| `/` | `WelcomePage.tsx` | Landing page |
+| `/driver` | `pages/DriverApp/index.tsx` | **Main driver app preview** (phone frame) |
+| `/app/*` | `figma-ui/SnapRoadApp.tsx` | Figma design system version |
+| `/portal/partner` | `PartnerDashboard.tsx` | Partner portal |
+| `/portal/admin*` | `AdminDashboard.tsx` | Admin dashboard |
+
+**IMPORTANT**: The `/driver` route is what users see in Emergent preview. The mobile React Native app has been rewritten to match this UI exactly.
+
+## Mobile App ↔ Web Parity (Completed Feb 22, 2026)
+The mobile React Native screens now match the `/driver` web preview:
+
+| Mobile Screen | Web Component | Matching Elements |
+|---|---|---|
+| `MapScreen.tsx` | `DriverApp/index.tsx` | Search bar, Favorites/Nearby/Report filters, Home/Work locations, green diamond offer markers, Nearby Offers panel |
+| `RewardsScreen.tsx` | Rewards tab | Gem balance, Offers/Challenges/Badges/Car Studio sub-tabs, Redeem buttons |
+| `ProfileScreen.tsx` | Profile tab | User card, Safety Score/Miles/Badges stats, menu items, Settings section |
+| Navigation tabs | Bottom tab bar | Map, Routes, Rewards, Profile |
 
 ## Implemented Features
 
-### Offer System (NEW - Feb 21, 2026)
-- **Business Offers**: Partners create offers with address → pinned on map at location
-- **Admin Third-Party Offers**: Groupon-style offers with `offer_url` field
-- **Bulk CSV Upload**: Admin can upload offers via CSV (business_name, address, offer_url, description, type, gems)
-- **In-App Browser**: Third-party offer links open inside the app (iframe), not external browser
-- **Offer Redemption**: Users redeem offers → earn gems + get discount
-- **Auto-Push on Route**: `GET /api/offers/on-route` returns offers within proximity of driver's active route
-- **Offer Fields**: id, business_name, business_type, description, base_gems, address, lat, lng, offer_url, is_admin_offer, expires_at
+### Offer System
+- Business offers with address → pinned on map at location
+- Admin third-party offers (Groupon-style) with `offer_url`
+- Bulk CSV upload for admin
+- In-app browser for third-party links
+- Offer redemption with gems + discount
+- Auto-push offers on driver's route
 
-### Gems on Route System (NEW - Feb 21, 2026)
-- `POST /api/gems/generate-route` — generates ~8 gems along a route when navigation starts
-- `POST /api/gems/collect` — collects a gem by driving over it (proximity check)
-- `GET /api/gems/trip-summary/{trip_id}` — shows collected gems at trip end only (simple, not distracting)
-- During driving: small gem counter in top-right corner
-- At trip end: summary modal with gems collected, value earned, new balance
-
-### Web Frontend (Stable)
-- Landing page with premium UI
-- Driver login/signup flow with onboarding
-- Driver dashboard with map, offers, gems, family tabs
-- Partner portal with offer creation (address-based), analytics, boosts
-- Admin dashboard with bulk upload, offer management, user/partner management
-- ESLint v10 configured with TypeScript support
-
-### Mobile App (React Native - Complete Build)
-- Expo SDK 54 with React Navigation v7
-- 30+ screens: Navigation, Safety, Analytics, Rewards, Settings, Help
-- Premium neon-blue theme design system
-- `setup.sh` script for GitHub clone auto-configuration
+### Gems on Route System
+- Generate gems along route at navigation start
+- Collect by driving over (proximity)
+- Summary modal at trip end only (simple, not distracting)
 
 ### Key API Endpoints
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/auth/login` | POST | User authentication |
-| `/api/offers` | GET | Get all offers with discount/gems |
-| `/api/offers` | POST | Create new offer |
-| `/api/offers/{id}/redeem` | POST | Redeem an offer |
-| `/api/offers/nearby` | GET | Offers near a location |
-| `/api/offers/on-route` | GET | Auto-push offers along route |
-| `/api/admin/offers/bulk` | POST | Admin bulk upload (JSON) |
-| `/api/admin/offers/bulk-csv` | POST | Admin bulk upload (CSV text) |
-| `/api/gems/generate-route` | POST | Generate gems on route |
-| `/api/gems/collect` | POST | Collect a gem |
-| `/api/gems/trip-summary/{id}` | GET | Trip end gem summary |
-| `/api/navigation/start` | POST | Start navigation |
-| `/api/navigation/stop` | POST | Stop navigation |
-| `/api/trips/history/detailed` | GET | Trip history (mocked) |
-| `/api/health` | GET | Health check |
+- `POST /api/auth/login` - Authentication
+- `GET /api/offers` - All offers (with address, offer_url)
+- `POST /api/offers/{id}/redeem` - Redeem offer
+- `GET /api/offers/on-route` - Auto-push offers along route
+- `POST /api/admin/offers/bulk` - Admin bulk upload
+- `POST /api/gems/generate-route` - Generate gems on route
+- `POST /api/gems/collect` - Collect a gem
+- `GET /api/gems/trip-summary/{id}` - Trip end gem summary
 
 ## Test Credentials
 - Driver: `driver@snaproad.com` / `password123`
-- Partner: `partner@snaproad.com` / `password123`
-- Admin: `admin@snaproad.com` / `password123`
-- Partner Portal: `/portal/partner` loads without auth
-- Admin Dashboard: `/portal/admin` loads without auth
+- Partner Portal: `/portal/partner` (no auth)
+- Admin: `/portal/admin` (no auth)
 
 ## What's MOCKED
-- ALL trip data (in-memory, resets on restart)
-- ALL partner/offer data (in-memory)
-- User authentication (no real DB persistence)
-- Gems on route (in-memory per trip)
-- Geocoding (mock based on address hash)
+- ALL data is in-memory (resets on restart)
+- No real database persistence
 
-## Backlog (Prioritized)
-
-### P1 - Backend Database Integration
-Replace mocked in-memory data with real MongoDB persistence for offers, gems, trips, users
-
-### P2 - Future
-- Apple Maps MapKit integration
-- Gas Buddy / fuel price API
-- Real geocoding API for address → lat/lng
-- Push notifications for nearby offers
-- Full mobile app parity with web features
+## Backlog
+- P1: Real MongoDB persistence
+- P2: Apple Maps MapKit, fuel price API, push notifications
 
 ---
-Last Updated: February 21, 2026
+Last Updated: February 22, 2026
