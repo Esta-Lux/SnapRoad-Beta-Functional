@@ -298,6 +298,38 @@ export const Navigation = () => {
           component={TripLogsScreen}
           options={{ animation: 'slide_from_right' }}
         />
+        {/* Premium feature-parity screens */}
+        <Stack.Screen 
+          name="CarStudio" 
+          component={CarStudioScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="Challenges" 
+          component={ChallengesScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="LevelProgress" 
+          component={LevelProgressScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="WeeklyRecap" 
+          component={WeeklyRecapScreen}
+          options={{ animation: 'slide_from_bottom' }}
+        />
+        {/* Admin & Partner Dashboards */}
+        <Stack.Screen 
+          name="AdminDashboard" 
+          component={AdminDashboardScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="PartnerDashboard" 
+          component={PartnerDashboardScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
