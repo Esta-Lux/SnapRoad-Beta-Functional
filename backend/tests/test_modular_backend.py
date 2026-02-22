@@ -12,13 +12,12 @@ class TestHealthAndRoot:
     """Health check and root endpoint tests"""
     
     def test_root_endpoint(self):
-        """GET / - Root returns app info"""
+        """GET / - Root serves frontend (returns HTML)"""
         response = requests.get(f"{BASE_URL}/")
         assert response.status_code == 200
-        data = response.json()
-        assert data["app"] == "SnapRoad API"
-        assert data["status"] == "running"
-        print(f"Root endpoint OK: {data}")
+        # Root path serves frontend HTML, not API JSON
+        assert "html" in response.headers.get("content-type", "").lower() or "<!DOCTYPE" in response.text[:100]
+        print(f"Root endpoint serves frontend HTML correctly")
     
     def test_health_endpoint(self):
         """GET /api/health - Health check"""
