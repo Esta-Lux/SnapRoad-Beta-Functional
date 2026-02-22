@@ -712,7 +712,7 @@ function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
   }
 
   const simulateIncident = async () => {
-    const API_BASE = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+    const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
     await fetch(`${API_BASE}/api/admin/moderation/simulate`, { method: 'POST' })
   }
 
