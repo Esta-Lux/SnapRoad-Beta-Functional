@@ -900,6 +900,9 @@ export default function AdminDashboard() {
                 <p className="text-white font-medium text-sm">Super Admin</p>
                 <p className="text-purple-400 text-xs">Full Access</p>
               </div>
+              <button onClick={toggleTheme} className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors" data-testid="theme-toggle-btn" title="Toggle theme">
+                {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
             </div>
           </div>
           <button onClick={() => navigate('/')} data-testid="logout-btn" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10">
