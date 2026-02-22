@@ -50,3 +50,13 @@ export { HazardFeedScreen } from './HazardFeedScreen';
 export { CommuteSchedulerScreen } from './CommuteSchedulerScreen';
 export { InsuranceReportScreen } from './InsuranceReportScreen';
 export { HelpScreen } from './HelpScreen';
+
+// Premium Feature-Parity
+export { CarStudioScreen } from './CarStudioScreen';
+export { ChallengesScreen } from './ChallengesScreen';
+export { LevelProgressScreen } from './LevelProgressScreen';
+export { WeeklyRecapScreen } from './WeeklyRecapScreen';
+
+// Admin & Partner Dashboards
+export { AdminDashboardScreen } from './AdminDashboardScreen';
+export { PartnerDashboardScreen } from './PartnerDashboardScreen';
