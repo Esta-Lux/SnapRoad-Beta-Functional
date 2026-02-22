@@ -1,270 +1,335 @@
-// SnapRoad Mobile - Premium Map Screen
-// Neon blue glass-morphism, iPhone 17 optimized
-
+// SnapRoad Mobile - Map Screen (matches /driver web preview)
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Dimensions,
-  Animated,
-  ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput,
+  Animated, Dimensions, FlatList, Modal,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useUserStore } from '../store';
-import { Colors, Shadows, FontSizes, FontWeights, BorderRadius } from '../utils/theme';
+import { Colors, FontSizes, FontWeights, BorderRadius, Spacing } from '../utils/theme';
 
-const { width: W, height: H } = Dimensions.get('window');
+const { width: SCREEN_W } = Dimensions.get('window');
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://gamified-routes.preview.emergentagent.com';
 
+// Types
+interface Offer {
+  id: number; business_name: string; business_type: string; description: string;
+  discount_percent: number; gems_reward: number; address?: string; lat: number; lng: number;
+  offer_url?: string | null; redeemed: boolean;
+}
+
+// Mock data matching web
 const QUICK_LOCATIONS = [
-  { id: 1, icon: 'home-outline' as const, label: 'Home', eta: '8 min' },
-  { id: 2, icon: 'briefcase-outline' as const, label: 'Work', eta: '22 min' },
-  { id: 3, icon: 'heart-outline' as const, label: "Mom's", eta: '34 min' },
+  { id: 1, icon: 'home-outline' as const, label: 'Home', subtitle: 'Set location' },
+  { id: 2, icon: 'business-outline' as const, label: 'Work', subtitle: 'Set location' },
 ];
 
-const NEARBY_OFFERS = [
-  { id: 1, name: 'Blue Bottle Coffee', discount: '15% off', gems: 50, distance: '0.3 mi', type: 'cafe' },
-  { id: 2, name: 'Auto Spa Pro', discount: 'Free wash', gems: 100, distance: '0.8 mi', type: 'carwash' },
-  { id: 3, name: 'Shell Station', discount: '$0.10/gal', gems: 25, distance: '0.2 mi', type: 'gas' },
-];
-
-const offerColors: Record<string, string> = {
-  cafe: '#F59E0B', carwash: '#38BDF8', gas: '#EF4444', restaurant: '#10B981', retail: '#A855F7',
-};
-
-export const MapScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+export const MapScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const { user } = useUserStore();
+  const [activeFilter, setActiveFilter] = useState<'favorites' | 'nearby'>('favorites');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [offersExpanded, setOffersExpanded] = useState(true);
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [showOfferDetail, setShowOfferDetail] = useState<Offer | null>(null);
   const pulseAnim = useRef(new Animated.Value(0.3)).current;
-  const cardSlide = useRef(new Animated.Value(30)).current;
-  const cardOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 0.3, duration: 2000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.3, duration: 1500, useNativeDriver: true }),
       ])
     ).start();
-    Animated.parallel([
-      Animated.spring(cardSlide, { toValue: 0, tension: 60, friction: 12, useNativeDriver: true }),
-      Animated.timing(cardOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-    ]).start();
+    fetchOffers();
   }, []);
 
+  const fetchOffers = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/offers`);
+      const data = await res.json();
+      if (data.success) setOffers(data.data);
+    } catch { /* use empty */ }
+  };
+
+  const handleRedeem = async (offerId: number) => {
+    try {
+      const res = await fetch(`${API_URL}/api/offers/${offerId}/redeem`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setOffers(prev => prev.map(o => o.id === offerId ? { ...o, redeemed: true } : o));
+        setShowOfferDetail(null);
+      }
+    } catch { /* ignore */ }
+  };
+
   return (
-    <View style={styles.container}>
-      {/* Map Background */}
-      <View style={styles.mapBg}>
-        <LinearGradient colors={['#0A1628', '#070E1B', '#0D1830']} style={StyleSheet.absoluteFill} />
-        {/* Grid */}
-        {[...Array(20)].map((_, i) => (
-          <View key={`h${i}`} style={[styles.gridH, { top: (i * H) / 20 }]} />
+    <View style={[s.container, { paddingTop: insets.top }]}>
+      {/* Search Bar */}
+      <View style={s.searchRow}>
+        <TouchableOpacity style={s.menuBtn} onPress={() => navigation?.openDrawer?.() || navigation?.navigate('Profile')}>
+          <Ionicons name="menu" size={22} color={Colors.text} />
+        </TouchableOpacity>
+        <TouchableOpacity style={s.searchBar} onPress={() => navigation?.navigate('SearchDestination')} activeOpacity={0.8}>
+          <Ionicons name="search" size={18} color={Colors.textMuted} />
+          <Text style={s.searchPlaceholder}>Search here</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.voiceBtn} onPress={() => navigation?.navigate('OrionCoach')}>
+          <Ionicons name="mic" size={20} color={Colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Filter Buttons: Favorites / Nearby / Report */}
+      <View style={s.filterRow}>
+        <TouchableOpacity
+          style={[s.filterBtn, activeFilter === 'favorites' && s.filterBtnActive]}
+          onPress={() => setActiveFilter('favorites')}
+        >
+          <Ionicons name="star" size={14} color={activeFilter === 'favorites' ? '#fff' : Colors.textMuted} />
+          <Text style={[s.filterText, activeFilter === 'favorites' && s.filterTextActive]}>Favorites</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.filterBtn, activeFilter === 'nearby' && s.filterBtnNearby]}
+          onPress={() => setActiveFilter('nearby')}
+        >
+          <Ionicons name="location" size={14} color={activeFilter === 'nearby' ? '#fff' : Colors.textMuted} />
+          <Text style={[s.filterText, activeFilter === 'nearby' && s.filterTextActive]}>Nearby</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.reportBtn} onPress={() => navigation?.navigate('HazardFeed')}>
+          <Ionicons name="alert-triangle" size={14} color="#fff" />
+          <Text style={s.reportText}>Report</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Quick Locations */}
+      <View style={s.quickLocRow}>
+        {QUICK_LOCATIONS.map(loc => (
+          <TouchableOpacity key={loc.id} style={s.quickLocCard}>
+            <View style={s.quickLocIcon}>
+              <Ionicons name={loc.icon} size={18} color={Colors.textMuted} />
+            </View>
+            <View>
+              <Text style={s.quickLocLabel}>{loc.label}</Text>
+              <Text style={s.quickLocSub}>{loc.subtitle}</Text>
+            </View>
+          </TouchableOpacity>
         ))}
-        {[...Array(12)].map((_, i) => (
-          <View key={`v${i}`} style={[styles.gridV, { left: (i * W) / 12 }]} />
-        ))}
-
-        {/* Route SVG */}
-        <Svg width={W} height={H} style={StyleSheet.absoluteFill}>
-          <Defs>
-            <SvgGradient id="rg" x1="0" y1="1" x2="0" y2="0">
-              <Stop offset="0" stopColor="#2563EB" />
-              <Stop offset="0.5" stopColor="#38BDF8" />
-              <Stop offset="1" stopColor="#06D6A0" />
-            </SvgGradient>
-          </Defs>
-          {/* Glow */}
-          <Path
-            d={`M${W*0.5} ${H*0.82} Q${W*0.32} ${H*0.6} ${W*0.5} ${H*0.48} Q${W*0.68} ${H*0.34} ${W*0.5} ${H*0.18}`}
-            fill="none" stroke="#2563EB" strokeWidth={16} strokeLinecap="round" opacity={0.12}
-          />
-          {/* Route */}
-          <Path
-            d={`M${W*0.5} ${H*0.82} Q${W*0.32} ${H*0.6} ${W*0.5} ${H*0.48} Q${W*0.68} ${H*0.34} ${W*0.5} ${H*0.18}`}
-            fill="none" stroke="url(#rg)" strokeWidth={4} strokeLinecap="round"
-          />
-          {/* Waypoints */}
-          <Circle cx={W*0.5} cy={H*0.48} r={5} fill="#38BDF8" opacity={0.6} />
-          <Circle cx={W*0.41} cy={H*0.58} r={4} fill="#2563EB" opacity={0.4} />
-        </Svg>
-
-        {/* User Marker */}
-        <View style={styles.userMarkerWrap}>
-          <Animated.View style={[styles.userPulseRing, { opacity: pulseAnim, transform: [{ scale: pulseAnim.interpolate({ inputRange: [0.3,1], outputRange: [1,1.8] }) }] }]} />
-          <View style={styles.userMarkerOuter}>
-            <LinearGradient colors={['#2563EB','#38BDF8']} style={styles.userMarkerCore}>
-              <Ionicons name="navigate" size={15} color="#fff" />
-            </LinearGradient>
-          </View>
-        </View>
-
-        {/* Destination Marker */}
-        <View style={styles.destMarker}>
-          <LinearGradient colors={['#06D6A0','#10B981']} style={styles.destMarkerCore}>
-            <Ionicons name="flag" size={12} color="#fff" />
-          </LinearGradient>
-        </View>
+        <TouchableOpacity style={s.addLocBtn}>
+          <Ionicons name="add" size={22} color={Colors.textMuted} />
+        </TouchableOpacity>
       </View>
 
-      {/* Top Bar */}
-      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.topRow}>
-          <TouchableOpacity style={styles.glassBtn} onPress={() => navigation.navigate('Profile')}>
-            <Ionicons name="menu" size={20} color={Colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.searchBox} onPress={() => navigation.navigate('SearchDestination')} activeOpacity={0.8}>
-            <Ionicons name="search" size={18} color={Colors.textMuted} />
-            <Text style={styles.searchPlaceholder}>Where to?</Text>
-            <Ionicons name="mic-outline" size={20} color={Colors.primaryLight} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Quick Destinations */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }} contentContainerStyle={{ gap: 8, paddingRight: 16 }}>
-          {QUICK_LOCATIONS.map((loc) => (
-            <TouchableOpacity key={loc.id} style={styles.quickPill} onPress={() => navigation.navigate('RoutePreview', { destination: loc.label })}>
-              <Ionicons name={loc.icon} size={15} color={Colors.primaryLight} />
-              <Text style={styles.quickLabel}>{loc.label}</Text>
-              <Text style={styles.quickEta}>{loc.eta}</Text>
-            </TouchableOpacity>
+      {/* Map Area with offer markers */}
+      <View style={s.mapArea}>
+        {/* Simulated map background */}
+        <View style={s.mapGrid}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <View key={`h${i}`} style={[s.gridLine, { top: `${(i + 1) * 12}%` }]} />
           ))}
-        </ScrollView>
-      </View>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <View key={`v${i}`} style={[s.gridLineV, { left: `${(i + 1) * 16}%` }]} />
+          ))}
+        </View>
 
-      {/* Safety Score Badge */}
-      <View style={[styles.safetyBadge, { top: insets.top + 130 }]}>
-        <LinearGradient colors={['rgba(17,29,50,0.92)','rgba(7,14,27,0.95)']} style={styles.safetyBadgeInner}>
-          <View style={styles.safetyScore}>
-            <Text style={styles.safetyScoreNum}>{user.safetyScore || 94}</Text>
-          </View>
-          <View>
-            <Text style={styles.safetyLabel}>Safety</Text>
-            <Text style={styles.safetyLevel}>Excellent</Text>
-          </View>
-        </LinearGradient>
-      </View>
+        {/* Offer Diamond Markers */}
+        {offers.slice(0, 3).map((offer, i) => {
+          const positions = [
+            { top: '20%', right: '15%' },
+            { top: '40%', right: '30%' },
+            { top: '60%', left: '40%' },
+          ];
+          const pos = positions[i] || positions[0];
+          return (
+            <TouchableOpacity
+              key={offer.id}
+              style={[s.offerMarker, pos as any]}
+              onPress={() => setShowOfferDetail(offer)}
+            >
+              <View style={s.offerDiamond}>
+                <Ionicons name="diamond" size={16} color="#fff" />
+              </View>
+              <Text style={s.offerMarkerText}>{offer.discount_percent}%</Text>
+            </TouchableOpacity>
+          );
+        })}
 
-      {/* Right FABs */}
-      <View style={[styles.fabCol, { bottom: H * 0.32 }]}>
-        <TouchableOpacity style={styles.glassBtn} onPress={() => navigation.navigate('PhotoCapture')} data-testid="map-camera-btn">
-          <Ionicons name="camera-outline" size={21} color={Colors.textSecondary} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.glassBtn} onPress={() => navigation.navigate('HazardFeed')} data-testid="map-report-btn">
-          <Ionicons name="alert-circle-outline" size={21} color="#F59E0B" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.orionFab} onPress={() => navigation.navigate('OrionCoach')} data-testid="map-orion-btn">
-          <LinearGradient colors={Colors.gradientPrimary} style={styles.orionFabGrad}>
-            <Ionicons name="mic" size={22} color="#fff" />
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
+        {/* Car icon */}
+        <View style={s.carIcon}>
+          <Ionicons name="car-sport" size={28} color={Colors.primary} />
+        </View>
 
-      {/* Nearby Offers */}
-      <Animated.View style={[styles.offersCard, { transform: [{ translateY: cardSlide }], opacity: cardOpacity }]}>
-        <View style={styles.offersHeader}>
-          <Text style={styles.offersTitle}>Nearby</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Offers')} style={styles.viewAllRow}>
-            <Text style={styles.viewAllText}>View all</Text>
-            <Ionicons name="chevron-forward" size={14} color={Colors.primaryLight} />
+        {/* Side buttons */}
+        <View style={s.sideButtons}>
+          <TouchableOpacity style={s.sideBtn} onPress={() => navigation?.navigate('PhotoCapture')}>
+            <Ionicons name="camera-outline" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-          {NEARBY_OFFERS.map((o) => (
-            <TouchableOpacity key={o.id} style={styles.offerChip} activeOpacity={0.8}>
-              <View style={[styles.offerDot, { backgroundColor: offerColors[o.type] || Colors.primary }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.offerChipDiscount}>{o.discount}</Text>
-                <Text style={styles.offerChipName} numberOfLines={1}>{o.name}</Text>
-              </View>
-              <View style={styles.offerChipRight}>
-                <Ionicons name="diamond-outline" size={11} color={Colors.accent} />
-                <Text style={styles.offerChipGems}>{o.gems}</Text>
-              </View>
+      </View>
+
+      {/* Nearby Offers Panel */}
+      <View style={s.offersPanel}>
+        <TouchableOpacity style={s.offersPanelHeader} onPress={() => setOffersExpanded(!offersExpanded)}>
+          <View style={s.offersPanelTitle}>
+            <Ionicons name="gift" size={18} color={Colors.primary} />
+            <Text style={s.offersPanelLabel}>Nearby Offers</Text>
+            <View style={s.offersBadge}>
+              <Text style={s.offersBadgeText}>{offers.length}</Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name={offersExpanded ? 'chevron-down' : 'chevron-up'} size={18} color={Colors.textMuted} />
+            <TouchableOpacity onPress={() => setOffersExpanded(false)}>
+              <Ionicons name="close" size={18} color={Colors.textMuted} />
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </Animated.View>
+          </View>
+        </TouchableOpacity>
+
+        {offersExpanded && (
+          <>
+            <View style={s.premiumBanner}>
+              <Ionicons name="star" size={12} color="#F59E0B" />
+              <Text style={s.premiumText}>Premium: 18% off all offers</Text>
+            </View>
+            <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={false}>
+              {offers.map(offer => (
+                <TouchableOpacity key={offer.id} style={s.offerCard} onPress={() => setShowOfferDetail(offer)}>
+                  <View style={s.offerCardIcon}>
+                    <Ionicons name={offer.business_type === 'cafe' ? 'cafe' : offer.business_type === 'gas' ? 'car' : 'gift'} size={18} color={Colors.textMuted} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={s.offerName}>{offer.business_name}</Text>
+                      <View style={s.discountBadge}>
+                        <Text style={s.discountText}>{offer.discount_percent}% off</Text>
+                      </View>
+                    </View>
+                    <Text style={s.offerMeta}>0.5 km  ·  4d left  ·  +{offer.gems_reward}</Text>
+                  </View>
+                  <TouchableOpacity style={s.navBtn} onPress={() => navigation?.navigate('RoutePreview', { destination: offer.business_name })}>
+                    <Ionicons name="navigate" size={16} color="#fff" />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </>
+        )}
+      </View>
+
+      {/* Offer Detail Modal */}
+      <Modal visible={!!showOfferDetail} transparent animationType="slide">
+        {showOfferDetail && (
+          <View style={s.modalOverlay}>
+            <View style={s.modalContent}>
+              <View style={s.modalHeader}>
+                <Text style={s.modalTitle}>{showOfferDetail.business_name}</Text>
+                <TouchableOpacity onPress={() => setShowOfferDetail(null)}>
+                  <Ionicons name="close" size={22} color={Colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+              <Text style={s.modalDesc}>{showOfferDetail.description}</Text>
+              {showOfferDetail.address && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                  <Ionicons name="location" size={14} color={Colors.primary} />
+                  <Text style={s.modalAddress}>{showOfferDetail.address}</Text>
+                </View>
+              )}
+              <View style={s.modalStats}>
+                <View style={s.modalStat}>
+                  <Text style={s.modalStatValue}>{showOfferDetail.discount_percent}%</Text>
+                  <Text style={s.modalStatLabel}>Discount</Text>
+                </View>
+                <View style={s.modalStat}>
+                  <Text style={[s.modalStatValue, { color: Colors.primary }]}>+{showOfferDetail.gems_reward}</Text>
+                  <Text style={s.modalStatLabel}>Gems</Text>
+                </View>
+              </View>
+              {showOfferDetail.offer_url && (
+                <TouchableOpacity style={s.viewDealBtn}>
+                  <Ionicons name="open-outline" size={16} color="#60A5FA" />
+                  <Text style={{ color: '#60A5FA', fontWeight: FontWeights.semibold, fontSize: FontSizes.sm }}>View Deal</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[s.redeemBtn, showOfferDetail.redeemed && s.redeemBtnDone]}
+                onPress={() => !showOfferDetail.redeemed && handleRedeem(showOfferDetail.id)}
+                disabled={showOfferDetail.redeemed}
+              >
+                <Text style={s.redeemText}>{showOfferDetail.redeemed ? 'Redeemed' : 'Redeem Offer'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </Modal>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0A0E16' },
+  // Search bar
+  searchRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, gap: 10 },
+  menuBtn: { width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  searchBar: { flex: 1, height: 42, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 10 },
+  searchPlaceholder: { color: Colors.textMuted, fontSize: FontSizes.md },
+  voiceBtn: { width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  // Filters
+  filterRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 8 },
+  filterBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)' },
+  filterBtnActive: { backgroundColor: Colors.primary },
+  filterBtnNearby: { backgroundColor: '#374151' },
+  filterText: { color: Colors.textMuted, fontSize: FontSizes.xs, fontWeight: FontWeights.medium },
+  filterTextActive: { color: '#fff' },
+  reportBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F59E0B' },
+  reportText: { color: '#fff', fontSize: FontSizes.xs, fontWeight: FontWeights.bold },
+  // Quick locations
+  quickLocRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 8 },
+  quickLocCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
+  quickLocIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  quickLocLabel: { color: Colors.text, fontSize: FontSizes.sm, fontWeight: FontWeights.semibold },
+  quickLocSub: { color: Colors.primary, fontSize: FontSizes.xs },
+  addLocBtn: { width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', alignItems: 'center', justifyContent: 'center' },
   // Map
-  mapBg: { ...StyleSheet.absoluteFillObject },
-  gridH: { position: 'absolute', left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(37,99,235,0.06)' },
-  gridV: { position: 'absolute', top: 0, bottom: 0, width: StyleSheet.hairlineWidth, backgroundColor: 'rgba(37,99,235,0.06)' },
-  // User marker
-  userMarkerWrap: { position: 'absolute', left: W/2-28, bottom: H*0.18, width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
-  userPulseRing: { position: 'absolute', width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(37,99,235,0.15)' },
-  userMarkerOuter: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(37,99,235,0.12)', alignItems: 'center', justifyContent: 'center' },
-  userMarkerCore: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', ...Shadows.neon },
-  destMarker: { position: 'absolute', left: W/2-13, top: H*0.18-13 },
-  destMarkerCore: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', borderWidth: 2.5, borderColor: '#fff', ...Shadows.glow },
-  // Top bar
-  topBar: { position: 'absolute', left: 0, right: 0, paddingHorizontal: 16, zIndex: 10 },
-  topRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  glassBtn: {
-    width: 46, height: 46, borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.glass, borderWidth: 1, borderColor: Colors.glassBorder,
-    alignItems: 'center', justifyContent: 'center', ...Shadows.md,
-  },
-  searchBox: {
-    flex: 1, height: 46, flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.glass, borderRadius: BorderRadius.lg,
-    borderWidth: 1, borderColor: Colors.glassBorder, paddingHorizontal: 14, ...Shadows.md,
-  },
-  searchInput: { flex: 1, color: Colors.text, fontSize: FontSizes.md, fontWeight: FontWeights.medium, letterSpacing: 0.2 },
-  searchPlaceholder: { flex: 1, color: Colors.textMuted, fontSize: FontSizes.md, fontWeight: FontWeights.medium, letterSpacing: 0.2 },
-  quickPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, height: 38, paddingHorizontal: 14,
-    backgroundColor: Colors.glass, borderRadius: BorderRadius.full,
-    borderWidth: 1, borderColor: Colors.glassBorder,
-  },
-  quickLabel: { color: Colors.text, fontSize: FontSizes.sm, fontWeight: FontWeights.medium, letterSpacing: 0.3 },
-  quickEta: { color: Colors.textMuted, fontSize: FontSizes.xs },
-  // Safety
-  safetyBadge: { position: 'absolute', left: 16, zIndex: 10 },
-  safetyBadgeInner: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, paddingHorizontal: 12,
-    borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.glassBorder,
-  },
-  safetyScore: {
-    width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: Colors.secondary,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  safetyScoreNum: { color: Colors.secondary, fontSize: FontSizes.sm, fontWeight: FontWeights.bold },
-  safetyLabel: { color: Colors.textMuted, fontSize: FontSizes.xs, letterSpacing: 0.8, textTransform: 'uppercase' },
-  safetyLevel: { color: Colors.secondary, fontSize: FontSizes.sm, fontWeight: FontWeights.semibold },
-  // FABs
-  fabCol: { position: 'absolute', right: 16, gap: 10, zIndex: 20 },
-  orionFab: { borderRadius: BorderRadius.lg, overflow: 'hidden', ...Shadows.neon },
-  orionFabGrad: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
-  // Offers card
-  offersCard: {
-    position: 'absolute', left: 16, right: 16, bottom: 100,
-    backgroundColor: Colors.glass, borderRadius: BorderRadius.xl,
-    borderWidth: 1, borderColor: Colors.glassBorder, padding: 16, ...Shadows.lg,
-  },
-  offersHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  offersTitle: { color: Colors.text, fontSize: FontSizes.lg, fontWeight: FontWeights.bold, letterSpacing: 0.3 },
-  viewAllRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  viewAllText: { color: Colors.primaryLight, fontSize: FontSizes.sm, fontWeight: FontWeights.medium },
-  offerChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, width: 180,
-    backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: BorderRadius.md, padding: 12,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.04)',
-  },
-  offerDot: { width: 8, height: 8, borderRadius: 4 },
-  offerChipDiscount: { color: Colors.secondary, fontSize: FontSizes.xs, fontWeight: FontWeights.semibold, letterSpacing: 0.5 },
-  offerChipName: { color: Colors.text, fontSize: FontSizes.sm, fontWeight: FontWeights.medium, marginTop: 1 },
-  offerChipRight: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  offerChipGems: { color: Colors.textMuted, fontSize: FontSizes.xs },
+  mapArea: { flex: 1, position: 'relative', overflow: 'hidden' },
+  mapGrid: { ...StyleSheet.absoluteFillObject },
+  gridLine: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: 'rgba(255,255,255,0.03)' },
+  gridLineV: { position: 'absolute', top: 0, bottom: 0, width: 1, backgroundColor: 'rgba(255,255,255,0.03)' },
+  offerMarker: { position: 'absolute', alignItems: 'center', zIndex: 10 },
+  offerDiamond: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#22C55E', alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '0deg' }] },
+  offerMarkerText: { color: '#22C55E', fontSize: 10, fontWeight: FontWeights.bold, marginTop: 2 },
+  carIcon: { position: 'absolute', top: '50%', left: '48%', zIndex: 5 },
+  sideButtons: { position: 'absolute', right: 12, bottom: 12, gap: 8 },
+  sideBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(10,14,22,0.85)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  // Offers Panel
+  offersPanel: { backgroundColor: '#111827', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8, borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  offersPanelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  offersPanelTitle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  offersPanelLabel: { color: Colors.text, fontSize: FontSizes.md, fontWeight: FontWeights.bold },
+  offersBadge: { backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 1 },
+  offersBadgeText: { color: '#fff', fontSize: 11, fontWeight: FontWeights.bold },
+  premiumBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  premiumText: { color: '#F59E0B', fontSize: FontSizes.xs },
+  offerCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 12, marginBottom: 6 },
+  offerCardIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  offerName: { color: Colors.text, fontSize: FontSizes.sm, fontWeight: FontWeights.semibold },
+  discountBadge: { backgroundColor: '#22C55E20', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  discountText: { color: '#22C55E', fontSize: 10, fontWeight: FontWeights.bold },
+  offerMeta: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 2 },
+  navBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#111827', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  modalTitle: { color: Colors.text, fontSize: FontSizes.lg, fontWeight: FontWeights.bold },
+  modalDesc: { color: Colors.textSecondary, fontSize: FontSizes.sm, lineHeight: 20 },
+  modalAddress: { color: Colors.textMuted, fontSize: FontSizes.xs },
+  modalStats: { flexDirection: 'row', gap: 16, marginTop: 16, marginBottom: 16 },
+  modalStat: { flex: 1, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 14, alignItems: 'center' },
+  modalStatValue: { color: '#22C55E', fontSize: FontSizes.xl, fontWeight: FontWeights.bold },
+  modalStatLabel: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 4 },
+  viewDealBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(96,165,250,0.1)', borderRadius: 12, paddingVertical: 12, marginBottom: 10, borderWidth: 1, borderColor: 'rgba(96,165,250,0.2)' },
+  redeemBtn: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  redeemBtnDone: { backgroundColor: '#374151' },
+  redeemText: { color: '#fff', fontSize: FontSizes.md, fontWeight: FontWeights.bold },
 });
 
 export default MapScreen;
