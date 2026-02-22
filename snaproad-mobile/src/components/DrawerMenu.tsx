@@ -152,6 +152,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({ visible, onClose, naviga
             {renderSection('NAVIGATION', NAV_ITEMS)}
             {renderSection('REWARDS', REWARDS_ITEMS)}
             {renderSection('ANALYTICS', ANALYTICS_ITEMS)}
+            {renderSection('MANAGEMENT', MANAGEMENT_ITEMS)}
             {renderSection('SETTINGS', SETTINGS_ITEMS)}
             <View style={{ height: 80 }} />
           </ScrollView>
