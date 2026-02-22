@@ -1353,3 +1353,387 @@ function LocationModal({
     </div>
   )
 }
+
+// =============================================
+// PARTNER FINANCE TAB (from Figma)
+// =============================================
+const CREDIT_HISTORY = [
+  { id: 1, type: 'credit', description: 'New Partner Referral – UrbanEats', amount: 50, date: 'Jun 12, 2025', icon: 'referral' },
+  { id: 2, type: 'debit', description: 'Offer Boost Purchased', amount: -35, date: 'Jun 10, 2025', icon: 'boost' },
+  { id: 3, type: 'credit', description: 'Monthly Bonus Credits', amount: 100, date: 'Jun 1, 2025', icon: 'bonus' },
+  { id: 4, type: 'debit', description: 'Premium Feature Usage', amount: -20, date: 'May 28, 2025', icon: 'feature' },
+  { id: 5, type: 'credit', description: 'Performance Bonus Q2', amount: 75, date: 'May 15, 2025', icon: 'bonus' },
+]
+
+const EARN_OPPORTUNITIES = [
+  { title: 'Refer a New Partner', desc: 'Earn 50 credits for every approved business you refer', credits: '+50 credits', color: '#0084FF' },
+  { title: 'Monthly Active Bonus', desc: 'Maintain 10+ active offers to earn bonus credits', credits: '+25 credits/mo', color: '#00DFA2' },
+  { title: 'High Redemption Reward', desc: 'Earn 1 credit for every 10 offer redemptions', credits: '+1 per 10', color: '#F59E0B' },
+]
+
+const CHART_DATA = [
+  { month: 'Jan', earned: 80, spent: 30 },
+  { month: 'Feb', earned: 120, spent: 60 },
+  { month: 'Mar', earned: 90, spent: 40 },
+  { month: 'Apr', earned: 150, spent: 80 },
+  { month: 'May', earned: 110, spent: 55 },
+  { month: 'Jun', earned: 225, spent: 55 },
+]
+
+function PartnerFinanceTab({ partnerProfile }: { partnerProfile: any }) {
+  const creditBalance = partnerProfile?.credits || 225
+  return (
+    <div className="space-y-6">
+      {/* Balance Cards */}
+      <div className="grid grid-cols-3 gap-6">
+        <div className="col-span-2 bg-gradient-to-br from-[#0084FF]/20 to-[#00DFA2]/10 rounded-2xl border border-[#0084FF]/20 p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-slate-400 text-sm mb-1">Credit Balance</p>
+              <p className="text-5xl font-bold text-white mb-1">{creditBalance}</p>
+              <p className="text-slate-400 text-sm">SnapRoad Partner Credits</p>
+            </div>
+            <div className="w-14 h-14 bg-[#0084FF]/20 rounded-2xl flex items-center justify-center">
+              <Wallet className="text-[#0084FF]" size={28} />
+            </div>
+          </div>
+          <div className="mt-6 flex gap-3">
+            <button className="px-5 py-2.5 rounded-xl bg-[#0084FF] text-white font-semibold text-sm hover:opacity-90 flex items-center gap-2" data-testid="add-credits-btn">
+              <CreditCard size={16} />Add Credits
+            </button>
+            <button className="px-5 py-2.5 rounded-xl bg-white/10 text-white font-semibold text-sm hover:bg-white/15 flex items-center gap-2">
+              <Download size={16} />Statement
+            </button>
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-5">
+            <p className="text-slate-400 text-xs mb-1">Earned This Month</p>
+            <p className="text-2xl font-bold text-[#00DFA2]">+225</p>
+            <p className="text-slate-400 text-xs flex items-center gap-1 mt-1"><ArrowUpRight size={12} className="text-[#00DFA2]" />+18% vs last month</p>
+          </div>
+          <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-5">
+            <p className="text-slate-400 text-xs mb-1">Spent This Month</p>
+            <p className="text-2xl font-bold text-[#FF5A5A]">-55</p>
+            <p className="text-slate-400 text-xs flex items-center gap-1 mt-1"><ArrowUpRight size={12} className="text-[#FF5A5A]" />Boosts & features</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Chart */}
+      <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
+        <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+          <BarChart2 size={18} className="text-[#0084FF]" />Credit Activity (6 months)
+        </h3>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={CHART_DATA} barGap={4}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+            <XAxis dataKey="month" stroke="#64748b" fontSize={12} />
+            <YAxis stroke="#64748b" fontSize={12} />
+            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} />
+            <Bar dataKey="earned" fill="#00DFA2" radius={[4, 4, 0, 0]} name="Earned" />
+            <Bar dataKey="spent" fill="#FF5A5A" radius={[4, 4, 0, 0]} name="Spent" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        {/* Recent Activity */}
+        <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
+          <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+            <Receipt size={18} className="text-[#0084FF]" />Recent Activity
+          </h3>
+          <div className="space-y-3">
+            {CREDIT_HISTORY.map(item => (
+              <div key={item.id} className="flex items-center justify-between py-3 border-b border-white/5 last:border-0">
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${item.type === 'credit' ? 'bg-[#00DFA2]/10' : 'bg-[#FF5A5A]/10'}`}>
+                    {item.type === 'credit' ? <ArrowUpRight size={16} className="text-[#00DFA2]" /> : <TrendingDown size={16} className="text-[#FF5A5A]" />}
+                  </div>
+                  <div>
+                    <p className="text-white text-sm font-medium">{item.description}</p>
+                    <p className="text-slate-500 text-xs">{item.date}</p>
+                  </div>
+                </div>
+                <span className={`font-bold text-sm ${item.type === 'credit' ? 'text-[#00DFA2]' : 'text-[#FF5A5A]'}`}>
+                  {item.amount > 0 ? '+' : ''}{item.amount}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Earn More */}
+        <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
+          <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+            <Zap size={18} className="text-amber-400" />Ways to Earn Credits
+          </h3>
+          <div className="space-y-4">
+            {EARN_OPPORTUNITIES.map((op, i) => (
+              <div key={i} className="p-4 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer">
+                <div className="flex items-start justify-between mb-1">
+                  <p className="text-white text-sm font-medium">{op.title}</p>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: op.color, backgroundColor: `${op.color}15` }}>{op.credits}</span>
+                </div>
+                <p className="text-slate-400 text-xs">{op.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =============================================
+// PARTNER REFERRALS TAB (from Figma)
+// =============================================
+const REFERRAL_LEADERBOARD = [
+  { rank: 1, name: 'UrbanEats Co.', referrals: 12, credits: 600, badge: 'gold' },
+  { rank: 2, name: 'FuelStop Pro', referrals: 9, credits: 450, badge: 'silver' },
+  { rank: 3, name: 'City Wheels', referrals: 7, credits: 350, badge: 'bronze' },
+  { rank: 4, name: 'Greenway Mart', referrals: 5, credits: 250, badge: null },
+  { rank: 5, name: 'Your Business', referrals: 3, credits: 150, badge: null, isMe: true },
+]
+
+const REFERRAL_TIERS = [
+  { name: 'Bronze', range: '1–2 referrals', credits: '50 credits each', color: '#CD7F32' },
+  { name: 'Silver', range: '3–5 referrals', credits: '60 credits each', color: '#C0C0C0' },
+  { name: 'Gold', range: '6+ referrals', credits: '75 credits each', color: '#FFD700' },
+]
+
+const REFERRAL_TREND = [
+  { month: 'Jan', referrals: 0 }, { month: 'Feb', referrals: 1 }, { month: 'Mar', referrals: 0 },
+  { month: 'Apr', referrals: 1 }, { month: 'May', referrals: 1 }, { month: 'Jun', referrals: 3 },
+]
+
+function PartnerReferralsTab({ partnerProfile }: { partnerProfile: any }) {
+  const [copiedLink, setCopiedLink] = useState(false)
+  const referralLink = `https://snaproad.app/join?ref=${partnerProfile?.id || 'partner123'}`
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(referralLink)
+    setCopiedLink(true)
+    setTimeout(() => setCopiedLink(false), 2000)
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* KPIs */}
+      <div className="grid grid-cols-3 gap-6">
+        {[
+          { label: 'Total Referrals', value: '3', icon: Share2, color: '#0084FF' },
+          { label: 'Approved Partners', value: '2', icon: CheckCircle, color: '#00DFA2' },
+          { label: 'Credits Earned', value: '150', icon: Wallet, color: '#F59E0B' },
+        ].map((kpi, i) => (
+          <div key={i} className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${kpi.color}15` }}>
+                <kpi.icon size={20} style={{ color: kpi.color }} />
+              </div>
+              <p className="text-slate-400 text-sm">{kpi.label}</p>
+            </div>
+            <p className="text-4xl font-bold text-white">{kpi.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Referral Link */}
+      <div className="bg-gradient-to-br from-[#0084FF]/10 to-[#00DFA2]/5 border border-[#0084FF]/20 rounded-2xl p-6">
+        <h3 className="text-white font-semibold mb-1">Your Referral Link</h3>
+        <p className="text-slate-400 text-sm mb-4">Share this link to earn credits when partners join SnapRoad</p>
+        <div className="flex items-center gap-3">
+          <div className="flex-1 bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-slate-300 text-sm font-mono truncate">
+            {referralLink}
+          </div>
+          <button onClick={copyLink} data-testid="copy-referral-link-btn"
+            className="px-5 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all"
+            style={{ backgroundColor: copiedLink ? '#00DFA2' : '#0084FF', color: copiedLink ? '#0B1220' : 'white' }}>
+            {copiedLink ? <><CheckCircle size={16} />Copied!</> : <><Share2 size={16} />Copy Link</>}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        {/* Trend Chart */}
+        <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
+          <h3 className="text-white font-semibold mb-4">Referral Trend</h3>
+          <ResponsiveContainer width="100%" height={180}>
+            <AreaChart data={REFERRAL_TREND}>
+              <defs>
+                <linearGradient id="refGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#0084FF" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#0084FF" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis dataKey="month" stroke="#64748b" fontSize={11} />
+              <YAxis stroke="#64748b" fontSize={11} allowDecimals={false} />
+              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} />
+              <Area type="monotone" dataKey="referrals" stroke="#0084FF" fill="url(#refGrad)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Tiers */}
+        <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
+          <h3 className="text-white font-semibold mb-4">Reward Tiers</h3>
+          <div className="space-y-3">
+            {REFERRAL_TIERS.map((tier, i) => (
+              <div key={i} className="flex items-center justify-between p-4 rounded-xl border" style={{ borderColor: `${tier.color}30`, backgroundColor: `${tier.color}08` }}>
+                <div>
+                  <p className="font-semibold text-sm" style={{ color: tier.color }}>{tier.name}</p>
+                  <p className="text-slate-400 text-xs">{tier.range}</p>
+                </div>
+                <span className="text-white text-sm font-medium">{tier.credits}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Leaderboard */}
+      <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
+        <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+          <Award size={18} className="text-amber-400" />Partner Leaderboard
+        </h3>
+        <div className="space-y-2">
+          {REFERRAL_LEADERBOARD.map(entry => (
+            <div key={entry.rank}
+              className={`flex items-center gap-4 p-4 rounded-xl border transition-colors ${entry.isMe ? 'border-[#0084FF]/30 bg-[#0084FF]/5' : 'border-white/5 bg-white/[0.02]'}`}>
+              <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
+                entry.rank === 1 ? 'bg-[#FFD700]/20 text-[#FFD700]' :
+                entry.rank === 2 ? 'bg-slate-400/20 text-slate-300' :
+                entry.rank === 3 ? 'bg-[#CD7F32]/20 text-[#CD7F32]' : 'bg-white/5 text-slate-400'
+              }`}>{entry.rank}</span>
+              <div className="flex-1">
+                <p className={`text-sm font-medium ${entry.isMe ? 'text-[#0084FF]' : 'text-white'}`}>{entry.name} {entry.isMe && '(You)'}</p>
+              </div>
+              <span className="text-slate-400 text-sm">{entry.referrals} referrals</span>
+              <span className="text-amber-400 font-semibold text-sm">{entry.credits} credits</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =============================================
+// PARTNER PRICING TAB (from Figma)
+// =============================================
+const PRICING_PLANS = [
+  {
+    id: 'local',
+    name: 'Local',
+    price: '$49',
+    period: '/mo',
+    desc: 'Perfect for single-location businesses',
+    features: ['1 location', 'Up to 5 offers', 'Basic analytics', '100 free boosts', 'Email support'],
+    color: '#64748b',
+    cta: 'Current Plan',
+    popular: false,
+  },
+  {
+    id: 'growth',
+    name: 'Growth',
+    price: '$149',
+    period: '/mo',
+    desc: 'For growing businesses with multiple locations',
+    features: ['Up to 5 locations', 'Unlimited offers', 'Advanced analytics', '500 free boosts', 'Priority support', 'AI image generation', 'Referral rewards'],
+    color: '#0084FF',
+    cta: 'Upgrade Now',
+    popular: true,
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise',
+    price: 'Custom',
+    period: '',
+    desc: 'For large chains and franchise networks',
+    features: ['Unlimited locations', 'Unlimited offers', 'Full analytics suite', 'Unlimited boosts', 'Dedicated account manager', 'Custom integrations', 'White-label options'],
+    color: '#00DFA2',
+    cta: 'Contact Sales',
+    popular: false,
+  },
+]
+
+function PartnerPricingTab({ partnerProfile, onUpgrade }: { partnerProfile: any; onUpgrade: () => void }) {
+  const currentPlan = partnerProfile?.plan || 'local'
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center mb-8">
+        <p className="text-slate-400 text-sm">
+          Current plan: <span className="text-white font-semibold capitalize">{currentPlan}</span>
+          {' · '}
+          <span className="text-[#0084FF] cursor-pointer hover:underline">Manage billing</span>
+        </p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        {PRICING_PLANS.map(plan => {
+          const isActive = plan.id === currentPlan
+          return (
+            <div key={plan.id}
+              className={`relative rounded-2xl border p-6 flex flex-col transition-all ${
+                plan.popular
+                  ? 'border-[#0084FF] ring-2 ring-[#0084FF]/20'
+                  : 'border-white/10 hover:border-white/20'
+              } ${isActive ? 'bg-white/[0.04]' : 'bg-slate-800/30'}`}>
+              {plan.popular && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-[#0084FF] text-white text-xs font-bold">
+                  Most Popular
+                </div>
+              )}
+
+              <div className="mb-5">
+                <div className="w-10 h-10 rounded-xl mb-3 flex items-center justify-center" style={{ backgroundColor: `${plan.color}20` }}>
+                  <BadgeCheck size={20} style={{ color: plan.color }} />
+                </div>
+                <h3 className="text-white text-xl font-bold">{plan.name}</h3>
+                <p className="text-slate-400 text-sm mt-1">{plan.desc}</p>
+              </div>
+
+              <div className="mb-6">
+                <span className="text-4xl font-bold text-white">{plan.price}</span>
+                <span className="text-slate-400 text-sm">{plan.period}</span>
+              </div>
+
+              <div className="space-y-3 flex-1 mb-6">
+                {plan.features.map((feature, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <CheckCircle size={16} style={{ color: plan.color }} className="shrink-0" />
+                    <span className="text-slate-300 text-sm">{feature}</span>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={onUpgrade}
+                data-testid={`plan-btn-${plan.id}`}
+                disabled={isActive}
+                className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${
+                  isActive
+                    ? 'bg-white/10 text-slate-400 cursor-default'
+                    : plan.popular
+                      ? 'bg-[#0084FF] text-white hover:opacity-90'
+                      : 'bg-white/10 text-white hover:bg-white/15'
+                }`}>
+                {isActive ? 'Current Plan' : plan.cta}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="bg-gradient-to-r from-slate-800/50 to-slate-900/50 border border-white/5 rounded-2xl p-6 text-center">
+        <p className="text-slate-400 text-sm">
+          Need a custom solution? <span className="text-[#0084FF] cursor-pointer hover:underline font-medium">Contact our sales team</span>
+          {' '}or view our <span className="text-[#0084FF] cursor-pointer hover:underline font-medium">full feature comparison</span>
+        </p>
+      </div>
+    </div>
+  )
+}
+
