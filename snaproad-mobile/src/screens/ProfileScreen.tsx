@@ -1,176 +1,147 @@
-// SnapRoad Mobile - Premium Profile Screen
-// Glass-morphism, neon accents, iPhone 17 optimized
-
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+// SnapRoad Mobile - Profile Screen (matches /driver web Profile tab)
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Shadows, FontSizes, FontWeights, BorderRadius } from '../utils/theme';
+import { Colors, FontSizes, FontWeights, BorderRadius } from '../utils/theme';
 import { useUserStore } from '../store';
 
+type ProfileTab = 'overview' | 'score' | 'fuel' | 'settings';
+
 const MENU_ITEMS = [
-  { id: 'DriverAnalytics', icon: 'pulse-outline' as const, label: 'Analytics', sub: 'Performance insights', color: Colors.primaryLight },
-  { id: 'TripAnalytics', icon: 'bar-chart-outline' as const, label: 'Trip Analytics', sub: 'Fuel & trip data', color: Colors.secondary },
-  { id: 'RouteHistory3D', icon: 'map-outline' as const, label: 'Route History', sub: '3D visualization', color: Colors.accent },
-  { id: 'TripLogs', icon: 'time-outline' as const, label: 'Trip History', sub: 'Past trips', color: Colors.info },
-  { id: 'FuelDashboard', icon: 'water-outline' as const, label: 'Fuel Dashboard', sub: 'Expenses & savings', color: '#F59E0B' },
-  { id: 'CommuteScheduler', icon: 'alarm-outline' as const, label: 'Commute', sub: 'Scheduled routes', color: Colors.primary },
-  { id: 'InsuranceReport', icon: 'shield-outline' as const, label: 'Insurance Report', sub: 'Safe driving proof', color: Colors.secondary },
-  { id: 'Leaderboard', icon: 'trophy-outline' as const, label: 'Leaderboard', sub: 'Rankings', color: Colors.gold },
-  { id: 'Family', icon: 'people-outline' as const, label: 'Family', sub: 'Track loved ones', color: Colors.primaryLight },
-  { id: 'OrionCoach', icon: 'chatbubble-ellipses-outline' as const, label: 'Orion AI', sub: 'Driving coach', color: Colors.primary },
-  { id: 'MyOffers', icon: 'gift-outline' as const, label: 'My Offers', sub: 'Saved & QR codes', color: Colors.secondary },
+  { id: 'DriverAnalytics', icon: 'analytics-outline' as const, label: 'Analytics', sub: 'Performance insights' },
+  { id: 'account', icon: 'settings-outline' as const, label: 'Account Info', sub: 'Personal details' },
+  { id: 'TripLogs', icon: 'time-outline' as const, label: 'Trip History', sub: 'View past trips' },
+  { id: 'FuelDashboard', icon: 'water-outline' as const, label: 'Fuel Dashboard', sub: 'Track expenses' },
+  { id: 'routes', icon: 'location-outline' as const, label: 'Saved Routes', sub: 'Your favorites' },
+  { id: 'Leaderboard', icon: 'trophy-outline' as const, label: 'Leaderboard', sub: 'Rankings' },
+  { id: 'carstudio', icon: 'car-sport-outline' as const, label: 'Car Studio', sub: 'Customize your ride' },
 ];
 
 const SETTINGS_ITEMS = [
   { id: 'PrivacyCenter', icon: 'shield-checkmark-outline' as const, label: 'Privacy', sub: 'Data & permissions' },
   { id: 'NotificationSettings', icon: 'notifications-outline' as const, label: 'Notifications', sub: 'Alert preferences' },
-  { id: 'Settings', icon: 'card-outline' as const, label: 'Subscription', sub: 'Manage plan' },
   { id: 'Help', icon: 'help-circle-outline' as const, label: 'Help & Support', sub: 'Get assistance' },
 ];
 
-export const ProfileScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useUserStore();
-  const initials = user.name ? user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'JD';
+  const userName = user?.name || 'John Doe';
+  const gems = user?.gems || 2450;
+
+  const handleNavigate = (screen: string) => {
+    if (navigation?.navigate) navigation.navigate(screen);
+  };
 
   return (
-    <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-        {/* Header Gradient */}
-        <View style={styles.headerBg}>
-          <LinearGradient colors={['#1D4ED8', '#2563EB', '#38BDF8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-          {/* Overlay glow circles */}
-          <View style={styles.glowCircle1} />
-          <View style={styles.glowCircle2} />
-          <LinearGradient colors={['transparent','transparent', Colors.background]} style={styles.headerFade} />
-          <TouchableOpacity style={[styles.settingsBtn, { top: insets.top + 8 }]} onPress={() => navigation.navigate('Settings')}>
-            <Ionicons name="settings-outline" size={20} color="rgba(255,255,255,0.8)" />
-          </TouchableOpacity>
-        </View>
+    <View style={[s.container, { paddingTop: insets.top }]}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 30 }}>
+        {/* Settings gear top right */}
+        <TouchableOpacity style={s.gearBtn} onPress={() => handleNavigate('Settings')}>
+          <Ionicons name="settings-outline" size={22} color={Colors.textMuted} />
+        </TouchableOpacity>
 
         {/* Profile Card */}
-        <View style={styles.cardWrap}>
-          <View style={styles.profileCard}>
-            <View style={styles.profileRow}>
-              <LinearGradient colors={Colors.gradientPrimary} style={styles.avatar}>
-                <Text style={styles.avatarText}>{initials}</Text>
-              </LinearGradient>
-              <View style={styles.profileInfo}>
-                <Text style={styles.profileName}>{user.name || 'John Doe'}</Text>
-                <Text style={styles.profileTier}>{user.isPremium ? 'Premium' : 'Free'} Member</Text>
-                <View style={styles.gemsRow}>
-                  <Ionicons name="diamond" size={14} color={Colors.accent} />
-                  <Text style={styles.gemsVal}>{user.gems?.toLocaleString() || '2,450'}</Text>
-                  <Text style={styles.gemsUnit}>gems</Text>
-                </View>
+        <View style={s.profileCard}>
+          <View style={s.avatar}>
+            <Text style={s.avatarText}>{userName.split(' ').map(n => n[0]).join('')}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.name}>{userName}</Text>
+            <Text style={s.plan}>Premium Member</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+              <Ionicons name="diamond" size={14} color={Colors.primary} />
+              <Text style={s.gemsText}>{gems.toLocaleString()} gems</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Stats Row */}
+        <View style={s.statsRow}>
+          <View style={s.statItem}>
+            <Text style={s.statValue}>92</Text>
+            <Text style={s.statLabel}>Safety Score</Text>
+          </View>
+          <View style={[s.statItem, s.statCenter]}>
+            <Text style={s.statValue}>1,247</Text>
+            <Text style={s.statLabel}>Miles Driven</Text>
+          </View>
+          <View style={s.statItem}>
+            <Text style={s.statValue}>28</Text>
+            <Text style={s.statLabel}>Badges</Text>
+          </View>
+        </View>
+
+        {/* Menu Items */}
+        <View style={s.menuSection}>
+          {MENU_ITEMS.map(item => (
+            <TouchableOpacity key={item.id} style={s.menuItem} onPress={() => handleNavigate(item.id)}>
+              <View style={s.menuIcon}>
+                <Ionicons name={item.icon} size={20} color={Colors.textMuted} />
               </View>
-            </View>
-            <View style={styles.statsRow}>
-              {[
-                { val: user.safetyScore || 94, label: 'Safety', color: Colors.secondary },
-                { val: user.totalMiles?.toLocaleString() || '1,247', label: 'Miles', color: Colors.primaryLight },
-                { val: 28, label: 'Badges', color: Colors.gold },
-              ].map((s, i) => (
-                <View key={i} style={styles.statCol}>
-                  <Text style={[styles.statVal, { color: s.color }]}>{s.val}</Text>
-                  <Text style={styles.statLabel}>{s.label}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.menuLabel}>{item.label}</Text>
+                <Text style={s.menuSub}>{item.sub}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={Colors.textDim} />
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Menu */}
-        <View style={styles.section}>
-          <View style={styles.menuCard}>
-            {MENU_ITEMS.map((item, i) => (
-              <TouchableOpacity key={`${item.id}-${i}`} style={[styles.menuItem, i < MENU_ITEMS.length - 1 && styles.menuBorder]} onPress={() => navigation.navigate(item.id)}>
-                <View style={[styles.menuIconBox, { backgroundColor: `${item.color}12` }]}>
-                  <Ionicons name={item.icon} size={19} color={item.color} />
-                </View>
-                <View style={styles.menuText}>
-                  <Text style={styles.menuLabel}>{item.label}</Text>
-                  <Text style={styles.menuSub}>{item.sub}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={Colors.textDim} />
-              </TouchableOpacity>
-            ))}
-          </View>
+        {/* Settings Section */}
+        <Text style={s.sectionTitle}>Settings</Text>
+        <View style={s.menuSection}>
+          {SETTINGS_ITEMS.map(item => (
+            <TouchableOpacity key={item.id} style={s.menuItem} onPress={() => handleNavigate(item.id)}>
+              <View style={s.menuIcon}>
+                <Ionicons name={item.icon} size={20} color={Colors.textMuted} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.menuLabel}>{item.label}</Text>
+                <Text style={s.menuSub}>{item.sub}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={Colors.textDim} />
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>SETTINGS</Text>
-          <View style={styles.menuCard}>
-            {SETTINGS_ITEMS.map((item, i) => (
-              <TouchableOpacity key={`s-${i}`} style={[styles.menuItem, i < SETTINGS_ITEMS.length - 1 && styles.menuBorder]} onPress={() => navigation.navigate(item.id)}>
-                <View style={styles.menuIconBoxDim}>
-                  <Ionicons name={item.icon} size={19} color={Colors.textSecondary} />
-                </View>
-                <View style={styles.menuText}>
-                  <Text style={styles.menuLabel}>{item.label}</Text>
-                  <Text style={styles.menuSub}>{item.sub}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={Colors.textDim} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Sign Out */}
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.signOutBtn} onPress={() => navigation.navigate('Welcome')}>
-            <Ionicons name="log-out-outline" size={18} color={Colors.error} />
-            <Text style={styles.signOutText}>Sign Out</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Logout */}
+        <TouchableOpacity style={s.logoutBtn}>
+          <Ionicons name="log-out-outline" size={18} color="#EF4444" />
+          <Text style={s.logoutText}>Sign Out</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  headerBg: { height: 220, position: 'relative', overflow: 'hidden' },
-  headerFade: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 100 },
-  glowCircle1: { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(56,189,248,0.15)', top: -40, right: -40 },
-  glowCircle2: { position: 'absolute', width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(6,214,160,0.1)', bottom: 10, left: -30 },
-  settingsBtn: { position: 'absolute', right: 16, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center', zIndex: 10 },
-  cardWrap: { paddingHorizontal: 16, marginTop: -80, zIndex: 10 },
-  profileCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.glassBorder, borderRadius: BorderRadius.xxl, padding: 24, ...Shadows.lg },
-  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  avatar: { width: 64, height: 64, borderRadius: 20, alignItems: 'center', justifyContent: 'center', ...Shadows.neon },
-  avatarText: { color: '#fff', fontSize: 22, fontWeight: FontWeights.bold, letterSpacing: 1 },
-  profileInfo: { flex: 1 },
-  profileName: { color: Colors.text, fontSize: FontSizes.xl, fontWeight: FontWeights.bold, letterSpacing: 0.3 },
-  profileTier: { color: Colors.textSecondary, fontSize: FontSizes.sm, marginTop: 2, letterSpacing: 0.5 },
-  gemsRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
-  gemsVal: { color: Colors.accent, fontSize: FontSizes.md, fontWeight: FontWeights.bold },
-  gemsUnit: { color: Colors.textMuted, fontSize: FontSizes.sm },
-  statsRow: { flexDirection: 'row', marginTop: 24, paddingTop: 20, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
-  statCol: { flex: 1, alignItems: 'center' },
-  statVal: { fontSize: FontSizes.xl, fontWeight: FontWeights.bold },
-  statLabel: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 4, letterSpacing: 0.8, textTransform: 'uppercase' },
-  section: { paddingHorizontal: 16, marginTop: 24 },
-  sectionTitle: { color: Colors.textMuted, fontSize: FontSizes.xs, fontWeight: FontWeights.semibold, letterSpacing: 1.5, marginBottom: 12, paddingHorizontal: 4 },
-  menuCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.glassBorder, borderRadius: BorderRadius.xl, overflow: 'hidden' },
-  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
-  menuBorder: { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
-  menuIconBox: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  menuIconBoxDim: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', alignItems: 'center', justifyContent: 'center' },
-  menuText: { flex: 1 },
-  menuLabel: { color: Colors.text, fontSize: FontSizes.md, fontWeight: FontWeights.medium, letterSpacing: 0.2 },
-  menuSub: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 2, letterSpacing: 0.3 },
-  signOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 50, borderRadius: BorderRadius.lg, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.15)' },
-  signOutText: { color: Colors.error, fontSize: FontSizes.md, fontWeight: FontWeights.medium },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0A0E16' },
+  gearBtn: { position: 'absolute', top: 12, right: 16, zIndex: 10, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  // Profile card
+  profileCard: { flexDirection: 'row', alignItems: 'center', gap: 14, marginHorizontal: 16, marginTop: 16, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  avatar: { width: 56, height: 56, borderRadius: 16, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#fff', fontSize: 20, fontWeight: FontWeights.bold },
+  name: { color: Colors.text, fontSize: FontSizes.lg, fontWeight: FontWeights.bold },
+  plan: { color: Colors.textMuted, fontSize: FontSizes.xs },
+  gemsText: { color: Colors.primary, fontSize: FontSizes.sm, fontWeight: FontWeights.semibold },
+  // Stats
+  statsRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 2, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  statItem: { flex: 1, alignItems: 'center', paddingVertical: 16 },
+  statCenter: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  statValue: { color: Colors.text, fontSize: FontSizes.xl, fontWeight: FontWeights.bold },
+  statLabel: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 2 },
+  // Menu
+  menuSection: { marginHorizontal: 16, marginTop: 16, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', overflow: 'hidden' },
+  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 15, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.04)' },
+  menuIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  menuLabel: { color: Colors.text, fontSize: FontSizes.sm, fontWeight: FontWeights.medium },
+  menuSub: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 1 },
+  sectionTitle: { color: Colors.textMuted, fontSize: FontSizes.xs, fontWeight: FontWeights.medium, letterSpacing: 0.5, marginLeft: 16, marginTop: 20, marginBottom: -4 },
+  // Logout
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 16, marginTop: 20, paddingVertical: 14, borderRadius: 14, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.15)' },
+  logoutText: { color: '#EF4444', fontSize: FontSizes.sm, fontWeight: FontWeights.semibold },
 });
 
 export default ProfileScreen;
