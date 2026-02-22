@@ -489,9 +489,286 @@ function AdminOffersList() {
   )
 }
 
+// =============================================
+// AI MODERATION TYPES & DATA
+// =============================================
+type IncidentTab = 'new' | 'blurred' | 'review' | 'approved' | 'rejected'
+interface Incident {
+  id: number; type: string; confidence: number;
+  status: 'new' | 'review' | 'approved' | 'rejected'; blurred: boolean;
+  location: string; reportedAt: string;
+}
+const STATUS_BADGES: Record<string, string> = {
+  new: 'bg-[#E6ECF5] text-[#0B1220]',
+  blurred: 'bg-[#0084FF]/10 text-[#0084FF]',
+  review: 'bg-[#0084FF]/10 text-[#0084FF]',
+  approved: 'bg-[#00FFD7]/10 text-[#00FFD7]',
+  rejected: 'bg-[#FF5A5A]/10 text-[#FF5A5A]',
+}
+const INCIDENTS_MOCK: Incident[] = [
+  { id: 1, type: 'Speeding (85mph in 65)', confidence: 94, status: 'new', blurred: false, location: 'I-70 E, Columbus OH', reportedAt: '2 min ago' },
+  { id: 2, type: 'Hard Braking Event', confidence: 88, status: 'new', blurred: true, location: 'High St & Broad, Columbus', reportedAt: '8 min ago' },
+  { id: 3, type: 'Reckless Lane Change', confidence: 96, status: 'review', blurred: true, location: 'I-270 S, Exit 17', reportedAt: '15 min ago' },
+  { id: 4, type: 'Phone Usage Detected', confidence: 91, status: 'new', blurred: false, location: '5th Ave, Columbus OH', reportedAt: '22 min ago' },
+  { id: 5, type: 'Red Light Violation', confidence: 83, status: 'review', blurred: false, location: 'Broad & 4th, Columbus', reportedAt: '31 min ago' },
+  { id: 6, type: 'Road Obstruction', confidence: 79, status: 'approved', blurred: false, location: 'Morse Rd, Columbus', reportedAt: '1 hr ago' },
+  { id: 7, type: 'Aggressive Tailgating', confidence: 90, status: 'new', blurred: true, location: 'I-71 N, near Dublin', reportedAt: '45 min ago' },
+  { id: 8, type: 'Wrong Way Driver', confidence: 99, status: 'review', blurred: false, location: 'SR-315 N, Columbus', reportedAt: '2 hrs ago' },
+  { id: 9, type: 'Sharp Cornering', confidence: 76, status: 'rejected', blurred: false, location: 'Riverside Dr, Columbus', reportedAt: '3 hrs ago' },
+]
+
+function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
+  const [activeModTab, setActiveModTab] = useState<IncidentTab>('new')
+  const [incidents, setIncidents] = useState<Incident[]>(INCIDENTS_MOCK)
+  const [confidenceThreshold, setConfidenceThreshold] = useState(80)
+
+  const handleModeration = (id: number, outcome: 'approved' | 'rejected') => {
+    setIncidents(prev => prev.map(i => i.id === id ? { ...i, status: outcome, blurred: outcome === 'approved' ? false : i.blurred } : i))
+  }
+
+  const filteredIncidents = useMemo(() => {
+    return incidents.filter(i => {
+      if (activeModTab === 'blurred') return i.blurred
+      return i.status === activeModTab
+    }).filter(i => i.confidence >= confidenceThreshold)
+  }, [incidents, activeModTab, confidenceThreshold])
+
+  const isDark = theme === 'dark'
+  const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
+
+  return (
+    <div className="space-y-6">
+      {/* Stats */}
+      <div className="grid grid-cols-5 gap-4">
+        {(['new', 'blurred', 'review', 'approved', 'rejected'] as IncidentTab[]).map(tab => {
+          const count = incidents.filter(i => tab === 'blurred' ? i.blurred : i.status === tab).length
+          const colors: Record<string, string> = { new: '#0084FF', blurred: '#8B5CF6', review: '#F59E0B', approved: '#00FFD7', rejected: '#FF5A5A' }
+          return (
+            <button key={tab} onClick={() => setActiveModTab(tab)}
+              data-testid={`mod-tab-${tab}`}
+              className={`p-4 rounded-2xl border transition-all text-left ${activeModTab === tab ? 'border-[#0084FF] ring-1 ring-[#0084FF]/30' : card}`}>
+              <div className="text-2xl font-bold mb-1" style={{ color: colors[tab] }}>{count}</div>
+              <div className={`text-xs capitalize ${isDark ? 'text-white/60' : 'text-[#4B5C74]'}`}>{tab}</div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Confidence Slider */}
+      <div className={`p-5 rounded-2xl border ${card}`}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal size={16} className={isDark ? 'text-white/60' : 'text-[#4B5C74]'} />
+            <span className={`text-sm ${isDark ? 'text-white/80' : 'text-[#0B1220]'}`}>Confidence Threshold</span>
+          </div>
+          <span className="text-[#0084FF] font-semibold">{confidenceThreshold}%</span>
+        </div>
+        <input type="range" min="0" max="100" value={confidenceThreshold}
+          onChange={e => setConfidenceThreshold(Number(e.target.value))}
+          className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          style={{ background: `linear-gradient(to right, #0084FF ${confidenceThreshold}%, ${isDark ? '#334155' : '#E6ECF5'} ${confidenceThreshold}%)` }} />
+        <p className={`text-xs mt-2 ${isDark ? 'text-white/40' : 'text-[#8A9BB6]'}`}>Showing incidents above {confidenceThreshold}% confidence</p>
+      </div>
+
+      {/* Incidents Grid */}
+      {filteredIncidents.length > 0 ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {filteredIncidents.map(incident => {
+            const canModerate = incident.status === 'new' || incident.status === 'review'
+            return (
+              <div key={incident.id} data-testid={`incident-${incident.id}`}
+                className={`p-5 rounded-2xl border transition-all hover:shadow-lg ${card}`}>
+                {/* Image Preview */}
+                <div className={`relative w-full h-36 rounded-xl mb-4 overflow-hidden ${isDark ? 'bg-slate-700/50' : 'bg-[#F5F8FA]'}`}>
+                  <img src={`https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=400&auto=format&fit=crop`}
+                    alt="Incident" className="w-full h-full object-cover" />
+                  {incident.blurred && (
+                    <div className="absolute inset-0 backdrop-blur-xl bg-black/40 flex items-center justify-center">
+                      <EyeOff size={24} className="text-white" />
+                    </div>
+                  )}
+                  <div className="absolute top-2 right-2 px-2 py-1 rounded-full bg-black/60 text-white text-[11px] font-medium">
+                    {incident.confidence}%
+                  </div>
+                </div>
+
+                <div className="flex items-start justify-between mb-2">
+                  <p className={`text-sm font-medium flex-1 mr-2 ${isDark ? 'text-white' : 'text-[#0B1220]'}`}>{incident.type}</p>
+                  <span className={`px-2 py-0.5 rounded-full text-[11px] shrink-0 ${STATUS_BADGES[incident.status]}`}>
+                    {incident.status.charAt(0).toUpperCase() + incident.status.slice(1)}
+                  </span>
+                </div>
+                <div className={`flex items-center gap-1 text-xs mb-4 ${isDark ? 'text-white/40' : 'text-[#8A9BB6]'}`}>
+                  <MapPin size={10} />{incident.location}
+                  <span className="mx-1">·</span>
+                  <Clock size={10} />{incident.reportedAt}
+                </div>
+
+                <div className="flex gap-2">
+                  <button onClick={() => handleModeration(incident.id, 'approved')} disabled={!canModerate}
+                    className={`flex-1 h-11 rounded-xl bg-[#00FFD7] text-[#0B1220] text-sm font-semibold flex items-center justify-center gap-2 transition-all ${canModerate ? 'hover:opacity-90' : 'opacity-30 cursor-not-allowed'}`}>
+                    <CheckCircle size={16} />Approve
+                  </button>
+                  <button onClick={() => handleModeration(incident.id, 'rejected')} disabled={!canModerate}
+                    className={`flex-1 h-11 rounded-xl bg-[#FF5A5A] text-white text-sm font-semibold flex items-center justify-center gap-2 transition-all ${canModerate ? 'hover:opacity-90' : 'opacity-30 cursor-not-allowed'}`}>
+                    <XCircle size={16} />Reject
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className={`p-16 rounded-2xl border text-center ${card}`}>
+          <Eye size={32} className={`mx-auto mb-3 ${isDark ? 'text-white/30' : 'text-[#4B5C74]'}`} />
+          <p className={isDark ? 'text-white/60' : 'text-[#0B1220]'}>No incidents in this queue</p>
+          <p className={`text-sm mt-1 ${isDark ? 'text-white/30' : 'text-[#8A9BB6]'}`}>Try lowering the confidence threshold or switching tabs</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// =============================================
+// FIGMA USERS TAB
+// =============================================
+const FIGMA_USERS = [
+  { id: 1, name: 'Sarah Johnson', email: 'sarah.j@email.com', plan: 'Premium', lastSeen: '5 min ago', status: 'Active', safety: 95, gems: 12450 },
+  { id: 2, name: 'Mike Wilson', email: 'mike.w@email.com', plan: 'Family', lastSeen: '2 hours ago', status: 'Active', safety: 88, gems: 7820 },
+  { id: 3, name: 'Emma Davis', email: 'emma.d@email.com', plan: 'Free', lastSeen: '1 day ago', status: 'Active', safety: 72, gems: 1560 },
+  { id: 4, name: 'James Brown', email: 'james.b@email.com', plan: 'Premium', lastSeen: '3 days ago', status: 'Suspended', safety: 45, gems: 320 },
+  { id: 5, name: 'Lisa Martinez', email: 'lisa.m@email.com', plan: 'Free', lastSeen: '1 hour ago', status: 'Active', safety: 91, gems: 4200 },
+  { id: 6, name: 'Chris Anderson', email: 'chris.a@email.com', plan: 'Premium', lastSeen: '30 min ago', status: 'Active', safety: 97, gems: 18900 },
+]
+
+function FigmaUsersTab({ theme, onExport }: { theme: 'dark' | 'light'; onExport: () => void }) {
+  const [searchTerm, setSearchTerm] = useState('')
+  const [planFilter, setPlanFilter] = useState('All Plans')
+  const [statusFilter, setStatusFilter] = useState('All Status')
+  const [selectedUser, setSelectedUser] = useState<number | null>(null)
+  const isDark = theme === 'dark'
+
+  const filtered = FIGMA_USERS.filter(u => {
+    const matchSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchPlan = planFilter === 'All Plans' || u.plan === planFilter
+    const matchStatus = statusFilter === 'All Status' || u.status === statusFilter
+    return matchSearch && matchPlan && matchStatus
+  })
+
+  const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
+  const inputBg = isDark ? 'bg-slate-700/50 border-white/10 text-white placeholder-slate-500' : 'bg-[#F5F8FA] border-[#E6ECF5] text-[#0B1220] placeholder-[#4B5C74]'
+  const thText = isDark ? 'text-white/50' : 'text-[#4B5C74]'
+  const tdText = isDark ? 'text-white' : 'text-[#0B1220]'
+  const trHover = isDark ? 'hover:bg-white/[0.02] border-white/5' : 'hover:bg-[#F5F8FA] border-[#E6ECF5]'
+
+  return (
+    <div className="space-y-6">
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          { label: 'Total Users', value: '68,234' },
+          { label: 'Free Plan', value: '42,156' },
+          { label: 'Premium', value: '18,942' },
+          { label: 'Family Plans', value: '7,136' },
+        ].map((s, i) => (
+          <div key={i} className={`p-5 rounded-2xl border ${card}`}>
+            <p className={`text-xs mb-1 ${isDark ? 'text-white/50' : 'text-[#4B5C74]'}`}>{s.label}</p>
+            <p className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-[#0B1220]'}`}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Search + Filters */}
+      <div className={`p-4 rounded-2xl border ${card}`}>
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex-1 relative">
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-slate-400' : 'text-[#4B5C74]'}`} size={18} />
+            <input type="text" placeholder="Search by name or email..." value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)} data-testid="admin-user-search"
+              className={`w-full h-10 pl-10 pr-4 rounded-xl border text-sm ${inputBg}`} />
+          </div>
+          <select value={planFilter} onChange={e => setPlanFilter(e.target.value)}
+            className={`h-10 px-4 rounded-xl border text-sm ${inputBg}`}>
+            {['All Plans', 'Free', 'Premium', 'Family'].map(p => <option key={p}>{p}</option>)}
+          </select>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+            className={`h-10 px-4 rounded-xl border text-sm ${inputBg}`}>
+            {['All Status', 'Active', 'Suspended'].map(s => <option key={s}>{s}</option>)}
+          </select>
+          <button onClick={onExport} className="h-10 px-5 rounded-xl bg-[#0084FF] text-white text-sm font-semibold flex items-center gap-2 hover:opacity-90" data-testid="export-users-btn">
+            <Download size={14} />Export
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className={`rounded-2xl border overflow-hidden ${card}`}>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className={`border-b ${isDark ? 'bg-slate-700/30 border-white/5' : 'bg-[#F5F8FA] border-[#E6ECF5]'}`}>
+              <tr>
+                {['Name', 'Email', 'Plan', 'Safety', 'Gems', 'Last Seen', 'Status', 'Actions'].map(h => (
+                  <th key={h} className={`px-5 py-3 text-left text-xs font-medium ${thText}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(user => (
+                <tr key={user.id} className={`border-b transition-colors ${trHover}`}>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#004A93] to-[#0084FF] flex items-center justify-center text-white text-xs font-bold">
+                        {user.name.split(' ').map(n => n[0]).join('')}
+                      </div>
+                      <span className={`text-sm font-medium ${tdText}`}>{user.name}</span>
+                    </div>
+                  </td>
+                  <td className={`px-5 py-3 text-sm ${isDark ? 'text-white/60' : 'text-[#4B5C74]'}`}>{user.email}</td>
+                  <td className="px-5 py-3">
+                    <span className={`px-2 py-1 rounded-full text-[11px] font-medium ${
+                      user.plan === 'Family' ? 'bg-[#00DFA2]/10 text-[#00DFA2]' :
+                      user.plan === 'Premium' ? 'bg-[#0084FF]/10 text-[#0084FF]' :
+                      isDark ? 'bg-white/10 text-white/60' : 'bg-[#E6ECF5] text-[#4B5C74]'
+                    }`}>{user.plan}</span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className={`font-bold ${user.safety >= 90 ? 'text-[#00DFA2]' : user.safety >= 70 ? 'text-amber-400' : 'text-[#FF5A5A]'}`}>{user.safety}</span>
+                  </td>
+                  <td className={`px-5 py-3 text-sm font-medium text-cyan-400`}>
+                    <span className="flex items-center gap-1"><Gem size={12} />{user.gems.toLocaleString()}</span>
+                  </td>
+                  <td className={`px-5 py-3 text-sm ${isDark ? 'text-white/50' : 'text-[#4B5C74]'}`}>{user.lastSeen}</td>
+                  <td className="px-5 py-3">
+                    <span className={`px-2 py-1 rounded-full text-[11px] font-medium ${
+                      user.status === 'Active' ? 'bg-[#00DFA2]/10 text-[#00DFA2]' : 'bg-[#FF5A5A]/10 text-[#FF5A5A]'
+                    }`}>{user.status}</span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <button onClick={() => setSelectedUser(selectedUser === user.id ? null : user.id)}
+                      className={`p-1 rounded-lg transition-colors ${isDark ? 'text-white/40 hover:text-white hover:bg-white/5' : 'text-[#4B5C74] hover:text-[#0B1220] hover:bg-[#F5F8FA]'}`}>
+                      <MoreVertical size={16} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {filtered.length === 0 && (
+        <p className={`text-center py-8 ${isDark ? 'text-white/40' : 'text-[#4B5C74]'}`}>No users match your search</p>
+      )}
+    </div>
+  )
+}
+
+// =============================================
+// MAIN ADMIN DASHBOARD
+// =============================================
 export default function AdminDashboard() {
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'partners' | 'events' | 'offers'>('overview')
+  const { theme, toggleTheme } = useTheme()
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'partners' | 'events' | 'offers' | 'aiModeration'>('overview')
   const [loading, setLoading] = useState(true)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showCreateOfferModal, setShowCreateOfferModal] = useState(false)
