@@ -13,12 +13,12 @@ class ConnectionManager:
     def __init__(self):
         # Partner connections: {partner_id: {connection_id: websocket}}
         self.partner_connections: Dict[str, Dict[str, WebSocket]] = {}
-        
         # Customer connections: {customer_id: websocket}
         self.customer_connections: Dict[str, WebSocket] = {}
-        
         # Staff connections for scan notifications
         self.staff_connections: Dict[str, WebSocket] = {}
+        # Admin connections for moderation: {admin_id: websocket}
+        self.admin_connections: Dict[str, WebSocket] = {}
     
     async def connect_partner(self, websocket: WebSocket, partner_id: str, connection_id: str):
         """Connect a partner staff member"""
