@@ -1,276 +1,408 @@
 """
 Supabase database service layer.
-All database operations go through here for clean separation.
-Falls back to mock data when Supabase is unavailable.
+All database operations go through here.
+Falls back to mock data when Supabase tables are not yet created.
 """
-import os
-import httpx
-from config import SUPABASE_URL, SUPABASE_SECRET_KEY
+import logging
+from typing import Optional, Any
+from database import get_supabase
 
-# SQL for creating all tables
-SCHEMA_SQL = """
--- Users table
-CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255),
-    name VARCHAR(255) NOT NULL,
-    avatar_url TEXT,
-    plan VARCHAR(20) DEFAULT 'basic' CHECK (plan IN ('basic', 'premium')),
-    stripe_customer_id VARCHAR(255),
-    subscription_status VARCHAR(20) DEFAULT 'inactive',
-    xp INTEGER DEFAULT 0,
-    level INTEGER DEFAULT 1,
-    gems INTEGER DEFAULT 100,
-    safety_score INTEGER DEFAULT 85,
-    car_category VARCHAR(50) DEFAULT 'sedan',
-    car_variant VARCHAR(50) DEFAULT 'sedan-classic',
-    car_color VARCHAR(50) DEFAULT 'ocean-blue',
-    total_miles DECIMAL(10,2) DEFAULT 0,
-    total_trips INTEGER DEFAULT 0,
-    total_savings DECIMAL(10,2) DEFAULT 0,
-    state VARCHAR(50),
-    city VARCHAR(100),
-    onboarding_complete BOOLEAN DEFAULT false,
-    email_verified BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+logger = logging.getLogger(__name__)
 
--- Partners table
-CREATE TABLE IF NOT EXISTS partners (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255),
-    business_name VARCHAR(255) NOT NULL,
-    business_type VARCHAR(50),
-    plan VARCHAR(20) DEFAULT 'starter' CHECK (plan IN ('starter', 'growth', 'enterprise')),
-    is_founders BOOLEAN DEFAULT false,
-    stripe_customer_id VARCHAR(255),
-    subscription_status VARCHAR(20) DEFAULT 'inactive',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+# ─────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────
 
--- Partner locations table
-CREATE TABLE IF NOT EXISTS partner_locations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    partner_id UUID REFERENCES partners(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    address TEXT NOT NULL,
-    lat DECIMAL(10,8) NOT NULL,
-    lng DECIMAL(11,8) NOT NULL,
-    is_primary BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+def _sb():
+    return get_supabase()
 
--- Offers table
-CREATE TABLE IF NOT EXISTS offers (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    partner_id UUID REFERENCES partners(id),
-    location_id UUID REFERENCES partner_locations(id),
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    business_name VARCHAR(255),
-    business_type VARCHAR(50),
-    discount_percent INTEGER,
-    base_gems INTEGER DEFAULT 25,
-    premium_gems INTEGER DEFAULT 50,
-    lat DECIMAL(10,8) NOT NULL,
-    lng DECIMAL(11,8) NOT NULL,
-    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'paused', 'expired')),
-    redemption_count INTEGER DEFAULT 0,
-    views INTEGER DEFAULT 0,
-    image_url TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    expires_at TIMESTAMPTZ,
-    is_boosted BOOLEAN DEFAULT false,
-    boost_expires_at TIMESTAMPTZ
-);
-
--- Redemptions table
-CREATE TABLE IF NOT EXISTS redemptions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    offer_id UUID REFERENCES offers(id),
-    user_id UUID REFERENCES users(id),
-    qr_code VARCHAR(255) UNIQUE NOT NULL,
-    qr_expires_at TIMESTAMPTZ NOT NULL,
-    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'expired')),
-    gems_earned INTEGER,
-    discount_applied INTEGER,
-    verified_at TIMESTAMPTZ,
-    verified_lat DECIMAL(10,8),
-    verified_lng DECIMAL(11,8),
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Badges table
-CREATE TABLE IF NOT EXISTS badges (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    icon VARCHAR(50),
-    category VARCHAR(50) CHECK (category IN ('driving', 'social', 'exploration', 'safety')),
-    requirement_type VARCHAR(50),
-    requirement_value INTEGER,
-    xp_reward INTEGER DEFAULT 50,
-    gems_reward INTEGER DEFAULT 0,
-    rarity VARCHAR(20) DEFAULT 'common' CHECK (rarity IN ('common', 'rare', 'epic', 'legendary'))
-);
-
--- User badges junction
-CREATE TABLE IF NOT EXISTS user_badges (
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    badge_id UUID REFERENCES badges(id) ON DELETE CASCADE,
-    earned_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, badge_id)
-);
-
--- Challenges table
-CREATE TABLE IF NOT EXISTS challenges (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    type VARCHAR(50) CHECK (type IN ('weekly', 'head_to_head', 'community')),
-    start_date TIMESTAMPTZ,
-    end_date TIMESTAMPTZ,
-    goal_type VARCHAR(50),
-    goal_value INTEGER,
-    reward_xp INTEGER,
-    reward_gems INTEGER,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Challenge participants junction
-CREATE TABLE IF NOT EXISTS challenge_participants (
-    challenge_id UUID REFERENCES challenges(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    progress INTEGER DEFAULT 0,
-    completed BOOLEAN DEFAULT false,
-    joined_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (challenge_id, user_id)
-);
-
--- Trips table
-CREATE TABLE IF NOT EXISTS trips (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    start_location VARCHAR(255),
-    end_location VARCHAR(255),
-    start_lat DECIMAL(10,8),
-    start_lng DECIMAL(11,8),
-    end_lat DECIMAL(10,8),
-    end_lng DECIMAL(11,8),
-    distance DECIMAL(10,2),
-    duration INTEGER,
-    safety_score INTEGER,
-    xp_earned INTEGER DEFAULT 0,
-    gems_earned INTEGER DEFAULT 0,
-    started_at TIMESTAMPTZ,
-    ended_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Boosts table
-CREATE TABLE IF NOT EXISTS boosts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    offer_id UUID REFERENCES offers(id),
-    partner_id UUID REFERENCES partners(id),
-    budget DECIMAL(10,2) NOT NULL,
-    duration_days INTEGER NOT NULL,
-    target_radius_miles INTEGER,
-    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'paused', 'completed')),
-    impressions INTEGER DEFAULT 0,
-    clicks INTEGER DEFAULT 0,
-    stripe_payment_id VARCHAR(255),
-    started_at TIMESTAMPTZ DEFAULT NOW(),
-    ends_at TIMESTAMPTZ
-);
-
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_offers_location ON offers(lat, lng);
-CREATE INDEX IF NOT EXISTS idx_offers_status ON offers(status);
-CREATE INDEX IF NOT EXISTS idx_offers_partner ON offers(partner_id);
-CREATE INDEX IF NOT EXISTS idx_redemptions_user ON redemptions(user_id);
-CREATE INDEX IF NOT EXISTS idx_redemptions_offer ON redemptions(offer_id);
-CREATE INDEX IF NOT EXISTS idx_trips_user ON trips(user_id);
-CREATE INDEX IF NOT EXISTS idx_partner_locations_partner ON partner_locations(partner_id);
-"""
-
-SEED_BADGES_SQL = """
-INSERT INTO badges (name, description, icon, category, requirement_type, requirement_value, rarity, xp_reward, gems_reward) VALUES
-('Road Warrior', 'Drive 100 miles', 'car', 'driving', 'miles', 100, 'common', 50, 10),
-('Safety Star', 'Maintain 90+ safety score for a week', 'shield', 'safety', 'score_streak', 7, 'rare', 100, 25),
-('Explorer', 'Visit 10 different locations', 'map', 'exploration', 'locations', 10, 'common', 50, 10),
-('Social Butterfly', 'Add 5 friends', 'users', 'social', 'friends', 5, 'common', 50, 10),
-('Marathon Driver', 'Drive 1000 miles', 'award', 'driving', 'miles', 1000, 'epic', 200, 50),
-('Perfect Week', '100% safety score for 7 days', 'star', 'safety', 'perfect_days', 7, 'legendary', 500, 100),
-('Gem Collector', 'Earn 500 gems', 'diamond', 'exploration', 'gems', 500, 'rare', 100, 0),
-('Early Bird', 'Complete a trip before 6 AM', 'sunrise', 'driving', 'early_trip', 1, 'rare', 75, 15)
-ON CONFLICT DO NOTHING;
-"""
+def _table_missing(error) -> bool:
+    """Check if error indicates a missing table."""
+    err = str(error)
+    return "PGRST205" in err or "schema cache" in err or "does not exist" in err
 
 
-async def run_migration():
-    """Run database migration via Supabase SQL endpoint."""
-    if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
-        return {"success": False, "error": "Supabase not configured"}
+# ─────────────────────────────────────────────
+# AUTH / USER MANAGEMENT (uses Supabase Auth)
+# ─────────────────────────────────────────────
 
-    headers = {
-        "apikey": SUPABASE_SECRET_KEY,
-        "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation",
+def sb_create_user(email: str, password: str, name: str, role: str = "driver") -> dict:
+    """Create user in Supabase Auth. Returns user dict or raises exception."""
+    sb = _sb()
+    result = sb.auth.admin.create_user({
+        "email": email,
+        "password": password,
+        "email_confirm": True,
+        "user_metadata": {
+            "name": name,
+            "role": role,
+            "gems": 150,
+            "level": 1,
+            "xp": 0,
+            "xp_to_next_level": 2500,
+            "safety_score": 100,
+            "streak": 0,
+            "total_miles": 0,
+            "total_trips": 0,
+            "is_premium": False,
+            "plan": "basic",
+            "onboarding_complete": False,
+        }
+    })
+    user = result.user
+    if not user:
+        raise Exception("User creation failed")
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": name,
+        "role": role,
+        **user.user_metadata,
     }
 
-    # Split SQL into individual statements and run via rpc or REST
-    # We use the /rest/v1/rpc endpoint with a pg function, or use direct SQL
-    # Supabase supports SQL execution via the /pg endpoint with service key
-    sql_url = f"{SUPABASE_URL}/rest/v1/rpc"
 
-    results = {"tables": False, "badges": False, "errors": []}
-
-    # Try executing via the SQL/query endpoint (newer Supabase feature)
+def sb_login_user(email: str, password: str) -> Optional[dict]:
+    """Authenticate user via Supabase Auth. Returns user dict or None."""
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            # Execute schema creation
-            resp = await client.post(
-                f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
-                json={"query": SCHEMA_SQL},
-                headers=headers,
-            )
-            if resp.status_code < 300:
-                results["tables"] = True
-            else:
-                results["errors"].append(f"Schema: {resp.status_code} {resp.text[:200]}")
-
-            # Seed badges
-            resp2 = await client.post(
-                f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
-                json={"query": SEED_BADGES_SQL},
-                headers=headers,
-            )
-            if resp2.status_code < 300:
-                results["badges"] = True
-            else:
-                results["errors"].append(f"Badges: {resp2.status_code} {resp2.text[:200]}")
+        sb = _sb()
+        result = sb.auth.sign_in_with_password({"email": email, "password": password})
+        user = result.user
+        if not user:
+            return None
+        meta = user.user_metadata or {}
+        return {
+            "id": user.id,
+            "email": user.email,
+            "name": meta.get("name", ""),
+            "role": meta.get("role", "driver"),
+            **meta,
+        }
     except Exception as e:
-        results["errors"].append(str(e))
-
-    results["success"] = results["tables"] or len(results["errors"]) == 0
-    return results
+        logger.warning(f"Supabase login failed: {e}")
+        return None
 
 
-def test_connection():
+def sb_get_user_by_email(email: str) -> Optional[dict]:
+    """Fetch a user by email from Supabase Auth admin."""
+    try:
+        sb = _sb()
+        users = sb.auth.admin.list_users()
+        for u in users:
+            if u.email == email:
+                meta = u.user_metadata or {}
+                return {
+                    "id": u.id,
+                    "email": u.email,
+                    "name": meta.get("name", ""),
+                    "role": meta.get("role", "driver"),
+                    **meta,
+                }
+        return None
+    except Exception as e:
+        logger.warning(f"sb_get_user_by_email failed: {e}")
+        return None
+
+
+def sb_update_user_metadata(user_id: str, updates: dict) -> bool:
+    """Update user metadata in Supabase Auth."""
+    try:
+        sb = _sb()
+        sb.auth.admin.update_user_by_id(user_id, {"user_metadata": updates})
+        return True
+    except Exception as e:
+        logger.warning(f"sb_update_user_metadata failed: {e}")
+        return False
+
+
+def sb_list_auth_users(limit: int = 100) -> list:
+    """List all users from Supabase Auth admin."""
+    try:
+        sb = _sb()
+        users = sb.auth.admin.list_users()
+        result = []
+        for u in users[:limit]:
+            meta = u.user_metadata or {}
+            result.append({
+                "id": u.id,
+                "email": u.email or "",
+                "name": meta.get("name", "Unknown"),
+                "role": meta.get("role", "driver"),
+                "plan": meta.get("plan", "basic"),
+                "gems": meta.get("gems", 0),
+                "safety_score": meta.get("safety_score", 85),
+                "is_premium": meta.get("is_premium", False),
+                "created_at": str(u.created_at) if u.created_at else "",
+                "status": "active",
+            })
+        return result
+    except Exception as e:
+        logger.warning(f"sb_list_auth_users failed: {e}")
+        return []
+
+
+def sb_delete_user(user_id: str) -> bool:
+    """Delete user from Supabase Auth."""
+    try:
+        _sb().auth.admin.delete_user(user_id)
+        return True
+    except Exception as e:
+        logger.warning(f"sb_delete_user failed: {e}")
+        return False
+
+
+# ─────────────────────────────────────────────
+# PARTNERS TABLE
+# ─────────────────────────────────────────────
+
+def sb_create_partner(data: dict) -> Optional[dict]:
+    try:
+        result = _sb().table("partners").insert(data).execute()
+        if result.data:
+            row = result.data[0]
+            row.pop("_id", None)
+            return row
+        return None
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_create_partner: {e}")
+        return None
+
+
+def sb_get_partners(limit: int = 50) -> list:
+    try:
+        result = _sb().table("partners").select(
+            "id,business_name,business_type,email,plan,status,is_approved,created_at,total_redemptions"
+        ).limit(limit).execute()
+        return result.data or []
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_get_partners: {e}")
+        return []
+
+
+def sb_update_partner(partner_id: str, updates: dict) -> bool:
+    try:
+        _sb().table("partners").update(updates).eq("id", partner_id).execute()
+        return True
+    except Exception as e:
+        logger.warning(f"sb_update_partner: {e}")
+        return False
+
+
+# ─────────────────────────────────────────────
+# OFFERS TABLE
+# ─────────────────────────────────────────────
+
+def sb_get_offers(status: str = "active", limit: int = 50) -> list:
+    try:
+        query = _sb().table("offers").select(
+            "id,business_name,business_type,description,base_gems,discount_percent,address,lat,lng,redemption_count,status,created_at,expires_at,image_url"
+        ).limit(limit)
+        if status != "all":
+            query = query.eq("status", status)
+        result = query.execute()
+        return result.data or []
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_get_offers: {e}")
+        return []
+
+
+def sb_create_offer(data: dict) -> Optional[dict]:
+    try:
+        result = _sb().table("offers").insert(data).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        logger.error(f"sb_create_offer: {e}")
+        return None
+
+
+def sb_update_offer(offer_id: int, updates: dict) -> bool:
+    try:
+        _sb().table("offers").update(updates).eq("id", offer_id).execute()
+        return True
+    except Exception as e:
+        logger.warning(f"sb_update_offer: {e}")
+        return False
+
+
+def sb_delete_offer(offer_id: int) -> bool:
+    try:
+        _sb().table("offers").delete().eq("id", offer_id).execute()
+        return True
+    except Exception as e:
+        logger.warning(f"sb_delete_offer: {e}")
+        return False
+
+
+# ─────────────────────────────────────────────
+# TRIPS TABLE
+# ─────────────────────────────────────────────
+
+def sb_create_trip(data: dict) -> Optional[dict]:
+    try:
+        result = _sb().table("trips").insert(data).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_create_trip: {e}")
+        return None
+
+
+def sb_get_trips(user_id: str, limit: int = 20) -> list:
+    try:
+        result = _sb().table("trips").select("*").eq("user_id", user_id).order(
+            "started_at", desc=True
+        ).limit(limit).execute()
+        return result.data or []
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_get_trips: {e}")
+        return []
+
+
+# ─────────────────────────────────────────────
+# ROAD REPORTS TABLE
+# ─────────────────────────────────────────────
+
+def sb_get_road_reports(lat: float = None, lng: float = None, limit: int = 50) -> list:
+    try:
+        result = _sb().table("road_reports").select(
+            "id,type,description,lat,lng,address,upvotes,status,created_at"
+        ).eq("status", "active").limit(limit).execute()
+        return result.data or []
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_get_road_reports: {e}")
+        return []
+
+
+def sb_create_road_report(data: dict) -> Optional[dict]:
+    try:
+        result = _sb().table("road_reports").insert(data).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_create_road_report: {e}")
+        return None
+
+
+# ─────────────────────────────────────────────
+# EVENTS TABLE
+# ─────────────────────────────────────────────
+
+def sb_get_events(limit: int = 20) -> list:
+    try:
+        result = _sb().table("events").select("*").order(
+            "start_date", desc=True
+        ).limit(limit).execute()
+        return result.data or []
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_get_events: {e}")
+        return []
+
+
+def sb_create_event(data: dict) -> Optional[dict]:
+    try:
+        result = _sb().table("events").insert(data).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        logger.error(f"sb_create_event: {e}")
+        return None
+
+
+# ─────────────────────────────────────────────
+# NOTIFICATIONS
+# ─────────────────────────────────────────────
+
+def sb_create_notification(user_id: str, n_type: str, title: str, message: str) -> bool:
+    try:
+        _sb().table("notifications").insert({
+            "user_id": user_id,
+            "type": n_type,
+            "title": title,
+            "message": message,
+        }).execute()
+        return True
+    except Exception as e:
+        if not _table_missing(e):
+            logger.warning(f"sb_create_notification: {e}")
+        return False
+
+
+def sb_get_notifications(user_id: str, limit: int = 20) -> list:
+    try:
+        result = _sb().table("notifications").select("*").eq("user_id", user_id).order(
+            "created_at", desc=True
+        ).limit(limit).execute()
+        return result.data or []
+    except Exception as e:
+        return []
+
+
+# ─────────────────────────────────────────────
+# PLATFORM STATS (derived from auth)
+# ─────────────────────────────────────────────
+
+def sb_get_platform_stats() -> dict:
+    """Get aggregate platform stats from Supabase."""
+    try:
+        sb = _sb()
+        users = sb.auth.admin.list_users()
+        total_users = len(users)
+        premium_users = sum(1 for u in users if (u.user_metadata or {}).get("is_premium"))
+
+        # Try to get partners count
+        total_partners = 0
+        try:
+            p_result = sb.table("partners").select("id", count="exact").execute()
+            total_partners = p_result.count or 0
+        except Exception:
+            pass
+
+        # Try to get offers count
+        total_offers = 0
+        try:
+            o_result = sb.table("offers").select("id", count="exact").eq("status", "active").execute()
+            total_offers = o_result.count or 0
+        except Exception:
+            pass
+
+        return {
+            "total_users": total_users,
+            "premium_users": premium_users,
+            "total_partners": total_partners,
+            "total_offers": total_offers,
+            "total_trips": 0,
+            "total_gems_earned": premium_users * 1200 + (total_users - premium_users) * 400,
+        }
+    except Exception as e:
+        logger.warning(f"sb_get_platform_stats: {e}")
+        return {}
+
+
+# ─────────────────────────────────────────────
+# CONNECTION TEST
+# ─────────────────────────────────────────────
+
+def test_connection() -> dict:
     """Quick connection test."""
     try:
-        from database import get_supabase
-        sb = get_supabase()
-        # Try a simple query
-        result = sb.table("users").select("id").limit(1).execute()
-        return {"connected": True, "has_tables": True}
+        sb = _sb()
+        users = sb.auth.admin.list_users()
+        tables = []
+        for tbl in ["partners", "offers", "trips", "events"]:
+            try:
+                sb.table(tbl).select("id").limit(1).execute()
+                tables.append(tbl)
+            except Exception:
+                pass
+        return {
+            "connected": True,
+            "auth_users": len(users),
+            "available_tables": tables,
+            "migration_needed": len(tables) < 4,
+        }
     except Exception as e:
-        err = str(e)
-        if "relation" in err and "does not exist" in err:
-            return {"connected": True, "has_tables": False}
-        return {"connected": False, "error": err}
+        return {"connected": False, "error": str(e)[:100]}
