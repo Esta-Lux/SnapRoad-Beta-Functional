@@ -1045,71 +1045,9 @@ export default function AdminDashboard() {
             )}
 
             {/* Users Tab */}
+            {/* Users Tab */}
             {activeTab === 'users' && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4">
-                  <div className="flex-1 relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                    <input type="text" placeholder="Search users..." className="w-full bg-slate-800/50 border border-white/5 rounded-xl pl-12 pr-4 py-3 text-white placeholder-slate-500" />
-                  </div>
-                  <button onClick={() => setShowExportModal(true)} className="bg-slate-800 border border-white/10 px-4 py-3 rounded-xl flex items-center gap-2 text-slate-400 hover:text-white">
-                    <Download size={18} />Export
-                  </button>
-                </div>
-
-                <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/5 overflow-hidden">
-                  <table className="w-full">
-                    <thead className="bg-slate-700/30">
-                      <tr>
-                        <th className="text-left text-slate-400 text-xs font-medium px-6 py-4 uppercase">User</th>
-                        <th className="text-left text-slate-400 text-xs font-medium px-6 py-4 uppercase">Plan</th>
-                        <th className="text-left text-slate-400 text-xs font-medium px-6 py-4 uppercase">Safety</th>
-                        <th className="text-left text-slate-400 text-xs font-medium px-6 py-4 uppercase">Gems</th>
-                        <th className="text-left text-slate-400 text-xs font-medium px-6 py-4 uppercase">Status</th>
-                        <th className="text-right text-slate-400 text-xs font-medium px-6 py-4 uppercase">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                      {users.map(user => (
-                        <tr key={user.id} className="hover:bg-white/2">
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl flex items-center justify-center text-white font-medium border border-white/10">
-                                {user.name.split(' ').map(n => n[0]).join('')}
-                              </div>
-                              <div>
-                                <p className="text-white font-medium text-sm">{user.name}</p>
-                                <p className="text-slate-500 text-xs">{user.email}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${user.plan === 'premium' ? 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-400' : 'bg-slate-600/30 text-slate-400'}`}>
-                              {user.plan.charAt(0).toUpperCase() + user.plan.slice(1)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`font-semibold ${user.safety_score >= 90 ? 'text-emerald-400' : user.safety_score >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
-                              {user.safety_score}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="text-cyan-400 font-medium flex items-center gap-1"><Gem size={14} />{user.gems.toLocaleString()}</span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${user.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                              {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <button className="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white"><Edit2 size={16} /></button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <FigmaUsersTab theme={theme} onExport={() => setShowExportModal(true)} />
             )}
 
             {/* Partners Tab */}
