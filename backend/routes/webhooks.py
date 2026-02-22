@@ -114,7 +114,7 @@ def _make_incident() -> dict:
     }
 
 
-@router.websocket("/ws/admin/moderation")
+@router.websocket("/api/ws/admin/moderation")
 async def admin_moderation_ws(websocket: WebSocket):
     """WebSocket endpoint for real-time admin incident moderation."""
     from services.websocket_manager import ws_manager
