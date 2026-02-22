@@ -31,6 +31,10 @@ const REWARDS_ITEMS = [
   { icon: 'gift-outline' as const, label: 'Offers', screen: 'Rewards' },
   { icon: 'ribbon-outline' as const, label: 'All Badges', screen: 'Badges' },
   { icon: 'car-sport-outline' as const, label: 'Car Studio', screen: 'CarStudio' },
+  { icon: 'trophy-outline' as const, label: 'Challenges', screen: 'Challenges' },
+  { icon: 'diamond-outline' as const, label: 'Gem History', screen: 'GemHistory' },
+  { icon: 'trending-up-outline' as const, label: 'Level Progress', screen: 'LevelProgress' },
+  { icon: 'calendar-outline' as const, label: 'Weekly Recap', screen: 'WeeklyRecap' },
 ];
 
 const ANALYTICS_ITEMS = [
