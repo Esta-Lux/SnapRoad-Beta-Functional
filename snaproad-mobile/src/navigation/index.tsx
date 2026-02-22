@@ -50,6 +50,14 @@ import { RoutesScreen } from '../screens/RoutesScreen';
 import { FriendsHubScreen } from '../screens/FriendsHubScreen';
 import { BadgesScreen } from '../screens/BadgesScreen';
 import { GemHistoryScreen } from '../screens/GemHistoryScreen';
+// Premium feature-parity screens
+import { CarStudioScreen } from '../screens/CarStudioScreen';
+import { ChallengesScreen } from '../screens/ChallengesScreen';
+import { LevelProgressScreen } from '../screens/LevelProgressScreen';
+import { WeeklyRecapScreen } from '../screens/WeeklyRecapScreen';
+// Admin & Partner Dashboards
+import { AdminDashboardScreen } from '../screens/AdminDashboardScreen';
+import { PartnerDashboardScreen } from '../screens/PartnerDashboardScreen';
 
 import { useUserStore } from '../store';
 
