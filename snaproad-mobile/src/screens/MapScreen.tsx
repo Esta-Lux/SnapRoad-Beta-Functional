@@ -7,6 +7,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSizes, FontWeights, BorderRadius, Spacing } from '../utils/theme';
+import { DrawerMenu } from '../components/DrawerMenu';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://snaproad-driver-1.preview.emergentagent.com';
@@ -32,6 +33,7 @@ export const MapScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const [offersExpanded, setOffersExpanded] = useState(true);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [showOfferDetail, setShowOfferDetail] = useState<Offer | null>(null);
+  const [showDrawer, setShowDrawer] = useState(false);
   const pulseAnim = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
@@ -65,9 +67,12 @@ export const MapScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
 
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
+      {/* Drawer Menu */}
+      <DrawerMenu visible={showDrawer} onClose={() => setShowDrawer(false)} navigation={navigation} />
+      
       {/* Search Bar */}
       <View style={s.searchRow}>
-        <TouchableOpacity style={s.menuBtn} onPress={() => navigation?.openDrawer?.() || navigation?.navigate('Profile')}>
+        <TouchableOpacity style={s.menuBtn} onPress={() => setShowDrawer(true)}>
           <Ionicons name="menu" size={22} color={Colors.text} />
         </TouchableOpacity>
         <TouchableOpacity style={s.searchBar} onPress={() => navigation?.navigate('SearchDestination')} activeOpacity={0.8}>
