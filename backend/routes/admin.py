@@ -7,6 +7,10 @@ from services.mock_data import (
     offers_db, users_db, admin_offers_db, pricing_config, analytics_db,
     BOOST_PRICING as OLD_BOOST_PRICING, active_boosts,
 )
+from services.supabase_service import (
+    sb_list_auth_users, sb_get_platform_stats, sb_get_events,
+    sb_create_event, sb_get_offers, test_connection
+)
 import uuid
 
 router = APIRouter(prefix="/api", tags=["Admin"])
