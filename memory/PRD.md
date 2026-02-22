@@ -10,10 +10,35 @@ SnapRoad is a privacy-first, gamified navigation app with three portals:
 - **Frontend (Web):** React + Vite + TypeScript + Tailwind CSS
 - **Mobile:** React Native (Expo) + TypeScript
 - **Backend:** FastAPI (Python) - **Modular architecture**
-- **Database:** Supabase (PostgreSQL) - configured, tables pending creation
+- **Database:** Supabase (PostgreSQL) - connected, run `/app/backend/sql/supabase_migration.sql` to create tables
 - **Integrations:** OpenAI GPT-5.2 (Orion AI Coach), OpenAI Vision (Photo Analysis)
 - **Payments:** Stripe (planned)
 - **Mapping:** Apple Maps MapKit (planned)
+
+## What's Implemented (as of Feb 2026)
+
+### Web Frontend
+- ✅ Driver App (full feature set: map, trips, rewards, offers, badges, challenges)
+- ✅ Admin Dashboard with tabs: Overview, Users (Figma), Partners, Events, Offers, AI Moderation (NEW)
+- ✅ Partner Dashboard with tabs: Overview, Offers, Locations, Analytics, Boosts, Credits & Finance (NEW), Referrals (NEW), Plans & Pricing (NEW)
+- ✅ Theme toggle (light/dark) on Admin Dashboard
+- ✅ Orion AI Coach (GPT-5.2)
+- ✅ Photo blur analysis (OpenAI Vision)
+- ✅ Notification system, Settings modal, Help modal
+
+### Backend
+- ✅ Fully modular FastAPI (11 route files, 40+ endpoints)
+- ✅ Supabase client connected (auth.admin works)
+- ✅ Auth route: Supabase-first with mock fallback
+- ✅ Admin user list via Supabase Auth
+- ✅ Supabase status endpoint (/api/admin/supabase/status)
+- ✅ SQL migration script: /app/backend/sql/supabase_migration.sql
+- ⚠️ Data layer: mock data (run migration to enable live Supabase)
+
+### Mobile App
+- ✅ 42+ screens registered and navigable
+- ✅ Car Studio, Challenges, Weekly Recap, Admin Dashboard, Partner Dashboard screens
+- ✅ DrawerMenu with all sections
 
 ## Backend Architecture (Restructured Feb 22, 2026)
 ```
@@ -22,21 +47,23 @@ SnapRoad is a privacy-first, gamified navigation app with three portals:
 ├── main.py                # FastAPI app assembly
 ├── config.py              # Settings & env loading
 ├── database.py            # Supabase client
+├── sql/
+│   └── supabase_migration.sql  # NEW: Full DB schema to run in Supabase SQL Editor
 ├── routes/
-│   ├── auth.py            # Authentication (login, signup)
+│   ├── auth.py            # Authentication (Supabase-first + mock fallback)
 │   ├── users.py           # User profile, stats, cars, skins, settings
 │   ├── offers.py          # Offers CRUD, redeem, nearby, personalized
 │   ├── partners.py        # Partner profile, locations, offers, boosts, V2 API
 │   ├── gamification.py    # XP, badges, challenges, leaderboard, gems, scores
 │   ├── trips.py           # Trip history, completion, fuel, analytics, 3D routes
-│   ├── admin.py           # Admin offers, analytics, pricing, export/import, boosts
+│   ├── admin.py           # Admin offers, analytics, pricing, export/import, boosts + Supabase endpoints
 │   ├── social.py          # Friends, family, road reports
 │   ├── navigation.py      # Locations, routes, nav, map search, widgets
 │   ├── ai.py              # Orion AI Coach, photo analysis
 │   └── webhooks.py        # Stripe webhooks, WebSocket endpoints
 ├── services/
-│   ├── mock_data.py       # All in-memory mock data
-│   ├── supabase_service.py # DB migration & connection test
+│   ├── mock_data.py       # All in-memory mock data (fallback)
+│   ├── supabase_service.py # Supabase CRUD functions (users, offers, partners, trips, etc.)
 │   ├── orion_coach.py     # AI coach service
 │   ├── photo_analysis.py  # Photo blur service
 │   ├── partner_service.py # Partner business logic
