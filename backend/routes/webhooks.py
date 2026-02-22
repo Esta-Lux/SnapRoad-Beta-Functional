@@ -38,7 +38,7 @@ async def partner_websocket(websocket: WebSocket, partner_id: str):
         await ws_manager.disconnect_partner(partner_id, connection_id)
 
 
-@router.websocket("/ws/customer/{customer_id}")
+@router.websocket("/api/ws/customer/{customer_id}")
 async def customer_websocket(websocket: WebSocket, customer_id: str):
     from services.websocket_manager import ws_manager
     try:
