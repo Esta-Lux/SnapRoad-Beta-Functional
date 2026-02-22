@@ -1,118 +1,121 @@
 # SnapRoad - Product Requirements Document
 
 ## Product Overview
-SnapRoad is a privacy-first, gamified navigation app with three parts:
-1. **Driver App** - Mobile/web navigation app with safety scoring, gem rewards, and local offers
-2. **Partner Portal** - Business dashboard for managing offers and viewing analytics
-3. **Admin Dashboard** - System management, third-party offer imports, and bulk CSV uploads
+SnapRoad is a privacy-first, gamified navigation app with three portals:
+1. **Driver App** - Mobile/web app for drivers (safety tracking, gems, offers, badges)
+2. **Partner Portal** - Business dashboard for managing offers, locations, boosts
+3. **Admin Dashboard** - Platform management (users, partners, events, analytics)
 
 ## Tech Stack
-- **Frontend**: React (Vite) web app at `/app/frontend`
-- **Backend**: FastAPI at `/app/backend`
-- **Mobile App**: React Native (Expo SDK 54) at `/app/snaproad-mobile`
-- **Database**: MongoDB (currently using mocked in-memory data)
+- **Frontend (Web):** React + Vite + TypeScript + Tailwind CSS
+- **Mobile:** React Native (Expo) + TypeScript
+- **Backend:** FastAPI (Python) - **Modular architecture**
+- **Database:** Supabase (PostgreSQL) - configured, tables pending creation
+- **Integrations:** OpenAI GPT-5.2 (Orion AI Coach), OpenAI Vision (Photo Analysis)
+- **Payments:** Stripe (planned)
+- **Mapping:** Apple Maps MapKit (planned)
 
-## Web Frontend Routes
-| Route | Component | Description |
-|---|---|---|
-| `/` | `WelcomePage.tsx` | Landing page |
-| `/driver` | `pages/DriverApp/index.tsx` | **Main driver app preview** (phone frame) |
-| `/app/*` | `figma-ui/SnapRoadApp.tsx` | Figma design system version |
-| `/portal/partner` | `PartnerDashboard.tsx` | Partner portal |
-| `/portal/admin*` | `AdminDashboard.tsx` | Admin dashboard |
+## Backend Architecture (Restructured Feb 22, 2026)
+```
+/app/backend/
+├── server.py              # Thin wrapper (entry point for supervisor)
+├── main.py                # FastAPI app assembly
+├── config.py              # Settings & env loading
+├── database.py            # Supabase client
+├── routes/
+│   ├── auth.py            # Authentication (login, signup)
+│   ├── users.py           # User profile, stats, cars, skins, settings
+│   ├── offers.py          # Offers CRUD, redeem, nearby, personalized
+│   ├── partners.py        # Partner profile, locations, offers, boosts, V2 API
+│   ├── gamification.py    # XP, badges, challenges, leaderboard, gems, scores
+│   ├── trips.py           # Trip history, completion, fuel, analytics, 3D routes
+│   ├── admin.py           # Admin offers, analytics, pricing, export/import, boosts
+│   ├── social.py          # Friends, family, road reports
+│   ├── navigation.py      # Locations, routes, nav, map search, widgets
+│   ├── ai.py              # Orion AI Coach, photo analysis
+│   └── webhooks.py        # Stripe webhooks, WebSocket endpoints
+├── services/
+│   ├── mock_data.py       # All in-memory mock data
+│   ├── supabase_service.py # DB migration & connection test
+│   ├── orion_coach.py     # AI coach service
+│   ├── photo_analysis.py  # Photo blur service
+│   ├── partner_service.py # Partner business logic
+│   └── websocket_manager.py # WebSocket management
+├── models/
+│   └── schemas.py         # All Pydantic request/response models
+└── middleware/
+    └── auth.py            # JWT auth & password hashing
+```
 
-**IMPORTANT**: The `/driver` route is what users see in Emergent preview. The mobile React Native app has been rewritten to match this UI exactly.
+## Mobile App Architecture
+```
+/app/snaproad-mobile/src/
+├── config.ts              # Centralized API config
+├── navigation/index.tsx   # Stack + Tab navigation (40+ screens registered)
+├── components/
+│   └── DrawerMenu.tsx     # Hamburger menu with all sections
+├── screens/               # 42 screens total
+│   ├── Onboarding:        Splash, Welcome, PlanSelection, CarSetup
+│   ├── Core Tabs:         Map, Routes, Rewards, Profile, Offers
+│   ├── Driver Features:   TripAnalytics, RouteHistory3D, DriverAnalytics, TripLogs, FuelDashboard
+│   ├── Offers & Gems:     OfferDetail, MyOffers, Gems, GemHistory
+│   ├── AI & Capture:      OrionCoach, PhotoCapture
+│   ├── Social:            Leaderboard, Family, FriendsHub, Badges
+│   ├── Settings:          Settings, PrivacyCenter, NotificationSettings
+│   ├── Navigation:        ActiveNavigation, SearchDestination, RoutePreview, HazardFeed, CommuteScheduler
+│   ├── Premium:           CarStudio, Challenges, LevelProgress, WeeklyRecap, InsuranceReport, Help
+│   └── Dashboards:        AdminDashboard, PartnerDashboard   ← NEW
+└── store/                 # Zustand state management
+```
 
-## Mobile App ↔ Web Parity (Updated Feb 22, 2026)
+## Key Credentials
+- **Driver:** driver@snaproad.com / password123
+- **Partner:** partner@snaproad.com / password123
+- **Admin:** admin@snaproad.com / password123
+- **Supabase URL:** https://cuseezsdaqlbwlxnjsyr.supabase.co
+- **Emergent LLM Key:** Configured in backend .env
 
-### New Screens Added (Phase 2)
-| Mobile Screen | Web Component | Status |
-|---|---|---|
-| `RoutesScreen.tsx` | `renderRoutes()` | ✅ NEW - Saved routes management |
-| `FriendsHubScreen.tsx` | `FriendsHub.tsx` | ✅ NEW - Friends list with status |
-| `BadgesScreen.tsx` | `BadgesGrid.tsx` | ✅ NEW - All badges with categories |
-| `GemHistoryScreen.tsx` | `GemHistory.tsx` | ✅ NEW - Transaction history |
-| `DrawerMenu.tsx` | `renderMenu()` | ✅ NEW - Hamburger side menu |
+## What's Implemented
+### Web App (100% functional)
+- Landing page with onboarding flow
+- Full driver app at /driver route (34+ sub-components)
+- Partner dashboard at /partner route
+- Admin dashboard at /admin route
+- All backed by mock API data
 
-### Core Screen Parity
-| Mobile Screen | Web Component | Matching Elements |
-|---|---|---|
-| `MapScreen.tsx` | `DriverApp/index.tsx` | Search bar, Favorites/Nearby/Report filters, Home/Work locations, green diamond offer markers, Nearby Offers panel, **DrawerMenu** |
-| `RewardsScreen.tsx` | Rewards tab | Gem balance, Offers/Challenges/Badges/Car Studio sub-tabs, Redeem buttons |
-| `ProfileScreen.tsx` | Profile tab | User card, **4 sub-tabs (overview/score/fuel/settings)**, Level card, Driving Score card, Car card, Quick links to Friends/Badges/Gems/TripHistory, Settings menu, Logout |
-| Navigation tabs | Bottom tab bar | Map, **Routes** (now proper route management), Rewards, Profile |
+### Mobile App (Feature parity achieved)
+- 42 screens registered in navigation
+- DrawerMenu with all sections (Social, Navigation, Rewards, Analytics, Management, Settings)
+- Admin Dashboard mobile screen (5 tabs: Overview, Users, Partners, Offers, Events)
+- Partner Dashboard mobile screen (5 tabs: Overview, Offers, Locations, Boosts, Analytics)
+- All premium feature screens implemented
 
-## Implemented Features
+### Backend (Modular + Supabase-ready)
+- Split from 4500-line monolithic server.py into 11 route modules
+- 40+ API endpoints verified working (97.6% pass rate)
+- Supabase client configured, migration script ready
+- Pydantic models for all request/response types
+- JWT authentication middleware
 
-### Route Management (NEW)
-- Add/edit/delete saved routes
-- Departure time and active days
-- Enable/disable route notifications
-- Start navigation from saved route
-- Route progress bar (X/20 limit)
+## Current Status
+- **Backend:** MOCKED (in-memory data). Supabase configured but tables not created.
+- **Web App:** Fully functional
+- **Mobile App:** All screens created with premium UI, navigation wired up
 
-### Side Drawer Menu (NEW)
-- User profile with ID, gems, score, rank
-- Social section: Friends Hub, Leaderboard
-- Navigation section: Map, Routes, Favorites, Widgets
-- Rewards section: Offers, Badges, Car Studio
-- Analytics section: Fuel Tracker, Driver Score, Trip Analytics, Route History
-- Settings section with logout
+## Pending Tasks
+### P0 (Critical)
+- Run Supabase database migration (create tables + seed data)
+- Connect endpoints to real Supabase queries (replace mock data)
 
-### Profile Enhancements (NEW)
-- 4 sub-tabs: Overview, Score, Fuel, Settings
-- Level/XP progress card
-- Driving Score card with Premium gating
-- Weekly Recap card with Premium gating
-- My Car customization card
-- Quick links to all major features
-- Share Trip Score button
+### P1 (Important)
+- Stripe integration for payment flows
+- Gas price API integration
+- Push notification setup
 
-### Offer System
-- Business offers with address → pinned on map at location
-- Admin third-party offers (Groupon-style) with `offer_url`
-- Bulk CSV upload for admin
-- In-app browser for third-party links
-- Offer redemption with gems + discount
-- Auto-push offers on driver's route
-
-### Gems on Route System
-- Generate gems along route at navigation start
-- Collect by driving over (proximity)
-- Summary modal at trip end only (simple, not distracting)
-
-### Key API Endpoints
-- `POST /api/auth/login` - Authentication
-- `GET /api/offers` - All offers (with address, offer_url)
-- `POST /api/offers/{id}/redeem` - Redeem offer
-- `GET /api/offers/on-route` - Auto-push offers along route
-- `POST /api/admin/offers/bulk` - Admin bulk upload
-- `POST /api/gems/generate-route` - Generate gems on route
-- `POST /api/gems/collect` - Collect a gem
-- `GET /api/gems/trip-summary/{id}` - Trip end gem summary
-- `GET /api/routes` - Get saved routes
-- `POST /api/routes` - Add new route
-- `PUT /api/routes/{id}/toggle` - Toggle route active
-- `DELETE /api/routes/{id}` - Delete route
-- `GET /api/friends` - Get friends list
-- `POST /api/friends/add` - Add friend by code
-- `GET /api/badges` - Get all badges
-
-## Test Credentials
-- Driver: `driver@snaproad.com` / `password123`
-- Partner Portal: `/portal/partner` (no auth)
-- Admin: `/portal/admin` (no auth)
-
-## What's MOCKED
-- ALL data is in-memory (resets on restart)
-- No real database persistence
-
-## Backlog
-- P1: Real MongoDB persistence for all data
-- P2: Apple Maps MapKit integration
-- P2: Fuel price API (Gas Buddy)
-- P2: Push notifications for offers along route
-- P3: Port Partner/Admin dashboards to mobile
+### P2 (Nice to have)
+- Apple Maps MapKit integration
+- Full E2E testing of mobile app
+- Code cleanup of obsolete figma-ui/ directory
 
 ---
 Last Updated: February 22, 2026
