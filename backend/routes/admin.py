@@ -1,7 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
 from typing import Optional
 from datetime import datetime, timedelta
-import random
+import random, os, logging
 from models.schemas import AdminOfferCreate, PricingUpdate, OfferImport, BulkOfferUpload, BoostCalculate, BoostCreate, AnalyticsEvent
 from services.mock_data import (
     offers_db, users_db, admin_offers_db, pricing_config, analytics_db,
@@ -12,6 +12,8 @@ from services.supabase_service import (
     sb_create_event, sb_get_offers, test_connection
 )
 import uuid
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Admin"])
 
