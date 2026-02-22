@@ -656,9 +656,13 @@ function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
             if (msg.type === 'pong') {
               setAdminCount(msg.admin_count || 1)
             } else if (msg.type === 'backlog') {
-              // Prepend live incidents to the mock ones
+              // Prepend live incidents to the mock ones (deduplicated)
               if (msg.incidents?.length > 0) {
-                setIncidents(prev => [...msg.incidents.reverse(), ...prev])
+                setIncidents(prev => {
+                  const existingIds = new Set(prev.map(i => i.id))
+                  const newOnes = msg.incidents.filter((i: Incident) => !existingIds.has(i.id)).reverse()
+                  return newOnes.length > 0 ? [...newOnes, ...prev] : prev
+                })
               }
             } else if (msg.type === 'new_incident') {
               const inc: Incident = {
