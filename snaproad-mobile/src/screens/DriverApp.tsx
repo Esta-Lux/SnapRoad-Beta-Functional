@@ -463,7 +463,7 @@ function AuthModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const API_URL = 'https://snaproad-driver-1.preview.emergentagent.com';
+  const API_URL = 'https://mobile-feature-impl.preview.emergentagent.com';
 
   const handleSubmit = async () => {
     if (!email || !password || (mode === 'signup' && !name)) {

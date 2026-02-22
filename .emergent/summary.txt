@@ -1,157 +1,115 @@
 <analysis>**original_problem_statement:**
 The user wants to build SnapRoad, a privacy-first, gamified navigation app. The project has three parts: a driver-facing mobile/web app, a partner portal for businesses, and an admin dashboard.
 
-Recent user requests have focused on:
-1.  **UI/Feature Parity:** Making the React Native mobile app () an exact functional and visual match of the web application found at the  route. This was the most recent and critical task.
-2.  **New Features:** Adding several new features, including:
-    *   A bulk upload system for third-party offers (like Groupon) on the admin dashboard.
-    *   Displaying business offers on the map at their specified address.
-    *   An in-app browser to open external offer links without leaving the app.
-    *   A gems system where drivers can collect points by driving over them on their route.
-    *   Push notifications for offers along a driver's route.
-3.  **Core Technology:** Ensuring all mapping features use Apple Maps MapKit.
+The most recent and critical user request is to make the React Native mobile app () an exact functional and visual replica of the premium web application found at the  route. This includes porting all missing features identified in a recent UI audit. The user has explicitly stated not to delete any existing files, even if they are obsolete.
 
 **User's preferred language**: English
 
 **what currently exists?**
--   **Backend ():** A FastAPI server with all business logic for trips, partners, offers, and gems implemented as **mocked services**. The agent recently added new mocked endpoints for bulk offer uploads, displaying offers on a route, and generating gems on a route.
--   **Web Frontend ():** A React application that hosts multiple UIs. The primary, user-approved UI for the driver application is located at the  route, powered by code in . An older, now-obsolete UI exists at . The web frontend is fully functional with the new mocked features, including the admin bulk upload page and the in-app browser for offers.
--   **Mobile App ():** A React Native (Expo) application. The agent has just performed a major rewrite of the core screens (, , ) and the main navigation structure to visually and structurally match the  web application.
--   **Developer Experience:** The mobile app project now includes a  script and a  hook in  to automatically resolve Expo SDK versioning issues for anyone cloning the repository. The web frontend project also has a newly configured ESLint setup for TypeScript.
+-   **Backend ():** A FastAPI server with all business logic for trips, partners, offers, and gems implemented as mocked services. No data is persistent.
+-   **Web Frontend ():** A React application. The true, user-approved UI for the driver application is located at the  route, powered by code in . This is the source of truth. An older, obsolete UI exists in .
+-   **Mobile App ():** A React Native (Expo) application. The core screens and navigation were previously rewritten to match the web app's basic structure. The agent just completed a comprehensive UI audit and created placeholder files for all remaining missing features, including a new .
 
 **Last working item**:
-    - Last item agent was working: In response to the user's latest message (), the agent began a comprehensive audit of the web app () to identify all features and components that are still missing from the newly rewritten mobile app. The audit itself was the last action.
+    - Last item agent was working: In response to the user's request, the agent began porting all remaining premium features from the web app to the mobile app. The agent has already created placeholder screen files and component files for all 11 missing features and integrated them into the navigation structure.
     - Status: IN PROGRESS
     - Agent Testing Done: N
-    - Which testing method agent to use? After implementing the missing features, the  should be used to conduct a full regression and feature test of the  application.
+    - Which testing method agent to use? frontend testing agent. After implementing the UI and logic for all the newly created screens, a full feature test of the  application is required.
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  - Issue 1: Mobile App has missing features compared to Web App (P0)
-
-  **Issues Detail:**
-  - **Issue 1: Mobile App has missing features compared to Web App**
-     - Attempted fixes: The agent started an audit to identify the feature gap but did not begin implementation.
-     - Next debug checklist:
-        1.  Complete the detailed comparison of  (and its sub-components) against the code in .
-        2.  Identify all missing UI components and logic (e.g., the content for the Routes tab, Car Studio, Challenges, Badges, side drawer functionality).
-        3.  Create a plan to implement these missing pieces in the React Native mobile app.
-     - Why fix this issue and what will be achieved with the fix? To fulfill the user's core request of making the mobile app a complete functional replica of the web preview.
-     - Status: NOT STARTED
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Frontend (mobile).
-     - Blocked on other issue: None.
+There are no outstanding bugs. The work is focused on a large feature implementation task.
 
 **In progress Task List**:
--   There are no tasks that were started and left partially finished. The next step is to begin implementing the findings from the audit described in Pending Issues.
+  - Task 1: Implement UI and Logic for Missing Mobile App Features (P0)
+
+ **Task Detail:**
+  - **Task 1: Implement UI and Logic for Missing Mobile App Features**
+     - **Where to resume:** The agent has created placeholder files for 11 missing features (e.g., , , , etc.) and a  component. The next step is to go through each of these new files and implement the corresponding UI and functionality, using  as a reference.
+     - **What will be achieved with this?** The mobile app will have full feature parity with the premium web application, fulfilling the user's core request.
+     - **Status:** IN PROGRESS
+     - **Should Test frontend/backend/both after fix?** Frontend (mobile).
+     - **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
 Upcoming Tasks:
--   **P1: Implement Missing Mobile App Features:** Based on the audit, implement all missing features from the  web app into the  application.
--   **P2: Backend Database Integration:** Replace all mocked data and logic in  (for partners, trips, offers, and gems) with live API calls to a real PostgreSQL database. This is the largest piece of technical debt.
--   **P2: Verify Mobile Environment Configuration:** Re-verify that the mobile app () does not contain any hardcoded API URLs and correctly uses an environment configuration file, as this was a known issue before the recent major rewrite.
+-   **P1: Backend Database Integration:** Replace all mocked data and logic in  (for partners, trips, offers, and gems) with live API calls to a real PostgreSQL database. This is the largest piece of technical debt.
+-   **P2: Verify Mobile Environment Configuration:** Re-verify that the mobile app () does not contain any hardcoded API URLs and correctly uses an environment configuration file.
 
 Future Tasks:
 -   **Full Mobile App Parity:** Port any remaining web-only portals (e.g., the full Partner and Admin dashboards) to the  app.
--   **Code Cleanup:** Remove the obsolete UI code found in  to prevent future confusion.
+-   **Code Cleanup:** Revisit the decision to keep the obsolete UI code found in  and propose its deletion once the primary mobile app work is complete.
 
 **Completed work in this session**
--   **Mobile App Rewrite for UI Parity:** Identified the correct web UI the user was seeing () and rewrote the mobile app's core screens (, , ) and navigation () to match it.
--   **New Backend Features (Mocked):** Added mocked endpoints for bulk offer uploads, fetching offers on a route, and generating gems on a route. The offer data model was updated to include  and .
--   **New Web Frontend Features:** Implemented the full user flow for the new features, including an in-app browser, a gem overlay on the map, and a bulk offer upload page for admins.
--   **Project Setup & Maintenance:**
-    -   Upgraded the mobile app to Expo SDK 54 and created a  script to fix local setup issues.
-    -   Configured ESLint for TypeScript in the web frontend project and fixed all outstanding linting errors.
--   **Bug Fixes:**
-    -   Fixed a critical bug preventing the mobile app from rendering the correct navigation stack.
-    -   Resolved a duplicate variable declaration error in the web app.
+-   **Comprehensive UI Audit:** Performed a deep dive into the entire frontend codebase ( and ) to create a detailed inventory of all UI components, identifying active, obsolete, and missing features.
+-   **Mobile App Scaffolding for Feature Parity:** Created numerous new screen and component files in  to serve as placeholders for all missing web features.
+-   **Mobile Navigation Rewrite:** Reconfigured the mobile navigation in  to use a , incorporating the new  component and linking the newly created placeholder screens.
+-   **Web App Onboarding Debug:** Successfully navigated the multi-step web app onboarding flow to access and confirm the source of truth UI for the driver application.
 
 **Earlier issues found/mentioned but not fixed**
-   - No outstanding issues were missed. The agent addressed all issues raised in the previous handoff or by the user in this session.
+   - None.
 
 **Known issue recurrence from previous fork**
-  - **ESLint Configuration:** This was a recurring issue that is now **RESOLVED**. The agent successfully configured ESLint with a modern flat config () for the TypeScript project.
+  - None.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **UI/Feature Parity:** The core work involved aligning a React Native mobile app with a React web app to ensure a consistent user experience.
--   **Mocked Backend Development:** Continued use of mocked API endpoints to enable rapid, parallel frontend development without a live database.
--   **React Native Refactoring:** Performing a large-scale rewrite of React Native screens and navigation using  to match a different design.
--   **Expo SDK Management:** Diagnosing and fixing compatibility issues between Expo SDK versions and creating automation scripts (, ) to streamline the local development setup.
+-   **UI/Feature Parity:** Aligning a React Native mobile app with a complex React web app.
+-   **Mocked Backend Development:** Using mock APIs to enable parallel frontend development.
+-   **React Native Navigation:** Refactoring the navigation stack to use .
+-   **Code Auditing:** Systematically analyzing a codebase to identify feature gaps and obsolete code.
 
 **key DB schema**
   - No active database. A reference schema exists at .
 
 **changes in tech stack**
--   **Frontend:** Added , , and  to support TypeScript linting.
--   **Mobile:** Upgraded the entire project to **Expo SDK 54**, **React 18.3.1**, and **React Native 0.78.2**.
+-   No new dependencies were added. The agent primarily worked with existing React Native and  libraries.
 
 **All files of reference**
 -   **Source of Truth for UI:** 
--   **Rewritten Mobile Screens:**
-    -   
-    -   
-    -   
--   **Updated Navigation:** 
--   **New Backend Logic:** 
--   **Setup & Config:**
-    -   Fixing folder permissions...
-Cleaning old build files...
-Installing dependencies...
-Aligning Expo SDK 54 components...
-
-Setup complete! Run 'npx expo start --go' to begin.
-    -   
-    -   
+-   **Mobile Navigation:** 
+-   **New Mobile Component:** 
+-   **New Mobile Screens (to be implemented):** All new files created in  (e.g., , , , etc.).
+-   **Updated PRD:** 
 
 **Areas that need refactoring**:
--   **Backend Mocking:** The entire backend for trips, partners, offers, and gems is mocked and represents significant technical debt.
--   **UI Code Duplication:** The web app () and mobile app () have separate, duplicated code for the same UI. In the long term, a monorepo with a shared component library would reduce this duplication.
--   **Obsolete Web UI:** The UI code under  is no longer used and should be deleted to avoid confusion.
+-   **Backend Mocking:** The entire backend is mocked and needs to be connected to a database.
+-   **UI Code Duplication:** The web app and mobile app have separate, duplicated UI code.
+-   **Obsolete Web UI:** The  directory is unused.
 
 **key api endpoints**
--    (New, Mocked)
--    (New, Mocked)
--    (New, Mocked)
--    (Updated)
--    (Updated)
+-   No new endpoints were added in this session.
 
 **Critical Info for New Agent**
--   **Your main goal is UI/Feature parity.** The user wants the React Native app () to be an exact replica of the web preview served from the  route.
--   **The source of truth for the UI is .** Do NOT use or refer to the old code in .
--   The previous agent completed the first major phase of rewriting the mobile app's core screens. **Your immediate task is to continue this work by auditing the web app for any remaining missing features and implementing them in the mobile app.**
--   The entire backend is mocked. Do not attempt to implement a database unless the user explicitly prioritizes it over the mobile app work.
+-   **Your primary goal is to implement the missing mobile features.** The user wants full feature parity between the  web app and the  app.
+-   **The placeholder files are already created.** Your task is to fill in the UI and logic for each new screen in . Use the web app's components in  as your guide.
+-   **Do not delete any files.** The user has explicitly instructed to keep the obsolete  directory for now.
+-   The backend is entirely mocked. Focus on the frontend implementation.
 
 **documents and test reports created in this job**
--   
--   
--    (updated twice)
+-    (updated)
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User ():** Reports that the downloaded code preview doesn't match the web preview in Emergent. Asks to make the  app match the web UI. (Incomplete)
-2.  **User ():** Asks for screenshots of both UIs to compare them. (Complete)
-3.  **User ():** Confirms the agent's screenshots don't match what they see and asks the agent to find the correct UI. (Complete)
-4.  **Agent ():** Confirms they found the correct UI at the  route and asks the user for confirmation. (Complete)
-5.  **User ():** Explicitly confirms Yes, proceed to make the React Native mobile app match the  UI and all its components. (Complete)
-6.  **Agent ():** Informs the user that the mobile screens have been rewritten to match the web UI. (Complete)
-7.  **User ():** Asks what other features from the web UI file still need to be added to the  app. (**This is the pending user request.**)
-8.  **Agent ():** Acknowledges the request and begins a full audit to compare the two applications. (In Progress)
+1.  **Agent ():** Sequentially explores the entire frontend codebase to conduct a deep-dive UI audit. (Completed)
+2.  **Agent ():** Presents a comprehensive summary of the UI audit, listing all active, obsolete, and missing components, and asks the user for the next step. (Completed)
+3.  **User ():** Dont delete anything but port all the missing to the mobile? We need this to be functioning and on high premium? (**This is the current, active directive.**)
+4.  **Agent ():** Acknowledges the request and begins creating all the necessary placeholder files for the missing mobile features. (In Progress)
 
 **Project Health Check:**
--   **Broken**: No. The web application is functional, and the mobile app is in a state of active, heavy development.
--   **Mocked**: Yes. The entire backend for all key features (trips, partners, offers, gems) is mocked. No data is persistent.
--   **Healthy/In-Progress**: The project is healthy. The primary focus is a large feature-parity task on the mobile app.
+-   **Broken**: No. The web application is functional.
+-   **Mocked**: Yes. The entire backend for all key features is mocked.
+-   **Healthy/In-Progress**: The project is healthy and in the middle of a large, user-directed feature implementation task for the mobile app.
 
 **3rd Party Integrations**
 -   **OpenAI GPT-5.2**: Live for the Orion AI Coach. Uses Emergent LLM Key.
 -   **OpenAI Vision**: Live for the Photo Capture blurring feature. Uses Emergent LLM Key.
--   **Apple Maps MapKit**: The designated mapping technology (not yet fully implemented in mobile).
+-   **Apple Maps MapKit**: The designated mapping technology.
 -   **Planned**: Gas Buddy (or similar fuel price API).
 
 **Testing status**
-  - Testing agent used after significant changes: YES. The last run passed with 100% backend and 95% frontend success.
+  - Testing agent used after significant changes: NO (not yet in this session, planned for after implementation is complete).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None.
   - Known regressions: None.
@@ -162,4 +120,4 @@ Setup complete! Run 'npx expo start --go' to begin.
 -   **Admin Login:**  / 
 
 **What agent forgot to execute**
--   The agent was in the middle of auditing the web app for missing features to port to the mobile app. The implementation of those findings is the clear next step and was not forgotten, but rather is the next task in the queue.</analysis>
+-   The agent has not forgotten any tasks. It is currently in the process of executing the user's primary request. The next logical step is the implementation within the newly created files.</analysis>
