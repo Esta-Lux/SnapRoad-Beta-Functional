@@ -614,6 +614,9 @@ export default function PartnerDashboard() {
               {activeTab === 'locations' && 'Store Locations'}
               {activeTab === 'analytics' && 'Real-Time Analytics'}
               {activeTab === 'boosts' && 'Boost Center'}
+              {activeTab === 'finance' && 'Credits & Earnings'}
+              {activeTab === 'referrals' && 'Referral Analytics'}
+              {activeTab === 'pricing' && 'Plans & Pricing'}
             </h1>
             <p className="text-slate-400">Manage your SnapRoad offers and track performance</p>
           </div>
