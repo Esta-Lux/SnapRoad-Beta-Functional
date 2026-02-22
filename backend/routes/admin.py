@@ -227,3 +227,85 @@ def get_analytics_dashboard(business_id: str = "default_business", days: int = 7
             "top_offers": [{"name": "15% Off First Visit", "redemptions": random.randint(50, 150), "revenue": random.randint(500, 1500)}],
         },
     }
+
+
+# ==================== SUPABASE-POWERED ENDPOINTS ====================
+
+@router.get("/admin/users")
+def get_admin_users(limit: int = 100):
+    """Get users from Supabase Auth (falls back to mock data)."""
+    # Try Supabase first
+    sb_users = sb_list_auth_users(limit)
+    if sb_users:
+        return {
+            "success": True,
+            "source": "supabase",
+            "data": sb_users,
+            "total": len(sb_users),
+        }
+    # Fallback to mock
+    mock_users = [
+        {
+            "id": k,
+            "email": v.get("email", ""),
+            "name": v.get("name", ""),
+            "plan": v.get("plan", "basic"),
+            "gems": v.get("gems", 0),
+            "safety_score": v.get("safety_score", 85),
+            "total_trips": v.get("total_trips", 0),
+            "is_premium": v.get("is_premium", False),
+            "status": "active",
+            "created_at": v.get("member_since", ""),
+        }
+        for k, v in users_db.items()
+    ]
+    return {"success": True, "source": "mock", "data": mock_users, "total": len(mock_users)}
+
+
+@router.get("/admin/stats")
+def get_admin_stats():
+    """Get platform stats combining Supabase + mock data."""
+    sb_stats = sb_get_platform_stats()
+    if sb_stats.get("total_users", 0) > 0:
+        return {"success": True, "source": "supabase", "data": sb_stats}
+    # Mock fallback
+    total_users = len(users_db)
+    premium_users = sum(1 for u in users_db.values() if u.get("is_premium", False))
+    total_offers = len(offers_db)
+    total_redemptions = sum(o.get("redemption_count", 0) for o in offers_db)
+    return {
+        "success": True,
+        "source": "mock",
+        "data": {
+            "total_users": total_users,
+            "premium_users": premium_users,
+            "total_offers": total_offers,
+            "total_redemptions": total_redemptions,
+            "total_partners": 2,
+        },
+    }
+
+
+@router.get("/admin/supabase/status")
+def get_supabase_status():
+    """Test Supabase connectivity and migration status."""
+    status = test_connection()
+    return {
+        "success": True,
+        "data": {
+            **status,
+            "migration_file": "/app/backend/sql/supabase_migration.sql",
+            "instructions": "Run supabase_migration.sql in your Supabase SQL Editor to enable live data",
+        },
+    }
+
+
+@router.get("/admin/events")
+def get_admin_events():
+    """Get events from Supabase or mock data."""
+    sb_events = sb_get_events()
+    if sb_events:
+        return {"success": True, "source": "supabase", "data": sb_events}
+    # Mock fallback
+    from services.mock_data import events_db
+    return {"success": True, "source": "mock", "data": events_db}
