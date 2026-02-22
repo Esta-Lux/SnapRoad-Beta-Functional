@@ -1,626 +1,232 @@
-// SnapRoad Mobile - Rewards Screen
-// Badges, challenges, and car studio
-
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Dimensions,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+// SnapRoad Mobile - Rewards Screen (matches /driver web Rewards tab)
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Spacing, BorderRadius, FontSizes, FontWeights } from '../utils/theme';
-import { Card, Badge, ProgressBar, GemDisplay } from '../components/ui';
-import { useUserStore, useBadgesStore, useChallengesStore } from '../store';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Colors, FontSizes, FontWeights, BorderRadius } from '../utils/theme';
+import { useUserStore } from '../store';
 
-const { width } = Dimensions.get('window');
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://gamified-routes.preview.emergentagent.com';
 
-type RewardsTab = 'challenges' | 'badges' | 'carstudio';
+type RewardsTab = 'offers' | 'challenges' | 'badges' | 'carstudio';
 
-interface RewardsScreenProps {
-  navigation: any;
-}
+const CHALLENGES = [
+  { id: 1, title: 'Safe Driver', desc: 'No hard brakes for 5 trips', progress: 3, total: 5, gems: 100, icon: 'shield-checkmark' },
+  { id: 2, title: 'Explorer', desc: 'Visit 3 new locations', progress: 1, total: 3, gems: 75, icon: 'compass' },
+  { id: 3, title: 'Eco Champion', desc: 'Drive 50 eco miles', progress: 32, total: 50, gems: 150, icon: 'leaf' },
+];
 
-export const RewardsScreen: React.FC<RewardsScreenProps> = ({ navigation }) => {
-  const [activeTab, setActiveTab] = useState<RewardsTab>('challenges');
+const BADGES = [
+  { id: 1, name: 'First Mile', icon: 'flag', earned: true, color: '#22C55E' },
+  { id: 2, name: 'Night Owl', icon: 'moon', earned: true, color: '#8B5CF6' },
+  { id: 3, name: 'Speed Limit', icon: 'speedometer', earned: true, color: '#0EA5E9' },
+  { id: 4, name: 'Eco Driver', icon: 'leaf', earned: false, color: '#22C55E' },
+  { id: 5, name: 'Social Star', icon: 'people', earned: false, color: '#F59E0B' },
+  { id: 6, name: 'Road Master', icon: 'trophy', earned: false, color: '#EF4444' },
+];
+
+export const RewardsScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const { user } = useUserStore();
-  const { badges } = useBadgesStore();
-  const { challenges, joinChallenge } = useChallengesStore();
+  const [activeTab, setActiveTab] = useState<RewardsTab>('offers');
+  const [offers, setOffers] = useState<any[]>([]);
 
-  const earnedBadges = badges.filter(b => b.earned);
-  const inProgressBadges = badges.filter(b => !b.earned && b.progress !== undefined);
+  useEffect(() => { fetchOffers(); }, []);
 
-  const getRarityColor = (rarity: string) => {
-    const colors: Record<string, string> = {
-      common: Colors.common,
-      rare: Colors.rare,
-      epic: Colors.epic,
-      legendary: Colors.legendary,
-    };
-    return colors[rarity] || Colors.common;
+  const fetchOffers = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/offers`);
+      const data = await res.json();
+      if (data.success) setOffers(data.data);
+    } catch { /* ignore */ }
   };
 
-  const tabs = [
-    { id: 'challenges', label: 'Challenges', icon: 'trophy' },
-    { id: 'badges', label: 'Badges', icon: 'ribbon' },
-    { id: 'carstudio', label: 'Car Studio', icon: 'color-palette' },
+  const handleRedeem = async (offerId: number) => {
+    try {
+      await fetch(`${API_URL}/api/offers/${offerId}/redeem`, { method: 'POST' });
+      setOffers(prev => prev.map(o => o.id === offerId ? { ...o, redeemed: true } : o));
+    } catch { /* ignore */ }
+  };
+
+  const tabs: { id: RewardsTab; label: string; icon: any }[] = [
+    { id: 'offers', label: 'Offers', icon: 'gift-outline' },
+    { id: 'challenges', label: 'Challenges', icon: 'flash-outline' },
+    { id: 'badges', label: 'Badges', icon: 'ribbon-outline' },
+    { id: 'carstudio', label: 'Car Studio', icon: 'car-sport-outline' },
   ];
 
-  const renderChallenges = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      {/* Active Challenges */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Active Challenges</Text>
-        {challenges.filter(c => c.joined).map((challenge) => (
-          <Card key={challenge.id} style={styles.challengeCard}>
-            <View style={styles.challengeHeader}>
-              <View style={styles.challengeIcon}>
-                <Ionicons name="flash" size={24} color={Colors.gold} />
-              </View>
-              <View style={styles.challengeInfo}>
-                <Text style={styles.challengeTitle}>{challenge.title}</Text>
-                <Text style={styles.challengeDescription}>{challenge.description}</Text>
-              </View>
-            </View>
-
-            <View style={styles.progressSection}>
-              <View style={styles.progressHeader}>
-                <Text style={styles.progressText}>
-                  {challenge.currentProgress} / {challenge.goalValue}
-                </Text>
-                <Text style={styles.progressPercent}>
-                  {Math.round((challenge.currentProgress / challenge.goalValue) * 100)}%
-                </Text>
-              </View>
-              <ProgressBar
-                progress={challenge.currentProgress / challenge.goalValue}
-                color={Colors.primary}
-                height={8}
-              />
-            </View>
-
-            <View style={styles.rewardsRow}>
-              <View style={styles.rewardItem}>
-                <Ionicons name="star" size={16} color={Colors.gold} />
-                <Text style={styles.rewardText}>{challenge.rewardXp} XP</Text>
-              </View>
-              <View style={styles.rewardItem}>
-                <Ionicons name="diamond" size={16} color={Colors.gem} />
-                <Text style={styles.rewardText}>{challenge.rewardGems} Gems</Text>
-              </View>
-              <View style={styles.participantsTag}>
-                <Ionicons name="people" size={14} color={Colors.textSecondary} />
-                <Text style={styles.participantsText}>
-                  {challenge.participants.toLocaleString()}
-                </Text>
-              </View>
-            </View>
-          </Card>
-        ))}
-      </View>
-
-      {/* Available Challenges */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Join a Challenge</Text>
-        {challenges.filter(c => !c.joined).map((challenge) => (
-          <Card key={challenge.id} style={styles.challengeCard}>
-            <View style={styles.challengeHeader}>
-              <View style={[styles.challengeIcon, { backgroundColor: `${Colors.info}20` }]}>
-                <Ionicons name="flag" size={24} color={Colors.info} />
-              </View>
-              <View style={styles.challengeInfo}>
-                <Text style={styles.challengeTitle}>{challenge.title}</Text>
-                <Text style={styles.challengeDescription}>{challenge.description}</Text>
-              </View>
-            </View>
-
-            <View style={styles.rewardsRow}>
-              <View style={styles.rewardItem}>
-                <Ionicons name="star" size={16} color={Colors.gold} />
-                <Text style={styles.rewardText}>{challenge.rewardXp} XP</Text>
-              </View>
-              <View style={styles.rewardItem}>
-                <Ionicons name="diamond" size={16} color={Colors.gem} />
-                <Text style={styles.rewardText}>{challenge.rewardGems} Gems</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.joinButton}
-              onPress={() => joinChallenge(challenge.id)}
-            >
-              <Text style={styles.joinButtonText}>Join Challenge</Text>
-              <Ionicons name="arrow-forward" size={18} color={Colors.primary} />
-            </TouchableOpacity>
-          </Card>
-        ))}
-      </View>
-    </ScrollView>
-  );
-
-  const renderBadges = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      {/* Stats */}
-      <View style={styles.badgeStats}>
-        <View style={styles.badgeStat}>
-          <Text style={styles.badgeStatValue}>{earnedBadges.length}</Text>
-          <Text style={styles.badgeStatLabel}>Earned</Text>
-        </View>
-        <View style={styles.badgeStatDivider} />
-        <View style={styles.badgeStat}>
-          <Text style={styles.badgeStatValue}>{badges.length}</Text>
-          <Text style={styles.badgeStatLabel}>Total</Text>
-        </View>
-        <View style={styles.badgeStatDivider} />
-        <View style={styles.badgeStat}>
-          <Text style={styles.badgeStatValue}>
-            {Math.round((earnedBadges.length / badges.length) * 100)}%
-          </Text>
-          <Text style={styles.badgeStatLabel}>Complete</Text>
-        </View>
-      </View>
-
-      {/* In Progress */}
-      {inProgressBadges.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>In Progress</Text>
-          {inProgressBadges.map((badge) => (
-            <Card key={badge.id} style={styles.badgeCard}>
-              <View style={[styles.badgeIcon, { borderColor: getRarityColor(badge.rarity) }]}>
-                <Ionicons name={badge.icon as any} size={24} color={getRarityColor(badge.rarity)} />
-              </View>
-              <View style={styles.badgeInfo}>
-                <View style={styles.badgeNameRow}>
-                  <Text style={styles.badgeName}>{badge.name}</Text>
-                  <Badge label={badge.rarity} variant="default" size="sm" />
-                </View>
-                <Text style={styles.badgeDescription}>{badge.description}</Text>
-                <View style={styles.badgeProgress}>
-                  <ProgressBar
-                    progress={(badge.progress || 0) / (badge.requirement || 1)}
-                    color={getRarityColor(badge.rarity)}
-                    height={6}
-                  />
-                  <Text style={styles.badgeProgressText}>
-                    {badge.progress} / {badge.requirement}
-                  </Text>
-                </View>
-              </View>
-            </Card>
-          ))}
-        </View>
-      )}
-
-      {/* Earned */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Earned Badges</Text>
-        <View style={styles.badgesGrid}>
-          {earnedBadges.map((badge) => (
-            <TouchableOpacity key={badge.id} style={styles.earnedBadge}>
-              <View style={[styles.earnedBadgeIcon, { backgroundColor: `${getRarityColor(badge.rarity)}20` }]}>
-                <Ionicons name={badge.icon as any} size={28} color={getRarityColor(badge.rarity)} />
-              </View>
-              <Text style={styles.earnedBadgeName} numberOfLines={1}>{badge.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-    </ScrollView>
-  );
-
-  const renderCarStudio = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      {/* Current Car Preview */}
-      <View style={styles.carPreview}>
-        <LinearGradient
-          colors={[`${Colors.primary}40`, 'transparent']}
-          style={styles.carPreviewGlow}
-        />
-        <View style={styles.carPreviewIcon}>
-          <Ionicons name="car-sport" size={80} color={Colors.primary} />
-        </View>
-        <Text style={styles.carPreviewName}>
-          {user.carCategory.charAt(0).toUpperCase() + user.carCategory.slice(1)} - {user.carColor}
-        </Text>
-      </View>
-
-      {/* Options */}
-      <View style={styles.section}>
-        <TouchableOpacity style={styles.studioOption}>
-          <View style={[styles.studioOptionIcon, { backgroundColor: `${Colors.primary}20` }]}>
-            <Ionicons name="color-palette" size={24} color={Colors.primary} />
-          </View>
-          <View style={styles.studioOptionInfo}>
-            <Text style={styles.studioOptionTitle}>Change Color</Text>
-            <Text style={styles.studioOptionDescription}>Customize your vehicle color</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={24} color={Colors.textSecondary} />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.studioOption}>
-          <View style={[styles.studioOptionIcon, { backgroundColor: `${Colors.accent}20` }]}>
-            <Ionicons name="sparkles" size={24} color={Colors.accent} />
-          </View>
-          <View style={styles.studioOptionInfo}>
-            <Text style={styles.studioOptionTitle}>Premium Skins</Text>
-            <Text style={styles.studioOptionDescription}>Unlock exclusive designs</Text>
-          </View>
-          <View style={styles.premiumTag}>
-            <Ionicons name="lock-closed" size={12} color={Colors.gold} />
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.studioOption}>
-          <View style={[styles.studioOptionIcon, { backgroundColor: `${Colors.success}20` }]}>
-            <Ionicons name="car" size={24} color={Colors.success} />
-          </View>
-          <View style={styles.studioOptionInfo}>
-            <Text style={styles.studioOptionTitle}>Change Vehicle</Text>
-            <Text style={styles.studioOptionDescription}>Switch car type</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={24} color={Colors.textSecondary} />
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
-  );
-
   return (
-    <View style={styles.container}>
+    <View style={[s.container, { paddingTop: insets.top }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={s.header}>
+        <Text style={s.title}>Gems & Rewards</Text>
+        <TouchableOpacity style={s.marketplaceBtn}>
+          <Text style={s.marketplaceText}>Marketplace</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Balance Card */}
+      <View style={s.balanceCard}>
         <View>
-          <Text style={styles.headerTitle}>Rewards</Text>
-          <Text style={styles.headerSubtitle}>
-            Level {user.level} • {user.xp.toLocaleString()} XP
-          </Text>
+          <Text style={s.balanceLabel}>Your Balance</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="diamond" size={24} color={Colors.primary} />
+            <Text style={s.balanceValue}>{user?.gems || 2450}</Text>
+          </View>
         </View>
-        <GemDisplay amount={user.gems} />
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={s.weeklyGems}>+125 this week</Text>
+          <Text style={s.rankText}>Rank #42 in your area</Text>
+        </View>
       </View>
 
-      {/* Tab Selector */}
-      <View style={styles.tabContainer}>
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <TouchableOpacity
-              key={tab.id}
-              style={[styles.tab, isActive && styles.tabActive]}
-              onPress={() => setActiveTab(tab.id as RewardsTab)}
-            >
-              <Ionicons
-                name={tab.icon as any}
-                size={20}
-                color={isActive ? Colors.primary : Colors.textSecondary}
-              />
-              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+      {/* Sub Tabs */}
+      <View style={s.tabRow}>
+        {tabs.map(tab => (
+          <TouchableOpacity
+            key={tab.id}
+            style={[s.tab, activeTab === tab.id && s.tabActive]}
+            onPress={() => setActiveTab(tab.id)}
+          >
+            <Ionicons name={tab.icon} size={14} color={activeTab === tab.id ? '#fff' : Colors.textMuted} />
+            <Text style={[s.tabText, activeTab === tab.id && s.tabTextActive]}>{tab.label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
-      {/* Content */}
-      <View style={styles.content}>
-        {activeTab === 'challenges' && renderChallenges()}
-        {activeTab === 'badges' && renderBadges()}
-        {activeTab === 'carstudio' && renderCarStudio()}
-      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+        {/* Offers Tab */}
+        {activeTab === 'offers' && offers.map(offer => (
+          <View key={offer.id} style={s.offerRow}>
+            <View style={s.offerIcon}>
+              <Ionicons name="gift" size={18} color={Colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.offerName}>{offer.business_name}</Text>
+              <Text style={s.offerDesc}>{offer.description}</Text>
+              {offer.address && <Text style={s.offerAddr}>{offer.address}</Text>}
+            </View>
+            <View style={{ alignItems: 'flex-end', gap: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons name="diamond" size={12} color={Colors.primary} />
+                <Text style={s.gemCount}>{offer.gems_reward}</Text>
+              </View>
+              <TouchableOpacity
+                style={[s.redeemBtn, offer.redeemed && s.redeemBtnDone]}
+                onPress={() => !offer.redeemed && handleRedeem(offer.id)}
+              >
+                <Text style={s.redeemText}>{offer.redeemed ? 'Done' : 'Redeem'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+
+        {/* Challenges Tab */}
+        {activeTab === 'challenges' && CHALLENGES.map(ch => (
+          <View key={ch.id} style={s.challengeCard}>
+            <View style={s.challengeIcon}>
+              <Ionicons name={ch.icon as any} size={20} color={Colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.challengeTitle}>{ch.title}</Text>
+              <Text style={s.challengeDesc}>{ch.desc}</Text>
+              <View style={s.progressBar}>
+                <View style={[s.progressFill, { width: `${(ch.progress / ch.total) * 100}%` }]} />
+              </View>
+              <Text style={s.progressText}>{ch.progress}/{ch.total}</Text>
+            </View>
+            <View style={{ alignItems: 'center' }}>
+              <Ionicons name="diamond" size={14} color="#F59E0B" />
+              <Text style={s.challengeGems}>{ch.gems}</Text>
+            </View>
+          </View>
+        ))}
+
+        {/* Badges Tab */}
+        {activeTab === 'badges' && (
+          <View style={s.badgesGrid}>
+            {BADGES.map(badge => (
+              <View key={badge.id} style={[s.badgeCard, !badge.earned && s.badgeLocked]}>
+                <View style={[s.badgeIcon, { backgroundColor: badge.earned ? `${badge.color}20` : 'rgba(255,255,255,0.04)' }]}>
+                  <Ionicons name={badge.icon as any} size={24} color={badge.earned ? badge.color : Colors.textDim} />
+                </View>
+                <Text style={[s.badgeName, !badge.earned && { color: Colors.textDim }]}>{badge.name}</Text>
+                {!badge.earned && <Ionicons name="lock-closed" size={12} color={Colors.textDim} style={{ marginTop: 4 }} />}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Car Studio Tab */}
+        {activeTab === 'carstudio' && (
+          <View style={s.studioCard}>
+            <View style={s.studioPreview}>
+              <Ionicons name="car-sport" size={80} color={Colors.primary} />
+            </View>
+            <Text style={s.studioTitle}>Customize Your Ride</Text>
+            <Text style={s.studioDesc}>Unlock colors and styles with gems</Text>
+            <View style={s.colorRow}>
+              {['#0EA5E9', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'].map(c => (
+                <TouchableOpacity key={c} style={[s.colorDot, { backgroundColor: c }]} />
+              ))}
+            </View>
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: 60,
-    paddingBottom: Spacing.md,
-  },
-  headerTitle: {
-    color: Colors.text,
-    fontSize: 24,
-    fontWeight: FontWeights.bold,
-  },
-  headerSubtitle: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.sm,
-    marginTop: 2,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
-    gap: Spacing.sm,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.surface,
-    gap: 6,
-  },
-  tabActive: {
-    backgroundColor: `${Colors.primary}15`,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  tabLabel: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.sm,
-    fontWeight: FontWeights.medium,
-  },
-  tabLabelActive: {
-    color: Colors.primary,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: Spacing.lg,
-  },
-  section: {
-    marginBottom: Spacing.xl,
-  },
-  sectionTitle: {
-    color: Colors.text,
-    fontSize: FontSizes.lg,
-    fontWeight: FontWeights.bold,
-    marginBottom: Spacing.md,
-  },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0A0E16' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
+  title: { color: Colors.text, fontSize: FontSizes.xl, fontWeight: FontWeights.bold },
+  marketplaceBtn: { borderWidth: 1, borderColor: Colors.primary, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 },
+  marketplaceText: { color: Colors.primary, fontSize: FontSizes.xs, fontWeight: FontWeights.semibold },
+  // Balance
+  balanceCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 16, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 16, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  balanceLabel: { color: Colors.textMuted, fontSize: FontSizes.xs, marginBottom: 4 },
+  balanceValue: { color: Colors.text, fontSize: 32, fontWeight: FontWeights.bold },
+  weeklyGems: { color: '#22C55E', fontSize: FontSizes.sm, fontWeight: FontWeights.semibold },
+  rankText: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 2 },
+  // Tabs
+  tabRow: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 12, gap: 4 },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)' },
+  tabActive: { backgroundColor: Colors.primary },
+  tabText: { color: Colors.textMuted, fontSize: FontSizes.xs, fontWeight: FontWeights.medium },
+  tabTextActive: { color: '#fff' },
+  // Offers
+  offerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 14, marginBottom: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  offerIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(14,165,233,0.1)', alignItems: 'center', justifyContent: 'center' },
+  offerName: { color: Colors.text, fontSize: FontSizes.sm, fontWeight: FontWeights.semibold },
+  offerDesc: { color: '#22C55E', fontSize: FontSizes.xs, marginTop: 2 },
+  offerAddr: { color: Colors.textDim, fontSize: 10, marginTop: 1 },
+  gemCount: { color: Colors.primary, fontSize: FontSizes.sm, fontWeight: FontWeights.bold },
+  redeemBtn: { backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  redeemBtnDone: { backgroundColor: '#374151' },
+  redeemText: { color: '#fff', fontSize: FontSizes.xs, fontWeight: FontWeights.bold },
   // Challenges
-  challengeCard: {
-    marginBottom: Spacing.md,
-  },
-  challengeHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: Spacing.md,
-  },
-  challengeIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: `${Colors.gold}20`,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.md,
-  },
-  challengeInfo: {
-    flex: 1,
-  },
-  challengeTitle: {
-    color: Colors.text,
-    fontSize: FontSizes.md,
-    fontWeight: FontWeights.semibold,
-    marginBottom: 2,
-  },
-  challengeDescription: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.sm,
-  },
-  progressSection: {
-    marginBottom: Spacing.md,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  progressText: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.sm,
-  },
-  progressPercent: {
-    color: Colors.primary,
-    fontSize: FontSizes.sm,
-    fontWeight: FontWeights.medium,
-  },
-  rewardsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-  },
-  rewardItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  rewardText: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.sm,
-  },
-  participantsTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginLeft: 'auto',
-  },
-  participantsText: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.xs,
-  },
-  joinButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    borderRadius: BorderRadius.md,
-    marginTop: Spacing.md,
-    gap: 8,
-  },
-  joinButtonText: {
-    color: Colors.primary,
-    fontSize: FontSizes.sm,
-    fontWeight: FontWeights.semibold,
-  },
+  challengeCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 14, marginBottom: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  challengeIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(14,165,233,0.1)', alignItems: 'center', justifyContent: 'center' },
+  challengeTitle: { color: Colors.text, fontSize: FontSizes.sm, fontWeight: FontWeights.semibold },
+  challengeDesc: { color: Colors.textMuted, fontSize: FontSizes.xs, marginTop: 2 },
+  progressBar: { height: 4, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 2, marginTop: 8, overflow: 'hidden' },
+  progressFill: { height: '100%', backgroundColor: Colors.primary, borderRadius: 2 },
+  progressText: { color: Colors.textMuted, fontSize: 10, marginTop: 4 },
+  challengeGems: { color: '#F59E0B', fontSize: FontSizes.xs, fontWeight: FontWeights.bold, marginTop: 2 },
   // Badges
-  badgeStats: {
-    flexDirection: 'row',
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    marginBottom: Spacing.xl,
-  },
-  badgeStat: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  badgeStatValue: {
-    color: Colors.text,
-    fontSize: 24,
-    fontWeight: FontWeights.bold,
-  },
-  badgeStatLabel: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.sm,
-    marginTop: 2,
-  },
-  badgeStatDivider: {
-    width: 1,
-    backgroundColor: Colors.surfaceLight,
-    marginHorizontal: Spacing.md,
-  },
-  badgeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  badgeIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.md,
-    backgroundColor: Colors.surfaceLight,
-  },
-  badgeInfo: {
-    flex: 1,
-  },
-  badgeNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    marginBottom: 2,
-  },
-  badgeName: {
-    color: Colors.text,
-    fontSize: FontSizes.md,
-    fontWeight: FontWeights.semibold,
-  },
-  badgeDescription: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.sm,
-    marginBottom: 8,
-  },
-  badgeProgress: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  badgeProgressText: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.xs,
-    minWidth: 50,
-  },
-  badgesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.md,
-  },
-  earnedBadge: {
-    width: (width - Spacing.lg * 2 - Spacing.md * 3) / 4,
-    alignItems: 'center',
-  },
-  earnedBadgeIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  earnedBadgeName: {
-    color: Colors.textSecondary,
-    fontSize: 10,
-    textAlign: 'center',
-  },
+  badgesGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, gap: 8 },
+  badgeCard: { width: '30%', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  badgeLocked: { opacity: 0.5 },
+  badgeIcon: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  badgeName: { color: Colors.text, fontSize: FontSizes.xs, fontWeight: FontWeights.medium, textAlign: 'center' },
   // Car Studio
-  carPreview: {
-    alignItems: 'center',
-    marginBottom: Spacing.xl,
-    paddingVertical: Spacing.xl,
-  },
-  carPreviewGlow: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-  },
-  carPreviewIcon: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: `${Colors.primary}20`,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.md,
-  },
-  carPreviewName: {
-    color: Colors.text,
-    fontSize: FontSizes.lg,
-    fontWeight: FontWeights.semibold,
-  },
-  studioOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    marginBottom: Spacing.md,
-  },
-  studioOptionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.md,
-  },
-  studioOptionInfo: {
-    flex: 1,
-  },
-  studioOptionTitle: {
-    color: Colors.text,
-    fontSize: FontSizes.md,
-    fontWeight: FontWeights.semibold,
-  },
-  studioOptionDescription: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.sm,
-  },
-  premiumTag: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: `${Colors.gold}20`,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  studioCard: { marginHorizontal: 16, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 20, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  studioPreview: { width: 160, height: 100, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  studioTitle: { color: Colors.text, fontSize: FontSizes.lg, fontWeight: FontWeights.bold },
+  studioDesc: { color: Colors.textMuted, fontSize: FontSizes.sm, marginTop: 4, marginBottom: 20 },
+  colorRow: { flexDirection: 'row', gap: 12 },
+  colorDot: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)' },
 });
 
 export default RewardsScreen;
