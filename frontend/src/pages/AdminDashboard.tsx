@@ -1158,6 +1158,11 @@ export default function AdminDashboard() {
                 <AdminOffersList />
               </div>
             )}
+
+            {/* AI Moderation Tab */}
+            {activeTab === 'aiModeration' && (
+              <AIModerationTab theme={theme} />
+            )}
           </>
         )}
       </main>
