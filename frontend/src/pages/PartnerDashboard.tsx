@@ -999,6 +999,21 @@ export default function PartnerDashboard() {
                 </div>
               </div>
             )}
+
+            {/* Finance / Credits Tab */}
+            {activeTab === 'finance' && (
+              <PartnerFinanceTab partnerProfile={partnerProfile} />
+            )}
+
+            {/* Referrals Tab */}
+            {activeTab === 'referrals' && (
+              <PartnerReferralsTab partnerProfile={partnerProfile} />
+            )}
+
+            {/* Pricing Tab */}
+            {activeTab === 'pricing' && (
+              <PartnerPricingTab partnerProfile={partnerProfile} onUpgrade={() => {}} />
+            )}
           </>
         )}
       </main>
