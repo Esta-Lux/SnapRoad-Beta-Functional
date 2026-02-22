@@ -6,7 +6,9 @@ import {
   BarChart3, Eye, Zap, Bell, Settings, LogOut, Search,
   Check, X, Filter, Download, Gem, Sparkles, ArrowRight,
   ChevronLeft, HelpCircle, Target, Award, Rocket, Image,
-  RefreshCw, Activity, Globe, TrendingDown, Store, Crown
+  RefreshCw, Activity, Globe, TrendingDown, Store, Crown,
+  CreditCard, Receipt, Wallet, Share2, BadgeCheck, ArrowUpRight,
+  CheckCircle, ChevronDown, BarChart2
 } from 'lucide-react'
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar,
