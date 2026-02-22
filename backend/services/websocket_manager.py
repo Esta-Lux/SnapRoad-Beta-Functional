@@ -137,11 +137,56 @@ class ConnectionManager:
         for conn_id in disconnected:
             await self.disconnect_partner(partner_id, conn_id)
     
-    def get_partner_connection_count(self, partner_id: str) -> int:
-        """Get the number of active connections for a partner"""
-        if partner_id not in self.partner_connections:
-            return 0
-        return len(self.partner_connections[partner_id])
+    async def connect_admin(self, websocket: WebSocket, admin_id: str):
+        """Connect an admin for real-time moderation alerts."""
+        await websocket.accept()
+        self.admin_connections[admin_id] = websocket
+        await websocket.send_json({
+            "type": "connection",
+            "status": "connected",
+            "admin_id": admin_id,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    async def disconnect_admin(self, admin_id: str):
+        """Disconnect admin connection."""
+        self.admin_connections.pop(admin_id, None)
+
+    async def broadcast_incident(self, incident: dict):
+        """Broadcast new incident to ALL connected admins."""
+        message = {
+            "type": "new_incident",
+            "incident": incident,
+            "timestamp": datetime.now().isoformat()
+        }
+        disconnected = []
+        for admin_id, ws in self.admin_connections.items():
+            try:
+                await ws.send_json(message)
+            except Exception:
+                disconnected.append(admin_id)
+        for aid in disconnected:
+            await self.disconnect_admin(aid)
+
+    async def broadcast_moderation_update(self, incident_id: int, outcome: str):
+        """Notify all admins when an incident is resolved."""
+        message = {
+            "type": "moderation_update",
+            "incident_id": incident_id,
+            "outcome": outcome,
+            "timestamp": datetime.now().isoformat()
+        }
+        disconnected = []
+        for admin_id, ws in self.admin_connections.items():
+            try:
+                await ws.send_json(message)
+            except Exception:
+                disconnected.append(admin_id)
+        for aid in disconnected:
+            await self.disconnect_admin(aid)
+
+    def get_admin_count(self) -> int:
+        return len(self.admin_connections)
 
 # Create singleton instance
 ws_manager = ConnectionManager()
