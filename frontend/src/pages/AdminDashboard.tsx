@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Shield, Users, Building2, Gift, Calendar, Plus, TrendingUp,
@@ -6,7 +6,8 @@ import {
   BarChart3, Eye, Zap, Check, X, MapPin, Clock, Star,
   AlertTriangle, Gem, Car, Trophy, ChevronRight, Download,
   Sparkles, ArrowRight, ChevronLeft, HelpCircle, Crown, Activity,
-  Upload, FileText, Image, RefreshCw, Globe
+  Upload, FileText, Image, RefreshCw, Globe, EyeOff, CheckCircle,
+  XCircle, SlidersHorizontal, Sun, Moon, MoreVertical
 } from 'lucide-react'
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar,
@@ -16,6 +17,7 @@ import {
 import { NotificationCenter, useNotifications, notificationService } from '@/components/NotificationSystem'
 import SettingsModal from '@/components/SettingsModal'
 import HelpModal from '@/components/HelpModal'
+import { useTheme } from '@/contexts/ThemeContext'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
