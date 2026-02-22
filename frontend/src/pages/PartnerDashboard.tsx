@@ -618,7 +618,16 @@ export default function PartnerDashboard() {
               {activeTab === 'referrals' && 'Referral Analytics'}
               {activeTab === 'pricing' && 'Plans & Pricing'}
             </h1>
-            <p className="text-slate-400">Manage your SnapRoad offers and track performance</p>
+            <p className="text-slate-400">
+              {activeTab === 'overview' && 'Manage your SnapRoad offers and track performance'}
+              {activeTab === 'offers' && 'Create and manage your business offers'}
+              {activeTab === 'locations' && 'Manage your store locations on the map'}
+              {activeTab === 'analytics' && 'Track your offer performance in real-time'}
+              {activeTab === 'boosts' && 'Amplify your offer reach with paid boosts'}
+              {activeTab === 'finance' && 'Manage your SnapRoad partner credits and earnings'}
+              {activeTab === 'referrals' && 'Earn credits by referring new partners to SnapRoad'}
+              {activeTab === 'pricing' && 'Upgrade your plan to unlock more features'}
+            </p>
           </div>
           {activeTab === 'offers' && (
             <button onClick={() => setShowCreateModal(true)} className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-semibold px-6 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-500/25">
