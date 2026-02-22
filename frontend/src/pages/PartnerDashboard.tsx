@@ -349,7 +349,7 @@ export default function PartnerDashboard() {
   const [offers, setOffers] = useState<Offer[]>([])
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'offers' | 'locations' | 'analytics' | 'boosts'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'offers' | 'locations' | 'analytics' | 'boosts' | 'finance' | 'referrals' | 'pricing'>('overview')
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showBoostModal, setShowBoostModal] = useState<Offer | null>(null)
