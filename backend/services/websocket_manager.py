@@ -137,6 +137,12 @@ class ConnectionManager:
         for conn_id in disconnected:
             await self.disconnect_partner(partner_id, conn_id)
     
+    def get_partner_connection_count(self, partner_id: str) -> int:
+        """Get the number of active connections for a partner"""
+        if partner_id not in self.partner_connections:
+            return 0
+        return len(self.partner_connections[partner_id])
+
     async def connect_admin(self, websocket: WebSocket, admin_id: str):
         """Connect an admin for real-time moderation alerts."""
         await websocket.accept()
