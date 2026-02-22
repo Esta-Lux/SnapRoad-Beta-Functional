@@ -68,7 +68,7 @@ export const TripAnalyticsScreen: React.FC<TripAnalyticsScreenProps> = ({ naviga
     setLoading(true);
     try {
       const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL || 'https://gamified-nav.preview.emergentagent.com'}/api/trips/history/detailed?days=${dateRange}`
+        `${process.env.EXPO_PUBLIC_API_URL || 'https://cleanup-check.preview.emergentagent.com'}/api/trips/history/detailed?days=${dateRange}`
       );
       const data = await response.json();
       if (data.success) {

@@ -11,7 +11,7 @@ import { useUserStore } from '../store';
 import Svg, { Circle } from 'react-native-svg';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://gamified-nav.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cleanup-check.preview.emergentagent.com';
 
 interface WeeklyStats {
   total_trips: number;
