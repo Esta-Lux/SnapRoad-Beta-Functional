@@ -866,6 +866,7 @@ export default function AdminDashboard() {
               { id: 'partners', icon: Building2, label: 'Partners', badge: stats.total_partners.toString() },
               { id: 'events', icon: Calendar, label: 'Events' },
               { id: 'offers', icon: Gift, label: 'All Offers' },
+              { id: 'aiModeration', icon: Eye, label: 'AI Moderation', badge: '9' },
             ].map(item => (
               <button key={item.id} onClick={() => setActiveTab(item.id as any)} data-testid={`nav-${item.id}`}
                 className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all ${activeTab === item.id ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-400 border border-purple-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
