@@ -926,6 +926,7 @@ export default function AdminDashboard() {
               {activeTab === 'partners' && 'Partner Management'}
               {activeTab === 'events' && 'Events & Promotions'}
               {activeTab === 'offers' && 'All Offers'}
+              {activeTab === 'aiModeration' && 'AI Moderation Queue'}
             </h1>
             <p className="text-slate-400">Full control over the SnapRoad platform</p>
           </div>
