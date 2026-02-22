@@ -6,6 +6,7 @@ load_dotenv()
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY")
 SUPABASE_PUBLISHABLE_KEY = os.environ.get("SUPABASE_PUBLISHABLE_KEY")
+SUPABASE_DB_PASSWORD = os.environ.get("SUPABASE_DB_PASSWORD")  # Optional: DB password for direct connection
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "snaproad-jwt-secret-change-in-prod")
 JWT_ALGORITHM = "HS256"
