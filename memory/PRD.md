@@ -20,6 +20,9 @@ SnapRoad is a privacy-first, gamified navigation app with three portals:
 ### Web Frontend
 - ✅ Driver App (full feature set: map, trips, rewards, offers, badges, challenges)
 - ✅ Admin Dashboard with tabs: Overview, Users (Figma), Partners, Events, Offers, AI Moderation (NEW)
+  - ✅ AI Moderation: **Real-time WebSocket** live incidents, approve/reject, confidence slider, simulate button, Live status badge
+  - ✅ Supabase Migration Banner on Overview: enter DB password → run migration programmatically
+  - ✅ Theme toggle (light/dark)
 - ✅ Partner Dashboard with tabs: Overview, Offers, Locations, Analytics, Boosts, Credits & Finance (NEW), Referrals (NEW), Plans & Pricing (NEW)
 - ✅ Theme toggle (light/dark) on Admin Dashboard
 - ✅ Orion AI Coach (GPT-5.2)
