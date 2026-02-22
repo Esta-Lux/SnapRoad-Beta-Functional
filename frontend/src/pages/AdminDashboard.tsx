@@ -640,7 +640,7 @@ function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
 
     const connect = () => {
       try {
-        ws = new WebSocket(`${WS_BASE}/ws/admin/moderation`)
+        ws = new WebSocket(`${WS_BASE}/api/ws/admin/moderation`)
         wsRef.current = ws
 
         ws.onopen = () => {
