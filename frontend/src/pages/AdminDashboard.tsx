@@ -498,7 +498,7 @@ function SupabaseMigrationBanner() {
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<{ success: boolean; message?: string; error?: string; help?: string } | null>(null)
   const [status, setStatus] = useState<{ connected: boolean; migration_needed: boolean } | null>(null)
-  const API_BASE = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+  const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
   useEffect(() => {
     fetch(`${API_BASE}/api/admin/supabase/status`)
