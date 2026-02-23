@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSizes, FontWeights, BorderRadius, Spacing } from '../utils/theme';
 import { DrawerMenu } from '../components/DrawerMenu';
+import { WebMap } from '../components/WebMap';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://privacy-first-app-3.preview.emergentagent.com';
