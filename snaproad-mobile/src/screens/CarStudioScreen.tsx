@@ -1,7 +1,7 @@
 // SnapRoad Mobile - Car Studio Screen (Premium 3D Car Customization)
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Animated,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Animated, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
