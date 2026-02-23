@@ -42,6 +42,12 @@ export { SettingsScreen } from './SettingsScreen';
 export { PrivacyCenterScreen } from './PrivacyCenterScreen';
 export { NotificationSettingsScreen } from './NotificationSettingsScreen';
 
+// Account & Legal
+export { AccountInfoScreen } from './AccountInfoScreen';
+export { PrivacyPolicyScreen } from './PrivacyPolicyScreen';
+export { TermsOfServiceScreen } from './TermsOfServiceScreen';
+export { PricingScreen } from './PricingScreen';
+
 // Navigation & Safety
 export { ActiveNavigationScreen } from './ActiveNavigationScreen';
 export { SearchDestinationScreen } from './SearchDestinationScreen';
