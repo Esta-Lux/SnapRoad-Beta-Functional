@@ -1,234 +1,388 @@
-# SnapRoad Web/Integration Developer Guide
-## For Brian (Web/Integration Lead)
-
-> **Tech Stack**: React + TypeScript + Vite + Tailwind CSS
-> **Focus Areas**: Admin Dashboard, Partner Dashboard, Driver App, Phone Preview, figma-ui library
-> **Maps**: Apple Maps MapKit JS via backend token (no Mapbox)
-> **Current State**: All web UIs fully built and functional. Data is mock — will auto-switch when Andrew runs Supabase migration.
-> **Updated**: February 2026
+# Brian - Frontend Developer Guide
+> **Role:** Frontend Developer  
+> **Last Updated:** December 2025  
+> **Focus:** React web app (reference), component library, design system
 
 ---
 
-## Current Architecture
+## Important Note
 
-```
-/app/frontend/src/
-├── App.tsx                          # Root router — all routes defined here
-├── pages/
-│   ├── WelcomePage.tsx              # Public landing page (with /preview link)
-│   ├── AdminDashboard.tsx           # Admin console — 1,538 lines, 6 tabs
-│   ├── PartnerDashboard.tsx         # Partner portal — 1,748 lines, 8 tabs
-│   ├── PhonePreviewPage.tsx         # NEW: iPhone-framed app preview at /preview
-│   └── DriverApp/
-│       ├── index.tsx                # Driver mobile-web app — 3,012 lines
-│       └── components/              # 32 sub-components (see list below)
-├── components/
-│   ├── figma-ui/                    # Figma design system (see section below)
-│   └── ui/                         # Shadcn/UI components
-├── contexts/
-│   ├── ThemeContext.tsx             # Dark/Light theme toggle
-│   ├── AuthContext.tsx             # Auth context (mock user + JWT)
-│   └── SnaproadThemeContext.tsx     # Theme for figma-ui components
-├── services/
-│   ├── api.ts                       # Legacy ApiService (covers all endpoints)
-│   └── partnerApi.ts                # PartnerApiService + WebSocket client
-└── lib/
-    ├── offer-pricing.ts             # Gem pricing, calculateGemCost()
-    ├── partner-plans.ts             # Partner subscription plan definitions
-    └── snaproad-utils.ts            # cn() utility + shared helpers
-```
+**The `/driver` route is now a REFERENCE IMPLEMENTATION only.**
+
+All active development has moved to `snaproad-mobile` (React Native/Expo). The web frontend at `/driver` is maintained as:
+1. A visual reference for feature parity
+2. A stakeholder preview tool
+3. Documentation of intended UX flows
 
 ---
 
-## Route Map
-
-| Route | Component | Description |
-|-------|-----------|-------------|
-| `/` | `WelcomePage` | Public landing page |
-| `/driver` | `DriverApp` | Full driver mobile-web preview |
-| `/driver/auth` | `AuthFlow` | Driver onboarding auth |
-| `/preview` | `PhonePreviewPage` | **NEW**: Premium iPhone-frame app showcase |
-| `/portal/partner` | `PartnerDashboard` | Partner portal (8 tabs) |
-| `/portal/admin-sr2025secure` | `AdminDashboard` | Admin console (6 tabs) |
-| `/app/*` | `SnapRoadApp` | Figma prototype routes |
-| `/business` | `BusinessDashboard` | Legacy (keep for now) |
-| `/login` | `Login` | Legacy login page |
-
----
-
-## Admin Dashboard (6 Tabs — Complete)
-
-**File**: `pages/AdminDashboard.tsx` (1,538 lines)  
-**URL**: `/portal/admin-sr2025secure`  
-**Theme**: Dark/Light toggle
-
-| Tab | Key Components | Notes |
-|-----|----------------|-------|
-| Overview | Metric cards, 30-day chart, top partners | Mock data |
-| Users | `FigmaUsersTab` — search/filter/status | Mock data |
-| Partners | Partner table with plan badges | Mock data |
-| Events | Event list | Supabase → Mock |
-| Offers | `AdminOffersList` — create/export/import | Export/import ✅ functional |
-| AI Moderation | `AIModerationTab` — **real-time WebSocket** | **✅ LIVE** |
-
-**AI Moderation (Live Feature)**:
-- Connects WebSocket to `/api/ws/admin/moderation`
-- 5 filter tabs: All, Pending, High Risk, Approved, Rejected
-- Confidence threshold slider
-- Simulate button → calls `POST /api/admin/moderation/simulate`
-- `SupabaseMigrationBanner` — trigger migration UI (blocked by firewall currently)
-
----
-
-## Partner Dashboard (8 Tabs — Complete)
-
-**File**: `pages/PartnerDashboard.tsx` (1,748 lines)  
-**URL**: `/portal/partner`  
-**Theme**: Dark/Light toggle
-
-| Tab | Key Components | Notes |
-|-----|----------------|-------|
-| Overview | Revenue chart, today's stats | Mock data |
-| Offers | Create/manage offers, boost controls | Mock data |
-| Locations | Map + location CRUD | Mock data |
-| Analytics | Views/clicks/redemptions chart | Mock data |
-| Boosts | Boost packages + active boosts | Mock (needs Stripe) |
-| Finance | `PartnerFinanceTab` — credits + earnings | Mock |
-| Referrals | `PartnerReferralsTab` — send + track | Mock |
-| Plans | Plan selector | Mock |
-
-**WebSocket**: `partnerApi.connectWebSocket(partnerId)` connects to `/api/ws/partner/{id}` via `services/partnerApi.ts`
-
----
-
-## Phone Preview Page (New)
-
-**File**: `pages/PhonePreviewPage.tsx`  
-**URL**: `/preview`  
-
-iPhone-style frame showcasing the mobile app:
-- Dynamic Island, status bar (time/wifi/battery)
-- Side buttons, home indicator
-- Live DriverApp loaded inside via `<iframe src="/driver">`
-- Feature badges floating left + right (Earn Gems, Safety Score, AI Coach, etc.)
-- "Open Full Screen" + "Get Started" CTAs
-- Ambient glow effects
-
----
-
-## Driver App (Complete)
-
-**File**: `pages/DriverApp/index.tsx` (3,012 lines)  
-**URL**: `/driver`
-
-32 sub-components in `pages/DriverApp/components/`:
-`BadgesGrid`, `Car3D`, `CarOnboarding`, `CarStudioNew`, `ChallengeHistory`, `ChallengeModal`, `CollapsibleOffersPanel`, `CommunityBadges`, `DrivingScore`, `FriendsHub`, `FuelTracker`, `GemHistory`, `GemOverlay`, `HelpSupport`, `InAppBrowser`, `InteractiveMap`, `Leaderboard`, `LevelProgress`, `NotificationSettings`, `OffersModal`, `OrionOfferAlerts`, `OrionVoice`, `PlanSelection`, `QuickPhotoReport`, `RedemptionPopup`, `RoadReports`, `RoadStatusOverlay`, `RouteHistory3D`, `ShareTripScore`, `TripAnalytics`, `TripHistory`, `WeeklyRecap`
-
----
-
-## figma-ui Component Library
-
-**Directory**: `components/figma-ui/`  
-**Access**: `/app/*` route (via `SnapRoadApp.tsx`)
-
-| Sub-directory | Components |
-|---------------|-----------|
-| `mobile/` | Welcome, Login, SignUp, MapScreen, Profile, Gems, Family, BottomNav, FuelDashboard, TripLogs, Leaderboard, Settings, LiveLocations, AccountInfo, PrivacyCenter, NotificationSettings, Onboarding, OrionCoach, PhotoCapture, DriverAnalytics, DriverMapScreen |
-| `admin/` | AdminDashboard, AdminLayout, AdminLogin, AdminOfferManagement, AdminUsers |
-| `partner/` | PartnerDashboard, PartnerLayout, PartnerOffers, PartnerAnalyticsDetailed, PartnerTeam, PartnerReferrals, QRScanner, CustomerOfferQR |
-| `primitives/` | GemIcon, GradientButton, ImageWithFallback |
-
----
-
-## Maps: Apple Maps MapKit (NOT Mapbox)
-
-Web currently uses **OpenStreetMap/CartoDB tiles** (free, no API key). For production:
-
-1. Backend generates JWT via `GET /api/maps/token` (Andrew to build)
-2. Load MapKit JS: `<script src="https://cdn.apple.com/mapkitjs/5.x.x/mapkit.js">`
-3. Init: `mapkit.init({ authorizationCallback: (done) => done(token) })`
-
-**Brian does NOT need MapKit credentials** — backend handles JWT generation.
-
----
-
-## API Integration Checklist
-
-The `services/api.ts` and `services/partnerApi.ts` already make real API calls. All endpoints are working (returning mock data). When Andrew runs the Supabase migration, the data will automatically switch to real — **no frontend changes required**.
-
-### Additional Connection Work (After Supabase Migration)
-
-| Component | Task | Depends On |
-|-----------|------|------------|
-| `DriverApp` trip analytics | Wire date range filter to API | Andrew's migration |
-| `PartnerDashboard` boost flow | Add Stripe checkout | Andrew's Stripe setup |
-| `AdminDashboard` user table | Connect to real user list | Migration |
-| Auth flow | Replace mock JWT with real auth | Migration |
-| Maps | Connect to Apple Maps token endpoint | Andrew adds `/api/maps/token` |
-
----
-
-## Environment Variables
-
-File: `/app/frontend/.env`
-
-| Variable | Value | Purpose |
-|----------|-------|---------|
-| `REACT_APP_BACKEND_URL` | External Kubernetes URL | Testing / curl commands |
-| `VITE_API_URL` | `/api` | All API calls in `services/api.ts` |
-| `VITE_BACKEND_URL` | External URL | AdminDashboard, PartnerDashboard |
-
-**Still needed from PM** (when Stripe is integrated):
-```env
-VITE_STRIPE_PUBLISHABLE_KEY=pk_test_xxxxx
-VITE_STRIPE_PRICE_DRIVER_PREMIUM=price_xxxxx
-VITE_STRIPE_PRICE_PARTNER_STARTER=price_xxxxx
-VITE_STRIPE_PRICE_PARTNER_GROWTH=price_xxxxx
-```
-
----
-
-## Test Credentials
-
-| Role | Email | Password |
-|------|-------|----------|
-| Driver | `driver@snaproad.com` | `password123` |
-| Partner | `partner@snaproad.com` | `password123` |
-| Admin | `admin@snaproad.com` | `password123` |
-
----
-
-## Quick Dev Commands
+## Quick Start
 
 ```bash
+# Navigate to frontend
 cd /app/frontend
-yarn dev          # Start dev server
-yarn build        # Production build
-yarn tsc --noEmit # Type check
+
+# Start dev server
+yarn dev
+
+# Build for production
+yarn build
 ```
 
 ---
 
-## API Quick Tests
+## 1. Architecture Overview
+
+```
+/app/frontend/
+├── index.html
+├── vite.config.ts
+├── tailwind.config.js
+├── tsconfig.json
+├── .env                    # REACT_APP_BACKEND_URL, VITE_API_URL
+└── src/
+    ├── App.tsx             # Root router
+    ├── main.tsx            # ReactDOM entry
+    ├── index.css           # Global styles
+    ├── pages/
+    │   ├── DriverApp/      # Main driver app (REFERENCE)
+    │   │   ├── index.tsx   # 3,012 lines
+    │   │   └── components/ # 34 sub-components
+    │   ├── AdminDashboard.tsx
+    │   ├── PartnerDashboard.tsx
+    │   ├── WelcomePage.tsx
+    │   ├── PhonePreviewPage.tsx
+    │   └── Auth/
+    ├── components/
+    │   ├── figma-ui/       # Design system components
+    │   ├── HelpModal.tsx
+    │   ├── NotificationSystem.tsx
+    │   └── SettingsModal.tsx
+    ├── contexts/
+    │   ├── AuthContext.tsx
+    │   ├── ThemeContext.tsx
+    │   └── SnaproadThemeContext.tsx
+    ├── services/
+    │   ├── api.ts          # ApiService class
+    │   └── partnerApi.ts   # Partner API + WebSocket
+    ├── lib/
+    │   ├── offer-pricing.ts
+    │   ├── partner-plans.ts
+    │   └── utils.ts
+    └── types/
+        └── api.ts
+```
+
+---
+
+## 2. Route Map
+
+| Route | Component | Purpose |
+|-------|-----------|---------|
+| `/` | WelcomePage | Public landing |
+| `/driver` | DriverApp | Driver app REFERENCE |
+| `/driver/auth` | AuthFlow | Driver onboarding |
+| `/preview` | PhonePreviewPage | iPhone frame preview |
+| `/portal/partner` | PartnerDashboard | Partner portal |
+| `/portal/admin-sr2025secure` | AdminDashboard | Admin console |
+| `/app/*` | SnapRoadApp | Figma prototype |
+| `/business` | BusinessDashboard | Legacy |
+
+---
+
+## 3. Driver App Reference (`/driver`)
+
+### Location
+`/app/frontend/src/pages/DriverApp/index.tsx` (3,012 lines)
+
+### Purpose
+This is the **reference implementation** that shows the complete feature set. Mobile developers should replicate this UX in `snaproad-mobile`.
+
+### Features Implemented
+- 4-tab navigation (Map, Routes, Rewards, Profile)
+- Hamburger menu with all sections
+- Map with offer pins and gem markers
+- Offer redemption flow
+- Challenge creation and acceptance
+- Badge collection
+- Leaderboard
+- Car customization studio
+- Orion AI voice assistant
+- Photo report with AI blur
+- Turn-by-turn navigation UI
+- Weekly recap
+- Level progress
+- Settings
+
+### Sub-Components (34)
+| Component | File | Purpose |
+|-----------|------|---------|
+| BadgesGrid | `BadgesGrid.tsx` | Badge collection display |
+| Car3D | `Car3D.tsx` | Three.js 3D car preview |
+| CarOnboarding | `CarOnboarding.tsx` | Car selection flow |
+| CarStudioNew | `CarStudioNew.tsx` | Car customization |
+| ChallengeHistory | `ChallengeHistory.tsx` | Past challenges |
+| ChallengeModal | `ChallengeModal.tsx` | Create/view challenge |
+| CollapsibleOffersPanel | `CollapsibleOffersPanel.tsx` | Map offers panel |
+| CommunityBadges | `CommunityBadges.tsx` | Community badge display |
+| DrivingScore | `DrivingScore.tsx` | 6-metric breakdown |
+| FriendsHub | `FriendsHub.tsx` | Friends list |
+| FuelTracker | `FuelTracker.tsx` | Fuel log |
+| GemHistory | `GemHistory.tsx` | Gem transactions |
+| GemOverlay | `GemOverlay.tsx` | AR gem collection |
+| HelpSupport | `HelpSupport.tsx` | FAQ + contact |
+| InAppBrowser | `InAppBrowser.tsx` | Embedded browser |
+| InteractiveMap | `InteractiveMap.tsx` | Main map |
+| Leaderboard | `Leaderboard.tsx` | Rankings |
+| LevelProgress | `LevelProgress.tsx` | XP progress |
+| NotificationSettings | `NotificationSettings.tsx` | Push prefs |
+| OffersModal | `OffersModal.tsx` | Offer detail |
+| OrionOfferAlerts | `OrionOfferAlerts.tsx` | Voice alerts |
+| OrionVoice | `OrionVoice.tsx` | AI voice interface |
+| PlanSelection | `PlanSelection.tsx` | Basic/Premium |
+| QuickPhotoReport | `QuickPhotoReport.tsx` | Photo incident |
+| RedemptionPopup | `RedemptionPopup.tsx` | Redeem confirm |
+| RoadReports | `RoadReports.tsx` | Community reports |
+| RoadStatusOverlay | `RoadStatusOverlay.tsx` | Road conditions |
+| RouteHistory3D | `RouteHistory3D.tsx` | 3D route viz |
+| ShareTripScore | `ShareTripScore.tsx` | Trip share card |
+| TripAnalytics | `TripAnalytics.tsx` | Trip breakdown |
+| TripHistory | `TripHistory.tsx` | Trip list |
+| WeeklyRecap | `WeeklyRecap.tsx` | Weekly summary |
+
+---
+
+## 4. Admin Dashboard
+
+### Location
+`/app/frontend/src/pages/AdminDashboard.tsx` (1,538 lines)
+
+### URL
+`/portal/admin-sr2025secure`
+
+### Tabs
+| Tab | Purpose |
+|-----|---------|
+| Overview | Metrics, 30-day chart, top partners |
+| Users | User table with search/filter |
+| Partners | Partner management |
+| Events | Platform events |
+| Offers | Create/edit/export/import offers |
+| AI Moderation | Real-time WebSocket incident feed |
+
+### Key Features
+- Theme toggle (dark/light)
+- Supabase migration banner
+- Bulk offer upload (CSV)
+- Export to JSON/CSV
+- Real-time AI moderation queue
+
+---
+
+## 5. Partner Dashboard
+
+### Location
+`/app/frontend/src/pages/PartnerDashboard.tsx` (1,748 lines)
+
+### URL
+`/portal/partner`
+
+### Tabs
+| Tab | Purpose |
+|-----|---------|
+| Overview | Revenue chart, today's stats |
+| Offers | Create/manage offers |
+| Locations | Store locations CRUD |
+| Analytics | Views/clicks/redemptions |
+| Boosts | Boost packages |
+| Finance | Credit balance, earnings |
+| Referrals | Referral program |
+| Plans | Subscription plans |
+
+---
+
+## 6. figma-ui Component Library
+
+### Location
+`/app/frontend/src/components/figma-ui/`
+
+### Purpose
+Figma-accurate design system components for prototype routes.
+
+### Mobile Components (`mobile/`)
+| Component | Purpose |
+|-----------|---------|
+| MapScreen | Main map |
+| Profile | User profile |
+| Gems | Gems wallet |
+| Family | Family tracking |
+| BottomNav | Bottom navigation |
+| FuelDashboard | Fuel stats |
+| TripLogs | Trip history |
+| Leaderboard | Rankings |
+| Settings | App settings |
+| LiveLocations | Location sharing |
+| Onboarding | Onboarding flow |
+| OrionCoach | AI chat |
+| PhotoCapture | Photo report |
+| DriverAnalytics | Analytics |
+
+### Admin Components (`admin/`)
+- AdminDashboard, AdminLayout, AdminLogin, AdminOfferManagement, AdminUsers
+
+### Partner Components (`partner/`)
+- PartnerDashboard, PartnerLayout, PartnerOffers, PartnerAnalyticsDetailed, PartnerTeam, PartnerReferrals, QRScanner, CustomerOfferQR
+
+---
+
+## 7. API Layer
+
+### ApiService (`services/api.ts`)
+```typescript
+class ApiService {
+  private baseUrl = import.meta.env.VITE_API_URL || '/api';
+  
+  async get(endpoint: string) { /* ... */ }
+  async post(endpoint: string, data: any) { /* ... */ }
+  async put(endpoint: string, data: any) { /* ... */ }
+  async delete(endpoint: string) { /* ... */ }
+}
+
+export const apiService = new ApiService();
+```
+
+### PartnerApiService (`services/partnerApi.ts`)
+```typescript
+class PartnerApiService extends ApiService {
+  // Partner-specific methods
+  async getLocations() { /* ... */ }
+  async createOffer(data: any) { /* ... */ }
+  
+  // WebSocket connection
+  connectWebSocket(partnerId: string) {
+    return new WebSocket(`${wsUrl}/api/ws/partner/${partnerId}`);
+  }
+}
+```
+
+---
+
+## 8. Design System
+
+### Colors (CSS Variables)
+```css
+:root {
+  --sr-primary: #2563eb;
+  --sr-secondary: #10b981;
+  --sr-background: #0f172a;
+  --sr-surface: #1e293b;
+  --sr-text: #f8fafc;
+  --sr-text-muted: #94a3b8;
+}
+```
+
+### Typography
+- Font: System fonts (Inter, SF Pro, Roboto)
+- Scale: text-sm, text-base, text-lg, text-xl, text-2xl
+
+### Icons
+- Primary: Lucide React (`lucide-react`)
+- Secondary: Heroicons (`@heroicons/react`)
+
+### Utilities
+```typescript
+// lib/utils.ts
+import { clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+```
+
+---
+
+## 9. Environment Variables
 
 ```bash
-export API_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d= -f2)
-
-# Partner dashboard boosts
-curl "$API_URL/api/partner/boosts/pricing"
-
-# Trip analytics
-curl "$API_URL/api/trips/history/detailed?days=30"
-
-# Admin AI moderation status
-curl "$API_URL/api/admin/moderation/status"
-
-# Test Orion AI (live)
-curl -X POST "$API_URL/api/orion/chat" \
-  -H "Content-Type: application/json" \
-  -d '{"message":"How can I save fuel?","session_id":"brian-test"}'
+# /app/frontend/.env
+REACT_APP_BACKEND_URL=https://feature-stitch.preview.emergentagent.com
+VITE_API_URL=/api
+VITE_BACKEND_URL=https://feature-stitch.preview.emergentagent.com
 ```
 
 ---
 
-*Document owner: Brian (Web/Integration Lead) | Last updated: February 2026*
+## 10. Legacy Cleanup Candidates
+
+The following pages are legacy and can be removed after final verification:
+
+| Path | File | Status |
+|------|------|--------|
+| `/dashboard/*` | `pages/Dashboard/` | UNUSED |
+| `/dashboard/incidents` | `pages/Incidents/` | UNUSED |
+| `/dashboard/partners` | `pages/Partners/` | UNUSED |
+| `/dashboard/rewards` | `pages/Rewards/` | UNUSED |
+| `/dashboard/settings` | `pages/Settings/` | UNUSED |
+| `/dashboard/trips` | `pages/Trips/` | UNUSED |
+| `/dashboard/users` | `pages/Users/` | UNUSED |
+| `/business` | `pages/BusinessDashboard/` | UNUSED |
+
+These can be removed once the PM confirms they are not needed.
+
+---
+
+## 11. What's NOT Your Responsibility
+
+Since all active development moved to `snaproad-mobile`:
+
+| Task | Owner |
+|------|-------|
+| New mobile screens | Kathir (Mobile) |
+| API endpoints | Andrew (Backend) |
+| Database migration | PM (Coordination) |
+| Apple MapKit | PM + Kathir |
+
+Your role is now:
+1. Maintain the `/driver` reference
+2. Update Admin/Partner dashboards if needed
+3. Design system documentation
+
+---
+
+## 12. Testing
+
+### Manual Testing
+```bash
+# Start frontend
+cd /app/frontend && yarn dev
+
+# Open in browser
+open https://feature-stitch.preview.emergentagent.com
+```
+
+### Test Credentials
+| Role | Email | Password | URL |
+|------|-------|----------|-----|
+| Driver | driver@snaproad.com | password123 | /driver |
+| Partner | partner@snaproad.com | password123 | /portal/partner |
+| Admin | admin@snaproad.com | password123 | /portal/admin-sr2025secure |
+
+---
+
+## 13. File Reference
+
+| What | Where |
+|------|-------|
+| App Router | `/app/frontend/src/App.tsx` |
+| Driver Reference | `/app/frontend/src/pages/DriverApp/` |
+| Admin Dashboard | `/app/frontend/src/pages/AdminDashboard.tsx` |
+| Partner Dashboard | `/app/frontend/src/pages/PartnerDashboard.tsx` |
+| API Service | `/app/frontend/src/services/api.ts` |
+| Design System | `/app/frontend/src/components/figma-ui/` |
+| Contexts | `/app/frontend/src/contexts/` |
+| Types | `/app/frontend/src/types/` |
+
+---
+
+*Document owner: Frontend Developer (Brian) | Last updated: December 2025*
