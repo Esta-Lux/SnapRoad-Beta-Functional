@@ -35,19 +35,19 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
           toValue: 1,
           tension: 50,
           friction: 7,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(logoOpacity, {
           toValue: 1,
           duration: 400,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]),
       // Fade in text
       Animated.timing(textOpacity, {
         toValue: 1,
         duration: 300,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
     ]).start();
 
@@ -57,12 +57,12 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
         Animated.timing(pulseAnim, {
           toValue: 1.1,
           duration: 1000,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(pulseAnim, {
           toValue: 1,
           duration: 1000,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ])
     ).start();
