@@ -1,211 +1,264 @@
-# SnapRoad PM Coordination Guide
-## Supporting Andrew, Brian & Kathir
-
-> **Your Role**: Unblock your team by providing credentials, coordinating dependencies, and tracking progress.
-> **Updated**: February 2026
-
----
-
-## Team Overview
-
-| Team Member | Role | Focus Area | Guide |
-|-------------|------|------------|-------|
-| **Andrew** | Backend Lead | Supabase migration, API routes, Apple Maps token, Stripe backend | `ANDREW_BACKEND_GUIDE.md` |
-| **Brian** | Web Lead | Admin Dashboard, Partner Dashboard, Driver App, Stripe frontend | `BRIAN_WEB_GUIDE.md` |
-| **Kathir** | Mobile Lead | React Native app, Apple Maps native, EAS Build, push notifications | `KATHIR_MOBILE_GUIDE.md` |
+# PM Coordination Guide - SnapRoad
+> **Role:** Product Manager  
+> **Last Updated:** December 2025  
+> **Focus:** Feature matrix, roadmap, Apple MapKit scope, integration status
 
 ---
 
-## Current Application Status
+## Quick Links
+- [Feature Audit](/app/memory/FEATURE_AUDIT.md) - Complete feature comparison
+- [API Guide](/app/memory/API_INTEGRATION_GUIDE.md) - All 60+ endpoints
+- [PRD](/app/memory/PRD.md) - Product requirements
 
-### What's LIVE (Real Data)
-| Feature | Details |
-|---------|---------|
-| **Orion AI Coach (GPT-5.2)** | Real AI responses at `/api/orion/chat` |
-| **Photo Privacy Analysis** | Real OpenAI Vision at `/api/photo/analyze` |
-| **Supabase Auth** | Real login/signup — users created in Supabase |
-| **Admin AI Moderation** | Real-time WebSocket incident feed |
+---
 
-### What's MOCKED (Pending Supabase Migration)
-Everything else — offers, trips, gems, partners, leaderboard, analytics, gamification. All endpoints exist and work, just returning in-memory demo data.
+## 1. Product Health Dashboard
 
-### The ONE Blocker for Everything
-**Run the Supabase database migration** (5 minutes, no code changes):
+### Current State
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Mobile App (snaproad-mobile) | PRODUCTION READY | 42+ screens, full feature parity |
+| Web Reference (/driver) | COMPLETE | Reference only, not deployed |
+| Backend API | FUNCTIONAL | 60+ endpoints, mock data |
+| Database | BLOCKED | Supabase tables not created |
+| Payments | INTEGRATED | Stripe test mode active |
+
+### Feature Completion
+```
+[████████████████████] 100% - Mobile App Screens
+[████████████████████] 100% - API Endpoints
+[████████████████████] 100% - Web Reference
+[░░░░░░░░░░░░░░░░░░░░]   0% - Database Migration
+[████████░░░░░░░░░░░░]  40% - Apple MapKit (scoping phase)
+```
+
+---
+
+## 2. Apple MapKit Integration Scope
+
+### Assigned To: PM (Coordination)
+**Purpose:** Replace mock/OpenStreetMap with native Apple Maps
+
+### What Exists Currently
+| Platform | Current Implementation | Location |
+|----------|----------------------|----------|
+| Web | OpenStreetMap/Leaflet via InteractiveMap.tsx | `/app/frontend/src/pages/DriverApp/components/InteractiveMap.tsx` |
+| Mobile (iOS) | expo-location for coordinates | `/app/snaproad-mobile/src/screens/MapScreen.tsx` |
+| Mobile (Web) | OpenStreetMap/Leaflet via WebMap.tsx | `/app/snaproad-mobile/src/components/WebMap.tsx` |
+
+### What Needs to be Implemented
+
+#### Phase 1: iOS Native Maps
+| Feature | Description | API Cost |
+|---------|-------------|----------|
+| Basic Map Display | Replace placeholder with MapKit MKMapView | Free (included with Apple dev account) |
+| User Location | Blue dot with accuracy circle | Free |
+| Custom Annotations | Offer pins, gem markers | Free |
+| Polyline Routes | Turn-by-turn route display | MapKit Directions API quota |
+
+#### Phase 2: Turn-by-Turn Navigation
+| Feature | Description | API Cost |
+|---------|-------------|----------|
+| Route Calculation | Origin → Destination routing | MapKit Directions API |
+| ETA Updates | Real-time arrival estimates | Included |
+| Traffic Conditions | Live traffic overlay | MapKit Traffic API |
+| Voice Guidance | Spoken directions | iOS native TTS |
+
+#### Phase 3: Enhanced Features
+| Feature | Description | API Cost |
+|---------|-------------|----------|
+| Offline Maps | Download regions for offline use | MapKit Offline API |
+| AR Navigation | Camera-based directions | ARKit integration |
+| 3D Buildings | 3D city rendering | MapKit 3D |
+
+### Technical Requirements
+```
+Dependencies to add (iOS):
+- react-native-maps (with Apple Maps provider)
+- OR @react-native-community/maps
+
+Dependencies to add (Web fallback):
+- Keep Leaflet/OpenStreetMap as fallback
+
+Backend endpoints ready:
+- GET /api/map/search - Location search
+- GET /api/map/directions - Route calculation
+- GET /api/offers/nearby - Nearby offer pins
+```
+
+### Cost Estimation
+| Tier | Monthly Active Users | Estimated Cost |
+|------|---------------------|----------------|
+| Free | < 25,000 | $0 (Apple quota) |
+| Basic | 25K - 100K | ~$200/month |
+| Growth | 100K - 500K | ~$1,000/month |
+| Scale | 500K+ | Contact Apple |
+
+### Scalability Note
+MapKit is highly cost-effective for iOS users. For Android, consider:
+- Google Maps Platform ($200/month credit, then ~$7/1000 requests)
+- Mapbox (~$0.50/1000 requests)
+
+---
+
+## 3. Supabase Integration Status
+
+### What's Implemented
+| Component | Status | Details |
+|-----------|--------|---------|
+| Supabase Client | CONNECTED | `/app/backend/database.py` |
+| Auth Integration | ACTIVE | Login/signup work with Supabase Auth |
+| Migration Script | READY | `/app/backend/sql/supabase_migration.sql` |
+| Backend Fallback | WORKING | Uses mock data when DB empty |
+
+### What's Blocked
+```
+ACTION REQUIRED: Manual SQL execution
+
+The migration script cannot be run programmatically due to 
+network restrictions. The PM or a team member with Supabase 
+access must:
+
 1. Open Supabase Dashboard → SQL Editor
-2. Paste `/app/backend/sql/supabase_migration.sql`
-3. Click Run → 12 tables created → all mock data automatically replaced
-
----
-
-## Recent Completions (February 2026)
-
-| Feature | Who | Status |
-|---------|-----|--------|
-| Backend refactored into 11 modular route files (60+ endpoints) | Andrew | ✅ Done |
-| Supabase Auth connected | Andrew | ✅ Done |
-| Admin Dashboard rebuilt — 6 tabs, AI Moderation | Brian | ✅ Done |
-| Partner Dashboard rebuilt — 8 tabs, Finance, Referrals | Brian | ✅ Done |
-| Phone Preview Page (`/preview`) | Brian | ✅ Done |
-| 42-screen mobile app built | Kathir | ✅ Done |
-| Mobile animation crash fixed (`useNativeDriver` web compat) | Kathir | ✅ Done |
-| Mobile app exports cleanly for web | Kathir | ✅ Done |
-
----
-
-## Credentials PM Needs to Provide
-
-### 1. Apple Developer Account (For Kathir — Builds & Maps)
-**Purpose**: App Store distribution + MapKit JS credentials  
-**URL**: https://developer.apple.com  
-**Action**:
-1. Enroll in Apple Developer Program ($99/year)
-2. Go to **Certificates, Identifiers & Profiles** → **Keys**
-3. Create a key with **MapKit JS** enabled
-4. Download the .p8 key file (one-time download!)
-5. Note: **Team ID** (Membership page), **Key ID** (key details), **Private Key** (.p8 contents)
-6. Give Team ID + Key ID + Private Key to **Andrew** (for `/api/maps/token` endpoint)
-7. **Kathir does NOT need MapKit credentials** — backend generates tokens
-
-**Cost**: $99/year (includes App Store + MapKit JS)
-
----
-
-### 2. Stripe (For Andrew + Brian)
-**URL**: https://dashboard.stripe.com  
-**Action**:
-1. Create account, go to **Developers → API Keys**
-2. Give `Secret key` (sk_test_...) → **Andrew** as `STRIPE_SECRET_KEY`
-3. Give `Publishable key` (pk_test_...) → **Brian** as `VITE_STRIPE_PUBLISHABLE_KEY`
-4. Create Products/Prices:
-
-| Product | Price | Type |
-|---------|-------|------|
-| Driver Premium | $4.99/month | Recurring |
-| Partner Starter | $29/month | Recurring |
-| Partner Growth | $79/month | Recurring |
-| Partner Enterprise | Custom | Custom |
-| Basic Boost | $9.99 | One-time |
-| Standard Boost | $19.99 | One-time |
-| Premium Boost | $39.99 | One-time |
-
-5. Set up Webhook → `https://your-domain.com/api/webhooks/stripe`
-   - Events: `checkout.session.completed`, `customer.subscription.*`, `invoice.*`
-   - Give Signing Secret → **Andrew** as `STRIPE_WEBHOOK_SECRET`
-
-**Cost**: 2.9% + $0.30 per transaction
-
----
-
-### 3. Expo (For Kathir — Push Notifications + EAS)
-**URL**: https://expo.dev  
-**Action**:
-1. Create account at expo.dev
-2. Create a new project
-3. Give `Project ID` → **Kathir** as `EXPO_PUBLIC_PUSH_NOTIFICATION_PROJECT_ID`
-
-**Note**: EAS Build project ID is already configured in `/app/snaproad-mobile/app.json`  
-```json
-"extra": { "eas": { "projectId": "367755bb-8925-4849-9958-1ad5bd0d0567" } }
+2. Paste contents of /app/backend/sql/supabase_migration.sql
+3. Click "Run"
+4. Tables will be created + seed data loaded
 ```
 
-**Cost**: Free for development
+### Tables Created by Migration
+| Table | Purpose | Records Seeded |
+|-------|---------|----------------|
+| users | Driver accounts | 3 test users |
+| partners | Business accounts | 2 test partners |
+| partner_locations | Store locations | 5 locations |
+| offers | Available offers | 10 sample offers |
+| trips | Trip history | 5 sample trips |
+| trip_gems | Gems collected | 20 samples |
+| road_reports | Hazard reports | 8 samples |
+| events | Platform events | 3 samples |
+| challenges | Driver challenges | 5 samples |
+| notifications | User notifications | 0 |
+| boosts | Offer boosts | 0 |
+| analytics_events | Analytics tracking | 0 |
 
 ---
 
-### 4. Google Play Console (For Kathir — Android)
-**URL**: https://play.google.com/console  
-**Cost**: $25 one-time
+## 4. Stripe Integration Status
+
+### What's Implemented
+| Component | Status | File Location |
+|-----------|--------|---------------|
+| Backend Endpoints | COMPLETE | `/app/backend/routes/payments.py` |
+| Mobile Payment Screen | COMPLETE | `/app/snaproad-mobile/src/screens/PaymentScreen.tsx` |
+| Webhook Handler | COMPLETE | `POST /api/payments/webhook/stripe` |
+| Test Keys | CONFIGURED | `/app/backend/.env` |
+
+### API Endpoints
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/payments/plans` | List subscription plans |
+| POST | `/api/payments/checkout/session` | Create Stripe checkout |
+| GET | `/api/payments/checkout/status/{session_id}` | Check payment status |
+| POST | `/api/payments/webhook/stripe` | Handle Stripe events |
+| GET | `/api/payments/transactions` | List all transactions |
+
+### Subscription Plans
+| Plan | Price | Features |
+|------|-------|----------|
+| Basic | $0.00/forever | Privacy-first navigation, 1x gems, Safety score, Community reports |
+| Premium | $10.99/month | 2x gems, Premium offers, Advanced analytics, Fuel tracking, Ad-free |
+| Family | $14.99/month | Up to 6 members, Real-time location sharing, Teen monitoring, Emergency SOS |
+
+### What's NOT Implemented
+- [ ] Live Stripe keys (currently using test keys)
+- [ ] Subscription management UI (cancel/upgrade)
+- [ ] Invoice/receipt generation
+- [ ] Revenue analytics dashboard
 
 ---
 
-## Credential Distribution Summary
+## 5. Test Credentials
 
+| Role | Email | Password | Access |
+|------|-------|----------|--------|
+| Driver | `driver@snaproad.com` | `password123` | Mobile app, `/driver` |
+| Partner | `partner@snaproad.com` | `password123` | Partner portal |
+| Admin | `admin@snaproad.com` | `password123` | Admin console |
+
+---
+
+## 6. Priority Backlog
+
+### P0 - Critical (Blocking Launch)
+| Task | Owner | Status | Blocker |
+|------|-------|--------|---------|
+| Run Supabase migration | PM/Ops | BLOCKED | Manual action required |
+| Connect endpoints to live DB | Backend | WAITING | Needs P0.1 |
+
+### P1 - Important (Next Sprint)
+| Task | Owner | Status | Notes |
+|------|-------|--------|-------|
+| Apple MapKit integration | Mobile + PM | SCOPING | See section 2 |
+| Live Stripe keys | PM/Ops | NOT STARTED | Needs Stripe account |
+| Push notifications | Backend + Mobile | NOT STARTED | Expo + FCM/APNs |
+| Gas price API | Backend | NOT STARTED | GasBuddy/OPIS API |
+
+### P2 - Nice to Have
+| Task | Owner | Status | Notes |
+|------|-------|--------|-------|
+| Android release | Mobile | NOT STARTED | EAS Build setup |
+| iOS TestFlight | Mobile | NOT STARTED | Apple Developer account |
+| E2E test suite | QA | NOT STARTED | Playwright/Detox |
+| Legacy code cleanup | All | NOT STARTED | Remove /dashboard/* |
+
+---
+
+## 7. Team Assignments
+
+| Team Member | Role | Current Focus |
+|-------------|------|---------------|
+| Andrew | Engineering Lead | Backend modularization, Supabase migration |
+| Brian | Frontend | Web components, DriverApp reference |
+| Kathir | Mobile | React Native screens, navigation |
+| PM | Coordination | Apple MapKit scope, stakeholder docs |
+
+---
+
+## 8. Key Decisions Log
+
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| Feb 2026 | Focus all work on snaproad-mobile | Single codebase, faster iteration |
+| Feb 2026 | Keep /driver as reference only | Web preview for stakeholders |
+| Feb 2026 | Use Supabase over MongoDB | Better auth, PostgreSQL, free tier |
+| Feb 2026 | Stripe for payments | Industry standard, good docs |
+| Dec 2025 | Apple MapKit over Google Maps | Better iOS native experience, cost-effective |
+
+---
+
+## 9. Weekly Sync Agenda Template
+
+```markdown
+## SnapRoad Weekly Sync - [DATE]
+
+### Wins
+- 
+
+### Blockers
+- Supabase migration still blocked
+
+### This Week
+- [ ] Apple MapKit scoping complete
+- [ ] 
+
+### Next Week
+- [ ] 
+
+### Action Items
+| Owner | Task | Due |
+|-------|------|-----|
 ```
-=== ANDREW (Backend .env) ===
-APPLE_MAPKIT_TEAM_ID=XXXXXXXXXX
-APPLE_MAPKIT_KEY_ID=XXXXXXXXXX
-APPLE_MAPKIT_PRIVATE_KEY=[.p8 contents]
-STRIPE_SECRET_KEY=sk_test_xxxxx
-STRIPE_WEBHOOK_SECRET=whsec_xxxxx
-# Already configured: SUPABASE_URL, SUPABASE_SECRET_KEY, EMERGENT_LLM_KEY, JWT_SECRET
-
-=== BRIAN (Frontend .env) ===
-VITE_STRIPE_PUBLISHABLE_KEY=pk_test_xxxxx
-VITE_STRIPE_PRICE_DRIVER_PREMIUM=price_xxxxx
-VITE_STRIPE_PRICE_PARTNER_STARTER=price_xxxxx
-VITE_STRIPE_PRICE_PARTNER_GROWTH=price_xxxxx
-# Already configured: REACT_APP_BACKEND_URL, VITE_API_URL
-
-=== KATHIR (Mobile .env) ===
-EXPO_PUBLIC_API_URL=https://your-backend-url.com
-EXPO_PUBLIC_PUSH_NOTIFICATION_PROJECT_ID=xxxxx
-# NO MapKit credentials needed — backend handles tokens
-```
 
 ---
 
-## Coordination Flow
-
-```
-PM
-├── Runs Supabase SQL migration → UNBLOCKS everything
-│
-├── Provides Stripe keys to Andrew + Brian
-│   └── Andrew wires Stripe backend
-│       └── Brian connects Partner boost/subscription UI
-│
-└── Provides Apple credentials to Andrew
-    └── Andrew creates /api/maps/token
-        ├── Brian adds Apple Maps to web driver app
-        └── Kathir adds real MapView to mobile app
-```
-
-### Sync Points
-
-| Week | Event | Participants |
-|------|-------|-------------|
-| Now | **Run Supabase migration** | PM |
-| Week 1 | Andrew adds `/api/maps/token` | Andrew → unblocks Kathir + Brian |
-| Week 1 | Andrew wires Stripe backend | Andrew → unblocks Brian |
-| Week 2 | Brian connects Stripe checkout UI | Brian |
-| Week 2 | Kathir adds real MapView + directions | Kathir |
-| Week 3 | EAS Build for iOS TestFlight | Kathir + PM |
-
----
-
-## Feature Status Matrix
-
-| Feature | Backend | Web | Mobile | Live Data |
-|---------|:-------:|:---:|:------:|:---------:|
-| Auth (login/signup) | ✅ | ✅ | ✅ | ✅ Supabase |
-| Driver onboarding | ✅ | ✅ | ✅ | ❌ Mock |
-| Map + offers | ✅ | ✅ | ✅ | ❌ Mock |
-| Gem collection | ✅ | ✅ | ✅ | ❌ Mock |
-| Trips + fuel | ✅ | ✅ | ✅ | ❌ Mock |
-| Safety score | ✅ | ✅ | ✅ | ❌ Mock |
-| Leaderboard | ✅ | ✅ | ✅ | ❌ Mock |
-| Challenges | ✅ | ✅ | ✅ | ❌ Mock |
-| Orion AI Coach | ✅ | ✅ | ✅ | ✅ **LIVE** |
-| Photo blur AI | ✅ | ✅ | ✅ | ✅ **LIVE** |
-| Admin AI Moderation | ✅ | ✅ | ✅ | ✅ **LIVE** |
-| Partner boosts | ✅ | ✅ | — | ❌ Needs Stripe |
-| Stripe payments | Skeleton | Skeleton | — | ❌ Needs keys |
-| Apple Maps | ❌ | ❌ | ❌ | ❌ Needs creds |
-| Push notifications | — | — | ❌ | ❌ Needs Expo |
-
----
-
-## Cost Summary
-
-| Service | Free Tier | Est. Monthly |
-|---------|-----------|-------------|
-| Supabase | 500MB + 50K MAU | $0 (dev) |
-| Emergent LLM Key (OpenAI) | N/A | Per-usage |
-| Apple Developer | N/A | $99/year |
-| Stripe | None | 2.9% + $0.30/txn |
-| Expo / EAS | Limited builds | $0 (dev) / ~$30 (prod) |
-| Google Play | N/A | $25 one-time |
-
----
-
-*Document owner: PM | Last updated: February 2026*
+*Document owner: Product Manager | Last updated: December 2025*
