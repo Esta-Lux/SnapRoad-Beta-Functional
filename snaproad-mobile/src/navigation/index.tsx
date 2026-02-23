@@ -58,6 +58,11 @@ import { WeeklyRecapScreen } from '../screens/WeeklyRecapScreen';
 // Admin & Partner Dashboards
 import { AdminDashboardScreen } from '../screens/AdminDashboardScreen';
 import { PartnerDashboardScreen } from '../screens/PartnerDashboardScreen';
+// Account & Legal Screens
+import { AccountInfoScreen } from '../screens/AccountInfoScreen';
+import { PrivacyPolicyScreen } from '../screens/PrivacyPolicyScreen';
+import { TermsOfServiceScreen } from '../screens/TermsOfServiceScreen';
+import { PricingScreen } from '../screens/PricingScreen';
 
 import { useUserStore } from '../store';
 
