@@ -150,74 +150,89 @@ const MainTabs = () => {
 // Main Navigation
 export const Navigation = () => {
   const [showSplash, setShowSplash] = useState(true);
+  const [showQuickStart, setShowQuickStart] = useState(false);
   const { user } = useUserStore();
+
+  // Check if we should show quick start guide
+  useEffect(() => {
+    const checkQuickStart = async () => {
+      if (user.onboardingComplete) {
+        const shouldShow = await shouldShowQuickStart();
+        setShowQuickStart(shouldShow);
+      }
+    };
+    if (!showSplash) {
+      checkQuickStart();
+    }
+  }, [showSplash, user.onboardingComplete]);
 
   if (showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }
 
   return (
-    <NavigationContainer theme={CustomTheme} navigationInChildEnabled>
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-          animation: Platform.OS !== 'web' ? 'slide_from_right' : 'none',
-        }}
-        initialRouteName={user.onboardingComplete ? 'MainTabs' : 'Welcome'}
-      >
-        {/* Onboarding Flow */}
-        <Stack.Screen name="Welcome" component={WelcomeScreen} />
-        <Stack.Screen name="PlanSelection" component={PlanSelectionScreen} />
-        <Stack.Screen name="CarSetup" component={CarSetupScreen} />
-        
-        {/* Main App */}
-        <Stack.Screen name="MainTabs" component={MainTabs} />
-        
-        {/* Detail Screens */}
-        <Stack.Screen 
-          name="OfferDetail" 
-          component={OfferDetailScreen}
-          options={{ animation: 'slide_from_bottom' }}
-        />
-        <Stack.Screen 
-          name="Leaderboard" 
-          component={LeaderboardScreen}
-          options={{ animation: 'slide_from_right' }}
-        />
-        
-        {/* New Aligned Screens */}
-        <Stack.Screen 
-          name="Settings" 
-          component={SettingsScreen}
-          options={{ animation: 'slide_from_right' }}
-        />
-        <Stack.Screen 
-          name="FuelDashboard" 
-          component={FuelDashboardScreen}
-          options={{ animation: 'slide_from_right' }}
-        />
-        <Stack.Screen 
-          name="TripLogs" 
-          component={TripLogsScreen}
-          options={{ animation: 'slide_from_right' }}
-        />
-        <Stack.Screen 
-          name="Family" 
-          component={FamilyScreen}
-          options={{ animation: 'slide_from_right' }}
-        />
-        <Stack.Screen 
-          name="TripAnalytics" 
-          component={TripAnalyticsScreen}
-          options={{ animation: 'slide_from_right' }}
-        />
-        <Stack.Screen 
-          name="RouteHistory3D" 
-          component={RouteHistory3DScreen}
-          options={{ animation: 'slide_from_right' }}
-        />
-        <Stack.Screen 
-          name="OrionCoach" 
+    <>
+      <NavigationContainer theme={CustomTheme} navigationInChildEnabled>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            animation: Platform.OS !== 'web' ? 'slide_from_right' : 'none',
+          }}
+          initialRouteName={user.onboardingComplete ? 'MainTabs' : 'Welcome'}
+        >
+          {/* Onboarding Flow */}
+          <Stack.Screen name="Welcome" component={WelcomeScreen} />
+          <Stack.Screen name="PlanSelection" component={PlanSelectionScreen} />
+          <Stack.Screen name="CarSetup" component={CarSetupScreen} />
+          
+          {/* Main App */}
+          <Stack.Screen name="MainTabs" component={MainTabs} />
+          
+          {/* Detail Screens */}
+          <Stack.Screen 
+            name="OfferDetail" 
+            component={OfferDetailScreen}
+            options={{ animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen 
+            name="Leaderboard" 
+            component={LeaderboardScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          
+          {/* New Aligned Screens */}
+          <Stack.Screen 
+            name="Settings" 
+            component={SettingsScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen 
+            name="FuelDashboard" 
+            component={FuelDashboardScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen 
+            name="TripLogs" 
+            component={TripLogsScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen 
+            name="Family" 
+            component={FamilyScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen 
+            name="TripAnalytics" 
+            component={TripAnalyticsScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen 
+            name="RouteHistory3D" 
+            component={RouteHistory3DScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen 
+            name="OrionCoach" 
           component={OrionCoachScreen}
           options={{ animation: 'slide_from_bottom' }}
         />
