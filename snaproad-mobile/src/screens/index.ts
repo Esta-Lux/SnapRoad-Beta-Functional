@@ -63,6 +63,11 @@ export { ChallengesScreen } from './ChallengesScreen';
 export { LevelProgressScreen } from './LevelProgressScreen';
 export { WeeklyRecapScreen } from './WeeklyRecapScreen';
 
+// New Fully Featured Screens
+export { PaymentScreen } from './PaymentScreen';
+export { LiveScreen } from './LiveScreen';
+export { EngagementScreen } from './EngagementScreen';
+
 // Admin & Partner Dashboards
 export { AdminDashboardScreen } from './AdminDashboardScreen';
 export { PartnerDashboardScreen } from './PartnerDashboardScreen';
