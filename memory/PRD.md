@@ -141,7 +141,12 @@ SnapRoad is a privacy-first, gamified navigation app with three portals:
 - Created `babel.config.js` with `babel-preset-expo`
 - Created `metro.config.js` with `getDefaultConfig`
 - Updated `app.json` with `"web": { "bundler": "metro" }` to fix `import.meta` error
-- Added "App Preview" link to WelcomePage footer → `/driver`
+- Added "App Preview" link to WelcomePage footer → `/preview`
+- Created `/preview` route: premium phone frame mockup (`PhonePreview.tsx`)
+  - iPhone-style frame with Dynamic Island, status bar (time/wifi/battery), side buttons, home indicator
+  - Live interactive DriverApp loaded inside via iframe
+  - Feature badges floating left & right (Earn Gems, Safety Score, AI Coach, etc.)
+  - "Open Full Screen" and "Get Started" CTAs, ambient glow effects
 
 ## Pending Tasks
 ### P0 (Critical)
