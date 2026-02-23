@@ -60,6 +60,20 @@ def update_user_car(car: CarCustomization):
     return {"success": True, "message": "Car customization saved"}
 
 
+@router.get("/user/car")
+def get_user_car():
+    user = users_db.get(current_user_id, {})
+    return {
+        "success": True,
+        "data": {
+            "category": user.get("car_category", "sedan"),
+            "variant": user.get("car_variant", "sedan-classic"),
+            "color": user.get("car_color", "midnight-black"),
+            "owned_colors": user.get("owned_colors", ["midnight-black", "ocean-blue", "arctic-white"]),
+        }
+    }
+
+
 @router.get("/user/car/colors")
 def get_car_colors():
     user = users_db.get(current_user_id, {})
