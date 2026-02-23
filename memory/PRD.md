@@ -129,8 +129,19 @@ SnapRoad is a privacy-first, gamified navigation app with three portals:
 
 ## Current Status
 - **Backend:** MOCKED (in-memory data). Supabase configured but tables not created.
-- **Web App:** Fully functional
-- **Mobile App:** All screens created with premium UI, navigation wired up
+- **Web App:** Fully functional. Mobile preview at `/driver`. Driver app, Partner portal, Admin console all live.
+- **Mobile App:** All screens created with premium UI, navigation wired up. Web preview via `/driver` route.
+
+## Documentation Created (Feb 2026)
+- `/app/memory/application_overview.md` — Full architecture doc: all routes, components, screens, services
+- `/app/memory/code_cleanup_candidates.md` — 19-item cleanup list (legacy pages, duplicates, stale code)
+
+## Mobile App Fix (Feb 2026)
+- Updated `react` to 19.0.0, `react-dom` to 19.0.0, `@types/react` to ~19.0.0 (matches react-native 0.78.2 requirement)
+- Created `babel.config.js` with `babel-preset-expo`
+- Created `metro.config.js` with `getDefaultConfig`
+- Updated `app.json` with `"web": { "bundler": "metro" }` to fix `import.meta` error
+- Added "App Preview" link to WelcomePage footer → `/driver`
 
 ## Pending Tasks
 ### P0 (Critical)
@@ -141,11 +152,12 @@ SnapRoad is a privacy-first, gamified navigation app with three portals:
 - Stripe integration for payment flows
 - Gas price API integration
 - Push notification setup
+- Code cleanup per `code_cleanup_candidates.md`
 
 ### P2 (Nice to have)
 - Apple Maps MapKit integration
 - Full E2E testing of mobile app
-- Code cleanup of obsolete figma-ui/ directory
+- Port new Admin/Partner Dashboard UIs to mobile React Native app
 
 ---
-Last Updated: February 22, 2026
+Last Updated: February 2026
