@@ -377,8 +377,31 @@ export const Navigation = () => {
           component={PricingScreen}
           options={{ animation: 'slide_from_right' }}
         />
+        {/* New Fully Featured Screens */}
+        <Stack.Screen 
+          name="Payment" 
+          component={PaymentScreen}
+          options={{ animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen 
+          name="Live" 
+          component={LiveScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="Engagement" 
+          component={EngagementScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
+    
+    {/* Quick Start Guide Modal */}
+    <QuickStartGuide 
+      visible={showQuickStart} 
+      onDismiss={() => setShowQuickStart(false)} 
+    />
+  </>
   );
 };
 
