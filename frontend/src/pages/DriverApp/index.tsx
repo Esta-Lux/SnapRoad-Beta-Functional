@@ -293,7 +293,7 @@ export default function DriverApp() {
       if (locRes.success) setLocations(locRes.data)
       if (routeRes.success) setRoutes(routeRes.data)
       if (offerRes.success) setOffers(offerRes.data)
-      if (badgeRes.success) setBadges(badgeRes.data)
+      if (badgeRes.success) setBadges(Array.isArray(badgeRes.data) ? badgeRes.data : badgeRes.data?.badges || [])
       if (skinRes.success) setSkins(skinRes.data)
       if (famRes.success) setFamily(famRes.data)
       if (userRes.success) {
