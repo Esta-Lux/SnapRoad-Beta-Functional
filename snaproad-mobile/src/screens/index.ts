@@ -67,6 +67,7 @@ export { WeeklyRecapScreen } from './WeeklyRecapScreen';
 export { PaymentScreen } from './PaymentScreen';
 export { LiveScreen } from './LiveScreen';
 export { EngagementScreen } from './EngagementScreen';
+export { RoadReportsScreen } from './RoadReportsScreen';
 
 // Admin & Partner Dashboards
 export { AdminDashboardScreen } from './AdminDashboardScreen';
