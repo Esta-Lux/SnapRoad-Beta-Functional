@@ -101,7 +101,7 @@ export const MapScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
           <Text style={[s.filterText, activeFilter === 'nearby' && s.filterTextActive]}>Nearby</Text>
         </TouchableOpacity>
         <TouchableOpacity style={s.reportBtn} onPress={() => navigation?.navigate('HazardFeed')}>
-          <Ionicons name="alert-triangle" size={14} color="#fff" />
+          <Ionicons name="warning-outline" size={14} color="#fff" />
           <Text style={s.reportText}>Report</Text>
         </TouchableOpacity>
       </View>

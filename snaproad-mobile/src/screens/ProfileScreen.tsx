@@ -12,7 +12,7 @@ type ProfileTab = 'overview' | 'score' | 'fuel' | 'settings';
 const QUICK_LINKS = [
   { icon: 'trophy-outline' as const, label: 'Achievements', value: '28/160 badges', screen: 'Badges', color: '#FEF3C7', iconColor: '#F59E0B' },
   { icon: 'ribbon-outline' as const, label: 'Community Badges', value: 'Help other drivers', screen: 'Badges', color: '#EDE9FE', iconColor: '#8B5CF6' },
-  { icon: 'alert-triangle' as const, label: 'Road Reports', value: 'Report hazards', screen: 'HazardFeed', color: '#FFEDD5', iconColor: '#F97316' },
+  { icon: 'warning-outline' as const, label: 'Road Reports', value: 'Report hazards', screen: 'HazardFeed', color: '#FFEDD5', iconColor: '#F97316' },
   { icon: 'git-branch-outline' as const, label: 'My Routes', value: '3 saved', screen: 'Routes', color: '#DBEAFE', iconColor: '#3B82F6' },
   { icon: 'time-outline' as const, label: 'Trip History', value: '47 trips', screen: 'TripHistory', color: '#F1F5F9', iconColor: '#64748B' },
   { icon: 'diamond-outline' as const, label: 'Gem History', value: '+2,450 this month', screen: 'GemHistory', color: '#CFFAFE', iconColor: '#0EA5E9' },
