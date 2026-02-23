@@ -20,6 +20,7 @@ import WelcomePage from './pages/WelcomePage'
 import PartnerDashboard from './pages/PartnerDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import DriverApp from './pages/DriverApp'
+import PhonePreview from './pages/PhonePreview'
 
 // New Figma UI Components
 import { SnapRoadApp } from './components/figma-ui'
@@ -51,6 +52,9 @@ function App() {
         {/* Driver App - Web Preview (Full Flutter-style UI) */}
         <Route path="/driver" element={<DriverApp />} />
         <Route path="/driver/auth" element={<AuthFlow />} />
+        
+        {/* Phone frame preview */}
+        <Route path="/preview" element={<PhonePreview />} />
         
         {/* Partner Portal - Separate URL for custom domain */}
         <Route path="/portal/partner" element={<PartnerDashboard />} />
