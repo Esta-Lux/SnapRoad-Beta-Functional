@@ -126,18 +126,37 @@ export const MapScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
 
       {/* Map Area with offer markers */}
       <View style={s.mapArea}>
-        {/* Simulated map background */}
-        <View style={s.mapGrid}>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <View key={`h${i}`} style={[s.gridLine, { top: `${(i + 1) * 12}%` }]} />
-          ))}
-          {Array.from({ length: 6 }).map((_, i) => (
-            <View key={`v${i}`} style={[s.gridLineV, { left: `${(i + 1) * 16}%` }]} />
-          ))}
-        </View>
+        {/* Web Map using OpenStreetMap/Leaflet */}
+        {Platform.OS === 'web' ? (
+          <WebMap
+            center={{ lat: 39.9612, lng: -82.9988 }}
+            zoom={14}
+            markers={offers.slice(0, 5).map(offer => ({
+              id: offer.id,
+              lat: offer.lat,
+              lng: offer.lng,
+              type: 'offer' as const,
+              label: offer.business_name,
+              onPress: () => setShowOfferDetail(offer),
+            }))}
+            style={{ flex: 1 }}
+          />
+        ) : (
+          <>
+            {/* Simulated map background for native */}
+            <View style={s.mapGrid}>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <View key={`h${i}`} style={[s.gridLine, { top: `${(i + 1) * 12}%` }]} />
+              ))}
+              {Array.from({ length: 6 }).map((_, i) => (
+                <View key={`v${i}`} style={[s.gridLineV, { left: `${(i + 1) * 16}%` }]} />
+              ))}
+            </View>
+          </>
+        )}
 
-        {/* Offer Diamond Markers */}
-        {offers.slice(0, 3).map((offer, i) => {
+        {/* Offer Diamond Markers (overlay on native) */}
+        {Platform.OS !== 'web' && offers.slice(0, 3).map((offer, i) => {
           const positions = [
             { top: '20%', right: '15%' },
             { top: '40%', right: '30%' },
