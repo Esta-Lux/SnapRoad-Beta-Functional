@@ -109,21 +109,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, onNa
             icon="person-outline"
             title="Account Info"
             subtitle="Name, email, phone"
-            onPress={() => handleNavigate('account-info')}
+            onPress={() => handleNavigate('AccountInfo')}
           />
           <SettingItem
             icon="shield-checkmark-outline"
             title="Privacy Center"
             subtitle="Data, permissions, preferences"
             iconColor={Colors.success}
-            onPress={() => handleNavigate('privacy-center')}
+            onPress={() => handleNavigate('PrivacyCenter')}
           />
           <SettingItem
             icon="diamond-outline"
             title="Subscription"
             subtitle="Premium - Active"
             iconColor={Colors.accent}
-            onPress={() => handleNavigate('pricing')}
+            onPress={() => handleNavigate('Pricing')}
           />
         </SettingSection>
 
@@ -283,12 +283,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, onNa
           <SettingItem
             icon="document-text-outline"
             title="Terms of Service"
-            onPress={() => handleNavigate('terms')}
+            onPress={() => handleNavigate('TermsOfService')}
           />
           <SettingItem
             icon="lock-closed-outline"
             title="Privacy Policy"
-            onPress={() => handleNavigate('privacy')}
+            onPress={() => handleNavigate('PrivacyPolicy')}
           />
         </SettingSection>
 
