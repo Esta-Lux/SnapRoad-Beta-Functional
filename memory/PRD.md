@@ -148,6 +148,19 @@ SnapRoad is a privacy-first, gamified navigation app with three portals:
   - Feature badges floating left & right (Earn Gems, Safety Score, AI Coach, etc.)
   - "Open Full Screen" and "Get Started" CTAs, ambient glow effects
 
+## Mobile Animation Fix (Feb 2026)
+- **Root cause fixed:** `useNativeDriver: true` in React Native `Animated` API is not supported on React Native Web
+- Changed all `useNativeDriver: true` → `useNativeDriver: Platform.OS !== 'web'` in: `SplashScreen.tsx`, `MapScreen.tsx`, `ActiveNavigationScreen.tsx`, `RouteHistory3DScreen.tsx`, `CarStudioScreen.tsx`
+- Fixed `Animated.event` in `WelcomeScreen.tsx` to use `useNativeDriver: false`
+- Set navigation `animation` to `'none'` on web (was `'slide_from_right'` for all platforms)
+- Web bundle now exports cleanly with no errors
+
+## Stakeholder Documentation (Feb 2026)
+- Created `/app/memory/docs/docs_andrew.md` — Engineering lead: full backend architecture, all 60+ API endpoints, Supabase migration guide, pending work, timestamps
+- Created `/app/memory/docs/docs_kathir.md` — Mobile developer: all 42 screens, navigation structure, build config, known issues + fixes applied
+- Created `/app/memory/docs/docs_brian.md` — Frontend developer: all routes, component library, figma-ui system, design conventions
+- Created `/app/memory/docs/docs_pm.md` — Product manager: feature status matrix, roadmap P0/P1/P2, pricing, timeline, blocking issues
+
 ## Pending Tasks
 ### P0 (Critical)
 - Run Supabase database migration (create tables + seed data)
