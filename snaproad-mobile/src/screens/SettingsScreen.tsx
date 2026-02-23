@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, BorderRadius, FontSizes, FontWeights } from '../utils/theme';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface SettingsScreenProps {
   navigation?: any;
@@ -66,9 +67,9 @@ const SettingSection: React.FC<{ title: string; children: React.ReactNode }> = (
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, onNavigate }) => {
   const insets = useSafeAreaInsets();
+  const { isDark, toggleTheme, theme, setTheme } = useTheme();
   
   // Settings state
-  const [darkMode, setDarkMode] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const [locationTracking, setLocationTracking] = useState(true);
   const [autoStartTrip, setAutoStartTrip] = useState(false);
