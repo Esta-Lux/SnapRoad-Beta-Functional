@@ -1,7 +1,7 @@
 // SnapRoad Mobile - Navigation Configuration
 // Stack + Tab navigation with Flutter-style flow
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, TouchableOpacity, StyleSheet, Text, Platform } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -63,6 +63,12 @@ import { AccountInfoScreen } from '../screens/AccountInfoScreen';
 import { PrivacyPolicyScreen } from '../screens/PrivacyPolicyScreen';
 import { TermsOfServiceScreen } from '../screens/TermsOfServiceScreen';
 import { PricingScreen } from '../screens/PricingScreen';
+// New Fully Featured Screens
+import { PaymentScreen } from '../screens/PaymentScreen';
+import { LiveScreen } from '../screens/LiveScreen';
+import { EngagementScreen } from '../screens/EngagementScreen';
+// Components
+import { QuickStartGuide, shouldShowQuickStart } from '../components/QuickStartGuide';
 
 import { useUserStore } from '../store';
 
