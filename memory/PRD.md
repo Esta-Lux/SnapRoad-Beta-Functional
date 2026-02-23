@@ -155,6 +155,24 @@ SnapRoad is a privacy-first, gamified navigation app with three portals:
 - Set navigation `animation` to `'none'` on web (was `'slide_from_right'` for all platforms)
 - Web bundle now exports cleanly with no errors
 
+## Web Driver App Fixes (Feb 23, 2026)
+- **Fixed `badges.filter is not a function` error:** Updated `/app/frontend/src/pages/DriverApp/index.tsx` line 296 to properly parse badges response: `badgeRes.data?.badges || []`
+- **Added GET `/api/user/car` endpoint:** Backend was returning 405 (Method Not Allowed). Added new GET handler in `/app/backend/routes/users.py`
+- **All 4 tabs now working:** Map (with OpenStreetMap tiles), Routes, Rewards, Profile
+- **Profile tab sub-tabs working:** Overview, Score, Fuel, Settings
+- **Testing: 100% pass rate** (20 backend tests, all frontend features verified)
+
+## snaproad-mobile React Native Fixes (Feb 23, 2026)
+- **Fixed API URL:** Changed `EXPO_PUBLIC_API_URL` from `http://localhost:8001` to production URL (was causing 404s due to double `/api/api/` path)
+- **Added ThemeContext:** Created `/app/snaproad-mobile/src/contexts/ThemeContext.tsx` with dark/light mode support and system preference detection
+- **Added WebMap component:** Created `/app/snaproad-mobile/src/components/WebMap.tsx` using OpenStreetMap/Leaflet for web platform
+- **Added missing screens:** PrivacyPolicyScreen, TermsOfServiceScreen, PricingScreen, AccountInfoScreen
+- **Fixed navigation routes:** Added Account, Legal, and Pricing screens to navigation stack
+- **Fixed SettingsScreen:** Updated navigation route names from lowercase (`privacy`, `terms`) to PascalCase (`PrivacyPolicy`, `TermsOfService`)
+- **Fixed invalid icon:** Changed `alert-triangle` to `warning-outline` (valid ionicons name)
+- **Updated App.tsx:** Wrapped app with ThemeProvider, StatusBar uses theme-aware styling
+- **Dark mode toggle:** SettingsScreen now uses real theme context for dark mode toggle
+
 ## Stakeholder Documentation (Feb 2026)
 - Created `/app/memory/docs/docs_andrew.md` — Engineering lead: full backend architecture, all 60+ API endpoints, Supabase migration guide, pending work, timestamps
 - Created `/app/memory/docs/docs_kathir.md` — Mobile developer: all 42 screens, navigation structure, build config, known issues + fixes applied
