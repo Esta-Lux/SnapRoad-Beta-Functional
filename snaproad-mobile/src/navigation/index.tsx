@@ -150,7 +150,7 @@ export const Navigation = () => {
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
-          animation: 'slide_from_right',
+          animation: Platform.OS !== 'web' ? 'slide_from_right' : 'none',
         }}
         initialRouteName={user.onboardingComplete ? 'MainTabs' : 'Welcome'}
       >
