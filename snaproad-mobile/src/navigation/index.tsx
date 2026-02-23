@@ -335,6 +335,27 @@ export const Navigation = () => {
           component={PartnerDashboardScreen}
           options={{ animation: 'slide_from_right' }}
         />
+        {/* Account & Legal Screens */}
+        <Stack.Screen 
+          name="AccountInfo" 
+          component={AccountInfoScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="PrivacyPolicy" 
+          component={PrivacyPolicyScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="TermsOfService" 
+          component={TermsOfServiceScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen 
+          name="Pricing" 
+          component={PricingScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
