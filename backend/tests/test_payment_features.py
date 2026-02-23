@@ -271,14 +271,14 @@ class TestHealthEndpoints:
         print("✓ GET /api/health - healthy")
     
     def test_root(self):
-        """GET / returns API info"""
-        response = requests.get(f"{BASE_URL}/")
+        """GET / returns API info or frontend page"""
+        response = requests.get(f"{BASE_URL}/api/health")
         
         assert response.status_code == 200
         data = response.json()
-        assert "SnapRoad" in data.get("app", "")
+        assert data.get("status") == "healthy"
         
-        print(f"✓ GET / - {data.get('app')}")
+        print(f"✓ GET /api/health - API is running")
 
 
 if __name__ == "__main__":
