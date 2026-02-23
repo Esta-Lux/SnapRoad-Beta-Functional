@@ -25,6 +25,9 @@
 
 ---
 
+## Bug Fixes:
+# Fix Buttons in Report Dashboard
+
 ## New Features to Integrate (Backend Work)
 
 ### 1. Trip Analytics Service (Currently Mocked in server.py)
