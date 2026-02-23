@@ -65,8 +65,8 @@ export const CarStudioScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(rotateAnim, { toValue: 1, duration: 8000, useNativeDriver: true }),
-        Animated.timing(rotateAnim, { toValue: 0, duration: 8000, useNativeDriver: true }),
+        Animated.timing(rotateAnim, { toValue: 1, duration: 8000, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(rotateAnim, { toValue: 0, duration: 8000, useNativeDriver: Platform.OS !== 'web' }),
       ])
     ).start();
   }, []);

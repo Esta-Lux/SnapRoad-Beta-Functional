@@ -65,8 +65,8 @@ export const RouteHistory3DScreen: React.FC<RouteHistory3DScreenProps> = ({ navi
       },
       onPanResponderRelease: () => {
         Animated.parallel([
-          Animated.spring(rotateX, { toValue: 45, useNativeDriver: true }),
-          Animated.spring(rotateY, { toValue: 0, useNativeDriver: true }),
+          Animated.spring(rotateX, { toValue: 45, useNativeDriver: Platform.OS !== 'web' }),
+          Animated.spring(rotateY, { toValue: 0, useNativeDriver: Platform.OS !== 'web' }),
         ]).start();
       },
     })
