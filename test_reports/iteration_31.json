@@ -11,7 +11,7 @@
         "issue": "Simulate button calls /api/api/admin/moderation/simulate (double /api prefix → 404). VITE_API_URL='/api' is used as base instead of VITE_BACKEND_URL='https://...'. Clicking 'Generate Test Incident' does nothing.",
         "selector": "[data-testid='simulate-incident-btn']",
         "priority": "CRITICAL",
-        "network_evidence": "404 https://gamified-drive.preview.emergentagent.com/api/api/admin/moderation/simulate",
+        "network_evidence": "404 https://privacy-first-app-3.preview.emergentagent.com/api/api/admin/moderation/simulate",
         "fix": "Line 715 in AdminDashboard.tsx: Change `import.meta.env.VITE_API_URL` to `import.meta.env.VITE_BACKEND_URL` in simulateIncident()"
       },
       {
@@ -19,7 +19,7 @@
         "issue": "Banner never renders on Overview tab. Status fetch calls /api/api/admin/supabase/status (double /api → 404). status stays null, so `if (!status || !status.migration_needed) return null` exits early. migration_needed is confirmed true by direct API call.",
         "selector": "[data-testid='migration-banner-toggle']",
         "priority": "CRITICAL",
-        "network_evidence": "404 https://gamified-drive.preview.emergentagent.com/api/api/admin/supabase/status",
+        "network_evidence": "404 https://privacy-first-app-3.preview.emergentagent.com/api/api/admin/supabase/status",
         "fix": "Line 501 in AdminDashboard.tsx: Change `import.meta.env.VITE_API_URL` to `import.meta.env.VITE_BACKEND_URL` in SupabaseMigrationBanner()"
       }
     ],
@@ -56,8 +56,8 @@
     "frontend": "73% - WS badge/Approve/Reject/Slider/Partner tabs all pass; Simulate button broken (404), Migration Banner not showing (404)"
   },
   "test_credentials": {
-    "admin_dashboard": "https://gamified-drive.preview.emergentagent.com/portal/admin-sr2025secure",
-    "partner_portal": "https://gamified-drive.preview.emergentagent.com/portal/partner"
+    "admin_dashboard": "https://privacy-first-app-3.preview.emergentagent.com/portal/admin-sr2025secure",
+    "partner_portal": "https://privacy-first-app-3.preview.emergentagent.com/portal/partner"
   },
   "seed_data_creation": "Backend simulate tests added ~5-10 in-memory incidents (IDs 101-110+). These reset on backend restart.",
   "retest_needed": true,

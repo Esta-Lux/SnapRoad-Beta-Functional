@@ -30,7 +30,7 @@
   },
   "test_credentials": {
     "partner_portal": "No auth required - /portal/partner loads directly",
-    "api_url": "https://gamified-drive.preview.emergentagent.com"
+    "api_url": "https://privacy-first-app-3.preview.emergentagent.com"
   },
   "seed_data_creation": "Backend uses in-memory mock data for offers, boosts, trips, and routes",
   "retest_needed": false,

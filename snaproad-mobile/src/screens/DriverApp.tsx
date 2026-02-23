@@ -463,7 +463,7 @@ function AuthModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const API_URL = 'https://gamified-drive.preview.emergentagent.com';
+  const API_URL = 'https://privacy-first-app-3.preview.emergentagent.com';
 
   const handleSubmit = async () => {
     if (!email || !password || (mode === 'signup' && !name)) {
