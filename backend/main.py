@@ -17,6 +17,7 @@ from routes.social import router as social_router
 from routes.navigation import router as navigation_router
 from routes.ai import router as ai_router
 from routes.webhooks import router as webhooks_router
+from routes.payments import router as payments_router
 
 
 def create_app() -> FastAPI:
@@ -42,5 +43,6 @@ def create_app() -> FastAPI:
     app.include_router(navigation_router)
     app.include_router(ai_router)
     app.include_router(webhooks_router)
+    app.include_router(payments_router)
 
     return app
