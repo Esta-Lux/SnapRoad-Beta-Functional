@@ -301,7 +301,7 @@ ENABLE_AI_FEATURES=true
 
 ### Mobile (`/app/snaproad-mobile/.env`)
 ```bash
-EXPO_PUBLIC_API_URL=https://privacy-first-app-3.preview.emergentagent.com
+EXPO_PUBLIC_API_URL=https://feature-stitch.preview.emergentagent.com
 EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
 EXPO_PUBLIC_ENABLE_PREMIUM=true
 EXPO_PUBLIC_ENABLE_CHALLENGES=true

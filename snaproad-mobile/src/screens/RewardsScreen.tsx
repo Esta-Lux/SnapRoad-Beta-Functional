@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSizes, FontWeights, BorderRadius } from '../utils/theme';
 import { useUserStore } from '../store';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://privacy-first-app-3.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://feature-stitch.preview.emergentagent.com';
 
 type RewardsTab = 'offers' | 'challenges' | 'badges' | 'carstudio';
 

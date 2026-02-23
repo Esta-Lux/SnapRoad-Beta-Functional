@@ -11,7 +11,7 @@ import { useUserStore } from '../store';
 import Svg, { Circle } from 'react-native-svg';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://privacy-first-app-3.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://feature-stitch.preview.emergentagent.com';
 
 interface WeeklyStats {
   total_trips: number;

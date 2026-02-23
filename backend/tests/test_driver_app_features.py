@@ -8,7 +8,7 @@ import requests
 import os
 
 # Get backend URL from environment
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', os.environ.get('VITE_BACKEND_URL', 'https://privacy-first-app-3.preview.emergentagent.com'))
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', os.environ.get('VITE_BACKEND_URL', 'https://feature-stitch.preview.emergentagent.com'))
 BASE_URL = BASE_URL.rstrip('/')
 
 
