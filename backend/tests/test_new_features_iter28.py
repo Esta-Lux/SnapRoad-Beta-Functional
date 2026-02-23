@@ -9,7 +9,7 @@ import os
 import time
 import uuid
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://cleanup-check.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://gamified-drive.preview.emergentagent.com').rstrip('/')
 
 
 class TestHealthAndBasicAPIs:

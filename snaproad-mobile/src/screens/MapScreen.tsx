@@ -10,7 +10,7 @@ import { Colors, FontSizes, FontWeights, BorderRadius, Spacing } from '../utils/
 import { DrawerMenu } from '../components/DrawerMenu';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cleanup-check.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://gamified-drive.preview.emergentagent.com';
 
 // Types
 interface Offer {
