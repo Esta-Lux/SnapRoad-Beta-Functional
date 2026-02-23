@@ -322,7 +322,7 @@ export default function WelcomePage() {
               </p>
               <div className="flex items-center gap-6 text-sm">
                 <Link 
-                  to="/driver" 
+                  to="/preview" 
                   className="text-slate-400 hover:text-blue-400 transition-colors"
                 >
                   App Preview
