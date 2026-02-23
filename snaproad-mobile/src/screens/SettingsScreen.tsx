@@ -133,12 +133,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, onNa
           <SettingItem
             icon="moon-outline"
             title="Dark Mode"
+            subtitle={theme === 'system' ? 'Following system' : (isDark ? 'On' : 'Off')}
             iconColor={Colors.primary}
             showChevron={false}
             rightElement={
               <Switch
-                value={darkMode}
-                onValueChange={setDarkMode}
+                value={isDark}
+                onValueChange={toggleTheme}
                 trackColor={{ false: Colors.surfaceLight, true: Colors.primary }}
                 thumbColor={Colors.text}
               />
