@@ -42,6 +42,12 @@ export { SettingsScreen } from './SettingsScreen';
 export { PrivacyCenterScreen } from './PrivacyCenterScreen';
 export { NotificationSettingsScreen } from './NotificationSettingsScreen';
 
+// Account & Legal
+export { AccountInfoScreen } from './AccountInfoScreen';
+export { PrivacyPolicyScreen } from './PrivacyPolicyScreen';
+export { TermsOfServiceScreen } from './TermsOfServiceScreen';
+export { PricingScreen } from './PricingScreen';
+
 // Navigation & Safety
 export { ActiveNavigationScreen } from './ActiveNavigationScreen';
 export { SearchDestinationScreen } from './SearchDestinationScreen';
@@ -56,6 +62,12 @@ export { CarStudioScreen } from './CarStudioScreen';
 export { ChallengesScreen } from './ChallengesScreen';
 export { LevelProgressScreen } from './LevelProgressScreen';
 export { WeeklyRecapScreen } from './WeeklyRecapScreen';
+
+// New Fully Featured Screens
+export { PaymentScreen } from './PaymentScreen';
+export { LiveScreen } from './LiveScreen';
+export { EngagementScreen } from './EngagementScreen';
+export { RoadReportsScreen } from './RoadReportsScreen';
 
 // Admin & Partner Dashboards
 export { AdminDashboardScreen } from './AdminDashboardScreen';

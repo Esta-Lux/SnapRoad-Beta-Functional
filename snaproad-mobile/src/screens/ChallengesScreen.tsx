@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, FontSizes, FontWeights } from '../utils/theme';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://gamified-drive.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://feature-stitch.preview.emergentagent.com';
 
 interface Challenge {
   id: number;

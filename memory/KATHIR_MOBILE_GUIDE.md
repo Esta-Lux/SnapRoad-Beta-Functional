@@ -1,164 +1,391 @@
-# SnapRoad Mobile Developer Guide
-## For Kathir (Mobile Lead)
-
-> **Tech Stack**: React Native (Expo) + TypeScript + Zustand + React Navigation
-> **Maps**: Apple Maps MapKit (via `react-native-maps` with `PROVIDER_DEFAULT` on iOS)
-> **Focus Areas**: Maps/Navigation, Trip Flow, QR Code, Push Notifications, Hazard Button
-> **Current State**: Core screens implemented, analytics screens ready for testing
+# Kathir - Mobile Developer Guide (snaproad-mobile)
+> **Role:** Mobile Developer  
+> **Last Updated:** December 2025  
+> **Focus:** React Native (Expo) app, all 42+ screens, navigation, API integration
 
 ---
 
-## IMPORTANT: Apple Maps MapKit (NOT Mapbox)
-
-SnapRoad uses **Apple Maps MapKit** for all mapping functionality. Here's how it works:
-
-### Map Display (No API Key Needed)
-- Use `react-native-maps` with `provider={PROVIDER_DEFAULT}`
-- On iOS, this automatically uses **Apple MapKit** (native, high-performance)
-- Map display, user location, custom markers, polylines all work without credentials
-- For Expo Go, use placeholder map UI (react-native-maps needs dev build)
-
-### Directions, Search & ETA (Needs Apple MapKit JS Credentials)
-- Backend generates JWT tokens: `GET /api/maps/token`
-- Use token to call Apple Maps Server API:
-  - `GET https://maps-api.apple.com/v1/directions` - Turn-by-turn directions
-  - `GET https://maps-api.apple.com/v1/search` - Place search
-  - `GET https://maps-api.apple.com/v1/etas` - ETA calculations
-  - `GET https://maps-api.apple.com/v1/reverseGeocode` - Coordinates to address
-
-### Alternative (No Credentials Needed)
-- `react-native-maps-directions` uses Apple Maps routing on iOS automatically
-- No API key required for basic routing!
-
-```tsx
-// Example: Apple Maps in SnapRoad
-import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
-
-<MapView
-  provider={PROVIDER_DEFAULT}  // Apple Maps on iOS
-  showsUserLocation
-  showsTraffic={true}
-  mapType="mutedStandard"      // Clean navigation look
->
-  <Polyline coordinates={routeCoords} strokeColor="#10B981" strokeWidth={6} />
-  <Marker coordinate={destination}>
-    <View style={styles.destinationMarker}>
-      <Ionicons name="flag" size={24} color="#fff" />
-    </View>
-  </Marker>
-</MapView>
-```
-
----
-
-## New Screens Implemented (Ready for Testing)
-
-### 1. TripAnalyticsScreen (`/app/snaproad-mobile/src/screens/TripAnalyticsScreen.tsx`)
-- Full trip analytics with 3 tabs: Trips, Savings, Stats
-- Date range filters (7/30/90 days)
-- Expandable trip cards with fuel details
-- Fetches from `GET /api/trips/history/detailed?days=30`
-
-### 2. RouteHistory3DScreen (`/app/snaproad-mobile/src/screens/RouteHistory3DScreen.tsx`)
-- Interactive pseudo-3D route visualization
-- SVG-based route rendering with PanResponder for rotation
-- Color-coded routes by safety score
-- Sort by: Most Trips, Distance, Recent
-- Fetches from `GET /api/routes/history-3d?days=90`
-
-### TODO for Kathir:
-- [ ] Add these screens to navigation stack in `/app/snaproad-mobile/src/navigation/index.tsx`
-- [ ] Add menu items in ProfileScreen to access these new screens
-- [ ] Test on physical device for performance
-- [ ] Add animated transitions between screens
-
----
-
-## Project Structure
-
-```
-/app/snaproad-mobile/
-├── App.tsx                      # Root component
-├── app.json                     # Expo config
-├── package.json                 # Dependencies
-└── src/
-    ├── components/
-    │   └── ui.tsx               # Shared UI components
-    ├── navigation/
-    │   └── index.tsx            # Navigation config
-    ├── screens/
-    │   ├── MapScreen.tsx        # Main map view
-    │   ├── TripAnalyticsScreen.tsx  # NEW: Trip analytics
-    │   ├── RouteHistory3DScreen.tsx # NEW: Route visualization
-    │   ├── MyOffersScreen.tsx   # Customer offers
-    │   ├── OrionCoachScreen.tsx # AI chat
-    │   ├── FuelDashboardScreen.tsx
-    │   ├── ProfileScreen.tsx
-    │   ├── RewardsScreen.tsx
-    │   └── ...
-    ├── services/
-    │   └── api.ts               # API service layer
-    ├── store/
-    │   └── index.ts             # Zustand stores
-    ├── types/
-    │   └── index.ts
-    └── utils/
-        └── theme.ts             # Colors, spacing, fonts
-```
-
----
-
-## API Endpoints Ready (Backend Complete)
-
-| Endpoint | Method | Description | Status |
-|----------|--------|-------------|--------|
-| `/api/trips/history/detailed` | GET | Trip history with fuel analytics | Mocked |
-| `/api/fuel/analytics` | GET | Monthly fuel breakdown | Mocked |
-| `/api/routes/history-3d` | GET | Route data for 3D visualization | Mocked |
-| `/api/offers/personalized` | GET | Personalized offers based on location | Mocked |
-| `/api/orion/chat` | POST | AI chat with Orion | **LIVE** |
-| `/api/maps/token` | GET | Apple MapKit JWT token | **TODO** (Andrew) |
-
----
-
-## Environment Variables
-
-```env
-# /app/snaproad-mobile/.env
-API_URL=https://api.snaproad.com/api
-EXPO_PUBLIC_API_URL=https://api.snaproad.com
-EXPO_PUBLIC_PUSH_NOTIFICATION_PROJECT_ID=xxxxx
-```
-
-**Note**: Apple MapKit credentials are NOT needed in the mobile app. The backend generates MapKit JWT tokens and the mobile app fetches them via `/api/maps/token`.
-
----
-
-## Navigation Service (Apple Maps)
-
-The navigation service is at `/app/snaproad-mobile/src/services/navigation.ts`:
-- `getDirections(origin, destination)` - Uses Apple Maps Directions API
-- `searchPlaces(query, location)` - Uses Apple Maps Search API
-- `reverseGeocode(lat, lng)` - Coordinates to address
-- `getETA(origin, destination)` - Travel time estimate
-
-All calls use a JWT token fetched from the backend.
-
----
-
-## Testing on Device
+## Quick Start
 
 ```bash
+# Navigate to mobile app
 cd /app/snaproad-mobile
+
+# Install dependencies
 yarn install
+
+# Start web preview
+npx expo start --web
+
+# Start Expo Go (mobile)
 npx expo start
 ```
 
-For real Apple Maps (requires development build):
-```bash
-eas build --profile development --platform ios
+---
+
+## 1. Architecture Overview
+
+```
+/app/snaproad-mobile/
+├── App.tsx                 # Root: SafeAreaProvider + StatusBar + Navigation
+├── index.js               # Expo entry point
+├── app.json               # Expo config (jsEngine: jsc, web bundler: metro)
+├── babel.config.js        # babel-preset-expo
+├── metro.config.js        # Metro bundler config
+├── .env                   # EXPO_PUBLIC_API_URL
+├── package.json
+└── src/
+    ├── navigation/
+    │   └── index.tsx      # Stack + Tab navigation (42+ screens)
+    ├── screens/           # All screen components
+    │   └── index.ts       # Screen exports
+    ├── components/
+    │   ├── DrawerMenu.tsx       # Hamburger side menu
+    │   ├── OrionVoice.tsx       # AI voice assistant
+    │   ├── QuickStartGuide.tsx  # First-time user guide
+    │   ├── RedemptionPopup.tsx  # Offer redemption modal
+    │   ├── WebMap.tsx           # OpenStreetMap for web platform
+    │   ├── Modals.tsx           # Shared modal components
+    │   └── ui.tsx               # UI primitives (Card, Button)
+    ├── contexts/
+    │   └── ThemeContext.tsx     # Dark/light mode context
+    ├── services/
+    │   └── api.ts         # API service (calls backend)
+    ├── store/
+    │   └── index.ts       # Zustand stores
+    ├── utils/
+    │   └── theme.ts       # Colors, fonts, spacing
+    ├── types/
+    │   └── index.ts       # TypeScript types
+    └── config.ts          # API_URL from .env
 ```
 
 ---
 
-**Questions? Contact PM for Apple Developer credentials or coordinate with Andrew on API contracts.**
+## 2. Navigation Structure
+
+### Bottom Tab Navigator (MainTabs)
+```
+MainTabs
+├── Map      → MapScreen.tsx
+├── Routes   → RoutesScreen.tsx
+├── Rewards  → RewardsScreen.tsx
+└── Profile  → ProfileScreen.tsx
+```
+
+### Full Screen Stack
+```
+Stack.Navigator
+├── Onboarding
+│   ├── Welcome
+│   ├── PlanSelection
+│   └── CarSetup
+├── MainTabs (4 bottom tabs)
+├── Feature Screens (37 screens)
+│   ├── OfferDetail, Leaderboard, Settings
+│   ├── FuelDashboard, TripLogs, Family
+│   ├── TripAnalytics, RouteHistory3D, OrionCoach
+│   ├── MyOffers, DriverAnalytics, Gems
+│   ├── PhotoCapture, PrivacyCenter, NotificationSettings
+│   ├── SearchDestination, RoutePreview, ActiveNavigation
+│   ├── HazardFeed, CommuteScheduler, InsuranceReport
+│   ├── Help, FriendsHub, Badges, GemHistory
+│   ├── CarStudio, Challenges, LevelProgress
+│   ├── WeeklyRecap, AdminDashboard, PartnerDashboard
+│   ├── AccountInfo, PrivacyPolicy, TermsOfService
+│   ├── Pricing, Payment, Live, Engagement
+│   └── RoadReports
+└── QuickStartGuide (Modal)
+```
+
+---
+
+## 3. All 42+ Screens Reference
+
+### Onboarding (4)
+| Screen | File | Purpose |
+|--------|------|---------|
+| SplashScreen | `SplashScreen.tsx` | Logo animation (2.5s) |
+| WelcomeScreen | `WelcomeScreen.tsx` | 4-slide onboarding carousel |
+| PlanSelectionScreen | `PlanSelectionScreen.tsx` | Basic vs Premium |
+| CarSetupScreen | `CarSetupScreen.tsx` | Car model + color |
+
+### Core Tabs (5)
+| Screen | File | Purpose |
+|--------|------|---------|
+| MapScreen | `MapScreen.tsx` | Main map with offers |
+| RoutesScreen | `RoutesScreen.tsx` | Saved commute routes |
+| RewardsScreen | `RewardsScreen.tsx` | Offers feed + gems |
+| ProfileScreen | `ProfileScreen.tsx` | User stats + level |
+| OffersScreen | `OffersScreen.tsx` | Full offers list |
+
+### Analytics & Tracking (6)
+| Screen | File | Purpose |
+|--------|------|---------|
+| TripAnalyticsScreen | `TripAnalyticsScreen.tsx` | Per-trip breakdown |
+| RouteHistory3DScreen | `RouteHistory3DScreen.tsx` | SVG 3D route viz |
+| DriverAnalyticsScreen | `DriverAnalyticsScreen.tsx` | 6-metric score |
+| TripLogsScreen | `TripLogsScreen.tsx` | Trip history list |
+| FuelDashboardScreen | `FuelDashboardScreen.tsx` | Fuel cost tracking |
+| WeeklyRecapScreen | `WeeklyRecapScreen.tsx` | Weekly summary |
+
+### Gamification (7)
+| Screen | File | Purpose |
+|--------|------|---------|
+| LeaderboardScreen | `LeaderboardScreen.tsx` | Driver rankings |
+| BadgesScreen | `BadgesScreen.tsx` | Badge collection |
+| ChallengesScreen | `ChallengesScreen.tsx` | Active challenges |
+| GemsScreen | `GemsScreen.tsx` | Gem balance + earn |
+| GemHistoryScreen | `GemHistoryScreen.tsx` | Transaction history |
+| LevelProgressScreen | `LevelProgressScreen.tsx` | XP milestones |
+| CarStudioScreen | `CarStudioScreen.tsx` | Car customization |
+
+### Navigation (6)
+| Screen | File | Purpose |
+|--------|------|---------|
+| SearchDestinationScreen | `SearchDestinationScreen.tsx` | Destination search |
+| RoutePreviewScreen | `RoutePreviewScreen.tsx` | Route preview |
+| ActiveNavigationScreen | `ActiveNavigationScreen.tsx` | Turn-by-turn nav |
+| HazardFeedScreen | `HazardFeedScreen.tsx` | Community reports |
+| CommuteSchedulerScreen | `CommuteSchedulerScreen.tsx` | Recurring routes |
+| RoadReportsScreen | `RoadReportsScreen.tsx` | Report hazards |
+
+### Social (4)
+| Screen | File | Purpose |
+|--------|------|---------|
+| FamilyScreen | `FamilyScreen.tsx` | Family members |
+| FriendsHubScreen | `FriendsHubScreen.tsx` | Friends list |
+| LiveScreen | `LiveScreen.tsx` | Real-time locations |
+| EngagementScreen | `EngagementScreen.tsx` | Badges/skins/progress |
+
+### Offers & Payments (4)
+| Screen | File | Purpose |
+|--------|------|---------|
+| OfferDetailScreen | `OfferDetailScreen.tsx` | Offer details + redeem |
+| MyOffersScreen | `MyOffersScreen.tsx` | Saved/redeemed offers |
+| PaymentScreen | `PaymentScreen.tsx` | Stripe checkout |
+| PricingScreen | `PricingScreen.tsx` | Plan pricing |
+
+### AI & Camera (2)
+| Screen | File | Purpose |
+|--------|------|---------|
+| OrionCoachScreen | `OrionCoachScreen.tsx` | AI driving coach |
+| PhotoCaptureScreen | `PhotoCaptureScreen.tsx` | Photo report + blur |
+
+### Settings & Legal (6)
+| Screen | File | Purpose |
+|--------|------|---------|
+| SettingsScreen | `SettingsScreen.tsx` | App preferences |
+| PrivacyCenterScreen | `PrivacyCenterScreen.tsx` | Privacy controls |
+| NotificationSettingsScreen | `NotificationSettingsScreen.tsx` | Push preferences |
+| AccountInfoScreen | `AccountInfoScreen.tsx` | Account details |
+| PrivacyPolicyScreen | `PrivacyPolicyScreen.tsx` | Privacy policy |
+| TermsOfServiceScreen | `TermsOfServiceScreen.tsx` | Terms of service |
+| HelpScreen | `HelpScreen.tsx` | FAQ + support |
+
+### Admin/Partner (2)
+| Screen | File | Purpose |
+|--------|------|---------|
+| AdminDashboardScreen | `AdminDashboardScreen.tsx` | 5-tab admin console |
+| PartnerDashboardScreen | `PartnerDashboardScreen.tsx` | 5-tab partner portal |
+
+---
+
+## 4. Key Components
+
+### DrawerMenu.tsx
+Hamburger side menu with sections:
+- **Social:** Friends Hub, Family, Leaderboard, Badges
+- **Navigation:** Active Navigation, Search, Hazard Feed, Commute
+- **Rewards:** Gems, Gem History, My Offers
+- **Analytics:** Driver Analytics, Trip Analytics, Route History, Weekly Recap
+- **Premium:** Car Studio, Challenges, Insurance, Orion Coach, Photo Capture
+- **Management:** Admin Dashboard, Partner Dashboard
+- **Settings:** Settings, Privacy Center, Notifications, Help
+
+### WebMap.tsx
+Platform-specific map component:
+- **iOS/Android:** Uses expo-location + react-native-maps
+- **Web:** Falls back to Leaflet/OpenStreetMap
+
+### OrionVoice.tsx
+AI voice assistant component:
+- Voice input via expo-speech
+- GPT-5.2 via `/api/orion/chat`
+- Voice output via expo-speech
+
+### QuickStartGuide.tsx
+First-time user walkthrough:
+1. Earn Gems while driving
+2. Redeem offers at partner locations
+3. Track your safety score
+4. Connect with family & friends
+5. Meet Orion, your AI coach
+
+### RedemptionPopup.tsx
+Offer redemption confirmation modal:
+- QR code display
+- Gem earnings animation
+- Partner location info
+
+---
+
+## 5. API Integration
+
+### Config
+```typescript
+// src/config.ts
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8001';
+```
+
+### Service File
+```typescript
+// src/services/api.ts
+export const api = {
+  get: async (endpoint: string) => {
+    const res = await fetch(`${API_URL}${endpoint}`);
+    return res.json();
+  },
+  post: async (endpoint: string, data?: object) => {
+    const res = await fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: data ? JSON.stringify(data) : undefined
+    });
+    return res.json();
+  }
+};
+```
+
+### Key Endpoints Used
+| Endpoint | Used By | Purpose |
+|----------|---------|---------|
+| `/api/auth/login` | WelcomeScreen | User login |
+| `/api/user/profile` | ProfileScreen | Get user data |
+| `/api/offers` | OffersScreen, MapScreen | List offers |
+| `/api/offers/{id}/redeem` | OfferDetailScreen | Redeem offer |
+| `/api/badges` | BadgesScreen | Badge collection |
+| `/api/challenges` | ChallengesScreen | Active challenges |
+| `/api/gems/history` | GemHistoryScreen | Gem transactions |
+| `/api/trips/history` | TripLogsScreen | Trip list |
+| `/api/orion/chat` | OrionCoachScreen | AI chat |
+| `/api/payments/checkout/session` | PaymentScreen | Create Stripe session |
+
+---
+
+## 6. Theme System
+
+### Theme Context
+```typescript
+// src/contexts/ThemeContext.tsx
+export const ThemeContext = createContext({
+  isDark: true,
+  toggleTheme: () => {},
+  colors: darkColors
+});
+```
+
+### Color Tokens
+```typescript
+// src/utils/theme.ts
+export const Colors = {
+  primary: '#2563eb',      // Blue
+  secondary: '#10b981',    // Green (gems)
+  background: '#0f172a',   // Slate 900
+  surface: '#1e293b',      // Slate 800
+  text: '#f8fafc',         // Slate 50
+  textMuted: '#94a3b8',    // Slate 400
+  // ... more colors
+};
+```
+
+---
+
+## 7. Known Issues & Fixes
+
+### Issue: White Screen on Web
+**Cause:** `useNativeDriver: true` not supported on web
+**Fix:** Use platform check:
+```typescript
+useNativeDriver: Platform.OS !== 'web'
+```
+
+### Issue: Navigation Animation Crash on Web
+**Fix:** Disable animations on web:
+```typescript
+animation: Platform.OS !== 'web' ? 'slide_from_right' : 'none'
+```
+
+### Issue: Hermes import.meta Error
+**Fix:** Use JSC engine in `app.json`:
+```json
+{ "expo": { "jsEngine": "jsc" } }
+```
+
+---
+
+## 8. Testing
+
+### Manual Testing
+```bash
+# Start web preview
+npx expo start --web
+
+# Test on Expo Go
+npx expo start
+```
+
+### Test Credentials
+| Role | Email | Password |
+|------|-------|----------|
+| Driver | driver@snaproad.com | password123 |
+| Partner | partner@snaproad.com | password123 |
+| Admin | admin@snaproad.com | password123 |
+
+---
+
+## 9. Next Steps for Mobile
+
+### P1 - High Priority
+1. **Apple MapKit Integration**
+   - Replace WebMap with react-native-maps
+   - Use MapKit provider on iOS
+   - Keep Leaflet fallback for web
+
+2. **Push Notifications**
+   - Configure expo-notifications
+   - Add FCM for Android
+   - Add APNs for iOS
+
+### P2 - Medium Priority
+1. **Offline Support**
+   - Cache offers locally
+   - Queue redemptions for sync
+
+2. **Performance**
+   - Lazy load screens
+   - Optimize images
+
+### P3 - Future
+1. **EAS Build**
+   - iOS TestFlight
+   - Android Play Store
+
+---
+
+## 10. File Reference Quick Links
+
+| What | Where |
+|------|-------|
+| Navigation | `/app/snaproad-mobile/src/navigation/index.tsx` |
+| All Screens | `/app/snaproad-mobile/src/screens/` |
+| Components | `/app/snaproad-mobile/src/components/` |
+| API Service | `/app/snaproad-mobile/src/services/api.ts` |
+| Theme | `/app/snaproad-mobile/src/utils/theme.ts` |
+| Store | `/app/snaproad-mobile/src/store/index.ts` |
+| Config | `/app/snaproad-mobile/src/config.ts` |
+| Types | `/app/snaproad-mobile/src/types/index.ts` |
+
+---
+
+*Document owner: Mobile Developer (Kathir) | Last updated: December 2025*

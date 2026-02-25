@@ -8,7 +8,7 @@ import requests
 import os
 
 # Use environment variable for BASE_URL
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://gamified-drive.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://feature-stitch.preview.emergentagent.com').rstrip('/')
 
 
 class TestBoostPricing:

@@ -8,9 +8,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSizes, FontWeights, BorderRadius, Spacing } from '../utils/theme';
 import { DrawerMenu } from '../components/DrawerMenu';
+import { WebMap } from '../components/WebMap';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://gamified-drive.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://feature-stitch.preview.emergentagent.com';
 
 // Types
 interface Offer {
@@ -101,7 +102,7 @@ export const MapScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
           <Text style={[s.filterText, activeFilter === 'nearby' && s.filterTextActive]}>Nearby</Text>
         </TouchableOpacity>
         <TouchableOpacity style={s.reportBtn} onPress={() => navigation?.navigate('HazardFeed')}>
-          <Ionicons name="alert-triangle" size={14} color="#fff" />
+          <Ionicons name="warning-outline" size={14} color="#fff" />
           <Text style={s.reportText}>Report</Text>
         </TouchableOpacity>
       </View>
@@ -126,18 +127,37 @@ export const MapScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
 
       {/* Map Area with offer markers */}
       <View style={s.mapArea}>
-        {/* Simulated map background */}
-        <View style={s.mapGrid}>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <View key={`h${i}`} style={[s.gridLine, { top: `${(i + 1) * 12}%` }]} />
-          ))}
-          {Array.from({ length: 6 }).map((_, i) => (
-            <View key={`v${i}`} style={[s.gridLineV, { left: `${(i + 1) * 16}%` }]} />
-          ))}
-        </View>
+        {/* Web Map using OpenStreetMap/Leaflet */}
+        {Platform.OS === 'web' ? (
+          <WebMap
+            center={{ lat: 39.9612, lng: -82.9988 }}
+            zoom={14}
+            markers={offers.slice(0, 5).map(offer => ({
+              id: offer.id,
+              lat: offer.lat,
+              lng: offer.lng,
+              type: 'offer' as const,
+              label: offer.business_name,
+              onPress: () => setShowOfferDetail(offer),
+            }))}
+            style={{ flex: 1 }}
+          />
+        ) : (
+          <>
+            {/* Simulated map background for native */}
+            <View style={s.mapGrid}>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <View key={`h${i}`} style={[s.gridLine, { top: `${(i + 1) * 12}%` }]} />
+              ))}
+              {Array.from({ length: 6 }).map((_, i) => (
+                <View key={`v${i}`} style={[s.gridLineV, { left: `${(i + 1) * 16}%` }]} />
+              ))}
+            </View>
+          </>
+        )}
 
-        {/* Offer Diamond Markers */}
-        {offers.slice(0, 3).map((offer, i) => {
+        {/* Offer Diamond Markers (overlay on native) */}
+        {Platform.OS !== 'web' && offers.slice(0, 3).map((offer, i) => {
           const positions = [
             { top: '20%', right: '15%' },
             { top: '40%', right: '30%' },

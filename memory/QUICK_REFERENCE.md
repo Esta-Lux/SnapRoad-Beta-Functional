@@ -1,174 +1,156 @@
-# SnapRoad - Quick Reference Card
-
-## 🔗 Application URLs
-
-### Driver App (Public)
-| Route | Description |
-|-------|-------------|
-| `/` | Welcome/Landing Page |
-| `/driver` | Main Driver App (map, offers, gamification) |
-
-### Partner Portal (Business)
-| Route | Description |
-|-------|-------------|
-| `/partner` | Partner Dashboard |
-| `/portal/partner` | Alternative partner route |
-
-### Admin Console (SECRET - Change before production!)
-| Route | Description |
-|-------|-------------|
-| `/portal/admin-sr2025secure` | **Admin Dashboard** |
-
-⚠️ **SECURITY:** The admin URL should be changed and secured before production deployment.
+# SnapRoad Quick Reference
+> **Last Updated:** December 2025
 
 ---
 
-## 🛠️ Tech Stack
+## Services
 
-### Frontend
-- **Framework:** React 18 + TypeScript
-- **Build Tool:** Vite
-- **Styling:** Tailwind CSS
-- **Charts:** Recharts
-- **Icons:** Lucide React
-- **Routing:** React Router v6
-- **UI Components:** Custom + Shadcn/UI
+| Service | Port | Status Check |
+|---------|------|--------------|
+| Frontend | 3000 | `sudo supervisorctl status frontend` |
+| Backend | 8001 | `sudo supervisorctl status backend` |
+| MongoDB | 27017 | `sudo supervisorctl status mongodb` |
+
+```bash
+# Restart services
+sudo supervisorctl restart frontend
+sudo supervisorctl restart backend
+
+# View logs
+tail -f /var/log/supervisor/backend.out.log
+tail -f /var/log/supervisor/frontend.out.log
+```
+
+---
+
+## Test Credentials
+
+| Role | Email | Password | URL |
+|------|-------|----------|-----|
+| Driver | driver@snaproad.com | password123 | /driver |
+| Partner | partner@snaproad.com | password123 | /portal/partner |
+| Admin | admin@snaproad.com | password123 | /portal/admin-sr2025secure |
+
+---
+
+## API Quick Tests
+
+```bash
+# Get API URL
+API_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d '=' -f2)
+
+# Health check
+curl $API_URL/api/health
+
+# Login
+curl -X POST $API_URL/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"driver@snaproad.com","password":"password123"}'
+
+# Get offers
+curl $API_URL/api/offers
+
+# Get badges
+curl $API_URL/api/badges
+
+# Get payment plans
+curl $API_URL/api/payments/plans
+```
+
+---
+
+## Key Files
+
+### Mobile App
+| What | Where |
+|------|-------|
+| Navigation | `/app/snaproad-mobile/src/navigation/index.tsx` |
+| All Screens | `/app/snaproad-mobile/src/screens/` |
+| Components | `/app/snaproad-mobile/src/components/` |
+| API Service | `/app/snaproad-mobile/src/services/api.ts` |
+| Theme | `/app/snaproad-mobile/src/utils/theme.ts` |
+| Config | `/app/snaproad-mobile/src/config.ts` |
 
 ### Backend
-- **Framework:** FastAPI (Python 3.10+)
-- **Data:** In-memory (mock) - needs database migration
-- **Maps:** OpenStreetMap tiles (custom implementation)
-- **CORS:** Configured for development
+| What | Where |
+|------|-------|
+| Entry Point | `/app/backend/server.py` |
+| App Factory | `/app/backend/main.py` |
+| Routes | `/app/backend/routes/` |
+| Payments | `/app/backend/routes/payments.py` |
+| AI Services | `/app/backend/services/orion_coach.py` |
+| Migration SQL | `/app/backend/sql/supabase_migration.sql` |
+| Environment | `/app/backend/.env` |
 
-### Data Storage (Current - Mock)
-- All data stored in Python dictionaries
-- Resets on server restart
-- Ready for PostgreSQL/MongoDB migration
-
----
-
-## 📁 Key Files
-
-### Frontend
-```
-/app/frontend/src/
-├── App.tsx                          # Main router
-├── pages/
-│   ├── WelcomePage.tsx              # Landing page
-│   ├── DriverApp/index.tsx          # Main driver app (large file)
-│   ├── PartnerDashboard.tsx         # Partner portal
-│   └── AdminDashboard.tsx           # Admin console
-└── public/assets/logo.png           # App logo
-```
-
-### Backend
-```
-/app/backend/
-├── server.py                        # All API endpoints (monolithic)
-├── .env                             # Environment variables
-└── tests/                           # Test files
-```
+### Documentation
+| What | Where |
+|------|-------|
+| PRD | `/app/memory/PRD.md` |
+| Feature Audit | `/app/memory/FEATURE_AUDIT.md` |
+| API Guide | `/app/memory/API_INTEGRATION_GUIDE.md` |
+| PM Guide | `/app/memory/PM_COORDINATION_GUIDE.md` |
+| Mobile Guide | `/app/memory/KATHIR_MOBILE_GUIDE.md` |
+| Backend Guide | `/app/memory/ANDREW_BACKEND_GUIDE.md` |
+| Web Guide | `/app/memory/BRIAN_WEB_GUIDE.md` |
 
 ---
 
-## 🔌 API Base URL
+## Feature Status
 
-```
-Development: http://localhost:8001/api
-Production:  https://your-domain.com/api
-```
-
-All frontend API calls should use the `REACT_APP_BACKEND_URL` environment variable.
+| Feature | Mobile | Backend | Database |
+|---------|--------|---------|----------|
+| Auth | DONE | DONE | SUPABASE |
+| Offers | DONE | DONE | MOCK |
+| Badges | DONE | DONE | MOCK |
+| Challenges | DONE | DONE | MOCK |
+| Trips | DONE | DONE | MOCK |
+| Payments | DONE | DONE | IN-MEMORY |
+| AI Chat | DONE | LIVE | N/A |
+| Photo | DONE | LIVE | N/A |
 
 ---
 
-## 🚀 Quick Start
+## Blocked Items
 
-### Development
-```bash
-# Terminal 1 - Backend
-cd /app/backend
-pip install -r requirements.txt
-uvicorn server:app --host 0.0.0.0 --port 8001 --reload
-
-# Terminal 2 - Frontend
-cd /app/frontend
-yarn install
-yarn dev
+### Supabase Migration
 ```
+STATUS: BLOCKED
+ACTION: User must run SQL manually
 
-### Production Build
-```bash
-# Frontend
-cd /app/frontend
-yarn build
-# Output in /app/frontend/dist/
-
-# Backend - use production server
-gunicorn server:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8001
+1. Open Supabase Dashboard → SQL Editor
+2. Paste /app/backend/sql/supabase_migration.sql
+3. Click "Run"
 ```
 
 ---
 
-## 🔐 Partner Plans
+## Screen Count
 
-| Plan | Price (Founders) | Price (Public) | Max Locations |
-|------|-----------------|----------------|---------------|
-| Starter | $20.99/mo | $34.99/mo | 5 |
-| Growth | $49.99/mo | $79.99/mo | 25 |
-| Enterprise | Custom | Custom | Unlimited |
-
----
-
-## 🎮 Driver Plans
-
-| Plan | Price | Features |
-|------|-------|----------|
-| Basic | Free | Standard offers, basic features |
-| Premium | $4.99/mo | Better discounts, exclusive offers, premium features |
-
----
-
-## 📊 Key Metrics (Mocked)
-
-All analytics data is currently mocked and returns random values. Production implementation required for:
-- Real-time views/clicks/redemptions
-- Revenue tracking
-- User engagement metrics
-- Partner performance analytics
+| Category | Count |
+|----------|-------|
+| Onboarding | 4 |
+| Core Tabs | 5 |
+| Analytics | 6 |
+| Gamification | 7 |
+| Navigation | 6 |
+| Social | 4 |
+| Offers/Payments | 4 |
+| AI/Camera | 2 |
+| Settings | 7 |
+| Admin/Partner | 2 |
+| **TOTAL** | **47** |
 
 ---
 
-## ⚡ Priority Implementation Order
+## Team Contacts
 
-1. **P0 (Week 1-2):**
-   - Database integration (PostgreSQL)
-   - User authentication (Auth0/Firebase)
-   - Real maps API (Apple Maps MapKit JS)
-
-2. **P1 (Week 3-4):**
-   - Stripe payments integration
-   - AI image generation
-   - Email notifications
-
-3. **P2 (Week 5-6):**
-   - Push notifications
-   - Real-time updates (WebSocket)
-   - Gas price API
-
-4. **P3 (Future):**
-   - Native iOS app
-   - Advanced analytics
-   - Machine learning recommendations
+| Role | Name | Focus |
+|------|------|-------|
+| Engineering Lead | Andrew | Backend, API, Supabase |
+| Frontend Developer | Brian | Web, Design System |
+| Mobile Developer | Kathir | React Native, Navigation |
+| Product Manager | PM | Roadmap, MapKit, Stakeholders |
 
 ---
 
-## 📄 Documentation
-
-- **Full Deployment Scope:** `/app/memory/DEPLOYMENT_SCOPE.md`
-- **Product Requirements:** `/app/memory/PRD.md`
-- **This Quick Reference:** `/app/memory/QUICK_REFERENCE.md`
-
----
-
-**Good luck with your deployment! 🚀**
+*Quick reference for SnapRoad development team*

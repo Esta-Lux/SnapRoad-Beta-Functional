@@ -1,156 +1,165 @@
 <analysis>**original_problem_statement:**
-The user wants to build SnapRoad, a privacy-first, gamified navigation app. The initial goal was to achieve feature parity between a web app and a React Native mobile app. The scope has expanded to backend refactoring, a Supabase migration, and new dashboard UIs.
+The user wants to build SnapRoad, a privacy-first, gamified navigation app. The initial goal was feature parity between a web app and a React Native mobile app.
 
-The user's most recent request (Chat Message 198) is to:
-1.  Create/update documentation for specific stakeholders (Andrew, Kathir, Brian, PM) detailing the new structure, what needs to be connected, and timestamps for completion.
-2.  Include any API endpoints that have not yet been added to the documentation.
-3.  Review and fix an error (related to animations, based on the provided image and agent's thoughts) that is causing a white screen when the user runs the  app locally.
+The user discovered a more complete, but separate, project in  and has directed all future work to focus exclusively on the  React Native application.
+
+The current overarching goal is a large, multi-part task:
+1.  **Full Audit & Feature Porting:** Conduct a comprehensive audit of  against the feature-rich  web preview (). Implement (or stitch) all missing features into  to make it fully polished and functional.
+2.  **Documentation Overhaul:** Update all stakeholder guides in the  folder with detailed, step-by-step instructions, component breakdowns, and a list of all relevant API endpoints for the  app.
+3.  **Supabase Migration:** Run the database migration to move the application from mock data to a live Supabase backend.
+4.  **Stripe Integration:** Implement Stripe for payments in the  ecosystem.
+5.  **API Strategy:** The user has requested to use APIs that are cost-effective but scalable to 100+ users.
 
 **User's preferred language**: English
 
 **what currently exists?**
-*   **Backend ():** A modular FastAPI application, fully refactored but still operating on mock data from . Supabase dependencies are installed, but the database itself remains empty due to a network firewall blocking direct connections. A full SQL migration script is available at .
-*   **Web Frontend ():** A functional React app with overhauled Admin and Partner dashboards. A new premium, phone-framed preview page () has been created to showcase the mobile app's driver UI.
-*   **Mobile App ():** A React Native (Expo) app. The project has undergone extensive configuration changes to fix build and runtime errors. However, the user is still experiencing a white screen and other errors when running it locally. Key configuration files (, , ) have been created/modified to address these issues.
+*   **Backend ():** A modular FastAPI application. It still operates primarily on mock data from . A Stripe payment endpoint has been added and is functional. The Supabase database connection is configured, but the schema is not yet migrated, blocking the transition to a live database.
+*   **Web Frontend ():** A React app that contains the most feature-complete version of the driver application at the  route. This route is now being used purely as a **reference implementation** for porting features to .
+*   **Mobile App ():** A React Native (Expo) app that is the sole focus of current development. It has undergone significant bug fixes (API calls, navigation, map rendering) and feature additions (theme switching, new screens). It is currently in the process of a major feature-parity update to match the  web reference.
+*   **Discovered Beta ():** A separate, complete project with a Node.js/Express backend and a Flutter mobile app was discovered. It has served as an additional source of feature ideas.
+*   **Documentation ():** In the process of a complete overhaul.  has been created to track feature gaps, and several guides are being rewritten.
 
 **Last working item**:
-    - Last item agent was working: The agent was starting to analyze the user's latest multi-part request from Chat Message 198. This involved understanding the need for new stakeholder-specific documentation and diagnosing a new error (related to animations) in the  app that the user reported via an image.
+    - Last item agent was working: The agent was in the middle of a large, user-directed task to perform a full audit of , implement all missing features from the  web reference, and rewrite all stakeholder documentation. The agent had started the audit by creating , began implementing missing components like , and started rewriting the guides in .
     - Status: IN PROGRESS
-    - Agent Testing Done: N
-    - Which testing method agent to use? The agent should first inspect the relevant files (,  and animation-related components). After attempting a fix for the animation error, it should use the screenshot tool to verify the mobile app renders correctly on the web preview.
+    - Agent Testing Done: N (Testing was done on previous fixes, but not on the new audit/stitching work).
+    - Which testing method agent to use? After implementing the missing features and updating the guides, a full test by the  is required to verify the feature parity of . A screenshot of the  route can confirm the app is still rendering.
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  - Issue 1: Mobile App is Broken for User (Priority: P0)
-  - Issue 2: Supabase Database is Empty (Priority: P1, BLOCKED)
+  - Issue 1: Supabase Database is Empty (Priority: P1, BLOCKED)
 
   **Issues Detail:**
-  - **Issue 1: Mobile App is Broken for User**
-     - **Attempted fixes:** The session involved a long and complex debugging process to fix the  app for local web preview. Fixes included:
-        - Creating  and  to handle transpilation issues ( error).
-        - Correcting dependency mismatches between React, React Native, and Expo SDK versions.
-        - Fixing  configuration (, ).
-        Despite these fixes, the user is still reporting a white screen and a new error related to animations (Chat 198). The root cause appears to be an incompatibility between the latest Expo SDK packages and how they are bundled for the web.
-     - **Next debug checklist:**
-        1.  Analyze the error from the user's image (Chat 198). The agent's thought process (Chat 199) indicates it's related to an animation error source.
-        2.  Inspect  and any components that use animations (e.g., ).
-        3.  Verify the  includes all necessary packages in its .
-        4.  Confirm the  is correct and hasn't been accidentally overwritten again.
-     - **Why fix this issue and what will be achieved with the fix?** The user is completely blocked from running and testing the mobile application. Fixing this is critical for their development workflow.
-     - **Status:** IN PROGRESS
-     - **Is recurring issue?** Y
-     - **Should Test frontend/backend/both after fix?** Frontend (mobile app web preview).
-     - **Blocked on other issue:** None.
-
-  - **Issue 2: Supabase Database is Empty**
-     - **Attempted fixes:** Direct connection attempts with  failed due to a network firewall in the execution environment.
-     - **Next debug checklist:** This is on hold. When the user decides to proceed, the only viable paths are: 1) The user runs  manually. 2) The user provides a Supabase Personal Access Token to use the Management API.
-     - **Why fix this issue and what will be achieved with the fix?** To move the application from mock data to a persistent, live database.
-     - **Status:** BLOCKED (on user action/request).
+  - **Issue 1: Supabase Database is Empty**
+     - **Attempted fixes:** The agent confirmed the connection to Supabase works using the provided keys. However, running the schema migration script () failed. This script must be executed directly in the Supabase dashboard's SQL Editor, as API-based schema changes are restricted.
+     - **Next debug checklist:** The user needs to manually run the contents of  in their Supabase project's SQL Editor.
+     - **Why fix this issue and what will be achieved with the fix?** To move the entire application from mock data to a persistent, live database, which is a critical step towards production.
+     - **Status:** BLOCKED (on user action).
      - **Is recurring issue?** Y
      - **Should Test frontend/backend/both after fix?** Both.
      - **Blocked on other issue:** None.
 
 **In progress Task List**:
-  - Task 1: Create/Update Stakeholder Documentation (P0)
+  - Task 1: Complete  Feature Audit and Implementation (Priority: P0)
+  - Task 2: Overhaul All Stakeholder Documentation (Priority: P0)
 
  **Task Detail:**
-  - **Task 1: Create/Update Stakeholder Documentation**
-     - **Where to resume:** The agent has just started this task. It needs to read the existing documentation () and then update it (or create new files) to cater to the specific needs of Andrew, Kathir, Brian, and the PM. This includes adding architecture details, pending work, completion timestamps, and a list of all API endpoints.
-     - **What will be achieved with this?** This will fulfill the user's direct request for detailed documentation for their team.
+  - **Task 1: Complete  Feature Audit and Implementation**
+     - **Where to resume:** Continue filling out  by comparing  with . Create and integrate the remaining missing components identified in the audit, such as the full incident reporting modal, drawer menu contents, offer detail modals, and advanced profile sub-tabs.
+     - **What will be achieved with this?**  will become a fully-featured, polished application, matching the reference web implementation and ready for user testing.
+     - **Status:** IN PROGRESS
+     - **Should Test frontend/backend/both after fix?** Frontend.
+     - **Blocked on something:** None.
+  - **Task 2: Overhaul All Stakeholder Documentation**
+     - **Where to resume:** The agent has created  and started on . It needs to complete Kathir's guide and then update the remaining guides (, , , ) with comprehensive, step-by-step details about the  architecture, components, and API endpoints as requested by the user.
+     - **What will be achieved with this?** Provides the user and their team with up-to-date, detailed documentation for onboarding and future development.
      - **Status:** IN PROGRESS
      - **Should Test frontend/backend/both after fix?** N/A
-     - **Blocked on something:** No.
+     - **Blocked on something:** Blocked on the completion of Task 1 to have the final list of components and features to document.
 
 **Upcoming and Future Tasks**
 Upcoming Tasks:
--   **P1: Complete Supabase Database Migration:** Once the user unblocks this, populate the database using a valid method (manual SQL run or Management API).
--   **P2: Full Backend Service Migration:** Replace all remaining mock data calls in  with live Supabase service calls.
--   **P3: Implement Mobile App UI Parity:** Port the new Admin and Partner dashboard UIs from the web app to the React Native mobile app.
+-   **P1: Full Backend Service Migration:** Once the Supabase DB is populated (Issue 1), replace all mock data calls in  with live Supabase service calls.
+-   **P2: Retire  Web Preview:** After  is confirmed to be feature-complete, delete the  component and related routes to eliminate code duplication.
 
 Future Tasks:
--   **Code Cleanup:** After user review, delete unused files listed in .
+-   **Code Cleanup:** After user review, delete any other unused files.
 
 **Completed work in this session**
--   **Codebase Audit & Documentation:** Generated  and  in .
--   **Mobile App Configuration Fixes:** Created and configured , , and  to resolve a series of build/runtime errors for the mobile app's web preview.
--   **Mobile App Preview UI:** Created a new, premium phone-framed preview page at  (accessible at ) to showcase the mobile app UI.
--   **Web App UI Update:** Updated the  to link to the new  page.
+- **Mobile App Overhaul:** Fixed numerous critical bugs in , including incorrect API URLs, broken navigation, missing map on web, invalid icon names, and data parsing errors ().
+- **Web-Compatible Map:** Implemented an OpenStreetMap with Leaflet for the mobile app's web preview.
+- **Theme Switching:** Added a  to support dark/light modes.
+- **Stripe Integration:**
+    - Called the  for Stripe.
+    - Added backend secrets (, ) to .
+    - Created a new backend route  in .
+    - Added the publishable key to .
+- **New Mobile Components:** Created several new screens and components for  to move towards feature parity, including , , , and an enhanced .
+- **Successful Testing:** Used the  to run a full suite of tests, confirming all backend endpoints and major frontend flows were working correctly after the initial bug-fixing phase.
+- **Initiated Audit & Doc Update:** Began the comprehensive audit and documentation overhaul requested by the user, creating  and starting work on the new guides.
 
 **Earlier issues found/mentioned but not fixed**
-   - The primary unfixed issue is the recurring set of errors preventing the user from running the  app locally. Despite numerous attempts and configuration changes, a white screen and other errors persist, now pointing towards an animation-related problem.
+- None.
 
 **Known issue recurrence from previous fork**
-  - **Issue recurrence in previous fork:** Supabase DB connection is blocked by a firewall.
-  - **Recurrence count:** 2+
+  - **Issue recurrence in previous fork:** Supabase DB migration remains blocked.
+  - **Recurrence count:** 4+
   - **Status:** BLOCKED
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Expo/React Native Configuration:** Extensive debugging of the build and bundling process, involving  (for transpilation), , and  (to control the JS engine and web output).
--   **JS Engines (Hermes vs. JSC):** Diagnosed and switched the JS engine for the web build to JSC to avoid Hermes-specific bundling issues.
--   **Codebase Auditing:** Systematically scanning the codebase to generate documentation and identify unused files.
--   **WebSockets:** Used for the real-time AI Moderation dashboard.
+-   **Feature Auditing:** Systematically comparing a reference implementation ( web preview) with a target application () to identify and close feature gaps.
+-   **React Native for Web:** Using Expo to build and debug a React Native app that also runs in a web browser, and handling platform-specific code (e.g., using Leaflet for maps on web).
+-   **Stripe Integration:** Using FastAPI backend to create payment sessions and a React Native frontend to handle the checkout flow.
 
 **key DB schema**
-  - The complete schema is defined in  but is not yet deployed to the database.
+  - The complete schema is defined in  but is not yet deployed.
 
 **changes in tech stack**
--   No new libraries were added, but the  project's dependencies were updated via , which caused downstream compatibility issues that were partially rolled back.
+-   **Stripe:** Added for payment processing.
 
 **All files of reference**
--   **/app/memory/application_overview.md**: Newly created documentation to be updated.
--   **/app/memory/code_cleanup_candidates.md**: Newly created list of unused files.
--   **/app/snaproad-mobile/app.json**: Critical config file, repeatedly modified.
--   **/app/snaproad-mobile/metro.config.js**: Critical config file for the bundler.
--   **/app/snaproad-mobile/babel.config.js**: Critical config file for code transpilation.
--   **/app/frontend/src/PhonePreviewPage.tsx**: New component for the mobile app preview.
+-   **/app/memory/AUDIT.md**: The primary tracking document for the current P0 task.
+-   **/app/frontend/src/pages/DriverApp/index.tsx**: The reference for all features that need to be ported to .
+-   **/app/snaproad-mobile/**: The entire directory is the focus of current work.
+-   **/app/backend/routes/payments.py**: The new Stripe integration endpoint.
+-   **/app/memory/*.md**: All documentation files that need to be updated.
+-   **/app/backend/sql/supabase_migration.sql**: The script the user needs to run.
 
 **key api endpoints**
--   : WebSocket connection for the admin dashboard.
--   : Triggers a test incident for the WebSocket.
-- All CRUD endpoints still point to mock data. No new endpoints were added in this session.
+-   : Creates a Stripe checkout session.
+-   All existing endpoints for offers, user data, admin, and partners remain relevant.
 
 **Critical Info for New Agent**
--   **User's Current Priority:** The user's focus has shifted. The top priorities are:
-    1.  **Fix the mobile app:** The user is blocked by a white screen and an animation-related error when running . You must resolve this first. Do not repeat the entire debugging cycle; the issue is likely related to the Hermes engine or a package incompatibility with . The final fix from the previous agent was to set  in , but the user's last message implies this was insufficient.
-    2.  **Update Documentation:** Fulfill the request from Chat 198 to create detailed, timestamped documentation for specific stakeholders.
--   **Supabase is Blocked:** Do not attempt direct database connections. The migration is on hold until the user decides how to proceed.
+-   **All new work MUST go into **. The  web route is a reference, not a development target.
+-   The highest priority (P0) is to complete the feature audit and implementation for , and then update all documentation in  as a single, large task.
+-   The Supabase migration is **BLOCKED** on a manual action from the user. Do not attempt to run the migration script from the agent environment. Inform the user they must run the SQL in their Supabase dashboard.
+-   The user has provided Stripe **test keys**. Use these for all Stripe-related development.
 
 **documents and test reports created in this job**
-  - /app/memory/application_overview.md
-  - /app/memory/code_cleanup_candidates.md
-  - /app/memory/PRD.md (updated)
+-   /app/memory/AUDIT.md
+-   /app/memory/API_INTEGRATION_GUIDE.md
+-   /app/test_reports/iteration_1.json (from previous testing agent run)
 
 **Last 10 User Messages and any pending HUMAN messages**
-- The last 10+ messages are a long back-and-forth debugging session for the  app.
-- **(Chat 186-197):** User reports an  error. The agent diagnoses it as a Hermes engine issue with Expo 54 and instructs the user to add  to . The user reports  is empty, and the agent provides the full correct content.
-- **(Chat 198):** **PENDING.** The user makes a new, high-priority request to update documentation for several team members, add missing endpoints, include timestamps, and fix a new error (shown in an image) that is still causing a white screen in the mobile app.
+- **Chat 220 (PENDING):** User confirmed the plan: Yes do full audit and stitch what is missing from snaproad-mobile?. They also requested a full update of all memory guides with detailed step-by-step instructions and endpoint information, and reiterated the need for scalable, cheap APIs. This is the current active task.
+- **Chat 218:** User asked what polish was missing from  compared to the  web preview.
+- **Chat 216:** User asked for clarification on what the  route is, its language, and why it exists if all work is moving to .
+- **Chat 151:** User gave clear instructions: all work goes to , port features from , implement Stripe, and run the Supabase migration now.
+- **Chat 148:** User provided Stripe **test** keys and clarified that the integration should be for 's backend and the web frontend that calls it. They also asked for the location of the  file.
+- **Chat 145:** User approved the plan to work on P0 (mobile feature sync) and P1 (Stripe) and provided a Stripe **live** key (which was later superseded by a test key).
+- **Chat 129:** Agent reported the Profile tab was fixed and working.
+- **Chat 115:** Agent identified the  error and implemented a fix.
+- **Chat 109:** Agent found the error in the console logs related to the blank Profile screen.
+- **Chat 93:** User noted the Profile screen was blank after the agent fixed the map rendering.
 
 **Project Health Check:**
--   **Broken**: The  application is non-functional from the user's local environment.
--   **Mocked**: Yes. The entire backend data layer is still using mock data.
--   **Healthy/In-Progress**: The web frontend is healthy and has new features. The backend is stable but incomplete.
+-   **Broken**: Nothing is critically broken.
+-   **In-Progress**:  is undergoing a major feature-parity update and documentation overhaul.
+-   **Mocked**: The backend data layer is still using mock data.
+-   **Blocked**: The Supabase database migration is blocked pending user action.
 
 **3rd Party Integrations**
--   **OpenAI GPT-5.2**: For Orion AI Coach (uses Emergent LLM Key).
--   **OpenAI Vision**: For Photo Capture blurring (uses Emergent LLM Key).
--   **Apple Maps MapKit**: Designated mapping technology.
--   **Supabase**: Integrated at the code level, but the database is not populated.
--   **Planned**: Gas Buddy, Stripe.
+-   **Stripe**: Integrated with test keys. Backend endpoint created.
+-   **Supabase**: Integrated at the code level, but DB is empty and schema is not migrated (BLOCKED).
+-   **OpenAI GPT-5.2**: Planned for Orion AI Coach (uses Emergent LLM Key).
+-   **OpenAI Vision**: Planned for Photo Capture blurring (uses Emergent LLM Key).
+-   **Apple Maps MapKit**: Designated mapping technology (currently using OpenStreetMap for web preview).
+-   **Planned**: Gas Buddy.
 
 **Testing status**
-  - Testing agent used after significant changes: NO
+  - Testing agent used after significant changes: YES (After the major bug-fixing sprint, all tests passed).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: []
-  - Known regressions: The  web build broke after dependency updates and is still not fixed for the user.
+  - Known regressions: None.
 
 **Credentials to test flow:**
 -   **Driver App Login:**  / 
 -   **Partner Login:**  / 
 -   **Admin Login:**  / 
+-   **Stripe Test Keys:** Available in  and .
 
 **What agent forgot to execute**
--   The agent did not successfully resolve the user's mobile app build/runtime issues. Despite numerous attempts and configuration changes, the user is still blocked by a white screen and errors, which is the most critical pending failure.</analysis>
+-   The agent is in the middle of a large, multi-step task requested by the user. Nothing has been forgotten; the work is actively in progress.</analysis>

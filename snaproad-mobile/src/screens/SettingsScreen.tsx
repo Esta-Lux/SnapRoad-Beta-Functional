@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, BorderRadius, FontSizes, FontWeights } from '../utils/theme';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface SettingsScreenProps {
   navigation?: any;
@@ -66,9 +67,9 @@ const SettingSection: React.FC<{ title: string; children: React.ReactNode }> = (
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, onNavigate }) => {
   const insets = useSafeAreaInsets();
+  const { isDark, toggleTheme, theme, setTheme } = useTheme();
   
   // Settings state
-  const [darkMode, setDarkMode] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const [locationTracking, setLocationTracking] = useState(true);
   const [autoStartTrip, setAutoStartTrip] = useState(false);
@@ -109,21 +110,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, onNa
             icon="person-outline"
             title="Account Info"
             subtitle="Name, email, phone"
-            onPress={() => handleNavigate('account-info')}
+            onPress={() => handleNavigate('AccountInfo')}
           />
           <SettingItem
             icon="shield-checkmark-outline"
             title="Privacy Center"
             subtitle="Data, permissions, preferences"
             iconColor={Colors.success}
-            onPress={() => handleNavigate('privacy-center')}
+            onPress={() => handleNavigate('PrivacyCenter')}
           />
           <SettingItem
             icon="diamond-outline"
             title="Subscription"
             subtitle="Premium - Active"
             iconColor={Colors.accent}
-            onPress={() => handleNavigate('pricing')}
+            onPress={() => handleNavigate('Pricing')}
           />
         </SettingSection>
 
@@ -132,12 +133,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, onNa
           <SettingItem
             icon="moon-outline"
             title="Dark Mode"
+            subtitle={theme === 'system' ? 'Following system' : (isDark ? 'On' : 'Off')}
             iconColor={Colors.primary}
             showChevron={false}
             rightElement={
               <Switch
-                value={darkMode}
-                onValueChange={setDarkMode}
+                value={isDark}
+                onValueChange={toggleTheme}
                 trackColor={{ false: Colors.surfaceLight, true: Colors.primary }}
                 thumbColor={Colors.text}
               />
@@ -283,12 +285,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, onNa
           <SettingItem
             icon="document-text-outline"
             title="Terms of Service"
-            onPress={() => handleNavigate('terms')}
+            onPress={() => handleNavigate('TermsOfService')}
           />
           <SettingItem
             icon="lock-closed-outline"
             title="Privacy Policy"
-            onPress={() => handleNavigate('privacy')}
+            onPress={() => handleNavigate('PrivacyPolicy')}
           />
         </SettingSection>
 

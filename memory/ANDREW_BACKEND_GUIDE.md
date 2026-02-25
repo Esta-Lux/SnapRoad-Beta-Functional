@@ -1,170 +1,477 @@
-# SnapRoad Backend Developer Guide
-## For Andrew (Backend Lead)
-
-> **Tech Stack**: FastAPI + MongoDB + Stripe + Python 3.10+
-> **Current State**: UI complete with mock data - needs real API integration
-> **Maps**: Apple Maps MapKit JS (for server-side directions/search/ETA)
+# Andrew - Backend Engineering Guide
+> **Role:** Engineering Lead  
+> **Last Updated:** December 2025  
+> **Focus:** FastAPI backend, 60+ API endpoints, Supabase migration, integrations
 
 ---
 
-## Current Architecture
+## Quick Start
+
+```bash
+# Navigate to backend
+cd /app/backend
+
+# Check service status
+sudo supervisorctl status backend
+
+# View logs
+tail -f /var/log/supervisor/backend.out.log
+
+# Restart service
+sudo supervisorctl restart backend
+```
+
+---
+
+## 1. Architecture Overview
 
 ```
 /app/backend/
-├── server.py                     # Main FastAPI server (monolithic, ~3700 lines)
-├── .env                          # Environment variables
-├── requirements.txt              # Python dependencies
+├── server.py              # Supervisor entry (imports app from main.py)
+├── main.py                # FastAPI app factory + CORS + routers
+├── config.py              # Environment variable loading
+├── database.py            # Supabase client singleton
+├── data.py                # Mock data (fallback when DB empty)
+├── requirements.txt       # Python dependencies
+├── .env                   # Environment variables
+├── sql/
+│   └── supabase_migration.sql  # Database schema + seed data
+├── routes/                # 11 route modules
+│   ├── __init__.py
+│   ├── auth.py            # Authentication
+│   ├── users.py           # User profile, cars, skins
+│   ├── offers.py          # Offers CRUD
+│   ├── partners.py        # Partner portal
+│   ├── gamification.py    # XP, badges, challenges, gems
+│   ├── trips.py           # Trips, fuel, incidents
+│   ├── admin.py           # Admin console
+│   ├── social.py          # Friends, family, reports
+│   ├── navigation.py      # Locations, routes, map
+│   ├── ai.py              # Orion AI, photo analysis
+│   ├── payments.py        # Stripe integration
+│   └── webhooks.py        # Stripe webhooks, WebSocket
 ├── services/
-│   ├── orion_coach.py            # AI driving coach (LIVE - GPT-5.2 via Emergent LLM)
-│   ├── photo_analysis.py         # AI face/plate detection (LIVE - OpenAI Vision)
-│   ├── partner_service.py        # Partner operations (MOCKED)
-│   └── websocket_manager.py      # Real-time WebSocket notifications
-└── tests/
-    └── test_server_pytest.py     # Existing tests
+│   ├── mock_data.py       # In-memory mock data
+│   ├── supabase_service.py # Supabase CRUD
+│   ├── orion_coach.py     # GPT-5.2 integration
+│   ├── photo_analysis.py  # OpenAI Vision
+│   ├── partner_service.py # Partner business logic
+│   └── websocket_manager.py # WebSocket management
+├── models/
+│   └── schemas.py         # Pydantic models (40+)
+├── middleware/
+│   └── auth.py            # JWT encode/decode
+└── tests/                 # pytest test files
 ```
 
 ---
 
-## Bug Fixes:
-# Fix Buttons in Report Dashboard
+## 2. Complete API Reference (60+ Endpoints)
 
-## New Features to Integrate (Backend Work)
+### Health & System
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Root info |
+| GET | `/api/health` | Health check |
+| GET | `/api/admin/migrate` | Run Supabase migration |
+| GET | `/api/admin/db-status` | DB connectivity |
+| GET | `/api/admin/supabase/status` | Supabase status |
 
-### 1. Trip Analytics Service (Currently Mocked in server.py)
-**Endpoints ready, data is generated at runtime:**
-- `GET /api/trips/history/detailed?days=30` - Trip list with fuel analytics
-- `GET /api/fuel/analytics` - Monthly fuel breakdown
-- `GET /api/routes/history-3d?days=90` - Route data for 3D visualization
+### Authentication (`routes/auth.py`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/signup` | Register user |
+| POST | `/api/auth/login` | Authenticate user |
 
-**TODO**: Replace `generate_sample_trips()` function in server.py with real MongoDB queries.
-- Store trip data when drivers complete trips via `POST /api/trips/complete-with-safety`
-- Aggregate fuel data per month
-- Build route frequency from trip coordinates
+### Users (`routes/users.py`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/user/profile` | Get current user |
+| GET | `/api/user/stats` | Driving stats |
+| POST | `/api/user/plan` | Update subscription |
+| POST | `/api/user/car` | Save car customization |
+| GET | `/api/user/car` | Get car customization |
+| GET | `/api/user/car/colors` | Available colors |
+| POST | `/api/user/car/color/{key}/purchase` | Buy color |
+| GET | `/api/user/onboarding-status` | Onboarding flags |
+| GET | `/api/session/reset` | Reset onboarding |
+| GET | `/api/cars` | List car models |
+| POST | `/api/cars/{id}/purchase` | Buy car |
+| POST | `/api/cars/{id}/equip` | Equip car |
+| GET | `/api/skins` | List skins |
+| POST | `/api/skins/{id}/purchase` | Buy skin |
+| POST | `/api/skins/{id}/equip` | Equip skin |
+| GET | `/api/pricing` | Subscription pricing |
+| GET | `/api/settings/notifications` | Notification settings |
+| POST | `/api/settings/notifications` | Update notifications |
+| GET | `/api/help/faq` | FAQ data |
+| POST | `/api/help/contact` | Submit contact form |
 
-### 2. Offer Boosting System (Currently Mocked in server.py)
-**Endpoints ready:**
-- `GET /api/partner/boosts/pricing` - Boost packages (Basic $9.99/24h, Standard $19.99/72h, Premium $39.99/7d)
-- `POST /api/partner/boosts/create` - Create a boost for an offer
-- `GET /api/partner/boosts/active` - Get active boosts for a partner
-- `DELETE /api/partner/boosts/{offer_id}` - Cancel a boost
-- `POST /api/partner/credits/add` - Add credits to partner account
+### Offers (`routes/offers.py`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/offers` | All active offers |
+| POST | `/api/offers` | Create offer |
+| POST | `/api/offers/{id}/redeem` | Redeem offer |
+| POST | `/api/offers/{id}/favorite` | Toggle favorite |
+| GET | `/api/offers/nearby` | Offers by location |
+| GET | `/api/offers/on-route` | Offers on route |
+| GET | `/api/offers/personalized` | AI personalized |
+| POST | `/api/offers/{id}/accept-voice` | Voice accept |
+| POST | `/api/driver/location-visit` | Record visit |
+| POST | `/api/images/generate` | Generate image |
 
-**TODO**: Connect to Stripe for real payments, store boost records in MongoDB.
+### Partners (`routes/partners.py`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/partner/plans` | Partner plans |
+| GET | `/api/partner/profile` | Partner profile |
+| POST | `/api/partner/plan` | Change plan |
+| GET | `/api/partner/locations` | List locations |
+| POST | `/api/partner/locations` | Add location |
+| PUT | `/api/partner/locations/{id}` | Update location |
+| DELETE | `/api/partner/locations/{id}` | Delete location |
+| POST | `/api/partner/locations/{id}/set-primary` | Set primary |
+| POST | `/api/partner/offers` | Create offer |
+| GET | `/api/partner/offers` | List offers |
+| PUT | `/api/partner/profile` | Update profile |
+| GET | `/api/partner/boosts/pricing` | Boost pricing |
+| POST | `/api/partner/boosts/create` | Create boost |
+| GET | `/api/partner/boosts/active` | Active boosts |
+| DELETE | `/api/partner/boosts/{id}` | Cancel boost |
+| GET | `/api/partner/credits` | Credit balance |
+| POST | `/api/partner/credits/add` | Add credits |
+| POST | `/api/partner/v2/login` | Partner login |
+| GET | `/api/partner/v2/profile/{id}` | Full profile |
+| GET | `/api/partner/v2/team/{id}` | Team members |
+| POST | `/api/partner/v2/team/{id}/invite` | Invite member |
+| PUT | `/api/partner/v2/team/{id}/role` | Change role |
+| DELETE | `/api/partner/v2/team/{id}` | Remove member |
+| GET | `/api/partner/v2/referrals/{id}` | Referrals |
+| POST | `/api/partner/v2/referrals/{id}` | Send referral |
+| POST | `/api/partner/v2/credits/{id}/use` | Use credits |
+| POST | `/api/partner/v2/redeem` | QR redemption |
+| GET | `/api/partner/v2/redemptions/{id}` | Recent redemptions |
+| GET | `/api/partner/v2/analytics/{id}` | Analytics |
 
-### 3. Apple Maps MapKit JS Integration (Backend Token Generation)
-**Why backend?** Apple MapKit JS requires JWT tokens signed with your private key. Never expose the private key to the frontend or mobile app.
+### Gamification (`routes/gamification.py`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/xp/add` | Add XP |
+| GET | `/api/xp/status` | Level + XP |
+| GET | `/api/xp/config` | XP config |
+| GET | `/api/badges` | All badges |
+| GET | `/api/badges/categories` | By category |
+| GET | `/api/badges/community` | Community badges |
+| GET | `/api/leaderboard` | Leaderboard |
+| GET | `/api/challenges` | Active challenges |
+| POST | `/api/challenges` | Create challenge |
+| POST | `/api/challenges/{id}/accept` | Accept |
+| POST | `/api/challenges/{id}/claim` | Claim reward |
+| GET | `/api/challenges/history` | History |
+| POST | `/api/gems/generate-route` | Spawn gems |
+| POST | `/api/gems/collect` | Collect gem |
+| GET | `/api/gems/trip-summary/{id}` | Trip gems |
+| GET | `/api/gems/history` | Gem history |
+| GET | `/api/driving-score` | Score breakdown |
+| GET | `/api/weekly-recap` | Weekly recap |
 
-**Endpoint to create:**
+### Trips & Fuel (`routes/trips.py`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/trips/history` | Recent trips |
+| POST | `/api/trips/complete` | Complete trip |
+| POST | `/api/trips/complete-with-safety` | With safety metrics |
+| GET | `/api/trips/history/detailed` | Detailed history |
+| POST | `/api/trips/{id}/share` | Share trip |
+| GET | `/api/fuel/history` | Fuel log |
+| POST | `/api/fuel/log` | Add fuel entry |
+| GET | `/api/fuel/trends` | Fuel trends |
+| GET | `/api/fuel/prices` | Current prices |
+| GET | `/api/fuel/analytics` | Monthly breakdown |
+| POST | `/api/incidents/report` | Report incident |
+| GET | `/api/routes/history-3d` | 3D route data |
+
+### Navigation (`routes/navigation.py`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/locations` | Saved locations |
+| POST | `/api/locations` | Save location |
+| DELETE | `/api/locations/{id}` | Delete location |
+| GET | `/api/routes` | Saved routes |
+| POST | `/api/routes` | Save route |
+| DELETE | `/api/routes/{id}` | Delete route |
+| POST | `/api/routes/{id}/toggle` | Toggle active |
+| POST | `/api/routes/{id}/notifications` | Toggle notifications |
+| POST | `/api/navigation/start` | Start nav |
+| POST | `/api/navigation/stop` | Stop nav |
+| POST | `/api/navigation/voice-command` | Voice command |
+| GET | `/api/map/search` | Location search |
+| GET | `/api/map/directions` | Get directions |
+| GET | `/api/widgets` | Widget settings |
+| POST | `/api/widgets/{id}/toggle` | Toggle widget |
+| POST | `/api/widgets/{id}/collapse` | Collapse widget |
+
+### Admin (`routes/admin.py`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/admin/offers/create` | Create offer |
+| POST | `/api/admin/offers/bulk` | Bulk create |
+| POST | `/api/admin/offers/bulk-csv` | CSV import |
+| GET | `/api/admin/export/offers` | Export offers |
+| GET | `/api/admin/export/users` | Export users |
+| POST | `/api/admin/import/offers` | Import offers |
+| GET | `/api/admin/analytics` | Platform analytics |
+| GET | `/api/admin/pricing` | Get pricing |
+| POST | `/api/admin/pricing` | Update pricing |
+| POST | `/api/analytics/track` | Track event |
+| GET | `/api/analytics/dashboard` | Analytics dashboard |
+| POST | `/api/admin/boosts/create` | Admin boost |
+| POST | `/api/boosts/calculate` | Calculate cost |
+| POST | `/api/boosts/create` | Create boost |
+| GET | `/api/boosts` | List boosts |
+| GET | `/api/boosts/{id}` | Get boost |
+| DELETE | `/api/boosts/{id}` | Cancel boost |
+| GET | `/api/admin/users` | List users |
+| GET | `/api/admin/stats` | Platform stats |
+| GET | `/api/admin/events` | Platform events |
+| POST | `/api/admin/supabase/migrate` | Run migration |
+
+### AI (`routes/ai.py`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/orion/chat` | AI chat (GPT-5.2) |
+| GET | `/api/orion/history/{session}` | Chat history |
+| DELETE | `/api/orion/session/{session}` | Clear session |
+| GET | `/api/orion/tips` | Quick tips |
+| POST | `/api/photo/analyze` | Photo analysis |
+
+### Social (`routes/social.py`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/friends` | Friends list |
+| GET | `/api/friends/search` | Search users |
+| POST | `/api/friends/add` | Add friend |
+| DELETE | `/api/friends/{id}` | Remove friend |
+| GET | `/api/family/members` | Family members |
+| GET | `/api/reports` | Road reports |
+| POST | `/api/reports` | Create report |
+| POST | `/api/reports/{id}/upvote` | Upvote |
+| DELETE | `/api/reports/{id}` | Delete report |
+| GET | `/api/reports/my` | Own reports |
+
+### Payments (`routes/payments.py`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/payments/plans` | Subscription plans |
+| POST | `/api/payments/checkout/session` | Create checkout |
+| GET | `/api/payments/checkout/status/{id}` | Check status |
+| POST | `/api/payments/webhook/stripe` | Stripe webhook |
+| GET | `/api/payments/transactions` | All transactions |
+| GET | `/api/payments/transaction/{id}` | Get transaction |
+
+### WebSockets (`routes/webhooks.py`)
+| Type | Endpoint | Description |
+|------|----------|-------------|
+| WS | `/api/ws/partner/{id}` | Partner notifications |
+| WS | `/api/ws/customer/{id}` | Customer notifications |
+| GET | `/api/ws/status/{id}` | Connection count |
+| WS | `/api/ws/admin/moderation` | AI moderation feed |
+| POST | `/api/admin/moderation/simulate` | Simulate incident |
+| GET | `/api/admin/moderation/status` | Queue status |
+
+---
+
+## 3. Supabase Integration
+
+### What's Implemented
+| Component | Status | File |
+|-----------|--------|------|
+| Client | CONNECTED | `/app/backend/database.py` |
+| Auth | ACTIVE | Uses Supabase Auth |
+| Migration Script | READY | `/app/backend/sql/supabase_migration.sql` |
+| Fallback | WORKING | Uses mock data when DB empty |
+
+### What's Blocked
+```
+ACTION REQUIRED: Manual SQL execution in Supabase dashboard
+
+Network firewall blocks outbound PostgreSQL connections.
+User must manually run the migration script.
+```
+
+### Tables Created by Migration
+| Table | Columns | Purpose |
+|-------|---------|---------|
+| users | id, email, name, gems, level, xp, safety_score, etc. | Driver accounts |
+| partners | id, email, name, plan, credits, etc. | Business accounts |
+| partner_locations | id, partner_id, name, address, lat, lng, etc. | Store locations |
+| offers | id, partner_id, title, gems_reward, etc. | Available offers |
+| trips | id, user_id, distance, duration, safety_score, etc. | Trip history |
+| trip_gems | id, trip_id, lat, lng, value, collected | Gems on route |
+| road_reports | id, user_id, type, title, lat, lng, upvotes | Hazard reports |
+| events | id, title, date, partner_id | Platform events |
+| challenges | id, challenger_id, opponent_id, stake | Driver challenges |
+| notifications | id, user_id, type, message, read | User notifications |
+| boosts | id, offer_id, multiplier, expires_at | Offer boosts |
+| analytics_events | id, event_type, offer_id, timestamp | Analytics tracking |
+
+---
+
+## 4. Stripe Integration
+
+### What's Implemented
+| Feature | Status | File |
+|---------|--------|------|
+| Checkout Session | COMPLETE | `routes/payments.py` |
+| Webhook Handler | COMPLETE | `routes/payments.py` |
+| Status Check | COMPLETE | `routes/payments.py` |
+| Transaction Records | COMPLETE | In-memory (move to Supabase) |
+
+### Subscription Plans
 ```python
-@app.get("/api/maps/token")
-def get_mapkit_token():
-    """Generate a short-lived JWT for Apple MapKit JS API calls."""
-    import jwt
-    import time
-
-    team_id = os.environ.get("APPLE_MAPKIT_TEAM_ID")
-    key_id = os.environ.get("APPLE_MAPKIT_KEY_ID")
-    private_key = os.environ.get("APPLE_MAPKIT_PRIVATE_KEY")
-
-    payload = {
-        "iss": team_id,
-        "iat": int(time.time()),
-        "exp": int(time.time()) + 3600,  # 1 hour
-        "origin": "*"  # Restrict in production
-    }
-    token = jwt.encode(payload, private_key, algorithm="ES256", headers={"kid": key_id})
-    return {"success": True, "token": token}
+SUBSCRIPTION_PLANS = {
+    "basic": { "price": 0.00, "period": "forever" },
+    "premium": { "price": 10.99, "period": "month" },
+    "family": { "price": 14.99, "period": "month" }
+}
 ```
 
-**Apple Maps Server API endpoints your backend can proxy:**
-- `GET https://maps-api.apple.com/v1/directions` - Turn-by-turn directions
-- `GET https://maps-api.apple.com/v1/search` - Place search
-- `GET https://maps-api.apple.com/v1/etas` - ETA calculations
-- `GET https://maps-api.apple.com/v1/reverseGeocode` - Coordinates to address
+### Test Keys (in .env)
+```
+STRIPE_API_KEY=sk_test_51T1HkrDq0wX3q3xg...
+STRIPE_PUBLISHABLE_KEY=pk_test_51T1HkrDq0wX3q3xg...
+```
+
+### What's NOT Implemented
+- [ ] Live Stripe keys
+- [ ] Subscription management
+- [ ] Invoice generation
+- [ ] Webhook signature verification
 
 ---
 
-## Environment Variables Needed
+## 5. AI Integration
 
-```env
-# Already configured:
-EMERGENT_LLM_KEY=sk-emergent-xxx       # For Orion AI Coach & Photo Analysis
-MONGO_URL=mongodb://...                 # Database
-DB_NAME=snaproad
+### Orion AI Coach (GPT-5.2)
+```python
+# services/orion_coach.py
+# Uses Emergent LLM Key via emergentintegrations
 
-# Needed from PM:
-APPLE_MAPKIT_TEAM_ID=XXXXXXXXXX         # Apple Developer Team ID
-APPLE_MAPKIT_KEY_ID=XXXXXXXXXX          # MapKit JS Key ID
-APPLE_MAPKIT_PRIVATE_KEY=-----BEGIN...  # Contents of .p8 file
-STRIPE_SECRET_KEY=sk_test_xxxxx         # For boost payments
-STRIPE_WEBHOOK_SECRET=whsec_xxxxx       # For webhooks
+from emergentintegrations.llm.openai import chat_completion
+
+# Multi-turn conversation support
+# Session management with history
+```
+
+### Photo Analysis (OpenAI Vision)
+```python
+# services/photo_analysis.py
+# Detects faces and license plates for privacy blur
+
+from emergentintegrations.llm.openai import vision_analysis
 ```
 
 ---
 
-## Recommended Migration Path
-
-### Phase 1: Database Setup (MongoDB)
-1. Enable MONGO_URL in .env
-2. Create collections: `users`, `partners`, `trips`, `offers`, `boosts`, `redemptions`
-3. Migrate the in-memory `users_db`, `offers_db`, `partners_db` to MongoDB
-4. Keep mock data generators as seed scripts
-
-### Phase 2: Trip & Fuel APIs
-1. Store trip completions in `trips` collection
-2. Build aggregation pipeline for fuel analytics
-3. Build route frequency map from trip coordinates
-
-### Phase 3: Partner & Boost APIs
-1. Migrate partner_service.py from in-memory to MongoDB
-2. Connect boost payments to Stripe (one-time charges)
-3. Store boost records in `boosts` collection
-
-### Phase 4: Apple MapKit Token API
-1. Create `/api/maps/token` endpoint
-2. Mobile/Web calls this to get signed JWT
-3. Use JWT to call Apple Maps Server API directly from clients
-
----
-
-## Testing
+## 6. Environment Variables
 
 ```bash
-# Test boost pricing
-curl https://YOUR_URL/api/partner/boosts/pricing
+# /app/backend/.env
 
-# Test creating a boost (admin offers bypass ownership check)
-curl -X POST https://YOUR_URL/api/partner/boosts/create \
-  -H "Content-Type: application/json" \
-  -d '{"offer_id": 4, "boost_type": "basic", "use_credits": false}'
+# Database (Legacy - required by platform)
+MONGO_URL=mongodb://localhost:27017
+DB_NAME=snaproad
 
-# Test trip history
-curl "https://YOUR_URL/api/trips/history/detailed?days=30"
+# Supabase
+SUPABASE_URL=https://cuseezsdaqlbwlxnjsyr.supabase.co
+SUPABASE_SECRET_KEY=eyJhbGci...
+SUPABASE_PUBLISHABLE_KEY=eyJhbGci...
+SUPABASE_DB_PASSWORD=***
 
-# Test route history
-curl "https://YOUR_URL/api/routes/history-3d?days=90"
+# Auth
+JWT_SECRET=snaproad-jwt-secret-2025
 
-# Test Orion AI (live)
-curl -X POST https://YOUR_URL/api/orion/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message":"How can I save fuel?","session_id":"test"}'
+# AI
+EMERGENT_LLM_KEY=sk-emergent-...
+
+# Payments
+STRIPE_API_KEY=sk_test_...
+STRIPE_PUBLISHABLE_KEY=pk_test_...
 ```
 
 ---
 
-## Key API Contracts
+## 7. Testing
 
-| Method | Endpoint | Status | Notes |
-|--------|----------|--------|-------|
-| GET | `/api/trips/history/detailed` | Mocked | Needs MongoDB |
-| GET | `/api/fuel/analytics` | Mocked | Needs MongoDB |
-| GET | `/api/routes/history-3d` | Mocked | Needs MongoDB |
-| GET | `/api/partner/boosts/pricing` | Mocked | Static data, ready |
-| POST | `/api/partner/boosts/create` | Mocked | Needs Stripe |
-| GET | `/api/partner/boosts/active` | Mocked | Needs MongoDB |
-| POST | `/api/orion/chat` | **LIVE** | GPT-5.2 via Emergent |
-| POST | `/api/photos/analyze` | **LIVE** | OpenAI Vision |
+### Run All Tests
+```bash
+cd /app/backend
+python -m pytest tests/ -v
+```
+
+### Test Specific Module
+```bash
+python -m pytest tests/test_payments.py -v
+```
+
+### curl Examples
+```bash
+# Get API URL
+API_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d '=' -f2)
+
+# Health check
+curl $API_URL/api/health
+
+# Login
+curl -X POST $API_URL/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"driver@snaproad.com","password":"password123"}'
+
+# Get offers
+curl $API_URL/api/offers
+
+# Create Stripe checkout
+curl -X POST $API_URL/api/payments/checkout/session \
+  -H "Content-Type: application/json" \
+  -d '{"plan_id":"premium","origin_url":"https://example.com"}'
+```
 
 ---
 
-**Questions? Contact the PM for credentials or clarification.**
+## 8. Next Steps
+
+### P0 - Critical
+1. **Run Supabase migration** (manual action required)
+2. **Connect routes to live DB** (replace mock data)
+
+### P1 - Important
+1. **Gas price API integration**
+2. **Push notification backend**
+3. **Stripe webhook signature verification**
+
+### P2 - Future
+1. **Rate limiting**
+2. **Caching layer (Redis)**
+3. **Background jobs (Celery)**
+
+---
+
+## 9. File Reference
+
+| What | Where |
+|------|-------|
+| Entry Point | `/app/backend/server.py` |
+| App Factory | `/app/backend/main.py` |
+| Routes | `/app/backend/routes/` |
+| Services | `/app/backend/services/` |
+| Models | `/app/backend/models/schemas.py` |
+| Database | `/app/backend/database.py` |
+| Config | `/app/backend/config.py` |
+| Migration | `/app/backend/sql/supabase_migration.sql` |
+| Tests | `/app/backend/tests/` |
+| Logs | `/var/log/supervisor/backend.*.log` |
+
+---
+
+*Document owner: Engineering Lead (Andrew) | Last updated: December 2025*
