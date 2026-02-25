@@ -159,9 +159,9 @@ GET    /api/images/{id}               → Get generated image
 
 ## 🗄️ Database Schema
 
-### Users Collection/Table
+### Profiles Collection/Table
 ```sql
-CREATE TABLE users (
+CREATE TABLE profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -271,7 +271,7 @@ CREATE TABLE offers (
 CREATE TABLE redemptions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     offer_id UUID REFERENCES offers(id),
-    user_id UUID REFERENCES users(id),
+    profile_id UUID REFERENCES profiles(id),
     
     qr_code VARCHAR(255) UNIQUE NOT NULL,
     qr_expires_at TIMESTAMP NOT NULL,
@@ -303,11 +303,11 @@ CREATE TABLE badges (
     rarity VARCHAR(20) DEFAULT 'common' -- common, rare, epic, legendary
 );
 
-CREATE TABLE user_badges (
-    user_id UUID REFERENCES users(id),
+CREATE TABLE profile_badges (
+    profile_id UUID REFERENCES profiles(id),
     badge_id UUID REFERENCES badges(id),
     earned_at TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY (user_id, badge_id)
+    PRIMARY KEY (profile_id, badge_id)
 );
 ```
 
@@ -334,13 +334,13 @@ CREATE TABLE challenges (
 
 CREATE TABLE challenge_participants (
     challenge_id UUID REFERENCES challenges(id),
-    user_id UUID REFERENCES users(id),
+    profile_id UUID REFERENCES profiles(id),
     
     progress INTEGER DEFAULT 0,
     completed BOOLEAN DEFAULT false,
     
     joined_at TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY (challenge_id, user_id)
+    PRIMARY KEY (challenge_id, profile_id)
 );
 ```
 

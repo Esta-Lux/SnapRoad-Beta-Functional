@@ -23,9 +23,9 @@
 ## 🔴 P0 - Critical (Must Have for Launch)
 
 ### 1. Database Integration
-- [ ] Choose database (PostgreSQL recommended, or MongoDB)
-- [ ] Set up database server (AWS RDS, Supabase, or self-hosted)
-- [ ] Create database schema (see `/app/memory/DEPLOYMENT_SCOPE.md`)
+- [x] Choose database (PostgreSQL)
+- [x] Set up database server (Supabase)
+- [x] Create database schema (see `/app/memory/DEPLOYMENT_SCOPE.md`)
 - [ ] Implement connection pooling
 - [ ] Migrate mock data structures to database models
 - [ ] Add database migrations system (Alembic for Python)
@@ -44,7 +44,7 @@ trips, boosts, analytics_events
 ---
 
 ### 2. User Authentication
-- [ ] Choose auth provider (Auth0, Firebase Auth, or custom JWT)
+- [ ] Choose auth provider (custom JWT)
 - [ ] Implement user registration endpoint
 - [ ] Implement user login endpoint
 - [ ] Implement password reset flow
