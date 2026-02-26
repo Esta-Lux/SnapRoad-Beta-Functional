@@ -27,8 +27,19 @@ import type {
   PaginatedResponse,
 } from '../types';
 
-// Get API URL from environment
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://feature-stitch.preview.emergentagent.com/api';
+// Get API URL from environment - no hardcoded fallback for portability
+// Set EXPO_PUBLIC_API_URL in .env to point to your backend
+const getApiUrl = (): string => {
+  const baseUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (!baseUrl) {
+    console.warn('EXPO_PUBLIC_API_URL not set in .env - using localhost:8001/api as fallback');
+    return 'http://localhost:8001/api';
+  }
+  // Ensure /api suffix is appended
+  return baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
+};
+
+const API_URL = getApiUrl();
 
 const TOKEN_KEY = 'snaproad_token';
 
