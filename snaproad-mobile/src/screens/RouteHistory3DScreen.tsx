@@ -79,8 +79,9 @@ export const RouteHistory3DScreen: React.FC<RouteHistory3DScreenProps> = ({ navi
   const loadRoutes = async () => {
     setLoading(true);
     try {
+      const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8001';
       const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL || 'https://feature-stitch.preview.emergentagent.com'}/api/routes/history-3d?days=${dateRange}`
+        `${API_BASE}/api/routes/history-3d?days=${dateRange}`
       );
       const data = await response.json();
       if (data.success) {
