@@ -1,12 +1,12 @@
-# SnapRoad - Orion AI Coach Service
-# AI-powered driving assistant using Emergent LLM
+# SnapRoad - Orion AI Coach Service (Portable)
+# AI-powered driving assistant using OpenAI SDK directly
+# No platform-specific dependencies - works anywhere
 
 import os
-import uuid
 from datetime import datetime
 from typing import Optional, List
 from dotenv import load_dotenv
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from openai import AsyncOpenAI
 
 load_dotenv()
 
@@ -40,77 +40,98 @@ Response format:
 
 Example interactions:
 User: "How can I improve my safety score?"
-Orion: "Great question! Focus on smooth braking and acceleration - harsh movements lower your score. Also, try to maintain consistent speeds and use your turn signals early. You're on track to earn bonus gems for safe driving! 🎯"
+Orion: "Great question! Focus on smooth braking and acceleration - harsh movements lower your score. Also, try to maintain consistent speeds and use your turn signals early. You're on track to earn bonus gems for safe driving!"
 
 User: "I'm stuck in traffic"
-Orion: "Traffic can be frustrating, but it's a great opportunity to practice patience - a key safe driving skill! Keep a safe following distance even when stopped, and avoid distracted driving. This calm approach actually helps your safety score. 🚗"
+Orion: "Traffic can be frustrating, but it's a great opportunity to practice patience - a key safe driving skill! Keep a safe following distance even when stopped, and avoid distracted driving. This calm approach actually helps your safety score."
 """
 
 class OrionCoachService:
-    """Service for handling Orion AI Coach conversations"""
+    """Service for handling Orion AI Coach conversations using OpenAI"""
     
     def __init__(self):
-        self.api_key = os.environ.get('EMERGENT_LLM_KEY')
+        # Support multiple env var names for API key
+        self.api_key = (
+            os.environ.get('OPENAI_API_KEY') or 
+            os.environ.get('OPENAI_KEY') or
+            os.environ.get('LLM_API_KEY')
+        )
+        self.model = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')  # Default to cost-effective model
         self.sessions = {}  # Store chat sessions by session_id
+        self._client = None
     
-    def _get_or_create_chat(self, session_id: str) -> LlmChat:
-        """Get existing chat session or create a new one"""
-        if session_id not in self.sessions:
+    def _get_client(self) -> AsyncOpenAI:
+        """Get or create OpenAI client"""
+        if self._client is None:
             if not self.api_key:
-                raise ValueError("EMERGENT_LLM_KEY not configured")
-            
-            chat = LlmChat(
-                api_key=self.api_key,
-                session_id=session_id,
-                system_message=ORION_SYSTEM_PROMPT
-            ).with_model("openai", "gpt-5.2")
-            
+                raise ValueError("OpenAI API key not configured. Set OPENAI_API_KEY in environment.")
+            self._client = AsyncOpenAI(api_key=self.api_key)
+        return self._client
+    
+    def _get_or_create_session(self, session_id: str) -> dict:
+        """Get existing session or create a new one"""
+        if session_id not in self.sessions:
             self.sessions[session_id] = {
-                "chat": chat,
+                "messages": [
+                    {"role": "system", "content": ORION_SYSTEM_PROMPT}
+                ],
                 "history": [],
                 "created_at": datetime.now()
             }
-        
-        return self.sessions[session_id]["chat"]
+        return self.sessions[session_id]
     
     async def send_message(self, session_id: str, user_text: str, context: Optional[dict] = None) -> dict:
         """Send a message to Orion and get a response"""
         try:
-            chat = self._get_or_create_chat(session_id)
+            client = self._get_client()
+            session = self._get_or_create_session(session_id)
             
             # Add context to the message if provided
             enhanced_text = user_text
             if context:
-                context_str = ""
+                context_parts = []
                 if context.get("safety_score"):
-                    context_str += f"\n[User's current safety score: {context['safety_score']}]"
+                    context_parts.append(f"User's current safety score: {context['safety_score']}")
                 if context.get("gems"):
-                    context_str += f"\n[User's gem balance: {context['gems']}]"
+                    context_parts.append(f"User's gem balance: {context['gems']}")
                 if context.get("current_speed"):
-                    context_str += f"\n[Current speed: {context['current_speed']} mph]"
+                    context_parts.append(f"Current speed: {context['current_speed']} mph")
                 if context.get("weather"):
-                    context_str += f"\n[Weather: {context['weather']}]"
-                if context_str:
-                    enhanced_text = f"{user_text}\n\n[Context: {context_str}]"
+                    context_parts.append(f"Weather: {context['weather']}")
+                if context_parts:
+                    enhanced_text = f"{user_text}\n\n[Context: {', '.join(context_parts)}]"
             
-            user_message = UserMessage(text=enhanced_text)
-            response = await chat.send_message(user_message)
+            # Add user message to conversation
+            session["messages"].append({"role": "user", "content": enhanced_text})
             
-            # Store in history
-            self.sessions[session_id]["history"].append({
+            # Call OpenAI API
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=session["messages"],
+                max_tokens=300,
+                temperature=0.7,
+            )
+            
+            assistant_message = response.choices[0].message.content
+            
+            # Add assistant response to conversation
+            session["messages"].append({"role": "assistant", "content": assistant_message})
+            
+            # Store in history (user-facing format)
+            session["history"].append({
                 "role": "user",
-                "content": user_text,
+                "content": user_text,  # Original text without context
                 "timestamp": datetime.now().isoformat()
             })
-            self.sessions[session_id]["history"].append({
+            session["history"].append({
                 "role": "assistant",
-                "content": response,
+                "content": assistant_message,
                 "timestamp": datetime.now().isoformat()
             })
             
             return {
                 "success": True,
-                "response": response,
+                "response": assistant_message,
                 "session_id": session_id
             }
             
