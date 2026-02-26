@@ -1,7 +1,9 @@
-# SnapRoad - Stripe Payments Integration
+# SnapRoad - Stripe Payments Integration (Portable)
 # Handles subscription plans: Basic (free), Premium ($10.99/mo), Family ($14.99/mo)
+# Uses standard Stripe SDK - no platform-specific dependencies
 
 import os
+import stripe
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict
@@ -11,14 +13,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 router = APIRouter(prefix="/api/payments", tags=["Payments"])
-
-# Import Stripe checkout from emergentintegrations
-from emergentintegrations.payments.stripe.checkout import (
-    StripeCheckout, 
-    CheckoutSessionResponse, 
-    CheckoutStatusResponse, 
-    CheckoutSessionRequest
-)
 
 # Fixed subscription packages - NEVER accept amounts from frontend
 SUBSCRIPTION_PLANS = {
@@ -81,44 +75,49 @@ async def create_checkout_session(request: Request, checkout_data: CreateCheckou
         raise HTTPException(status_code=400, detail="Basic plan is free, no payment required")
     
     # Get Stripe API key from environment
-    api_key = os.environ.get("STRIPE_API_KEY")
+    api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
     if not api_key:
-        raise HTTPException(status_code=500, detail="Stripe not configured")
+        raise HTTPException(status_code=500, detail="Stripe not configured. Set STRIPE_SECRET_KEY in environment.")
     
-    # Build webhook URL
-    host_url = str(request.base_url).rstrip("/")
-    webhook_url = f"{host_url}/api/payments/webhook/stripe"
-    
-    # Initialize Stripe checkout
-    stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+    # Initialize Stripe
+    stripe.api_key = api_key
     
     # Build success and cancel URLs from frontend origin
     origin = checkout_data.origin_url.rstrip("/")
     success_url = f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin}/payment/cancel"
     
-    # Create checkout session request
-    checkout_request = CheckoutSessionRequest(
-        amount=float(plan["price"]),
-        currency="usd",
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={
-            "plan_id": checkout_data.plan_id,
-            "plan_name": plan["name"],
-            "user_id": checkout_data.user_id or "anonymous",
-            "user_email": checkout_data.user_email or "",
-            "source": "snaproad_mobile"
-        }
-    )
-    
     try:
-        # Create Stripe checkout session
-        session: CheckoutSessionResponse = await stripe_checkout.create_checkout_session(checkout_request)
+        # Create Stripe checkout session using standard SDK
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "product_data": {
+                        "name": f"SnapRoad {plan['name']} Plan",
+                        "description": ", ".join(plan["features"][:3]),
+                    },
+                    "unit_amount": int(plan["price"] * 100),  # Stripe uses cents
+                    "recurring": {"interval": "month"} if plan["period"] == "month" else None,
+                },
+                "quantity": 1,
+            }],
+            mode="subscription" if plan["period"] == "month" else "payment",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            customer_email=checkout_data.user_email if checkout_data.user_email else None,
+            metadata={
+                "plan_id": checkout_data.plan_id,
+                "plan_name": plan["name"],
+                "user_id": checkout_data.user_id or "anonymous",
+                "source": "snaproad_mobile"
+            }
+        )
         
         # Store transaction record BEFORE redirect
-        payment_transactions[session.session_id] = {
-            "session_id": session.session_id,
+        payment_transactions[session.id] = {
+            "session_id": session.id,
             "plan_id": checkout_data.plan_id,
             "plan_name": plan["name"],
             "amount": plan["price"],
@@ -130,8 +129,10 @@ async def create_checkout_session(request: Request, checkout_data: CreateCheckou
             "updated_at": datetime.utcnow().isoformat()
         }
         
-        return CheckoutResponse(url=session.url, session_id=session.session_id)
+        return CheckoutResponse(url=session.url, session_id=session.id)
         
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create checkout session: {str(e)}")
 
@@ -140,24 +141,31 @@ async def create_checkout_session(request: Request, checkout_data: CreateCheckou
 async def get_checkout_status(request: Request, session_id: str):
     """Get the status of a checkout session"""
     
-    api_key = os.environ.get("STRIPE_API_KEY")
+    api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="Stripe not configured")
     
-    host_url = str(request.base_url).rstrip("/")
-    webhook_url = f"{host_url}/api/payments/webhook/stripe"
-    
-    stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+    stripe.api_key = api_key
     
     try:
-        status: CheckoutStatusResponse = await stripe_checkout.get_checkout_status(session_id)
+        # Retrieve session from Stripe
+        session = stripe.checkout.Session.retrieve(session_id)
+        
+        # Map Stripe status to our format
+        payment_status = "pending"
+        if session.payment_status == "paid":
+            payment_status = "paid"
+        elif session.status == "expired":
+            payment_status = "expired"
+        elif session.status == "complete":
+            payment_status = "paid"
         
         # Update transaction record if exists
         if session_id in payment_transactions:
             tx = payment_transactions[session_id]
             
             # Only update if not already marked as paid (prevent double processing)
-            if tx["payment_status"] != "paid" and status.payment_status == "paid":
+            if tx["payment_status"] != "paid" and payment_status == "paid":
                 tx["payment_status"] = "paid"
                 tx["updated_at"] = datetime.utcnow().isoformat()
                 # Here you would also update user's subscription in database
@@ -166,14 +174,16 @@ async def get_checkout_status(request: Request, session_id: str):
             "success": True,
             "data": {
                 "session_id": session_id,
-                "status": status.status,
-                "payment_status": status.payment_status,
-                "amount_total": status.amount_total,
-                "currency": status.currency,
-                "metadata": status.metadata
+                "status": session.status,
+                "payment_status": payment_status,
+                "amount_total": session.amount_total,
+                "currency": session.currency,
+                "metadata": dict(session.metadata) if session.metadata else {}
             }
         }
         
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get checkout status: {str(e)}")
 
@@ -182,32 +192,44 @@ async def get_checkout_status(request: Request, session_id: str):
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events"""
     
-    api_key = os.environ.get("STRIPE_API_KEY")
+    api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
+    
     if not api_key:
         raise HTTPException(status_code=500, detail="Stripe not configured")
     
-    host_url = str(request.base_url).rstrip("/")
-    webhook_url = f"{host_url}/api/payments/webhook/stripe"
-    
-    stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+    stripe.api_key = api_key
     
     try:
         body = await request.body()
         signature = request.headers.get("Stripe-Signature", "")
         
-        webhook_response = await stripe_checkout.handle_webhook(body, signature)
+        # Verify webhook signature if secret is configured
+        if webhook_secret:
+            try:
+                event = stripe.Webhook.construct_event(body, signature, webhook_secret)
+            except stripe.error.SignatureVerificationError:
+                raise HTTPException(status_code=400, detail="Invalid webhook signature")
+        else:
+            # Parse without verification (not recommended for production)
+            import json
+            event = json.loads(body)
         
-        # Process webhook event
-        if webhook_response.payment_status == "paid":
-            session_id = webhook_response.session_id
-            if session_id in payment_transactions:
+        # Handle the event
+        event_type = event.get("type", event.get("event", {}).get("type", "unknown"))
+        
+        if event_type == "checkout.session.completed":
+            session_data = event.get("data", {}).get("object", {})
+            session_id = session_data.get("id")
+            
+            if session_id and session_id in payment_transactions:
                 tx = payment_transactions[session_id]
                 if tx["payment_status"] != "paid":
                     tx["payment_status"] = "paid"
                     tx["updated_at"] = datetime.utcnow().isoformat()
                     # Update user subscription in database here
         
-        return {"success": True, "event_type": webhook_response.event_type}
+        return {"success": True, "event_type": event_type}
         
     except Exception as e:
         # Log but don't fail - Stripe will retry
