@@ -50,7 +50,7 @@ class TestPaymentsAPI:
             f"{BASE_URL}/api/payments/checkout/session",
             json={
                 "plan_id": "premium",
-                "origin_url": "https://feature-stitch.preview.emergentagent.com",
+                "origin_url": "http://localhost:8001",
                 "user_id": "test-user-123",
                 "user_email": "test@example.com"
             }
@@ -71,7 +71,7 @@ class TestPaymentsAPI:
             f"{BASE_URL}/api/payments/checkout/session",
             json={
                 "plan_id": "family",
-                "origin_url": "https://feature-stitch.preview.emergentagent.com",
+                "origin_url": "http://localhost:8001",
                 "user_id": "test-user-456"
             }
         )
@@ -90,7 +90,7 @@ class TestPaymentsAPI:
             f"{BASE_URL}/api/payments/checkout/session",
             json={
                 "plan_id": "basic",
-                "origin_url": "https://feature-stitch.preview.emergentagent.com"
+                "origin_url": "http://localhost:8001"
             }
         )
         
