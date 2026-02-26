@@ -463,7 +463,8 @@ function AuthModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const API_URL = 'https://feature-stitch.preview.emergentagent.com';
+  // Use environment variable for API URL (set in .env)
+  const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8001';
 
   const handleSubmit = async () => {
     if (!email || !password || (mode === 'signup' && !name)) {
