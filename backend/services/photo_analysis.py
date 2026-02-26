@@ -1,5 +1,6 @@
-# SnapRoad - Photo Analysis Service with Privacy Blur
+# SnapRoad - Photo Analysis Service with Privacy Blur (Portable)
 # AI-powered face and license plate detection for privacy protection
+# Uses OpenAI Vision API directly - no platform-specific dependencies
 
 import os
 import base64
@@ -8,7 +9,7 @@ import re
 from datetime import datetime
 from typing import Optional, List
 from dotenv import load_dotenv
-from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+from openai import AsyncOpenAI
 
 load_dotenv()
 
@@ -47,7 +48,22 @@ class PhotoAnalysisService:
     """Service for analyzing photos and detecting faces/license plates for privacy blur"""
     
     def __init__(self):
-        self.api_key = os.environ.get('EMERGENT_LLM_KEY')
+        # Support multiple env var names for API key
+        self.api_key = (
+            os.environ.get('OPENAI_API_KEY') or 
+            os.environ.get('OPENAI_KEY') or
+            os.environ.get('LLM_API_KEY')
+        )
+        self.model = os.environ.get('OPENAI_VISION_MODEL', 'gpt-4o-mini')  # Vision-capable model
+        self._client = None
+    
+    def _get_client(self) -> AsyncOpenAI:
+        """Get or create OpenAI client"""
+        if self._client is None:
+            if not self.api_key:
+                raise ValueError("OpenAI API key not configured. Set OPENAI_API_KEY in environment.")
+            self._client = AsyncOpenAI(api_key=self.api_key)
+        return self._client
     
     async def analyze_image(self, image_base64: str, image_type: str = "image/jpeg") -> dict:
         """
@@ -61,32 +77,49 @@ class PhotoAnalysisService:
             dict with faces, license_plates arrays and description
         """
         try:
-            if not self.api_key:
-                raise ValueError("EMERGENT_LLM_KEY not configured")
+            client = self._get_client()
             
-            # Create a new chat instance for each analysis
-            chat = LlmChat(
-                api_key=self.api_key,
-                session_id=f"photo_analysis_{datetime.now().timestamp()}",
-                system_message=PRIVACY_DETECTION_PROMPT
-            ).with_model("openai", "gpt-5.2")
+            # Ensure proper base64 format with data URI if needed
+            if not image_base64.startswith("data:"):
+                image_url = f"data:{image_type};base64,{image_base64}"
+            else:
+                image_url = image_base64
             
-            # Create image content
-            image_content = ImageContent(image_base64=image_base64)
-            
-            # Create message with image
-            user_message = UserMessage(
-                text="Analyze this image and identify all faces and license plates that need privacy blurring. Return coordinates as JSON.",
-                file_contents=[image_content]
+            # Call OpenAI Vision API
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": PRIVACY_DETECTION_PROMPT
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Analyze this image and identify all faces and license plates that need privacy blurring. Return coordinates as JSON."
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": image_url,
+                                    "detail": "high"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=500,
+                temperature=0.3,
             )
             
-            # Get response
-            response = await chat.send_message(user_message)
+            response_text = response.choices[0].message.content
             
             # Parse the JSON response
             try:
                 # Try to extract JSON from the response
-                json_match = re.search(r'\{[\s\S]*\}', response)
+                json_match = re.search(r'\{[\s\S]*\}', response_text)
                 if json_match:
                     result = json.loads(json_match.group())
                 else:
@@ -94,14 +127,14 @@ class PhotoAnalysisService:
                     result = {
                         "faces": [],
                         "license_plates": [],
-                        "description": response
+                        "description": response_text
                     }
             except json.JSONDecodeError:
                 # If JSON parsing fails, return empty detections with the response as description
                 result = {
                     "faces": [],
                     "license_plates": [],
-                    "description": response
+                    "description": response_text
                 }
             
             # Ensure required fields exist
