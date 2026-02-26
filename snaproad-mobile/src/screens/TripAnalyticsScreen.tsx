@@ -67,8 +67,9 @@ export const TripAnalyticsScreen: React.FC<TripAnalyticsScreenProps> = ({ naviga
   const loadData = async () => {
     setLoading(true);
     try {
+      const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8001';
       const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL || 'https://feature-stitch.preview.emergentagent.com'}/api/trips/history/detailed?days=${dateRange}`
+        `${API_BASE}/api/trips/history/detailed?days=${dateRange}`
       );
       const data = await response.json();
       if (data.success) {
