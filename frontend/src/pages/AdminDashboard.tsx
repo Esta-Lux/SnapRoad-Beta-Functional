@@ -7,17 +7,24 @@ import {
   AlertTriangle, Gem, Car, Trophy, ChevronRight, Download,
   Sparkles, ArrowRight, ChevronLeft, HelpCircle, Crown, Activity,
   Upload, FileText, Image, RefreshCw, Globe, EyeOff, CheckCircle,
-  XCircle, SlidersHorizontal, Sun, Moon, MoreVertical
+  XCircle, SlidersHorizontal, Sun, Moon, MoreVertical, Wifi, WifiOff
 } from 'lucide-react'
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts'
+import toast, { Toaster } from 'react-hot-toast'
 import { NotificationCenter, useNotifications, notificationService } from '@/components/NotificationSystem'
 import SettingsModal from '@/components/SettingsModal'
 import HelpModal from '@/components/HelpModal'
 import { useTheme } from '@/contexts/ThemeContext'
+import { adminApi } from '@/services/adminApi'
+import { useAdminStats } from '@/hooks/useAdminStats'
+import { useUsers } from '@/hooks/useUsers'
+import { useWebSocket } from '@/hooks/useWebSocket'
+import { useIncidents } from '@/hooks/useIncidents'
+import type { AdminIncident, IncidentTab, WebSocketStatus, AdminUser } from '@/types/admin'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
