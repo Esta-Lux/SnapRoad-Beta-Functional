@@ -596,12 +596,6 @@ function SupabaseMigrationBanner() {
 // =============================================
 // AI MODERATION TYPES & DATA
 // =============================================
-type IncidentTab = 'new' | 'blurred' | 'review' | 'approved' | 'rejected'
-interface Incident {
-  id: number; type: string; confidence: number;
-  status: 'new' | 'review' | 'approved' | 'rejected'; blurred: boolean;
-  location: string; reportedAt: string;
-}
 const STATUS_BADGES: Record<string, string> = {
   new: 'bg-[#E6ECF5] text-[#0B1220]',
   blurred: 'bg-[#0084FF]/10 text-[#0084FF]',
@@ -609,26 +603,6 @@ const STATUS_BADGES: Record<string, string> = {
   approved: 'bg-[#00FFD7]/10 text-[#00FFD7]',
   rejected: 'bg-[#FF5A5A]/10 text-[#FF5A5A]',
 }
-const INCIDENTS_MOCK: Incident[] = [
-  { id: 1, type: 'Speeding (85mph in 65)', confidence: 94, status: 'new', blurred: false, location: 'I-70 E, Columbus OH', reportedAt: '2 min ago' },
-  { id: 2, type: 'Hard Braking Event', confidence: 88, status: 'new', blurred: true, location: 'High St & Broad, Columbus', reportedAt: '8 min ago' },
-  { id: 3, type: 'Reckless Lane Change', confidence: 96, status: 'review', blurred: true, location: 'I-270 S, Exit 17', reportedAt: '15 min ago' },
-  { id: 4, type: 'Phone Usage Detected', confidence: 91, status: 'new', blurred: false, location: '5th Ave, Columbus OH', reportedAt: '22 min ago' },
-  { id: 5, type: 'Red Light Violation', confidence: 83, status: 'review', blurred: false, location: 'Broad & 4th, Columbus', reportedAt: '31 min ago' },
-  { id: 6, type: 'Road Obstruction', confidence: 79, status: 'approved', blurred: false, location: 'Morse Rd, Columbus', reportedAt: '1 hr ago' },
-  { id: 7, type: 'Aggressive Tailgating', confidence: 90, status: 'new', blurred: true, location: 'I-71 N, near Dublin', reportedAt: '45 min ago' },
-  { id: 8, type: 'Wrong Way Driver', confidence: 99, status: 'review', blurred: false, location: 'SR-315 N, Columbus', reportedAt: '2 hrs ago' },
-  { id: 9, type: 'Sharp Cornering', confidence: 76, status: 'rejected', blurred: false, location: 'Riverside Dr, Columbus', reportedAt: '3 hrs ago' },
-]
-
-const WS_BASE = (() => {
-  // Derive the backend WebSocket base URL from the HTTP URL
-  const apiUrl = (import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_BACKEND_URL || '')
-  // If it's a full URL (e.g. https://...) use that; otherwise use window.location.origin
-  const httpBase = apiUrl.startsWith('http') ? apiUrl.replace(/\/$/, '') : window.location.origin
-  // Convert https -> wss, http -> ws
-  return httpBase.replace(/^https/, 'wss').replace(/^http:\/\//, 'ws://')
-})()
 
 function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
   const [activeModTab, setActiveModTab] = useState<IncidentTab>('new')
