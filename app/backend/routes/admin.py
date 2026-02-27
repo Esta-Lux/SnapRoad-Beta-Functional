@@ -109,18 +109,14 @@ def get_admin_analytics():
     premium_users = sum(1 for u in users_db.values() if u.get("is_premium", False))
     total_offers = len(offers_db)
     total_redemptions = sum(o.get("redemption_count", 0) for o in offers_db)
-<<<<<<< HEAD
     total_partners = 156  # Mock partner count
     active_offers = 847  # Mock active offers count
     total_trips = 89420  # Mock total trips
     total_gems = 156780  # Mock total gems
-=======
->>>>>>> dbb8eaabacc7393ccaa9bb100ac90bde47b9aacc
     chart_data = [{"date": (datetime.now() - timedelta(days=29 - i)).strftime("%b %d"), "new_users": random.randint(50, 200), "active_users": random.randint(500, 2000), "redemptions": random.randint(100, 500), "revenue": random.randint(5000, 20000)} for i in range(30)]
     return {
         "success": True,
         "data": {
-<<<<<<< HEAD
             "summary": {
                 "total_users": total_users, 
                 "premium_users": premium_users, 
@@ -133,9 +129,6 @@ def get_admin_analytics():
                 "total_trips": total_trips,
                 "total_gems": total_gems
             },
-=======
-            "summary": {"total_users": total_users, "premium_users": premium_users, "total_offers": total_offers, "total_redemptions": total_redemptions, "total_revenue": sum(d["revenue"] for d in chart_data), "avg_safety_score": round(sum(u.get("safety_score", 0) for u in users_db.values()) / total_users, 1) if total_users > 0 else 0},
->>>>>>> dbb8eaabacc7393ccaa9bb100ac90bde47b9aacc
             "chart_data": chart_data,
             "user_growth": {"today": random.randint(100, 300), "this_week": random.randint(700, 1500), "this_month": random.randint(3000, 6000)},
             "top_partners": [{"name": "Shell Gas Station", "redemptions": random.randint(500, 1500)}, {"name": "Starbucks Downtown", "redemptions": random.randint(400, 1200)}, {"name": "Quick Shine Car Wash", "redemptions": random.randint(300, 800)}],
@@ -143,7 +136,6 @@ def get_admin_analytics():
     }
 
 
-<<<<<<< HEAD
 # ==================== REFERRAL ANALYTICS ====================
 @router.get("/admin/referral-analytics")
 def get_referral_analytics():
@@ -677,8 +669,6 @@ def activate_user(user_id: str):
         return {"success": False, "message": f"Failed to activate user: {str(e)}"}
 
 
-=======
->>>>>>> dbb8eaabacc7393ccaa9bb100ac90bde47b9aacc
 @router.get("/admin/pricing")
 def get_admin_pricing():
     return {"success": True, "data": pricing_config}
@@ -789,8 +779,6 @@ def get_analytics_dashboard(business_id: str = "default_business", days: int = 7
     }
 
 
-<<<<<<< HEAD
-=======
 # ==================== INCIDENT MODERATION ====================
 
 # In-memory store for moderated incidents
@@ -835,7 +823,6 @@ def get_moderated_incidents():
     }
 
 
->>>>>>> dbb8eaabacc7393ccaa9bb100ac90bde47b9aacc
 # ==================== SUPABASE-POWERED ENDPOINTS ====================
 
 @router.get("/admin/users")
@@ -858,19 +845,12 @@ def get_admin_users(limit: int = 100):
             "name": v.get("name", ""),
             "plan": v.get("plan", "basic"),
             "gems": v.get("gems", 0),
-<<<<<<< HEAD
-            "safety_score": v.get("safety_score", 85),
-            "total_trips": v.get("total_trips", 0),
-            "is_premium": v.get("is_premium", False),
-            "status": "active",
-=======
-            "level": v.get("level", 1),
+"level": v.get("level", 1),
             "safety_score": v.get("safety_score", 85),
             "total_trips": v.get("total_trips", 0),
             "is_premium": v.get("is_premium", False),
             "status": "active" if not v.get("suspended") else "suspended",
             "family_members": v.get("family_members", 1),
->>>>>>> dbb8eaabacc7393ccaa9bb100ac90bde47b9aacc
             "created_at": v.get("member_since", ""),
         }
         for k, v in users_db.items()
@@ -889,14 +869,10 @@ def get_admin_stats():
     premium_users = sum(1 for u in users_db.values() if u.get("is_premium", False))
     total_offers = len(offers_db)
     total_redemptions = sum(o.get("redemption_count", 0) for o in offers_db)
-<<<<<<< HEAD
-=======
     
     # Get incidents count from road_reports_db
     from services.mock_data import road_reports_db
     incidents_today = len([r for r in road_reports_db if r.get("type") in ["hazard", "accident", "police", "construction"]])
-    
->>>>>>> dbb8eaabacc7393ccaa9bb100ac90bde47b9aacc
     return {
         "success": True,
         "source": "mock",
@@ -905,12 +881,12 @@ def get_admin_stats():
             "premium_users": premium_users,
             "total_offers": total_offers,
             "total_redemptions": total_redemptions,
-            "total_partners": 2,
-<<<<<<< HEAD
-=======
+            "total_partners": 156,
+            "active_offers": 847,
+            "total_trips": 89420,
+            "total_gems": 156780,
             "incidents_today": incidents_today,
             "revenue": 4523000,  # $45,230 in cents
->>>>>>> dbb8eaabacc7393ccaa9bb100ac90bde47b9aacc
         },
     }
 
