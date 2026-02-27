@@ -306,9 +306,9 @@ export function cn(...inputs: ClassValue[]) {
 
 ```bash
 # /app/frontend/.env
-REACT_APP_BACKEND_URL=https://feature-stitch.preview.emergentagent.com
+REACT_APP_BACKEND_URL=https://admin-portal-sr.preview.emergentagent.com
 VITE_API_URL=/api
-VITE_BACKEND_URL=https://feature-stitch.preview.emergentagent.com
+VITE_BACKEND_URL=https://admin-portal-sr.preview.emergentagent.com
 ```
 
 ---
@@ -358,7 +358,7 @@ Your role is now:
 cd /app/frontend && yarn dev
 
 # Open in browser
-open https://feature-stitch.preview.emergentagent.com
+open https://admin-portal-sr.preview.emergentagent.com
 ```
 
 ### Test Credentials
