@@ -981,7 +981,6 @@ export default function AdminDashboard() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'partners' | 'events' | 'offers' | 'aiModeration'>('overview')
-  const [loading, setLoading] = useState(true)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showCreateOfferModal, setShowCreateOfferModal] = useState(false)
   const [showCreateEventModal, setShowCreateEventModal] = useState(false)
@@ -991,49 +990,72 @@ export default function AdminDashboard() {
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
-  const [analytics, setAnalytics] = useState<any>(null)
   
-  const [stats] = useState({ total_users: 12450, premium_users: 3240, total_partners: 156, active_offers: 847, total_trips: 89420, avg_safety_score: 87 })
-  const [users, setUsers] = useState<User[]>([])
+  // Use the admin stats hook for real API data
+  const { stats: apiStats, analytics, loading, error, refetch } = useAdminStats()
+
+  // Local state for partners and events (can be converted to hooks later)
   const [partners, setPartners] = useState<Partner[]>([])
   const [events, setEvents] = useState<Event[]>([])
+
+  // Derived stats with fallback
+  const stats = useMemo(() => ({
+    total_users: apiStats?.total_users ?? 12450,
+    premium_users: apiStats?.premium_users ?? 3240,
+    total_partners: apiStats?.total_partners ?? 156,
+    active_offers: apiStats?.total_offers ?? 847,
+    avg_safety_score: apiStats?.avg_safety_score ?? 87,
+  }), [apiStats])
 
   useEffect(() => {
     const hasSeenOnboarding = localStorage.getItem('admin_onboarding_complete')
     if (!hasSeenOnboarding) setShowOnboarding(true)
-    loadData()
+    loadPartnerAndEvents()
     
     // Start demo notifications every 60 seconds for admin
     const stopNotifications = notificationService.startDemoNotifications(60000)
     return () => stopNotifications()
   }, [])
 
-  const loadData = async () => {
-    setLoading(true)
-    
-    // Load admin analytics
+  const loadPartnerAndEvents = async () => {
+    // Load partners from API
     try {
-      const res = await fetch(`${API_URL}/api/admin/analytics`)
-      const data = await res.json()
-      if (data.success) setAnalytics(data.data)
-    } catch (e) { console.error(e) }
+      const partnersRes = await adminApi.getPartners()
+      if (partnersRes.success && partnersRes.data) {
+        setPartners(partnersRes.data)
+      } else {
+        // Fallback to mock data
+        setPartners([
+          { id: '1', business_name: 'Shell Gas Station', email: 'shell@partner.com', offers_count: 5, total_redemptions: 2340, status: 'active' },
+          { id: '2', business_name: 'Starbucks Downtown', email: 'starbucks@partner.com', offers_count: 3, total_redemptions: 1567, status: 'active' },
+          { id: '3', business_name: 'Quick Shine Car Wash', email: 'quickshine@partner.com', offers_count: 2, total_redemptions: 890, status: 'pending' },
+        ])
+      }
+    } catch {
+      setPartners([
+        { id: '1', business_name: 'Shell Gas Station', email: 'shell@partner.com', offers_count: 5, total_redemptions: 2340, status: 'active' },
+        { id: '2', business_name: 'Starbucks Downtown', email: 'starbucks@partner.com', offers_count: 3, total_redemptions: 1567, status: 'active' },
+        { id: '3', business_name: 'Quick Shine Car Wash', email: 'quickshine@partner.com', offers_count: 2, total_redemptions: 890, status: 'pending' },
+      ])
+    }
 
-    setUsers([
-      { id: '1', name: 'John Smith', email: 'john@example.com', plan: 'premium', safety_score: 95, gems: 12450, level: 45, status: 'active' },
-      { id: '2', name: 'Sarah Wilson', email: 'sarah@example.com', plan: 'basic', safety_score: 88, gems: 3420, level: 23, status: 'active' },
-      { id: '3', name: 'Mike Johnson', email: 'mike@example.com', plan: 'premium', safety_score: 92, gems: 8750, level: 38, status: 'active' },
-      { id: '4', name: 'Emily Davis', email: 'emily@example.com', plan: 'basic', safety_score: 78, gems: 1560, level: 12, status: 'suspended' },
-    ])
-    setPartners([
-      { id: '1', business_name: 'Shell Gas Station', email: 'shell@partner.com', offers_count: 5, total_redemptions: 2340, status: 'active' },
-      { id: '2', business_name: 'Starbucks Downtown', email: 'starbucks@partner.com', offers_count: 3, total_redemptions: 1567, status: 'active' },
-      { id: '3', business_name: 'Quick Shine Car Wash', email: 'quickshine@partner.com', offers_count: 2, total_redemptions: 890, status: 'pending' },
-    ])
-    setEvents([
-      { id: '1', title: 'Safe Driver Weekend', description: 'Double gems for all safe trips!', type: 'weekly', gems_multiplier: 2, xp_bonus: 500, start_date: '2025-02-08', end_date: '2025-02-10', status: 'active' },
-      { id: '2', title: "Valentine's Safety Special", description: 'Share the road, share the love!', type: 'special', gems_multiplier: 1.5, xp_bonus: 1000, start_date: '2025-02-14', end_date: '2025-02-14', status: 'scheduled' },
-    ])
-    setLoading(false)
+    // Load events from API
+    try {
+      const eventsRes = await adminApi.getEvents()
+      if (eventsRes.success && eventsRes.data) {
+        setEvents(eventsRes.data)
+      } else {
+        setEvents([
+          { id: '1', title: 'Safe Driver Weekend', description: 'Double gems for all safe trips!', type: 'weekly', gems_multiplier: 2, xp_bonus: 500, start_date: '2025-02-08', end_date: '2025-02-10', status: 'active' },
+          { id: '2', title: "Valentine's Safety Special", description: 'Share the road, share the love!', type: 'special', gems_multiplier: 1.5, xp_bonus: 1000, start_date: '2025-02-14', end_date: '2025-02-14', status: 'scheduled' },
+        ])
+      }
+    } catch {
+      setEvents([
+        { id: '1', title: 'Safe Driver Weekend', description: 'Double gems for all safe trips!', type: 'weekly', gems_multiplier: 2, xp_bonus: 500, start_date: '2025-02-08', end_date: '2025-02-10', status: 'active' },
+        { id: '2', title: "Valentine's Safety Special", description: 'Share the road, share the love!', type: 'special', gems_multiplier: 1.5, xp_bonus: 1000, start_date: '2025-02-14', end_date: '2025-02-14', status: 'scheduled' },
+      ])
+    }
   }
 
   const handleOnboardingComplete = () => {
@@ -1045,6 +1067,9 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      {/* Toast Container */}
+      <Toaster position="top-right" />
+      
       {showOnboarding && <OnboardingWalkthrough onComplete={handleOnboardingComplete} onSkip={handleOnboardingComplete} />}
       {showCreateOfferModal && <CreateOfferModal onClose={() => setShowCreateOfferModal(false)} partners={partners} />}
       {showExportModal && <ExportModal onClose={() => setShowExportModal(false)} />}
