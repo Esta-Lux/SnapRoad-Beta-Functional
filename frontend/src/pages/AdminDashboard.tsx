@@ -802,30 +802,33 @@ function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
 }
 
 // =============================================
-// FIGMA USERS TAB
+// USERS TAB WITH LIVE API
 // =============================================
-const FIGMA_USERS = [
-  { id: 1, name: 'Sarah Johnson', email: 'sarah.j@email.com', plan: 'Premium', lastSeen: '5 min ago', status: 'Active', safety: 95, gems: 12450 },
-  { id: 2, name: 'Mike Wilson', email: 'mike.w@email.com', plan: 'Family', lastSeen: '2 hours ago', status: 'Active', safety: 88, gems: 7820 },
-  { id: 3, name: 'Emma Davis', email: 'emma.d@email.com', plan: 'Free', lastSeen: '1 day ago', status: 'Active', safety: 72, gems: 1560 },
-  { id: 4, name: 'James Brown', email: 'james.b@email.com', plan: 'Premium', lastSeen: '3 days ago', status: 'Suspended', safety: 45, gems: 320 },
-  { id: 5, name: 'Lisa Martinez', email: 'lisa.m@email.com', plan: 'Free', lastSeen: '1 hour ago', status: 'Active', safety: 91, gems: 4200 },
-  { id: 6, name: 'Chris Anderson', email: 'chris.a@email.com', plan: 'Premium', lastSeen: '30 min ago', status: 'Active', safety: 97, gems: 18900 },
-]
-
 function FigmaUsersTab({ theme, onExport }: { theme: 'dark' | 'light'; onExport: () => void }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [planFilter, setPlanFilter] = useState('All Plans')
   const [statusFilter, setStatusFilter] = useState('All Status')
-  const [selectedUser, setSelectedUser] = useState<number | null>(null)
+  const [selectedUser, setSelectedUser] = useState<string | null>(null)
   const isDark = theme === 'dark'
 
-  const filtered = FIGMA_USERS.filter(u => {
-    const matchSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchPlan = planFilter === 'All Plans' || u.plan === planFilter
-    const matchStatus = statusFilter === 'All Status' || u.status === statusFilter
-    return matchSearch && matchPlan && matchStatus
-  })
+  // Use the real API hook
+  const { users, loading, error, source, total, refetch, filterUsers } = useUsers()
+
+  // Filter users based on search and filters
+  const filtered = useMemo(() => {
+    return filterUsers({ search: searchTerm, plan: planFilter, status: statusFilter })
+  }, [filterUsers, searchTerm, planFilter, statusFilter])
+
+  // Calculate plan stats from actual data
+  const planStats = useMemo(() => {
+    const stats = {
+      total: users.length,
+      free: users.filter(u => u.plan === 'free' || u.plan === 'basic').length,
+      premium: users.filter(u => u.plan === 'premium').length,
+      family: users.filter(u => u.plan === 'family').length,
+    }
+    return stats
+  }, [users])
 
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
   const inputBg = isDark ? 'bg-slate-700/50 border-white/10 text-white placeholder-slate-500' : 'bg-[#F5F8FA] border-[#E6ECF5] text-[#0B1220] placeholder-[#4B5C74]'
@@ -833,15 +836,48 @@ function FigmaUsersTab({ theme, onExport }: { theme: 'dark' | 'light'; onExport:
   const tdText = isDark ? 'text-white' : 'text-[#0B1220]'
   const trHover = isDark ? 'hover:bg-white/[0.02] border-white/5' : 'hover:bg-[#F5F8FA] border-[#E6ECF5]'
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-12 h-12 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className={`p-8 rounded-2xl border text-center ${card}`}>
+        <AlertTriangle size={32} className="mx-auto mb-3 text-red-400" />
+        <p className="text-red-400 font-medium mb-2">Failed to load users</p>
+        <p className="text-slate-500 text-sm mb-4">{error}</p>
+        <button onClick={refetch} className="px-4 py-2 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-400">
+          <RefreshCw size={14} className="inline mr-2" />Retry
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
+      {/* Data Source Badge */}
+      {source && (
+        <div className="flex items-center gap-2">
+          <span className={`text-xs px-2 py-1 rounded-full ${source === 'supabase' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+            {source === 'supabase' ? 'Live Data' : 'Demo Data'}
+          </span>
+          <button onClick={refetch} className="text-xs text-blue-400 hover:text-blue-300">
+            <RefreshCw size={12} className="inline mr-1" />Refresh
+          </button>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         {[
-          { label: 'Total Users', value: '68,234' },
-          { label: 'Free Plan', value: '42,156' },
-          { label: 'Premium', value: '18,942' },
-          { label: 'Family Plans', value: '7,136' },
+          { label: 'Total Users', value: total.toLocaleString() },
+          { label: 'Free Plan', value: planStats.free.toLocaleString() },
+          { label: 'Premium', value: planStats.premium.toLocaleString() },
+          { label: 'Family Plans', value: planStats.family.toLocaleString() },
         ].map((s, i) => (
           <div key={i} className={`p-5 rounded-2xl border ${card}`}>
             <p className={`text-xs mb-1 ${isDark ? 'text-white/50' : 'text-[#4B5C74]'}`}>{s.label}</p>
@@ -860,10 +896,12 @@ function FigmaUsersTab({ theme, onExport }: { theme: 'dark' | 'light'; onExport:
               className={`w-full h-10 pl-10 pr-4 rounded-xl border text-sm ${inputBg}`} />
           </div>
           <select value={planFilter} onChange={e => setPlanFilter(e.target.value)}
+            data-testid="plan-filter"
             className={`h-10 px-4 rounded-xl border text-sm ${inputBg}`}>
             {['All Plans', 'Free', 'Premium', 'Family'].map(p => <option key={p}>{p}</option>)}
           </select>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+            data-testid="status-filter"
             className={`h-10 px-4 rounded-xl border text-sm ${inputBg}`}>
             {['All Status', 'Active', 'Suspended'].map(s => <option key={s}>{s}</option>)}
           </select>
@@ -879,44 +917,46 @@ function FigmaUsersTab({ theme, onExport }: { theme: 'dark' | 'light'; onExport:
           <table className="w-full">
             <thead className={`border-b ${isDark ? 'bg-slate-700/30 border-white/5' : 'bg-[#F5F8FA] border-[#E6ECF5]'}`}>
               <tr>
-                {['Name', 'Email', 'Plan', 'Safety', 'Gems', 'Last Seen', 'Status', 'Actions'].map(h => (
+                {['Name', 'Email', 'Plan', 'Safety', 'Gems', 'Status', 'Actions'].map(h => (
                   <th key={h} className={`px-5 py-3 text-left text-xs font-medium ${thText}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map(user => (
-                <tr key={user.id} className={`border-b transition-colors ${trHover}`}>
+                <tr key={user.id} data-testid={`user-row-${user.id}`} className={`border-b transition-colors ${trHover}`}>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#004A93] to-[#0084FF] flex items-center justify-center text-white text-xs font-bold">
-                        {user.name.split(' ').map(n => n[0]).join('')}
+                        {(user.name || 'U').split(' ').map(n => n[0]).join('').substring(0, 2)}
                       </div>
-                      <span className={`text-sm font-medium ${tdText}`}>{user.name}</span>
+                      <span className={`text-sm font-medium ${tdText}`}>{user.name || 'Unknown'}</span>
                     </div>
                   </td>
                   <td className={`px-5 py-3 text-sm ${isDark ? 'text-white/60' : 'text-[#4B5C74]'}`}>{user.email}</td>
                   <td className="px-5 py-3">
-                    <span className={`px-2 py-1 rounded-full text-[11px] font-medium ${
-                      user.plan === 'Family' ? 'bg-[#00DFA2]/10 text-[#00DFA2]' :
-                      user.plan === 'Premium' ? 'bg-[#0084FF]/10 text-[#0084FF]' :
+                    <span className={`px-2 py-1 rounded-full text-[11px] font-medium capitalize ${
+                      user.plan === 'family' ? 'bg-[#00DFA2]/10 text-[#00DFA2]' :
+                      user.plan === 'premium' ? 'bg-[#0084FF]/10 text-[#0084FF]' :
                       isDark ? 'bg-white/10 text-white/60' : 'bg-[#E6ECF5] text-[#4B5C74]'
                     }`}>{user.plan}</span>
                   </td>
                   <td className="px-5 py-3">
-                    <span className={`font-bold ${user.safety >= 90 ? 'text-[#00DFA2]' : user.safety >= 70 ? 'text-amber-400' : 'text-[#FF5A5A]'}`}>{user.safety}</span>
+                    <span className={`font-bold ${user.safety_score >= 90 ? 'text-[#00DFA2]' : user.safety_score >= 70 ? 'text-amber-400' : 'text-[#FF5A5A]'}`}>
+                      {user.safety_score}
+                    </span>
                   </td>
                   <td className={`px-5 py-3 text-sm font-medium text-cyan-400`}>
-                    <span className="flex items-center gap-1"><Gem size={12} />{user.gems.toLocaleString()}</span>
+                    <span className="flex items-center gap-1"><Gem size={12} />{(user.gems || 0).toLocaleString()}</span>
                   </td>
-                  <td className={`px-5 py-3 text-sm ${isDark ? 'text-white/50' : 'text-[#4B5C74]'}`}>{user.lastSeen}</td>
                   <td className="px-5 py-3">
-                    <span className={`px-2 py-1 rounded-full text-[11px] font-medium ${
-                      user.status === 'Active' ? 'bg-[#00DFA2]/10 text-[#00DFA2]' : 'bg-[#FF5A5A]/10 text-[#FF5A5A]'
+                    <span className={`px-2 py-1 rounded-full text-[11px] font-medium capitalize ${
+                      user.status === 'active' ? 'bg-[#00DFA2]/10 text-[#00DFA2]' : 'bg-[#FF5A5A]/10 text-[#FF5A5A]'
                     }`}>{user.status}</span>
                   </td>
                   <td className="px-5 py-3">
                     <button onClick={() => setSelectedUser(selectedUser === user.id ? null : user.id)}
+                      data-testid={`user-actions-${user.id}`}
                       className={`p-1 rounded-lg transition-colors ${isDark ? 'text-white/40 hover:text-white hover:bg-white/5' : 'text-[#4B5C74] hover:text-[#0B1220] hover:bg-[#F5F8FA]'}`}>
                       <MoreVertical size={16} />
                     </button>
