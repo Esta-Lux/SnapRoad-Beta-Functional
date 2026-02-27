@@ -606,125 +606,70 @@ const STATUS_BADGES: Record<string, string> = {
 
 function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
   const [activeModTab, setActiveModTab] = useState<IncidentTab>('new')
-  const [incidents, setIncidents] = useState<Incident[]>(INCIDENTS_MOCK)
   const [confidenceThreshold, setConfidenceThreshold] = useState(80)
-  const [wsStatus, setWsStatus] = useState<'connecting' | 'live' | 'offline'>('connecting')
   const [liveToast, setLiveToast] = useState<string | null>(null)
-  const [adminCount, setAdminCount] = useState(1)
-  const wsRef = useRef<WebSocket | null>(null)
-  const pingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // WebSocket connection
-  useEffect(() => {
-    let ws: WebSocket
-    let retryTimeout: ReturnType<typeof setTimeout>
+  // Use our custom hooks
+  const {
+    incidents,
+    addIncident,
+    updateIncidentStatus,
+    moderateIncident,
+    simulateIncident: doSimulateIncident,
+    filterByTab,
+    getTabCounts,
+  } = useIncidents()
 
-    const connect = () => {
-      try {
-        ws = new WebSocket(`${WS_BASE}/api/ws/admin/moderation`)
-        wsRef.current = ws
+  // WebSocket hook with auto-reconnect and status indicator
+  const { status: wsStatus, adminCount, sendModeration, reconnect } = useWebSocket({
+    onIncident: (incident) => {
+      addIncident({ ...incident, reportedAt: 'just now' })
+      setLiveToast(`New incident: ${incident.type}`)
+      toast.success(`New incident: ${incident.type}`, { duration: 4000 })
+      setTimeout(() => setLiveToast(null), 4000)
+      setActiveModTab('new')
+    },
+    onModerationUpdate: (incidentId, outcome) => {
+      updateIncidentStatus(incidentId, outcome)
+      toast.info(`Incident ${incidentId} ${outcome} by another admin`)
+    },
+    onBacklog: (backlogIncidents) => {
+      backlogIncidents.forEach(inc => addIncident(inc))
+    },
+  })
 
-        ws.onopen = () => {
-          setWsStatus('live')
-          pingRef.current = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
-          }, 30000)
-        }
-
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data)
-            if (msg.type === 'pong') {
-              setAdminCount(msg.admin_count || 1)
-            } else if (msg.type === 'backlog') {
-              // Prepend live incidents to the mock ones (deduplicated)
-              if (msg.incidents?.length > 0) {
-                setIncidents(prev => {
-                  const existingIds = new Set(prev.map(i => i.id))
-                  const newOnes = msg.incidents.filter((i: Incident) => !existingIds.has(i.id)).reverse()
-                  return newOnes.length > 0 ? [...newOnes, ...prev] : prev
-                })
-              }
-            } else if (msg.type === 'new_incident') {
-              const inc: Incident = {
-                ...msg.incident,
-                reportedAt: 'just now',
-              }
-              setIncidents(prev => [inc, ...prev])
-              setLiveToast(`New incident: ${inc.type}`)
-              setTimeout(() => setLiveToast(null), 4000)
-              // Auto-switch to new tab if not already there
-              setActiveModTab('new')
-            } else if (msg.type === 'moderation_update') {
-              // Another admin moderated an incident
-              setIncidents(prev => prev.map(i =>
-                i.id === msg.incident_id ? { ...i, status: msg.outcome } : i
-              ))
-            }
-          } catch {}
-        }
-
-        ws.onclose = () => {
-          setWsStatus('offline')
-          if (pingRef.current) clearInterval(pingRef.current)
-          retryTimeout = setTimeout(connect, 5000)
-        }
-
-        ws.onerror = () => {
-          setWsStatus('offline')
-          ws.close()
-        }
-      } catch {
-        setWsStatus('offline')
-        retryTimeout = setTimeout(connect, 5000)
-      }
-    }
-
-    connect()
-    return () => {
-      ws?.close()
-      if (pingRef.current) clearInterval(pingRef.current)
-      clearTimeout(retryTimeout)
-    }
-  }, [])
-
-  const handleModeration = (id: number, outcome: 'approved' | 'rejected') => {
-    setIncidents(prev => prev.map(i => i.id === id ? { ...i, status: outcome } : i))
-    // Broadcast to other admins
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'moderate', incident_id: id, outcome }))
-    }
+  const handleModeration = async (id: number, outcome: 'approved' | 'rejected') => {
+    updateIncidentStatus(id, outcome)
+    sendModeration(id, outcome)
+    await moderateIncident(id, outcome)
+    toast.success(`Incident ${outcome}`)
   }
 
-  const simulateIncident = async () => {
-    const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
-    await fetch(`${API_BASE}/api/admin/moderation/simulate`, { method: 'POST' })
+  const handleSimulateIncident = async () => {
+    const loadingToast = toast.loading('Generating test incident...')
+    const incident = await doSimulateIncident()
+    toast.dismiss(loadingToast)
+    if (incident) {
+      toast.success('Test incident generated!')
+    } else {
+      toast.error('Failed to generate incident')
+    }
   }
 
   const filteredIncidents = useMemo(() => {
-    return incidents.filter(i => {
-      if (activeModTab === 'blurred') return i.blurred
-      return i.status === activeModTab
-    }).filter(i => i.confidence >= confidenceThreshold)
-  }, [incidents, activeModTab, confidenceThreshold])
+    return filterByTab(activeModTab, confidenceThreshold)
+  }, [filterByTab, activeModTab, confidenceThreshold])
 
+  const tabCounts = getTabCounts()
   const isDark = theme === 'dark'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
 
   return (
     <div className="space-y-6">
-      {/* Live Toast */}
-      {liveToast && (
-        <div className="fixed top-6 right-6 z-50 flex items-center gap-3 bg-[#0084FF] text-white px-5 py-3 rounded-2xl shadow-2xl animate-slide-up">
-          <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-          <span className="font-medium text-sm">{liveToast}</span>
-        </div>
-      )}
-
       {/* Header Row with Live Badge + Controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {/* WebSocket Status Badge */}
+          {/* WebSocket Status Badge with reconnect button */}
           <div data-testid="ws-status-badge"
             className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all ${
               wsStatus === 'live'
@@ -733,17 +678,24 @@ function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
                   ? 'border-amber-400/40 bg-amber-400/10 text-amber-400'
                   : 'border-[#FF5A5A]/40 bg-[#FF5A5A]/10 text-[#FF5A5A]'
             }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${
-              wsStatus === 'live' ? 'bg-[#00DFA2] animate-pulse' :
-              wsStatus === 'connecting' ? 'bg-amber-400 animate-pulse' :
-              'bg-[#FF5A5A]'
-            }`} />
+            {wsStatus === 'live' ? (
+              <Wifi size={12} className="text-[#00DFA2]" />
+            ) : wsStatus === 'connecting' ? (
+              <RefreshCw size={12} className="animate-spin text-amber-400" />
+            ) : (
+              <WifiOff size={12} className="text-[#FF5A5A]" />
+            )}
             {wsStatus === 'live' ? `Live · ${adminCount} admin${adminCount !== 1 ? 's' : ''} online` :
-             wsStatus === 'connecting' ? 'Connecting...' : 'Offline – retrying'}
+             wsStatus === 'connecting' ? 'Connecting...' : 'Offline'}
           </div>
+          {wsStatus === 'offline' && (
+            <button onClick={reconnect} className="text-xs text-blue-400 hover:text-blue-300 underline">
+              Retry connection
+            </button>
+          )}
         </div>
         {/* Simulate Incident button */}
-        <button onClick={simulateIncident} data-testid="simulate-incident-btn"
+        <button onClick={handleSimulateIncident} data-testid="simulate-incident-btn"
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0084FF]/10 border border-[#0084FF]/20 text-[#0084FF] text-sm font-semibold hover:bg-[#0084FF]/20 transition-all">
           <Zap size={14} />Generate Test Incident
         </button>
@@ -752,7 +704,7 @@ function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
       {/* Stats */}
       <div className="grid grid-cols-5 gap-4">
         {(['new', 'blurred', 'review', 'approved', 'rejected'] as IncidentTab[]).map(tab => {
-          const count = incidents.filter(i => tab === 'blurred' ? i.blurred : i.status === tab).length
+          const count = tabCounts[tab]
           const colors: Record<string, string> = { new: '#0084FF', blurred: '#8B5CF6', review: '#F59E0B', approved: '#00FFD7', rejected: '#FF5A5A' }
           return (
             <button key={tab} onClick={() => setActiveModTab(tab)}
@@ -824,10 +776,12 @@ function AIModerationTab({ theme }: { theme: 'dark' | 'light' }) {
 
                 <div className="flex gap-2">
                   <button onClick={() => handleModeration(incident.id, 'approved')} disabled={!canModerate}
+                    data-testid={`approve-btn-${incident.id}`}
                     className={`flex-1 h-11 rounded-xl bg-[#00FFD7] text-[#0B1220] text-sm font-semibold flex items-center justify-center gap-2 transition-all ${canModerate ? 'hover:opacity-90' : 'opacity-30 cursor-not-allowed'}`}>
                     <CheckCircle size={16} />Approve
                   </button>
                   <button onClick={() => handleModeration(incident.id, 'rejected')} disabled={!canModerate}
+                    data-testid={`reject-btn-${incident.id}`}
                     className={`flex-1 h-11 rounded-xl bg-[#FF5A5A] text-white text-sm font-semibold flex items-center justify-center gap-2 transition-all ${canModerate ? 'hover:opacity-90' : 'opacity-30 cursor-not-allowed'}`}>
                     <XCircle size={16} />Reject
                   </button>
