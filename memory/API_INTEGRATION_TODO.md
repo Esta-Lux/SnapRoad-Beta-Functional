@@ -29,6 +29,7 @@
 - [ ] Implement connection pooling
 - [ ] Migrate mock data structures to database models
 - [ ] Add database migrations system (Alembic for Python)
+- [ ] Add Username connection to Auth and Profile
 
 **Files to modify:**
 - `/app/backend/server.py` - Replace in-memory dicts with DB queries
