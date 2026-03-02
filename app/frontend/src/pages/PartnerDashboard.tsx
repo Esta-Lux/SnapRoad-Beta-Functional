@@ -394,6 +394,7 @@ export default function PartnerDashboard() {
       const data = await res.json()
       if (data.success) {
         setPartnerProfile(data.data)
+        // Set default location for offer creation
         if (data.data?.locations?.length > 0) {
           setNewOfferData(prev => ({ ...prev, location_id: data.data.locations[0].id }))
         }

@@ -309,7 +309,6 @@ class ApiService {
       body: JSON.stringify({ status }),
     });
   }
-
   // Generic methods for DriverApp and other callers (returns ApiResponse<T>; T = full backend body)
   async get<T = unknown>(endpoint: string): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint);
