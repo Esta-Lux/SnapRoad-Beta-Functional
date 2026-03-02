@@ -3,13 +3,12 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { Search, Building2, Plus, Edit2, Trash2, Check, X, TrendingUp, Gift } from 'lucide-react'
-import { Partner } from '@/types/admin'
+import { adminApi } from '@/services/adminApi'
+import type { Partner } from '@/types/admin'
 
 interface PartnersTabProps {
   theme: 'dark' | 'light'
 }
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 export default function PartnersTab({ theme }: PartnersTabProps) {
   const [searchTerm, setSearchTerm] = useState('')
@@ -18,18 +17,30 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
   const [loading, setLoading] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [newPartner, setNewPartner] = useState({
+    business_name: '',
+    email: '',
+    business_type: '',
+    address: '',
+    phone: '',
+    password_hash: 'temp_hash',
+  })
 
   useEffect(() => {
     loadPartners()
   }, [])
 
+  const showFeedback = (type: 'success' | 'error', message: string) => {
+    setFeedback({ type, message })
+    setTimeout(() => setFeedback(null), 3000)
+  }
+
   const loadPartners = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/api/admin/partners`)
-      const data = await res.json()
-      if (data.success) {
-        setPartners(data.data)
+      const res = await adminApi.getPartners()
+      if (res.success && res.data) {
+        setPartners(res.data)
       }
     } catch (error) {
       console.error('Failed to load partners:', error)
@@ -40,91 +51,71 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
 
   const handleApprove = async (partnerId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/admin/partners/${partnerId}/approve`, {
-        method: 'POST'
-      })
-      const data = await res.json()
-      if (data.success) {
-        setFeedback({ type: 'success', message: 'Partner approved successfully!' })
-        loadPartners() // Refresh the list
-        setTimeout(() => setFeedback(null), 3000)
+      const res = await adminApi.approvePartner(partnerId)
+      if (res.success) {
+        showFeedback('success', 'Partner approved successfully!')
+        loadPartners()
       } else {
-        setFeedback({ type: 'error', message: 'Failed to approve partner' })
-        setTimeout(() => setFeedback(null), 3000)
+        showFeedback('error', 'Failed to approve partner')
       }
     } catch (error) {
-      console.error('Failed to approve partner:', error)
-      setFeedback({ type: 'error', message: 'Network error while approving partner' })
-      setTimeout(() => setFeedback(null), 3000)
+      showFeedback('error', 'Network error while approving partner')
     }
   }
 
   const handleSuspend = async (partnerId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/admin/partners/${partnerId}/suspend`, {
-        method: 'POST'
-      })
-      const data = await res.json()
-      if (data.success) {
-        setFeedback({ type: 'success', message: 'Partner suspended successfully!' })
-        loadPartners() // Refresh the list
-        setTimeout(() => setFeedback(null), 3000)
+      const res = await adminApi.suspendPartner(partnerId)
+      if (res.success) {
+        showFeedback('success', 'Partner suspended successfully!')
+        loadPartners()
       } else {
-        setFeedback({ type: 'error', message: 'Failed to suspend partner' })
-        setTimeout(() => setFeedback(null), 3000)
+        showFeedback('error', 'Failed to suspend partner')
       }
     } catch (error) {
-      console.error('Failed to suspend partner:', error)
-      setFeedback({ type: 'error', message: 'Network error while suspending partner' })
-      setTimeout(() => setFeedback(null), 3000)
+      showFeedback('error', 'Network error while suspending partner')
     }
   }
 
   const handleDelete = async (partnerId: string) => {
     if (!confirm('Are you sure you want to delete this partner?')) return
-    
     try {
-      const res = await fetch(`${API_URL}/api/admin/partners/${partnerId}`, {
-        method: 'DELETE'
-      })
-      const data = await res.json()
-      if (data.success) {
-        setFeedback({ type: 'success', message: 'Partner deleted successfully!' })
-        loadPartners() // Refresh the list
-        setTimeout(() => setFeedback(null), 3000)
+      const res = await adminApi.deletePartner(partnerId)
+      if (res.success) {
+        showFeedback('success', 'Partner deleted successfully!')
+        loadPartners()
       } else {
-        setFeedback({ type: 'error', message: 'Failed to delete partner' })
-        setTimeout(() => setFeedback(null), 3000)
+        showFeedback('error', 'Failed to delete partner')
       }
     } catch (error) {
-      console.error('Failed to delete partner:', error)
-      setFeedback({ type: 'error', message: 'Network error while deleting partner' })
-      setTimeout(() => setFeedback(null), 3000)
+      showFeedback('error', 'Network error while deleting partner')
     }
   }
 
-  const handleEditPartner = async (partnerId: string) => {
-    try {
-      // In a real app, this would open an edit modal
-      console.log(`Editing partner ${partnerId}`)
-    } catch (error) {
-      console.error('Failed to edit partner:', error)
+  const handleCreatePartner = async () => {
+    if (!newPartner.business_name || !newPartner.email) {
+      showFeedback('error', 'Business name and email are required')
+      return
     }
-  }
-
-  const handleViewOffers = async (partnerId: string) => {
     try {
-      // In a real app, this would navigate to offers page
-      console.log(`Viewing offers for partner ${partnerId}`)
+      const res = await adminApi.createPartner(newPartner)
+      if (res.success) {
+        showFeedback('success', 'Partner created successfully!')
+        setShowCreateModal(false)
+        setNewPartner({ business_name: '', email: '', business_type: '', address: '', phone: '', password_hash: 'temp_hash' })
+        loadPartners()
+      } else {
+        showFeedback('error', 'Failed to create partner')
+      }
     } catch (error) {
-      console.error('Failed to view partner offers:', error)
+      showFeedback('error', 'Network error while creating partner')
     }
   }
 
   const filteredPartners = useMemo(() => {
     return partners.filter(partner => {
-      const matchesSearch = partner.business_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           partner.email.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesSearch = (partner.business_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           (partner.email || '').toLowerCase().includes(searchTerm.toLowerCase())
       const matchesStatus = statusFilter === 'All Status' || partner.status === statusFilter
       return matchesSearch && matchesStatus
     })
@@ -132,6 +123,8 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
 
   const isDark = theme === 'dark'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
+  const textPrimary = isDark ? 'text-white' : 'text-[#0B1220]'
+  const textSecondary = isDark ? 'text-slate-400' : 'text-[#4B5C74]'
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -156,11 +149,10 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* Feedback Toast */}
       {feedback && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg border ${
-          feedback.type === 'success' 
-            ? 'bg-green-500/20 border-green-500/30 text-green-400' 
+          feedback.type === 'success'
+            ? 'bg-green-500/20 border-green-500/30 text-green-400'
             : 'bg-red-500/20 border-red-500/30 text-red-400'
         }`}>
           <div className="flex items-center gap-2">
@@ -170,51 +162,25 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
         </div>
       )}
 
-      {/* Header with Stats */}
+      {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-500/20 rounded-lg flex items-center justify-center">
-              <Building2 className="text-emerald-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{partners.length}</div>
-              <div className="text-xs text-slate-400">Total Partners</div>
-            </div>
-          </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{partners.length}</div>
+          <div className={`text-xs ${textSecondary}`}>Total Partners</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
-              <Check className="text-green-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{partners.filter(p => p.status === 'active').length}</div>
-              <div className="text-xs text-slate-400">Active</div>
-            </div>
-          </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{partners.filter(p => p.status === 'active').length}</div>
+          <div className={`text-xs ${textSecondary}`}>Active</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-yellow-500/20 rounded-lg flex items-center justify-center">
-              <TrendingUp className="text-yellow-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{partners.filter(p => p.status === 'pending').length}</div>
-              <div className="text-xs text-slate-400">Pending</div>
-            </div>
-          </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{partners.filter(p => p.status === 'pending').length}</div>
+          <div className={`text-xs ${textSecondary}`}>Pending</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
-              <Gift className="text-purple-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">247</div>
-              <div className="text-xs text-slate-400">Active Offers</div>
-            </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>
+            {partners.reduce((acc, p) => acc + (p.total_redemptions || 0), 0)}
           </div>
+          <div className={`text-xs ${textSecondary}`}>Total Redemptions</div>
         </div>
       </div>
 
@@ -245,7 +211,7 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
             <option value="pending">Pending</option>
             <option value="suspended">Suspended</option>
           </select>
-          <button 
+          <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-400 hover:to-pink-400"
           >
@@ -265,51 +231,49 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
                   {getBusinessTypeIcon(partner.business_type)}
                 </div>
                 <div>
-                  <h3 className="font-semibold text-white">{partner.business_name}</h3>
-                  <p className="text-xs text-slate-400">{partner.email}</p>
+                  <h3 className={`font-semibold ${textPrimary}`}>{partner.business_name}</h3>
+                  <p className={`text-xs ${textSecondary}`}>{partner.email}</p>
                 </div>
               </div>
               <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(partner.status)}`}>
-                {partner.status.charAt(0).toUpperCase() + partner.status.slice(1)}
+                {(partner.status || 'unknown').charAt(0).toUpperCase() + (partner.status || 'unknown').slice(1)}
               </span>
             </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">Business Type</span>
-                <span className="text-white capitalize">{partner.business_type}</span>
+                <span className={textSecondary}>Business Type</span>
+                <span className={`${textPrimary} capitalize`}>{partner.business_type || 'N/A'}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">Member Since</span>
-                <span className="text-white">{new Date(partner.created_at).toLocaleDateString()}</span>
+                <span className={textSecondary}>Plan</span>
+                <span className={`${textPrimary} capitalize`}>{partner.plan || 'starter'}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">Active Offers</span>
-                <span className="text-white">{Math.floor(Math.random() * 20) + 5}</span>
+                <span className={textSecondary}>Member Since</span>
+                <span className={textPrimary}>{partner.created_at ? new Date(partner.created_at).toLocaleDateString() : 'N/A'}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">Total Redemptions</span>
-                <span className="text-white">{Math.floor(Math.random() * 500) + 100}</span>
+                <span className={textSecondary}>Total Redemptions</span>
+                <span className={textPrimary}>{partner.total_redemptions || 0}</span>
               </div>
             </div>
 
             <div className="flex gap-2 mt-4 pt-4 border-t border-slate-700/50">
-              <button 
-                onClick={() => handleEditPartner(partner.id)}
+              <button
                 className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 text-sm"
               >
                 <Edit2 size={14} />
                 Edit
               </button>
-              <button 
-                onClick={() => handleViewOffers(partner.id)}
+              <button
                 className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 text-sm"
               >
                 <Gift size={14} />
                 Offers
               </button>
               {partner.status === 'active' && (
-                <button 
+                <button
                   onClick={() => handleSuspend(partner.id)}
                   className="flex items-center justify-center gap-1 px-3 py-2 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 text-sm"
                 >
@@ -319,13 +283,13 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
               )}
               {partner.status === 'pending' && (
                 <>
-                  <button 
+                  <button
                     onClick={() => handleApprove(partner.id)}
                     className="flex items-center justify-center gap-1 px-3 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 text-sm"
                   >
                     <Check size={14} />
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleDelete(partner.id)}
                     className="flex items-center justify-center gap-1 px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 text-sm"
                   >
@@ -334,7 +298,7 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
                 </>
               )}
               {partner.status === 'suspended' && (
-                <button 
+                <button
                   onClick={() => handleApprove(partner.id)}
                   className="flex items-center justify-center gap-1 px-3 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 text-sm"
                 >
@@ -347,10 +311,16 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
         ))}
       </div>
 
-      {filteredPartners.length === 0 && (
+      {filteredPartners.length === 0 && !loading && (
         <div className={`text-center py-12 rounded-xl border ${card}`}>
           <Building2 className="mx-auto text-slate-400 mb-4" size={48} />
           <p className="text-slate-400">No partners found matching your filters</p>
+        </div>
+      )}
+
+      {loading && (
+        <div className="flex items-center justify-center py-20">
+          <div className="w-12 h-12 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
         </div>
       )}
 
@@ -358,32 +328,46 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className={`w-full max-w-md p-6 rounded-xl border ${card}`}>
-            <h3 className="text-xl font-semibold text-white mb-4">Create New Partner</h3>
+            <h3 className={`text-xl font-semibold ${textPrimary} mb-4`}>Create New Partner</h3>
             <div className="space-y-4">
               <input
                 type="text"
-                placeholder="Business Name"
+                placeholder="Business Name *"
+                value={newPartner.business_name}
+                onChange={(e) => setNewPartner({ ...newPartner, business_name: e.target.value })}
                 className={`w-full px-4 py-2 rounded-lg border ${
                   isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
                 }`}
               />
               <input
                 type="email"
-                placeholder="Email"
+                placeholder="Email *"
+                value={newPartner.email}
+                onChange={(e) => setNewPartner({ ...newPartner, email: e.target.value })}
                 className={`w-full px-4 py-2 rounded-lg border ${
                   isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
                 }`}
               />
-              <input
-                type="text"
-                placeholder="Business Type"
+              <select
+                value={newPartner.business_type}
+                onChange={(e) => setNewPartner({ ...newPartner, business_type: e.target.value })}
                 className={`w-full px-4 py-2 rounded-lg border ${
                   isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
                 }`}
-              />
+              >
+                <option value="">Select Business Type</option>
+                <option value="fuel">Fuel Station</option>
+                <option value="cafe">Cafe</option>
+                <option value="restaurant">Restaurant</option>
+                <option value="carwash">Car Wash</option>
+                <option value="retail">Retail</option>
+                <option value="entertainment">Entertainment</option>
+              </select>
               <input
                 type="text"
                 placeholder="Address"
+                value={newPartner.address}
+                onChange={(e) => setNewPartner({ ...newPartner, address: e.target.value })}
                 className={`w-full px-4 py-2 rounded-lg border ${
                   isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
                 }`}
@@ -391,6 +375,8 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
               <input
                 type="tel"
                 placeholder="Phone"
+                value={newPartner.phone}
+                onChange={(e) => setNewPartner({ ...newPartner, phone: e.target.value })}
                 className={`w-full px-4 py-2 rounded-lg border ${
                   isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
                 }`}
@@ -406,7 +392,7 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
                 Cancel
               </button>
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={handleCreatePartner}
                 className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-400 hover:to-pink-400"
               >
                 Create Partner

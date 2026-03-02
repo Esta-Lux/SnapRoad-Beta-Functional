@@ -1,346 +1,190 @@
-// SnapRoad Partner Portal - API Service
-// Handles all API calls for the Partner Portal with real-time WebSocket support
+/**
+ * SnapRoad Partner API Service
+ * Centralized API calls for the Partner Portal
+ */
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
-
-export interface PartnerProfile {
-  id: string;
-  business_name: string;
-  email: string;
-  credits: number;
-  subscription_plan: string;
-  location: {
-    lat: number;
-    lng: number;
-    address: string;
-  };
-}
-
-export interface TeamMember {
-  id: string;
-  partner_id: string;
-  name: string;
-  email: string;
-  role: 'owner' | 'manager' | 'staff';
-  status: 'active' | 'pending' | 'revoked';
-  invited_at: string;
-  last_active: string | null;
-  redemptions_today: number;
-}
-
-export interface Referral {
-  id: string;
-  referrer_id: string;
-  business_name: string;
-  email: string;
-  status: 'pending' | 'signed_up' | 'active';
-  credit_earned: number;
-  referred_at: string;
-  activated_at: string | null;
-}
-
-export interface ReferralStats {
-  total: number;
-  active: number;
-  pending: number;
-  total_earned: number;
-  available_credits: number;
-}
-
-export interface PartnerAnalytics {
-  total_views: number;
-  total_clicks: number;
-  total_redemptions: number;
-  today_redemptions: number;
-  revenue: number;
-  active_offers: number;
-  team_members: number;
-  conversion_rate: number;
-}
-
-export interface Redemption {
-  id: string;
-  offer_id: string;
-  customer_id: string;
-  staff_id: string;
-  redeemed_at: string;
-  is_repeat: boolean;
-  staff_name?: string;
-  offer_title?: string;
-}
+const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 class PartnerApiService {
-  private partnerId: string | null = null;
-  private token: string | null = null;
-  private websocket: WebSocket | null = null;
-  private connectionId: string | null = null;
-  private onRedemptionCallback: ((data: any) => void) | null = null;
-  private onCustomerNearbyCallback: ((data: any) => void) | null = null;
+  private partnerId: string = 'default_partner'
+  private token: string | null = null
 
-  // Authentication
-  async login(email: string, password: string): Promise<{ success: boolean; partner_id?: string; business_name?: string; error?: string }> {
+  setPartnerId(id: string) {
+    this.partnerId = id
+  }
+
+  setToken(token: string | null) {
+    this.token = token
+    if (token) localStorage.setItem('snaproad_partner_token', token)
+    else localStorage.removeItem('snaproad_partner_token')
+  }
+
+  getToken(): string | null {
+    if (!this.token) this.token = localStorage.getItem('snaproad_partner_token')
+    return this.token
+  }
+
+  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<{ success: boolean; data?: T; message?: string }> {
+    const url = `${API_URL}${endpoint}`
+    const token = this.getToken()
+    const config: RequestInit = {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...options.headers,
+      },
+      ...options,
+    }
     try {
-      const response = await fetch(`${API_URL}/partner/v2/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        this.partnerId = data.partner_id;
-        this.token = data.token;
-        return { success: true, partner_id: data.partner_id, business_name: data.business_name };
-      }
-      
-      return { success: false, error: 'Invalid credentials' };
+      const response = await fetch(url, config)
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+      return await response.json()
     } catch (error) {
-      return { success: false, error: 'Connection failed' };
+      console.error('Partner API request failed:', error)
+      throw error
     }
   }
 
-  // Get partner profile
-  async getProfile(): Promise<PartnerProfile | null> {
-    if (!this.partnerId) return null;
-    
-    try {
-      const response = await fetch(`${API_URL}/partner/v2/profile/${this.partnerId}`);
-      const data = await response.json();
-      return data.success ? data.data : null;
-    } catch {
-      return null;
-    }
+  // Profile
+  async getProfile(): Promise<any> {
+    return this.request(`/api/partner/profile?partner_id=${this.partnerId}`)
   }
 
-  // Team Management
-  async getTeamMembers(): Promise<TeamMember[]> {
-    if (!this.partnerId) return [];
-    
-    try {
-      const response = await fetch(`${API_URL}/partner/v2/team/${this.partnerId}`);
-      const data = await response.json();
-      return data.success ? data.data : [];
-    } catch {
-      return [];
-    }
+  async updateProfile(data: { business_name?: string; email?: string }): Promise<any> {
+    const params = new URLSearchParams({ partner_id: this.partnerId })
+    if (data.business_name) params.set('business_name', data.business_name)
+    if (data.email) params.set('email', data.email)
+    return this.request(`/api/partner/profile?${params}`, { method: 'PUT' })
   }
 
-  async inviteTeamMember(email: string, role: string, method: 'email' | 'code' = 'email'): Promise<{ success: boolean; invite_code?: string; member_id?: string }> {
-    if (!this.partnerId) return { success: false };
-    
-    try {
-      const response = await fetch(`${API_URL}/partner/v2/team/${this.partnerId}/invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, role, method })
-      });
-      return await response.json();
-    } catch {
-      return { success: false };
-    }
+  // Plans
+  async getPlans(): Promise<any> {
+    return this.request('/api/partner/plans')
   }
 
-  async updateMemberRole(memberId: string, role: string): Promise<boolean> {
-    try {
-      const response = await fetch(`${API_URL}/partner/v2/team/${memberId}/role?role=${role}`, {
-        method: 'PUT'
-      });
-      const data = await response.json();
-      return data.success;
-    } catch {
-      return false;
-    }
+  async updatePlan(plan: string): Promise<any> {
+    return this.request(`/api/partner/plan?partner_id=${this.partnerId}`, {
+      method: 'POST',
+      body: JSON.stringify({ plan }),
+    })
   }
 
-  async revokeTeamAccess(memberId: string): Promise<boolean> {
+  // Locations
+  async getLocations(): Promise<any> {
+    return this.request(`/api/partner/locations?partner_id=${this.partnerId}`)
+  }
+
+  async addLocation(data: { name: string; address: string; lat: number; lng: number; is_primary: boolean }): Promise<any> {
+    return this.request(`/api/partner/locations?partner_id=${this.partnerId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateLocation(locationId: number, data: any): Promise<any> {
+    return this.request(`/api/partner/locations/${locationId}?partner_id=${this.partnerId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteLocation(locationId: number): Promise<any> {
+    return this.request(`/api/partner/locations/${locationId}?partner_id=${this.partnerId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async setPrimaryLocation(locationId: number): Promise<any> {
+    return this.request(`/api/partner/locations/${locationId}/set-primary?partner_id=${this.partnerId}`, {
+      method: 'POST',
+    })
+  }
+
+  // Offers
+  async getOffers(): Promise<any> {
+    return this.request(`/api/partner/offers?partner_id=${this.partnerId}`)
+  }
+
+  async createOffer(data: any): Promise<any> {
+    return this.request(`/api/partner/offers?partner_id=${this.partnerId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  // Boosts
+  async getBoostPricing(): Promise<any> {
+    return this.request('/api/partner/boosts/pricing')
+  }
+
+  async createBoost(data: { offer_id: number; boost_type: string; use_credits: boolean }): Promise<any> {
+    return this.request(`/api/partner/boosts/create?partner_id=${this.partnerId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getActiveBoosts(): Promise<any> {
+    return this.request(`/api/partner/boosts/active?partner_id=${this.partnerId}`)
+  }
+
+  async cancelBoost(offerId: number): Promise<any> {
+    return this.request(`/api/partner/boosts/${offerId}?partner_id=${this.partnerId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // Credits
+  async getCredits(): Promise<any> {
+    return this.request(`/api/partner/credits?partner_id=${this.partnerId}`)
+  }
+
+  async addCredits(amount: number): Promise<any> {
+    return this.request(`/api/partner/credits/add?partner_id=${this.partnerId}`, {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    })
+  }
+
+  // Analytics (v2 partner-specific)
+  async getAnalytics(): Promise<any> {
     try {
-      const response = await fetch(`${API_URL}/partner/v2/team/${memberId}`, {
-        method: 'DELETE'
-      });
-      const data = await response.json();
-      return data.success;
+      const result = await this.request(`/api/partner/v2/analytics/${this.partnerId}`)
+      if (result.success && result.data) {
+        const d = result.data
+        return {
+          success: true,
+          data: {
+            summary: {
+              total_views: d.total_views || 0,
+              total_clicks: d.total_clicks || 0,
+              total_redemptions: d.total_redemptions || 0,
+              total_revenue: d.revenue || 0,
+              ctr: d.conversion_rate || 0,
+              conversion_rate: d.conversion_rate || 0,
+            },
+            chart_data: [],
+            geo_data: [],
+          },
+        }
+      }
+      return result
     } catch {
-      return false;
+      return { success: false, data: null }
     }
   }
 
   // Referrals
-  async getReferrals(): Promise<{ referrals: Referral[]; stats: ReferralStats }> {
-    if (!this.partnerId) return { referrals: [], stats: { total: 0, active: 0, pending: 0, total_earned: 0, available_credits: 0 } };
-    
-    try {
-      const response = await fetch(`${API_URL}/partner/v2/referrals/${this.partnerId}`);
-      const data = await response.json();
-      return data.success ? { referrals: data.data, stats: data.stats } : { referrals: [], stats: data.stats || {} };
-    } catch {
-      return { referrals: [], stats: { total: 0, active: 0, pending: 0, total_earned: 0, available_credits: 0 } };
-    }
+  async getReferrals(): Promise<any> {
+    return this.request(`/api/partner/v2/referrals/${this.partnerId}`)
   }
 
-  async sendReferral(email: string, message: string = ''): Promise<boolean> {
-    if (!this.partnerId) return false;
-    
-    try {
-      const response = await fetch(`${API_URL}/partner/v2/referrals/${this.partnerId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, message })
-      });
-      const data = await response.json();
-      return data.success;
-    } catch {
-      return false;
-    }
-  }
-
-  async useCredits(amount: number, purpose: 'subscription' | 'boosting'): Promise<{ success: boolean; remaining_credits?: number }> {
-    if (!this.partnerId) return { success: false };
-    
-    try {
-      const response = await fetch(`${API_URL}/partner/v2/credits/${this.partnerId}/use`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, purpose })
-      });
-      return await response.json();
-    } catch {
-      return { success: false };
-    }
-  }
-
-  // QR Redemption
-  async redeemOffer(qrData: any, staffId: string): Promise<{ success: boolean; redemption_id?: string; offer?: any; error?: string }> {
-    try {
-      const response = await fetch(`${API_URL}/partner/v2/redeem`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qr_data: qrData, staff_id: staffId })
-      });
-      return await response.json();
-    } catch {
-      return { success: false, error: 'Connection failed' };
-    }
-  }
-
-  async getRecentRedemptions(limit: number = 10): Promise<Redemption[]> {
-    if (!this.partnerId) return [];
-    
-    try {
-      const response = await fetch(`${API_URL}/partner/v2/redemptions/${this.partnerId}?limit=${limit}`);
-      const data = await response.json();
-      return data.success ? data.data : [];
-    } catch {
-      return [];
-    }
-  }
-
-  // Analytics
-  async getAnalytics(): Promise<PartnerAnalytics | null> {
-    if (!this.partnerId) return null;
-    
-    try {
-      const response = await fetch(`${API_URL}/partner/v2/analytics/${this.partnerId}`);
-      const data = await response.json();
-      return data.success ? data.data : null;
-    } catch {
-      return null;
-    }
-  }
-
-  // WebSocket for Real-time Notifications
-  connectWebSocket(onRedemption?: (data: any) => void, onCustomerNearby?: (data: any) => void): void {
-    if (!this.partnerId || this.websocket?.readyState === WebSocket.OPEN) return;
-
-    this.onRedemptionCallback = onRedemption || null;
-    this.onCustomerNearbyCallback = onCustomerNearby || null;
-
-    // Construct WebSocket URL
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.host;
-    const wsUrl = `${wsProtocol}//${wsHost}/ws/partner/${this.partnerId}`;
-
-    try {
-      this.websocket = new WebSocket(wsUrl);
-
-      this.websocket.onopen = () => {
-        console.log('Partner WebSocket connected');
-        // Start keep-alive ping
-        this.startPing();
-      };
-
-      this.websocket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          
-          if (message.type === 'redemption' && this.onRedemptionCallback) {
-            this.onRedemptionCallback(message.data);
-          } else if (message.type === 'customer_nearby' && this.onCustomerNearbyCallback) {
-            this.onCustomerNearbyCallback(message);
-          }
-        } catch (error) {
-          console.error('WebSocket message parse error:', error);
-        }
-      };
-
-      this.websocket.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-
-      this.websocket.onclose = () => {
-        console.log('WebSocket disconnected');
-        // Attempt reconnect after 5 seconds
-        setTimeout(() => this.connectWebSocket(onRedemption, onCustomerNearby), 5000);
-      };
-    } catch (error) {
-      console.error('Failed to create WebSocket:', error);
-    }
-  }
-
-  private pingInterval: number | null = null;
-
-  private startPing(): void {
-    if (this.pingInterval) return;
-    
-    this.pingInterval = window.setInterval(() => {
-      if (this.websocket?.readyState === WebSocket.OPEN) {
-        this.websocket.send(JSON.stringify({ type: 'ping' }));
-      }
-    }, 30000); // Ping every 30 seconds
-  }
-
-  disconnectWebSocket(): void {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = null;
-    }
-    
-    if (this.websocket) {
-      this.websocket.close();
-      this.websocket = null;
-    }
-  }
-
-  // Utility methods
-  setPartnerId(id: string): void {
-    this.partnerId = id;
-  }
-
-  getPartnerId(): string | null {
-    return this.partnerId;
-  }
-
-  isAuthenticated(): boolean {
-    return !!this.partnerId && !!this.token;
-  }
-
-  logout(): void {
-    this.disconnectWebSocket();
-    this.partnerId = null;
-    this.token = null;
+  // Redemptions
+  async getRedemptions(limit: number = 10): Promise<any> {
+    return this.request(`/api/partner/v2/redemptions/${this.partnerId}?limit=${limit}`)
   }
 }
 
-// Export singleton instance
-export const partnerApi = new PartnerApiService();
-export default partnerApi;
+export const partnerApi = new PartnerApiService()
+export { PartnerApiService }
+export default partnerApi

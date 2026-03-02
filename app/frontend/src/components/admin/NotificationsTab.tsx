@@ -1,17 +1,18 @@
 // Notification Center Tab
 // =============================================
 
-import { useState, useEffect, useMemo } from 'react'
-import { Bell, Search, Filter, Check, X, Mail, AlertTriangle, Info, Zap, Clock, Send, Plus } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Bell, Search, Check, X, AlertTriangle, Info, Send } from 'lucide-react'
+import { adminApi } from '@/services/adminApi'
 
 interface Notification {
-  id: number
+  id: string
   type: 'system' | 'security' | 'marketing' | 'alert' | 'info'
   title: string
   message: string
   status: 'read' | 'unread'
   priority: 'high' | 'medium' | 'low'
-  timestamp: string
+  created_at: string
   recipients: string
 }
 
@@ -19,7 +20,21 @@ interface NotificationsTabProps {
   theme: 'dark' | 'light'
 }
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+function mapApiToNotification(api: { id: string; type: string; title: string; message: string; priority?: string; status?: string; is_read?: boolean; recipients?: string; created_at?: string }): Notification {
+  const status = (api.status ?? (api.is_read ? 'read' : 'unread')) as 'read' | 'unread'
+  const priority = (api.priority ?? 'medium') as 'high' | 'medium' | 'low'
+  const type = (api.type ?? 'system') as Notification['type']
+  return {
+    id: api.id,
+    type,
+    title: api.title,
+    message: api.message,
+    status,
+    priority,
+    created_at: api.created_at ?? '',
+    recipients: api.recipients ?? '',
+  }
+}
 
 export default function NotificationsTab({ theme }: NotificationsTabProps) {
   const [searchTerm, setSearchTerm] = useState('')
@@ -27,7 +42,7 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
   const [statusFilter, setStatusFilter] = useState('All Status')
   const [priorityFilter, setPriorityFilter] = useState('All Priority')
   const [notifications, setNotifications] = useState<Notification[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [newNotification, setNewNotification] = useState({
@@ -45,25 +60,22 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
   const loadNotifications = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/api/admin/notifications`)
-      const data = await res.json()
-      if (data.success) {
-        setNotifications(data.data)
+      const res = await adminApi.getNotifications()
+      if (res.success && res.data) {
+        setNotifications(res.data.map(mapApiToNotification))
       }
     } catch (error) {
       console.error('Failed to load notifications:', error)
+      setNotifications([])
     } finally {
       setLoading(false)
     }
   }
 
-  const handleMarkAsRead = async (notificationId: number) => {
+  const handleMarkAsRead = async (notificationId: string) => {
     try {
-      setNotifications(prev => prev.map(notification => 
-        notification.id === notificationId 
-          ? { ...notification, status: 'read' as const }
-          : notification
-      ))
+      await adminApi.markNotificationRead(notificationId)
+      await loadNotifications()
     } catch (error) {
       console.error('Failed to mark notification as read:', error)
     }
@@ -71,7 +83,10 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
 
   const handleMarkAllAsRead = async () => {
     try {
-      setNotifications(prev => prev.map(notification => ({ ...notification, status: 'read' as const })))
+      for (const n of notifications.filter(n => n.status === 'unread')) {
+        await adminApi.markNotificationRead(n.id)
+      }
+      await loadNotifications()
     } catch (error) {
       console.error('Failed to mark all notifications as read:', error)
     }
@@ -79,13 +94,8 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
 
   const handleSendNotification = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/admin/notifications`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newNotification)
-      })
-      const data = await res.json()
-      if (data.success) {
+      const res = await adminApi.createNotification(newNotification)
+      if (res.success) {
         setFeedback({ type: 'success', message: 'Notification sent successfully!' })
         setShowCreateModal(false)
         setNewNotification({
@@ -95,10 +105,10 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
           priority: 'medium',
           recipients: 'all_users'
         })
-        loadNotifications() // Refresh the list
+        await loadNotifications()
         setTimeout(() => setFeedback(null), 3000)
       } else {
-        setFeedback({ type: 'error', message: 'Failed to send notification' })
+        setFeedback({ type: 'error', message: res.error ?? 'Failed to send notification' })
         setTimeout(() => setFeedback(null), 3000)
       }
     } catch (error) {
@@ -108,15 +118,14 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
     }
   }
 
-  const filteredNotifications = notifications ? notifications.filter(notification => {
+  const filteredNotifications = notifications.filter(notification => {
     const matchesSearch = notification.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          notification.message.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesType = typeFilter === 'All Types' || notification.type === typeFilter.toLowerCase()
-    const matchesStatus = statusFilter === 'All Status' || notification.status === statusFilter.toLowerCase()
-    const matchesPriority = priorityFilter === 'All Priority' || notification.priority === priorityFilter.toLowerCase()
+    const matchesType = (typeFilter === 'All Types' || typeFilter === 'all') || notification.type === typeFilter.toLowerCase()
+    const matchesStatus = (statusFilter === 'All Status' || statusFilter === 'all') || notification.status === statusFilter.toLowerCase()
+    const matchesPriority = (priorityFilter === 'All Priority' || priorityFilter === 'all') || notification.priority === priorityFilter.toLowerCase()
     return matchesSearch && matchesType && matchesStatus && matchesPriority
-    return matchesSearch && matchesType && matchesStatus
-  }) : []
+  })
 
   const isDark = theme === 'dark'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
@@ -140,14 +149,12 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
     }
   }
 
-  const markAsRead = (id: number) => {
-    setNotifications(prev => prev.map(n => 
-      n.id === id ? { ...n, status: 'read' } : n
-    ))
+  const markAsRead = async (id: string) => {
+    await handleMarkAsRead(id)
   }
 
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, status: 'read' })))
+  const markAllAsRead = async () => {
+    await handleMarkAllAsRead()
   }
 
   if (loading) {
@@ -206,7 +213,7 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
               <Bell className="text-blue-400" size={20} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{notifications?.length || 0}</div>
+              <div className="text-2xl font-bold text-white">{notifications?.length ?? 0}</div>
               <div className="text-xs text-slate-400">Total Notifications</div>
             </div>
           </div>
@@ -217,7 +224,7 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
               <AlertTriangle className="text-red-400" size={20} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{notifications?.filter(n => n.status === 'unread').length || 0}</div>
+              <div className="text-2xl font-bold text-white">{notifications?.filter(n => n.status === 'unread').length ?? 0}</div>
               <div className="text-xs text-slate-400">Unread</div>
             </div>
           </div>
@@ -228,7 +235,7 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
               <AlertTriangle className="text-amber-400" size={20} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{notifications?.filter(n => n.priority === 'high').length || 0}</div>
+              <div className="text-2xl font-bold text-white">{notifications?.filter(n => n.priority === 'high').length ?? 0}</div>
               <div className="text-xs text-slate-400">High Priority</div>
             </div>
           </div>
@@ -239,7 +246,7 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
               <Send className="text-purple-400" size={20} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{notifications?.filter(n => n.type === 'marketing').length || 0}</div>
+              <div className="text-2xl font-bold text-white">{notifications?.filter(n => n.type === 'marketing').length ?? 0}</div>
               <div className="text-xs text-slate-400">Marketing</div>
             </div>
           </div>
@@ -290,60 +297,64 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
 
       {/* Notifications List */}
       <div className="space-y-3">
-        {filteredNotifications.map((notification) => (
-          <div 
-            key={notification.id} 
-            className={`p-4 rounded-xl border transition-all ${
-              card
-            } ${notification.status === 'unread' ? 'ring-2 ring-purple-500/20' : ''}`}
-          >
-            <div className="flex items-start gap-4">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                notification.status === 'unread' ? 'bg-purple-500/20' : 'bg-slate-700/50'
-              }`}>
-                {getTypeIcon(notification.type)}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-white font-medium">{notification.title}</h3>
-                  <span className={`px-2 py-1 text-xs rounded-full border ${getPriorityColor(notification.priority)}`}>
-                    {notification.priority}
-                  </span>
+        {filteredNotifications.length > 0 ? (
+          filteredNotifications.map((notification) => (
+            <div 
+              key={notification.id} 
+              className={`p-4 rounded-xl border transition-all ${
+                card
+              } ${notification.status === 'unread' ? 'ring-2 ring-purple-500/20' : ''}`}
+            >
+              <div className="flex items-start gap-4">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  notification.status === 'unread' ? 'bg-purple-500/20' : 'bg-slate-700/50'
+                }`}>
+                  {getTypeIcon(notification.type)}
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="text-white font-medium">{notification.title}</h3>
+                    <span className={`px-2 py-1 text-xs rounded-full border ${getPriorityColor(notification.priority)}`}>
+                      {notification.priority}
+                    </span>
+                    {notification.status === 'unread' && (
+                      <span className="w-2 h-2 bg-purple-400 rounded-full" />
+                    )}
+                  </div>
+                  <p className="text-slate-400 text-sm mb-2">{notification.message}</p>
+                  <div className="flex items-center gap-4 text-xs text-slate-500">
+                    <span>{notification.created_at}</span>
+                    <span>•</span>
+                    <span>Recipients: {notification.recipients}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
                   {notification.status === 'unread' && (
-                    <span className="w-2 h-2 bg-purple-400 rounded-full" />
+                    <button 
+                      onClick={() => markAsRead(notification.id)}
+                      className="p-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                    >
+                      <Check size={16} />
+                    </button>
                   )}
-                </div>
-                <p className="text-slate-400 text-sm mb-2">{notification.message}</p>
-                <div className="flex items-center gap-4 text-xs text-slate-500">
-                  <span>{notification.timestamp}</span>
-                  <span>•</span>
-                  <span>Recipients: {notification.recipients}</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {notification.status === 'unread' && (
-                  <button 
-                    onClick={() => markAsRead(notification.id)}
-                    className="p-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
-                  >
-                    <Check size={16} />
+                  <button className="p-2 rounded-lg bg-slate-700/50 text-slate-400 hover:bg-slate-700">
+                    <X size={16} />
                   </button>
-                )}
-                <button className="p-2 rounded-lg bg-slate-700/50 text-slate-400 hover:bg-slate-700">
-                  <X size={16} />
-                </button>
+                </div>
               </div>
             </div>
+          ))
+        ) : (
+          <div className={`text-center py-12 rounded-xl border ${card}`}>
+            <Bell className="mx-auto text-slate-400 mb-4" size={48} />
+            <p className="text-slate-400">
+              {notifications.length === 0 
+                ? 'No notifications yet' 
+                : 'No notifications found matching your filters'}
+            </p>
           </div>
-        ))}
+        )}
       </div>
-
-      {filteredNotifications.length === 0 && (
-        <div className={`text-center py-12 rounded-xl border ${card}`}>
-          <Bell className="mx-auto text-slate-400 mb-4" size={48} />
-          <p className="text-slate-400">No notifications found matching your filters</p>
-        </div>
-      )}
 
       {/* Create Notification Modal */}
       {showCreateModal && (
@@ -371,7 +382,7 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
               />
               <select
                 value={newNotification.type}
-                onChange={(e) => setNewNotification({...newNotification, type: e.target.value as any})}
+                onChange={(e) => setNewNotification({...newNotification, type: e.target.value as Notification['type']})}
                 className={`w-full px-4 py-2 rounded-lg border ${
                   isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
                 }`}
@@ -384,7 +395,7 @@ export default function NotificationsTab({ theme }: NotificationsTabProps) {
               </select>
               <select
                 value={newNotification.priority}
-                onChange={(e) => setNewNotification({...newNotification, priority: e.target.value as any})}
+                onChange={(e) => setNewNotification({...newNotification, priority: e.target.value as Notification['priority']})}
                 className={`w-full px-4 py-2 rounded-lg border ${
                   isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
                 }`}

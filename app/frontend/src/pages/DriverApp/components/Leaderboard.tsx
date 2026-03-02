@@ -96,7 +96,8 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
     )
   }
 
-  const formatGems = (gems: number) => {
+  const formatGems = (gems: number | undefined) => {
+    if (!gems || gems === 0) return '0'
     if (gems >= 1000000) return `${(gems / 1000000).toFixed(1)}M`
     if (gems >= 1000) return `${(gems / 1000).toFixed(1)}K`
     return gems.toString()
@@ -122,7 +123,7 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
                   <h2 className="text-white font-bold text-xl">Leaderboard</h2>
                   <p className="text-white/70 text-xs flex items-center gap-1">
                     <Users size={12} />
-                    {totalUsers.toLocaleString()} drivers competing
+                    {totalUsers?.toLocaleString() || '0'} drivers competing
                   </p>
                 </div>
               </div>

@@ -1,12 +1,12 @@
 // SnapRoad Admin Portal - Ryan's Emergent Improvements + Our Admin Components
 // Professional architecture with modular, clean, extensible code
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, AlertTriangle, Eye, Gift, Building2, BarChart3,
   Bell, TrendingUp, DollarSign, Scale, Settings, FileText, LogOut,
-  Moon, Sun, ChevronRight, Crown
+  Moon, Sun, Crown
 } from 'lucide-react'
 
 // Import our admin components
@@ -24,17 +24,8 @@ import SettingsTab from '@/components/admin/SettingsTab'
 import NotificationsTab from '@/components/admin/NotificationsTab'
 import AuditLogTab from '@/components/admin/AuditLogTab'
 
-// Import Ryan's Emergent hooks
-import { useToast } from '@/hooks/useToast'
-import { useAdminStats } from '@/hooks/useAdminStats'
-import { useUsers } from '@/hooks/useUsers'
-import { useIncidents } from '@/hooks/useIncidents'
+// Hooks
 import { useWebSocket } from '@/hooks/useWebSocket'
-
-// Types
-import { Event, User, Partner } from '@/types/admin'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 // Navigation items based on Figma design
 const NAV_ITEMS = [
@@ -57,21 +48,8 @@ export default function AdminDashboard() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('dashboard')
   const [darkMode, setDarkMode] = useState(true)
-  
-  // Ryan's Emergent hooks for professional functionality
-  const { success, error } = useToast()
-  const { stats, loading: statsLoading } = useAdminStats()
-  const { users, loading: usersLoading } = useUsers()
-  const { incidents, loading: incidentsLoading } = useIncidents()
-  const { isConnected, lastMessage } = useWebSocket()
-
-  // Mock data for development
-  const [mockStats] = useState([
-    { label: 'Total Users', value: '12,450', change: '+12%', icon: Users, color: 'blue' },
-    { label: 'Active Partners', value: '156', change: '+5%', icon: Building2, color: 'emerald' },
-    { label: 'Revenue (MTD)', value: '$45,230', change: '+18%', icon: DollarSign, color: 'purple' },
-    { label: 'Incidents Today', value: '23', change: '-8%', icon: AlertTriangle, color: 'amber' },
-  ])
+  const { status: wsStatus } = useWebSocket()
+  const isConnected = wsStatus === 'live'
 
   const toggleDarkMode = () => {
     setDarkMode(!darkMode)

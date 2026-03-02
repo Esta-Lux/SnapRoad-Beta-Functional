@@ -6,9 +6,11 @@ import {
   Eye, Zap, CheckCircle, XCircle, MapPin, Clock, EyeOff,
   SlidersHorizontal
 } from 'lucide-react'
+import { adminApi } from '@/services/adminApi'
 import { Incident, IncidentTab, AIModerationTabProps } from '@/types/admin'
+import type { AdminIncident } from '@/types/admin'
 
-// Mock data and constants
+// Status badges and constants
 const STATUS_BADGES: Record<string, string> = {
   new: 'bg-[#E6ECF5] text-[#0B1220]',
   blurred: 'bg-[#0084FF]/10 text-[#0084FF]',
@@ -17,17 +19,27 @@ const STATUS_BADGES: Record<string, string> = {
   rejected: 'bg-[#FF5A5A]/10 text-[#FF5A5A]',
 }
 
-const INCIDENTS_MOCK: Incident[] = [
-  { id: 1, type: 'Speeding (85mph in 65)', confidence: 94, status: 'new', blurred: false, location: 'I-70 E, Columbus OH', reportedAt: '2 min ago' },
-  { id: 2, type: 'Hard Braking Event', confidence: 88, status: 'new', blurred: true, location: 'High St & Broad, Columbus', reportedAt: '8 min ago' },
-  { id: 3, type: 'Reckless Lane Change', confidence: 96, status: 'review', blurred: true, location: 'I-270 S, Exit 17', reportedAt: '15 min ago' },
-  { id: 4, type: 'Phone Usage Detected', confidence: 91, status: 'new', blurred: false, location: '5th Ave, Columbus OH', reportedAt: '22 min ago' },
-  { id: 5, type: 'Red Light Violation', confidence: 83, status: 'review', blurred: false, location: 'Broad & 4th, Columbus', reportedAt: '31 min ago' },
-  { id: 6, type: 'Road Obstruction', confidence: 79, status: 'approved', blurred: false, location: 'Morse Rd, Columbus', reportedAt: '1 hr ago' },
-  { id: 7, type: 'Aggressive Tailgating', confidence: 90, status: 'new', blurred: true, location: 'I-71 N, near Dublin', reportedAt: '45 min ago' },
-  { id: 8, type: 'Wrong Way Driver', confidence: 99, status: 'review', blurred: false, location: 'SR-315 N, Columbus', reportedAt: '2 hrs ago' },
-  { id: 9, type: 'Sharp Cornering', confidence: 76, status: 'rejected', blurred: false, location: 'Riverside Dr, Columbus', reportedAt: '3 hrs ago' },
-]
+function mapStatus(apiStatus: string): Incident['status'] {
+  switch (apiStatus) {
+    case 'pending': return 'new'
+    case 'approved': return 'approved'
+    case 'rejected': return 'rejected'
+    default: return 'new'
+  }
+}
+
+function mapIncident(inc: AdminIncident): Incident {
+  const confidence = inc.confidence < 1 ? inc.confidence * 100 : inc.confidence
+  return {
+    id: inc.id,
+    type: inc.type || inc.description || 'Unknown',
+    confidence: Math.round(confidence),
+    status: mapStatus(inc.status),
+    blurred: inc.is_blurred ?? false,
+    location: inc.location ?? '',
+    reportedAt: inc.created_at ?? '',
+  }
+}
 
 const WS_BASE = (() => {
   const apiUrl = (import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_BACKEND_URL || '')
@@ -37,7 +49,8 @@ const WS_BASE = (() => {
 
 export default function AIModerationTab({ theme }: AIModerationTabProps) {
   const [activeModTab, setActiveModTab] = useState<IncidentTab>('new')
-  const [incidents, setIncidents] = useState<Incident[]>(INCIDENTS_MOCK)
+  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [loading, setLoading] = useState(true)
   const [confidenceThreshold, setConfidenceThreshold] = useState(80)
   const [wsStatus, setWsStatus] = useState<'live' | 'connecting' | 'offline'>('offline')
   const [adminCount, setAdminCount] = useState(1)
@@ -45,6 +58,22 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
   
   const wsRef = useRef<WebSocket | null>(null)
   const pingRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    adminApi.getIncidents()
+      .then(res => {
+        if (res.success && res.data) {
+          setIncidents(res.data.map(mapIncident))
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load incidents:', err)
+        setIncidents([])
+      })
+      .finally(() => {
+        setLoading(false)
+      })
+  }, [])
 
   useEffect(() => {
     let ws: WebSocket | null = null
@@ -73,13 +102,25 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
           if (msg.type === 'pong') return
           
           if (msg.type === 'incident_new') {
-            setIncidents(prev => [msg.incident, ...prev])
-            setLiveToast(`New incident: ${msg.incident.type}`)
+            const incident = msg.incident
+            const mapped: Incident = incident.id != null
+              ? mapIncident(incident as unknown as AdminIncident)
+              : {
+                  id: incident.id ?? String(Math.random()),
+                  type: incident.type ?? 'Unknown',
+                  confidence: incident.confidence != null ? (incident.confidence < 1 ? incident.confidence * 100 : incident.confidence) : 0,
+                  status: mapStatus(incident.status ?? 'pending'),
+                  blurred: incident.is_blurred ?? incident.blurred ?? false,
+                  location: incident.location ?? '',
+                  reportedAt: incident.created_at ?? incident.reportedAt ?? 'just now',
+                }
+            setIncidents(prev => [mapped, ...prev])
+            setLiveToast(`New incident: ${mapped.type}`)
             setTimeout(() => setLiveToast(null), 4000)
             setActiveModTab('new')
           } else if (msg.type === 'moderation_update') {
             setIncidents(prev => prev.map(i =>
-              i.id === msg.incident_id ? { ...i, status: msg.outcome } : i
+              String(i.id) === String(msg.incident_id) ? { ...i, status: msg.outcome } : i
             ))
           } else if (msg.type === 'admin_count') {
             setAdminCount(msg.count)
@@ -110,8 +151,15 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
     }
   }, [])
 
-  const handleModeration = (id: number, outcome: 'approved' | 'rejected') => {
-    setIncidents(prev => prev.map(i => i.id === id ? { ...i, status: outcome } : i))
+  const handleModeration = async (id: number | string, outcome: 'approved' | 'rejected') => {
+    const idStr = String(id)
+    setIncidents(prev => prev.map(i => String(i.id) === idStr ? { ...i, status: outcome } : i))
+    try {
+      await adminApi.moderateIncident(idStr, outcome)
+    } catch (err) {
+      console.error('Failed to moderate incident:', err)
+      setIncidents(prev => prev.map(i => String(i.id) === idStr ? { ...i, status: i.status } : i))
+    }
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'moderate', incident_id: id, outcome }))
     }
@@ -131,6 +179,14 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
 
   const isDark = theme === 'dark'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-12 h-12 border-2 border-[#0084FF]/30 border-t-[#0084FF] rounded-full animate-spin" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -233,7 +289,7 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
 
                 <div className="flex items-start justify-between mb-2">
                   <p className={`text-sm font-medium flex-1 mr-2 ${isDark ? 'text-white' : 'text-[#0B1220]'}`}>{incident.type}</p>
-                  <span className={`px-2 py-0.5 rounded-full text-[11px] shrink-0 ${STATUS_BADGES[incident.status]}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-[11px] shrink-0 ${STATUS_BADGES[incident.status] ?? STATUS_BADGES.new}`}>
                     {incident.status.charAt(0).toUpperCase() + incident.status.slice(1)}
                   </span>
                 </div>
@@ -260,7 +316,9 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
       ) : (
         <div className={`text-center py-12 rounded-2xl border ${card}`}>
           <Eye size={48} className={isDark ? 'text-white/20' : 'text-[#4B5C74]'} />
-          <p className={`mt-4 ${isDark ? 'text-white/60' : 'text-[#4B5C74]'}`}>No incidents match current filters</p>
+          <p className={`mt-4 ${isDark ? 'text-white/60' : 'text-[#4B5C74]'}`}>
+            {incidents.length === 0 ? 'No incidents yet' : 'No incidents match current filters'}
+          </p>
         </div>
       )}
     </div>
