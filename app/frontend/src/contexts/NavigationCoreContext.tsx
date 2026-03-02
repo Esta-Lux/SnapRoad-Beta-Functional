@@ -1,6 +1,6 @@
 /**
- * Navigation core context: VehicleState + prediction.
- * Feeds the map layer (MapKit-ready: camera, vehicle position, heading, route, ghost).
+ * Navigation core context: VehicleState, prediction, behavior, modes, experience, camera.
+ * Feeds the map layer (MapKit-ready). Phase 2+3: driving style, cognitive load, experience engine, camera director.
  */
 
 import {
@@ -12,8 +12,27 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { SensorFusion, predictPosition, predictionConfidence } from '@/core'
-import type { VehicleState, MapCameraState, PredictedPosition, Coordinate2D } from '@/core'
+import {
+  SensorFusion,
+  predictPosition,
+  predictionConfidence,
+  snapToRoute,
+  segmentFromPolyline,
+  DrivingBehaviorEngine,
+  computeCognitiveLoad,
+  computeExperience,
+  interpolateExperience,
+} from '@/core'
+import type {
+  VehicleState,
+  MapCameraState,
+  PredictedPosition,
+  Coordinate2D,
+  DrivingMode,
+  DrivingStyle,
+  ExperienceState,
+  RouteSegment,
+} from '@/core'
 
 interface NavigationCoreState {
   vehicle: VehicleState | null
@@ -21,18 +40,32 @@ interface NavigationCoreState {
   camera: MapCameraState | null
   isLive: boolean
   error: string | null
+  mode: DrivingMode
+  drivingStyle: DrivingStyle
+  experience: ExperienceState | null
 }
 
 interface NavigationCoreContextValue extends NavigationCoreState {
   recenter: () => void
   setCamera: (camera: MapCameraState | null) => void
+  setMode: (mode: DrivingMode) => void
+  setRoutePolyline: (polyline: Coordinate2D[] | null) => void
+  getDrivingMetrics: () => { vehicle: VehicleState | null; style: DrivingStyle; mode: DrivingMode; experience: ExperienceState | null }
 }
 
-const defaultCamera = (center: Coordinate2D): MapCameraState => ({
+const defaultCamera = (center: Coordinate2D, zoom = 15, bearing = 0): MapCameraState => ({
   center,
-  zoom: 15,
-  bearing: 0,
+  zoom,
+  bearing,
 })
+
+const defaultExperience: ExperienceState = {
+  zoom: 15,
+  pitch: 60,
+  routeGlow: 0.6,
+  laneHighlight: 0,
+  instructionLeadTime: 2,
+}
 
 const initialState: NavigationCoreState = {
   vehicle: null,
@@ -40,11 +73,15 @@ const initialState: NavigationCoreState = {
   camera: null,
   isLive: false,
   error: null,
+  mode: 'adaptive',
+  drivingStyle: { aggression: 0, smoothness: 1, hesitation: 0 },
+  experience: defaultExperience,
 }
 
 const NavigationCoreContext = createContext<NavigationCoreContextValue | null>(null)
 
 const PREDICTION_SECONDS = 2
+const SMOOTHING = 0.08
 
 export function NavigationCoreProvider({
   children,
@@ -60,17 +97,37 @@ export function NavigationCoreProvider({
     camera: defaultCamera(fallbackCenter),
   })
   const fusionRef = useRef<SensorFusion | null>(null)
+  const behaviorRef = useRef<DrivingBehaviorEngine | null>(null)
+  const routeSegmentsRef = useRef<RouteSegment[]>([])
+  const modeRef = useRef<DrivingMode>(state.mode)
   const watchIdRef = useRef<number | null>(null)
+  const smoothedExperienceRef = useRef<ExperienceState>(defaultExperience)
+  modeRef.current = state.mode
 
   const getFusion = useCallback(() => {
     if (!fusionRef.current) fusionRef.current = new SensorFusion({ processNoise: 0.01, measurementNoise: 2.0 })
     return fusionRef.current
   }, [])
 
+  const getBehavior = useCallback(() => {
+    if (!behaviorRef.current) behaviorRef.current = new DrivingBehaviorEngine()
+    return behaviorRef.current
+  }, [])
+
   const updateVehicle = useCallback(
     (reading: { lat: number; lng: number; speed?: number | null; heading?: number | null; accuracy?: number | null; timestamp?: number }) => {
       const fusion = getFusion()
-      const vehicle = fusion.update(reading)
+      let vehicle = fusion.update(reading)
+      const segments = routeSegmentsRef.current
+      if (segments.length > 0) {
+        const snapped = snapToRoute(vehicle.coordinate, vehicle.heading, segments)
+        if (snapped) vehicle = { ...vehicle, coordinate: snapped.coordinate }
+      }
+      getBehavior().push(vehicle)
+      const style = getBehavior().getStyle()
+      const cognitiveLoad = computeCognitiveLoad(vehicle, style)
+      const mode = modeRef.current
+      const targetExperience = computeExperience(vehicle, style, cognitiveLoad, mode)
       const predicted = {
         coordinate: predictPosition(vehicle, PREDICTION_SECONDS),
         confidence: predictionConfidence(PREDICTION_SECONDS),
@@ -80,12 +137,19 @@ export function NavigationCoreProvider({
         ...prev,
         vehicle,
         predicted,
-        camera: { center: vehicle.coordinate, zoom: 15, bearing: vehicle.heading },
+        drivingStyle: style,
+        experience: targetExperience,
+        camera: {
+          center: vehicle.coordinate,
+          zoom: targetExperience.zoom,
+          bearing: vehicle.heading,
+        },
         isLive: true,
         error: null,
       }))
+      smoothedExperienceRef.current = interpolateExperience(smoothedExperienceRef.current, targetExperience, 0.3)
     },
-    [getFusion]
+    [getFusion, getBehavior]
   )
 
   useEffect(() => {
@@ -103,6 +167,7 @@ export function NavigationCoreProvider({
         },
         predicted: null,
         camera: defaultCamera(fallbackCenter),
+        experience: defaultExperience,
         isLive: false,
       }))
       return
@@ -146,9 +211,9 @@ export function NavigationCoreProvider({
   const recenter = useCallback(() => {
     setState((prev) => {
       const center = prev.vehicle?.coordinate ?? fallbackCenter
-      const cam = defaultCamera(center)
-      if (prev.vehicle) cam.bearing = prev.vehicle.heading
-      return { ...prev, camera: cam }
+      const zoom = prev.experience?.zoom ?? 15
+      const bearing = prev.vehicle?.heading ?? 0
+      return { ...prev, camera: defaultCamera(center, zoom, bearing) }
     })
   }, [fallbackCenter])
 
@@ -156,10 +221,28 @@ export function NavigationCoreProvider({
     setState((prev) => ({ ...prev, camera: camera ?? prev.camera }))
   }, [])
 
+  const setMode = useCallback((mode: DrivingMode) => {
+    setState((prev) => ({ ...prev, mode }))
+  }, [])
+
+  const setRoutePolyline = useCallback((polyline: Coordinate2D[] | null) => {
+    routeSegmentsRef.current = polyline && polyline.length >= 2 ? [segmentFromPolyline(polyline)] : []
+  }, [])
+
+  const getDrivingMetrics = useCallback(() => ({
+    vehicle: state.vehicle,
+    style: state.drivingStyle,
+    mode: state.mode,
+    experience: state.experience,
+  }), [state.vehicle, state.drivingStyle, state.mode, state.experience])
+
   const value: NavigationCoreContextValue = {
     ...state,
     recenter,
     setCamera,
+    setMode,
+    setRoutePolyline,
+    getDrivingMetrics,
   }
 
   return (

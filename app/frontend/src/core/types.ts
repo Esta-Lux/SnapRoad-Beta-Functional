@@ -40,3 +40,22 @@ export interface PredictedPosition {
   confidence: number   // 0–1
   inSeconds: number
 }
+
+/** Driving mode (blueprint: Calm / Sport / Adaptive). */
+export type DrivingMode = 'adaptive' | 'sport' | 'calm'
+
+/** Driving style derived from behavior metrics. */
+export interface DrivingStyle {
+  aggression: number   // 0–1
+  smoothness: number  // 0–1
+  hesitation: number  // 0–1
+}
+
+/** Experience state: what the map/UI should feel like (zoom, glow, camera, instructions). */
+export interface ExperienceState {
+  zoom: number
+  pitch: number
+  routeGlow: number   // 0–1
+  laneHighlight: number
+  instructionLeadTime: number  // seconds
+}
