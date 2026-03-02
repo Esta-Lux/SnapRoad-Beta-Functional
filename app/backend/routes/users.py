@@ -217,3 +217,85 @@ def get_faq():
 @router.post("/help/contact")
 def submit_contact(form: dict):
     return {"success": True, "message": "Message sent! We'll get back to you within 24 hours."}
+
+
+@router.put("/settings/voice")
+def update_voice_settings(settings: dict):
+    return {"success": True, "message": "Voice settings updated", "data": settings}
+
+
+# ==================== NOTIFICATIONS ====================
+_notifications = [
+    {"id": 1, "type": "reward", "title": "Gem Bonus!", "message": "You earned 50 bonus gems for safe driving this week", "read": False, "created_at": "2026-02-27T10:00:00Z"},
+    {"id": 2, "type": "offer", "title": "New Offer Nearby", "message": "Shell Gas Station: 15% off fuel within 0.5 miles", "read": False, "created_at": "2026-02-27T09:30:00Z"},
+    {"id": 3, "type": "challenge", "title": "Challenge Complete!", "message": "You completed the Weekend Warrior challenge", "read": True, "created_at": "2026-02-26T18:00:00Z"},
+    {"id": 4, "type": "safety", "title": "Safety Score Update", "message": "Your safety score improved to 92!", "read": True, "created_at": "2026-02-26T12:00:00Z"},
+]
+
+
+@router.get("/notifications")
+def get_notifications():
+    return {"success": True, "data": _notifications}
+
+
+@router.put("/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: int):
+    for n in _notifications:
+        if n["id"] == notification_id:
+            n["read"] = True
+            return {"success": True, "data": n}
+    return {"success": False, "message": "Notification not found"}
+
+
+@router.put("/notifications/read-all")
+def mark_all_read():
+    for n in _notifications:
+        n["read"] = True
+    return {"success": True, "message": "All notifications marked as read"}
+
+
+# ==================== VEHICLES ====================
+@router.get("/user/vehicles")
+def get_vehicles():
+    user = users_db.get(current_user_id, {})
+    car = user.get("car", {})
+    return {"success": True, "data": [car] if car else []}
+
+
+@router.post("/user/vehicles")
+def add_vehicle(vehicle: dict):
+    user = users_db.get(current_user_id, {})
+    user["car"] = vehicle
+    return {"success": True, "data": vehicle}
+
+
+# ==================== FAMILY GROUP ====================
+@router.get("/family/group")
+def get_family_group():
+    return {
+        "success": True,
+        "data": {
+            "id": "fam_001",
+            "name": "My Family",
+            "created_at": "2026-01-15T10:00:00Z",
+            "member_count": 3,
+            "plan": "family_premium",
+        }
+    }
+
+
+# ==================== SETTINGS (PUT support) ====================
+@router.put("/settings/notifications")
+def update_notification_settings_put(category: str = "", setting: str = "", enabled: bool = True):
+    if category and setting:
+        if category not in notification_settings:
+            notification_settings[category] = {}
+        notification_settings[category][setting] = enabled
+    return {"success": True, "message": "Settings updated", "data": notification_settings}
+
+
+@router.put("/user/profile")
+def update_profile(body: dict):
+    user = users_db.get(current_user_id, {})
+    user.update({k: v for k, v in body.items() if k not in ("id", "email")})
+    return {"success": True, "data": user}

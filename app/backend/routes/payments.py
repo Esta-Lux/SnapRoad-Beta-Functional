@@ -3,7 +3,6 @@
 # Uses standard Stripe SDK - no platform-specific dependencies
 
 import os
-import stripe
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict
@@ -78,8 +77,7 @@ async def create_checkout_session(request: Request, checkout_data: CreateCheckou
     api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="Stripe not configured. Set STRIPE_SECRET_KEY in environment.")
-    
-    # Initialize Stripe
+    import stripe
     stripe.api_key = api_key
     
     # Build success and cancel URLs from frontend origin
@@ -144,11 +142,9 @@ async def get_checkout_status(request: Request, session_id: str):
     api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="Stripe not configured")
-    
+    import stripe
     stripe.api_key = api_key
-    
     try:
-        # Retrieve session from Stripe
         session = stripe.checkout.Session.retrieve(session_id)
         
         # Map Stripe status to our format
@@ -197,9 +193,8 @@ async def stripe_webhook(request: Request):
     
     if not api_key:
         raise HTTPException(status_code=500, detail="Stripe not configured")
-    
+    import stripe
     stripe.api_key = api_key
-    
     try:
         body = await request.body()
         signature = request.headers.get("Stripe-Signature", "")

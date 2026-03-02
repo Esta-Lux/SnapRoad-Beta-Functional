@@ -30,7 +30,10 @@ def create_app() -> FastAPI:
 
     # When using credentials, browsers require explicit origins (not "*").
     # Set CORS_ORIGINS env to e.g. "http://localhost:3000,https://app.example.com" for production.
-    _origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    _origins = os.environ.get(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:3007,http://127.0.0.1:3007,capacitor://localhost"
+    ).split(",")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[o.strip() for o in _origins if o.strip()],

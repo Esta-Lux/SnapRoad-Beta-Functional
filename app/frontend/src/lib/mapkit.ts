@@ -32,6 +32,14 @@ export async function fetchMapKitToken(): Promise<string> {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
   const url = `${base}/api/mapkit/token?origin=${encodeURIComponent(origin)}`
   const res = await fetch(url)
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`
+    try {
+      const body = await res.json()
+      detail = body.error || body.detail || detail
+    } catch { /* non-JSON response */ }
+    throw new Error(`MapKit token request failed: ${detail}`)
+  }
   const data = await res.json()
   if (!data.success || !data.token) {
     throw new Error(data.error || 'Failed to get MapKit token')
@@ -50,25 +58,39 @@ export function initMapKit(): Promise<boolean> {
   initPromise = (async () => {
     try {
       await loadMapKitScript()
-      const mapkit = (window as unknown as { mapkit: { init: (opts: { authorizationCallback: (done: (token: string) => void) => void }) => void } }).mapkit
+      const mapkit = (window as unknown as {
+        mapkit: {
+          init: (opts: { authorizationCallback: (done: (token: string) => void) => void }) => void
+          addEventListener?: (type: string, cb: (e: unknown) => void) => void
+        }
+      }).mapkit
       if (!mapkit || !mapkit.init) return false
-      await new Promise<void>((resolve, reject) => {
+
+      const token = await fetchMapKitToken()
+
+      const ready = await new Promise<boolean>((resolve) => {
+        let settled = false
+        const settle = (v: boolean) => { if (!settled) { settled = true; resolve(v) } }
+
+        if (mapkit.addEventListener) {
+          mapkit.addEventListener('configuration-change', () => settle(true))
+          mapkit.addEventListener('error', (e: unknown) => {
+            console.warn('MapKit error event during init:', e)
+            settle(false)
+          })
+        }
+
         mapkit.init({
-          authorizationCallback: (done: (token: string) => void) => {
-            fetchMapKitToken()
-              .then((token) => {
-                done(token)
-                resolve()
-              })
-              .catch((err) => {
-                console.warn('MapKit token not available:', err?.message || err)
-                reject(err)
-              })
-          },
+          authorizationCallback: (done: (t: string) => void) => done(token),
         })
+
+        setTimeout(() => settle(true), 5000)
       })
-      return true
-    } catch {
+
+      return ready
+    } catch (err) {
+      console.warn('MapKit init failed:', err)
+      initPromise = null
       return false
     }
   })()

@@ -1,11 +1,19 @@
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-import random
+import random, math
 from models.schemas import NavigationRequest, Location, Route, Widget
 from services.mock_data import (
     saved_locations, saved_routes, widget_settings, MAP_LOCATIONS,
+    road_reports_db,
 )
+
+
+class VoiceCommandBody(BaseModel):
+    command: str = ""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 router = APIRouter(prefix="/api", tags=["Navigation"])
 
@@ -44,7 +52,17 @@ def add_route(route: Route):
     return {"success": True, "message": "Route saved", "data": r}
 
 
+@router.delete("/routes/{route_id}")
+def delete_route(route_id: int):
+    before = len(saved_routes)
+    saved_routes[:] = [r for r in saved_routes if r.get("id") != route_id]
+    if len(saved_routes) == before:
+        return {"success": False, "message": "Route not found"}
+    return {"success": True, "message": "Route deleted"}
+
+
 @router.post("/routes/{route_id}/toggle")
+@router.put("/routes/{route_id}/toggle")
 def toggle_route(route_id: int):
     route = next((r for r in saved_routes if r.get("id") == route_id), None)
     if not route:
@@ -54,6 +72,7 @@ def toggle_route(route_id: int):
 
 
 @router.post("/routes/{route_id}/notifications")
+@router.put("/routes/{route_id}/notifications")
 def toggle_notifications(route_id: int):
     route = next((r for r in saved_routes if r.get("id") == route_id), None)
     if not route:
@@ -74,8 +93,8 @@ def stop_navigation():
 
 
 @router.post("/navigation/voice-command")
-def voice_command(command: str = ""):
-    return {"success": True, "data": {"command": command, "response": f"Processing: {command}", "action": "navigate"}}
+def voice_command(body: VoiceCommandBody):
+    return {"success": True, "data": {"command": body.command, "response": f"Processing: {body.command}", "action": "navigate"}}
 
 
 # ==================== MAP SEARCH ====================
@@ -128,6 +147,7 @@ def get_widgets():
 
 
 @router.post("/widgets/{widget_id}/toggle")
+@router.put("/widgets/{widget_id}/toggle")
 def toggle_widget(widget_id: str):
     if widget_id in widget_settings:
         widget_settings[widget_id]["visible"] = not widget_settings[widget_id]["visible"]
@@ -135,7 +155,77 @@ def toggle_widget(widget_id: str):
 
 
 @router.post("/widgets/{widget_id}/collapse")
+@router.put("/widgets/{widget_id}/collapse")
 def collapse_widget(widget_id: str):
     if widget_id in widget_settings:
         widget_settings[widget_id]["collapsed"] = not widget_settings[widget_id]["collapsed"]
     return {"success": True, "data": widget_settings}
+
+
+@router.put("/widgets/{widget_id}/position")
+def update_widget_position(widget_id: str, body: dict):
+    if widget_id in widget_settings:
+        widget_settings[widget_id]["position"] = body.get("position", 0)
+    return {"success": True, "data": widget_settings}
+
+
+# ==================== MAP TRAFFIC ====================
+@router.get("/map/traffic")
+def get_map_traffic(lat: Optional[float] = None, lng: Optional[float] = None, radius: float = 15):
+    """Return road reports formatted as map overlay data for traffic layer rendering."""
+    reports = road_reports_db
+    if lat is not None and lng is not None:
+        filtered = []
+        for r in reports:
+            dlat = abs(r.get("lat", 0) - lat)
+            dlng = abs(r.get("lng", 0) - lng)
+            dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+            if dist <= radius:
+                filtered.append(r)
+        reports = filtered
+
+    overlays = []
+    for r in reports:
+        rtype = r.get("type", "hazard")
+        severity = "high" if rtype in ("accident", "police") else "medium" if rtype in ("construction", "hazard") else "low"
+        overlays.append({
+            "id": r.get("id"),
+            "type": rtype,
+            "lat": r.get("lat"),
+            "lng": r.get("lng"),
+            "title": r.get("title", rtype.capitalize()),
+            "description": r.get("description", ""),
+            "severity": severity,
+            "upvotes": r.get("upvotes", 0),
+            "created_at": r.get("created_at"),
+            "expires_at": r.get("expires_at"),
+        })
+    return {"success": True, "data": overlays, "total": len(overlays)}
+
+
+# ==================== NAVIGATION ETA ====================
+@router.get("/navigation/eta")
+def get_navigation_eta(
+    origin_lat: float = Query(...),
+    origin_lng: float = Query(...),
+    dest_lat: float = Query(...),
+    dest_lng: float = Query(...),
+    speed_mph: float = Query(30, description="Current speed in mph"),
+):
+    """Compute ETA from current position to destination based on straight-line distance and speed."""
+    dlat = abs(dest_lat - origin_lat)
+    dlng = abs(dest_lng - origin_lng)
+    distance_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+    distance_miles = distance_km * 0.621371
+    speed = max(speed_mph, 5)
+    eta_minutes = round((distance_miles / speed) * 60)
+    return {
+        "success": True,
+        "data": {
+            "distance_miles": round(distance_miles, 2),
+            "distance_km": round(distance_km, 2),
+            "eta_minutes": eta_minutes,
+            "eta_text": f"{eta_minutes} min",
+            "speed_mph": speed,
+        },
+    }

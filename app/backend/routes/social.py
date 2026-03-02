@@ -24,9 +24,9 @@ def get_friends():
 
 
 @router.get("/friends/search")
-def search_friends(q: str = ""):
+def search_friends(q: str = "", user_id: str = ""):
     results = []
-    query = q.lower()
+    query = (q or user_id).lower()
     for uid, user in users_db.items():
         if uid == current_user_id:
             continue
@@ -134,3 +134,42 @@ def get_my_reports():
     my_reports = [r for r in road_reports_db if r["user_id"] == current_user_id]
     total_upvotes = sum(r["upvotes"] for r in my_reports)
     return {"success": True, "data": my_reports, "stats": {"total_reports": len(my_reports), "total_upvotes": total_upvotes, "gems_from_upvotes": total_upvotes * 10}}
+
+
+# ==================== FAMILY ACTIONS ====================
+@router.post("/family/{member_id}/call")
+def family_call(member_id: str):
+    return {"success": True, "message": f"Calling family member {member_id}"}
+
+
+@router.post("/family/{member_id}/message")
+def family_message(member_id: str):
+    return {"success": True, "message": f"Message sent to family member {member_id}"}
+
+
+# ==================== INCIDENTS (consumer-facing) ====================
+@router.get("/incidents")
+def get_incidents(lat: Optional[float] = None, lng: Optional[float] = None, radius: float = 15):
+    reports = road_reports_db
+    if lat is not None and lng is not None:
+        filtered = []
+        for r in reports:
+            dlat = abs(r.get("lat", 0) - lat)
+            dlng = abs(r.get("lng", 0) - lng)
+            dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+            if dist <= radius:
+                filtered.append(r)
+        reports = filtered
+    return {"success": True, "data": reports, "total": len(reports)}
+
+
+@router.post("/incidents/{incident_id}/upvote")
+def upvote_incident(incident_id: int):
+    report = next((r for r in road_reports_db if r["id"] == incident_id), None)
+    if not report:
+        return {"success": False, "message": "Incident not found"}
+    if current_user_id in report.get("upvoters", []):
+        return {"success": False, "message": "Already upvoted"}
+    report["upvotes"] = report.get("upvotes", 0) + 1
+    report.setdefault("upvoters", []).append(current_user_id)
+    return {"success": True, "data": {"id": incident_id, "upvotes": report["upvotes"]}}

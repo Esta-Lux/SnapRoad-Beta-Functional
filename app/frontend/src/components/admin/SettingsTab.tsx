@@ -2,7 +2,7 @@
 // =============================================
 
 import { useState, useEffect } from 'react'
-import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, ToggleLeft, ToggleRight, Cloud, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 
 interface SettingsTabProps {
   theme: 'dark' | 'light'
@@ -14,10 +14,40 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   const [settings, setSettings] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [supabaseStatus, setSupabaseStatus] = useState<any>(null)
+  const [sbLoading, setSbLoading] = useState(false)
+  const [migrating, setMigrating] = useState(false)
 
   useEffect(() => {
     loadSettings()
+    checkSupabaseStatus()
   }, [])
+
+  const checkSupabaseStatus = async () => {
+    setSbLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/api/admin/supabase/status`)
+      if (res.ok) {
+        const data = await res.json()
+        setSupabaseStatus(data.data ?? data)
+      }
+    } catch { /* unavailable */ }
+    setSbLoading(false)
+  }
+
+  const runMigration = async () => {
+    setMigrating(true)
+    try {
+      const res = await fetch(`${API_URL}/api/admin/supabase/migrate`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          checkSupabaseStatus()
+        }
+      }
+    } catch { /* unavailable */ }
+    setMigrating(false)
+  }
 
   const loadSettings = async () => {
     setLoading(true)
@@ -398,6 +428,57 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
             />
           </div>
         </div>
+      </div>
+
+      {/* Supabase Status & Migration */}
+      <div className={`p-5 rounded-xl border ${card}`}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Cloud className="text-emerald-400" size={20} />
+            <h3 className="text-lg font-semibold text-white">Supabase</h3>
+          </div>
+          <button
+            onClick={checkSupabaseStatus}
+            disabled={sbLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-700/50 text-slate-300 rounded-lg hover:bg-slate-700 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={sbLoading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
+        {sbLoading && !supabaseStatus ? (
+          <div className="flex items-center gap-2 text-slate-400 text-sm">
+            <Loader2 size={16} className="animate-spin" /> Checking status...
+          </div>
+        ) : supabaseStatus ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              {supabaseStatus.connected ? (
+                <CheckCircle size={16} className="text-emerald-400" />
+              ) : (
+                <XCircle size={16} className="text-red-400" />
+              )}
+              <span className="text-sm text-white">
+                {supabaseStatus.connected ? 'Connected' : 'Not connected'}
+              </span>
+              {supabaseStatus.tables && (
+                <span className="text-xs text-slate-400 ml-2">
+                  {supabaseStatus.tables} tables
+                </span>
+              )}
+            </div>
+            <button
+              onClick={runMigration}
+              disabled={migrating}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 disabled:opacity-50 text-sm"
+            >
+              {migrating ? <Loader2 size={16} className="animate-spin" /> : <Database size={16} />}
+              {migrating ? 'Running Migration...' : 'Run Migration'}
+            </button>
+          </div>
+        ) : (
+          <p className="text-slate-400 text-sm">Unable to fetch Supabase status</p>
+        )}
       </div>
     </div>
   )

@@ -52,12 +52,13 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
     user = result.user
     if not user:
         raise Exception("User creation failed")
+    meta = user.user_metadata or {}
     return {
-        "id": user.id,
-        "email": user.email,
+        "id": str(user.id),
+        "email": str(user.email) if user.email else "",
         "name": name,
         "role": role,
-        **user.user_metadata,
+        **{k: v for k, v in meta.items() if not callable(v)},
     }
 
 
@@ -88,14 +89,14 @@ def sb_get_user_by_email(email: str) -> Optional[dict]:
         sb = _sb()
         users = sb.auth.admin.list_users()
         for u in users:
-            if u.email == email:
-                meta = u.user_metadata or {}
+            if getattr(u, "email", None) == email:
+                meta = getattr(u, "user_metadata", None) or {}
                 return {
-                    "id": u.id,
-                    "email": u.email,
+                    "id": str(u.id),
+                    "email": str(u.email) if getattr(u, "email", None) else "",
                     "name": meta.get("name", ""),
                     "role": meta.get("role", "driver"),
-                    **meta,
+                    **{k: v for k, v in meta.items() if not callable(v)},
                 }
         return None
     except Exception as e:

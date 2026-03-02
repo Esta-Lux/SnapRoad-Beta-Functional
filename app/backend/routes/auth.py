@@ -12,23 +12,31 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 def _build_token(user_dict: dict) -> str:
     return create_access_token({
         "sub": str(user_dict.get("id", "")),
-        "email": user_dict.get("email", ""),
-        "role": user_dict.get("role", "user"),
+        "email": str(user_dict.get("email", "")),
+        "role": str(user_dict.get("role", "user")),
     })
 
 
 def _clean(user: dict) -> dict:
-    return {k: v for k, v in user.items() if k not in ("password_hash", "password")}
+    """Return a JSON-serializable user dict (no secrets, no UUIDs)."""
+    out = {}
+    for k, v in user.items():
+        if k in ("password_hash", "password"):
+            continue
+        if hasattr(v, "__str__") and not isinstance(v, (str, int, float, bool, list, dict, type(None))):
+            out[k] = str(v)
+        else:
+            out[k] = v
+    return out
 
 
 @router.post("/signup")
 def signup(request: SignupRequest):
-    # 1. Try Supabase first
+    # 1. Try Supabase first (skip if not configured)
     try:
         existing = sb_get_user_by_email(request.email)
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
-
         user = sb_create_user(request.email, request.password, request.name, "driver")
         token = _build_token(user)
         logger.info(f"Supabase signup: {request.email}")
@@ -39,14 +47,21 @@ def signup(request: SignupRequest):
         logger.warning(f"Supabase signup failed, using mock: {e}")
 
     # 2. Mock fallback
-    if request.email in user_credentials:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    from services.mock_data import next_user_id
-    new_id = str(next_user_id)
-    user_credentials[request.email] = {"password": request.password, "user_id": new_id}
-    users_db[new_id] = create_new_user(new_id, request.name, request.email)
-    token = create_access_token({"sub": new_id, "email": request.email, "role": "user"})
-    return {"success": True, "data": {"user": _clean(users_db[new_id]), "token": token}}
+    try:
+        if request.email in user_credentials:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        import services.mock_data as mock_data
+        new_id = str(mock_data.next_user_id)
+        mock_data.next_user_id += 1
+        user_credentials[request.email] = {"password": request.password, "user_id": new_id}
+        users_db[new_id] = create_new_user(new_id, request.name, request.email)
+        token = create_access_token({"sub": new_id, "email": request.email, "role": "user"})
+        return {"success": True, "data": {"user": _clean(users_db[new_id]), "token": token}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Signup mock path failed: %s", e)
+        raise HTTPException(status_code=500, detail="Signup failed. Please try again.")
 
 
 @router.post("/login")

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { 
   MapPin, Shield, Gem, Trophy, Zap, ArrowRight, X, Eye, EyeOff, Star, Car
 } from 'lucide-react'
+import { api } from '@/services/api'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
@@ -32,34 +33,53 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    
+    const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login'
+    const body = mode === 'signup'
+      ? { name, email, password }
+      : { email, password }
+    const url = API_URL ? `${API_URL}${endpoint}` : endpoint
+
     try {
-      // Actually call the signup/login API
-      const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login'
-      const body = mode === 'signup' 
-        ? { name, email, password }
-        : { email, password }
-      
-      const response = await fetch(`${API_URL}${endpoint}`, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
-      
-      const data = await response.json()
-      
+      let data: { success?: boolean; message?: string; detail?: string; token?: string; data?: { token?: string } }
+      const contentType = response.headers.get('content-type')
+      try {
+        data = contentType?.includes('application/json')
+          ? await response.json()
+          : { success: false, message: `Server returned ${response.status}` }
+      } catch {
+        alert(
+          response.ok
+            ? 'Connection error. Please try again.'
+            : 'Cannot reach the server. Is the backend running? Start it with: cd app/backend && python run_server.py'
+        )
+        setLoading(false)
+        return
+      }
       if (data.success) {
-        // Navigate to driver app preview
+        const token = data.data?.token ?? data.token
+        if (token) api.setToken(token)
         onClose()
         navigate('/driver')
       } else {
-        alert(data.message || data.detail || 'Authentication failed')
+        const msg = typeof data.detail === 'string' ? data.detail : data.message || data.detail || 'Authentication failed'
+        alert(msg)
       }
     } catch (error) {
       console.error('Auth error:', error)
-      alert('Connection error. Please try again.')
+      const isNetwork =
+        error instanceof TypeError &&
+        (error.message === 'Failed to fetch' || error.message.includes('NetworkError'))
+      alert(
+        isNetwork
+          ? 'Cannot reach the server. Make sure the backend is running on port 8001 (e.g. cd app/backend && python run_server.py), then try again.'
+          : 'Connection error. Please try again.'
+      )
     }
-    
     setLoading(false)
   }
 

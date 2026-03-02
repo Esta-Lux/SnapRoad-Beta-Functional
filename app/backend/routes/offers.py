@@ -126,6 +126,15 @@ def accept_offer_via_voice(offer_id: int, add_as_stop: bool = True):
     }
 
 
+@router.post("/offers/{offer_id}/favorite")
+def favorite_offer(offer_id: int):
+    offer = next((o for o in offers_db if o["id"] == offer_id), None)
+    if not offer:
+        return {"success": False, "message": "Offer not found"}
+    offer["favorited"] = not offer.get("favorited", False)
+    return {"success": True, "data": {"offer_id": offer_id, "favorited": offer["favorited"]}}
+
+
 @router.post("/driver/location-visit")
 def record_location_visit(visit: LocationVisit):
     if current_user_id not in driver_location_history:

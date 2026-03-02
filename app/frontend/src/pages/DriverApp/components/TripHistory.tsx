@@ -39,8 +39,9 @@ export default function TripHistory({ isOpen, onClose }: TripHistoryProps) {
       const res = await fetch(url)
       const data = await res.json()
       if (data.success) {
-        setTrips(data.data)
-        setStats(data.stats)
+        const d = data.data
+        setTrips(Array.isArray(d) ? d : Array.isArray(d?.recent_trips) ? d.recent_trips : [])
+        setStats(data.stats ?? (d && !Array.isArray(d) ? { total_trips: d.total_trips, total_miles: d.total_miles, avg_safety_score: d.avg_safety_score ?? 0, total_gems_earned: d.total_gems_earned ?? 0 } : null))
       }
     } catch (e) {
       console.log('Could not load trips')
