@@ -100,7 +100,7 @@ const categoryIcons: Record<string, { icon: typeof Home; color: string }> = {
 export default function DriverApp() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
-  const { vehicle, camera, predicted, isLive, recenter } = useNavigationCore()
+  const { vehicle, camera, predicted, isLive, recenter, setRoutePolyline, setMode, mode, experience } = useNavigationCore()
 
   // Main state - 4 tabs now
   const [activeTab, setActiveTab] = useState<TabType>('map')
@@ -1108,6 +1108,23 @@ export default function DriverApp() {
   const getWorkLocation = () => locations.find(l => l.category === 'work')
   const getFavoriteLocations = () => locations.filter(l => !['home', 'work'].includes(l.category))
 
+  // Sync route for map matching when navigating
+  useEffect(() => {
+    if (!navigationData?.origin || !navigationData?.destination) {
+      setRoutePolyline(null)
+      return
+    }
+    const o = navigationData.origin
+    const d = navigationData.destination
+    const points: { lat: number; lng: number }[] = []
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8
+      points.push({ lat: o.lat + t * (d.lat - o.lat), lng: o.lng + t * (d.lng - o.lng) })
+    }
+    setRoutePolyline(points)
+    return () => setRoutePolyline(null)
+  }, [navigationData?.origin, navigationData?.destination, setRoutePolyline])
+
   // Clean Map Tab - Google Maps Style
   const renderMap = () => (
     <div id="map-container" className="flex-1 relative bg-slate-800 overflow-hidden"
@@ -1152,7 +1169,21 @@ export default function DriverApp() {
           : undefined}
         predictedPosition={predicted ? { coordinate: predicted.coordinate, confidence: predicted.confidence } : null}
         isLiveGps={isLive}
+        routeGlow={experience?.routeGlow}
       />
+
+      {/* Driving mode: Calm / Adaptive / Sport (Phase 2) */}
+      <div className="absolute top-2 right-14 z-20 flex rounded-full bg-slate-900/90 backdrop-blur border border-white/10 overflow-hidden">
+        {(['calm', 'adaptive', 'sport'] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={`px-2.5 py-1 text-[10px] font-medium capitalize transition-colors ${mode === m ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-white'}`}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
 
       {/* Collapsible Offers Panel - On Map */}
       {activeTab === 'map' && showOffersPanel && (

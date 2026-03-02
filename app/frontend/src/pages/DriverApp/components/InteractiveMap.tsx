@@ -49,6 +49,8 @@ interface InteractiveMapProps {
   predictedPosition?: PredictedPositionState | null
   /** When true, show a small "Live GPS" indicator. */
   isLiveGps?: boolean
+  /** Route line glow intensity 0–1 (Phase 3 experience). */
+  routeGlow?: number
 }
 
 // Color mapping
@@ -262,6 +264,7 @@ export default function InteractiveMap({
   routePolyline,
   predictedPosition,
   isLiveGps = false,
+  routeGlow = 0.7,
 }: InteractiveMapProps) {
   const [internalZoom, setInternalZoom] = useState(14)
   const [internalCenter, setInternalCenter] = useState(userLocation)
@@ -487,7 +490,7 @@ export default function InteractiveMap({
                 .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
                 .join(' ')}
               fill="none"
-              stroke="rgba(59, 130, 246, 0.85)"
+              stroke={`rgba(59, 130, 246, ${0.5 + routeGlow * 0.5})`}
               strokeWidth={4}
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -497,7 +500,7 @@ export default function InteractiveMap({
                 .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
                 .join(' ')}
               fill="none"
-              stroke="rgba(96, 165, 250, 0.5)"
+              stroke={`rgba(96, 165, 250, ${0.3 + routeGlow * 0.4})`}
               strokeWidth={8}
               strokeLinecap="round"
               strokeLinejoin="round"
