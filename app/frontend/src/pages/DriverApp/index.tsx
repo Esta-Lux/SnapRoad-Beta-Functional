@@ -38,6 +38,8 @@ import RedemptionPopup from './components/RedemptionPopup'
 import WeeklyRecap from './components/WeeklyRecap'
 import OrionOfferAlerts from './components/OrionOfferAlerts'
 import InteractiveMap from './components/InteractiveMap'
+import MapKitMap from './components/MapKitMap'
+import { useMapKit } from '@/contexts/MapKitContext'
 import { NavMarker, ProfileCar, CAR_COLORS } from './components/Car3D'
 // New enhanced components
 import TripAnalytics from './components/TripAnalytics'
@@ -101,6 +103,7 @@ export default function DriverApp() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
   const { vehicle, camera, predicted, isLive, recenter, setRoutePolyline, setMode, mode, experience } = useNavigationCore()
+  const { ready: mapKitReady } = useMapKit()
 
   // Main state - 4 tabs now
   const [activeTab, setActiveTab] = useState<TabType>('map')
@@ -1133,44 +1136,69 @@ export default function DriverApp() {
       onTouchMove={draggingWidget ? handleWidgetDrag : undefined}
       onTouchEnd={handleWidgetDragEnd}>
       
-      {/* Interactive Map - MapKit-ready (camera, vehicle, route, prediction) */}
-      <InteractiveMap
-        userLocation={vehicle?.coordinate ?? userLocation}
-        offers={offers}
-        isNavigating={isNavigating}
-        onOfferClick={(offer) => {
-          setSelectedOfferForRedemption(offer)
-          setShowRedemptionPopup(true)
-        }}
-        carColor={userCar.color.includes('blue') ? '#3b82f6' :
-                  userCar.color.includes('red') ? '#ef4444' :
-                  userCar.color.includes('green') ? '#22c55e' :
-                  userCar.color.includes('white') ? '#f8fafc' :
-                  userCar.color.includes('gold') ? '#fbbf24' : '#1e293b'}
-        userCar={userCar}
-        onOrionClick={() => setShowOrionVoice(true)}
-        onRecenter={() => { recenter(); toast.success('Centered on your location') }}
-        camera={camera}
-        vehicleHeading={vehicle?.heading ?? carHeading}
-        routePolyline={navigationData?.origin && navigationData?.destination
-          ? (() => {
-              const o = navigationData.origin
-              const d = navigationData.destination
-              const points: { lat: number; lng: number }[] = []
-              for (let i = 0; i <= 8; i++) {
-                const t = i / 8
-                points.push({
-                  lat: o.lat + t * (d.lat - o.lat),
-                  lng: o.lng + t * (d.lng - o.lng),
-                })
-              }
-              return points
-            })()
-          : undefined}
-        predictedPosition={predicted ? { coordinate: predicted.coordinate, confidence: predicted.confidence } : null}
-        isLiveGps={isLive}
-        routeGlow={experience?.routeGlow}
-      />
+      {/* Map: Apple MapKit (when token configured) or OSM fallback */}
+      {mapKitReady ? (
+        <MapKitMap
+          center={camera?.center ?? vehicle?.coordinate ?? userLocation}
+          zoom={camera?.zoom ?? 15}
+          bearing={camera?.bearing}
+          userLocation={vehicle?.coordinate ?? userLocation}
+          vehicleHeading={vehicle?.heading ?? carHeading}
+          routePolyline={navigationData?.origin && navigationData?.destination
+            ? (() => {
+                const o = navigationData.origin
+                const d = navigationData.destination
+                const pts: { lat: number; lng: number }[] = []
+                for (let i = 0; i <= 8; i++) {
+                  const t = i / 8
+                  pts.push({ lat: o.lat + t * (d.lat - o.lat), lng: o.lng + t * (d.lng - o.lng) })
+                }
+                return pts
+              })()
+            : undefined}
+          onRecenter={() => { recenter(); toast.success('Centered on your location') }}
+          onOrionClick={() => setShowOrionVoice(true)}
+          isLiveGps={isLive}
+        />
+      ) : (
+        <InteractiveMap
+          userLocation={vehicle?.coordinate ?? userLocation}
+          offers={offers}
+          isNavigating={isNavigating}
+          onOfferClick={(offer) => {
+            setSelectedOfferForRedemption(offer)
+            setShowRedemptionPopup(true)
+          }}
+          carColor={userCar.color.includes('blue') ? '#3b82f6' :
+                    userCar.color.includes('red') ? '#ef4444' :
+                    userCar.color.includes('green') ? '#22c55e' :
+                    userCar.color.includes('white') ? '#f8fafc' :
+                    userCar.color.includes('gold') ? '#fbbf24' : '#1e293b'}
+          userCar={userCar}
+          onOrionClick={() => setShowOrionVoice(true)}
+          onRecenter={() => { recenter(); toast.success('Centered on your location') }}
+          camera={camera}
+          vehicleHeading={vehicle?.heading ?? carHeading}
+          routePolyline={navigationData?.origin && navigationData?.destination
+            ? (() => {
+                const o = navigationData.origin
+                const d = navigationData.destination
+                const points: { lat: number; lng: number }[] = []
+                for (let i = 0; i <= 8; i++) {
+                  const t = i / 8
+                  points.push({
+                    lat: o.lat + t * (d.lat - o.lat),
+                    lng: o.lng + t * (d.lng - o.lng),
+                  })
+                }
+                return points
+              })()
+            : undefined}
+          predictedPosition={predicted ? { coordinate: predicted.coordinate, confidence: predicted.confidence } : null}
+          isLiveGps={isLive}
+          routeGlow={experience?.routeGlow}
+        />
+      )}
 
       {/* Driving mode: Calm / Adaptive / Sport (Phase 2) */}
       <div className="absolute top-2 right-14 z-20 flex rounded-full bg-slate-900/90 backdrop-blur border border-white/10 overflow-hidden">

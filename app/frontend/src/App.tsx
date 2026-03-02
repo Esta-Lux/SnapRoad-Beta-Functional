@@ -22,6 +22,7 @@ import AdminDashboard from './pages/AdminDashboard'
 import DriverApp from './pages/DriverApp'
 import PhonePreview from './pages/PhonePreview'
 import { NavigationCoreProvider } from './contexts/NavigationCoreContext'
+import { MapKitProvider } from './contexts/MapKitContext'
 
 // New Figma UI Components
 import { SnapRoadApp } from './components/figma-ui'
@@ -53,7 +54,9 @@ function App() {
         {/* Driver App - Web Preview (Phase 1: VehicleState + MapKit-ready map) */}
         <Route path="/driver" element={
           <NavigationCoreProvider fallbackCenter={{ lat: 39.9612, lng: -82.9988 }} enableGps={true}>
-            <DriverApp />
+            <MapKitProvider>
+              <DriverApp />
+            </MapKitProvider>
           </NavigationCoreProvider>
         } />
         <Route path="/driver/auth" element={<AuthFlow />} />

@@ -4,6 +4,9 @@ All routes are organized into modular files under /routes.
 Mock data is used as fallback; Supabase is the target database.
 """
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent / ".env")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,6 +19,7 @@ from routes.trips import router as trips_router
 from routes.admin import router as admin_router
 from routes.social import router as social_router
 from routes.navigation import router as navigation_router
+from routes.mapkit import router as mapkit_router
 from routes.ai import router as ai_router
 from routes.webhooks import router as webhooks_router
 from routes.payments import router as payments_router
@@ -45,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router)
     app.include_router(social_router)
     app.include_router(navigation_router)
+    app.include_router(mapkit_router)
     app.include_router(ai_router)
     app.include_router(webhooks_router)
     app.include_router(payments_router)
