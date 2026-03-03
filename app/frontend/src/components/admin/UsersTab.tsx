@@ -2,21 +2,21 @@
 // =============================================
 
 import { useState, useEffect, useMemo } from 'react'
-import { Search, Users, Filter, Edit2, Trash2, Shield, AlertTriangle, TrendingUp } from 'lucide-react'
-import { User } from '@/types/admin'
+import { Search, Users, Edit2, Trash2, Shield, TrendingUp, Download } from 'lucide-react'
+import { adminApi } from '@/services/adminApi'
+import type { AdminUser } from '@/types/admin'
 
 interface UsersTabProps {
   theme: 'dark' | 'light'
 }
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
-
 export default function UsersTab({ theme }: UsersTabProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('All Status')
   const [planFilter, setPlanFilter] = useState('All Plans')
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(false)
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   useEffect(() => {
     loadUsers()
@@ -25,10 +25,9 @@ export default function UsersTab({ theme }: UsersTabProps) {
   const loadUsers = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/api/admin/users`)
-      const data = await res.json()
-      if (data.success) {
-        setUsers(data.data)
+      const res = await adminApi.getUsers()
+      if (res.success && res.data) {
+        setUsers(res.data)
       }
     } catch (error) {
       console.error('Failed to load users:', error)
@@ -37,38 +36,69 @@ export default function UsersTab({ theme }: UsersTabProps) {
     }
   }
 
+  const showFeedback = (type: 'success' | 'error', message: string) => {
+    setFeedback({ type, message })
+    setTimeout(() => setFeedback(null), 3000)
+  }
+
   const handleSuspendUser = async (userId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/admin/users/${userId}/suspend`, {
-        method: 'POST'
-      })
-      const data = await res.json()
-      if (data.success) {
-        loadUsers() // Refresh the list
+      const res = await adminApi.suspendUser(userId)
+      if (res.success) {
+        showFeedback('success', 'User suspended')
+        loadUsers()
       }
     } catch (error) {
-      console.error('Failed to suspend user:', error)
+      showFeedback('error', 'Failed to suspend user')
     }
   }
 
   const handleActivateUser = async (userId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/admin/users/${userId}/activate`, {
-        method: 'POST'
-      })
-      const data = await res.json()
-      if (data.success) {
-        loadUsers() // Refresh the list
+      const res = await adminApi.activateUser(userId)
+      if (res.success) {
+        showFeedback('success', 'User activated')
+        loadUsers()
       }
     } catch (error) {
-      console.error('Failed to activate user:', error)
+      showFeedback('error', 'Failed to activate user')
+    }
+  }
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to delete this user?')) return
+    try {
+      const res = await adminApi.deleteUser(userId)
+      if (res.success) {
+        showFeedback('success', 'User deleted')
+        loadUsers()
+      }
+    } catch (error) {
+      showFeedback('error', 'Failed to delete user')
+    }
+  }
+
+  const handleExport = async () => {
+    try {
+      const res = await adminApi.exportUsers('csv')
+      if (res.success && res.data) {
+        const blob = new Blob([res.data as string], { type: 'text/csv' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'snaproad_users.csv'
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+    } catch (error) {
+      showFeedback('error', 'Failed to export users')
     }
   }
 
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
-      const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           user.email.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesSearch = (user.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           (user.email || '').toLowerCase().includes(searchTerm.toLowerCase())
       const matchesPlan = planFilter === 'All Plans' || user.plan === planFilter
       const matchesStatus = statusFilter === 'All Status' || user.status === statusFilter
       return matchesSearch && matchesPlan && matchesStatus
@@ -77,54 +107,42 @@ export default function UsersTab({ theme }: UsersTabProps) {
 
   const isDark = theme === 'dark'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
+  const textPrimary = isDark ? 'text-white' : 'text-[#0B1220]'
+  const textSecondary = isDark ? 'text-slate-400' : 'text-[#4B5C74]'
+
+  const avgSafety = users.length > 0
+    ? Math.round(users.reduce((acc, u) => acc + (u.safety_score || 0), 0) / users.length)
+    : 0
 
   return (
     <div className="space-y-6">
-      {/* Header with Stats */}
+      {feedback && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg border ${
+          feedback.type === 'success'
+            ? 'bg-green-500/20 border-green-500/30 text-green-400'
+            : 'bg-red-500/20 border-red-500/30 text-red-400'
+        }`}>
+          {feedback.message}
+        </div>
+      )}
+
+      {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-              <Users className="text-blue-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{users.length}</div>
-              <div className="text-xs text-slate-400">Total Users</div>
-            </div>
-          </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{users.length}</div>
+          <div className={`text-xs ${textSecondary}`}>Total Users</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
-              <Shield className="text-green-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{users.filter(u => u.plan === 'premium').length}</div>
-              <div className="text-xs text-slate-400">Premium Users</div>
-            </div>
-          </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{users.filter(u => u.is_premium).length}</div>
+          <div className={`text-xs ${textSecondary}`}>Premium Users</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
-              <Shield className="text-purple-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{Math.round(users.reduce((acc, u) => acc + u.safety_score, 0) / users.length)}</div>
-              <div className="text-xs text-slate-400">Avg Safety Score</div>
-            </div>
-          </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{avgSafety}</div>
+          <div className={`text-xs ${textSecondary}`}>Avg Safety Score</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-amber-500/20 rounded-lg flex items-center justify-center">
-              <Shield className="text-amber-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{users.filter(u => u.status === 'suspended').length}</div>
-              <div className="text-xs text-slate-400">Suspended</div>
-            </div>
-          </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{users.filter(u => u.status === 'suspended').length}</div>
+          <div className={`text-xs ${textSecondary}`}>Suspended</div>
         </div>
       </div>
 
@@ -166,6 +184,13 @@ export default function UsersTab({ theme }: UsersTabProps) {
             <option value="active">Active</option>
             <option value="suspended">Suspended</option>
           </select>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30"
+          >
+            <Download size={18} />
+            Export
+          </button>
         </div>
       </div>
 
@@ -189,8 +214,8 @@ export default function UsersTab({ theme }: UsersTabProps) {
                 <tr key={user.id} className={isDark ? 'hover:bg-slate-800/30' : 'hover:bg-[#F8FAFC]'}>
                   <td className="px-6 py-4">
                     <div>
-                      <div className="text-sm font-medium text-white">{user.name}</div>
-                      <div className="text-xs text-slate-400">{user.email}</div>
+                      <div className={`text-sm font-medium ${textPrimary}`}>{user.name}</div>
+                      <div className={`text-xs ${textSecondary}`}>{user.email}</div>
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -204,34 +229,34 @@ export default function UsersTab({ theme }: UsersTabProps) {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
-                      <div className="w-16 bg-slate-700/50 rounded-full h-2">
-                        <div 
+                      <div className={`w-16 rounded-full h-2 ${isDark ? 'bg-slate-700/50' : 'bg-slate-200'}`}>
+                        <div
                           className={`h-2 rounded-full ${
-                            user.safety_score >= 90 ? 'bg-green-500' :
-                            user.safety_score >= 80 ? 'bg-yellow-500' :
+                            (user.safety_score || 0) >= 90 ? 'bg-green-500' :
+                            (user.safety_score || 0) >= 80 ? 'bg-yellow-500' :
                             'bg-red-500'
                           }`}
-                          style={{ width: `${user.safety_score}%` }}
+                          style={{ width: `${user.safety_score || 0}%` }}
                         />
                       </div>
-                      <span className="text-sm text-white">{user.safety_score}</span>
+                      <span className={`text-sm ${textPrimary}`}>{user.safety_score || 0}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-1">
                       <span className="text-amber-400">💎</span>
-                      <span className="text-sm text-white">{user.gems.toLocaleString()}</span>
+                      <span className={`text-sm ${textPrimary}`}>{(user.gems || 0).toLocaleString()}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="text-sm text-white">Level {user.level}</span>
+                    <span className={`text-sm ${textPrimary}`}>Level {user.level || 1}</span>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-1 text-xs rounded-full ${
                       user.status === 'active' ? 'bg-green-500/20 text-green-400' :
                       'bg-red-500/20 text-red-400'
                     }`}>
-                      {user.status ? user.status.charAt(0).toUpperCase() + user.status.slice(1) : 'Unknown'}
+                      {user.status ? user.status.charAt(0).toUpperCase() + user.status.slice(1) : 'Active'}
                     </span>
                   </td>
                   <td className="px-6 py-4">
@@ -240,21 +265,27 @@ export default function UsersTab({ theme }: UsersTabProps) {
                         <Edit2 size={16} />
                       </button>
                       {user.status === 'active' ? (
-                        <button 
+                        <button
                           onClick={() => handleSuspendUser(user.id)}
                           className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-orange-400"
+                          title="Suspend user"
                         >
                           <Shield size={16} />
                         </button>
                       ) : (
-                        <button 
+                        <button
                           onClick={() => handleActivateUser(user.id)}
                           className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-green-400"
+                          title="Activate user"
                         >
                           <TrendingUp size={16} />
                         </button>
                       )}
-                      <button className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-red-400">
+                      <button
+                        onClick={() => handleDeleteUser(user.id)}
+                        className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-red-400"
+                        title="Delete user"
+                      >
                         <Trash2 size={16} />
                       </button>
                     </div>
@@ -266,10 +297,16 @@ export default function UsersTab({ theme }: UsersTabProps) {
         </div>
       </div>
 
-      {filteredUsers.length === 0 && (
+      {filteredUsers.length === 0 && !loading && (
         <div className={`text-center py-12 rounded-xl border ${card}`}>
           <Users className="mx-auto text-slate-400 mb-4" size={48} />
           <p className="text-slate-400">No users found matching your filters</p>
+        </div>
+      )}
+
+      {loading && (
+        <div className="flex items-center justify-center py-20">
+          <div className="w-12 h-12 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
         </div>
       )}
     </div>

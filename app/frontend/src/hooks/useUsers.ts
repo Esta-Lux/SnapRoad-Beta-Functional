@@ -68,10 +68,11 @@ export function useUsers(options: UseUsersOptions = {}): UseUsersReturn {
   const updateUserStatus = useCallback(
     async (userId: string, status: 'active' | 'suspended'): Promise<boolean> => {
       try {
-        const response = await adminApi.updateUserStatus(userId, status);
+        const response = status === 'suspended'
+          ? await adminApi.suspendUser(userId)
+          : await adminApi.activateUser(userId);
         
         if (response.success) {
-          // Update local state
           setUsers(prev =>
             prev.map(u => (u.id === userId ? { ...u, status } : u))
           );

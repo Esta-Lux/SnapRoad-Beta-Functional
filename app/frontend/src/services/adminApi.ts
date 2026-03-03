@@ -1,6 +1,6 @@
 /**
  * SnapRoad Admin API Service
- * Centralized API calls for Admin Portal - Ryan's Emergent Implementation
+ * Centralized API calls for the Admin Portal
  */
 
 import type {
@@ -8,35 +8,44 @@ import type {
   AdminAnalytics,
   AdminUser,
   AdminIncident,
-  RoadReport,
   AdminApiResponse,
-} from '@/types/admin';
+  Partner,
+  Campaign,
+  Reward,
+  Notification,
+  AuditEntry,
+  LegalDocument,
+  FinanceData,
+  ReferralAnalyticsData,
+  Boost,
+  PlatformSettings,
+} from '@/types/admin'
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || '';
+const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 class AdminApiService {
-  private token: string | null = null;
+  private token: string | null = null
 
   setToken(token: string | null) {
-    this.token = token;
+    this.token = token
     if (token) {
-      localStorage.setItem('snaproad_admin_token', token);
+      localStorage.setItem('snaproad_admin_token', token)
     } else {
-      localStorage.removeItem('snaproad_admin_token');
+      localStorage.removeItem('snaproad_admin_token')
     }
   }
 
   getToken(): string | null {
     if (!this.token) {
-      this.token = localStorage.getItem('snaproad_admin_token');
+      this.token = localStorage.getItem('snaproad_admin_token')
     }
-    return this.token;
+    return this.token
   }
 
-  private async request(endpoint: string, options: RequestInit = {}): Promise<AdminApiResponse> {
-    const url = `${API_URL}${endpoint}`;
-    const token = this.getToken();
-    
+  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<AdminApiResponse<T>> {
+    const url = `${API_URL}${endpoint}`
+    const token = this.getToken()
+
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
@@ -44,133 +53,289 @@ class AdminApiService {
         ...options.headers,
       },
       ...options,
-    };
+    }
 
     try {
-      const response = await fetch(url, config);
-      
+      const response = await fetch(url, config)
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
-      
-      const data = await response.json();
-      return data;
+      return await response.json()
     } catch (error) {
-      console.error('API request failed:', error);
-      throw error;
+      console.error('API request failed:', error)
+      throw error
     }
   }
 
-  // Stats endpoints
+  // ==================== STATS & ANALYTICS ====================
+
   async getStats(): Promise<AdminApiResponse<AdminStats>> {
-    return this.request('/api/admin/stats');
+    return this.request('/api/admin/stats')
   }
 
   async getAnalytics(): Promise<AdminApiResponse<AdminAnalytics>> {
-    return this.request('/api/admin/analytics');
+    return this.request('/api/admin/analytics')
   }
 
-  // Users endpoints
+  // ==================== USERS ====================
+
   async getUsers(limit: number = 100): Promise<AdminApiResponse<AdminUser[]>> {
-    return this.request(`/api/admin/users?limit=${limit}`);
+    return this.request(`/api/admin/users?limit=${limit}`)
   }
 
-  async createUser(userData: Partial<AdminUser>): Promise<AdminApiResponse<AdminUser>> {
-    return this.request('/api/admin/users', {
-      method: 'POST',
-      body: JSON.stringify(userData),
-    });
-  }
-
-  async updateUser(id: number, userData: Partial<AdminUser>): Promise<AdminApiResponse<AdminUser>> {
+  async updateUser(id: string, userData: Partial<AdminUser>): Promise<AdminApiResponse<AdminUser>> {
     return this.request(`/api/admin/users/${id}`, {
       method: 'PUT',
       body: JSON.stringify(userData),
-    });
+    })
   }
 
-  async deleteUser(id: number): Promise<AdminApiResponse<void>> {
-    return this.request(`/api/admin/users/${id}`, {
-      method: 'DELETE',
-    });
+  async deleteUser(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/users/${id}`, { method: 'DELETE' })
   }
 
-  // Incidents endpoints
-  async getIncidents(): Promise<AdminApiResponse<AdminIncident[]>> {
-    return this.request('/api/admin/incidents');
+  async suspendUser(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/users/${id}/suspend`, { method: 'POST' })
   }
 
-  async updateIncidentStatus(id: number, status: AdminIncident['status']): Promise<AdminApiResponse<AdminIncident>> {
-    return this.request(`/api/admin/incidents/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
+  async activateUser(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/users/${id}/activate`, { method: 'POST' })
   }
 
-  async moderateIncident(id: number, outcome: string): Promise<AdminApiResponse<void>> {
+  async exportUsers(format: string = 'json'): Promise<AdminApiResponse<any>> {
+    return this.request(`/api/admin/export/users?format=${format}`)
+  }
+
+  // ==================== INCIDENTS ====================
+
+  async getIncidents(status?: string): Promise<AdminApiResponse<AdminIncident[]>> {
+    const qs = status ? `?status=${status}` : ''
+    return this.request(`/api/admin/incidents${qs}`)
+  }
+
+  async moderateIncident(id: string, outcome: string): Promise<AdminApiResponse<void>> {
     return this.request(`/api/admin/incidents/${id}/moderate`, {
       method: 'POST',
       body: JSON.stringify({ outcome }),
-    });
+    })
   }
 
-  // Road Reports endpoints
-  async getRoadReports(): Promise<AdminApiResponse<RoadReport[]>> {
-    return this.request('/api/admin/road-reports');
+  async getModeratedIncidents(): Promise<AdminApiResponse<AdminIncident[]>> {
+    return this.request('/api/admin/incidents/moderated')
   }
 
-  // Notifications endpoints
-  async getNotifications(): Promise<AdminApiResponse<any[]>> {
-    return this.request('/api/admin/notifications');
+  // ==================== NOTIFICATIONS ====================
+
+  async getNotifications(): Promise<AdminApiResponse<Notification[]>> {
+    return this.request('/api/admin/notifications')
   }
 
-  async createNotification(notificationData: any): Promise<AdminApiResponse<any>> {
+  async createNotification(data: Partial<Notification>): Promise<AdminApiResponse<Notification>> {
     return this.request('/api/admin/notifications', {
       method: 'POST',
-      body: JSON.stringify(notificationData),
-    });
+      body: JSON.stringify(data),
+    })
   }
 
-  // Partners endpoints
-  async getPartners(): Promise<AdminApiResponse<any[]>> {
-    return this.request('/api/admin/partners');
+  async markNotificationRead(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/notifications/${id}/read`, { method: 'PATCH' })
   }
 
-  async createPartner(partnerData: any): Promise<AdminApiResponse<any>> {
+  // ==================== PARTNERS ====================
+
+  async getPartners(): Promise<AdminApiResponse<Partner[]>> {
+    return this.request('/api/admin/partners')
+  }
+
+  async createPartner(data: Partial<Partner>): Promise<AdminApiResponse<Partner>> {
     return this.request('/api/admin/partners', {
       method: 'POST',
-      body: JSON.stringify(partnerData),
-    });
+      body: JSON.stringify(data),
+    })
   }
 
-  // Rewards endpoints
-  async getRewards(): Promise<AdminApiResponse<any[]>> {
-    return this.request('/api/admin/rewards');
+  async updatePartner(id: string, data: Partial<Partner>): Promise<AdminApiResponse<Partner>> {
+    return this.request(`/api/admin/partners/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
   }
 
-  async createReward(rewardData: any): Promise<AdminApiResponse<any>> {
+  async deletePartner(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/partners/${id}`, { method: 'DELETE' })
+  }
+
+  async approvePartner(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/partners/${id}/approve`, { method: 'POST' })
+  }
+
+  async suspendPartner(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/partners/${id}/suspend`, { method: 'POST' })
+  }
+
+  // ==================== CAMPAIGNS ====================
+
+  async getCampaigns(): Promise<AdminApiResponse<Campaign[]>> {
+    return this.request('/api/admin/campaigns')
+  }
+
+  async createCampaign(data: Partial<Campaign>): Promise<AdminApiResponse<Campaign>> {
+    return this.request('/api/admin/campaigns', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateCampaign(id: string, data: Partial<Campaign>): Promise<AdminApiResponse<Campaign>> {
+    return this.request(`/api/admin/campaigns/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteCampaign(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/campaigns/${id}`, { method: 'DELETE' })
+  }
+
+  async activateCampaign(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/campaigns/${id}/activate`, { method: 'POST' })
+  }
+
+  // ==================== REWARDS ====================
+
+  async getRewards(): Promise<AdminApiResponse<Reward[]>> {
+    return this.request('/api/admin/rewards')
+  }
+
+  async createReward(data: Partial<Reward>): Promise<AdminApiResponse<Reward>> {
     return this.request('/api/admin/rewards', {
       method: 'POST',
-      body: JSON.stringify(rewardData),
-    });
+      body: JSON.stringify(data),
+    })
   }
 
-  // Settings endpoints
-  async getSettings(): Promise<AdminApiResponse<any>> {
-    return this.request('/api/admin/settings');
-  }
-
-  async updateSettings(settingsData: any): Promise<AdminApiResponse<any>> {
-    return this.request('/api/admin/settings', {
+  async updateReward(id: string, data: Partial<Reward>): Promise<AdminApiResponse<Reward>> {
+    return this.request(`/api/admin/rewards/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(settingsData),
-    });
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteReward(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/rewards/${id}`, { method: 'DELETE' })
+  }
+
+  async claimReward(id: string, userId: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/rewards/${id}/claim`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    })
+  }
+
+  // ==================== OFFERS ====================
+
+  async getOffers(status: string = 'all'): Promise<AdminApiResponse<any[]>> {
+    return this.request(`/api/admin/offers?status=${status}`)
+  }
+
+  async createOffer(data: any): Promise<AdminApiResponse<any>> {
+    return this.request('/api/admin/offers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateOffer(id: string, data: any): Promise<AdminApiResponse<any>> {
+    return this.request(`/api/admin/offers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteOffer(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/offers/${id}`, { method: 'DELETE' })
+  }
+
+  async exportOffers(format: string = 'json'): Promise<AdminApiResponse<any>> {
+    return this.request(`/api/admin/export/offers?format=${format}`)
+  }
+
+  // ==================== FINANCE ====================
+
+  async getFinance(): Promise<AdminApiResponse<FinanceData>> {
+    return this.request('/api/admin/finance')
+  }
+
+  // ==================== REFERRAL ANALYTICS ====================
+
+  async getReferralAnalytics(): Promise<AdminApiResponse<ReferralAnalyticsData>> {
+    return this.request('/api/admin/referral-analytics')
+  }
+
+  // ==================== LEGAL DOCUMENTS ====================
+
+  async getLegalDocuments(): Promise<AdminApiResponse<LegalDocument[]>> {
+    return this.request('/api/admin/legal-documents')
+  }
+
+  async updateLegalDocument(id: string, data: Partial<LegalDocument>): Promise<AdminApiResponse<LegalDocument>> {
+    return this.request(`/api/admin/legal-documents/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  // ==================== AUDIT LOG ====================
+
+  async getAuditLog(limit: number = 50): Promise<AdminApiResponse<AuditEntry[]>> {
+    return this.request(`/api/admin/audit-log?limit=${limit}`)
+  }
+
+  // ==================== SETTINGS ====================
+
+  async getSettings(): Promise<AdminApiResponse<PlatformSettings>> {
+    return this.request('/api/admin/settings')
+  }
+
+  async updateSettings(data: Record<string, any>): Promise<AdminApiResponse<any>> {
+    return this.request('/api/admin/settings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  // ==================== BOOSTS ====================
+
+  async getBoosts(partnerId?: string): Promise<AdminApiResponse<Boost[]>> {
+    const qs = partnerId ? `?partner_id=${partnerId}` : ''
+    return this.request(`/api/boosts${qs}`)
+  }
+
+  async createBoost(data: any): Promise<AdminApiResponse<Boost>> {
+    return this.request('/api/boosts/create', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async cancelBoost(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/boosts/${id}`, { method: 'DELETE' })
+  }
+
+  async calculateBoostCost(data: { duration_days: number; reach_target: number }): Promise<AdminApiResponse<any>> {
+    return this.request('/api/boosts/calculate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  // ==================== SUPABASE STATUS ====================
+
+  async getSupabaseStatus(): Promise<AdminApiResponse<any>> {
+    return this.request('/api/admin/supabase/status')
   }
 }
 
-// Create singleton instance
-export const adminApi = new AdminApiService();
-
-// Export class for testing or custom instances
-export { AdminApiService };
-export default adminApi;
+export const adminApi = new AdminApiService()
+export { AdminApiService }
+export default adminApi

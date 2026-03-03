@@ -2,15 +2,28 @@
 // =============================================
 
 import { useState, useEffect } from 'react'
-import { FileText, Search, Filter, Calendar, Download, Shield, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
+import { FileText, Search, Download, Shield, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
+import { adminApi } from '@/services/adminApi'
 
 interface AuditLogTabProps {
   theme: 'dark' | 'light'
 }
 
+interface AuditLogEntry {
+  id: string
+  action: string
+  actor: string
+  target: string
+  ip_address: string
+  status: string
+  details: string
+  created_at: string
+}
+
 export default function AuditLogTab({ theme }: AuditLogTabProps) {
-  const [logs, setLogs] = useState<any>(null)
+  const [logs, setLogs] = useState<AuditLogEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [actionFilter, setActionFilter] = useState('all')
   const [userFilter, setUserFilter] = useState('all')
@@ -21,34 +34,34 @@ export default function AuditLogTab({ theme }: AuditLogTabProps) {
 
   const loadAuditLogs = async () => {
     setLoading(true)
+    setError(null)
     try {
-      // Mock data - in real app, this would call backend API
-      const mockLogs = [
-        { id: 1, action: 'USER_CREATED', user: 'admin@snaproad.com', target: 'john@example.com', ip: '192.168.1.100', timestamp: '2024-02-19 14:30:22', status: 'success', details: 'Created new user account' },
-        { id: 2, action: 'PARTNER_APPROVED', user: 'admin@snaproad.com', target: 'Shell Gas Station', ip: '192.168.1.100', timestamp: '2024-02-19 13:45:10', status: 'success', details: 'Approved partner registration' },
-        { id: 3, action: 'SETTINGS_UPDATED', user: 'admin@snaproad.com', target: 'System Settings', ip: '192.168.1.100', timestamp: '2024-02-19 12:20:05', status: 'success', details: 'Updated security settings' },
-        { id: 4, action: 'LOGIN_FAILED', user: 'unknown', target: 'admin@snaproad.com', ip: '192.168.1.200', timestamp: '2024-02-19 11:15:33', status: 'error', details: 'Failed login attempt - invalid password' },
-        { id: 5, action: 'OFFER_CREATED', user: 'admin@snaproad.com', target: 'McDonald\'s Offer', ip: '192.168.1.100', timestamp: '2024-02-19 10:30:15', status: 'success', details: 'Created new promotional offer' },
-        { id: 6, action: 'USER_SUSPENDED', user: 'admin@snaproad.com', target: 'emily@example.com', ip: '192.168.1.100', timestamp: '2024-02-19 09:45:22', status: 'success', details: 'Suspended user account for policy violation' },
-        { id: 7, action: 'DATA_EXPORTED', user: 'admin@snaproad.com', target: 'User Database', ip: '192.168.1.100', timestamp: '2024-02-19 08:20:10', status: 'success', details: 'Exported 1,250 user records to CSV' },
-        { id: 8, action: 'SYSTEM_BACKUP', user: 'system', target: 'Database', ip: '127.0.0.1', timestamp: '2024-02-19 06:00:00', status: 'success', details: 'Automated daily backup completed' },
-      ]
-      setLogs(mockLogs)
-    } catch (error) {
-      console.error('Failed to load audit logs:', error)
+      const res = await adminApi.getAuditLog()
+      if (res.success && res.data) {
+        setLogs(res.data)
+      } else {
+        setLogs([])
+      }
+    } catch (err) {
+      console.error('Failed to load audit logs:', err)
+      setError('Failed to load audit logs')
+      setLogs([])
     } finally {
       setLoading(false)
     }
   }
 
-  const filteredLogs = logs ? logs.filter(log => {
+  const filteredLogs = logs.filter(log => {
     const matchesSearch = log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          log.target.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         log.details.toLowerCase().includes(searchTerm.toLowerCase())
+                         (log.details || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (log.actor || '').toLowerCase().includes(searchTerm.toLowerCase())
     const matchesAction = actionFilter === 'all' || log.action === actionFilter
-    const matchesUser = userFilter === 'all' || log.user === userFilter
+    const matchesUser = userFilter === 'all' || log.actor === userFilter
     return matchesSearch && matchesAction && matchesUser
-  }) : []
+  })
+
+  const uniqueActors = [...new Set(logs.map(l => l.actor).filter(Boolean))]
 
   const isDark = theme === 'dark'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
@@ -74,6 +87,15 @@ export default function AuditLogTab({ theme }: AuditLogTabProps) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="w-12 h-12 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <AlertTriangle className="text-red-400 mb-4" size={48} />
+        <p className="text-slate-400">{error}</p>
       </div>
     )
   }
@@ -129,8 +151,9 @@ export default function AuditLogTab({ theme }: AuditLogTabProps) {
             }`}
           >
             <option value="all">All Users</option>
-            <option value="admin@snaproad.com">Admin</option>
-            <option value="system">System</option>
+            {uniqueActors.map(actor => (
+              <option key={actor} value={actor}>{actor}</option>
+            ))}
           </select>
         </div>
       </div>
@@ -145,7 +168,7 @@ export default function AuditLogTab({ theme }: AuditLogTabProps) {
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Action</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">User</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Target</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">IP Address</th>
+                <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">IP</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Details</th>
               </tr>
@@ -154,7 +177,7 @@ export default function AuditLogTab({ theme }: AuditLogTabProps) {
               {filteredLogs.map((log) => (
                 <tr key={log.id} className={isDark ? 'hover:bg-slate-800/30' : 'hover:bg-[#F8FAFC]'}>
                   <td className="px-6 py-4">
-                    <div className="text-sm text-slate-400">{log.timestamp}</div>
+                    <div className="text-sm text-slate-400">{log.created_at}</div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
@@ -163,13 +186,13 @@ export default function AuditLogTab({ theme }: AuditLogTabProps) {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm text-white">{log.user}</div>
+                    <div className="text-sm text-white">{log.actor}</div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm text-white">{log.target}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm text-slate-400 font-mono">{log.ip}</div>
+                    <div className="text-sm text-slate-400 font-mono">{log.ip_address}</div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
@@ -187,10 +210,12 @@ export default function AuditLogTab({ theme }: AuditLogTabProps) {
         </div>
       </div>
 
-      {filteredLogs.length === 0 && (
+      {(filteredLogs.length === 0 || logs.length === 0) && (
         <div className={`text-center py-12 rounded-xl border ${card}`}>
           <FileText className="mx-auto text-slate-400 mb-4" size={48} />
-          <p className="text-slate-400">No audit logs found matching your filters</p>
+          <p className="text-slate-400">
+            {logs.length === 0 ? 'No audit logs found' : 'No audit logs found matching your filters'}
+          </p>
         </div>
       )}
     </div>

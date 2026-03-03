@@ -2,30 +2,19 @@
 // =============================================
 
 import { useState, useEffect, useMemo } from 'react'
-import { Search, AlertTriangle, MapPin, Clock, Filter, Eye, Shield, TrendingUp } from 'lucide-react'
-
-interface Incident {
-  id: number
-  type: string
-  location: string
-  severity: 'low' | 'medium' | 'high'
-  status: 'open' | 'investigating' | 'resolved'
-  confidence: number
-  reportedAt: string
-  description: string
-}
+import { Search, AlertTriangle, MapPin, Clock, Eye, Shield, TrendingUp } from 'lucide-react'
+import { adminApi } from '@/services/adminApi'
+import type { AdminIncident } from '@/types/admin'
 
 interface IncidentsTabProps {
   theme: 'dark' | 'light'
 }
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
-
 export default function IncidentsTab({ theme }: IncidentsTabProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('All Status')
   const [severityFilter, setSeverityFilter] = useState('All Severity')
-  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [incidents, setIncidents] = useState<AdminIncident[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -35,10 +24,9 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
   const loadIncidents = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/api/admin/incidents`)
-      const data = await res.json()
-      if (data.success) {
-        setIncidents(data.data)
+      const res = await adminApi.getIncidents()
+      if (res.success && res.data) {
+        setIncidents(res.data)
       }
     } catch (error) {
       console.error('Failed to load incidents:', error)
@@ -47,36 +35,21 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
     }
   }
 
-  const handleResolveIncident = async (incidentId: number) => {
+  const handleModerate = async (incidentId: string, outcome: 'approved' | 'rejected') => {
     try {
-      // In a real app, this would call the backend
-      setIncidents(prev => prev.map(incident => 
-        incident.id === incidentId 
-          ? { ...incident, status: 'resolved' as const }
-          : incident
-      ))
+      const res = await adminApi.moderateIncident(incidentId, outcome)
+      if (res.success) {
+        loadIncidents()
+      }
     } catch (error) {
-      console.error('Failed to resolve incident:', error)
-    }
-  }
-
-  const handleInvestigateIncident = async (incidentId: number) => {
-    try {
-      // In a real app, this would call the backend
-      setIncidents(prev => prev.map(incident => 
-        incident.id === incidentId 
-          ? { ...incident, status: 'investigating' as const }
-          : incident
-      ))
-    } catch (error) {
-      console.error('Failed to investigate incident:', error)
+      console.error('Failed to moderate incident:', error)
     }
   }
 
   const filteredIncidents = useMemo(() => {
     return incidents.filter(incident => {
-      const matchesSearch = incident.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           incident.location.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesSearch = (incident.type || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           (incident.location || '').toLowerCase().includes(searchTerm.toLowerCase())
       const matchesSeverity = severityFilter === 'All Severity' || incident.severity === severityFilter
       const matchesStatus = statusFilter === 'All Status' || incident.status === statusFilter
       return matchesSearch && matchesSeverity && matchesStatus
@@ -85,6 +58,8 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
 
   const isDark = theme === 'dark'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
+  const textPrimary = isDark ? 'text-white' : 'text-[#0B1220]'
+  const textSecondary = isDark ? 'text-slate-400' : 'text-[#4B5C74]'
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -97,64 +72,47 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'open': return 'bg-blue-500/20 text-blue-400'
-      case 'resolved': return 'bg-green-500/20 text-green-400'
-      case 'investigating': return 'bg-purple-500/20 text-purple-400'
+      case 'pending': return 'bg-blue-500/20 text-blue-400'
+      case 'approved': return 'bg-green-500/20 text-green-400'
+      case 'rejected': return 'bg-red-500/20 text-red-400'
       default: return 'bg-slate-500/20 text-slate-400'
     }
   }
 
+  const pendingCount = incidents.filter(i => i.status === 'pending').length
+  const approvedCount = incidents.filter(i => i.status === 'approved').length
+  const rejectedCount = incidents.filter(i => i.status === 'rejected').length
+  const avgConfidence = incidents.length > 0
+    ? Math.round(incidents.reduce((acc, i) => acc + (i.confidence || 0), 0) / incidents.length)
+    : 0
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-12 h-12 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      {/* Header with Stats */}
+      {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center">
-              <AlertTriangle className="text-red-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{incidents.length}</div>
-              <div className="text-xs text-slate-400">Total Incidents</div>
-            </div>
-          </div>
-          <div className="mt-2 flex items-center gap-1 text-xs text-red-400">
-            <TrendingUp size={12} />
-            <span>+12%</span>
-          </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{incidents.length}</div>
+          <div className={`text-xs ${textSecondary}`}>Total Reports</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-              <Eye className="text-blue-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{incidents.filter(i => i.status === 'open').length}</div>
-              <div className="text-xs text-slate-400">Open Cases</div>
-            </div>
-          </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{pendingCount}</div>
+          <div className={`text-xs ${textSecondary}`}>Pending Review</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
-              <Shield className="text-green-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{incidents.filter(i => i.status === 'resolved').length}</div>
-              <div className="text-xs text-slate-400">Resolved</div>
-            </div>
-          </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{approvedCount}</div>
+          <div className={`text-xs ${textSecondary}`}>Approved</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
-              <TrendingUp className="text-purple-400" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{Math.round(incidents.reduce((acc, i) => acc + i.confidence, 0) / incidents.length)}%</div>
-              <div className="text-xs text-slate-400">Avg Confidence</div>
-            </div>
-          </div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{rejectedCount}</div>
+          <div className={`text-xs ${textSecondary}`}>Rejected</div>
         </div>
       </div>
 
@@ -193,85 +151,83 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
             }`}
           >
             <option value="All Status">All Status</option>
-            <option value="open">Open</option>
-            <option value="resolved">Resolved</option>
-            <option value="investigating">Investigating</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
           </select>
         </div>
       </div>
 
-      {/* Incidents Table */}
-      <div className={`rounded-xl border overflow-hidden ${card}`}>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className={isDark ? 'bg-slate-800/50' : 'bg-[#F8FAFC]'}>
-              <tr>
-                <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Incident</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Severity</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Location</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Reported By</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Time</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Confidence</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700/50">
-              {filteredIncidents.map((incident) => (
-                <tr key={incident.id} className={isDark ? 'hover:bg-slate-800/30' : 'hover:bg-[#F8FAFC]'}>
-                  <td className="px-6 py-4">
-                    <div>
-                      <div className="text-sm font-medium text-white">{incident.type}</div>
-                      <div className="text-xs text-slate-400">{incident.description}</div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 text-xs rounded-full ${getSeverityColor(incident.severity)}`}>
-                      {incident.severity.charAt(0).toUpperCase() + incident.severity.slice(1)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(incident.status)}`}>
-                      {incident.status.charAt(0).toUpperCase() + incident.status.slice(1)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-1 text-sm text-white">
-                      <MapPin size={14} />
-                      {incident.location}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-white">{incident.reportedBy}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-1 text-sm text-slate-400">
-                      <Clock size={14} />
-                      {incident.reportedAt}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 bg-slate-700/50 rounded-full h-2">
-                        <div 
-                          className={`h-2 rounded-full ${
-                            incident.confidence >= 90 ? 'bg-green-500' :
-                            incident.confidence >= 80 ? 'bg-yellow-500' :
-                            'bg-red-500'
-                          }`}
-                          style={{ width: `${incident.confidence}%` }}
-                        />
-                      </div>
-                      <span className="text-sm text-white">{incident.confidence}%</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* Incidents Card Grid */}
+      {filteredIncidents.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredIncidents.map((incident) => (
+            <div key={incident.id} className={`p-5 rounded-xl border ${card} hover:shadow-lg transition-all`}>
+              {/* Image Preview */}
+              {incident.image_url && (
+                <div className={`relative w-full h-36 rounded-xl mb-4 overflow-hidden ${isDark ? 'bg-slate-700/50' : 'bg-[#F5F8FA]'}`}>
+                  <img
+                    src={incident.image_url}
+                    alt="Incident"
+                    className={`w-full h-full object-cover ${incident.is_blurred ? 'blur-xl' : ''}`}
+                  />
+                  <div className="absolute top-2 right-2 px-2 py-1 rounded-full bg-black/60 text-white text-[11px] font-medium">
+                    {incident.confidence || 0}%
+                  </div>
+                </div>
+              )}
 
-      {filteredIncidents.length === 0 && (
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <p className={`text-sm font-medium ${textPrimary}`}>{incident.type}</p>
+                  <p className={`text-xs ${textSecondary} mt-1`}>{incident.description}</p>
+                </div>
+                <div className="flex gap-1">
+                  <span className={`px-2 py-0.5 text-[11px] rounded-full ${getSeverityColor(incident.severity)}`}>
+                    {(incident.severity || 'unknown').charAt(0).toUpperCase() + (incident.severity || '').slice(1)}
+                  </span>
+                  <span className={`px-2 py-0.5 text-[11px] rounded-full ${getStatusColor(incident.status)}`}>
+                    {(incident.status || 'unknown').charAt(0).toUpperCase() + (incident.status || '').slice(1)}
+                  </span>
+                </div>
+              </div>
+
+              <div className={`flex items-center gap-3 text-xs ${textSecondary} mb-4`}>
+                {incident.location && (
+                  <span className="flex items-center gap-1">
+                    <MapPin size={10} />{incident.location}
+                  </span>
+                )}
+                {incident.created_at && (
+                  <span className="flex items-center gap-1">
+                    <Clock size={10} />{new Date(incident.created_at).toLocaleDateString()}
+                  </span>
+                )}
+                {incident.reported_by && (
+                  <span>by {incident.reported_by}</span>
+                )}
+              </div>
+
+              {incident.status === 'pending' && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleModerate(incident.id, 'approved')}
+                    className="flex-1 h-9 rounded-lg bg-emerald-500/20 text-emerald-400 text-sm font-medium hover:bg-emerald-500/30 transition-all"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => handleModerate(incident.id, 'rejected')}
+                    className="flex-1 h-9 rounded-lg bg-red-500/20 text-red-400 text-sm font-medium hover:bg-red-500/30 transition-all"
+                  >
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
         <div className={`text-center py-12 rounded-xl border ${card}`}>
           <AlertTriangle className="mx-auto text-slate-400 mb-4" size={48} />
           <p className="text-slate-400">No incidents found matching your filters</p>

@@ -2,16 +2,16 @@
 // =============================================
 
 import { useState, useEffect } from 'react'
-import { FileText, Shield, Download, Upload, Search, Filter, Calendar, Check, AlertTriangle } from 'lucide-react'
+import { FileText, Shield, Download, Upload, Search, Calendar, Check, AlertTriangle } from 'lucide-react'
+import { adminApi } from '@/services/adminApi'
+import type { LegalDocument } from '@/types/admin'
 
 interface LegalTabProps {
   theme: 'dark' | 'light'
 }
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
-
 export default function LegalTab({ theme }: LegalTabProps) {
-  const [documents, setDocuments] = useState<any>(null)
+  const [documents, setDocuments] = useState<LegalDocument[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
@@ -24,10 +24,9 @@ export default function LegalTab({ theme }: LegalTabProps) {
   const loadDocuments = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/api/admin/legal-documents`)
-      const data = await res.json()
-      if (data.success) {
-        setDocuments(data.data)
+      const res = await adminApi.getLegalDocuments()
+      if (res.success && res.data) {
+        setDocuments(res.data)
       }
     } catch (error) {
       console.error('Failed to load documents:', error)
@@ -36,40 +35,25 @@ export default function LegalTab({ theme }: LegalTabProps) {
     }
   }
 
-  const handleDownloadDocument = async (docId: number) => {
-    try {
-      console.log(`Downloading document ${docId}`)
-      // In a real app, this would trigger a file download
-    } catch (error) {
-      console.error('Failed to download document:', error)
-    }
+  const handleDownloadDocument = async (docId: string) => {
+    console.log(`Downloading document ${docId}`)
   }
 
-  const handleViewDocument = async (docId: number) => {
-    try {
-      console.log(`Viewing document ${docId}`)
-      // In a real app, this would open a document viewer
-    } catch (error) {
-      console.error('Failed to view document:', error)
-    }
+  const handleViewDocument = async (docId: string) => {
+    console.log(`Viewing document ${docId}`)
   }
 
-  const handleViewHistory = async (docId: number) => {
-    try {
-      console.log(`Viewing history for document ${docId}`)
-      // In a real app, this would show document version history
-    } catch (error) {
-      console.error('Failed to view document history:', error)
-    }
+  const handleViewHistory = async (docId: string) => {
+    console.log(`Viewing history for document ${docId}`)
   }
 
-  const filteredDocuments = documents ? documents.filter(doc => {
+  const filteredDocuments = documents.filter(doc => {
     const matchesSearch = doc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          doc.description.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesType = typeFilter === 'all' || doc.type === typeFilter
     const matchesStatus = statusFilter === 'all' || doc.status === statusFilter
     return matchesSearch && matchesType && matchesStatus
-  }) : []
+  })
 
   const isDark = theme === 'dark'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
@@ -124,7 +108,7 @@ export default function LegalTab({ theme }: LegalTabProps) {
               <FileText className="text-blue-400" size={20} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{documents?.length || 0}</div>
+              <div className="text-2xl font-bold text-white">{documents.length}</div>
               <div className="text-xs text-slate-400">Total Documents</div>
             </div>
           </div>
@@ -135,7 +119,7 @@ export default function LegalTab({ theme }: LegalTabProps) {
               <Check className="text-green-400" size={20} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{documents?.filter(d => d.status === 'active').length || 0}</div>
+              <div className="text-2xl font-bold text-white">{documents.filter(d => d.status === 'active').length}</div>
               <div className="text-xs text-slate-400">Active</div>
             </div>
           </div>
@@ -146,7 +130,7 @@ export default function LegalTab({ theme }: LegalTabProps) {
               <AlertTriangle className="text-amber-400" size={20} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{documents?.filter(d => d.required === true).length || 0}</div>
+              <div className="text-2xl font-bold text-white">{documents.filter(d => d.is_required === true).length}</div>
               <div className="text-xs text-slate-400">Required</div>
             </div>
           </div>
@@ -157,7 +141,7 @@ export default function LegalTab({ theme }: LegalTabProps) {
               <Shield className="text-purple-400" size={20} />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{documents?.filter(d => d.type === 'compliance').length || 0}</div>
+              <div className="text-2xl font-bold text-white">{documents.filter(d => d.type === 'compliance').length}</div>
               <div className="text-xs text-slate-400">Compliance</div>
             </div>
           </div>
@@ -226,7 +210,7 @@ export default function LegalTab({ theme }: LegalTabProps) {
                 <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(doc.status)}`}>
                   {doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}
                 </span>
-                {doc.required && (
+                {doc.is_required && (
                   <span className="px-2 py-1 text-xs rounded-full bg-red-500/20 text-red-400">
                     Required
                   </span>
@@ -248,7 +232,7 @@ export default function LegalTab({ theme }: LegalTabProps) {
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-400">Last Updated</span>
-                <span className="text-white">{doc.lastUpdated}</span>
+                <span className="text-white">{doc.last_updated ? new Date(doc.last_updated).toLocaleDateString() : 'N/A'}</span>
               </div>
             </div>
 

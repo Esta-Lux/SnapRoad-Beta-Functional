@@ -3,16 +3,23 @@
 
 import { useState, useEffect } from 'react'
 import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, ToggleLeft, ToggleRight, Cloud, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { adminApi } from '@/services/adminApi'
 
 interface SettingsTabProps {
   theme: 'dark' | 'light'
 }
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+type SettingsData = Record<string, Record<string, any>>
+
+const defaultGeneral = { platform_name: '', maintenance_mode: false, debug_mode: false }
+const defaultSecurity = { jwt_expiry_hours: 24, password_min_length: 8, require_2fa: false }
+const defaultNotifications = { email_notifications: true, push_notifications: false, system_alerts: true }
+const defaultFeatures = { ai_moderation: false, real_time_analytics: false, partner_referrals: false }
+const defaultDatabase = { connection_pool_size: 10, query_timeout_seconds: 30, backup_frequency_hours: 24 }
 
 export default function SettingsTab({ theme }: SettingsTabProps) {
-  const [settings, setSettings] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
+  const [settings, setSettings] = useState<SettingsData | null>(null)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [supabaseStatus, setSupabaseStatus] = useState<any>(null)
   const [sbLoading, setSbLoading] = useState(false)
@@ -52,34 +59,45 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   const loadSettings = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/api/admin/settings`)
-      const data = await res.json()
-      if (data.success) {
-        setSettings(data.data)
+      const res = await adminApi.getSettings()
+      if (res.success && res.data) {
+        setSettings(res.data)
+      } else {
+        setSettings(null)
       }
     } catch (error) {
       console.error('Failed to load settings:', error)
+      setSettings(null)
     } finally {
       setLoading(false)
     }
   }
 
   const updateSetting = (category: string, key: string, value: any) => {
-    setSettings(prev => ({
-      ...prev,
-      [category]: {
-        ...prev[category],
-        [key]: value
+    setSettings(prev => {
+      if (!prev) return prev
+      const cat = prev[category] || {}
+      return {
+        ...prev,
+        [category]: { ...cat, [key]: value }
       }
-    }))
+    })
   }
 
-  const saveSettings = async () => {
+  const get = (category: string, key: string, fallback: any) => {
+    return settings?.[category]?.[key] ?? fallback
+  }
+
+  const handleSaveSettings = async () => {
+    if (!settings) return
     setSaving(true)
     try {
-      // Mock API call - in real app, this would save to backend
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      console.log('Settings saved:', settings)
+      const res = await adminApi.updateSettings(settings)
+      if (res.success) {
+        console.log('Settings saved successfully!')
+      } else {
+        console.error('Failed to save settings:', res.error || res.message)
+      }
     } catch (error) {
       console.error('Failed to save settings:', error)
     } finally {
@@ -106,24 +124,11 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
     )
   }
 
-  const handleSaveSettings = async () => {
-    setSaving(true)
-    try {
-      const res = await fetch(`${API_URL}/api/admin/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
-      })
-      const data = await res.json()
-      if (data.success) {
-        console.log('Settings saved successfully!')
-      }
-    } catch (error) {
-      console.error('Failed to save settings:', error)
-    } finally {
-      setSaving(false)
-    }
-  }
+  const general = settings.general ?? defaultGeneral
+  const security = settings.security ?? defaultSecurity
+  const notifications = settings.notifications ?? defaultNotifications
+  const features = settings.features ?? defaultFeatures
+  const database = settings.database ?? defaultDatabase
 
   return (
     <div className="space-y-6">
@@ -138,8 +143,8 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
             <RefreshCw size={18} />
             Reset to Defaults
           </button>
-          <button 
-            onClick={saveSettings}
+          <button
+            onClick={handleSaveSettings}
             disabled={saving}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-400 hover:to-pink-400 disabled:opacity-50"
           >
@@ -165,7 +170,7 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
               </div>
               <input
                 type="text"
-                value={settings.general.platform_name}
+                value={get('general', 'platform_name', defaultGeneral.platform_name)}
                 onChange={(e) => updateSetting('general', 'platform_name', e.target.value)}
                 className={`px-3 py-2 rounded-lg border ${
                   isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
@@ -178,10 +183,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 <div className="text-xs text-slate-400">Temporarily disable platform</div>
               </div>
               <button
-                onClick={() => updateSetting('general', 'maintenance_mode', !settings.general.maintenance_mode)}
+                onClick={() => updateSetting('general', 'maintenance_mode', !general.maintenance_mode)}
                 className="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
               >
-                {settings.general.maintenance_mode ? (
+                {general.maintenance_mode ? (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-green-500 transition-transform translate-x-6" />
                 ) : (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-slate-400 transition-transform translate-x-1" />
@@ -194,10 +199,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 <div className="text-xs text-slate-400">Enable detailed logging</div>
               </div>
               <button
-                onClick={() => updateSetting('general', 'debug_mode', !settings.general.debug_mode)}
+                onClick={() => updateSetting('general', 'debug_mode', !general.debug_mode)}
                 className="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
               >
-                {settings.general.debug_mode ? (
+                {general.debug_mode ? (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-green-500 transition-transform translate-x-6" />
                 ) : (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-slate-400 transition-transform translate-x-1" />
@@ -221,8 +226,8 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
               </div>
               <input
                 type="number"
-                value={settings.security.jwt_expiry_hours}
-                onChange={(e) => updateSetting('security', 'jwt_expiry_hours', parseInt(e.target.value))}
+                value={get('security', 'jwt_expiry_hours', defaultSecurity.jwt_expiry_hours)}
+                onChange={(e) => updateSetting('security', 'jwt_expiry_hours', parseInt(e.target.value) || 0)}
                 className={`w-20 px-3 py-2 rounded-lg border ${
                   isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
                 }`}
@@ -235,8 +240,8 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
               </div>
               <input
                 type="number"
-                value={settings.security.password_min_length}
-                onChange={(e) => updateSetting('security', 'password_min_length', parseInt(e.target.value))}
+                value={get('security', 'password_min_length', defaultSecurity.password_min_length)}
+                onChange={(e) => updateSetting('security', 'password_min_length', parseInt(e.target.value) || 0)}
                 className={`w-20 px-3 py-2 rounded-lg border ${
                   isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
                 }`}
@@ -248,10 +253,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 <div className="text-xs text-slate-400">Two-factor authentication</div>
               </div>
               <button
-                onClick={() => updateSetting('security', 'require_2fa', !settings.security.require_2fa)}
+                onClick={() => updateSetting('security', 'require_2fa', !security.require_2fa)}
                 className="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
               >
-                {settings.security.require_2fa ? (
+                {security.require_2fa ? (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-green-500 transition-transform translate-x-6" />
                 ) : (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-slate-400 transition-transform translate-x-1" />
@@ -274,10 +279,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 <div className="text-xs text-slate-400">Send email alerts</div>
               </div>
               <button
-                onClick={() => updateSetting('notifications', 'email_notifications', !settings.notifications.email_notifications)}
+                onClick={() => updateSetting('notifications', 'email_notifications', !notifications.email_notifications)}
                 className="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
               >
-                {settings.notifications.email_notifications ? (
+                {notifications.email_notifications ? (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-green-500 transition-transform translate-x-6" />
                 ) : (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-slate-400 transition-transform translate-x-1" />
@@ -290,10 +295,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 <div className="text-xs text-slate-400">Mobile push alerts</div>
               </div>
               <button
-                onClick={() => updateSetting('notifications', 'push_notifications', !settings.notifications.push_notifications)}
+                onClick={() => updateSetting('notifications', 'push_notifications', !notifications.push_notifications)}
                 className="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
               >
-                {settings.notifications.push_notifications ? (
+                {notifications.push_notifications ? (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-green-500 transition-transform translate-x-6" />
                 ) : (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-slate-400 transition-transform translate-x-1" />
@@ -306,10 +311,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 <div className="text-xs text-slate-400">Critical system notifications</div>
               </div>
               <button
-                onClick={() => updateSetting('notifications', 'system_alerts', !settings.notifications.system_alerts)}
+                onClick={() => updateSetting('notifications', 'system_alerts', !notifications.system_alerts)}
                 className="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
               >
-                {settings.notifications.system_alerts ? (
+                {notifications.system_alerts ? (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-green-500 transition-transform translate-x-6" />
                 ) : (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-slate-400 transition-transform translate-x-1" />
@@ -332,10 +337,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 <div className="text-xs text-slate-400">AI-powered content moderation</div>
               </div>
               <button
-                onClick={() => updateSetting('features', 'ai_moderation', !settings.features.ai_moderation)}
+                onClick={() => updateSetting('features', 'ai_moderation', !features.ai_moderation)}
                 className="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
               >
-                {settings.features.ai_moderation ? (
+                {features.ai_moderation ? (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-green-500 transition-transform translate-x-6" />
                 ) : (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-slate-400 transition-transform translate-x-1" />
@@ -348,10 +353,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 <div className="text-xs text-slate-400">Live data processing</div>
               </div>
               <button
-                onClick={() => updateSetting('features', 'real_time_analytics', !settings.features.real_time_analytics)}
+                onClick={() => updateSetting('features', 'real_time_analytics', !features.real_time_analytics)}
                 className="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
               >
-                {settings.features.real_time_analytics ? (
+                {features.real_time_analytics ? (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-green-500 transition-transform translate-x-6" />
                 ) : (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-slate-400 transition-transform translate-x-1" />
@@ -364,10 +369,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 <div className="text-xs text-slate-400">Referral program features</div>
               </div>
               <button
-                onClick={() => updateSetting('features', 'partner_referrals', !settings.features.partner_referrals)}
+                onClick={() => updateSetting('features', 'partner_referrals', !features.partner_referrals)}
                 className="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
               >
-                {settings.features.partner_referrals ? (
+                {features.partner_referrals ? (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-green-500 transition-transform translate-x-6" />
                 ) : (
                   <span className="inline-block h-4 w-4 transform rounded-full bg-slate-400 transition-transform translate-x-1" />
@@ -392,8 +397,8 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
             </div>
             <input
               type="number"
-              value={settings.database.connection_pool_size}
-              onChange={(e) => updateSetting('database', 'connection_pool_size', parseInt(e.target.value))}
+              value={get('database', 'connection_pool_size', defaultDatabase.connection_pool_size)}
+              onChange={(e) => updateSetting('database', 'connection_pool_size', parseInt(e.target.value) || 0)}
               className={`w-20 px-3 py-2 rounded-lg border ${
                 isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
               }`}
@@ -406,8 +411,8 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
             </div>
             <input
               type="number"
-              value={settings.database.query_timeout_seconds}
-              onChange={(e) => updateSetting('database', 'query_timeout_seconds', parseInt(e.target.value))}
+              value={get('database', 'query_timeout_seconds', defaultDatabase.query_timeout_seconds)}
+              onChange={(e) => updateSetting('database', 'query_timeout_seconds', parseInt(e.target.value) || 0)}
               className={`w-20 px-3 py-2 rounded-lg border ${
                 isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
               }`}
@@ -420,8 +425,8 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
             </div>
             <input
               type="number"
-              value={settings.database.backup_frequency_hours}
-              onChange={(e) => updateSetting('database', 'backup_frequency_hours', parseInt(e.target.value))}
+              value={get('database', 'backup_frequency_hours', defaultDatabase.backup_frequency_hours)}
+              onChange={(e) => updateSetting('database', 'backup_frequency_hours', parseInt(e.target.value) || 0)}
               className={`w-20 px-3 py-2 rounded-lg border ${
                 isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
               }`}

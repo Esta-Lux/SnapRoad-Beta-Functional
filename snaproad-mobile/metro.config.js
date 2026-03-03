@@ -2,9 +2,7 @@ const { getDefaultConfig } = require('@expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
-// Ensure expo packages that use import.meta are transformed by Babel
-// Without this, import.meta in node_modules causes "Cannot use 'import.meta' outside a module"
-config.transformer = config.transformer || {};
+// Transform all node_modules to handle import.meta
 config.transformer.transformIgnorePatterns = [
   'node_modules/(?!(' + [
     'react-native',
@@ -19,6 +17,7 @@ config.transformer.transformIgnorePatterns = [
     'expo-location',
     'expo-modules-core',
     'expo-status-bar',
+    'expo-dev-client',
     '@expo',
     'react-navigation',
     '@react-navigation',
@@ -26,6 +25,9 @@ config.transformer.transformIgnorePatterns = [
     'react-native-safe-area-context',
     'react-native-screens',
     '@react-native-async-storage',
+    'react-native-svg',
+    '@babel/runtime',
+    'regenerator-runtime',
   ].join('|') + ')/)',
 ];
 

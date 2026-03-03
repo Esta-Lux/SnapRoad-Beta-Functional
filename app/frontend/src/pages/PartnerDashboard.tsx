@@ -18,6 +18,7 @@ import {
 import { NotificationCenter, NotificationBell, useNotifications, notificationService } from '@/components/NotificationSystem'
 import SettingsModal from '@/components/SettingsModal'
 import HelpModal from '@/components/HelpModal'
+import { partnerApi } from '@/services/partnerApi'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
@@ -35,6 +36,9 @@ interface Offer {
   image_url?: string
   location_id?: number
   location_name?: string
+  is_boosted?: boolean
+  boost_multiplier?: number
+  boost_expires?: string
 }
 
 interface PartnerLocation {
@@ -145,11 +149,9 @@ function BoostModal({ offer, onClose, onBoost }: { offer: Offer; onClose: () => 
   }
 
   useEffect(() => {
-    // Load partner credits
     const loadCredits = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/partner/credits`)
-        const data = await res.json()
+        const data = await partnerApi.getCredits()
         if (data.success) setCredits(data.data.balance)
       } catch (e) { console.log('Could not load credits') }
     }
@@ -159,20 +161,16 @@ function BoostModal({ offer, onClose, onBoost }: { offer: Offer; onClose: () => 
   const handleBoost = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/api/partner/boosts/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ offer_id: offer.id, boost_type: selectedBoost, use_credits: useCredits })
+      const data = await partnerApi.createBoost({
+        offer_id: offer.id,
+        boost_type: selectedBoost,
+        use_credits: useCredits,
       })
-      const data = await res.json()
       if (data.success) {
-        toast.success(data.message)
         onClose()
-      } else {
-        toast.error(data.message)
       }
     } catch (e) {
-      toast.error('Failed to create boost')
+      console.error('Failed to create boost')
     }
     setLoading(false)
   }
@@ -390,11 +388,9 @@ export default function PartnerDashboard() {
 
   const loadPartnerProfile = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/partner/profile?partner_id=default_partner`)
-      const data = await res.json()
+      const data = await partnerApi.getProfile()
       if (data.success) {
         setPartnerProfile(data.data)
-        // Set default location for offer creation
         if (data.data?.locations?.length > 0) {
           setNewOfferData(prev => ({ ...prev, location_id: data.data.locations[0].id }))
         }
@@ -405,19 +401,32 @@ export default function PartnerDashboard() {
   const loadData = async () => {
     setLoading(true)
     
-    // Load analytics
     try {
-      const res = await fetch(`${API_URL}/api/analytics/dashboard?business_id=default_business`)
-      const data = await res.json()
-      if (data.success) setAnalytics(data.data)
+      const analyticsRes = await partnerApi.getAnalytics()
+      if (analyticsRes.success) setAnalytics(analyticsRes.data)
     } catch (e) { console.error(e) }
 
-    // Mock offers
-    setOffers([
-      { id: 1, title: '15% Off First Visit', description: 'Welcome offer for new customers', discount_percent: 15, gems_reward: 50, redemption_count: 234, views: 4500, status: 'active', created_at: '2025-02-01', expires_at: '2025-02-28' },
-      { id: 2, title: 'Weekend Special', description: 'Extra discount on weekends', discount_percent: 20, gems_reward: 75, redemption_count: 156, views: 3200, status: 'active', created_at: '2025-02-05', expires_at: '2025-02-15' },
-      { id: 3, title: 'Loyalty Bonus', description: 'For returning customers', discount_percent: 10, gems_reward: 30, redemption_count: 457, views: 4750, status: 'paused', created_at: '2025-01-15', expires_at: '2025-03-15' },
-    ])
+    try {
+      const offersRes = await partnerApi.getOffers()
+      if (offersRes.success && offersRes.data) {
+        setOffers(offersRes.data.map((o: any) => ({
+          id: o.id,
+          title: o.title || '',
+          description: o.description || '',
+          discount_percent: o.discount_percent || 0,
+          gems_reward: o.base_gems || 0,
+          redemption_count: o.redemption_count || 0,
+          views: o.views || 0,
+          status: o.status || 'active',
+          created_at: o.created_at || '',
+          expires_at: o.expires_at || '',
+          image_url: o.image_url,
+          location_id: o.location_id,
+          location_name: o.location_name,
+        })))
+      }
+    } catch (e) { console.error(e) }
+
     setLoading(false)
   }
 
@@ -426,15 +435,9 @@ export default function PartnerDashboard() {
     setShowOnboarding(false)
   }
 
-  // Location Management Functions
   const handleAddLocation = async (locationData: { name: string; address: string; lat: number; lng: number; is_primary: boolean }) => {
     try {
-      const res = await fetch(`${API_URL}/api/partner/locations?partner_id=default_partner`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(locationData)
-      })
-      const data = await res.json()
+      const data = await partnerApi.addLocation(locationData)
       if (data.success) {
         sendNotification('success', 'Location Added', `${locationData.name} has been added to your locations.`)
         loadPartnerProfile()
@@ -449,12 +452,7 @@ export default function PartnerDashboard() {
 
   const handleUpdateLocation = async (locationId: number, locationData: { name: string; address: string; lat: number; lng: number; is_primary: boolean }) => {
     try {
-      const res = await fetch(`${API_URL}/api/partner/locations/${locationId}?partner_id=default_partner`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(locationData)
-      })
-      const data = await res.json()
+      const data = await partnerApi.updateLocation(locationId, locationData)
       if (data.success) {
         sendNotification('success', 'Location Updated', 'Location has been updated successfully.')
         loadPartnerProfile()
@@ -468,10 +466,7 @@ export default function PartnerDashboard() {
   const handleDeleteLocation = async (locationId: number) => {
     if (!window.confirm('Are you sure you want to delete this location?')) return
     try {
-      const res = await fetch(`${API_URL}/api/partner/locations/${locationId}?partner_id=default_partner`, {
-        method: 'DELETE'
-      })
-      const data = await res.json()
+      const data = await partnerApi.deleteLocation(locationId)
       if (data.success) {
         sendNotification('success', 'Location Deleted', 'Location has been removed.')
         loadPartnerProfile()
@@ -483,10 +478,7 @@ export default function PartnerDashboard() {
 
   const handleSetPrimaryLocation = async (locationId: number) => {
     try {
-      const res = await fetch(`${API_URL}/api/partner/locations/${locationId}/set-primary?partner_id=default_partner`, {
-        method: 'POST'
-      })
-      const data = await res.json()
+      const data = await partnerApi.setPrimaryLocation(locationId)
       if (data.success) {
         sendNotification('success', 'Primary Location', 'Primary location updated.')
         loadPartnerProfile()
@@ -502,20 +494,15 @@ export default function PartnerDashboard() {
       return
     }
     try {
-      const res = await fetch(`${API_URL}/api/partner/offers?partner_id=default_partner`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: newOfferData.title,
-          description: newOfferData.description,
-          discount_percent: newOfferData.discount_percent,
-          gems_reward: newOfferData.gems_reward,
-          location_id: newOfferData.location_id,
-          expires_hours: newOfferData.expires_days * 24,
-          image_url: newOfferImage
-        })
+      const data = await partnerApi.createOffer({
+        title: newOfferData.title,
+        description: newOfferData.description,
+        discount_percent: newOfferData.discount_percent,
+        gems_reward: newOfferData.gems_reward,
+        location_id: newOfferData.location_id,
+        expires_hours: newOfferData.expires_days * 24,
+        image_url: newOfferImage,
       })
-      const data = await res.json()
       if (data.success) {
         sendNotification('success', 'Offer Created', 'Your new offer is now live!')
         setShowCreateModal(false)
@@ -535,7 +522,7 @@ export default function PartnerDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {showOnboarding && <OnboardingWalkthrough onComplete={handleOnboardingComplete} onSkip={handleOnboardingComplete} />}
-      {showBoostModal && <BoostModal offer={showBoostModal} onClose={() => setShowBoostModal(null)} onBoost={async () => { setShowBoostModal(null); await loadPartnerData() }} />}
+      {showBoostModal && <BoostModal offer={showBoostModal} onClose={() => setShowBoostModal(null)} onBoost={async () => { setShowBoostModal(null); await loadData() }} />}
       {showImageGenerator && <ImageGeneratorModal onClose={() => setShowImageGenerator(false)} onGenerate={(url) => setNewOfferImage(url)} />}
 
       {/* Background Effects */}
@@ -669,8 +656,9 @@ export default function PartnerDashboard() {
                 </div>
 
                 {/* Charts Row */}
+                {(analytics.chart_data?.length > 0 || analytics.geo_data?.length > 0) && (
                 <div className="grid grid-cols-2 gap-6">
-                  {/* Performance Chart */}
+                  {analytics.chart_data?.length > 0 && (
                   <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/5 p-6">
                     <h2 className="text-white font-semibold text-lg mb-4 flex items-center gap-2">
                       <Activity className="text-emerald-400" size={20} />Performance Trend
@@ -696,8 +684,9 @@ export default function PartnerDashboard() {
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
+                  )}
 
-                  {/* Geographic Distribution */}
+                  {analytics.geo_data?.length > 0 && (
                   <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/5 p-6">
                     <h2 className="text-white font-semibold text-lg mb-4 flex items-center gap-2">
                       <Globe className="text-cyan-400" size={20} />Top Locations
@@ -706,13 +695,13 @@ export default function PartnerDashboard() {
                       <ResponsiveContainer width="50%" height={200}>
                         <PieChart>
                           <Pie data={analytics.geo_data} dataKey="redemptions" nameKey="city" cx="50%" cy="50%" outerRadius={80}>
-                            {analytics.geo_data.map((_, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}
+                            {analytics.geo_data.map((_: any, index: number) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}
                           </Pie>
                           <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} />
                         </PieChart>
                       </ResponsiveContainer>
                       <div className="flex-1 space-y-2">
-                        {analytics.geo_data.map((geo, i) => (
+                        {analytics.geo_data.map((geo: any, i: number) => (
                           <div key={i} className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
@@ -724,7 +713,9 @@ export default function PartnerDashboard() {
                       </div>
                     </div>
                   </div>
+                  )}
                 </div>
+                )}
 
                 {/* Conversion Metrics */}
                 <div className="grid grid-cols-3 gap-6">
@@ -744,7 +735,7 @@ export default function PartnerDashboard() {
                   </div>
                   <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/5 p-6">
                     <p className="text-slate-400 text-sm mb-2">Avg Order Value</p>
-                    <p className="text-3xl font-bold text-white">${(analytics.summary.total_revenue / analytics.summary.total_redemptions).toFixed(2)}</p>
+                    <p className="text-3xl font-bold text-white">${(analytics.summary.total_redemptions > 0 ? analytics.summary.total_revenue / analytics.summary.total_redemptions : 0).toFixed(2)}</p>
                     <p className="text-emerald-400 text-sm mt-2">+$2.50 vs last week</p>
                   </div>
                 </div>
@@ -790,6 +781,20 @@ export default function PartnerDashboard() {
             {/* Analytics Tab */}
             {activeTab === 'analytics' && analytics && (
               <div className="space-y-6">
+                <div className="grid grid-cols-4 gap-4 mb-6">
+                  {[
+                    { label: 'Total Views', value: (analytics.summary?.total_views || 0).toLocaleString(), color: 'text-blue-400' },
+                    { label: 'Total Clicks', value: (analytics.summary?.total_clicks || 0).toLocaleString(), color: 'text-purple-400' },
+                    { label: 'Redemptions', value: (analytics.summary?.total_redemptions || 0).toLocaleString(), color: 'text-emerald-400' },
+                    { label: 'Revenue', value: `$${(analytics.summary?.total_revenue || 0).toLocaleString()}`, color: 'text-amber-400' },
+                  ].map((s, i) => (
+                    <div key={i} className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-2xl border border-white/5 p-5">
+                      <p className="text-slate-400 text-sm">{s.label}</p>
+                      <p className={`text-2xl font-bold ${s.color} mt-1`}>{s.value}</p>
+                    </div>
+                  ))}
+                </div>
+                {analytics.chart_data?.length > 0 && (
                 <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/5 p-6">
                   <h2 className="text-white font-semibold text-lg mb-4">Revenue Over Time</h2>
                   <ResponsiveContainer width="100%" height={300}>
@@ -802,6 +807,7 @@ export default function PartnerDashboard() {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+                )}
               </div>
             )}
 
@@ -1390,7 +1396,20 @@ const CHART_DATA = [
 ]
 
 function PartnerFinanceTab({ partnerProfile }: { partnerProfile: any }) {
-  const creditBalance = partnerProfile?.credits || 225
+  const [creditBalance, setCreditBalance] = useState(0)
+  const [loadingCredits, setLoadingCredits] = useState(true)
+
+  useEffect(() => {
+    const fetchCredits = async () => {
+      try {
+        const data = await partnerApi.getCredits()
+        if (data.success) setCreditBalance(data.data.balance || 0)
+      } catch (e) { console.error(e) }
+      setLoadingCredits(false)
+    }
+    fetchCredits()
+  }, [])
+
   return (
     <div className="space-y-6">
       {/* Balance Cards */}
@@ -1518,7 +1537,18 @@ const REFERRAL_TREND = [
 
 function PartnerReferralsTab({ partnerProfile }: { partnerProfile: any }) {
   const [copiedLink, setCopiedLink] = useState(false)
+  const [referralStats, setReferralStats] = useState({ total: 0, active: 0, total_earned: 0 })
   const referralLink = `https://snaproad.app/join?ref=${partnerProfile?.id || 'partner123'}`
+
+  useEffect(() => {
+    const fetchReferrals = async () => {
+      try {
+        const data = await partnerApi.getReferrals()
+        if (data.success && data.stats) setReferralStats(data.stats)
+      } catch (e) { console.error(e) }
+    }
+    fetchReferrals()
+  }, [partnerProfile?.id])
 
   const copyLink = () => {
     navigator.clipboard.writeText(referralLink)
@@ -1531,9 +1561,9 @@ function PartnerReferralsTab({ partnerProfile }: { partnerProfile: any }) {
       {/* KPIs */}
       <div className="grid grid-cols-3 gap-6">
         {[
-          { label: 'Total Referrals', value: '3', icon: Share2, color: '#0084FF' },
-          { label: 'Approved Partners', value: '2', icon: CheckCircle, color: '#00DFA2' },
-          { label: 'Credits Earned', value: '150', icon: Wallet, color: '#F59E0B' },
+          { label: 'Total Referrals', value: String(referralStats.total), icon: Share2, color: '#0084FF' },
+          { label: 'Approved Partners', value: String(referralStats.active), icon: CheckCircle, color: '#00DFA2' },
+          { label: 'Credits Earned', value: String(referralStats.total_earned), icon: Wallet, color: '#F59E0B' },
         ].map((kpi, i) => (
           <div key={i} className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-3">
