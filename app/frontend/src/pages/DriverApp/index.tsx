@@ -7,7 +7,7 @@ import {
   Navigation, ChevronRight, ChevronDown, ChevronUp, Settings, Camera,
   Gem, Award, X, Plus, Check, Star, Clock, Car, Fuel,
   Coffee, AlertTriangle, Volume2, Route, LogOut, Play, Pause,
-  Trash2, Timer, RefreshCw, EyeOff, School, ShoppingCart, Dumbbell,
+  Trash2, Timer, RefreshCw, EyeOff, School, ShoppingCart, Dumbbell, 
   Building, Compass, Layers, GripVertical, Minimize2, Maximize2,
   Phone, MessageCircle, Battery, ChevronLeft, Shield, Zap,
   History, BarChart3, HelpCircle, Lock, Edit2, Share2, Swords,
@@ -164,7 +164,7 @@ export default function DriverApp() {
   const [fallbackBannerDismissed, setFallbackBannerDismissed] = useState(false)
   const useAppleMap = mapKitReady && !mapKitError && !mapKitFailed
   const tripStartTimeRef = useRef<number | null>(null)
-
+  
   // Main state - 4 tabs now
   const [activeTab, setActiveTab] = useState<TabType>('map')
   const [rewardsTab, setRewardsTab] = useState<RewardsTab>('offers')
@@ -456,9 +456,9 @@ export default function DriverApp() {
       if (res.success) {
         setUserPlan(plan)
         setGemMultiplier(plan === 'premium' ? 2 : 1)
-        setUserData((prev: any) => ({
-          ...prev,
-          plan,
+        setUserData((prev: any) => ({ 
+          ...prev, 
+          plan, 
           is_premium: plan === 'premium',
           gem_multiplier: plan === 'premium' ? 2 : 1
         }))
@@ -550,7 +550,7 @@ export default function DriverApp() {
       if (res.success) {
         toast.success('Photo report posted! +500 XP')
         loadData()
-        return res
+      return res
       }
       toast.error((res.data as { message?: string })?.message ?? 'Could not post photo report')
       return { success: false, data: res.data }
@@ -568,8 +568,8 @@ export default function DriverApp() {
       if (res.success && body) {
         const inner = body.data ?? body
         toast.success((body as { message?: string }).message ?? 'Offer redeemed!')
-        setUserData((prev: any) => ({
-          ...prev,
+        setUserData((prev: any) => ({ 
+          ...prev, 
           gems: prev.gems + ((inner as { gems_earned?: number }).gems_earned ?? 0),
           xp: prev.xp + ((inner as { xp_earned?: number }).xp_earned ?? 0)
         }))
@@ -757,9 +757,9 @@ export default function DriverApp() {
       const res = await api.post('/api/navigation/start', { destination: dest || 'Unknown', origin: 'current_location' })
       api.post('/api/analytics/track', { event: 'navigation_started', properties: { destination: dest, mode } }).catch(() => {})
       if (res.success) {
-        setTimeout(() => {
+      setTimeout(() => {
           toast.success((res.data as { message?: string })?.message ?? `Navigating to ${dest || 'destination'}`)
-        }, 1500)
+      }, 1500)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not start navigation')
       }
@@ -887,8 +887,8 @@ export default function DriverApp() {
         toast.success((res.data as { message?: string })?.message ?? 'Location added!')
         const newLoc = (res.data as { data?: typeof locations[0] })?.data ?? (res.data as typeof locations[0])
         if (newLoc && typeof newLoc === 'object') setLocations([...locations, newLoc])
-        setNewLocation({ name: '', address: '', category: 'favorite' })
-        setShowAddLocation(false)
+      setNewLocation({ name: '', address: '', category: 'favorite' })
+      setShowAddLocation(false)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not add location')
       }
@@ -919,8 +919,8 @@ export default function DriverApp() {
         toast.success((res.data as { message?: string })?.message ?? 'Route saved!')
         const newRouteObj = (res.data as { data?: typeof routes[0] })?.data ?? (res.data as typeof routes[0])
         if (newRouteObj && typeof newRouteObj === 'object') setRoutes([...routes, newRouteObj])
-        setNewRoute({ name: '', origin: '', destination: '', departure_time: '08:00', days_active: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], notifications: true })
-        setShowAddRoute(false)
+      setNewRoute({ name: '', origin: '', destination: '', departure_time: '08:00', days_active: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], notifications: true })
+      setShowAddRoute(false)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not add route')
       }
@@ -943,7 +943,7 @@ export default function DriverApp() {
     try {
       const res = await api.put(`/api/routes/${id}/toggle`)
       if (res.success) {
-        setRoutes(routes.map(r => r.id === id ? { ...r, is_active: !r.is_active } : r))
+      setRoutes(routes.map(r => r.id === id ? { ...r, is_active: !r.is_active } : r))
         toast.success((res.data as { message?: string })?.message ?? 'Route updated')
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not update route')
@@ -957,7 +957,7 @@ export default function DriverApp() {
     try {
       const res = await api.put(`/api/routes/${id}/notifications`)
       if (res.success) {
-        setRoutes(routes.map(r => r.id === id ? { ...r, notifications: !r.notifications } : r))
+      setRoutes(routes.map(r => r.id === id ? { ...r, notifications: !r.notifications } : r))
         toast.success((res.data as { message?: string })?.message ?? 'Notifications updated')
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not update notifications')
@@ -973,7 +973,7 @@ export default function DriverApp() {
     try {
       const res = await api.post(`/api/offers/${id}/favorite`)
       if (res.success) {
-        toast.success(favorites.includes(id) ? 'Removed from favorites' : 'Added to favorites!')
+      toast.success(favorites.includes(id) ? 'Removed from favorites' : 'Added to favorites!')
       } else {
         setFavorites(favorites)
         toast.error((res.data as { message?: string })?.message ?? 'Could not update favorite')
@@ -990,7 +990,7 @@ export default function DriverApp() {
       const res = await api.post('/api/incidents/report', { incident_type: type, location: 'Current location' })
       if (res.success) {
         toast.success((res.data as { message?: string })?.message ?? `Reported ${type}! +${gems} gems`)
-        setShowReportModal(false)
+      setShowReportModal(false)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not report incident')
       }
@@ -1004,7 +1004,7 @@ export default function DriverApp() {
     try {
       const res = await api.post(`/api/family/${member.id}/call`)
       if (res.success) {
-        toast.success(`Calling ${member.name}...`)
+      toast.success(`Calling ${member.name}...`)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not start call')
       }
@@ -1017,7 +1017,7 @@ export default function DriverApp() {
     try {
       const res = await api.post(`/api/family/${member.id}/message`)
       if (res.success) {
-        toast.success(`Opening chat with ${member.name}`)
+      toast.success(`Opening chat with ${member.name}`)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not open chat')
       }
@@ -1033,7 +1033,7 @@ export default function DriverApp() {
         const res = await api.post(`/api/skins/${skinId}/equip`)
         if (res.success) {
           setEquippedSkin(skinId)
-          toast.success(`${skin.name} equipped!`)
+        toast.success(`${skin.name} equipped!`)
         } else {
           toast.error((res.data as { message?: string })?.message ?? 'Could not equip skin')
         }
@@ -1045,7 +1045,7 @@ export default function DriverApp() {
         try {
           const res = await api.post(`/api/skins/${skinId}/purchase`)
           if (res.success) {
-            toast.success(`Purchased ${skin.name} for ${skin.price} gems!`)
+          toast.success(`Purchased ${skin.name} for ${skin.price} gems!`)
             setEquippedSkin(skinId)
           } else {
             toast.error((res.data as { message?: string })?.message ?? 'Could not purchase skin')
@@ -1066,7 +1066,7 @@ export default function DriverApp() {
     try {
       const res = await api.put(`/api/settings/voice?muted=${newMuted}`)
       if (res.success) {
-        toast.success(newMuted ? 'Voice muted' : 'Voice unmuted')
+      toast.success(newMuted ? 'Voice muted' : 'Voice unmuted')
       } else {
         setIsMuted(!newMuted)
         toast.error((res.data as { message?: string })?.message ?? 'Could not update voice setting')
@@ -1284,21 +1284,21 @@ export default function DriverApp() {
       )}
       {!useAppleMap && (
         <>
-          <InteractiveMap
+      <InteractiveMap
             userLocation={vehicle?.coordinate ?? userLocation}
-            offers={offers}
-            isNavigating={isNavigating}
-            onOfferClick={(offer) => {
-              setSelectedOfferForRedemption(offer)
-              setShowRedemptionPopup(true)
-            }}
-            carColor={userCar.color.includes('blue') ? '#3b82f6' :
-                      userCar.color.includes('red') ? '#ef4444' :
-                      userCar.color.includes('green') ? '#22c55e' :
-                      userCar.color.includes('white') ? '#f8fafc' :
-                      userCar.color.includes('gold') ? '#fbbf24' : '#1e293b'}
-            userCar={userCar}
-            onOrionClick={() => setShowOrionVoice(true)}
+        offers={offers}
+        isNavigating={isNavigating}
+        onOfferClick={(offer) => {
+          setSelectedOfferForRedemption(offer)
+          setShowRedemptionPopup(true)
+        }}
+        carColor={userCar.color.includes('blue') ? '#3b82f6' : 
+                  userCar.color.includes('red') ? '#ef4444' : 
+                  userCar.color.includes('green') ? '#22c55e' :
+                  userCar.color.includes('white') ? '#f8fafc' :
+                  userCar.color.includes('gold') ? '#fbbf24' : '#1e293b'}
+        userCar={userCar}
+        onOrionClick={() => setShowOrionVoice(true)}
             onRecenter={() => { recenter(); toast.success('Centered on your location') }}
             camera={camera}
             vehicleHeading={vehicle?.heading ?? carHeading}
@@ -1772,7 +1772,7 @@ export default function DriverApp() {
             endLat: r.endLat ?? (r.lat ?? 0) + 0.002,
             endLng: r.endLng ?? (r.lng ?? 0) + 0.002,
           }))}
-          onSelectRoad={setSelectedRoadStatus}
+        onSelectRoad={setSelectedRoadStatus} 
         />
       )}
 
@@ -1785,10 +1785,10 @@ export default function DriverApp() {
       {/* Note: Offer gems and user marker are rendered in InteractiveMap component */}
 
       {/* Camera report FAB - bottom left above speed indicator */}
-      <button onClick={() => setShowQuickPhotoReport(true)} data-testid="report-btn"
+        <button onClick={() => setShowQuickPhotoReport(true)} data-testid="report-btn"
         className="absolute left-3 bottom-44 z-20 w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg border border-white/10 active:scale-95 transition-transform">
-        <Camera className="text-white" size={18} />
-      </button>
+          <Camera className="text-white" size={18} />
+        </button>
 
       {/* Speed Display (when navigating or moving) */}
       {(isNavigating || (vehicle && vehicle.velocity > 0.5)) && (
