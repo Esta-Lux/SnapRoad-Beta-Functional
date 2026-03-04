@@ -51,20 +51,32 @@ def signup(request: SignupRequest):
 
 @router.post("/login")
 def login(request: LoginRequest):
+    sb_error: str | None = None
+
     # 1. Try Supabase auth
     try:
-        sb_user = sb_login_user(request.email, request.password)
+        sb_user, sb_error = sb_login_user(request.email, request.password)
         if sb_user:
+            # Double-check the role by fetching profile again to avoid RLS issues
+            profile = sb_get_user_by_email(request.email)
+            if profile:
+                sb_user = profile
+                logger.info(f"Supabase login: {request.email}, role={profile.get('role')}")
             token = _build_token(sb_user)
-            logger.info(f"Supabase login: {request.email}")
             return {"success": True, "data": {"user": _clean(sb_user), "token": token}}
+        if sb_error:
+            logger.warning(f"Supabase login failed for {request.email}: {sb_error}")
     except Exception as e:
         logger.warning(f"Supabase login error: {e}")
+        sb_error = str(e)
 
     # 2. Mock fallback
     cred = user_credentials.get(request.email)
     if not cred or cred["password"] != request.password:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        detail = "Invalid email or password"
+        if sb_error:
+            logger.info(f"Both Supabase and mock failed for {request.email}. Supabase reason: {sb_error}")
+        raise HTTPException(status_code=401, detail=detail)
 
     uid = cred["user_id"]
     user = users_db.get(uid, {})

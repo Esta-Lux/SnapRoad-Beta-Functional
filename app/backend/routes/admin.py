@@ -2,10 +2,11 @@
 SnapRoad Admin API Routes
 All endpoints use the Supabase DAO layer (supabase_service.py).
 """
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
 from typing import Optional
 from datetime import datetime, timedelta
 import logging
+from middleware.auth import require_admin
 
 from models.schemas import (
     AdminOfferCreate, PricingUpdate, OfferImport, BulkOfferUpload,
@@ -37,7 +38,7 @@ from services.supabase_service import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["Admin"])
+router = APIRouter(prefix="/api", tags=["Admin"], dependencies=[Depends(require_admin)])
 
 BOOST_PRICING_ADMIN = {
     "base_daily_cost": 25, "additional_day_cost": 20,

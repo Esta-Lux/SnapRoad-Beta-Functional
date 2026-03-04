@@ -8,6 +8,7 @@ from services.mock_data import (
     generated_images_db, driver_location_history,
 )
 from models.schemas import ImageGenerateRequest, LocationVisit
+from services.supabase_service import _sb
 import uuid
 
 router = APIRouter(prefix="/api", tags=["Offers"])
@@ -15,7 +16,65 @@ router = APIRouter(prefix="/api", tags=["Offers"])
 
 @router.get("/offers")
 def get_offers():
-    return {"success": True, "data": offers_db}
+    """Get all active offers from database (both admin and partner offers)"""
+    try:
+        sb = _sb()
+        # Fetch all active offers from the database
+        result = sb.table("offers").select("*").eq("status", "active").execute()
+        
+        if result.data:
+            # Format offers for driver app
+            offers = []
+            for offer in result.data:
+                offers.append({
+                    "id": offer.get("id"),
+                    "business_name": offer.get("business_name", ""),
+                    "business_type": offer.get("business_type", "retail"),
+                    "description": offer.get("description", ""),
+                    "discount_percent": offer.get("discount_percent", 0),
+                    "gems_reward": offer.get("base_gems", 0),
+                    "base_gems": offer.get("base_gems", 0),
+                    "address": offer.get("address"),
+                    "lat": offer.get("lat", 0),
+                    "lng": offer.get("lng", 0),
+                    "offer_url": offer.get("offer_url"),
+                    "expires_at": offer.get("expires_at", ""),
+                    "is_admin_offer": offer.get("is_admin_offer", False),
+                    "created_by": offer.get("created_by", ""),
+                    "redemption_count": offer.get("redemption_count", 0),
+                    "views": offer.get("views", 0),
+                    "redeemed": False,  # TODO: Track per-user redemptions
+                })
+            
+            return {
+                "success": True,
+                "data": offers,
+                "discount_info": {
+                    "free_discount": OFFER_CONFIG["free_discount_percent"],
+                    "premium_discount": OFFER_CONFIG["premium_discount_percent"]
+                },
+                "total_savings": sum(o.get("discount_percent", 0) for o in offers)
+            }
+        else:
+            # Fallback to mock data if no database offers
+            return {
+                "success": True,
+                "data": offers_db,
+                "discount_info": {
+                    "free_discount": OFFER_CONFIG["free_discount_percent"],
+                    "premium_discount": OFFER_CONFIG["premium_discount_percent"]
+                }
+            }
+    except Exception as e:
+        # Fallback to mock data on error
+        return {
+            "success": True,
+            "data": offers_db,
+            "discount_info": {
+                "free_discount": OFFER_CONFIG["free_discount_percent"],
+                "premium_discount": OFFER_CONFIG["premium_discount_percent"]
+            }
+        }
 
 
 @router.post("/offers")

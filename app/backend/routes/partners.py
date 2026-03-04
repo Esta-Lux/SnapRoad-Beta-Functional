@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+import logging
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from typing import Optional
 from datetime import datetime, timedelta
 from models.schemas import (
     PartnerLocation, PartnerPlanUpdate, PartnerOfferCreate,
-    PartnerLoginRequest, TeamInviteRequest, ReferralRequest,
+    PartnerLoginRequest, PartnerRegisterRequest,
+    TeamInviteRequest, ReferralRequest,
     CreditUseRequest, QRRedemptionRequest, BoostRequest, BoostCreditsRequest,
 )
 from services.supabase_service import (
@@ -15,9 +17,12 @@ from services.supabase_service import (
     sb_get_boosts, sb_create_boost, sb_cancel_boost,
     sb_get_redemptions_by_partner,
     sb_get_partner_referrals, sb_create_partner_referral,
+    sb_login_user, sb_create_user, sb_get_user_by_email,
 )
 from services.mock_data import PARTNER_PLANS, BOOST_PRICING
+from middleware.auth import create_access_token, require_partner
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Partners"])
 
 
@@ -225,6 +230,40 @@ def get_partner_offers(partner_id: str = "default_partner"):
     return {"success": True, "data": offers, "count": len(offers)}
 
 
+@router.put("/partner/offers/{offer_id}")
+def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, partner_id: str = "default_partner"):
+    partner = sb_get_partner(partner_id)
+    if not partner:
+        return {"success": False, "message": "Partner not found"}
+    
+    locations = sb_get_partner_locations(partner_id)
+    location = next((l for l in locations if l["id"] == str(offer.location_id)), None)
+    if not location:
+        return {"success": False, "message": "Location not found"}
+    
+    updates = {
+        "title": offer.title,
+        "description": offer.description,
+        "discount_percent": offer.discount_percent,
+        "base_gems": offer.gems_reward,
+        "image_url": offer.image_url,
+        "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
+    }
+    sb_update_offer(offer_id, updates)
+    return {"success": True, "message": "Offer updated successfully"}
+
+
+@router.delete("/partner/offers/{offer_id}")
+def delete_partner_offer(offer_id: str, partner_id: str = "default_partner"):
+    from services.supabase_service import _sb
+    try:
+        _sb().table("offers").delete().eq("id", offer_id).eq("partner_id", partner_id).execute()
+        return {"success": True, "message": "Offer deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting offer: {e}")
+        return {"success": False, "message": "Failed to delete offer"}
+
+
 # ==================== BOOST SYSTEM ====================
 @router.get("/partner/boosts/pricing")
 def get_boost_pricing():
@@ -319,11 +358,48 @@ def add_partner_credits(credits_req: BoostCreditsRequest, partner_id: str = "def
 # ==================== PARTNER V2 ENDPOINTS ====================
 @router.post("/partner/v2/login")
 async def partner_login_v2(request: PartnerLoginRequest):
-    from services.partner_service import partner_service
-    result = partner_service.authenticate(request.email, request.password)
-    if not result:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    return result
+    user, _login_err = sb_login_user(request.email, request.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Get all partners and find matching partner record
+    partners = sb_get_partners(limit=200)
+    match = next((p for p in partners if p.get("email") == request.email), None)
+    
+    # Check if user has partner role or if partner record exists
+    role = user.get("role", "driver")
+    if role not in ("partner", "admin") and not match:
+        raise HTTPException(status_code=403, detail="No partner account linked to this email")
+    
+    # Use partner record ID if exists, otherwise use user ID
+    partner_id = match["id"] if match else str(user.get("id", ""))
+    business_name = match.get("business_name", "") if match else ""
+    
+    token = create_access_token({"sub": str(user["id"]), "email": request.email, "role": "partner", "partner_id": partner_id})
+    return {"success": True, "token": token, "partner_id": partner_id, "business_name": business_name}
+
+
+@router.post("/partner/v2/register")
+async def partner_register_v2(request: PartnerRegisterRequest):
+    import hashlib
+    existing = sb_get_user_by_email(request.email)
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    full_name = f"{request.first_name} {request.last_name}"
+    user = sb_create_user(request.email, request.password, full_name, "partner")
+    partner_data = {
+        "id": str(user["id"]),
+        "business_name": request.business_name,
+        "email": request.email,
+        "password_hash": hashlib.sha256(request.password.encode()).hexdigest(),
+        "plan": "starter",
+        "is_founders": True,
+        "status": "active",
+        "is_approved": True,
+    }
+    sb_create_partner(partner_data)
+    token = create_access_token({"sub": str(user["id"]), "email": request.email, "role": "partner", "partner_id": str(user["id"])})
+    return {"success": True, "token": token, "partner_id": str(user["id"]), "business_name": request.business_name}
 
 
 @router.get("/partner/v2/profile/{partner_id}")
@@ -463,3 +539,174 @@ async def get_partner_analytics(partner_id: str):
             "conversion_rate": round((total_redemptions / max(total_views, 1)) * 100, 1),
         },
     }
+
+
+@router.get("/partner/v2/credits/history/{partner_id}")
+async def get_credit_history(partner_id: str):
+    """Credit transaction history from boosts, referrals, and bonuses."""
+    boosts = sb_get_boosts(partner_id)
+    referrals = sb_get_partner_referrals(partner_id)
+    history = []
+    for b in boosts:
+        history.append({
+            "id": b.get("id"),
+            "type": "debit",
+            "description": f"Boost: {b.get('boost_type', 'standard')} on offer",
+            "amount": -float(b.get("cost", 0) or 0),
+            "date": b.get("created_at", ""),
+        })
+    for r in referrals:
+        earned = float(r.get("credits_awarded", 0) or 0)
+        if earned > 0:
+            history.append({
+                "id": r.get("id"),
+                "type": "credit",
+                "description": "Partner Referral Reward",
+                "amount": earned,
+                "date": r.get("created_at", ""),
+            })
+    history.sort(key=lambda x: x.get("date", ""), reverse=True)
+
+    total_earned = sum(h["amount"] for h in history if h["amount"] > 0)
+    total_spent = abs(sum(h["amount"] for h in history if h["amount"] < 0))
+    return {
+        "success": True,
+        "data": {
+            "history": history[:20],
+            "total_earned": total_earned,
+            "total_spent": total_spent,
+        },
+    }
+
+
+@router.get("/partner/v2/referrals/leaderboard")
+async def get_referral_leaderboard():
+    """Top referrers across all partners."""
+    partners = sb_get_partners(limit=100)
+    leaderboard = []
+    for p in partners:
+        refs = sb_get_partner_referrals(p["id"])
+        total_credits = sum(float(r.get("credits_awarded", 0) or 0) for r in refs)
+        if refs:
+            leaderboard.append({
+                "name": p.get("business_name", "Unknown"),
+                "referrals": len(refs),
+                "credits": total_credits,
+                "partner_id": p["id"],
+            })
+    leaderboard.sort(key=lambda x: x["referrals"], reverse=True)
+    for i, entry in enumerate(leaderboard[:10]):
+        entry["rank"] = i + 1
+        badge = None
+        if i == 0: badge = "gold"
+        elif i == 1: badge = "silver"
+        elif i == 2: badge = "bronze"
+        entry["badge"] = badge
+    return {"success": True, "data": leaderboard[:10]}
+
+
+# ==================== STRIPE PAYMENT ENDPOINTS ====================
+@router.post("/partner/v2/subscribe")
+async def stripe_subscribe(partner_id: str = "default_partner", plan: str = "starter"):
+    """Create a Stripe Checkout session for plan subscription."""
+    from config import STRIPE_SECRET_KEY
+    if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
+        return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        plan_info = PARTNER_PLANS.get(plan)
+        if not plan_info:
+            raise HTTPException(status_code=400, detail="Invalid plan")
+        price = plan_info.get("price_founders") or plan_info.get("price_public")
+        if not price:
+            return {"success": False, "message": "Enterprise plans require contacting sales"}
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="subscription",
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": int(price * 100),
+                    "recurring": {"interval": "month"},
+                    "product_data": {"name": f"SnapRoad {plan_info['name']} Plan"},
+                },
+                "quantity": 1,
+            }],
+            metadata={"partner_id": partner_id, "plan": plan},
+            success_url="http://localhost:5173/portal/partner?payment=success",
+            cancel_url="http://localhost:5173/portal/partner?payment=cancelled",
+        )
+        return {"success": True, "checkout_url": session.url, "session_id": session.id}
+    except ImportError:
+        return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
+    except Exception as e:
+        logger.error(f"Stripe subscribe error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/partner/v2/boosts/purchase")
+async def stripe_boost_purchase(partner_id: str = "default_partner", offer_id: str = "", boost_type: str = "basic"):
+    """Create a Stripe payment intent for a boost purchase."""
+    from config import STRIPE_SECRET_KEY
+    if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
+        return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        boost_info = BOOST_PRICING.get(boost_type)
+        if not boost_info:
+            raise HTTPException(status_code=400, detail="Invalid boost type")
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="payment",
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": int(boost_info["price"] * 100),
+                    "product_data": {"name": f"SnapRoad {boost_info['name']}"},
+                },
+                "quantity": 1,
+            }],
+            metadata={"partner_id": partner_id, "offer_id": offer_id, "boost_type": boost_type},
+            success_url="http://localhost:5173/portal/partner?boost=success",
+            cancel_url="http://localhost:5173/portal/partner?boost=cancelled",
+        )
+        return {"success": True, "checkout_url": session.url, "session_id": session.id}
+    except ImportError:
+        return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
+    except Exception as e:
+        logger.error(f"Stripe boost error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/partner/v2/credits/purchase")
+async def stripe_credits_purchase(partner_id: str = "default_partner", amount: float = 50.0):
+    """Create a Stripe Checkout session to buy credits."""
+    from config import STRIPE_SECRET_KEY
+    if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
+        return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="payment",
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": int(amount * 100),
+                    "product_data": {"name": f"SnapRoad Partner Credits (${amount:.2f})"},
+                },
+                "quantity": 1,
+            }],
+            metadata={"partner_id": partner_id, "credits_amount": str(amount)},
+            success_url="http://localhost:5173/portal/partner?credits=success",
+            cancel_url="http://localhost:5173/portal/partner?credits=cancelled",
+        )
+        return {"success": True, "checkout_url": session.url, "session_id": session.id}
+    except ImportError:
+        return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
+    except Exception as e:
+        logger.error(f"Stripe credits error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

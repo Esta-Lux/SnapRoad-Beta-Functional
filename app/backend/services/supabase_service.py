@@ -43,14 +43,15 @@ def _safe_count(table: str, filters: Optional[dict] = None) -> int:
 
 def sb_get_user_by_email(email: str) -> Optional[dict]:
     try:
-        result = _sb().table("profiles").select("*").eq("email", email).maybe_single().execute()
-        return result.data
+        result = _sb().table("profiles").select("*").eq("email", email).limit(1).execute()
+        return result.data[0] if result.data else None
     except Exception as e:
         logger.warning(f"sb_get_user_by_email error: {e}")
         return None
 
 
 def sb_create_user(email: str, password: str, name: str, role: str = "driver") -> dict:
+    import hashlib
     sb = _sb()
     auth_resp = sb.auth.admin.create_user({
         "email": email,
@@ -62,7 +63,8 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
     profile = {
         "id": uid,
         "email": email,
-        "full_name": name,
+        "name": name,
+        "password_hash": hashlib.sha256(password.encode()).hexdigest(),
         "role": role,
         "status": "active",
         "xp": 0,
@@ -73,18 +75,48 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
     return {**profile, "id": str(uid)}
 
 
-def sb_login_user(email: str, password: str) -> Optional[dict]:
+def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[str]]:
+    """Returns (profile_dict, None) on success or (None, error_message) on failure."""
     try:
+        # Use main client for data queries (service role, no auth context)
         sb = _sb()
-        auth_resp = sb.auth.sign_in_with_password({"email": email, "password": password})
-        uid = auth_resp.user.id
-        profile = sb.table("profiles").select("*").eq("id", str(uid)).maybe_single().execute()
-        if profile.data:
-            return profile.data
-        return {"id": str(uid), "email": email, "role": "driver"}
+        
+        # Fetch profile using service role client (bypasses RLS)
+        profile_data = None
+        try:
+            profile_result = sb.table("profiles").select("*").eq("email", email).limit(1).execute()
+            if profile_result and profile_result.data and len(profile_result.data) > 0:
+                profile_data = profile_result.data[0]
+                logger.info(f"Profile fetch SUCCESS for {email}, role={profile_data.get('role')}")
+            else:
+                logger.warning(f"Profile fetch returned no data for {email}")
+        except Exception as profile_err:
+            logger.warning(f"Profile fetch error for {email}: {profile_err}")
+        
+        # Use a SEPARATE client for authentication to avoid polluting the main client
+        from supabase import create_client
+        from config import SUPABASE_URL, SUPABASE_SECRET_KEY
+        auth_client = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
+        
+        # Authenticate with the separate client
+        auth_resp = auth_client.auth.sign_in_with_password({"email": email, "password": password})
+        if not auth_resp or not auth_resp.user:
+            logger.warning(f"Auth failed for {email} - no user returned")
+            return None, "Authentication failed - no user returned"
+        uid = str(auth_resp.user.id)
+        logger.info(f"Auth SUCCESS for {email}, uid={uid}")
+        
+        # Return the profile we fetched earlier (from service role client)
+        if profile_data:
+            logger.info(f"Returning fetched profile for {email}")
+            return profile_data, None
+        
+        # Fallback: return minimal user data from auth
+        logger.warning(f"No profile_data for {email}, returning fallback with role=driver")
+        return {"id": uid, "email": email, "role": "driver"}, None
     except Exception as e:
-        logger.warning(f"sb_login_user error: {e}")
-        return None
+        logger.warning(f"sb_login_user error for {email}: {e}")
+        return None, str(e)
 
 
 # ─────────────────────────────────────────────

@@ -48,4 +48,28 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     user_id = payload.get("sub")
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid token")
-    return {"user_id": user_id, "email": payload.get("email"), "role": payload.get("role", "user")}
+    return {
+        "user_id": user_id,
+        "email": payload.get("email"),
+        "role": payload.get("role", "user"),
+        "partner_id": payload.get("partner_id"),
+    }
+
+
+async def require_admin(user: dict = Depends(get_current_user)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    role = user.get("role")
+    if role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+async def require_partner(user: dict = Depends(get_current_user)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if user.get("role") != "partner":
+        raise HTTPException(status_code=403, detail="Partner access required")
+    if not user.get("partner_id"):
+        raise HTTPException(status_code=403, detail="No partner_id in token")
+    return user

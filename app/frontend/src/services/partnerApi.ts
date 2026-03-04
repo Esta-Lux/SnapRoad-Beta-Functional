@@ -45,6 +45,53 @@ class PartnerApiService {
     }
   }
 
+  // Auth
+  async login(email: string, password: string): Promise<any> {
+    const result = await this.request('/api/partner/v2/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    })
+    if (result.success && result.token) {
+      this.setToken(result.token)
+      this.setPartnerId(result.partner_id)
+      localStorage.setItem('snaproad_partner_id', result.partner_id)
+    }
+    return result
+  }
+
+  async register(data: { first_name: string; last_name: string; business_name: string; business_address: string; email: string; password: string; referral_code?: string }): Promise<any> {
+    const result = await this.request('/api/partner/v2/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    if (result.success && result.token) {
+      this.setToken(result.token)
+      this.setPartnerId(result.partner_id)
+      localStorage.setItem('snaproad_partner_id', result.partner_id)
+    }
+    return result
+  }
+
+  logout() {
+    this.setToken(null)
+    this.partnerId = 'default_partner'
+    localStorage.removeItem('snaproad_partner_id')
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.getToken()
+  }
+
+  restoreSession(): boolean {
+    const token = this.getToken()
+    const pid = localStorage.getItem('snaproad_partner_id')
+    if (token && pid) {
+      this.partnerId = pid
+      return true
+    }
+    return false
+  }
+
   // Profile
   async getProfile(): Promise<any> {
     return this.request(`/api/partner/profile?partner_id=${this.partnerId}`)
@@ -112,6 +159,19 @@ class PartnerApiService {
     })
   }
 
+  async updateOffer(offerId: string, data: any): Promise<any> {
+    return this.request(`/api/partner/offers/${offerId}?partner_id=${this.partnerId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteOffer(offerId: string): Promise<any> {
+    return this.request(`/api/partner/offers/${offerId}?partner_id=${this.partnerId}`, {
+      method: 'DELETE',
+    })
+  }
+
   // Boosts
   async getBoostPricing(): Promise<any> {
     return this.request('/api/partner/boosts/pricing')
@@ -144,6 +204,27 @@ class PartnerApiService {
       method: 'POST',
       body: JSON.stringify({ amount }),
     })
+  }
+
+  async getCreditHistory(): Promise<any> {
+    return this.request(`/api/partner/v2/credits/history/${this.partnerId}`)
+  }
+
+  async getReferralLeaderboard(): Promise<any> {
+    return this.request('/api/partner/v2/referrals/leaderboard')
+  }
+
+  // Stripe payments
+  async subscribeToplan(plan: string): Promise<any> {
+    return this.request(`/api/partner/v2/subscribe?partner_id=${this.partnerId}&plan=${plan}`, { method: 'POST' })
+  }
+
+  async purchaseBoost(offerId: string, boostType: string): Promise<any> {
+    return this.request(`/api/partner/v2/boosts/purchase?partner_id=${this.partnerId}&offer_id=${offerId}&boost_type=${boostType}`, { method: 'POST' })
+  }
+
+  async purchaseCredits(amount: number): Promise<any> {
+    return this.request(`/api/partner/v2/credits/purchase?partner_id=${this.partnerId}&amount=${amount}`, { method: 'POST' })
   }
 
   // Analytics (v2 partner-specific)

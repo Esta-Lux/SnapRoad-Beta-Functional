@@ -1094,7 +1094,7 @@ export default function DriverApp() {
         </div>
 
         <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-slate-800">
-          <button onClick={() => { logout(); navigate('/login') }} data-testid="logout-btn"
+          <button onClick={() => { logout(); navigate('/driver/auth') }} data-testid="logout-btn"
             className="w-full flex items-center justify-center gap-2 py-2 text-red-400 hover:bg-red-500/10 rounded-xl">
             <LogOut size={16} /> Log Out
           </button>

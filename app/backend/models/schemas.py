@@ -150,13 +150,22 @@ class PartnerOfferCreate(BaseModel):
     description: str
     discount_percent: int
     gems_reward: int
-    location_id: int
+    location_id: str
     expires_hours: int = 168
     image_url: Optional[str] = None
 
 class PartnerLoginRequest(BaseModel):
     email: str
     password: str
+
+class PartnerRegisterRequest(BaseModel):
+    first_name: str
+    last_name: str
+    business_name: str
+    business_address: str
+    email: str
+    password: str
+    referral_code: Optional[str] = None
 
 class TeamInviteRequest(BaseModel):
     email: Optional[str] = None

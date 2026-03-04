@@ -1,7 +1,7 @@
 // SnapRoad Admin Portal - Ryan's Emergent Improvements + Our Admin Components
 // Professional architecture with modular, clean, extensible code
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, AlertTriangle, Eye, Gift, Building2, BarChart3,
@@ -9,7 +9,8 @@ import {
   Moon, Sun, Crown
 } from 'lucide-react'
 
-// Import our admin components
+import { adminApi } from '@/services/adminApi'
+import { useAuthStore } from '@/store/authStore'
 import DashboardOverview from '@/components/admin/DashboardOverview'
 import UsersTab from '@/components/admin/UsersTab'
 import IncidentsTab from '@/components/admin/IncidentsTab'
@@ -27,29 +28,51 @@ import AuditLogTab from '@/components/admin/AuditLogTab'
 // Hooks
 import { useWebSocket } from '@/hooks/useWebSocket'
 
-// Navigation items based on Figma design
-const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'users', label: 'Users & Families', icon: Users, badge: '12,450' },
-  { id: 'incidents', label: 'Incidents', icon: AlertTriangle },
-  { id: 'moderation', label: 'AI Moderation Queue', icon: Eye, badge: '9' },
-  { id: 'rewards', label: 'Rewards & Vouchers', icon: Gift },
-  { id: 'partners', label: 'Partners & Campaigns', icon: Building2, badge: '156' },
-  { id: 'referrals', label: 'Partner Referral Analytics', icon: BarChart3 },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'analytics', label: 'Analytics', icon: TrendingUp },
-  { id: 'finance', label: 'Finance', icon: DollarSign },
-  { id: 'legal', label: 'Legal & Compliance', icon: Scale },
-  { id: 'settings', label: 'Settings', icon: Settings },
-  { id: 'audit', label: 'Audit Log', icon: FileText },
+const NAV_BASE = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, badgeKey: '' },
+  { id: 'users', label: 'Users & Families', icon: Users, badgeKey: 'total_users' },
+  { id: 'incidents', label: 'Incidents', icon: AlertTriangle, badgeKey: '' },
+  { id: 'moderation', label: 'AI Moderation Queue', icon: Eye, badgeKey: '' },
+  { id: 'rewards', label: 'Rewards & Vouchers', icon: Gift, badgeKey: '' },
+  { id: 'partners', label: 'Partners & Campaigns', icon: Building2, badgeKey: 'total_partners' },
+  { id: 'referrals', label: 'Partner Referral Analytics', icon: BarChart3, badgeKey: '' },
+  { id: 'notifications', label: 'Notifications', icon: Bell, badgeKey: '' },
+  { id: 'analytics', label: 'Analytics', icon: TrendingUp, badgeKey: '' },
+  { id: 'finance', label: 'Finance', icon: DollarSign, badgeKey: '' },
+  { id: 'legal', label: 'Legal & Compliance', icon: Scale, badgeKey: '' },
+  { id: 'settings', label: 'Settings', icon: Settings, badgeKey: '' },
+  { id: 'audit', label: 'Audit Log', icon: FileText, badgeKey: '' },
 ]
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
+  const { logout } = useAuthStore()
   const [activeTab, setActiveTab] = useState('dashboard')
   const [darkMode, setDarkMode] = useState(true)
+  const [navBadges, setNavBadges] = useState<Record<string, string>>({})
   const { status: wsStatus } = useWebSocket()
   const isConnected = wsStatus === 'live'
+
+  useEffect(() => {
+    const loadBadges = async () => {
+      try {
+        const res = await adminApi.getStats()
+        if (res.success && res.data) {
+          const s = res.data
+          setNavBadges({
+            total_users: (s.total_users || 0).toLocaleString(),
+            total_partners: (s.total_partners || 0).toLocaleString(),
+          })
+        }
+      } catch { /* silent */ }
+    }
+    loadBadges()
+  }, [])
+
+  const NAV_ITEMS = NAV_BASE.map(item => ({
+    ...item,
+    badge: item.badgeKey ? navBadges[item.badgeKey] || '' : '',
+  }))
 
   const toggleDarkMode = () => {
     setDarkMode(!darkMode)
@@ -175,7 +198,7 @@ export default function AdminDashboard() {
               </button>
             </div>
             <button
-              onClick={() => navigate('/')}
+              onClick={() => { logout(); adminApi.setToken(null); navigate('/auth?tab=admin'); }}
               className={`w-full mt-3 flex items-center gap-2 px-4 py-3 rounded-xl transition-colors duration-200 ${
                 darkMode 
                   ? 'text-red-400 hover:bg-red-500/10' 

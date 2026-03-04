@@ -1,19 +1,10 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { 
-  MapPin, Shield, Gem, Trophy, Zap, ArrowRight, X, Eye, EyeOff, Star, Car
+  Shield, Gem, Trophy, Zap, ArrowRight, X, Eye, EyeOff, Star
 } from 'lucide-react'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
-
-// Reset user state for fresh experience
-const resetUserSession = async () => {
-  try {
-    await fetch(`${API_URL}/api/auth/login?role=driver`, { method: 'POST' })
-  } catch (e) {
-    console.log('Session reset skipped')
-  }
-}
+import { useAuth } from '../contexts/AuthContext'
+import snaproadLogo from '../assets/images/f1ce41940925932061ca7e2e293db7cdf37e4b87.png'
 
 // Auth Modal - Driver Only (Partners/Admin use direct portal links)
 function AuthModal({ isOpen, onClose, mode, onModeChange }: {
@@ -23,6 +14,7 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
   onModeChange: (mode: 'signin' | 'signup') => void
 }) {
   const navigate = useNavigate()
+  const { login, signup } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -32,35 +24,22 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    
     try {
-      // Actually call the signup/login API
-      const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login'
-      const body = mode === 'signup' 
-        ? { name, email, password }
-        : { email, password }
-      
-      const response = await fetch(`${API_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      })
-      
-      const data = await response.json()
-      
-      if (data.success) {
-        // Navigate to driver app preview
+      const success = mode === 'signup'
+        ? await signup(name, email, password)
+        : await login(email, password)
+      if (success) {
         onClose()
         navigate('/driver')
       } else {
-        alert(data.message || data.detail || 'Authentication failed')
+        alert(mode === 'signup' ? 'Signup failed' : 'Invalid credentials')
       }
     } catch (error) {
       console.error('Auth error:', error)
       alert('Connection error. Please try again.')
+    } finally {
+      setLoading(false)
     }
-    
-    setLoading(false)
   }
 
   if (!isOpen) return null
@@ -88,9 +67,7 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
           <div className="p-8">
             {/* Header */}
             <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/25">
-                <Car className="text-white" size={28} />
-              </div>
+              <img src={snaproadLogo} alt="SnapRoad" className="h-14 w-auto mx-auto mb-4" />
               <h2 className="text-2xl font-bold text-white mb-1">
                 {mode === 'signin' ? 'Welcome back, Driver' : 'Start Your Journey'}
               </h2>
@@ -232,7 +209,7 @@ export default function WelcomePage() {
         <header className="p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img 
-              src="/assets/logo.png" 
+              src={snaproadLogo} 
               alt="SnapRoad" 
               className="h-10 w-auto"
             />
@@ -329,10 +306,17 @@ export default function WelcomePage() {
                 </Link>
                 <span className="text-slate-700">|</span>
                 <Link 
-                  to="/portal/partner" 
+                  to="/auth?tab=partner" 
                   className="text-slate-400 hover:text-emerald-400 transition-colors"
                 >
-                  Business Portal
+                  Partner Login
+                </Link>
+                <span className="text-slate-700">|</span>
+                <Link 
+                  to="/auth?tab=admin" 
+                  className="text-slate-400 hover:text-slate-300 transition-colors"
+                >
+                  Admin Login
                 </Link>
                 <span className="text-slate-700">|</span>
                 <a 
