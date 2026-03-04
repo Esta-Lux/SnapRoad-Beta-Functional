@@ -49,7 +49,7 @@ export default function FriendsHub({ isOpen, onClose, userId, friendsCount }: Fr
     }
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/api/friends/search?user_id=${searchId}`)
+      const res = await fetch(`${API_URL}/api/friends/search?q=${encodeURIComponent(searchId)}`)
       const data = await res.json()
       if (data.success) {
         setSearchResult(data.data)

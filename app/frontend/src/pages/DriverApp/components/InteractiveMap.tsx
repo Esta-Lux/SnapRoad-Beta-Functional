@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Gem, Navigation, Locate, Mic } from 'lucide-react'
+import { Gem, Navigation, Locate, Mic, Navigation2, Plus, Minus, Layers, Compass } from 'lucide-react'
+import type { DrivingMode } from '@/core/types'
 
 /** MapKit-ready: same concepts as MKMapCamera / annotation / overlay. */
 export interface MapCameraState {
@@ -51,6 +52,10 @@ interface InteractiveMapProps {
   isLiveGps?: boolean
   /** Route line glow intensity 0–1 (Phase 3 experience). */
   routeGlow?: number
+  /** Driving mode for visual styling. */
+  mode?: DrivingMode
+  /** Road traffic/hazard reports to render as markers. */
+  roadReports?: { id: number; type: string; lat: number; lng: number; title?: string; severity?: string }[]
 }
 
 // Color mapping
@@ -265,12 +270,15 @@ export default function InteractiveMap({
   predictedPosition,
   isLiveGps = false,
   routeGlow = 0.7,
+  mode = 'adaptive',
+  roadReports = [],
 }: InteractiveMapProps) {
   const [internalZoom, setInternalZoom] = useState(14)
   const [internalCenter, setInternalCenter] = useState(userLocation)
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, lat: 0, lng: 0 })
   const [mapSize, setMapSize] = useState({ width: 400, height: 600 })
+  const [mapStyle, setMapStyle] = useState<'dark' | 'satellite' | 'light'>('dark')
   const mapRef = useRef<HTMLDivElement>(null)
   const lastTouchDistance = useRef<number | null>(null)
 
@@ -420,9 +428,15 @@ export default function InteractiveMap({
         const wrappedX = ((x % Math.pow(2, zoom)) + Math.pow(2, zoom)) % Math.pow(2, zoom)
         
         if (y >= 0 && y < Math.pow(2, zoom)) {
+          const tileBase =
+            mapStyle === 'satellite'
+              ? `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${Math.floor(y)}/${Math.floor(wrappedX)}`
+              : mapStyle === 'light'
+                ? `https://c.basemaps.cartocdn.com/light_all/${zoom}/${Math.floor(wrappedX)}/${Math.floor(y)}.png`
+                : `https://c.basemaps.cartocdn.com/dark_all/${zoom}/${Math.floor(wrappedX)}/${Math.floor(y)}.png`
           tiles.push({
-            key: `${x}-${y}-${zoom}`,
-            url: `https://c.basemaps.cartocdn.com/dark_all/${zoom}/${Math.floor(wrappedX)}/${Math.floor(y)}.png`,
+            key: `${x}-${y}-${zoom}-${mapStyle}`,
+            url: tileBase,
             left: (dx - Math.floor(tilesX / 2)) * 256 - offsetX + mapSize.width / 2,
             top: (dy - Math.floor(tilesY / 2)) * 256 - offsetY + mapSize.height / 2
           })
@@ -477,36 +491,22 @@ export default function InteractiveMap({
           />
         ))}
 
-        {/* MapKit-ready: route polyline */}
-        {routePoints.length > 1 && (
-          <svg
-            className="absolute inset-0 pointer-events-none"
-            width={mapSize.width}
-            height={mapSize.height}
-            style={{ zIndex: 10 }}
-          >
-            <path
-              d={routePoints
-                .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
-                .join(' ')}
-              fill="none"
-              stroke={`rgba(59, 130, 246, ${0.5 + routeGlow * 0.5})`}
-              strokeWidth={4}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d={routePoints
-                .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
-                .join(' ')}
-              fill="none"
-              stroke={`rgba(96, 165, 250, ${0.3 + routeGlow * 0.4})`}
-              strokeWidth={8}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        )}
+        {/* Route polyline with mode-aware styling */}
+        {routePoints.length > 1 && (() => {
+          const d = routePoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+          const isSport = mode === 'sport'
+          const isCalm = mode === 'calm'
+          const innerColor = isSport ? `rgba(34,211,238,${routeGlow})` : isCalm ? `rgba(96,165,250,${0.4 + routeGlow * 0.2})` : `rgba(59,130,246,${0.5 + routeGlow * 0.5})`
+          const outerColor = isSport ? `rgba(34,211,238,${0.3 + routeGlow * 0.3})` : isCalm ? `rgba(96,165,250,${0.15})` : `rgba(96,165,250,${0.3 + routeGlow * 0.4})`
+          const innerW = isSport ? 5 : isCalm ? 3 : 4
+          const outerW = isSport ? 12 : isCalm ? 6 : 8
+          return (
+            <svg className="absolute inset-0 pointer-events-none" width={mapSize.width} height={mapSize.height} style={{ zIndex: 10 }}>
+              <path d={d} fill="none" stroke={outerColor} strokeWidth={outerW} strokeLinecap="round" strokeLinejoin="round" />
+              <path d={d} fill="none" stroke={innerColor} strokeWidth={innerW} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )
+        })()}
 
         {/* Ghost prediction marker (MapKit-ready: same as native ghost car) */}
         {ghostPos && (
@@ -609,6 +609,21 @@ export default function InteractiveMap({
             </button>
           )
         })}
+
+        {/* Road Report / Traffic Markers */}
+        {roadReports.map((r) => {
+          const pos = latLngToPixel(r.lat, r.lng)
+          if (pos.x < -30 || pos.x > mapSize.width + 30 || pos.y < -30 || pos.y > mapSize.height + 30) return null
+          const bg = r.severity === 'high' ? '#ef4444' : r.severity === 'medium' ? '#f59e0b' : '#3b82f6'
+          return (
+            <div key={`rr-${r.id}`} className="absolute pointer-events-none" style={{ left: pos.x, top: pos.y, transform: 'translate(-50%, -50%)', zIndex: 18 }}>
+              <div className="w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-bold text-white shadow-md"
+                style={{ background: bg }}>
+                {r.type === 'accident' ? '!' : r.type === 'police' ? 'P' : r.type === 'construction' ? 'C' : '⚠'}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* Floating Controls - Right Side */}
@@ -616,21 +631,56 @@ export default function InteractiveMap({
         {/* Orion Voice Button */}
         <button
           onClick={onOrionClick}
-          className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg hover:from-purple-400 hover:to-indigo-500 active:scale-95 transition-all"
+          className="w-11 h-11 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg hover:from-purple-400 hover:to-indigo-500 active:scale-95 transition-all"
           data-testid="orion-map-btn"
           style={{ boxShadow: '0 4px 15px rgba(139, 92, 246, 0.4)' }}
         >
-          <Mic className="text-white" size={22} />
+          <Mic className="text-white" size={20} />
+        </button>
+        {/* Map type toggle */}
+        <button
+          onClick={() => setMapStyle((s) => s === 'dark' ? 'satellite' : s === 'satellite' ? 'light' : 'dark')}
+          className="w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-all border border-white/10"
+          data-testid="map-type-toggle"
+        >
+          <Layers className="text-white" size={18} />
+        </button>
+        {/* Zoom in */}
+        <button
+          onClick={() => { if (!isCameraControlled) setInternalZoom((z) => Math.min(18, z + 1)) }}
+          className="w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-all border border-white/10"
+          data-testid="map-zoom-in"
+        >
+          <Plus className="text-white" size={18} />
+        </button>
+        {/* Zoom out */}
+        <button
+          onClick={() => { if (!isCameraControlled) setInternalZoom((z) => Math.max(10, z - 1)) }}
+          className="w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-all border border-white/10"
+          data-testid="map-zoom-out"
+        >
+          <Minus className="text-white" size={18} />
         </button>
         {/* Recenter Button */}
         <button
           onClick={handleRecenter}
-          className="w-12 h-12 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg hover:bg-slate-800 active:scale-95 transition-all border border-white/10"
+          className="w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg hover:bg-slate-800 active:scale-95 transition-all border border-white/10"
           data-testid="map-recenter"
         >
-          <Locate className="text-white" size={22} />
+          <Locate className="text-white" size={20} />
         </button>
       </div>
+
+      {/* Compass indicator -- shown when bearing is non-zero */}
+      {bearing !== 0 && (
+        <button
+          onClick={handleRecenter}
+          className="absolute top-[72px] left-3 z-20 w-9 h-9 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg border border-white/10 active:scale-95 transition-transform"
+          data-testid="compass-reset"
+        >
+          <Compass size={18} className="text-white" style={{ transform: `rotate(${-bearing}deg)`, transition: 'transform .3s ease' }} />
+        </button>
+      )}
 
       {/* Navigation Indicator */}
       {isNavigating && (
@@ -640,10 +690,19 @@ export default function InteractiveMap({
         </div>
       )}
 
-      {/* Live GPS indicator (MapKit-ready: same concept as native location accuracy) */}
+      {/* Mode edge tint */}
+      <div className="absolute inset-0 pointer-events-none z-[5]" style={{
+        background: mode === 'sport'
+          ? 'linear-gradient(180deg, rgba(239,68,68,0.12) 0%, transparent 30%, transparent 70%, rgba(239,68,68,0.08) 100%)'
+          : mode === 'calm'
+            ? 'linear-gradient(180deg, rgba(96,165,250,0.1) 0%, transparent 30%, transparent 70%, rgba(96,165,250,0.06) 100%)'
+            : 'none'
+      }} />
+
+      {/* Live GPS indicator */}
       {isLiveGps && (
-        <div className="absolute top-2 left-2 z-20 px-2 py-0.5 rounded-full bg-emerald-500/90 text-white text-[10px] font-medium">
-          Live GPS
+        <div className="absolute top-2 left-2 z-20 px-2 py-0.5 rounded-full bg-emerald-500/90 text-white text-[10px] font-medium flex items-center gap-1">
+          <Navigation2 size={10} className="animate-pulse" /> Live GPS
         </div>
       )}
 

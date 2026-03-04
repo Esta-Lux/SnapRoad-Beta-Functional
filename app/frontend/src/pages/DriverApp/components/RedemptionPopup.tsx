@@ -165,7 +165,7 @@ export default function RedemptionPopup({
                 <div className="flex items-center gap-2">
                   <MapPin className={`${isInRange ? 'text-emerald-400' : 'text-amber-400'}`} size={16} />
                   <span className="text-slate-300 text-sm">
-                    {offer.distance ? `${offer.distance.toFixed(1)} miles away` : '0.3 miles away'}
+                    {offer.distance != null ? `${Number(offer.distance).toFixed(1)} miles away` : '0.3 miles away'}
                   </span>
                   {isInRange && (
                     <span className="ml-auto bg-emerald-500/20 text-emerald-400 text-xs px-2 py-0.5 rounded-full">

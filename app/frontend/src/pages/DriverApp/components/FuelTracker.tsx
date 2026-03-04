@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Fuel, Plus, TrendingUp, TrendingDown, DollarSign, Droplet, Calendar } from 'lucide-react'
+import { X, Fuel, Plus, TrendingUp, TrendingDown, DollarSign, Droplet, Calendar, BarChart3, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || ''
@@ -21,11 +21,13 @@ interface FuelTrackerProps {
 }
 
 export default function FuelTracker({ isOpen, onClose, isPremium }: FuelTrackerProps) {
-  const [tab, setTab] = useState<'history' | 'log' | 'trends'>('history')
+  const [tab, setTab] = useState<'history' | 'log' | 'trends' | 'prices' | 'analytics'>('history')
   const [history, setHistory] = useState<FuelEntry[]>([])
   const [stats, setStats] = useState<any>(null)
   const [trends, setTrends] = useState<any[]>([])
   const [trendStats, setTrendStats] = useState<any>(null)
+  const [prices, setPrices] = useState<any[]>([])
+  const [analytics, setAnalytics] = useState<any>(null)
   const [logForm, setLogForm] = useState({
     date: new Date().toISOString().split('T')[0],
     station: '',
@@ -39,6 +41,8 @@ export default function FuelTracker({ isOpen, onClose, isPremium }: FuelTrackerP
     if (isOpen && isPremium) {
       loadHistory()
       loadTrends()
+      loadPrices()
+      loadAnalytics()
     }
   }, [isOpen, isPremium])
 
@@ -66,6 +70,26 @@ export default function FuelTracker({ isOpen, onClose, isPremium }: FuelTrackerP
     } catch (e) {
       console.log('Could not load trends')
     }
+  }
+
+  const loadPrices = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/fuel/prices`)
+      if (res.ok) {
+        const data = await res.json()
+        setPrices(data.data ?? data.prices ?? [])
+      }
+    } catch { /* prices unavailable */ }
+  }
+
+  const loadAnalytics = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/fuel/analytics`)
+      if (res.ok) {
+        const data = await res.json()
+        setAnalytics(data.data ?? data)
+      }
+    } catch { /* analytics unavailable */ }
   }
 
   const handleLog = async () => {
@@ -148,10 +172,10 @@ export default function FuelTracker({ isOpen, onClose, isPremium }: FuelTrackerP
           )}
 
           {/* Tabs */}
-          <div className="flex gap-2 mt-3">
-            {(['history', 'log', 'trends'] as const).map(t => (
+          <div className="flex gap-1.5 mt-3 overflow-x-auto">
+            {(['history', 'log', 'trends', 'prices', 'analytics'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
-                className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize ${tab === t ? 'bg-white text-amber-600' : 'bg-white/10 text-white'}`}>
+                className={`px-2.5 py-2 rounded-lg text-[10px] font-medium capitalize whitespace-nowrap ${tab === t ? 'bg-white text-amber-600' : 'bg-white/10 text-white'}`}>
                 {t === 'log' ? '+ Log' : t}
               </button>
             ))}
@@ -277,6 +301,66 @@ export default function FuelTracker({ isOpen, onClose, isPremium }: FuelTrackerP
               <p className="text-slate-500 text-xs text-center mt-3">
                 Prices based on your local area
               </p>
+            </div>
+          )}
+
+          {tab === 'prices' && (
+            <div className="space-y-2">
+              {prices.length > 0 ? prices.map((p: any, i: number) => (
+                <div key={i} className="bg-slate-800 rounded-xl p-3 flex items-center gap-3">
+                  <div className="w-8 h-8 bg-amber-500/20 rounded-full flex items-center justify-center shrink-0">
+                    <MapPin size={14} className="text-amber-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium truncate">{p.station || p.name || 'Station'}</p>
+                    <p className="text-slate-400 text-[10px]">{p.address || p.distance || ''}</p>
+                  </div>
+                  <p className="text-amber-400 font-bold text-sm">${(p.price ?? p.price_per_gallon ?? 0).toFixed(2)}</p>
+                </div>
+              )) : (
+                <div className="text-center py-8">
+                  <Fuel className="text-slate-600 mx-auto mb-2" size={28} />
+                  <p className="text-slate-400 text-sm">No nearby fuel prices available</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'analytics' && (
+            <div className="space-y-3">
+              {analytics ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-slate-800 rounded-xl p-3 text-center">
+                      <p className="text-emerald-400 font-bold text-lg">{analytics.avg_mpg ?? analytics.efficiency ?? '—'}</p>
+                      <p className="text-slate-400 text-[10px]">Avg MPG</p>
+                    </div>
+                    <div className="bg-slate-800 rounded-xl p-3 text-center">
+                      <p className="text-amber-400 font-bold text-lg">${analytics.monthly_spend ?? analytics.total_spend ?? '—'}</p>
+                      <p className="text-slate-400 text-[10px]">Monthly Spend</p>
+                    </div>
+                    <div className="bg-slate-800 rounded-xl p-3 text-center">
+                      <p className="text-blue-400 font-bold text-lg">{analytics.total_gallons ?? '—'}</p>
+                      <p className="text-slate-400 text-[10px]">Total Gallons</p>
+                    </div>
+                    <div className="bg-slate-800 rounded-xl p-3 text-center">
+                      <p className="text-purple-400 font-bold text-lg">{analytics.fill_ups ?? '—'}</p>
+                      <p className="text-slate-400 text-[10px]">Fill-ups</p>
+                    </div>
+                  </div>
+                  {analytics.recommendation && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
+                      <p className="text-emerald-400 text-xs font-medium mb-1">Tip</p>
+                      <p className="text-slate-300 text-xs">{analytics.recommendation}</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-8">
+                  <BarChart3 className="text-slate-600 mx-auto mb-2" size={28} />
+                  <p className="text-slate-400 text-sm">Analytics loading...</p>
+                </div>
+              )}
             </div>
           )}
         </div>

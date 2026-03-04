@@ -126,7 +126,7 @@ export function OrionCoach({ isOpen, onClose, currentRoute, userContext }: Orion
 
   const fetchQuickTips = async () => {
     try {
-      const response = await fetch(`${API_URL}/orion/tips`);
+      const response = await fetch(`${API_URL}/api/orion/tips`);
       const data = await response.json();
       if (data.success) {
         setQuickTips(data.tips);
@@ -172,7 +172,7 @@ export function OrionCoach({ isOpen, onClose, currentRoute, userContext }: Orion
 
     try {
       // Call real AI backend
-      const response = await fetch(`${API_URL}/orion/chat`, {
+      const response = await fetch(`${API_URL}/api/orion/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

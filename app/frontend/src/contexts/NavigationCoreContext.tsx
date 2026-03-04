@@ -133,21 +133,22 @@ export function NavigationCoreProvider({
         confidence: predictionConfidence(PREDICTION_SECONDS),
         inSeconds: PREDICTION_SECONDS,
       }
+      const smoothed = interpolateExperience(smoothedExperienceRef.current, targetExperience, SMOOTHING * 3)
+      smoothedExperienceRef.current = smoothed
       setState((prev) => ({
         ...prev,
         vehicle,
         predicted,
         drivingStyle: style,
-        experience: targetExperience,
+        experience: smoothed,
         camera: {
           center: vehicle.coordinate,
-          zoom: targetExperience.zoom,
+          zoom: smoothed.zoom,
           bearing: vehicle.heading,
         },
         isLive: true,
         error: null,
       }))
-      smoothedExperienceRef.current = interpolateExperience(smoothedExperienceRef.current, targetExperience, 0.3)
     },
     [getFusion, getBehavior]
   )

@@ -138,7 +138,7 @@ export function PhotoCapture({ isOpen, onClose, onSubmit }: PhotoCaptureProps) {
       const base64Data = imageData.split(',')[1] || imageData;
       
       // Call AI backend for face/plate detection
-      const response = await fetch(`${API_URL}/photo/analyze`, {
+      const response = await fetch(`${API_URL}/api/photo/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

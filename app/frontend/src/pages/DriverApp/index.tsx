@@ -5,12 +5,12 @@ import toast from 'react-hot-toast'
 import {
   MapPin, Gift, Trophy, Users, Search, Home, Briefcase, Bell, Menu, Mic,
   Navigation, ChevronRight, ChevronDown, ChevronUp, Settings, Camera,
-  Gem, Heart, Award, X, Plus, Check, Star, Clock, Car, Fuel,
-  Coffee, AlertTriangle, Volume2, Route, Gauge, LogOut, Play, Pause,
+  Gem, Award, X, Plus, Check, Star, Clock, Car, Fuel,
+  Coffee, AlertTriangle, Volume2, Route, LogOut, Play, Pause,
   Trash2, Timer, RefreshCw, EyeOff, School, ShoppingCart, Dumbbell, 
   Building, Compass, Layers, GripVertical, Minimize2, Maximize2,
-  Phone, MessageCircle, Battery, ChevronLeft, Shield, Zap, TrendingUp,
-  History, Download, BarChart3, HelpCircle, Lock, Edit2, UserPlus, Share2, Swords,
+  Phone, MessageCircle, Battery, ChevronLeft, Shield, Zap,
+  History, BarChart3, HelpCircle, Lock, Edit2, Share2, Swords,
   DollarSign, Droplets, Leaf, Target, Map
 } from 'lucide-react'
 import FriendsHub from './components/FriendsHub'
@@ -29,8 +29,8 @@ import CommunityBadges from './components/CommunityBadges'
 import LevelProgress from './components/LevelProgress'
 import OrionVoice from './components/OrionVoice'
 import QuickPhotoReport from './components/QuickPhotoReport'
-import RoadStatusOverlay, { RoadStatusMarkers, MOCK_ROAD_SEGMENTS } from './components/RoadStatusOverlay'
-import OffersModal, { OfferMarker } from './components/OffersModal'
+import RoadStatusOverlay, { RoadStatusMarkers } from './components/RoadStatusOverlay'
+import OffersModal from './components/OffersModal'
 import ShareTripScore from './components/ShareTripScore'
 import DrivingScore from './components/DrivingScore'
 import ChallengeHistory from './components/ChallengeHistory'
@@ -38,13 +38,18 @@ import RedemptionPopup from './components/RedemptionPopup'
 import WeeklyRecap from './components/WeeklyRecap'
 import OrionOfferAlerts from './components/OrionOfferAlerts'
 import InteractiveMap from './components/InteractiveMap'
-import { NavMarker, ProfileCar, CAR_COLORS } from './components/Car3D'
+import MapKitMap from './components/MapKitMap'
+import { useMapKit } from '@/contexts/MapKitContext'
+import { ProfileCar, CAR_COLORS } from './components/Car3D'
 // New enhanced components
 import TripAnalytics from './components/TripAnalytics'
 import RouteHistory3D from './components/RouteHistory3D'
 import CollapsibleOffersPanel from './components/CollapsibleOffersPanel'
 import InAppBrowser from './components/InAppBrowser'
 import GemOverlay from './components/GemOverlay'
+import MapSearchBar from './components/MapSearchBar'
+import RouteInfoBar from './components/RouteInfoBar'
+import SpeedIndicator from './components/SpeedIndicator'
 import { api } from '@/services/api'
 import { useNavigationCore } from '@/contexts/NavigationCoreContext'
 
@@ -87,6 +92,59 @@ interface WidgetState {
   position: { x: number; y: number }
 }
 
+interface Offer {
+  id: number
+  business_name: string
+  discount_percent: number
+  gems_reward: number
+  lat?: number
+  lng?: number
+  business_type?: string
+  redeemed?: boolean
+  name?: string
+  [key: string]: unknown
+}
+
+interface FamilyMember {
+  id: string
+  name: string
+  role: string
+  safety_score: number
+  last_trip?: string
+}
+
+interface RoadReport {
+  id: number
+  type: string
+  lat: number
+  lng: number
+  title?: string
+  severity?: string
+  description?: string
+  upvotes?: number
+}
+
+interface NavigationDestination {
+  lat: number
+  lng: number
+  name?: string
+}
+
+interface NavigationState {
+  origin?: NavigationDestination
+  destination?: NavigationDestination
+  steps?: { instruction: string; distance: string; lat?: number; lng?: number }[]
+  [key: string]: unknown
+}
+
+interface SearchResult {
+  name: string
+  lat: number
+  lng: number
+  address?: string
+  type?: string
+}
+
 // Category icons
 const categoryIcons: Record<string, { icon: typeof Home; color: string }> = {
   home: { icon: Home, color: 'emerald' },
@@ -100,8 +158,13 @@ const categoryIcons: Record<string, { icon: typeof Home; color: string }> = {
 export default function DriverApp() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
-  const { vehicle, camera, predicted, isLive, recenter, setRoutePolyline, setMode, mode, experience } = useNavigationCore()
-
+  const { vehicle, camera, predicted, isLive, recenter, setRoutePolyline, setMode, mode, experience, getDrivingMetrics } = useNavigationCore()
+  const { ready: mapKitReady, error: mapKitError, reportError: reportMapKitError } = useMapKit()
+  const [mapKitFailed, setMapKitFailed] = useState(false)
+  const [fallbackBannerDismissed, setFallbackBannerDismissed] = useState(false)
+  const useAppleMap = mapKitReady && !mapKitError && !mapKitFailed
+  const tripStartTimeRef = useRef<number | null>(null)
+  
   // Main state - 4 tabs now
   const [activeTab, setActiveTab] = useState<TabType>('map')
   const [rewardsTab, setRewardsTab] = useState<RewardsTab>('offers')
@@ -115,8 +178,8 @@ export default function DriverApp() {
   const [showAddLocation, setShowAddLocation] = useState(false)
   const [showAddRoute, setShowAddRoute] = useState(false)
   const [showWidgetSettings, setShowWidgetSettings] = useState(false)
-  const [showOfferDetail, setShowOfferDetail] = useState<any>(null)
-  const [showFamilyMember, setShowFamilyMember] = useState<any>(null)
+  const [showOfferDetail, setShowOfferDetail] = useState<Offer | null>(null)
+  const [showFamilyMember, setShowFamilyMember] = useState<FamilyMember | null>(null)
   const [showReportModal, setShowReportModal] = useState(false)
   const [draggingWidget, setDraggingWidget] = useState<string | null>(null)
   
@@ -139,15 +202,15 @@ export default function DriverApp() {
   const [showLevelProgress, setShowLevelProgress] = useState(false)
   const [showOrionVoice, setShowOrionVoice] = useState(false)
   const [showQuickPhotoReport, setShowQuickPhotoReport] = useState(false)
-  const [selectedRoadStatus, setSelectedRoadStatus] = useState<any>(null)
+  const [selectedRoadStatus, setSelectedRoadStatus] = useState<{ id: string; name: string; status: 'clear' | 'moderate' | 'heavy' | 'closed'; reason?: string; estimatedDelay?: number; startLat: number; startLng: number; endLat: number; endLng: number } | null>(null)
   const [showOffersModal, setShowOffersModal] = useState(false)
   const [showShareTrip, setShowShareTrip] = useState(false)
-  const [lastTripData, setLastTripData] = useState<any>(null)
+  const [lastTripData, setLastTripData] = useState<Record<string, unknown> | null>(null)
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
   const [showDrivingScore, setShowDrivingScore] = useState(false)
   const [showChallengeHistory, setShowChallengeHistory] = useState(false)
   const [showRedemptionPopup, setShowRedemptionPopup] = useState(false)
-  const [selectedOfferForRedemption, setSelectedOfferForRedemption] = useState<any>(null)
+  const [selectedOfferForRedemption, setSelectedOfferForRedemption] = useState<Offer | null>(null)
   const [showWeeklyRecap, setShowWeeklyRecap] = useState(false)
   
   // New feature states
@@ -165,10 +228,11 @@ export default function DriverApp() {
   
   // Search and navigation states
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
-  const [selectedDestination, setSelectedDestination] = useState<any>(null)
-  const [navigationData, setNavigationData] = useState<any>(null)
+  const [selectedDestination, setSelectedDestination] = useState<NavigationDestination | null>(null)
+  const [navigationData, setNavigationData] = useState<NavigationState | null>(null)
+  const [liveEta, setLiveEta] = useState<{ distanceMiles: number; etaMinutes: number } | null>(null)
   const [showTurnByTurn, setShowTurnByTurn] = useState(false)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -192,14 +256,15 @@ export default function DriverApp() {
   // Data states
   const [locations, setLocations] = useState<SavedLocation[]>([])
   const [routes, setRoutes] = useState<SavedRoute[]>([])
-  const [offers, setOffers] = useState<any[]>([])
-  const [challenges, setChallenges] = useState<any[]>([])
-  const [badges, setBadges] = useState<any[]>([])
-  const [skins, setSkins] = useState<any[]>([])
-  const [family, setFamily] = useState<any[]>([])
+  const [offers, setOffers] = useState<Offer[]>([])
+  const [challenges, setChallenges] = useState<Record<string, unknown>[]>([])
+  const [badges, setBadges] = useState<Record<string, unknown>[]>([])
+  const [skins, setSkins] = useState<Record<string, unknown>[]>([])
+  const [family, setFamily] = useState<FamilyMember[]>([])
+  const [roadReports, setRoadReports] = useState<RoadReport[]>([])
   
   // Fresh user state - starts empty
-  const [userData, setUserData] = useState<any>({
+  const [userData, setUserData] = useState<Record<string, unknown>>({
     id: '123456',
     name: user?.name || 'Driver',
     gems: 0, level: 1, xp: 0, safety_score: 100, streak: 0,
@@ -234,9 +299,19 @@ export default function DriverApp() {
   const swipeRef = useRef<HTMLDivElement>(null)
   const startX = useRef(0)
 
+  const loadRoadReports = async () => {
+    try {
+      const res = await api.get<{ data?: any[] }>(`/api/map/traffic?lat=${userLocation.lat}&lng=${userLocation.lng}`)
+      if (res.success && Array.isArray((res.data as any)?.data)) {
+        setRoadReports((res.data as any).data)
+      }
+    } catch { /* traffic reports unavailable */ }
+  }
+
   // Load data on mount
   useEffect(() => {
     loadData()
+    loadRoadReports()
   }, [])
 
   // Sync userLocation from VehicleState when live (for search/directions)
@@ -245,6 +320,29 @@ export default function DriverApp() {
       setUserLocation({ lat: vehicle.coordinate.lat, lng: vehicle.coordinate.lng })
     }
   }, [isLive, vehicle?.coordinate?.lat, vehicle?.coordinate?.lng])
+
+  // Poll backend ETA endpoint during navigation
+  useEffect(() => {
+    if (!isNavigating || !navigationData?.destination) { setLiveEta(null); return }
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const v = vehicle?.coordinate ?? userLocation
+        const d = navigationData.destination
+        const spd = vehicle?.velocity ? Math.round(vehicle.velocity * 2.237) : 30
+        const res = await api.get<{ data?: { distance_miles: number; eta_minutes: number } }>(
+          `/api/navigation/eta?origin_lat=${v.lat}&origin_lng=${v.lng}&dest_lat=${d.lat}&dest_lng=${d.lng}&speed_mph=${spd}`
+        )
+        if (!cancelled && res.success && (res.data as any)?.data) {
+          const d2 = (res.data as any).data
+          setLiveEta({ distanceMiles: d2.distance_miles, etaMinutes: d2.eta_minutes })
+        }
+      } catch { /* silent */ }
+    }
+    poll()
+    const id = setInterval(poll, 15000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng])
 
   // Speed simulation when navigating (fallback when not live)
   useEffect(() => {
@@ -358,9 +456,9 @@ export default function DriverApp() {
       if (res.success) {
         setUserPlan(plan)
         setGemMultiplier(plan === 'premium' ? 2 : 1)
-        setUserData((prev: any) => ({
-          ...prev,
-          plan,
+        setUserData((prev: any) => ({ 
+          ...prev, 
+          plan, 
           is_premium: plan === 'premium',
           gem_multiplier: plan === 'premium' ? 2 : 1
         }))
@@ -452,7 +550,7 @@ export default function DriverApp() {
       if (res.success) {
         toast.success('Photo report posted! +500 XP')
         loadData()
-        return res
+      return res
       }
       toast.error((res.data as { message?: string })?.message ?? 'Could not post photo report')
       return { success: false, data: res.data }
@@ -470,11 +568,12 @@ export default function DriverApp() {
       if (res.success && body) {
         const inner = body.data ?? body
         toast.success((body as { message?: string }).message ?? 'Offer redeemed!')
-        setUserData((prev: any) => ({
-          ...prev,
+        setUserData((prev: any) => ({ 
+          ...prev, 
           gems: prev.gems + ((inner as { gems_earned?: number }).gems_earned ?? 0),
           xp: prev.xp + ((inner as { xp_earned?: number }).xp_earned ?? 0)
         }))
+        api.post('/api/analytics/track', { event: 'offer_redeemed', properties: { offer_id: offerId } }).catch(() => {})
         loadData()
       } else {
         toast.error((body as { message?: string })?.message ?? 'Could not redeem offer')
@@ -646,16 +745,21 @@ export default function DriverApp() {
   const handleStartNavigation = async (dest?: string) => {
     const tripId = `trip_${Date.now()}`
     setActiveTripId(tripId)
+    tripStartTimeRef.current = Date.now()
     setIsNavigating(true)
     setShowMenu(false)
     setShowSearch(false)
+    if (mode === 'adaptive') {
+      toast('Driving mode: Adaptive', { icon: '🟢', duration: 2000 })
+    }
     toast.loading('Calculating route...', { duration: 1500 })
     try {
       const res = await api.post('/api/navigation/start', { destination: dest || 'Unknown', origin: 'current_location' })
+      api.post('/api/analytics/track', { event: 'navigation_started', properties: { destination: dest, mode } }).catch(() => {})
       if (res.success) {
-        setTimeout(() => {
+      setTimeout(() => {
           toast.success((res.data as { message?: string })?.message ?? `Navigating to ${dest || 'destination'}`)
-        }, 1500)
+      }, 1500)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not start navigation')
       }
@@ -666,6 +770,7 @@ export default function DriverApp() {
 
   const handleStopNavigation = async () => {
     const tripIdToEnd = activeTripId
+    const tripStart = tripStartTimeRef.current
     setIsNavigating(false)
     setShowTurnByTurn(false)
     setNavigationData(null)
@@ -673,11 +778,22 @@ export default function DriverApp() {
     setCurrentStepIndex(0)
     try {
       await api.post('/api/navigation/stop')
-      toast.success('Navigation stopped')
+      const durationMin = tripStart ? Math.round((Date.now() - tripStart) / 60000) : 5
+      const safetyScore = vehicle ? Math.max(60, Math.round(100 - (getDrivingMetrics().style.aggression * 30))) : 85
+      await api.post('/api/trips/complete-with-safety', {
+        trip_id: tripIdToEnd,
+        distance: durationMin * 0.5,
+        duration: durationMin,
+        safety_score: safetyScore,
+        smooth_braking: Math.round((1 - getDrivingMetrics().style.aggression) * 100),
+        speed_compliance: Math.round((1 - getDrivingMetrics().style.hesitation) * 100),
+        focus_score: Math.round(getDrivingMetrics().style.smoothness * 100),
+      })
+      await api.post('/api/analytics/track', { event: 'trip_completed', properties: { trip_id: tripIdToEnd, duration: durationMin, mode } })
+      toast.success('Trip completed!')
     } catch (_e) {
       toast.error('Could not stop navigation')
     }
-    // Gem summary will be shown by GemOverlay when isNavigating goes false
   }
 
   // Search location with API
@@ -771,8 +887,8 @@ export default function DriverApp() {
         toast.success((res.data as { message?: string })?.message ?? 'Location added!')
         const newLoc = (res.data as { data?: typeof locations[0] })?.data ?? (res.data as typeof locations[0])
         if (newLoc && typeof newLoc === 'object') setLocations([...locations, newLoc])
-        setNewLocation({ name: '', address: '', category: 'favorite' })
-        setShowAddLocation(false)
+      setNewLocation({ name: '', address: '', category: 'favorite' })
+      setShowAddLocation(false)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not add location')
       }
@@ -803,8 +919,8 @@ export default function DriverApp() {
         toast.success((res.data as { message?: string })?.message ?? 'Route saved!')
         const newRouteObj = (res.data as { data?: typeof routes[0] })?.data ?? (res.data as typeof routes[0])
         if (newRouteObj && typeof newRouteObj === 'object') setRoutes([...routes, newRouteObj])
-        setNewRoute({ name: '', origin: '', destination: '', departure_time: '08:00', days_active: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], notifications: true })
-        setShowAddRoute(false)
+      setNewRoute({ name: '', origin: '', destination: '', departure_time: '08:00', days_active: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], notifications: true })
+      setShowAddRoute(false)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not add route')
       }
@@ -827,7 +943,7 @@ export default function DriverApp() {
     try {
       const res = await api.put(`/api/routes/${id}/toggle`)
       if (res.success) {
-        setRoutes(routes.map(r => r.id === id ? { ...r, is_active: !r.is_active } : r))
+      setRoutes(routes.map(r => r.id === id ? { ...r, is_active: !r.is_active } : r))
         toast.success((res.data as { message?: string })?.message ?? 'Route updated')
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not update route')
@@ -841,7 +957,7 @@ export default function DriverApp() {
     try {
       const res = await api.put(`/api/routes/${id}/notifications`)
       if (res.success) {
-        setRoutes(routes.map(r => r.id === id ? { ...r, notifications: !r.notifications } : r))
+      setRoutes(routes.map(r => r.id === id ? { ...r, notifications: !r.notifications } : r))
         toast.success((res.data as { message?: string })?.message ?? 'Notifications updated')
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not update notifications')
@@ -857,7 +973,7 @@ export default function DriverApp() {
     try {
       const res = await api.post(`/api/offers/${id}/favorite`)
       if (res.success) {
-        toast.success(favorites.includes(id) ? 'Removed from favorites' : 'Added to favorites!')
+      toast.success(favorites.includes(id) ? 'Removed from favorites' : 'Added to favorites!')
       } else {
         setFavorites(favorites)
         toast.error((res.data as { message?: string })?.message ?? 'Could not update favorite')
@@ -874,7 +990,7 @@ export default function DriverApp() {
       const res = await api.post('/api/incidents/report', { incident_type: type, location: 'Current location' })
       if (res.success) {
         toast.success((res.data as { message?: string })?.message ?? `Reported ${type}! +${gems} gems`)
-        setShowReportModal(false)
+      setShowReportModal(false)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not report incident')
       }
@@ -888,7 +1004,7 @@ export default function DriverApp() {
     try {
       const res = await api.post(`/api/family/${member.id}/call`)
       if (res.success) {
-        toast.success(`Calling ${member.name}...`)
+      toast.success(`Calling ${member.name}...`)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not start call')
       }
@@ -901,7 +1017,7 @@ export default function DriverApp() {
     try {
       const res = await api.post(`/api/family/${member.id}/message`)
       if (res.success) {
-        toast.success(`Opening chat with ${member.name}`)
+      toast.success(`Opening chat with ${member.name}`)
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not open chat')
       }
@@ -917,7 +1033,7 @@ export default function DriverApp() {
         const res = await api.post(`/api/skins/${skinId}/equip`)
         if (res.success) {
           setEquippedSkin(skinId)
-          toast.success(`${skin.name} equipped!`)
+        toast.success(`${skin.name} equipped!`)
         } else {
           toast.error((res.data as { message?: string })?.message ?? 'Could not equip skin')
         }
@@ -929,7 +1045,7 @@ export default function DriverApp() {
         try {
           const res = await api.post(`/api/skins/${skinId}/purchase`)
           if (res.success) {
-            toast.success(`Purchased ${skin.name} for ${skin.price} gems!`)
+          toast.success(`Purchased ${skin.name} for ${skin.price} gems!`)
             setEquippedSkin(skinId)
           } else {
             toast.error((res.data as { message?: string })?.message ?? 'Could not purchase skin')
@@ -950,7 +1066,7 @@ export default function DriverApp() {
     try {
       const res = await api.put(`/api/settings/voice?muted=${newMuted}`)
       if (res.success) {
-        toast.success(newMuted ? 'Voice muted' : 'Voice unmuted')
+      toast.success(newMuted ? 'Voice muted' : 'Voice unmuted')
       } else {
         setIsMuted(!newMuted)
         toast.error((res.data as { message?: string })?.message ?? 'Could not update voice setting')
@@ -1133,57 +1249,181 @@ export default function DriverApp() {
       onTouchMove={draggingWidget ? handleWidgetDrag : undefined}
       onTouchEnd={handleWidgetDragEnd}>
       
-      {/* Interactive Map - MapKit-ready (camera, vehicle, route, prediction) */}
+      {/* Map: Apple MapKit (when token configured) or OSM fallback */}
+      {useAppleMap && (
+        <MapKitMap
+          center={camera?.center ?? vehicle?.coordinate ?? userLocation}
+          zoom={camera?.zoom ?? 15}
+          bearing={camera?.bearing}
+          userLocation={vehicle?.coordinate ?? userLocation}
+          vehicleHeading={vehicle?.heading ?? carHeading}
+          routePolyline={navigationData?.origin && navigationData?.destination
+            ? (() => {
+                const o = navigationData.origin
+                const d = navigationData.destination
+                const pts: { lat: number; lng: number }[] = []
+                for (let i = 0; i <= 8; i++) {
+                  const t = i / 8
+                  pts.push({ lat: o.lat + t * (d.lat - o.lat), lng: o.lng + t * (d.lng - o.lng) })
+                }
+                return pts
+              })()
+            : undefined}
+          predictedPosition={predicted ? { coordinate: predicted.coordinate, confidence: predicted.confidence } : null}
+          routeGlow={experience?.routeGlow}
+          mode={mode}
+          onRecenter={() => { recenter(); toast.success('Centered on your location') }}
+          onOrionClick={() => setShowOrionVoice(true)}
+          isLiveGps={isLive}
+          onMapError={(msg) => { setMapKitFailed(true); reportMapKitError(msg) }}
+          offers={offers}
+          onOfferClick={(offer) => { setSelectedOfferForRedemption(offer); setShowRedemptionPopup(true) }}
+          roadReports={roadReports}
+          isNavigating={isNavigating}
+        />
+      )}
+      {!useAppleMap && (
+        <>
       <InteractiveMap
-        userLocation={vehicle?.coordinate ?? userLocation}
+            userLocation={vehicle?.coordinate ?? userLocation}
         offers={offers}
         isNavigating={isNavigating}
         onOfferClick={(offer) => {
           setSelectedOfferForRedemption(offer)
           setShowRedemptionPopup(true)
         }}
-        carColor={userCar.color.includes('blue') ? '#3b82f6' :
-                  userCar.color.includes('red') ? '#ef4444' :
+        carColor={userCar.color.includes('blue') ? '#3b82f6' : 
+                  userCar.color.includes('red') ? '#ef4444' : 
                   userCar.color.includes('green') ? '#22c55e' :
                   userCar.color.includes('white') ? '#f8fafc' :
                   userCar.color.includes('gold') ? '#fbbf24' : '#1e293b'}
         userCar={userCar}
         onOrionClick={() => setShowOrionVoice(true)}
-        onRecenter={() => { recenter(); toast.success('Centered on your location') }}
-        camera={camera}
-        vehicleHeading={vehicle?.heading ?? carHeading}
-        routePolyline={navigationData?.origin && navigationData?.destination
-          ? (() => {
-              const o = navigationData.origin
-              const d = navigationData.destination
-              const points: { lat: number; lng: number }[] = []
-              for (let i = 0; i <= 8; i++) {
-                const t = i / 8
-                points.push({
-                  lat: o.lat + t * (d.lat - o.lat),
-                  lng: o.lng + t * (d.lng - o.lng),
-                })
-              }
-              return points
-            })()
-          : undefined}
-        predictedPosition={predicted ? { coordinate: predicted.coordinate, confidence: predicted.confidence } : null}
-        isLiveGps={isLive}
-        routeGlow={experience?.routeGlow}
-      />
+            onRecenter={() => { recenter(); toast.success('Centered on your location') }}
+            camera={camera}
+            vehicleHeading={vehicle?.heading ?? carHeading}
+            routePolyline={navigationData?.origin && navigationData?.destination
+              ? (() => {
+                  const o = navigationData.origin
+                  const d = navigationData.destination
+                  const points: { lat: number; lng: number }[] = []
+                  for (let i = 0; i <= 8; i++) {
+                    const t = i / 8
+                    points.push({
+                      lat: o.lat + t * (d.lat - o.lat),
+                      lng: o.lng + t * (d.lng - o.lng),
+                    })
+                  }
+                  return points
+                })()
+              : undefined}
+            predictedPosition={predicted ? { coordinate: predicted.coordinate, confidence: predicted.confidence } : null}
+            isLiveGps={isLive}
+            routeGlow={experience?.routeGlow}
+            mode={mode}
+            roadReports={roadReports}
+          />
+          {mapKitError && !fallbackBannerDismissed && (
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-900/80 backdrop-blur border border-amber-500/30 text-amber-200 text-xs shadow-lg">
+              <AlertTriangle size={12} />
+              <span>
+                Apple Maps unavailable: {mapKitError}
+                {mapKitError?.toLowerCase().includes('map creation') && (
+                  <span className="block mt-1 text-[10px] text-amber-300/90">
+                    If developing on localhost: your MapKit key may be domain‑restricted. Use an unrestricted key (expires in 7 days) for local dev.
+                  </span>
+                )}
+              </span>
+              <button onClick={() => setFallbackBannerDismissed(true)} className="ml-1 hover:text-white">
+                <X size={12} />
+              </button>
+            </div>
+          )}
+        </>
+      )}
 
-      {/* Driving mode: Calm / Adaptive / Sport (Phase 2) */}
-      <div className="absolute top-2 right-14 z-20 flex rounded-full bg-slate-900/90 backdrop-blur border border-white/10 overflow-hidden">
-        {(['calm', 'adaptive', 'sport'] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`px-2.5 py-1 text-[10px] font-medium capitalize transition-colors ${mode === m ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-white'}`}
-          >
-            {m}
-          </button>
-        ))}
-      </div>
+      {/* Driving mode selector: Calm / Adaptive / Sport -- positioned below top bar */}
+      {!showTurnByTurn && (
+        <div className="absolute top-[72px] right-3 z-20 flex rounded-full bg-slate-900/90 backdrop-blur border border-white/10 overflow-hidden shadow-lg">
+          {(['calm', 'adaptive', 'sport'] as const).map((m) => {
+            const active = mode === m
+            const colors: Record<string, string> = { calm: 'bg-blue-500', adaptive: 'bg-emerald-500', sport: 'bg-red-500' }
+            return (
+              <button
+                key={m}
+                onClick={() => { setMode(m); api.post('/api/analytics/track', { event: 'mode_switch', properties: { mode: m } }).catch(() => {}) }}
+                className={`relative px-3 py-1.5 text-[10px] font-semibold capitalize transition-all duration-300 ${active ? `${colors[m]} text-white` : 'text-slate-400 hover:text-white'}`}
+              >
+                {active && <span className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ background: m === 'sport' ? '#ef4444' : m === 'calm' ? '#3b82f6' : '#10b981' }} />}
+                {m}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {showTurnByTurn && (
+        <div className="absolute top-2 right-3 z-20 flex rounded-full bg-slate-900/90 backdrop-blur border border-white/10 overflow-hidden shadow-lg">
+          {(['calm', 'adaptive', 'sport'] as const).map((m) => {
+            const active = mode === m
+            const colors: Record<string, string> = { calm: 'bg-blue-500', adaptive: 'bg-emerald-500', sport: 'bg-red-500' }
+            return (
+              <button
+                key={m}
+                onClick={() => { setMode(m); api.post('/api/analytics/track', { event: 'mode_switch', properties: { mode: m } }).catch(() => {}) }}
+                className={`relative px-3 py-1.5 text-[10px] font-semibold capitalize transition-all duration-300 ${active ? `${colors[m]} text-white` : 'text-slate-400 hover:text-white'}`}
+              >
+                {active && <span className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ background: m === 'sport' ? '#ef4444' : m === 'calm' ? '#3b82f6' : '#10b981' }} />}
+                {m}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Speed HUD -- replaced by SpeedIndicator component in bottom-left */}
+
+      {/* Map search bar */}
+      {!isNavigating && (
+        <MapSearchBar
+          onSelect={(r) => {
+            setSelectedDestination({ name: r.name, lat: r.lat, lng: r.lng })
+          }}
+          onNavigate={(r) => {
+            setSelectedDestination({ name: r.name, lat: r.lat, lng: r.lng })
+            handleStartNavigation(r.name)
+          }}
+        />
+      )}
+
+      {/* Route info bar during navigation */}
+      {isNavigating && navigationData?.destination && (
+        <div className="absolute top-2 left-2 right-28 z-20">
+          <RouteInfoBar
+            distanceMiles={liveEta?.distanceMiles ?? (() => {
+              const v = vehicle?.coordinate ?? userLocation
+              const d = navigationData.destination
+              const R = 3958.8
+              const dLat = (d.lat - v.lat) * Math.PI / 180
+              const dLon = (d.lng - v.lng) * Math.PI / 180
+              const a = Math.sin(dLat / 2) ** 2 + Math.cos(v.lat * Math.PI / 180) * Math.cos(d.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2
+              return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+            })()}
+            etaMinutes={liveEta?.etaMinutes ?? (() => {
+              const v = vehicle?.coordinate ?? userLocation
+              const d = navigationData.destination
+              const R = 3958.8
+              const dLat = (d.lat - v.lat) * Math.PI / 180
+              const dLon = (d.lng - v.lng) * Math.PI / 180
+              const a = Math.sin(dLat / 2) ** 2 + Math.cos(v.lat * Math.PI / 180) * Math.cos(d.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2
+              const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+              const speed = vehicle?.velocity && vehicle.velocity > 1 ? vehicle.velocity * 2.237 : 30
+              return (dist / speed) * 60
+            })()}
+            destination={navigationData.destination.name || 'Destination'}
+            mode={mode}
+          />
+        </div>
+      )}
 
       {/* Collapsible Offers Panel - On Map */}
       {activeTab === 'map' && showOffersPanel && (
@@ -1283,7 +1523,7 @@ export default function DriverApp() {
 
       {/* Top Bar - Google Maps Style (Hidden during turn-by-turn) */}
       {!showTurnByTurn && (
-      <div className="absolute top-3 left-3 right-3 z-10">
+      <div className="absolute top-3 left-3 right-3 z-30">
         {/* Search Bar with Menu */}
         <div className="flex gap-2">
           <button onClick={() => setShowMenu(true)} data-testid="menu-btn"
@@ -1518,11 +1758,23 @@ export default function DriverApp() {
         </div>
       )}
 
-      {/* Road Status Markers - Hidden by default for cleaner map */}
-      {/* <RoadStatusMarkers 
-        roads={MOCK_ROAD_SEGMENTS} 
+      {/* Road Status Markers -- wired to live road reports */}
+      {roadReports.length > 0 && (
+        <RoadStatusMarkers
+          roads={roadReports.map((r: any) => ({
+            id: r.id ?? String(Math.random()),
+            name: r.road ?? r.name ?? 'Unknown',
+            status: r.severity === 'high' ? 'heavy' : r.severity === 'medium' ? 'moderate' : r.type === 'closure' ? 'closed' : 'clear',
+            reason: r.description ?? r.reason,
+            estimatedDelay: r.delay ?? r.estimatedDelay ?? 0,
+            startLat: r.lat ?? r.startLat ?? 0,
+            startLng: r.lng ?? r.startLng ?? 0,
+            endLat: r.endLat ?? (r.lat ?? 0) + 0.002,
+            endLng: r.endLng ?? (r.lng ?? 0) + 0.002,
+          }))}
         onSelectRoad={setSelectedRoadStatus} 
-      /> */}
+        />
+      )}
 
       {/* Road Status Overlay (when road selected) */}
       <RoadStatusOverlay 
@@ -1532,19 +1784,16 @@ export default function DriverApp() {
 
       {/* Note: Offer gems and user marker are rendered in InteractiveMap component */}
 
-      {/* Floating Action Button - Bottom Right (Camera only, cleaner look) */}
-      <div className="absolute right-3 bottom-24 flex flex-col gap-2 z-20">
+      {/* Camera report FAB - bottom left above speed indicator */}
         <button onClick={() => setShowQuickPhotoReport(true)} data-testid="report-btn"
-          className="w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
+        className="absolute left-3 bottom-44 z-20 w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg border border-white/10 active:scale-95 transition-transform">
           <Camera className="text-white" size={18} />
         </button>
-      </div>
 
-      {/* Speed Display (when navigating) */}
-      {isNavigating && (
-        <div className="absolute left-3 bottom-24 bg-slate-900/95 backdrop-blur rounded-xl p-3 text-center z-20">
-          <p className="text-2xl font-bold text-white">{currentSpeed}</p>
-          <p className="text-[10px] text-slate-400">MPH</p>
+      {/* Speed Display (when navigating or moving) */}
+      {(isNavigating || (vehicle && vehicle.velocity > 0.5)) && (
+        <div className="absolute left-3 bottom-24 z-20">
+          <SpeedIndicator velocityMs={vehicle?.velocity ?? 0} mode={mode} />
           <div className="flex items-center justify-center gap-1 mt-1">
             <div className="w-2 h-2 rounded-full bg-emerald-500" />
             <span className="text-[10px] text-emerald-400">Safe</span>

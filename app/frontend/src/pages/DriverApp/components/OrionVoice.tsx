@@ -159,7 +159,13 @@ export default function OrionVoice({ isOpen, onClose, onReportCreated, isNavigat
   }, [])
 
   const processCommand = useCallback((text: string) => {
-    // Find matching command type
+    // Send raw transcript to backend voice-command endpoint for NLP processing
+    fetch(`${API_URL}/api/navigation/voice-command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: text, lat: currentLocation.lat, lng: currentLocation.lng }),
+    }).catch(() => {})
+
     let foundType: string | null = null
     for (const cmd of VOICE_COMMANDS) {
       if (cmd.phrases.some(phrase => text.includes(phrase))) {
@@ -168,8 +174,7 @@ export default function OrionVoice({ isOpen, onClose, onReportCreated, isNavigat
       }
     }
 
-    // Find direction
-    let foundDirection = 'ahead' // default
+    let foundDirection = 'ahead'
     for (const dir of DIRECTIONS) {
       if (text.includes(dir)) {
         foundDirection = dir
@@ -180,8 +185,6 @@ export default function OrionVoice({ isOpen, onClose, onReportCreated, isNavigat
     if (foundType) {
       setDetectedCommand({ type: foundType, direction: foundDirection })
       setOrionMessage(`Got it! ${foundType.charAt(0).toUpperCase() + foundType.slice(1)} ${foundDirection}. Posting report...`)
-      
-      // Auto-submit after brief delay
       setTimeout(() => {
         submitReport(foundType, foundDirection)
       }, 1500)
