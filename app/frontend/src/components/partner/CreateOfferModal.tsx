@@ -1,13 +1,15 @@
 import { useState } from 'react'
-import { X, MapPin, Plus, Check, Image } from 'lucide-react'
+import { X, MapPin, Plus, Check, Image, Gem, Gift, Loader2 } from 'lucide-react'
 import type { PartnerProfile } from '@/types/partner'
+import { calculateAutoGems, calculateFreeDiscount } from '@/lib/offer-pricing'
 
 interface NewOfferData {
   title: string
   description: string
   discount_percent: number
   gems_reward: number
-  location_id: number
+  is_free_item: boolean
+  location_id: string
   expires_days: number
 }
 
@@ -29,13 +31,23 @@ export default function CreateOfferModal({
     title: '',
     description: '',
     discount_percent: 15,
-    gems_reward: 50,
-    location_id: partnerProfile?.locations[0]?.id || 0,
+    gems_reward: 0,
+    is_free_item: false,
+    location_id: partnerProfile?.locations[0]?.id || '',
     expires_days: 7,
   })
+  const [submitting, setSubmitting] = useState(false)
+
+  const autoGems = calculateAutoGems(data.discount_percent, data.is_free_item)
+  const freeDiscount = calculateFreeDiscount(data.discount_percent)
 
   const handleCreate = async () => {
-    await onCreate(data, newOfferImage)
+    setSubmitting(true)
+    try {
+      await onCreate({ ...data, gems_reward: autoGems }, newOfferImage)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -66,11 +78,11 @@ export default function CreateOfferModal({
                 {partnerProfile && partnerProfile.locations.length > 0 ? (
                   <select
                     value={data.location_id}
-                    onChange={(e) => setData(prev => ({ ...prev, location_id: parseInt(e.target.value) }))}
+                    onChange={(e) => setData(prev => ({ ...prev, location_id: e.target.value }))}
                     className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none cursor-pointer"
                     data-testid="offer-location-select"
                   >
-                    <option value={0} disabled>-- Choose a store location --</option>
+                    <option value="" disabled>-- Choose a store location --</option>
                     {partnerProfile.locations.map(loc => (
                       <option key={loc.id} value={loc.id}>
                         {loc.name} {loc.is_primary ? '(Primary)' : ''} - {loc.address.substring(0, 40)}...
@@ -87,7 +99,7 @@ export default function CreateOfferModal({
                     </button>
                   </div>
                 )}
-                {data.location_id > 0 && partnerProfile && (
+                {data.location_id && partnerProfile && (
                   <div className="mt-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
                     <p className="text-emerald-400 text-xs flex items-center gap-2">
                       <Check size={12} /> Offer will appear on map at this location
@@ -108,18 +120,29 @@ export default function CreateOfferModal({
                   value={data.description} onChange={(e) => setData(prev => ({ ...prev, description: e.target.value }))}
                   className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 resize-none" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-slate-400 text-sm mb-1 block">Discount %</label>
-                  <input type="number" placeholder="15"
-                    value={data.discount_percent} onChange={(e) => setData(prev => ({ ...prev, discount_percent: parseInt(e.target.value) || 0 }))}
-                    className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white" />
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={data.is_free_item}
+                      onChange={(e) => setData(prev => ({ ...prev, is_free_item: e.target.checked, discount_percent: e.target.checked ? 100 : prev.discount_percent }))}
+                      className="w-4 h-4 rounded border-white/20 bg-slate-700 text-emerald-500 focus:ring-emerald-500/30" />
+                    <span className="text-slate-300 text-sm flex items-center gap-1"><Gift size={14} className="text-emerald-400" /> Free Item</span>
+                  </label>
                 </div>
-                <div>
-                  <label className="text-slate-400 text-sm mb-1 block">Gems Reward</label>
-                  <input type="number" placeholder="50"
-                    value={data.gems_reward} onChange={(e) => setData(prev => ({ ...prev, gems_reward: parseInt(e.target.value) || 0 }))}
-                    className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white" />
+                {!data.is_free_item && (
+                  <div>
+                    <label className="text-slate-400 text-sm mb-1 block">Discount % (Premium Users)</label>
+                    <input type="number" placeholder="15" min="1" max="100"
+                      value={data.discount_percent} onChange={(e) => setData(prev => ({ ...prev, discount_percent: parseInt(e.target.value) || 0 }))}
+                      className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white" />
+                    <p className="text-slate-500 text-xs mt-1">Free users will see {freeDiscount}% discount</p>
+                  </div>
+                )}
+                <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-3 flex items-center justify-between">
+                  <span className="text-slate-300 text-sm flex items-center gap-2">
+                    <Gem size={16} className="text-cyan-400" /> Auto Gem Reward
+                  </span>
+                  <span className="text-cyan-400 font-bold text-lg">{autoGems} gems</span>
                 </div>
               </div>
               <div>
@@ -134,10 +157,10 @@ export default function CreateOfferModal({
                 </select>
               </div>
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={onClose} className="flex-1 bg-slate-700/50 text-white py-3 rounded-xl hover:bg-slate-700">Cancel</button>
-                <button type="button" onClick={handleCreate} disabled={!data.title || data.location_id === 0}
-                  className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl hover:from-emerald-400 hover:to-teal-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
-                  Create Offer
+                <button type="button" onClick={onClose} disabled={submitting} className="flex-1 bg-slate-700/50 text-white py-3 rounded-xl hover:bg-slate-700 disabled:opacity-50">Cancel</button>
+                <button type="button" onClick={handleCreate} disabled={!data.title || !data.location_id || submitting}
+                  className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl hover:from-emerald-400 hover:to-teal-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                  {submitting ? <><Loader2 size={18} className="animate-spin" /> Creating...</> : 'Create Offer'}
                 </button>
               </div>
             </div>

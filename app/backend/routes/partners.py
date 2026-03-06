@@ -8,6 +8,7 @@ from models.schemas import (
     TeamInviteRequest, ReferralRequest,
     CreditUseRequest, QRRedemptionRequest, BoostRequest, BoostCreditsRequest,
 )
+from services.offer_utils import calculate_auto_gems, calculate_free_discount, get_fee_tier_info
 from services.supabase_service import (
     sb_get_partner, sb_get_partners, sb_update_partner, sb_create_partner,
     sb_get_partner_locations, sb_create_partner_location,
@@ -199,19 +200,23 @@ def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_p
         return {"success": False, "message": "Partner not found"}
 
     locations = sb_get_partner_locations(partner_id)
-    location = next((l for l in locations if l["id"] == str(offer.location_id)), None)
+    location = next((l for l in locations if l["id"] == offer.location_id), None)
     if not location:
         return {"success": False, "message": "Location not found"}
+
+    auto_gems = calculate_auto_gems(offer.discount_percent, offer.is_free_item)
+    free_discount = calculate_free_discount(offer.discount_percent)
 
     new_offer = sb_create_offer({
         "partner_id": partner_id,
         "location_id": location["id"],
         "title": offer.title,
         "description": offer.description,
-        "business_name": partner.get("business_name", ""),
-        "business_type": partner.get("business_type", "retail"),
         "discount_percent": offer.discount_percent,
-        "base_gems": offer.gems_reward,
+        "base_gems": auto_gems,
+        "premium_discount_percent": offer.discount_percent,
+        "free_discount_percent": free_discount,
+        "is_free_item": offer.is_free_item,
         "lat": location["lat"],
         "lng": location["lng"],
         "status": "active",
@@ -241,11 +246,18 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, partner_id: s
     if not location:
         return {"success": False, "message": "Location not found"}
     
+    auto_gems = calculate_auto_gems(offer.discount_percent, offer.is_free_item)
+    premium_discount = offer.discount_percent
+    free_discount = calculate_free_discount(premium_discount)
+
     updates = {
         "title": offer.title,
         "description": offer.description,
-        "discount_percent": offer.discount_percent,
-        "base_gems": offer.gems_reward,
+        "discount_percent": premium_discount,
+        "premium_discount_percent": premium_discount,
+        "free_discount_percent": free_discount,
+        "is_free_item": offer.is_free_item,
+        "base_gems": auto_gems,
         "image_url": offer.image_url,
         "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
     }
@@ -514,10 +526,138 @@ async def redeem_offer(request: QRRedemptionRequest, background_tasks: Backgroun
     return result
 
 
+# ==================== TEAM LINKS ====================
+@router.post("/partner/v2/team-link/generate")
+async def generate_team_link(partner_id: str, label: str = "Team Link"):
+    """Generate a shareable QR scan link for partner team members."""
+    import secrets
+    from services.supabase_service import _sb
+
+    partner = sb_get_partner(partner_id)
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+
+    token = secrets.token_urlsafe(32)
+    try:
+        result = _sb().table("partner_team_links").insert({
+            "partner_id": partner_id,
+            "token": token,
+            "label": label,
+            "created_by": partner_id,
+            "is_active": True,
+        }).execute()
+        link_data = result.data[0] if result.data else {"token": token}
+    except Exception as e:
+        logger.warning(f"Team link DB error (table may not exist yet): {e}")
+        link_data = {"token": token, "partner_id": partner_id, "label": label}
+
+    scan_url = f"/scan/{partner_id}/{token}"
+    return {
+        "success": True,
+        "data": {
+            **link_data,
+            "scan_url": scan_url,
+            "full_url": f"{{base_url}}{scan_url}",
+        },
+    }
+
+
+@router.get("/partner/v2/team-links/{partner_id}")
+async def list_team_links(partner_id: str):
+    from services.supabase_service import _sb
+    try:
+        result = _sb().table("partner_team_links").select("*").eq("partner_id", partner_id).eq("is_active", True).execute()
+        links = result.data or []
+    except Exception:
+        links = []
+    return {"success": True, "data": links, "count": len(links)}
+
+
+@router.delete("/partner/v2/team-link/{link_id}")
+async def revoke_team_link(link_id: str):
+    from services.supabase_service import _sb
+    try:
+        _sb().table("partner_team_links").update({"is_active": False}).eq("id", link_id).execute()
+    except Exception as e:
+        logger.warning(f"Revoke team link error: {e}")
+    return {"success": True, "message": "Team link revoked"}
+
+
+@router.post("/partner/v2/scan/validate")
+async def validate_scan(token: str, qr_data: str):
+    """Validate a QR code scanned via a team link. Token auth instead of partner login."""
+    from services.supabase_service import _sb
+    import json
+
+    # Verify the team link token
+    try:
+        link = _sb().table("partner_team_links").select("*").eq("token", token).eq("is_active", True).maybe_single().execute()
+        if not link or not link.data:
+            raise HTTPException(status_code=403, detail="Invalid or expired team link")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    # Parse QR data
+    try:
+        data = json.loads(qr_data) if isinstance(qr_data, str) else qr_data
+    except Exception:
+        data = {"raw": qr_data}
+
+    offer_id = data.get("offerId") or data.get("offer_id")
+    if not offer_id:
+        return {"success": False, "message": "No offer ID in QR code"}
+
+    # Look up the offer
+    try:
+        offer = _sb().table("offers").select("*").eq("id", offer_id).maybe_single().execute()
+        if not offer or not offer.data:
+            return {"success": False, "message": "Offer not found"}
+    except Exception:
+        return {"success": False, "message": "Could not verify offer"}
+
+    return {
+        "success": True,
+        "message": "QR code validated",
+        "data": {
+            "offer": {
+                "id": offer.data.get("id"),
+                "title": offer.data.get("title", offer.data.get("description", "")[:60]),
+                "business_name": offer.data.get("business_name"),
+                "discount_percent": offer.data.get("discount_percent", 0),
+                "base_gems": offer.data.get("base_gems", 0),
+            },
+            "customer_id": data.get("customerId"),
+            "token": data.get("token"),
+        },
+    }
+
+
 @router.get("/partner/v2/redemptions/{partner_id}")
 async def get_recent_redemptions(partner_id: str, limit: int = 10):
     redemptions = sb_get_redemptions_by_partner(partner_id, limit)
     return {"success": True, "data": redemptions, "count": len(redemptions)}
+
+
+@router.get("/partner/v2/fees/{partner_id}")
+async def get_partner_fees(partner_id: str):
+    partner = sb_get_partner(partner_id)
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    total_redemptions = partner.get("total_redemptions", 0) or 0
+    total_owed = partner.get("total_fees_owed", 0) or 0
+    total_paid = partner.get("total_fees_paid", 0) or 0
+    tier_info = get_fee_tier_info(total_redemptions)
+    return {
+        "success": True,
+        "data": {
+            **tier_info,
+            "total_owed": round(total_owed, 2),
+            "total_paid": round(total_paid, 2),
+            "balance_due": round(total_owed - total_paid, 2),
+        },
+    }
 
 
 @router.get("/partner/v2/analytics/{partner_id}")

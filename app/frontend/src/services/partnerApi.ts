@@ -128,20 +128,20 @@ class PartnerApiService {
     })
   }
 
-  async updateLocation(locationId: number, data: any): Promise<any> {
+  async updateLocation(locationId: string, data: any): Promise<any> {
     return this.request(`/api/partner/locations/${locationId}?partner_id=${this.partnerId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     })
   }
 
-  async deleteLocation(locationId: number): Promise<any> {
+  async deleteLocation(locationId: string): Promise<any> {
     return this.request(`/api/partner/locations/${locationId}?partner_id=${this.partnerId}`, {
       method: 'DELETE',
     })
   }
 
-  async setPrimaryLocation(locationId: number): Promise<any> {
+  async setPrimaryLocation(locationId: string): Promise<any> {
     return this.request(`/api/partner/locations/${locationId}/set-primary?partner_id=${this.partnerId}`, {
       method: 'POST',
     })
@@ -210,6 +210,10 @@ class PartnerApiService {
     return this.request(`/api/partner/v2/credits/history/${this.partnerId}`)
   }
 
+  async getFees(): Promise<any> {
+    return this.request(`/api/partner/v2/fees/${this.partnerId}`)
+  }
+
   async getReferralLeaderboard(): Promise<any> {
     return this.request('/api/partner/v2/referrals/leaderboard')
   }
@@ -263,6 +267,19 @@ class PartnerApiService {
   // Redemptions
   async getRedemptions(limit: number = 10): Promise<any> {
     return this.request(`/api/partner/v2/redemptions/${this.partnerId}?limit=${limit}`)
+  }
+
+  // Team Links
+  async generateTeamLink(label: string = 'Team Link'): Promise<any> {
+    return this.request(`/api/partner/v2/team-link/generate?partner_id=${this.partnerId}&label=${encodeURIComponent(label)}`, { method: 'POST' })
+  }
+
+  async getTeamLinks(): Promise<any> {
+    return this.request(`/api/partner/v2/team-links/${this.partnerId}`)
+  }
+
+  async revokeTeamLink(linkId: string): Promise<any> {
+    return this.request(`/api/partner/v2/team-link/${linkId}`, { method: 'DELETE' })
   }
 }
 

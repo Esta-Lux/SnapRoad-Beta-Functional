@@ -395,14 +395,23 @@ export default function InteractiveMap({
   })
 
   const latLngToPixel = (lat: number, lng: number) => {
+    // Validate coordinates to prevent NaN
+    if (!lat || !lng || isNaN(lat) || isNaN(lng) || !isFinite(lat) || !isFinite(lng)) {
+      return { x: 0, y: 0 }
+    }
+    
     const targetX = lon2tile(lng, zoom) * 256
     const targetY = lat2tile(lat, zoom) * 256
     const centerX = lon2tile(center.lng, zoom) * 256
     const centerY = lat2tile(center.lat, zoom) * 256
     
+    const x = (targetX - centerX) + mapSize.width / 2
+    const y = (targetY - centerY) + mapSize.height / 2
+    
+    // Final validation to prevent NaN
     return {
-      x: (targetX - centerX) + mapSize.width / 2,
-      y: (targetY - centerY) + mapSize.height / 2
+      x: isNaN(x) || !isFinite(x) ? 0 : x,
+      y: isNaN(y) || !isFinite(y) ? 0 : y
     }
   }
 

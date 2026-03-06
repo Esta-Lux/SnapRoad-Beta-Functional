@@ -24,6 +24,7 @@ import LegalTab from '@/components/admin/LegalTab'
 import SettingsTab from '@/components/admin/SettingsTab'
 import NotificationsTab from '@/components/admin/NotificationsTab'
 import AuditLogTab from '@/components/admin/AuditLogTab'
+import { AdminOfferManagement } from '@/components/figma-ui/admin/AdminOfferManagement'
 
 // Hooks
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -35,6 +36,7 @@ const NAV_BASE = [
   { id: 'moderation', label: 'AI Moderation Queue', icon: Eye, badgeKey: '' },
   { id: 'rewards', label: 'Rewards & Vouchers', icon: Gift, badgeKey: '' },
   { id: 'partners', label: 'Partners & Campaigns', icon: Building2, badgeKey: 'total_partners' },
+  { id: 'offers', label: 'Offer Management', icon: Gift, badgeKey: '' },
   { id: 'referrals', label: 'Partner Referral Analytics', icon: BarChart3, badgeKey: '' },
   { id: 'notifications', label: 'Notifications', icon: Bell, badgeKey: '' },
   { id: 'analytics', label: 'Analytics', icon: TrendingUp, badgeKey: '' },
@@ -91,7 +93,9 @@ export default function AdminDashboard() {
       case 'rewards':
         return <RewardsTab theme={darkMode ? 'dark' : 'light'} />
       case 'partners':
-        return <PartnersTab theme={darkMode ? 'dark' : 'light'} />
+        return <PartnersTab theme={darkMode ? 'dark' : 'light'} onNavigate={(tabId) => setActiveTab(tabId)} />
+      case 'offers':
+        return <AdminOfferManagement onNavigate={(page) => setActiveTab(page)} theme={darkMode ? 'dark' : 'light'} />
       case 'referrals':
         return <ReferralAnalyticsTab theme={darkMode ? 'dark' : 'light'} />
       case 'notifications':

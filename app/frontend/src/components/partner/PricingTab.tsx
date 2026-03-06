@@ -70,7 +70,10 @@ export default function PricingTab({ currentPlan, onUpgrade }: Props) {
         <p className="text-slate-400 text-sm">
           Current plan: <span className="text-white font-semibold capitalize">{currentPlan}</span>
           {' · '}
-          <span className="text-[#0084FF] cursor-pointer hover:underline">Manage billing</span>
+          <span
+            className="text-[#0084FF] cursor-pointer hover:underline"
+            onClick={() => window.open('mailto:billing@snaproad.co?subject=Billing%20Inquiry', '_blank')}
+          >Manage billing</span>
         </p>
       </div>
 
@@ -198,11 +201,17 @@ export default function PricingTab({ currentPlan, onUpgrade }: Props) {
       <div className="bg-gradient-to-r from-slate-800/50 to-slate-900/50 border border-white/5 rounded-2xl p-6 text-center">
         <p className="text-slate-400 text-sm">
           Need a custom solution?{' '}
-          <span className="text-[#0084FF] cursor-pointer hover:underline font-medium">
+          <span
+            className="text-[#0084FF] cursor-pointer hover:underline font-medium"
+            onClick={() => window.open('mailto:sales@snaproad.co?subject=Custom%20Solution%20Inquiry', '_blank')}
+          >
             Contact our sales team
           </span>{' '}
           or view our{' '}
-          <span className="text-[#0084FF] cursor-pointer hover:underline font-medium">
+          <span
+            className="text-[#0084FF] cursor-pointer hover:underline font-medium"
+            onClick={() => window.open('https://snaproad.co/pricing', '_blank')}
+          >
             full feature comparison
           </span>
         </p>

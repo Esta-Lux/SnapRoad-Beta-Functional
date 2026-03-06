@@ -42,10 +42,16 @@ class BulkOfferItem(BaseModel):
     description: str = ""
     offer_url: Optional[str] = None
     business_type: str = "other"
-    base_gems: int = 25
+    discount_percent: int = 0
+    is_free_item: bool = False
+    base_gems: Optional[int] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
     expires_days: int = 30
+    offer_source: str = "direct"
+    original_price: Optional[float] = None
+    affiliate_tracking_url: Optional[str] = None
+    external_id: Optional[str] = None
 
 class BulkOfferUpload(BaseModel):
     offers: List[BulkOfferItem]
@@ -149,7 +155,8 @@ class PartnerOfferCreate(BaseModel):
     title: str
     description: str
     discount_percent: int
-    gems_reward: int
+    gems_reward: Optional[int] = None
+    is_free_item: bool = False
     location_id: str
     expires_hours: int = 168
     image_url: Optional[str] = None
@@ -214,12 +221,18 @@ class AdminOfferCreate(BaseModel):
     business_id: Optional[str] = None
     business_type: str
     description: str
-    discount_percent: int
-    base_gems: int
-    lat: float
-    lng: float
+    discount_percent: int = 0
+    is_free_item: bool = False
+    base_gems: Optional[int] = None
+    lat: float = 39.9612
+    lng: float = -82.9988
     expires_hours: int = 24
     image_id: Optional[str] = None
+    offer_source: str = "direct"
+    original_price: Optional[float] = None
+    offer_url: Optional[str] = None
+    affiliate_tracking_url: Optional[str] = None
+    external_id: Optional[str] = None
 
 
 # ==================== AI ====================

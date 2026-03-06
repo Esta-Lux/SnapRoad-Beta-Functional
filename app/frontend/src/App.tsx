@@ -26,6 +26,8 @@ import AdminDashboard from './pages/AdminDashboard'
 import DriverApp from './pages/DriverApp'
 import PhonePreview from './pages/PhonePreview'
 import { NavigationCoreProvider } from './contexts/NavigationCoreContext'
+import { MapKitProvider } from './contexts/MapKitContext'
+import TeamScanPage from './pages/TeamScanPage'
 
 // New Figma UI Components
 import { SnapRoadApp } from './components/figma-ui'
@@ -59,9 +61,11 @@ function App() {
         {/* Driver App - Web Preview (Phase 1: VehicleState + MapKit-ready map) */}
         <Route path="/driver" element={
           <DriverGuard>
-            <NavigationCoreProvider fallbackCenter={{ lat: 39.9612, lng: -82.9988 }} enableGps={true}>
-              <DriverApp />
-            </NavigationCoreProvider>
+            <MapKitProvider>
+              <NavigationCoreProvider fallbackCenter={{ lat: 39.9612, lng: -82.9988 }} enableGps={true}>
+                <DriverApp />
+              </NavigationCoreProvider>
+            </MapKitProvider>
           </DriverGuard>
         } />
         <Route path="/driver/auth" element={<AuthFlow />} />
@@ -69,6 +73,9 @@ function App() {
         {/* Phone frame preview */}
         <Route path="/preview" element={<PhonePreview />} />
         
+        {/* Team QR scan page — no auth required (uses token from URL) */}
+        <Route path="/scan/:partnerId/:token" element={<TeamScanPage />} />
+
         {/* Partner Portal - protected by partner auth */}
         <Route path="/portal/partner" element={<PartnerGuard><PartnerDashboard /></PartnerGuard>} />
         

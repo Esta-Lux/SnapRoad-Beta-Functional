@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import {
   Wallet, CreditCard, Download, ArrowUpRight,
-  TrendingDown, Receipt, Zap, BarChart2,
+  TrendingDown, Receipt, Zap, BarChart2, Info,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { partnerApi } from '@/services/partnerApi'
+import { REDEMPTION_FEE_SCHEDULE } from '@/lib/offer-pricing'
 
 const EARN_OPPORTUNITIES = [
   { title: 'Refer a New Partner', desc: 'Earn 50 credits for every approved business you refer', credits: '+50 credits', color: '#0084FF' },
@@ -22,11 +23,22 @@ interface CreditEntry {
   date: string
 }
 
+interface FeeInfo {
+  current_fee: number
+  current_tier: number
+  tier_range: string
+  total_redemptions: number
+  total_owed: number
+  total_paid: number
+  balance_due: number
+}
+
 export default function FinanceTab() {
   const [creditBalance, setCreditBalance] = useState(0)
   const [creditHistory, setCreditHistory] = useState<CreditEntry[]>([])
   const [totalEarned, setTotalEarned] = useState(0)
   const [totalSpent, setTotalSpent] = useState(0)
+  const [feeInfo, setFeeInfo] = useState<FeeInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [showAddCreditsModal, setShowAddCreditsModal] = useState(false)
   const [creditAmount, setCreditAmount] = useState('50')
@@ -44,6 +56,11 @@ export default function FinanceTab() {
           setTotalEarned(historyRes.data.total_earned || 0)
           setTotalSpent(historyRes.data.total_spent || 0)
         }
+        // Fetch fee info
+        try {
+          const feeRes = await partnerApi.getFees()
+          if (feeRes.success && feeRes.data) setFeeInfo(feeRes.data as any)
+        } catch {}
       } catch (e) { console.error(e) }
       setLoading(false)
     }
@@ -138,6 +155,48 @@ export default function FinanceTab() {
           </div>
         </div>
       </div>
+
+      {/* Redemption Fee Tier Info */}
+      {feeInfo && (
+        <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
+          <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+            <Info size={18} className="text-amber-400" /> Redemption Fee Summary
+          </h3>
+          <div className="grid grid-cols-4 gap-4 mb-4">
+            <div className="bg-white/[0.03] rounded-xl p-3 text-center">
+              <p className="text-slate-400 text-xs">Current Rate</p>
+              <p className="text-white text-xl font-bold">${feeInfo.current_fee.toFixed(2)}</p>
+              <p className="text-slate-500 text-[10px]">per redemption</p>
+            </div>
+            <div className="bg-white/[0.03] rounded-xl p-3 text-center">
+              <p className="text-slate-400 text-xs">Total Redemptions</p>
+              <p className="text-white text-xl font-bold">{feeInfo.total_redemptions.toLocaleString()}</p>
+              <p className="text-slate-500 text-[10px]">Tier {feeInfo.current_tier} ({feeInfo.tier_range})</p>
+            </div>
+            <div className="bg-white/[0.03] rounded-xl p-3 text-center">
+              <p className="text-slate-400 text-xs">Total Owed</p>
+              <p className="text-amber-400 text-xl font-bold">${feeInfo.total_owed.toFixed(2)}</p>
+            </div>
+            <div className="bg-white/[0.03] rounded-xl p-3 text-center">
+              <p className="text-slate-400 text-xs">Balance Due</p>
+              <p className="text-red-400 text-xl font-bold">${feeInfo.balance_due.toFixed(2)}</p>
+            </div>
+          </div>
+          <div className="bg-white/[0.02] rounded-xl p-3">
+            <p className="text-slate-400 text-xs font-medium mb-2">Fee Schedule</p>
+            <div className="grid grid-cols-5 gap-2">
+              {REDEMPTION_FEE_SCHEDULE.map((tier, i) => (
+                <div key={i} className={`text-center p-2 rounded-lg ${feeInfo.current_tier === i + 1 ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-white/[0.02]'}`}>
+                  <p className="text-slate-500 text-[10px]">{tier.range}</p>
+                  <p className={`font-bold text-sm ${feeInfo.current_tier === i + 1 ? 'text-amber-400' : 'text-slate-300'}`}>
+                    ${typeof tier.fee === 'number' ? tier.fee.toFixed(2) : '0.50+'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-6">
         <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">

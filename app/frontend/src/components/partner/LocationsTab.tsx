@@ -8,9 +8,9 @@ import type { PartnerProfile, PartnerLocation } from '@/types/partner'
 interface Props {
   partnerProfile: PartnerProfile
   onAdd: (data: LocationFormData) => void
-  onUpdate: (locationId: number, data: LocationFormData) => void
-  onDelete: (locationId: number) => void
-  onSetPrimary: (locationId: number) => void
+  onUpdate: (locationId: string, data: LocationFormData) => void
+  onDelete: (locationId: string) => void
+  onSetPrimary: (locationId: string) => void
   onUpgradePlan?: () => void
 }
 

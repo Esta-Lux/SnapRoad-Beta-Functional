@@ -260,6 +260,40 @@ class AdminApiService {
     return this.request(`/api/admin/export/offers?format=${format}`)
   }
 
+  async importGrouponDeals(area: string = 'Columbus, OH', category?: string, limit: number = 20): Promise<AdminApiResponse<any>> {
+    const params = new URLSearchParams({ area, limit: String(limit) })
+    if (category) params.set('category', category)
+    return this.request(`/api/admin/offers/import-groupon?${params}`, { method: 'POST' })
+  }
+
+  async approveImports(deals: any[]): Promise<AdminApiResponse<any>> {
+    return this.request('/api/admin/offers/approve-imports', {
+      method: 'POST',
+      body: JSON.stringify(deals),
+    })
+  }
+
+  async enrichOfferWithYelp(offerId: string): Promise<AdminApiResponse<any>> {
+    return this.request(`/api/admin/offers/${offerId}/enrich-yelp`, { method: 'POST' })
+  }
+
+  async uploadExcel(file: File): Promise<AdminApiResponse<any>> {
+    const url = `${API_URL}/api/admin/offers/upload-excel`
+    const token = this.getToken()
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      body: formData,
+    })
+    return res.json()
+  }
+
+  getTemplateUrl(): string {
+    return `${API_URL}/api/admin/offers/upload-template`
+  }
+
   // ==================== FINANCE ====================
 
   async getFinance(): Promise<AdminApiResponse<FinanceData>> {

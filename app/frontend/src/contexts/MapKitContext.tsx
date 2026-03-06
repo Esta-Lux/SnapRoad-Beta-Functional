@@ -26,10 +26,10 @@ export function MapKitProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false
     initMapKit()
-      .then((ok) => {
+      .then((result) => {
         if (!cancelled) {
-          setReady(ok)
-          if (!ok) setError('MapKit not configured (set backend .env)')
+          setReady(result.ok)
+          if (!result.ok) setError(result.error || 'MapKit init failed')
         }
       })
       .catch((err) => {

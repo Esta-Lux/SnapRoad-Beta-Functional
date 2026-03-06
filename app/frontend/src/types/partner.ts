@@ -10,7 +10,7 @@ export interface Offer {
   created_at: string
   expires_at: string
   image_url?: string
-  location_id?: number
+  location_id?: string
   location_name?: string
   is_boosted?: boolean
   boost_multiplier?: number
@@ -18,7 +18,7 @@ export interface Offer {
 }
 
 export interface PartnerLocation {
-  id: number
+  id: string
   name: string
   address: string
   lat: number

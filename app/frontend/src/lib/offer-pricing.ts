@@ -1,82 +1,74 @@
 // SnapRoad - Offer Gem Pricing Constants
 // Automatic pricing based on discount percentage
-// These constants sync across driver, partner, and admin sides
+// Synced with backend: services/offer_utils.py
 
 export const GEM_PRICING_TIERS = {
-  // 10% or less discount = 50 gems
   LOW_DISCOUNT: {
-    threshold: 10,
-    freeUserGems: 50,
-    premiumUserGems: 40, // Premium users get 20% discount on gem costs
+    threshold: 5,
+    gems: 45,
     label: 'Standard Offer',
     color: '#0084FF',
   },
-  // Above 10% discount = 80 gems
-  MEDIUM_DISCOUNT: {
-    threshold: 25,
-    freeUserGems: 80,
-    premiumUserGems: 65,
+  HIGH_DISCOUNT: {
+    threshold: 100,
+    gems: 100,
     label: 'Premium Offer',
     color: '#9D4EDD',
   },
-  // Free items = 100 gems
   FREE_ITEM: {
     threshold: 100,
-    freeUserGems: 100,
-    premiumUserGems: 80,
+    gems: 125,
     label: 'Exclusive Offer',
     color: '#00DFA2',
   },
 };
 
-// Calculate gem cost based on discount percentage and user plan
+export function calculateAutoGems(discountPercent: number, isFreeItem: boolean): number {
+  if (isFreeItem) return 125;
+  if (discountPercent >= 5) return 100;
+  return 45;
+}
+
+/** @deprecated Use calculateAutoGems — kept for backward compat */
 export function calculateGemCost(
   discountPercent: number,
   isFreeItem: boolean,
-  isPremiumUser: boolean
+  _isPremiumUser: boolean
 ): number {
-  if (isFreeItem) {
-    return isPremiumUser 
-      ? GEM_PRICING_TIERS.FREE_ITEM.premiumUserGems 
-      : GEM_PRICING_TIERS.FREE_ITEM.freeUserGems;
-  }
-  
-  if (discountPercent <= GEM_PRICING_TIERS.LOW_DISCOUNT.threshold) {
-    return isPremiumUser 
-      ? GEM_PRICING_TIERS.LOW_DISCOUNT.premiumUserGems 
-      : GEM_PRICING_TIERS.LOW_DISCOUNT.freeUserGems;
-  }
-  
-  return isPremiumUser 
-    ? GEM_PRICING_TIERS.MEDIUM_DISCOUNT.premiumUserGems 
-    : GEM_PRICING_TIERS.MEDIUM_DISCOUNT.freeUserGems;
+  return calculateAutoGems(discountPercent, isFreeItem);
 }
 
-// Get pricing tier info for display
 export function getOfferTier(discountPercent: number, isFreeItem: boolean) {
   if (isFreeItem) {
-    return {
-      tier: 'FREE_ITEM',
-      ...GEM_PRICING_TIERS.FREE_ITEM,
-    };
+    return { tier: 'FREE_ITEM', ...GEM_PRICING_TIERS.FREE_ITEM };
   }
-  
-  if (discountPercent <= GEM_PRICING_TIERS.LOW_DISCOUNT.threshold) {
-    return {
-      tier: 'LOW_DISCOUNT',
-      ...GEM_PRICING_TIERS.LOW_DISCOUNT,
-    };
+  if (discountPercent >= 5) {
+    return { tier: 'HIGH_DISCOUNT', ...GEM_PRICING_TIERS.HIGH_DISCOUNT };
   }
-  
-  return {
-    tier: 'MEDIUM_DISCOUNT',
-    ...GEM_PRICING_TIERS.MEDIUM_DISCOUNT,
-  };
+  return { tier: 'LOW_DISCOUNT', ...GEM_PRICING_TIERS.LOW_DISCOUNT };
 }
 
-// Partner pricing (what we charge partners)
+export function calculateFreeDiscount(premiumDiscount: number): number {
+  if (premiumDiscount <= 0) return 0;
+  return Math.max(1, Math.floor(premiumDiscount / 4));
+}
+
+// Tiered per-redemption fee (synced with backend offer_utils.py)
+export function calculateRedemptionFee(totalRedemptions: number): number {
+  const base = 0.20;
+  const tiersPast = Math.max(0, Math.floor((totalRedemptions - 1) / 500));
+  return Math.round((base + tiersPast * 0.10) * 100) / 100;
+}
+
+export const REDEMPTION_FEE_SCHEDULE = [
+  { range: '1-500', fee: 0.20 },
+  { range: '501-1,000', fee: 0.30 },
+  { range: '1,001-1,500', fee: 0.40 },
+  { range: '1,501-2,000', fee: 0.50 },
+  { range: '2,001+', fee: '0.50+ ($0.10 per 500)' },
+];
+
 export const PARTNER_PRICING = {
-  PER_REDEMPTION_FEE: 0.50, // $0.50 per redemption
   MONTHLY_SUBSCRIPTION: {
     BASIC: 29.99,
     PROFESSIONAL: 79.99,

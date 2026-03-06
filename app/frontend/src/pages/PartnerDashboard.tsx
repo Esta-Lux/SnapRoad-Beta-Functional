@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Building2, Plus, Gift, TrendingUp, BarChart3,
   Bell, Settings, LogOut, HelpCircle,
-  Rocket, Store, CreditCard, Share2, BadgeCheck,
+  Rocket, Store, CreditCard, Share2, BadgeCheck, QrCode,
 } from 'lucide-react'
 import { NotificationCenter, useNotifications, notificationService } from '@/components/NotificationSystem'
 import SettingsModal from '@/components/SettingsModal'
@@ -24,30 +24,33 @@ import LocationsTab from '@/components/partner/LocationsTab'
 import BoostsTab from '@/components/partner/BoostsTab'
 import FinanceTab from '@/components/partner/FinanceTab'
 import ReferralsTab from '@/components/partner/ReferralsTab'
+import TeamLinksTab from '@/components/partner/TeamLinksTab'
 import PricingTab from '@/components/partner/PricingTab'
 
-type TabId = 'overview' | 'offers' | 'locations' | 'analytics' | 'boosts' | 'finance' | 'referrals' | 'pricing'
+type TabId = 'overview' | 'offers' | 'locations' | 'analytics' | 'boosts' | 'finance' | 'referrals' | 'pricing' | 'team-links'
 
 const TAB_META: Record<TabId, { title: string; subtitle: string }> = {
-  overview:  { title: 'Dashboard Overview',  subtitle: 'Manage your SnapRoad offers and track performance' },
-  offers:    { title: 'My Offers',           subtitle: 'Create and manage your business offers' },
-  locations: { title: 'Store Locations',     subtitle: 'Manage your store locations on the map' },
-  analytics: { title: 'Real-Time Analytics', subtitle: 'Track your offer performance in real-time' },
-  boosts:    { title: 'Boost Center',        subtitle: 'Amplify your offer reach with paid boosts' },
-  finance:   { title: 'Credits & Earnings',  subtitle: 'Manage your SnapRoad partner credits and earnings' },
-  referrals: { title: 'Referral Analytics',  subtitle: 'Earn credits by referring new partners to SnapRoad' },
-  pricing:   { title: 'Plans & Pricing',     subtitle: 'Upgrade your plan to unlock more features' },
+  overview:      { title: 'Dashboard Overview',  subtitle: 'Manage your SnapRoad offers and track performance' },
+  offers:        { title: 'My Offers',           subtitle: 'Create and manage your business offers' },
+  locations:     { title: 'Store Locations',     subtitle: 'Manage your store locations on the map' },
+  analytics:     { title: 'Real-Time Analytics', subtitle: 'Track your offer performance in real-time' },
+  boosts:        { title: 'Boost Center',        subtitle: 'Amplify your offer reach with paid boosts' },
+  finance:       { title: 'Credits & Earnings',  subtitle: 'Manage your SnapRoad partner credits and earnings' },
+  referrals:     { title: 'Referral Analytics',  subtitle: 'Earn credits by referring new partners to SnapRoad' },
+  pricing:       { title: 'Plans & Pricing',     subtitle: 'Upgrade your plan to unlock more features' },
+  'team-links':  { title: 'Team Scan Links',     subtitle: 'Create shareable QR scan links for your team members' },
 }
 
 const NAV_ITEMS: { id: TabId; icon: typeof BarChart3; label: string; badgeKey?: 'offers' | 'locations' }[] = [
-  { id: 'overview',  icon: BarChart3,  label: 'Overview' },
-  { id: 'offers',    icon: Gift,       label: 'My Offers',         badgeKey: 'offers' },
-  { id: 'locations', icon: Store,      label: 'Locations',         badgeKey: 'locations' },
-  { id: 'analytics', icon: TrendingUp, label: 'Analytics' },
-  { id: 'boosts',    icon: Rocket,     label: 'Boosts' },
-  { id: 'finance',   icon: CreditCard, label: 'Credits & Finance' },
-  { id: 'referrals', icon: Share2,     label: 'Referrals' },
-  { id: 'pricing',   icon: BadgeCheck, label: 'Plan & Pricing' },
+  { id: 'overview',    icon: BarChart3,  label: 'Overview' },
+  { id: 'offers',      icon: Gift,       label: 'My Offers',         badgeKey: 'offers' },
+  { id: 'locations',   icon: Store,      label: 'Locations',         badgeKey: 'locations' },
+  { id: 'analytics',   icon: TrendingUp, label: 'Analytics' },
+  { id: 'boosts',      icon: Rocket,     label: 'Boosts' },
+  { id: 'finance',     icon: CreditCard, label: 'Credits & Finance' },
+  { id: 'referrals',   icon: Share2,     label: 'Referrals' },
+  { id: 'team-links',  icon: QrCode,     label: 'Team Scan Links' },
+  { id: 'pricing',     icon: BadgeCheck, label: 'Plan & Pricing' },
 ]
 
 export default function PartnerDashboard() {
@@ -131,7 +134,7 @@ export default function PartnerDashboard() {
     } catch { sendNotification('system', 'Error', 'Failed to add location') }
   }
 
-  const handleUpdateLocation = async (locationId: number, locationData: { name: string; address: string; lat: number; lng: number; is_primary: boolean }) => {
+  const handleUpdateLocation = async (locationId: string, locationData: { name: string; address: string; lat: number; lng: number; is_primary: boolean }) => {
     try {
       const data = await partnerApi.updateLocation(locationId, locationData)
       if (data.success) {
@@ -141,7 +144,7 @@ export default function PartnerDashboard() {
     } catch { sendNotification('system', 'Error', 'Failed to update location') }
   }
 
-  const handleDeleteLocation = async (locationId: number) => {
+  const handleDeleteLocation = async (locationId: string) => {
     if (!window.confirm('Are you sure you want to delete this location?')) return
     try {
       const data = await partnerApi.deleteLocation(locationId)
@@ -152,7 +155,7 @@ export default function PartnerDashboard() {
     } catch { sendNotification('system', 'Error', 'Failed to delete location') }
   }
 
-  const handleSetPrimaryLocation = async (locationId: number) => {
+  const handleSetPrimaryLocation = async (locationId: string) => {
     try {
       const data = await partnerApi.setPrimaryLocation(locationId)
       if (data.success) {
@@ -177,7 +180,7 @@ export default function PartnerDashboard() {
     } catch { sendNotification('system', 'Error', 'Failed to start checkout') }
   }
 
-  const handleCreateOffer = async (offerData: { title: string; description: string; discount_percent: number; gems_reward: number; location_id: number; expires_days: number }, image: string | null) => {
+  const handleCreateOffer = async (offerData: { title: string; description: string; discount_percent: number; gems_reward: number; is_free_item?: boolean; location_id: string; expires_days: number }, image: string | null) => {
     if (!offerData.title || !offerData.location_id) {
       sendNotification('system', 'Error', 'Please fill in all required fields and select a location.')
       return
@@ -188,6 +191,7 @@ export default function PartnerDashboard() {
         description: offerData.description,
         discount_percent: offerData.discount_percent,
         gems_reward: offerData.gems_reward,
+        is_free_item: offerData.is_free_item ?? false,
         location_id: offerData.location_id,
         expires_hours: offerData.expires_days * 24,
         image_url: image,
@@ -389,6 +393,7 @@ export default function PartnerDashboard() {
             {activeTab === 'boosts' && <BoostsTab offers={offers} onBoost={setShowBoostModal} />}
             {activeTab === 'finance' && <FinanceTab />}
             {activeTab === 'referrals' && <ReferralsTab partnerId={partnerProfile?.id} />}
+            {activeTab === 'team-links' && <TeamLinksTab partnerId={partnerProfile?.id || ''} />}
             {activeTab === 'pricing' && <PricingTab currentPlan={partnerProfile?.plan || 'starter'} onUpgrade={(planId) => handlePlanUpgrade(planId)} />}
           </>
         )}

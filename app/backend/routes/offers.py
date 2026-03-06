@@ -9,6 +9,7 @@ from services.mock_data import (
 )
 from models.schemas import ImageGenerateRequest, LocationVisit
 from services.supabase_service import _sb
+from services.offer_utils import calculate_free_discount, calculate_redemption_fee
 import uuid
 
 router = APIRouter(prefix="/api", tags=["Offers"])
@@ -23,15 +24,19 @@ def get_offers():
         result = sb.table("offers").select("*").eq("status", "active").execute()
         
         if result.data:
-            # Format offers for driver app
             offers = []
             for offer in result.data:
+                premium_disc = offer.get("premium_discount_percent") or offer.get("discount_percent", 0)
+                free_disc = offer.get("free_discount_percent") or calculate_free_discount(premium_disc)
                 offers.append({
                     "id": offer.get("id"),
                     "business_name": offer.get("business_name", ""),
                     "business_type": offer.get("business_type", "retail"),
                     "description": offer.get("description", ""),
-                    "discount_percent": offer.get("discount_percent", 0),
+                    "discount_percent": premium_disc,
+                    "premium_discount_percent": premium_disc,
+                    "free_discount_percent": free_disc,
+                    "is_free_item": offer.get("is_free_item", False),
                     "gems_reward": offer.get("base_gems", 0),
                     "base_gems": offer.get("base_gems", 0),
                     "address": offer.get("address"),
@@ -43,7 +48,14 @@ def get_offers():
                     "created_by": offer.get("created_by", ""),
                     "redemption_count": offer.get("redemption_count", 0),
                     "views": offer.get("views", 0),
-                    "redeemed": False,  # TODO: Track per-user redemptions
+                    "redeemed": False,
+                    "offer_source": offer.get("offer_source", "direct"),
+                    "original_price": offer.get("original_price"),
+                    "affiliate_tracking_url": offer.get("affiliate_tracking_url"),
+                    "external_id": offer.get("external_id"),
+                    "yelp_rating": offer.get("yelp_rating"),
+                    "yelp_review_count": offer.get("yelp_review_count"),
+                    "yelp_image_url": offer.get("yelp_image_url"),
                 })
             
             return {
@@ -102,6 +114,73 @@ def create_offer(offer: OfferCreate):
 
 @router.post("/offers/{offer_id}/redeem")
 def redeem_offer(offer_id: int):
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Try Supabase first for real offers
+    try:
+        sb = _sb()
+        db_offer = sb.table("offers").select("*").eq("id", offer_id).maybe_single().execute()
+        if db_offer and db_offer.data:
+            odata = db_offer.data
+            user = users_db.get(current_user_id, {})
+            is_premium = user.get("is_premium", False)
+
+            premium_disc = odata.get("premium_discount_percent") or odata.get("discount_percent", 0)
+            free_disc = odata.get("free_discount_percent") or calculate_free_discount(premium_disc)
+            discount = premium_disc if is_premium else free_disc
+            gem_reward = odata.get("base_gems", 25)
+
+            # Update in-memory user gems
+            if current_user_id in users_db:
+                users_db[current_user_id]["gems"] = user.get("gems", 0) + gem_reward
+
+            # Increment offer redemption_count
+            new_count = (odata.get("redemption_count") or 0) + 1
+            sb.table("offers").update({"redemption_count": new_count}).eq("id", offer_id).execute()
+
+            # Track partner redemption fee
+            partner_id = odata.get("partner_id")
+            fee_amount = 0.0
+            if partner_id:
+                try:
+                    partner = sb.table("partners").select("total_redemptions,total_fees_owed").eq("id", partner_id).maybe_single().execute()
+                    if partner and partner.data:
+                        p_total = (partner.data.get("total_redemptions") or 0) + 1
+                        fee_amount = calculate_redemption_fee(p_total)
+                        p_fees = (partner.data.get("total_fees_owed") or 0) + fee_amount
+                        sb.table("partners").update({
+                            "total_redemptions": p_total,
+                            "total_fees_owed": round(p_fees, 2),
+                        }).eq("id", partner_id).execute()
+                except Exception as e:
+                    logger.warning(f"Fee tracking error: {e}")
+
+            # Record in redemptions table
+            try:
+                sb.table("redemptions").insert({
+                    "offer_id": offer_id,
+                    "partner_id": partner_id,
+                    "gems_earned": gem_reward,
+                    "discount_applied": discount,
+                    "fee_amount": fee_amount,
+                }).execute()
+            except Exception as e:
+                logger.warning(f"Redemption insert error: {e}")
+
+            return {
+                "success": True,
+                "data": {
+                    "discount_percent": discount,
+                    "gems_earned": gem_reward,
+                    "new_gem_total": users_db.get(current_user_id, {}).get("gems", 0),
+                    "is_free_item": odata.get("is_free_item", False),
+                },
+            }
+    except Exception as e:
+        logger.warning(f"Supabase redeem fallback: {e}")
+
+    # Fallback to mock
     offer = next((o for o in offers_db if o["id"] == offer_id), None)
     if not offer:
         return {"success": False, "message": "Offer not found"}

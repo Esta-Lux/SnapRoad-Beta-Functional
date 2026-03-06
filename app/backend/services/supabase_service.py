@@ -77,46 +77,54 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
 
 def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[str]]:
     """Returns (profile_dict, None) on success or (None, error_message) on failure."""
-    try:
-        # Use main client for data queries (service role, no auth context)
-        sb = _sb()
-        
-        # Fetch profile using service role client (bypasses RLS)
-        profile_data = None
+    import hashlib
+    import time
+    
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
+            sb = _sb()
+            
+            # Fetch profile using service role client (bypasses RLS)
             profile_result = sb.table("profiles").select("*").eq("email", email).limit(1).execute()
-            if profile_result and profile_result.data and len(profile_result.data) > 0:
-                profile_data = profile_result.data[0]
-                logger.info(f"Profile fetch SUCCESS for {email}, role={profile_data.get('role')}")
-            else:
-                logger.warning(f"Profile fetch returned no data for {email}")
-        except Exception as profile_err:
-            logger.warning(f"Profile fetch error for {email}: {profile_err}")
-        
-        # Use a SEPARATE client for authentication to avoid polluting the main client
-        from supabase import create_client
-        from config import SUPABASE_URL, SUPABASE_SECRET_KEY
-        auth_client = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
-        
-        # Authenticate with the separate client
-        auth_resp = auth_client.auth.sign_in_with_password({"email": email, "password": password})
-        if not auth_resp or not auth_resp.user:
-            logger.warning(f"Auth failed for {email} - no user returned")
-            return None, "Authentication failed - no user returned"
-        uid = str(auth_resp.user.id)
-        logger.info(f"Auth SUCCESS for {email}, uid={uid}")
-        
-        # Return the profile we fetched earlier (from service role client)
-        if profile_data:
-            logger.info(f"Returning fetched profile for {email}")
+            if not profile_result or not profile_result.data or len(profile_result.data) == 0:
+                logger.warning(f"Profile not found for {email}")
+                return None, "Invalid email or password"
+            
+            profile_data = profile_result.data[0]
+            logger.info(f"Profile fetch SUCCESS for {email}, role={profile_data.get('role')}")
+            
+            # Verify password using stored hash
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            stored_hash = profile_data.get("password_hash", "")
+            
+            if password_hash != stored_hash:
+                logger.warning(f"Password mismatch for {email}")
+                return None, "Invalid email or password"
+            
+            logger.info(f"Password verified for {email}")
             return profile_data, None
-        
-        # Fallback: return minimal user data from auth
-        logger.warning(f"No profile_data for {email}, returning fallback with role=driver")
-        return {"id": uid, "email": email, "role": "driver"}, None
-    except Exception as e:
-        logger.warning(f"sb_login_user error for {email}: {e}")
-        return None, str(e)
+            
+        except Exception as e:
+            error_str = str(e)
+            # Check if it's a network/connection error
+            if any(err in error_str.lower() for err in ["timeout", "connection", "getaddrinfo", "disconnected"]):
+                if attempt < max_retries - 1:
+                    logger.warning(f"Network error for {email} (attempt {attempt + 1}/{max_retries}): {e}. Retrying...")
+                    # Reset client and retry
+                    from database import reset_supabase_client
+                    reset_supabase_client()
+                    time.sleep(0.5)  # Brief delay before retry
+                    continue
+                else:
+                    logger.error(f"Network error for {email} after {max_retries} attempts: {e}")
+                    return None, "Service temporarily unavailable. Please try again."
+            else:
+                # Non-network error, don't retry
+                logger.warning(f"sb_login_user error for {email}: {e}")
+                return None, str(e)
+    
+    return None, "Invalid email or password"
 
 
 # ─────────────────────────────────────────────
