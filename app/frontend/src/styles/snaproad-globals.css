@@ -1,0 +1,314 @@
+@import "tailwindcss";
+
+/* ================================================
+   SnapRoad iPhone-16 UI Refresh — 2025
+   Apple Human Interface Guidelines Compliant
+   ================================================ */
+
+:root.dark, :root {
+  /* ============================================
+     COLORS — SnapRoad Official Palette
+     ============================================ */
+  
+  /* Dark Theme Backgrounds */
+  --bg-primary: #0A0E16;
+  --bg-surface: #121822;
+  --bg-elevated: #0F1622;
+  --bg-border: #1E2735;
+  
+  /* Text Hierarchy */
+  --text-primary: #FFFFFF;
+  --text-secondary: #C9D6E3;
+  --text-muted: #8A9BB6;
+  
+  /* Brand Colors (Official) */
+  --snaproad-blue: #0084FF;
+  --accent-teal: #00FFD7;
+  --error: #FF5A5A;
+  
+  /* Gradients */
+  --gradient-start: #004A93;
+  --gradient-end: #0084FF;
+  
+  /* ============================================
+     SHADOWS — iPhone 16 Style
+     ============================================ */
+  --shadow-card: 0px 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-soft: 0px 2px 8px rgba(0, 0, 0, 0.03);
+  --shadow-glow: 0 0 16px rgba(0, 255, 215, 0.15);
+  
+  /* ============================================
+     SPACING — 8-Point Grid System
+     ============================================ */
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 48px;
+  --space-8: 64px;
+  
+  /* ============================================
+     BORDER RADIUS — Consistent System
+     ============================================ */
+  --radius-card: 16px;
+  --radius-input: 12px;
+  --radius-button: 12px;
+  --radius-modal: 24px;
+  
+  /* ============================================
+     BUTTON HEIGHTS
+     ============================================ */
+  --button-height: 48px;
+  --button-height-sm: 40px;
+  
+  /* ============================================
+     NAVIGATION
+     ============================================ */
+  --nav-height: 56px;
+  --status-bar: 60px;
+  --dynamic-island: 62px;
+  --bottom-safe: 34px;
+}
+
+/* Light Mode Variables */
+:root.light {
+  --bg-primary: #F9FBFF;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-border: #E6ECF5;
+  
+  --text-primary: #0B1220;
+  --text-secondary: #4B5C74;
+  --text-muted: #6B7C95;
+  
+  --shadow-card: 0px 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-soft: 0px 2px 8px rgba(0, 0, 0, 0.03);
+  --shadow-glow: 0 0 16px rgba(0, 132, 255, 0.12);
+}
+
+/* ============================================
+   TYPOGRAPHY SCALE — Apple HIG Compliant
+   ============================================ */
+
+/* H1: 28-30px, SemiBold */
+h1 {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+/* H2: 22px, SemiBold */
+h2 {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+/* H3: 18-20px, SemiBold */
+h3 {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+/* Body: 15-16px, Regular */
+body,
+p {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+/* Caption: 13px, Medium */
+.caption {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Small: 12px, Regular */
+.small {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+/* Apply theme to body */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'Roboto', sans-serif;
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+/* Gradients */
+.gradient-primary {
+  background: linear-gradient(90deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
+}
+
+.gradient-glow {
+  box-shadow: var(--shadow-glow);
+}
+
+/* Shadows */
+.card-shadow {
+  box-shadow: var(--shadow-card);
+}
+
+.soft-shadow {
+  box-shadow: var(--shadow-soft);
+}
+
+/* Grid Overlay */
+.grid-overlay {
+  background-image: 
+    linear-gradient(rgba(22, 34, 51, 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(22, 34, 51, 0.2) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Route Glow Effect */
+.route-glow {
+  filter: drop-shadow(0 0 8px rgba(0, 255, 215, 0.35));
+}
+
+/* Hide Scrollbar */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Theme-aware Classes */
+.bg-primary {
+  background-color: var(--bg-primary);
+}
+
+.bg-surface {
+  background-color: var(--bg-surface);
+}
+
+.bg-elevated {
+  background-color: var(--bg-elevated);
+}
+
+.border-theme {
+  border-color: var(--bg-border);
+}
+
+.text-primary {
+  color: var(--text-primary);
+}
+
+.text-secondary {
+  color: var(--text-secondary);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* ============================================
+   BUTTONS — iPhone 16 Standard
+   ============================================ */
+
+.btn-primary {
+  height: var(--button-height);
+  border-radius: var(--radius-button);
+  font-size: 16px;
+  font-weight: 500;
+  background-color: var(--snaproad-blue);
+  color: white;
+  transition: opacity 0.2s;
+}
+
+.btn-primary:hover {
+  background-color: #006DD9;
+}
+
+.btn-primary:active {
+  opacity: 0.85;
+}
+
+.btn-secondary {
+  height: var(--button-height);
+  border-radius: var(--radius-button);
+  font-size: 16px;
+  font-weight: 500;
+  background-color: white;
+  color: var(--text-primary);
+  border: 1px solid var(--bg-border);
+  transition: opacity 0.2s;
+}
+
+.btn-secondary:active {
+  opacity: 0.85;
+}
+
+/* ============================================
+   CARDS — iPhone 16 Style
+   ============================================ */
+
+.card {
+  padding: 20px;
+  border-radius: var(--radius-card);
+  background-color: var(--bg-surface);
+  box-shadow: var(--shadow-card);
+}
+
+/* ============================================
+   INPUTS — Consistent Styling
+   ============================================ */
+
+input,
+textarea,
+select {
+  height: var(--button-height);
+  border-radius: var(--radius-input);
+  font-size: 16px;
+  font-weight: 400;
+}
+
+/* ============================================
+   NAVIGATION BAR — iOS 17-18 Style
+   ============================================ */
+
+.nav-bar {
+  height: var(--nav-height);
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.nav-title {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* ============================================
+   VIGNETTE OVERLAY
+   ============================================ */
+
+.vignette {
+  position: relative;
+}
+
+.vignette::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}

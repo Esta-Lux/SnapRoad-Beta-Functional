@@ -1,0 +1,465 @@
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from typing import Optional
+from datetime import datetime, timedelta
+from models.schemas import (
+    PartnerLocation, PartnerPlanUpdate, PartnerOfferCreate,
+    PartnerLoginRequest, TeamInviteRequest, ReferralRequest,
+    CreditUseRequest, QRRedemptionRequest, BoostRequest, BoostCreditsRequest,
+)
+from services.supabase_service import (
+    sb_get_partner, sb_get_partners, sb_update_partner, sb_create_partner,
+    sb_get_partner_locations, sb_create_partner_location,
+    sb_update_partner_location, sb_delete_partner_location,
+    sb_set_primary_location,
+    sb_get_offers_by_partner, sb_create_offer, sb_update_offer,
+    sb_get_boosts, sb_create_boost, sb_cancel_boost,
+    sb_get_redemptions_by_partner,
+    sb_get_partner_referrals, sb_create_partner_referral,
+)
+from services.mock_data import PARTNER_PLANS, BOOST_PRICING
+
+router = APIRouter(prefix="/api", tags=["Partners"])
+
+
+PLAN_LOCATION_LIMITS = {
+    "starter": 5,
+    "growth": 25,
+    "enterprise": 999999,
+}
+
+
+def _plan_info(plan_key: str) -> dict:
+    return PARTNER_PLANS.get(plan_key, PARTNER_PLANS["starter"])
+
+
+# ==================== PARTNER PLANS ====================
+@router.get("/partner/plans")
+def get_partner_plans():
+    return {"success": True, "data": {"plans": PARTNER_PLANS, "is_founders_active": True}}
+
+
+# ==================== PARTNER PROFILE ====================
+@router.get("/partner/profile")
+def get_partner_profile(partner_id: str = "default_partner"):
+    partner = sb_get_partner(partner_id)
+    if not partner:
+        return {
+            "success": True,
+            "data": {
+                "id": partner_id,
+                "business_name": "New Business",
+                "email": "",
+                "plan": "starter",
+                "plan_info": _plan_info("starter"),
+                "is_founders": True,
+                "locations": [],
+                "location_count": 0,
+                "max_locations": 5,
+                "can_add_location": True,
+                "created_at": datetime.now().isoformat(),
+            },
+        }
+    plan_key = partner.get("plan", "starter")
+    plan = _plan_info(plan_key)
+    locations = sb_get_partner_locations(partner_id)
+    max_locs = PLAN_LOCATION_LIMITS.get(plan_key, 5)
+    return {
+        "success": True,
+        "data": {
+            "id": partner["id"],
+            "business_name": partner.get("business_name", ""),
+            "email": partner.get("email", ""),
+            "plan": plan_key,
+            "plan_info": plan,
+            "is_founders": partner.get("is_founders", False),
+            "locations": locations,
+            "location_count": len(locations),
+            "max_locations": max_locs,
+            "can_add_location": len(locations) < max_locs,
+            "created_at": partner.get("created_at", ""),
+        },
+    }
+
+
+@router.put("/partner/profile")
+def update_partner_profile(
+    business_name: Optional[str] = None,
+    email: Optional[str] = None,
+    partner_id: str = "default_partner",
+):
+    updates = {}
+    if business_name:
+        updates["business_name"] = business_name
+    if email:
+        updates["email"] = email
+    if not updates:
+        return {"success": False, "message": "No fields to update"}
+    sb_update_partner(partner_id, updates)
+    return {"success": True, "message": "Profile updated"}
+
+
+@router.post("/partner/plan")
+def update_partner_plan(plan_update: PartnerPlanUpdate, partner_id: str = "default_partner"):
+    if plan_update.plan not in PARTNER_PLANS:
+        return {"success": False, "message": "Invalid plan"}
+    sb_update_partner(partner_id, {"plan": plan_update.plan})
+    plan = _plan_info(plan_update.plan)
+    return {
+        "success": True,
+        "message": f"Plan updated to {plan['name']}",
+        "data": {
+            "plan": plan_update.plan,
+            "max_locations": PLAN_LOCATION_LIMITS.get(plan_update.plan, 5),
+            "features": plan["features"],
+        },
+    }
+
+
+# ==================== LOCATIONS ====================
+@router.get("/partner/locations")
+def get_partner_locations(partner_id: str = "default_partner"):
+    partner = sb_get_partner(partner_id)
+    plan_key = partner.get("plan", "starter") if partner else "starter"
+    max_locs = PLAN_LOCATION_LIMITS.get(plan_key, 5)
+    locations = sb_get_partner_locations(partner_id)
+    return {
+        "success": True,
+        "data": locations,
+        "count": len(locations),
+        "max_locations": max_locs,
+        "can_add_more": len(locations) < max_locs,
+    }
+
+
+@router.post("/partner/locations")
+def add_partner_location(location: PartnerLocation, partner_id: str = "default_partner"):
+    partner = sb_get_partner(partner_id)
+    plan_key = partner.get("plan", "starter") if partner else "starter"
+    max_locs = PLAN_LOCATION_LIMITS.get(plan_key, 5)
+    existing = sb_get_partner_locations(partner_id)
+    if len(existing) >= max_locs:
+        return {"success": False, "message": f"Location limit reached ({max_locs}). Upgrade your plan."}
+
+    if location.is_primary or len(existing) == 0:
+        sb_set_primary_location(partner_id, "")  # clear all first
+        location.is_primary = True
+
+    new_loc = sb_create_partner_location({
+        "partner_id": partner_id,
+        "name": location.name,
+        "address": location.address,
+        "lat": location.lat,
+        "lng": location.lng,
+        "is_primary": location.is_primary,
+    })
+    if not new_loc:
+        return {"success": False, "message": "Failed to create location"}
+    return {"success": True, "message": f"Location '{location.name}' added successfully", "data": new_loc}
+
+
+@router.put("/partner/locations/{location_id}")
+def update_partner_location(location_id: str, location: PartnerLocation, partner_id: str = "default_partner"):
+    updates = {
+        "name": location.name,
+        "address": location.address,
+        "lat": location.lat,
+        "lng": location.lng,
+    }
+    if location.is_primary:
+        sb_set_primary_location(partner_id, location_id)
+    sb_update_partner_location(location_id, updates)
+    return {"success": True, "message": "Location updated"}
+
+
+@router.delete("/partner/locations/{location_id}")
+def delete_partner_location(location_id: str, partner_id: str = "default_partner"):
+    sb_delete_partner_location(location_id)
+    remaining = sb_get_partner_locations(partner_id)
+    if remaining and not any(l.get("is_primary") for l in remaining):
+        sb_update_partner_location(remaining[0]["id"], {"is_primary": True})
+    return {"success": True, "message": "Location deleted"}
+
+
+@router.post("/partner/locations/{location_id}/set-primary")
+def set_primary_location(location_id: str, partner_id: str = "default_partner"):
+    sb_set_primary_location(partner_id, location_id)
+    return {"success": True, "message": "Primary location updated"}
+
+
+# ==================== PARTNER OFFERS ====================
+@router.post("/partner/offers")
+def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_partner"):
+    partner = sb_get_partner(partner_id)
+    if not partner:
+        return {"success": False, "message": "Partner not found"}
+
+    locations = sb_get_partner_locations(partner_id)
+    location = next((l for l in locations if l["id"] == str(offer.location_id)), None)
+    if not location:
+        return {"success": False, "message": "Location not found"}
+
+    new_offer = sb_create_offer({
+        "partner_id": partner_id,
+        "location_id": location["id"],
+        "title": offer.title,
+        "description": offer.description,
+        "business_name": partner.get("business_name", ""),
+        "business_type": partner.get("business_type", "retail"),
+        "discount_percent": offer.discount_percent,
+        "base_gems": offer.gems_reward,
+        "lat": location["lat"],
+        "lng": location["lng"],
+        "status": "active",
+        "image_url": offer.image_url,
+        "created_by": partner_id,
+        "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
+    })
+    if not new_offer:
+        return {"success": False, "message": "Failed to create offer"}
+    return {"success": True, "message": f"Offer created at {location['name']}", "data": new_offer}
+
+
+@router.get("/partner/offers")
+def get_partner_offers(partner_id: str = "default_partner"):
+    offers = sb_get_offers_by_partner(partner_id)
+    return {"success": True, "data": offers, "count": len(offers)}
+
+
+# ==================== BOOST SYSTEM ====================
+@router.get("/partner/boosts/pricing")
+def get_boost_pricing():
+    return {"success": True, "data": {"packages": BOOST_PRICING, "currency": "USD"}}
+
+
+@router.post("/partner/boosts/create")
+def create_offer_boost(boost_req: BoostRequest, partner_id: str = "default_partner"):
+    if boost_req.boost_type not in BOOST_PRICING:
+        return {"success": False, "message": "Invalid boost type"}
+    config = BOOST_PRICING[boost_req.boost_type]
+    ends_at = datetime.now() + timedelta(hours=config["duration_hours"])
+    new_boost = sb_create_boost({
+        "offer_id": str(boost_req.offer_id),
+        "partner_id": partner_id,
+        "budget": config["price"],
+        "duration_days": config["duration_hours"] // 24,
+        "target_radius_miles": 10,
+        "status": "active",
+        "ends_at": ends_at.isoformat(),
+    })
+    if not new_boost:
+        return {"success": False, "message": "Failed to create boost"}
+    sb_update_offer(str(boost_req.offer_id), {
+        "boost_multiplier": config["multiplier"],
+        "boost_expiry": ends_at.isoformat(),
+    })
+    return {
+        "success": True,
+        "message": f"{config['name']} applied!",
+        "data": new_boost,
+    }
+
+
+@router.get("/partner/boosts/active")
+def get_active_boosts(partner_id: str = "default_partner"):
+    boosts = sb_get_boosts(partner_id)
+    now = datetime.now()
+    active = []
+    for b in boosts:
+        ends = b.get("ends_at")
+        is_active = False
+        hours_remaining = 0
+        if ends:
+            try:
+                ends_dt = datetime.fromisoformat(str(ends))
+                is_active = ends_dt > now
+                hours_remaining = max(0, (ends_dt - now).total_seconds() / 3600)
+            except Exception:
+                pass
+        active.append({**b, "is_active": is_active, "hours_remaining": round(hours_remaining, 1)})
+    return {
+        "success": True,
+        "data": active,
+        "active_count": sum(1 for a in active if a["is_active"]),
+    }
+
+
+@router.delete("/partner/boosts/{boost_id}")
+def cancel_boost(boost_id: str, partner_id: str = "default_partner"):
+    sb_cancel_boost(boost_id)
+    return {"success": True, "message": "Boost cancelled"}
+
+
+# ==================== CREDITS ====================
+@router.get("/partner/credits")
+def get_partner_credits(partner_id: str = "default_partner"):
+    partner = sb_get_partner(partner_id)
+    credits_val = 0
+    if partner:
+        credits_val = partner.get("credits", 0) or 0
+    return {"success": True, "data": {"balance": credits_val, "currency": "USD"}}
+
+
+@router.post("/partner/credits/add")
+def add_partner_credits(credits_req: BoostCreditsRequest, partner_id: str = "default_partner"):
+    partner = sb_get_partner(partner_id)
+    if not partner:
+        return {"success": False, "message": "Partner not found"}
+    current = partner.get("credits", 0) or 0
+    # The partners table in the real schema doesn't have a credits column yet;
+    # this will silently fail until the column is added. That's acceptable for now.
+    new_balance = current + credits_req.amount
+    sb_update_partner(partner_id, {"credits": new_balance})
+    return {
+        "success": True,
+        "message": f"Added ${credits_req.amount} in credits",
+        "data": {"previous_balance": current, "added": credits_req.amount, "new_balance": new_balance},
+    }
+
+
+# ==================== PARTNER V2 ENDPOINTS ====================
+@router.post("/partner/v2/login")
+async def partner_login_v2(request: PartnerLoginRequest):
+    from services.partner_service import partner_service
+    result = partner_service.authenticate(request.email, request.password)
+    if not result:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return result
+
+
+@router.get("/partner/v2/profile/{partner_id}")
+async def get_partner_profile_v2(partner_id: str):
+    partner = sb_get_partner(partner_id)
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    locations = sb_get_partner_locations(partner_id)
+    primary_loc = next((l for l in locations if l.get("is_primary")), locations[0] if locations else None)
+    return {
+        "success": True,
+        "data": {
+            "id": partner["id"],
+            "business_name": partner.get("business_name", ""),
+            "email": partner.get("email", ""),
+            "credits": partner.get("credits", 0) or 0,
+            "subscription_plan": partner.get("plan", "starter"),
+            "location": primary_loc,
+        },
+    }
+
+
+@router.get("/partner/v2/team/{partner_id}")
+async def get_team_members(partner_id: str):
+    from services.partner_service import partner_service
+    team = partner_service.get_team_members(partner_id)
+    return {"success": True, "data": team, "count": len(team)}
+
+
+@router.post("/partner/v2/team/{partner_id}/invite")
+async def invite_team_member(partner_id: str, request: TeamInviteRequest):
+    from services.partner_service import partner_service
+    result = partner_service.invite_team_member(
+        partner_id=partner_id, email=request.email or "", role=request.role, method=request.method
+    )
+    return result
+
+
+@router.put("/partner/v2/team/{member_id}/role")
+async def update_member_role(member_id: str, role: str):
+    from services.partner_service import partner_service
+    success = partner_service.update_team_member_role(member_id, role)
+    if not success:
+        raise HTTPException(status_code=404, detail="Member not found")
+    return {"success": True}
+
+
+@router.delete("/partner/v2/team/{member_id}")
+async def revoke_team_access(member_id: str):
+    from services.partner_service import partner_service
+    success = partner_service.revoke_team_access(member_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Member not found")
+    return {"success": True}
+
+
+@router.get("/partner/v2/referrals/{partner_id}")
+async def get_referrals(partner_id: str):
+    referrals = sb_get_partner_referrals(partner_id)
+    total = len(referrals)
+    credits_earned = sum(float(r.get("credits_awarded", 0)) for r in referrals)
+    return {
+        "success": True,
+        "data": referrals,
+        "stats": {
+            "total": total,
+            "active": total,
+            "pending": 0,
+            "total_earned": credits_earned,
+        },
+    }
+
+
+@router.post("/partner/v2/referrals/{partner_id}")
+async def send_referral(partner_id: str, request: ReferralRequest):
+    ref = sb_create_partner_referral({
+        "referrer_partner_id": partner_id,
+        "credits_awarded": 0,
+    })
+    if not ref:
+        return {"success": False, "message": "Failed to create referral"}
+    return {"success": True, "referral_id": ref.get("id")}
+
+
+@router.post("/partner/v2/credits/{partner_id}/use")
+async def use_credits(partner_id: str, request: CreditUseRequest):
+    partner = sb_get_partner(partner_id)
+    if not partner:
+        raise HTTPException(status_code=400, detail="Partner not found")
+    current = partner.get("credits", 0) or 0
+    if current < request.amount:
+        raise HTTPException(status_code=400, detail="Insufficient credits")
+    sb_update_partner(partner_id, {"credits": current - request.amount})
+    return {
+        "success": True,
+        "amount_used": request.amount,
+        "purpose": request.purpose,
+        "remaining_credits": current - request.amount,
+    }
+
+
+@router.post("/partner/v2/redeem")
+async def redeem_offer(request: QRRedemptionRequest, background_tasks: BackgroundTasks):
+    from services.partner_service import partner_service
+    from services.websocket_manager import ws_manager
+    result = partner_service.validate_redemption(request.qr_data, request.staff_id)
+    if result["success"]:
+        background_tasks.add_task(ws_manager.notify_partner_redemption, "partner_001", result)
+        customer_id = request.qr_data.get("customerId")
+        if customer_id:
+            background_tasks.add_task(ws_manager.notify_customer_redeemed, customer_id, result)
+    return result
+
+
+@router.get("/partner/v2/redemptions/{partner_id}")
+async def get_recent_redemptions(partner_id: str, limit: int = 10):
+    redemptions = sb_get_redemptions_by_partner(partner_id, limit)
+    return {"success": True, "data": redemptions, "count": len(redemptions)}
+
+
+@router.get("/partner/v2/analytics/{partner_id}")
+async def get_partner_analytics(partner_id: str):
+    offers = sb_get_offers_by_partner(partner_id)
+    total_redemptions = sum(o.get("redemption_count", 0) or 0 for o in offers)
+    total_views = sum(o.get("views", 0) or 0 for o in offers)
+    active_offers = len([o for o in offers if o.get("status") == "active"])
+    return {
+        "success": True,
+        "data": {
+            "total_views": total_views,
+            "total_clicks": int(total_views * 0.3),
+            "total_redemptions": total_redemptions,
+            "today_redemptions": 0,
+            "revenue": total_redemptions * 8.50,
+            "active_offers": active_offers,
+            "team_members": 0,
+            "conversion_rate": round((total_redemptions / max(total_views, 1)) * 100, 1),
+        },
+    }

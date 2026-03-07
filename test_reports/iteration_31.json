@@ -1,0 +1,107 @@
+{
+  "summary": "Tested new WebSocket AI Moderation features + all existing Partner Dashboard tabs. Backend: 17/17 tests PASSED (moderation status, simulate, WS connection, backlog, new_incident broadcast). Frontend: WS Live badge ✓, Approve/Reject ✓, Confidence slider ✓, Partner Dashboard (Finance/Referrals/Pricing) ✓. Two critical BUGS found: (1) Simulate button hits 404 due to double `/api` prefix, (2) Supabase Migration Banner never renders due to same URL bug.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AIModerationTab - simulateIncident()",
+        "issue": "Simulate button calls /api/api/admin/moderation/simulate (double /api prefix → 404). VITE_API_URL='/api' is used as base instead of VITE_BACKEND_URL='https://...'. Clicking 'Generate Test Incident' does nothing.",
+        "selector": "[data-testid='simulate-incident-btn']",
+        "priority": "CRITICAL",
+        "network_evidence": "404 https://admin-portal-sr.preview.emergentagent.com/api/api/admin/moderation/simulate",
+        "fix": "Line 715 in AdminDashboard.tsx: Change `import.meta.env.VITE_API_URL` to `import.meta.env.VITE_BACKEND_URL` in simulateIncident()"
+      },
+      {
+        "component": "SupabaseMigrationBanner",
+        "issue": "Banner never renders on Overview tab. Status fetch calls /api/api/admin/supabase/status (double /api → 404). status stays null, so `if (!status || !status.migration_needed) return null` exits early. migration_needed is confirmed true by direct API call.",
+        "selector": "[data-testid='migration-banner-toggle']",
+        "priority": "CRITICAL",
+        "network_evidence": "404 https://admin-portal-sr.preview.emergentagent.com/api/api/admin/supabase/status",
+        "fix": "Line 501 in AdminDashboard.tsx: Change `import.meta.env.VITE_API_URL` to `import.meta.env.VITE_BACKEND_URL` in SupabaseMigrationBanner()"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "WS Backlog on reconnect",
+        "issue": "React duplicate key warnings for incident IDs 101-104 when WS reconnects. Backlog is re-prepended to existing state without deduplication, causing duplicate keys in the incidents grid.",
+        "affected_selectors": ["[data-testid^='incident-']"],
+        "fix": "In backlog message handler, filter: `setIncidents(prev => [...msg.incidents.filter(i => !prev.find(p => p.id === i.id)).reverse(), ...prev])`"
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_websocket_moderation.py",
+    "/app/test_reports/pytest/pytest_iter31_ws.xml"
+  ],
+  "action_items": [
+    "CRITICAL FIX (line 715 AdminDashboard.tsx): In simulateIncident(), change `import.meta.env.VITE_API_URL` → `import.meta.env.VITE_BACKEND_URL` (or use the top-level `API_URL` constant defined at line 22)",
+    "CRITICAL FIX (line 501 AdminDashboard.tsx): In SupabaseMigrationBanner(), change `import.meta.env.VITE_API_URL` → `import.meta.env.VITE_BACKEND_URL`",
+    "MEDIUM FIX: In WS backlog handler, deduplicate incidents before prepending to prevent duplicate React keys on reconnect"
+  ],
+  "critical_code_review_comments": [
+    "CRITICAL: VITE_API_URL='/api' (relative path) is used as the base URL for API calls in SupabaseMigrationBanner (line 501) and simulateIncident (line 715). This creates double /api prefix: /api/api/admin/... → 404. Should use VITE_BACKEND_URL (full URL https://...) like the top-level API_URL constant at line 22.",
+    "CRITICAL: Same file uses three different env var patterns: (1) `VITE_BACKEND_URL || REACT_APP_BACKEND_URL` (line 22 - correct), (2) `VITE_API_URL || REACT_APP_BACKEND_URL` (lines 501, 619, 715 - wrong), (3) WS_BASE uses VITE_API_URL but has fallback to window.location.origin (works accidentally). Needs to be unified to use VITE_BACKEND_URL.",
+    "MEDIUM: WS backlog handler does not deduplicate existing incidents. When WS reconnects, duplicate incident IDs appear causing React key warnings and potential UI glitches.",
+    "INFO: In-memory incident store (_live_incidents in webhooks.py) grows unbounded; accumulated 14+ incidents from backend test runs. Consider adding a cap (already capped at -20 in backlog slice) but add clear endpoint for test resets."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_websocket_moderation.py"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 tests passed)",
+    "frontend": "73% - WS badge/Approve/Reject/Slider/Partner tabs all pass; Simulate button broken (404), Migration Banner not showing (404)"
+  },
+  "test_credentials": {
+    "admin_dashboard": "https://admin-portal-sr.preview.emergentagent.com/portal/admin-sr2025secure",
+    "partner_portal": "https://admin-portal-sr.preview.emergentagent.com/portal/partner"
+  },
+  "seed_data_creation": "Backend simulate tests added ~5-10 in-memory incidents (IDs 101-110+). These reset on backend restart.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Two critical frontend bugs exist with same root cause: VITE_API_URL ('/api') used as base URL in SupabaseMigrationBanner (line 501) and simulateIncident (line 715) causing double /api prefix → 404. Fix both by switching to VITE_BACKEND_URL. After fix: (1) simulate button should add new live incident to queue, (2) migration banner should appear on Overview tab with amber warning style, expandable with password input and Run Migration button. WS badge, Approve/Reject, Confidence slider all work correctly. Partner Dashboard all 3 tabs working.",
+  "rca_of_issues": {
+    "simulate_button_404": {
+      "bug": "Simulate button fires POST to wrong URL",
+      "root_cause": "simulateIncident() uses `import.meta.env.VITE_API_URL` ('/api') as API_BASE. Since VITE_API_URL is truthy, REACT_APP_BACKEND_URL fallback never used. URL becomes /api + /api/admin/moderation/simulate = /api/api/admin/moderation/simulate → 404",
+      "affected_file": "frontend/src/pages/AdminDashboard.tsx line 715",
+      "fix": "const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''"
+    },
+    "migration_banner_invisible": {
+      "bug": "SupabaseMigrationBanner returns null because status never loaded",
+      "root_cause": "Same VITE_API_URL double-prefix issue. fetch('/api/api/admin/supabase/status') → 404 → catch block swallowed → status stays null → `if (!status || !status.migration_needed) return null` exits early. API confirmed to return migration_needed:true when called correctly.",
+      "affected_file": "frontend/src/pages/AdminDashboard.tsx line 501",
+      "fix": "const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''"
+    }
+  },
+  "tests_performed": {
+    "backend_tests": [
+      "GET /api/admin/moderation/status → 200, queue_size + live_admin_connections + live=true ✓",
+      "POST /api/admin/moderation/simulate → 200, success=true, incident.status='new' ✓",
+      "Simulate twice → queue_size increases ✓",
+      "WS /api/ws/admin/moderation accepts connection → sends 'connection' + 'backlog' ✓",
+      "WS receives new_incident after simulate call ✓",
+      "GET /api/admin/supabase/status → migration_needed in response ✓",
+      "Partner login → 200, token returned ✓",
+      "GET /api/admin/analytics → 200 ✓",
+      "GET /api/health → healthy ✓"
+    ],
+    "frontend_tests": [
+      "Admin Dashboard: skip tour modal ✓",
+      "AI Moderation tab: WS badge 'Live · 1 admin online' (green) ✓",
+      "AI Moderation: 9 stat tabs with counts ✓",
+      "AI Moderation: Simulate button → FAILS with 404 (VITE_API_URL bug) ✗",
+      "AI Moderation: Approve button → approved count increments ✓",
+      "AI Moderation: Reject button → rejected count increments ✓",
+      "AI Moderation: Confidence slider set to 70%, display updates ✓",
+      "AI Moderation: Incident cards show 'Live' badge for live incidents ✓",
+      "Overview tab: Migration Banner NOT visible (VITE_API_URL bug → status null) ✗",
+      "Partner: Credits & Finance tab with balance 225, 6-month chart ✓",
+      "Partner: Referrals tab - Copy button shows 'Copied!', tiers + leaderboard ✓",
+      "Partner: Plan & Pricing - 3 cards (Local $49, Growth $149, Enterprise Custom) ✓"
+    ]
+  }
+}

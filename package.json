@@ -1,0 +1,14 @@
+{
+  "name": "snaproad-beta",
+  "private": true,
+  "description": "SnapRoad – run frontend and backend together",
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd app/backend && (test -x .venv/bin/python && .venv/bin/python run_server.py || python3 run_server.py)",
+    "dev:frontend": "cd app/frontend && npm run dev",
+    "install:all": "npm install && cd app/frontend && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
