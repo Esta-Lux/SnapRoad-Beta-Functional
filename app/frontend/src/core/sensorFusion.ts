@@ -47,6 +47,12 @@ export class SensorFusion {
     const dt = this.lastTime ? (now - this.lastTime) / 1000 : 0
     this.lastTime = now
 
+    // First reading: initialize Kalman with actual position so we don't blend with 0 (which would show map in ocean)
+    if (this.lastState === null) {
+      this.kalmanLat.reset(reading.lat)
+      this.kalmanLng.reset(reading.lng)
+    }
+
     const lat = this.kalmanLat.update(reading.lat)
     const lng = this.kalmanLng.update(reading.lng)
 

@@ -161,10 +161,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTheme(newTheme);
   };
 
-  if (!isLoaded) {
-    return null; // Or a loading indicator
-  }
-
+  // Always render children so we never show a white screen (AsyncStorage load can be slow on web).
+  // Use current resolved theme even while saved preference is still loading.
   return (
     <ThemeContext.Provider value={{ theme, resolvedTheme, colors, isDark, setTheme, toggleTheme }}>
       {children}

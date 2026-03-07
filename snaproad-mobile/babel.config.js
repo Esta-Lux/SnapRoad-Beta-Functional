@@ -1,26 +1,35 @@
+// Replace import.meta so Metro web bundle works when loaded as non-module script (avoids "Cannot use 'import.meta' outside a module")
+function replaceImportMeta() {
+  const t = require('@babel/core').types;
+  return {
+    name: 'transform-import-meta',
+    visitor: {
+      MetaProperty(path) {
+        if (path.node.meta.name === 'import' && path.node.property.name === 'meta') {
+          path.replaceWith(t.objectExpression([
+            t.objectProperty(t.identifier('url'), t.stringLiteral('')),
+            t.objectProperty(t.identifier('resolve'), t.arrowFunctionExpression([t.stringLiteral('')], t.stringLiteral(''))),
+          ]));
+        }
+      },
+    },
+  };
+}
+
 module.exports = function (api) {
   api.cache(true);
   return {
     presets: [
-      ['babel-preset-expo', {
-        // Disable import.meta support in preset to handle it manually
-        jsxImportSource: undefined,
-      }],
+      ['babel-preset-expo', { jsxImportSource: undefined }],
     ],
     plugins: [
-      // Handle ES modules and import.meta
+      replaceImportMeta,
       '@babel/plugin-transform-modules-commonjs',
-      // Ensure proper module handling
-      ['@babel/plugin-transform-runtime', {
-        helpers: true,
-        regenerator: true,
-      }],
+      ['@babel/plugin-transform-runtime', { helpers: true, regenerator: true }],
     ],
     env: {
       production: {
-        plugins: [
-          'transform-remove-console',
-        ],
+        plugins: ['transform-remove-console'],
       },
     },
   };
