@@ -28,10 +28,12 @@ def _get_private_key() -> Optional[str]:
 
 
 @router.get("/mapkit/token")
-def get_mapkit_token(origin: str = Query(..., description="Allowed origin, e.g. http://localhost:3000 or https://yourapp.com")):
+def get_mapkit_token(origin: str = Query("", description="Optional: restrict token to this origin. Omit for unrestricted (any domain).")):
     """
     Returns a JWT for MapKit JS. Frontend calls this and passes the token to mapkit.init().
     Requires env: MAPKIT_KEY_ID, MAPKIT_TEAM_ID, and either MAPKIT_PRIVATE_KEY or MAPKIT_PRIVATE_KEY_PATH.
+    Token is issued without origin restriction so Directions and other APIs work from any origin (e.g. localhost vs 127.0.0.1).
+    For production, you can add "origin": origin.strip() to the payload and ensure frontend sends exact origin.
     """
     key_id = os.environ.get("MAPKIT_KEY_ID")
     team_id = os.environ.get("MAPKIT_TEAM_ID")
@@ -50,8 +52,9 @@ def get_mapkit_token(origin: str = Query(..., description="Allowed origin, e.g. 
             "iss": team_id,
             "iat": now,
             "exp": now + 3600 * 12,
-            "origin": origin.strip(),
         }
+        # Unrestricted token (no origin) so Directions works from any origin (localhost, 127.0.0.1, etc.).
+        # To restrict for production: payload["origin"] = origin.strip()
         token = jwt.encode(
             payload,
             private_key,

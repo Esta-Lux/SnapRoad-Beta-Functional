@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { Locate, Mic, Navigation2, Plus, Minus, Layers } from 'lucide-react'
+import { Locate, Mic, Navigation2, Layers } from 'lucide-react'
 import type { DrivingMode } from '@/core/types'
 
 /* ------------------------------------------------------------------ */
@@ -83,6 +83,9 @@ export interface MapKitMapProps {
   vehicleHeading?: number
   carColor?: string
   routePolyline?: { lat: number; lng: number }[]
+  destinationCoordinate?: { lat: number; lng: number }
+  traveledDistanceMeters?: number
+  contentInsets?: { top: number; bottom: number; left: number; right: number }
   predictedPosition?: { coordinate: { lat: number; lng: number }; confidence: number } | null
   routeGlow?: number
   mode?: DrivingMode
@@ -101,6 +104,57 @@ export interface MapKitMapProps {
 /* ------------------------------------------------------------------ */
 
 const DELTA_FOR_ZOOM = (z: number) => 0.01 * Math.pow(2, 17 - Math.min(18, Math.max(10, z)))
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i)
+  return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : { r: 0, g: 0, b: 0 }
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  return '#' + [r, g, b].map((x) => Math.round(x).toString(16).padStart(2, '0')).join('')
+}
+
+function interpolateColor(hex1: string, hex2: string, t: number): string {
+  const a = hexToRgb(hex1)
+  const b = hexToRgb(hex2)
+  return rgbToHex(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t)
+}
+
+function cumulativeDistance(pts: { lat: number; lng: number }[]): number[] {
+  const out: number[] = [0]
+  for (let i = 1; i < pts.length; i++) {
+    const R = 6371000
+    const p1 = pts[i - 1]
+    const p2 = pts[i]
+    const dLat = ((p2.lat - p1.lat) * Math.PI) / 180
+    const dLon = ((p2.lng - p1.lng) * Math.PI) / 180
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((p1.lat * Math.PI) / 180) * Math.cos((p2.lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2
+    const d = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    out.push(out[i - 1] + d)
+  }
+  return out
+}
+
+function chunkPolyline(
+  pts: { lat: number; lng: number }[],
+  n: number
+): Array<{ points: { lat: number; lng: number }[]; t: number }> {
+  if (pts.length < 2 || n < 1) return []
+  const chunks: Array<{ points: { lat: number; lng: number }[]; t: number }> = []
+  const step = (pts.length - 1) / Math.min(n, pts.length - 1)
+  for (let i = 0; i < n; i++) {
+    const start = Math.floor(i * step)
+    const end = Math.min(Math.floor((i + 1) * step) + 1, pts.length)
+    const slice = pts.slice(start, end)
+    if (slice.length >= 2) {
+      const t = (i + 0.5) / n
+      chunks.push({ points: slice, t })
+    }
+  }
+  return chunks
+}
 
 function modeColors(mode: DrivingMode, glow: number) {
   if (mode === 'sport') return { stroke: '#22d3ee', width: 6, opacity: 1 }
@@ -132,6 +186,9 @@ export default function MapKitMap({
   vehicleHeading = 0,
   carColor = '#3b82f6',
   routePolyline,
+  destinationCoordinate,
+  traveledDistanceMeters,
+  contentInsets,
   predictedPosition,
   routeGlow = 0.7,
   mode = 'adaptive',
@@ -148,11 +205,15 @@ export default function MapKitMap({
   const mapRef = useRef<MKMap | null>(null)
   const userAnnRef = useRef<MKAnnotation | null>(null)
   const ghostAnnRef = useRef<MKAnnotation | null>(null)
-  const overlayRef = useRef<unknown>(null)
+  const routeOverlaysRef = useRef<unknown[]>([])
+  const destAnnRef = useRef<MKAnnotation | null>(null)
   const offerAnnsRef = useRef<MKAnnotation[]>([])
   const reportAnnsRef = useRef<MKAnnotation[]>([])
   const [mapFailed, setMapFailed] = useState(false)
   const [mapReady, setMapReady] = useState(false)
+  const navStartRef = useRef<number>(0)
+  const traveledRef = useRef<{ lat: number; lng: number }[]>([])
+  const traveledOverlayRef = useRef<unknown>(null)
 
   /* ---------- Effect 1: Create map once on mount ---------- */
   useEffect(() => {
@@ -189,6 +250,7 @@ export default function MapKitMap({
           showsMapTypeControl: false,
           showsUserLocation: false,
           tracksUserLocation: false,
+          mapType: 'standard',
         } as Record<string, unknown>)
       } catch (e) {
         console.warn('MapKit Map creation failed:', e)
@@ -221,7 +283,8 @@ export default function MapKitMap({
       }
       userAnnRef.current = null
       ghostAnnRef.current = null
-      overlayRef.current = null
+      destAnnRef.current = null
+      routeOverlaysRef.current = []
     }
     // mount-only: we update region/annotations via separate effects
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,6 +296,17 @@ export default function MapKitMap({
     const map = mapRef.current
     if (!mapkit || !map) return
     try {
+      if (isNavigating) {
+        const elapsed = Date.now() - navStartRef.current
+        if (elapsed > 2000) {
+          const coord = new mapkit.Coordinate(userLocation.lat, userLocation.lng)
+          const span = new mapkit.CoordinateSpan(0.003, 0.004)
+          const region = new mapkit.CoordinateRegion(coord, span)
+          map.setRegionAnimated(region, true)
+          map.rotation = -vehicleHeading
+          return
+        }
+      }
       const delta = DELTA_FOR_ZOOM(zoom)
       const coord = new mapkit.Coordinate(center.lat, center.lng)
       const span = new mapkit.CoordinateSpan(delta, delta * 1.2)
@@ -244,9 +318,16 @@ export default function MapKitMap({
     } catch (e) {
       console.warn('MapKit setRegion failed:', e)
     }
-  }, [center.lat, center.lng, zoom, bearing])
+  }, [center.lat, center.lng, zoom, bearing, isNavigating, userLocation.lat, userLocation.lng, vehicleHeading])
 
   useEffect(() => { setRegion() }, [setRegion])
+
+  useEffect(() => {
+    if (isNavigating) {
+      navStartRef.current = Date.now()
+      traveledRef.current = []
+    }
+  }, [isNavigating])
 
   /* ---------- Effect 3: User location annotation ---------- */
   useEffect(() => {
@@ -255,7 +336,16 @@ export default function MapKitMap({
     if (!mapkit || !map) return
 
     if (userAnnRef.current) {
-      try { map.removeAnnotation(userAnnRef.current) } catch { /* noop */ }
+      try {
+        (userAnnRef.current as unknown as { coordinate: unknown }).coordinate =
+          new mapkit.Coordinate(userLocation.lat, userLocation.lng)
+        const el = (userAnnRef.current as unknown as { element?: HTMLElement }).element
+        if (el) {
+          const carDiv = el.querySelector('div:last-child') as HTMLElement | null
+          if (carDiv) carDiv.style.transform = `rotate(${vehicleHeading}deg)`
+        }
+        return
+      } catch { /* fall through to recreate */ }
     }
 
     try {
@@ -263,13 +353,13 @@ export default function MapKitMap({
 
       const factory = () => {
         const el = document.createElement('div')
-        el.style.cssText = 'width:48px;height:48px;position:relative;'
+        el.style.cssText = 'width:40px;height:52px;position:relative;'
         const pulse = document.createElement('div')
-        pulse.style.cssText = 'position:absolute;inset:2px;border-radius:50%;background:rgba(59,130,246,0.18);animation:pulse 2s infinite;'
+        pulse.style.cssText = 'position:absolute;left:4px;top:10px;width:32px;height:32px;border-radius:50%;background:rgba(59,130,246,0.18);animation:pulse 2s infinite;'
         el.appendChild(pulse)
         const car = document.createElement('div')
         const c = carColor
-        car.innerHTML = `<svg width="22" height="36" viewBox="0 0 22 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        car.innerHTML = `<svg width="24" height="38" viewBox="0 0 22 36" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect x="2" y="3" width="18" height="30" rx="5" fill="${c}"/>
           <rect x="0" y="9" width="2.5" height="5" rx="1.2" fill="${c}" opacity="0.7"/>
           <rect x="19.5" y="9" width="2.5" height="5" rx="1.2" fill="${c}" opacity="0.7"/>
@@ -283,13 +373,13 @@ export default function MapKitMap({
           <rect x="3.5" y="30" width="3.5" height="1.5" rx="0.75" fill="#ef4444"/>
           <rect x="15" y="30" width="3.5" height="1.5" rx="0.75" fill="#ef4444"/>
         </svg>`
-        car.style.cssText = `position:absolute;left:13px;top:6px;transform:rotate(${vehicleHeading}deg);transition:transform .3s ease;transform-origin:center center;`
+        car.style.cssText = `position:absolute;left:8px;top:7px;transform:rotate(${vehicleHeading}deg);transition:transform .3s ease;transform-origin:center center;`
         el.appendChild(car)
         return el
       }
 
       const ann = new mapkit.Annotation(coord, factory, {
-        anchorOffset: new DOMPoint(0, 0),
+        anchorOffset: new DOMPoint(0, -24),
         animates: false,
       })
       map.addAnnotation(ann)
@@ -339,38 +429,191 @@ export default function MapKitMap({
     }
   }, [predictedPosition, vehicleHeading, mapReady])
 
-  /* ---------- Effect 5: Route polyline overlay ---------- */
+  /* ---------- Effect 5: Gradient route polyline (blue→green, shadow, traveled gray) ---------- */
   useEffect(() => {
     const mapkit = mk()
     const map = mapRef.current
     if (!mapkit || !map) return
 
-    if (overlayRef.current) {
-      try { map.removeOverlay(overlayRef.current) } catch { /* noop */ }
-      overlayRef.current = null
-    }
+    routeOverlaysRef.current.forEach((o) => {
+      try { map.removeOverlay(o) } catch { /* noop */ }
+    })
+    routeOverlaysRef.current = []
 
     if (!routePolyline || routePolyline.length < 2) return
 
     try {
-      const coords = routePolyline.map(p => new mapkit.Coordinate(p.lat, p.lng))
-      const mc = modeColors(mode, routeGlow)
-      const style = new mapkit.Style({
-        strokeColor: mc.stroke,
-        lineWidth: mc.width,
-        strokeOpacity: mc.opacity,
-        lineCap: 'round',
-        lineJoin: 'round',
+      const totalLen = cumulativeDistance(routePolyline)
+      const totalMeters = totalLen[totalLen.length - 1] ?? 0
+
+      let traveled: { lat: number; lng: number }[] = []
+      let remaining: { lat: number; lng: number }[] = []
+
+      if (typeof traveledDistanceMeters === 'number' && traveledDistanceMeters > 0 && totalMeters > 0) {
+        const traveledM = Math.min(traveledDistanceMeters, totalMeters)
+        let idx = 0
+        for (; idx < totalLen.length; idx++) {
+          if ((totalLen[idx] ?? 0) >= traveledM) break
+        }
+        idx = Math.max(1, idx)
+        traveled = routePolyline.slice(0, idx)
+        remaining = routePolyline.slice(idx - 1)
+      } else {
+        remaining = routePolyline
+      }
+
+      const baseStyle = { lineCap: 'round' as const, lineJoin: 'round' as const }
+
+      // 1. Shadow line: full path shifted ~1px down (lat offset) for depth, 10px width, #1a365d 30% opacity
+      const SHADOW_OFFSET_LAT = -0.00001
+      const shadowCoords = routePolyline.map((p) => new mapkit.Coordinate(p.lat + SHADOW_OFFSET_LAT, p.lng))
+      const shadowStyle = new mapkit.Style({
+        ...baseStyle,
+        strokeColor: '#1a365d',
+        lineWidth: 10,
+        strokeOpacity: 0.3,
       })
-      const overlay = new mapkit.PolylineOverlay(coords, { style })
-      map.addOverlay(overlay)
-      overlayRef.current = overlay
+      const shadowOverlay = new mapkit.PolylineOverlay(shadowCoords, { style: shadowStyle })
+      map.addOverlay(shadowOverlay)
+      routeOverlaysRef.current.push(shadowOverlay)
+
+      // 2. Traveled portion (gray #94A3B8 40% opacity)
+      if (traveled.length >= 2) {
+        const traveledCoords = traveled.map((p) => new mapkit.Coordinate(p.lat, p.lng))
+        const grayStyle = new mapkit.Style({
+          ...baseStyle,
+          strokeColor: '#94A3B8',
+          lineWidth: 7,
+          strokeOpacity: 0.4,
+        })
+        const grayOverlay = new mapkit.PolylineOverlay(traveledCoords, { style: grayStyle })
+        map.addOverlay(grayOverlay)
+        routeOverlaysRef.current.push(grayOverlay)
+      }
+
+      // 3. Remaining portion: gradient segments (blue #4A89F3 → green #34D399)
+      const nSegments = 25
+      const chunks = chunkPolyline(remaining, nSegments)
+      chunks.forEach(({ points, t }) => {
+        const coords = points.map((p) => new mapkit.Coordinate(p.lat, p.lng))
+        const color = interpolateColor('#4A89F3', '#34D399', t)
+        const style = new mapkit.Style({
+          ...baseStyle,
+          strokeColor: color,
+          lineWidth: 7,
+          strokeOpacity: 1,
+        })
+        const overlay = new mapkit.PolylineOverlay(coords, { style })
+        map.addOverlay(overlay)
+        routeOverlaysRef.current.push(overlay)
+      })
+
+      // Fit map to show the full route only when not navigating (so camera can follow user during nav)
+      if (!isNavigating) {
+        let minLat = routePolyline[0].lat
+        let maxLat = routePolyline[0].lat
+        let minLng = routePolyline[0].lng
+        let maxLng = routePolyline[0].lng
+        for (let i = 1; i < routePolyline.length; i++) {
+          const p = routePolyline[i]
+          minLat = Math.min(minLat, p.lat)
+          maxLat = Math.max(maxLat, p.lat)
+          minLng = Math.min(minLng, p.lng)
+          maxLng = Math.max(maxLng, p.lng)
+        }
+        const centerLat = (minLat + maxLat) / 2
+        const centerLng = (minLng + maxLng) / 2
+        const deltaLat = Math.max(0.01, (maxLat - minLat) * 1.4)
+        const deltaLng = Math.max(0.01, (maxLng - minLng) * 1.4)
+        const coord = new mapkit.Coordinate(centerLat, centerLng)
+        const span = new mapkit.CoordinateSpan(deltaLat, deltaLng)
+        map.setRegionAnimated(new mapkit.CoordinateRegion(coord, span), true)
+      }
     } catch (e) {
       console.warn('MapKit polyline overlay failed:', e)
     }
-  }, [routePolyline, mode, routeGlow, mapReady])
+  }, [routePolyline, traveledDistanceMeters, mapReady, isNavigating])
 
-  /* ---------- Effect 6: Offer markers ---------- */
+  /* ---------- Effect 5b: GPS-breadcrumb traveled trail ---------- */
+  useEffect(() => {
+    const mapkit = mk()
+    const map = mapRef.current
+    if (!mapkit || !map || !mapReady) return
+
+    if (!isNavigating) {
+      if (traveledOverlayRef.current) {
+        try { map.removeOverlay(traveledOverlayRef.current as Parameters<typeof map.removeOverlay>[0]) } catch { /* noop */ }
+        traveledOverlayRef.current = null
+      }
+      traveledRef.current = []
+      return
+    }
+
+    const last = traveledRef.current[traveledRef.current.length - 1]
+    if (!last || Math.abs(last.lat - userLocation.lat) > 0.00001 || Math.abs(last.lng - userLocation.lng) > 0.00001) {
+      traveledRef.current.push({ lat: userLocation.lat, lng: userLocation.lng })
+    }
+
+    if (traveledRef.current.length < 2) return
+
+    if (traveledOverlayRef.current) {
+      try { map.removeOverlay(traveledOverlayRef.current as Parameters<typeof map.removeOverlay>[0]) } catch { /* noop */ }
+    }
+
+    try {
+      const coords = traveledRef.current.map(p => new mapkit.Coordinate(p.lat, p.lng))
+      const style = new mapkit.Style({
+        lineWidth: 5,
+        strokeColor: '#94A3B8',
+        strokeOpacity: 0.5,
+        lineCap: 'round',
+        lineJoin: 'round',
+      } as Record<string, unknown>)
+      const overlay = new mapkit.PolylineOverlay(coords, { style })
+      map.addOverlay(overlay)
+      traveledOverlayRef.current = overlay
+    } catch { /* noop */ }
+  }, [userLocation.lat, userLocation.lng, isNavigating, mapReady])
+
+  /* ---------- Effect 6: Destination marker (dark blue pin) ---------- */
+  useEffect(() => {
+    const mapkit = mk()
+    const map = mapRef.current
+    if (!mapkit || !map) return
+
+    if (destAnnRef.current) {
+      try { map.removeAnnotation(destAnnRef.current) } catch { /* noop */ }
+      destAnnRef.current = null
+    }
+
+    if (!destinationCoordinate?.lat || !destinationCoordinate?.lng) return
+
+    try {
+      const coord = new mapkit.Coordinate(destinationCoordinate.lat, destinationCoordinate.lng)
+
+      const factory = () => {
+        const el = document.createElement('div')
+        el.style.cssText = 'width:40px;height:52px;position:relative;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.3));animation:bounce-in 0.5s ease-out;'
+        el.innerHTML = `<svg width="40" height="52" viewBox="0 0 40 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 0C8.954 0 0 8.954 0 20c0 15 20 32 20 32s20-17 20-32C40 8.954 31.046 0 20 0z" fill="#1E3A5F"/>
+          <circle cx="20" cy="20" r="8" fill="white"/>
+          <circle cx="20" cy="20" r="3" fill="#1E3A5F"/>
+        </svg>`
+        return el
+      }
+
+      const ann = new mapkit.Annotation(coord, factory, {
+        anchorOffset: new DOMPoint(20, 52),
+        animates: false,
+      })
+      map.addAnnotation(ann)
+      destAnnRef.current = ann
+    } catch (e) {
+      console.warn('MapKit destination annotation failed:', e)
+    }
+  }, [destinationCoordinate?.lat, destinationCoordinate?.lng, mapReady])
+
+  /* ---------- Effect 7: Offer markers ---------- */
   useEffect(() => {
     const mapkit = mk()
     const map = mapRef.current
@@ -402,7 +645,7 @@ export default function MapKitMap({
     })
   }, [offers, onOfferClick, mapReady])
 
-  /* ---------- Effect 7: Road report markers ---------- */
+  /* ---------- Effect 8: Road report markers ---------- */
   useEffect(() => {
     const mapkit = mk()
     const map = mapRef.current
@@ -458,21 +701,24 @@ export default function MapKitMap({
 
   const cardinal = bearingToCardinal(bearing)
 
+  const containerStyle =
+    contentInsets
+      ? {
+          paddingTop: contentInsets.top,
+          paddingRight: contentInsets.right,
+          paddingBottom: contentInsets.bottom,
+          paddingLeft: contentInsets.left,
+          transition: 'padding 300ms ease-in-out',
+        }
+      : undefined
+
   return (
     <div className="absolute inset-0 z-0 bg-slate-900">
-      {/* MapKit container -- hide built-in attribution/legal */}
-      <div ref={containerRef} className="absolute inset-0 mapkit-clean" />
+      {/* MapKit container -- hide built-in attribution/legal; padding when contentInsets for nav panels */}
+      <div ref={containerRef} className="absolute inset-0 mapkit-clean" style={containerStyle} />
 
       {/* Mode edge tint overlay */}
       <div className="absolute inset-0 pointer-events-none z-[5]" style={{ background: edgeTint }} />
-
-      {/* Navigation indicator */}
-      {isNavigating && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 bg-blue-500 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
-          <Navigation2 className="animate-pulse" size={16} />
-          <span className="text-sm font-medium">Navigating...</span>
-        </div>
-      )}
 
       {/* Live GPS badge */}
       {isLiveGps && (
@@ -515,8 +761,8 @@ export default function MapKitMap({
             onClick={() => {
               const m = mapRef.current
               if (!m) return
-              const types = ['mutedStandard', 'satellite', 'standard'] as const
-              const cur = (m as unknown as { mapType: string }).mapType || 'mutedStandard'
+              const types = ['standard', 'satellite', 'mutedStandard'] as const
+              const cur = (m as unknown as { mapType: string }).mapType || 'standard'
               const idx = types.indexOf(cur as typeof types[number])
               const next = types[(idx + 1) % types.length]
               ;(m as unknown as { mapType: string }).mapType = next
@@ -525,50 +771,22 @@ export default function MapKitMap({
           >
             <Layers className="text-slate-600" size={17} />
           </button>
-          <div className="w-7 h-px bg-gray-200" />
-          {/* Zoom in */}
-          <button
-            type="button"
-            onClick={() => {
-              const m = mapRef.current
-              const mapkit = mk()
-              if (!m || !mapkit) return
-              try {
-                const delta = DELTA_FOR_ZOOM(zoom + 1)
-                const coord = new mapkit.Coordinate(center.lat, center.lng)
-                const span = new mapkit.CoordinateSpan(delta, delta * 1.2)
-                m.setRegionAnimated(new mapkit.CoordinateRegion(coord, span), true)
-              } catch { /* non-critical */ }
-            }}
-            className="w-11 h-10 flex items-center justify-center active:bg-gray-200/80 transition-colors"
-          >
-            <Plus className="text-slate-600" size={18} />
-          </button>
-          <div className="w-7 h-px bg-gray-200" />
-          {/* Zoom out */}
-          <button
-            type="button"
-            onClick={() => {
-              const m = mapRef.current
-              const mapkit = mk()
-              if (!m || !mapkit) return
-              try {
-                const delta = DELTA_FOR_ZOOM(zoom - 1)
-                const coord = new mapkit.Coordinate(center.lat, center.lng)
-                const span = new mapkit.CoordinateSpan(delta, delta * 1.2)
-                m.setRegionAnimated(new mapkit.CoordinateRegion(coord, span), true)
-              } catch { /* non-critical */ }
-            }}
-            className="w-11 h-10 flex items-center justify-center active:bg-gray-200/80 transition-colors rounded-b-lg"
-          >
-            <Minus className="text-slate-600" size={18} />
-          </button>
         </div>
 
         {/* Recenter / location button */}
         <button
           type="button"
-          onClick={onRecenter}
+          onClick={() => {
+            const mapkit = mk()
+            const map = mapRef.current
+            if (mapkit && map) {
+              const coord = new mapkit.Coordinate(userLocation.lat, userLocation.lng)
+              const span = new mapkit.CoordinateSpan(0.005, 0.006)
+              const region = new mapkit.CoordinateRegion(coord, span)
+              map.setRegionAnimated(region, true)
+            }
+            onRecenter?.()
+          }}
           className="w-11 h-10 bg-gray-50/98 backdrop-blur-md rounded-xl border border-gray-200/90 shadow-[0_1px_4px_rgba(0,0,0,0.08)] flex items-center justify-center active:bg-gray-200/80 transition-colors"
         >
           <Locate className="text-blue-500" size={19} />

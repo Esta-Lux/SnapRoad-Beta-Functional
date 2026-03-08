@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import toast from 'react-hot-toast'
@@ -37,9 +37,9 @@ import ChallengeHistory from './components/ChallengeHistory'
 import RedemptionPopup from './components/RedemptionPopup'
 import WeeklyRecap from './components/WeeklyRecap'
 import OrionOfferAlerts from './components/OrionOfferAlerts'
-import InteractiveMap from './components/InteractiveMap'
 import MapKitMap from './components/MapKitMap'
 import { useMapKit } from '@/contexts/MapKitContext'
+import { getMapKitDirections, type DirectionsResult } from '@/lib/mapkit'
 import { ProfileCar, CAR_COLORS } from './components/Car3D'
 // New enhanced components
 import TripAnalytics from './components/TripAnalytics'
@@ -48,6 +48,7 @@ import CollapsibleOffersPanel from './components/CollapsibleOffersPanel'
 import InAppBrowser from './components/InAppBrowser'
 import GemOverlay from './components/GemOverlay'
 import MapSearchBar from './components/MapSearchBar'
+import RoutePreview from './components/RoutePreview'
 import RouteInfoBar from './components/RouteInfoBar'
 import SpeedIndicator from './components/SpeedIndicator'
 import { api } from '@/services/api'
@@ -133,7 +134,9 @@ interface NavigationDestination {
 interface NavigationState {
   origin?: NavigationDestination
   destination?: NavigationDestination
-  steps?: { instruction: string; distance: string; lat?: number; lng?: number }[]
+  steps?: { instruction: string; distance: string; duration?: string; maneuver?: string; lat?: number; lng?: number }[]
+  /** Full road path from MapKit Directions; when set, route follows roads instead of straight line. */
+  polyline?: { lat: number; lng: number }[]
   [key: string]: unknown
 }
 
@@ -234,6 +237,12 @@ export default function DriverApp() {
   const [navigationData, setNavigationData] = useState<NavigationState | null>(null)
   const [liveEta, setLiveEta] = useState<{ distanceMiles: number; etaMinutes: number } | null>(null)
   const [showTurnByTurn, setShowTurnByTurn] = useState(false)
+  const [showRoutePreview, setShowRoutePreview] = useState(false)
+  const [showEndConfirm, setShowEndConfirm] = useState(false)
+  const [showTripSummary, setShowTripSummary] = useState(false)
+  const [selectedRouteId, setSelectedRouteId] = useState('fastest')
+  const [availableRoutes, setAvailableRoutes] = useState<DirectionsResult[]>([])
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState(0)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
@@ -321,6 +330,35 @@ export default function DriverApp() {
     }
   }, [isLive, vehicle?.coordinate?.lat, vehicle?.coordinate?.lng])
 
+  // GPS watcher: high accuracy, real position/heading/speed (runs on mount)
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+      },
+      (err) => console.warn('Initial position failed:', err.message),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    )
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        if (typeof pos.coords.heading === 'number' && pos.coords.heading >= 0 && (pos.coords.speed ?? 0) > 0.5) {
+          setCarHeading(pos.coords.heading)
+        }
+        if (typeof pos.coords.speed === 'number' && pos.coords.speed >= 0) {
+          setCurrentSpeed(Math.round(pos.coords.speed * 2.237))
+        }
+      },
+      (err) => console.warn('Watch position failed:', err.message),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+    )
+
+    return () => navigator.geolocation.clearWatch(watchId)
+  }, [])
+
   // Poll backend ETA endpoint during navigation
   useEffect(() => {
     if (!isNavigating || !navigationData?.destination) { setLiveEta(null); return }
@@ -344,12 +382,12 @@ export default function DriverApp() {
     return () => { cancelled = true; clearInterval(id) }
   }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng])
 
-  // Speed simulation when navigating (fallback when not live)
+  // When navigating but not live GPS: don't fake speed — show 0 until real movement
   useEffect(() => {
     if (isNavigating && !isLive) {
       const interval = setInterval(() => {
-        setCurrentSpeed(Math.floor(Math.random() * 20) + 55)
-        setCarHeading((prev) => prev + (Math.random() > 0.5 ? 5 : -5))
+        setCurrentSpeed(0) // Don't fake speed — show 0 until real GPS movement
+        setCarHeading((prev) => prev) // Don't randomly rotate heading either
       }, 3000)
       return () => clearInterval(interval)
     } else if (!isLive) {
@@ -768,21 +806,25 @@ export default function DriverApp() {
     }
   }
 
-  const handleStopNavigation = async () => {
+  const handleRequestEndNavigation = () => {
+    setShowEndConfirm(true)
+  }
+
+  const handleConfirmEndNavigation = async () => {
+    setShowEndConfirm(false)
     const tripIdToEnd = activeTripId
     const tripStart = tripStartTimeRef.current
-    setIsNavigating(false)
-    setShowTurnByTurn(false)
-    setNavigationData(null)
-    setSelectedDestination(null)
-    setCurrentStepIndex(0)
+    const durationMin = tripStart ? Math.round((Date.now() - tripStart) / 60000) : 5
+    const safetyScore = vehicle ? Math.max(60, Math.round(100 - (getDrivingMetrics().style.aggression * 30))) : 85
+    const distMeters = (navigationData?.distance as { meters?: number })?.meters
+    const distMiles = distMeters ? distMeters / 1609.34 : durationMin * 0.5
+    const gemsEarned = Math.round(5 * (userData.gem_multiplier || 1))
+
     try {
       await api.post('/api/navigation/stop')
-      const durationMin = tripStart ? Math.round((Date.now() - tripStart) / 60000) : 5
-      const safetyScore = vehicle ? Math.max(60, Math.round(100 - (getDrivingMetrics().style.aggression * 30))) : 85
       await api.post('/api/trips/complete-with-safety', {
         trip_id: tripIdToEnd,
-        distance: durationMin * 0.5,
+        distance: distMiles,
         duration: durationMin,
         safety_score: safetyScore,
         smooth_braking: Math.round((1 - getDrivingMetrics().style.aggression) * 100),
@@ -790,10 +832,34 @@ export default function DriverApp() {
         focus_score: Math.round(getDrivingMetrics().style.smoothness * 100),
       })
       await api.post('/api/analytics/track', { event: 'trip_completed', properties: { trip_id: tripIdToEnd, duration: durationMin, mode } })
-      toast.success('Trip completed!')
     } catch (_e) {
       toast.error('Could not stop navigation')
     }
+
+    setShowTripSummary(true)
+    setLastTripData({
+      distance: distMiles,
+      duration: durationMin,
+      safety_score: safetyScore,
+      gems_earned: gemsEarned,
+      xp_earned: 1000,
+      origin: 'Start',
+      destination: navigationData?.destination?.name ?? 'End',
+      date: new Date().toLocaleDateString(),
+      is_safe_drive: safetyScore >= 80,
+    })
+    setIsNavigating(false)
+    setShowTurnByTurn(false)
+    setNavigationData(null)
+    setSelectedDestination(null)
+    setCurrentStepIndex(0)
+    setRoutePolyline(null)
+  }
+
+  const handleDismissTripSummary = () => {
+    setShowTripSummary(false)
+    setLastTripData(null)
+    toast.success('Trip completed!')
   }
 
   // Search location with API
@@ -832,25 +898,57 @@ export default function DriverApp() {
     }
   }
 
-  // Fetch directions from API
   const fetchDirections = async (destination: any) => {
+    const origin = vehicle?.coordinate ?? userLocation
+    const oLat = Number(origin?.lat)
+    const oLng = Number(origin?.lng)
+    const dLat = Number(destination?.lat)
+    const dLng = Number(destination?.lng)
+
+    if (!Number.isFinite(oLat) || !Number.isFinite(oLng) || !Number.isFinite(dLat) || !Number.isFinite(dLng)) {
+      console.warn('fetchDirections: invalid coordinates')
+      toast.error('Invalid location')
+      return
+    }
+
     try {
-      const params = new URLSearchParams({
-        origin_lat: userLocation.lat.toString(),
-        origin_lng: userLocation.lng.toString(),
-        dest_lat: destination.lat.toString(),
-        dest_lng: destination.lng.toString(),
-        dest_name: destination.name
-      })
-      const res = await api.get<{ success?: boolean; data?: unknown }>(`/api/map/directions?${params}`)
-      if (res.success && res.data) {
-        const nav = (res.data as { data?: unknown })?.data ?? res.data
-        setNavigationData(nav)
-        setShowTurnByTurn(true)
-        setCurrentStepIndex(0)
+      const routes = await getMapKitDirections({ lat: oLat, lng: oLng }, { lat: dLat, lng: dLng })
+
+      if (!routes?.length || !routes[0].polyline?.length) {
+        console.warn('MapKit directions returned no route')
+        toast.error('Could not get directions. Try another destination.')
+        return
       }
+
+      setAvailableRoutes(routes)
+      setSelectedRouteIndex(0)
+      setSelectedRouteId('fastest')
+
+      const first = routes[0]
+      const distMiles = (first.distanceMeters / 1609.34).toFixed(1)
+      const etaMin = Math.round(first.expectedTravelTimeSeconds / 60)
+
+      const nav: NavigationState = {
+        origin: { lat: oLat, lng: oLng, name: 'Current Location' },
+        destination: { lat: dLat, lng: dLng, name: destination?.name ?? 'Destination' },
+        steps: first.steps.map(s => ({
+          instruction: s.instructions,
+          distance: s.distance > 1609 ? `${(s.distance / 1609.34).toFixed(1)} mi` : `${Math.round(s.distance)} ft`,
+          maneuver: s.maneuver,
+        })),
+        polyline: first.polyline,
+        duration: { text: etaMin < 60 ? `${etaMin} min` : `${Math.floor(etaMin / 60)}h ${etaMin % 60}m`, seconds: first.expectedTravelTimeSeconds },
+        distance: { text: `${distMiles} mi`, meters: first.distanceMeters },
+        traffic: 'normal',
+      }
+
+      setNavigationData(nav)
+      setRoutePolyline(first.polyline)
+      setShowRoutePreview(true)
+      setCurrentStepIndex(0)
     } catch (e) {
       console.error('Directions error:', e)
+      toast.error('Could not get route')
     }
   }
 
@@ -860,14 +958,58 @@ export default function DriverApp() {
     setSearchQuery(location.name)
     setSearchResults([])
     setShowSearch(false)
-    
-    // Start navigation with turn-by-turn
-    setIsNavigating(true)
     toast.loading('Calculating route...', { duration: 1500 })
     await fetchDirections(location)
-    setTimeout(() => {
-      toast.success(`Navigating to ${location.name}`)
-    }, 1500)
+    setTimeout(() => toast.success('Route ready'), 1500)
+  }
+
+  const handleGoFromRoutePreview = () => {
+    setIsNavigating(true)
+    setShowTurnByTurn(true)
+    setShowRoutePreview(false)
+    toast.success(`Navigating to ${navigationData?.destination?.name ?? 'destination'}`)
+  }
+
+  const handleCancelRoutePreview = () => {
+    setShowRoutePreview(false)
+    setNavigationData(null)
+    setRoutePolyline(null)
+    setAvailableRoutes([])
+    setSelectedDestination(null)
+  }
+
+  // Map route option id to index: fastest = min time, shortest = min distance, eco = fewest steps
+  const handleRouteSelect = (id: string) => {
+    setSelectedRouteId(id)
+    if (!availableRoutes.length || !navigationData?.origin || !navigationData?.destination) return
+    let index = 0
+    if (id === 'fastest') {
+      index = availableRoutes.reduce((best, r, i) => (r.expectedTravelTimeSeconds < availableRoutes[best].expectedTravelTimeSeconds ? i : best), 0)
+    } else if (id === 'shortest') {
+      index = availableRoutes.reduce((best, r, i) => (r.distanceMeters < availableRoutes[best].distanceMeters ? i : best), 0)
+    } else if (id === 'eco') {
+      index = availableRoutes.reduce((best, r, i) => (r.steps.length < availableRoutes[best].steps.length ? i : best), 0)
+    }
+    setSelectedRouteIndex(index)
+    const r = availableRoutes[index]
+    if (!r?.polyline?.length) return
+    const distMiles = (r.distanceMeters / 1609.34).toFixed(1)
+    const etaMin = Math.round(r.expectedTravelTimeSeconds / 60)
+    const nav: NavigationState = {
+      origin: navigationData.origin,
+      destination: navigationData.destination,
+      steps: r.steps.map(s => ({
+        instruction: s.instructions,
+        distance: s.distance > 1609 ? `${(s.distance / 1609.34).toFixed(1)} mi` : `${Math.round(s.distance)} ft`,
+        maneuver: s.maneuver,
+      })),
+      polyline: r.polyline,
+      duration: { text: etaMin < 60 ? `${etaMin} min` : `${Math.floor(etaMin / 60)}h ${etaMin % 60}m`, seconds: r.expectedTravelTimeSeconds },
+      distance: { text: `${distMiles} mi`, meters: r.distanceMeters },
+      traffic: 'normal',
+    }
+    setNavigationData(nav)
+    setRoutePolyline(r.polyline)
   }
 
   const handleVoiceCommand = async () => {
@@ -1224,50 +1366,74 @@ export default function DriverApp() {
   const getWorkLocation = () => locations.find(l => l.category === 'work')
   const getFavoriteLocations = () => locations.filter(l => !['home', 'work'].includes(l.category))
 
-  // Sync route for map matching when navigating
+  // Memoized route polyline for map overlay. Use selected route from availableRoutes when in preview/nav.
+  const routePolylineForMap = useMemo(() => {
+    if (!navigationData?.origin || !navigationData?.destination) return undefined
+    const poly = (showRoutePreview || isNavigating) && availableRoutes.length > 0
+      ? availableRoutes[selectedRouteIndex]?.polyline
+      : navigationData.polyline
+    if (poly && poly.length >= 2) return poly
+    return undefined
+  }, [navigationData?.origin, navigationData?.destination, navigationData?.polyline, showRoutePreview, isNavigating, availableRoutes, selectedRouteIndex])
+
+  // Sync route state for map; clear when no navigation. Do not set straight-line fallback.
   useEffect(() => {
     if (!navigationData?.origin || !navigationData?.destination) {
       setRoutePolyline(null)
       return
     }
-    const o = navigationData.origin
-    const d = navigationData.destination
-    const points: { lat: number; lng: number }[] = []
-    for (let i = 0; i <= 8; i++) {
-      const t = i / 8
-      points.push({ lat: o.lat + t * (d.lat - o.lat), lng: o.lng + t * (d.lng - o.lng) })
-    }
-    setRoutePolyline(points)
+    setRoutePolyline(navigationData.polyline && navigationData.polyline.length >= 2 ? navigationData.polyline : null)
     return () => setRoutePolyline(null)
-  }, [navigationData?.origin, navigationData?.destination, setRoutePolyline])
+  }, [navigationData?.origin, navigationData?.destination, navigationData?.polyline, setRoutePolyline])
+
+  // Content insets when turn-by-turn is active so the route stays visible below/above panels
+  const mapContentInsets = useMemo(() => {
+    if (!showTurnByTurn || !isNavigating) return undefined
+    return { top: 200, bottom: 88, left: 16, right: 16 }
+  }, [showTurnByTurn, isNavigating])
+
+  // Effective map center/zoom/bearing during navigation: follow user at street level
+  const navCenter = vehicle?.coordinate ?? userLocation
+  const navZoom = 17
+  const navBearing = vehicle?.heading ?? carHeading ?? 0
+
+  // Fraction through current step (0–1) for progress bar, from traveled distance
+  const currentStepProgress = useMemo(() => {
+    if (!navigationData?.steps?.length || !navigationData?.distance?.meters) return 0
+    const totalMeters = Number((navigationData.distance as { meters?: number }).meters) || 0
+    if (totalMeters <= 0) return 0
+    const traveledM =
+      typeof liveEta?.distanceMiles === 'number'
+        ? Math.max(0, totalMeters - liveEta.distanceMiles * 1609.34)
+        : 0
+    const progress = Math.min(1, traveledM / totalMeters)
+    if (progress >= 1 - 1e-6) return 1
+    const stepIndex = progress * navigationData.steps.length
+    const currentStep = Math.min(Math.floor(stepIndex), navigationData.steps.length - 1)
+    const fractionInStep = stepIndex - currentStep
+    return Math.max(0, Math.min(1, fractionInStep))
+  }, [navigationData?.steps?.length, navigationData?.distance, liveEta?.distanceMiles])
 
   // Clean Map Tab - Google Maps Style
   const renderMap = () => (
-    <div id="map-container" className="flex-1 relative bg-slate-800 overflow-hidden"
+    <div id="map-container" className="flex-1 min-h-0 relative bg-slate-800 overflow-hidden"
       onMouseMove={draggingWidget ? handleWidgetDrag : undefined}
       onMouseUp={handleWidgetDragEnd}
       onTouchMove={draggingWidget ? handleWidgetDrag : undefined}
       onTouchEnd={handleWidgetDragEnd}>
       
-      {/* Map: Apple MapKit (when token configured) or OSM fallback */}
+      {/* Map: Apple MapKit (when token ready) or loading/error state */}
       {useAppleMap && (
         <MapKitMap
-          center={camera?.center ?? vehicle?.coordinate ?? userLocation}
-          zoom={camera?.zoom ?? 15}
-          bearing={camera?.bearing}
+          center={isNavigating ? navCenter : (camera?.center ?? vehicle?.coordinate ?? userLocation)}
+          zoom={isNavigating ? navZoom : (camera?.zoom ?? 15)}
+          bearing={isNavigating ? navBearing : camera?.bearing}
           userLocation={vehicle?.coordinate ?? userLocation}
           vehicleHeading={vehicle?.heading ?? carHeading}
-          routePolyline={navigationData?.origin && navigationData?.destination
-            ? (() => {
-                const o = navigationData.origin
-                const d = navigationData.destination
-                const pts: { lat: number; lng: number }[] = []
-                for (let i = 0; i <= 8; i++) {
-                  const t = i / 8
-                  pts.push({ lat: o.lat + t * (d.lat - o.lat), lng: o.lng + t * (d.lng - o.lng) })
-                }
-                return pts
-              })()
+          routePolyline={routePolylineForMap}
+          destinationCoordinate={isNavigating && navigationData?.destination ? { lat: navigationData.destination.lat, lng: navigationData.destination.lng } : undefined}
+          traveledDistanceMeters={isNavigating && navigationData?.distance?.meters && liveEta
+            ? Math.max(0, (navigationData.distance.meters as number) - liveEta.distanceMiles * 1609.34)
             : undefined}
           predictedPosition={predicted ? { coordinate: predicted.coordinate, confidence: predicted.confidence } : null}
           routeGlow={experience?.routeGlow}
@@ -1280,71 +1446,33 @@ export default function DriverApp() {
           onOfferClick={(offer) => { setSelectedOfferForRedemption(offer); setShowRedemptionPopup(true) }}
           roadReports={roadReports}
           isNavigating={isNavigating}
+          contentInsets={mapContentInsets}
         />
       )}
       {!useAppleMap && (
-        <>
-      <InteractiveMap
-            userLocation={vehicle?.coordinate ?? userLocation}
-        offers={offers}
-        isNavigating={isNavigating}
-        onOfferClick={(offer) => {
-          setSelectedOfferForRedemption(offer)
-          setShowRedemptionPopup(true)
-        }}
-        carColor={userCar.color.includes('blue') ? '#3b82f6' : 
-                  userCar.color.includes('red') ? '#ef4444' : 
-                  userCar.color.includes('green') ? '#22c55e' :
-                  userCar.color.includes('white') ? '#f8fafc' :
-                  userCar.color.includes('gold') ? '#fbbf24' : '#1e293b'}
-        userCar={userCar}
-        onOrionClick={() => setShowOrionVoice(true)}
-            onRecenter={() => { recenter(); toast.success('Centered on your location') }}
-            camera={camera}
-            vehicleHeading={vehicle?.heading ?? carHeading}
-            routePolyline={navigationData?.origin && navigationData?.destination
-              ? (() => {
-                  const o = navigationData.origin
-                  const d = navigationData.destination
-                  const points: { lat: number; lng: number }[] = []
-                  for (let i = 0; i <= 8; i++) {
-                    const t = i / 8
-                    points.push({
-                      lat: o.lat + t * (d.lat - o.lat),
-                      lng: o.lng + t * (d.lng - o.lng),
-                    })
-                  }
-                  return points
-                })()
-              : undefined}
-            predictedPosition={predicted ? { coordinate: predicted.coordinate, confidence: predicted.confidence } : null}
-            isLiveGps={isLive}
-            routeGlow={experience?.routeGlow}
-            mode={mode}
-            roadReports={roadReports}
-          />
-          {mapKitError && !fallbackBannerDismissed && (
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-900/80 backdrop-blur border border-amber-500/30 text-amber-200 text-xs shadow-lg">
-              <AlertTriangle size={12} />
-              <span>
-                Apple Maps unavailable: {mapKitError}
-                {mapKitError?.toLowerCase().includes('map creation') && (
-                  <span className="block mt-1 text-[10px] text-amber-300/90">
-                    If developing on localhost: your MapKit key may be domain‑restricted. Use an unrestricted key (expires in 7 days) for local dev.
-                  </span>
-                )}
-              </span>
-              <button onClick={() => setFallbackBannerDismissed(true)} className="ml-1 hover:text-white">
-                <X size={12} />
-              </button>
+        <div className="absolute inset-0 z-0 bg-slate-900 flex items-center justify-center">
+          {mapKitError ? (
+            <div className="text-center px-4 max-w-sm">
+              <p className="text-amber-400 text-sm font-medium mb-2">Apple Maps unavailable</p>
+              <p className="text-slate-400 text-xs mb-3">{mapKitError}</p>
+              {!fallbackBannerDismissed && (
+                <button onClick={() => setFallbackBannerDismissed(true)} className="text-slate-500 text-xs underline">
+                  Dismiss
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="text-center">
+              <div className="w-12 h-12 mx-auto mb-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              <p className="text-slate-400 text-sm">Loading Apple Maps…</p>
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* Driving mode selector: Calm / Adaptive / Sport -- positioned below top bar */}
       {!showTurnByTurn && (
-        <div className="absolute top-[72px] right-3 z-20 flex rounded-full bg-slate-900/90 backdrop-blur border border-white/10 overflow-hidden shadow-lg">
+        <div className="absolute top-[72px] right-3 z-20 flex rounded-full bg-white/95 backdrop-blur border border-gray-200 overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,0.08)]">
           {(['calm', 'adaptive', 'sport'] as const).map((m) => {
             const active = mode === m
             const colors: Record<string, string> = { calm: 'bg-blue-500', adaptive: 'bg-emerald-500', sport: 'bg-red-500' }
@@ -1352,7 +1480,7 @@ export default function DriverApp() {
               <button
                 key={m}
                 onClick={() => { setMode(m); api.post('/api/analytics/track', { event: 'mode_switch', properties: { mode: m } }).catch(() => {}) }}
-                className={`relative px-3 py-1.5 text-[10px] font-semibold capitalize transition-all duration-300 ${active ? `${colors[m]} text-white` : 'text-slate-400 hover:text-white'}`}
+                className={`relative px-3 py-1.5 text-[10px] font-semibold capitalize transition-all duration-300 ${active ? `${colors[m]} text-white` : 'text-slate-500 hover:text-slate-700'}`}
               >
                 {active && <span className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ background: m === 'sport' ? '#ef4444' : m === 'calm' ? '#3b82f6' : '#10b981' }} />}
                 {m}
@@ -1362,7 +1490,7 @@ export default function DriverApp() {
         </div>
       )}
       {showTurnByTurn && (
-        <div className="absolute top-2 right-3 z-20 flex rounded-full bg-slate-900/90 backdrop-blur border border-white/10 overflow-hidden shadow-lg">
+        <div className="absolute top-2 right-3 z-20 flex rounded-full bg-white/95 backdrop-blur border border-gray-200 overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,0.08)]">
           {(['calm', 'adaptive', 'sport'] as const).map((m) => {
             const active = mode === m
             const colors: Record<string, string> = { calm: 'bg-blue-500', adaptive: 'bg-emerald-500', sport: 'bg-red-500' }
@@ -1370,7 +1498,7 @@ export default function DriverApp() {
               <button
                 key={m}
                 onClick={() => { setMode(m); api.post('/api/analytics/track', { event: 'mode_switch', properties: { mode: m } }).catch(() => {}) }}
-                className={`relative px-3 py-1.5 text-[10px] font-semibold capitalize transition-all duration-300 ${active ? `${colors[m]} text-white` : 'text-slate-400 hover:text-white'}`}
+                className={`relative px-3 py-1.5 text-[10px] font-semibold capitalize transition-all duration-300 ${active ? `${colors[m]} text-white` : 'text-slate-500 hover:text-slate-700'}`}
               >
                 {active && <span className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ background: m === 'sport' ? '#ef4444' : m === 'calm' ? '#3b82f6' : '#10b981' }} />}
                 {m}
@@ -1385,13 +1513,38 @@ export default function DriverApp() {
       {/* Map search bar */}
       {!isNavigating && (
         <MapSearchBar
+          userLocation={userLocation}
           onSelect={(r) => {
             setSelectedDestination({ name: r.name, lat: r.lat, lng: r.lng })
           }}
           onNavigate={(r) => {
-            setSelectedDestination({ name: r.name, lat: r.lat, lng: r.lng })
-            handleStartNavigation(r.name)
+            const dest = { name: r.name, lat: r.lat, lng: r.lng }
+            setSelectedDestination(dest)
+            setSearchQuery(r.name)
+            setSearchResults([])
+            setShowSearch(false)
+            toast.loading('Calculating route...', { duration: 1500 })
+            fetchDirections(dest).then(() => toast.success('Route ready'))
           }}
+        />
+      )}
+
+      {/* Route Preview - pre-navigation bottom sheet */}
+      {showRoutePreview && navigationData && (
+        <RoutePreview
+          data={{
+            destination: navigationData.destination,
+            steps: navigationData.steps ?? [],
+            polyline: navigationData.polyline ?? [],
+            duration: navigationData.duration ?? { text: '-- min', seconds: 0 },
+            distance: navigationData.distance ?? { text: '-- mi', meters: 0 },
+            traffic: (navigationData.traffic as string) ?? 'normal',
+          }}
+          destinationName={navigationData.destination?.name}
+          selectedRouteId={selectedRouteId}
+          onRouteSelect={handleRouteSelect}
+          onGo={handleGoFromRoutePreview}
+          onCancel={handleCancelRoutePreview}
         />
       )}
 
@@ -1426,7 +1579,7 @@ export default function DriverApp() {
       )}
 
       {/* Collapsible Offers Panel - On Map */}
-      {activeTab === 'map' && showOffersPanel && (
+      {activeTab === 'map' && showOffersPanel && !isNavigating && (
         <CollapsibleOffersPanel
           offers={offers}
           userLocation={userLocation}
@@ -1448,95 +1601,166 @@ export default function DriverApp() {
 
       {/* Turn-by-Turn Navigation Panel */}
       {showTurnByTurn && navigationData && (
-        <div className="absolute top-0 left-0 right-0 z-30">
-          {/* Current Step */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-500 p-4 shadow-lg">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center">
+        <div className="absolute top-0 left-0 right-0 z-30 pt-[env(safe-area-inset-top)] transition-all duration-300 ease-in-out">
+          <div className="bg-white mx-3 mt-2 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden">
+            <div className="flex items-center gap-4 px-4 py-3">
+              <div className="w-14 h-14 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
                 {navigationData.steps[currentStepIndex]?.maneuver === 'turn-right' ? (
-                  <ChevronRight className="text-white" size={28} />
+                  <ChevronRight className="text-white" size={30} />
                 ) : navigationData.steps[currentStepIndex]?.maneuver === 'turn-left' ? (
-                  <ChevronLeft className="text-white" size={28} />
+                  <ChevronLeft className="text-white" size={30} />
                 ) : navigationData.steps[currentStepIndex]?.maneuver === 'arrive' ? (
-                  <MapPin className="text-white" size={24} />
+                  <MapPin className="text-white" size={26} />
+                ) : navigationData.steps[currentStepIndex]?.maneuver === 'u-turn' ? (
+                  <RefreshCw className="text-white" size={26} />
+                ) : navigationData.steps[currentStepIndex]?.maneuver === 'merge' ? (
+                  <Zap className="text-white" size={26} />
                 ) : (
-                  <Navigation className="text-white" size={24} />
+                  <Navigation className="text-white" size={26} />
                 )}
               </div>
-              <div className="flex-1">
-                <p className="text-white font-bold text-lg">
+              <div className="flex-1 min-w-0">
+                <p className="text-slate-900 font-bold text-xl truncate" style={{ fontSize: '20px' }}>
                   {navigationData.steps[currentStepIndex]?.instruction || 'Continue'}
                 </p>
-                <p className="text-blue-100 text-sm">
-                  {navigationData.steps[currentStepIndex]?.distance} • {navigationData.steps[currentStepIndex]?.duration}
-                </p>
               </div>
-              <button 
-                onClick={handleStopNavigation}
-                className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30"
-                data-testid="end-navigation-btn"
-              >
-                <X className="text-white" size={20} />
-              </button>
+              <span className="text-slate-500 text-base font-medium flex-shrink-0">
+                {navigationData.steps[currentStepIndex]?.distance}
+              </span>
+            </div>
+            <div className="h-1 bg-gray-100 overflow-hidden">
+              <div
+                className="h-full bg-blue-500 transition-all duration-300 ease-in-out"
+                style={{ width: `${currentStepProgress * 100}%` }}
+              />
             </div>
           </div>
 
-          {/* ETA Bar */}
-          <div className="bg-slate-900/95 backdrop-blur px-4 py-3 flex items-center justify-between border-b border-white/10">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Clock className="text-emerald-400" size={16} />
-                <span className="text-white font-semibold">{navigationData.duration?.text || '-- min'}</span>
-              </div>
-              <div className="text-slate-400">•</div>
-              <span className="text-slate-300">{navigationData.distance?.text || '-- mi'}</span>
-              <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                navigationData.traffic === 'light' ? 'bg-emerald-500/20 text-emerald-400' :
-                navigationData.traffic === 'moderate' ? 'bg-amber-500/20 text-amber-400' :
-                'bg-red-500/20 text-red-400'
-              }`}>
-                {navigationData.traffic || 'normal'} traffic
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setCurrentStepIndex(Math.max(0, currentStepIndex - 1))}
-                disabled={currentStepIndex === 0}
-                className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center disabled:opacity-30"
+          <div className="mx-3 mt-2">
+            <RouteInfoBar
+              distanceMiles={liveEta?.distanceMiles ?? (() => {
+                const v = vehicle?.coordinate ?? userLocation
+                const d = navigationData.destination
+                if (!d) return 0
+                const R = 3958.8
+                const dLat = (d.lat - v.lat) * Math.PI / 180
+                const dLon = (d.lng - v.lng) * Math.PI / 180
+                const a = Math.sin(dLat/2)**2 + Math.cos(v.lat*Math.PI/180)*Math.cos(d.lat*Math.PI/180)*Math.sin(dLon/2)**2
+                return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+              })()}
+              etaMinutes={liveEta?.etaMinutes ?? (() => {
+                const v = vehicle?.coordinate ?? userLocation
+                const d = navigationData.destination
+                if (!d) return 0
+                const R = 3958.8
+                const dLat = (d.lat - v.lat) * Math.PI / 180
+                const dLon = (d.lng - v.lng) * Math.PI / 180
+                const a = Math.sin(dLat/2)**2 + Math.cos(v.lat*Math.PI/180)*Math.cos(d.lat*Math.PI/180)*Math.sin(dLon/2)**2
+                const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+                const speed = vehicle?.velocity && vehicle.velocity > 1 ? vehicle.velocity * 2.237 : 30
+                return (dist / speed) * 60
+              })()}
+              destination={navigationData.destination?.name}
+              mode={mode}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Bottom floating pill - End + Recenter */}
+      {showTurnByTurn && isNavigating && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 bg-white/95 backdrop-blur rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.12)] transition-all duration-300">
+          <button
+            onClick={handleRequestEndNavigation}
+            className="text-red-500 text-sm font-medium hover:text-red-600 px-2"
+            data-testid="end-navigation-btn"
+          >
+            End
+          </button>
+          <div className="w-px h-4 bg-slate-200" />
+          <button
+            onClick={() => { recenter(); toast.success('Centered') }}
+            className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors"
+          >
+            <Compass className="text-slate-600" size={18} />
+          </button>
+        </div>
+      )}
+
+      {/* End confirmation bottom sheet */}
+      {showEndConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center pointer-events-none">
+          <div className="absolute inset-0 bg-black/40 pointer-events-auto" onClick={() => setShowEndConfirm(false)} />
+          <div className="relative w-full max-w-md bg-white rounded-t-2xl shadow-[0_2px_8px_rgba(0,0,0,0.12)] p-4 pb-safe pointer-events-auto animate-slide-up transition-all duration-300 ease-in-out">
+            <p className="text-slate-800 font-semibold text-lg mb-4">End navigation?</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowEndConfirm(false)}
+                className="flex-1 py-3 rounded-xl bg-gray-100 text-slate-600 font-medium hover:bg-gray-200 transition-colors"
               >
-                <ChevronUp className="text-white" size={16} />
+                Cancel
               </button>
-              <button 
-                onClick={() => setCurrentStepIndex(Math.min((navigationData.steps?.length || 1) - 1, currentStepIndex + 1))}
-                disabled={currentStepIndex === (navigationData.steps?.length || 1) - 1}
-                className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center disabled:opacity-30"
+              <button
+                onClick={handleConfirmEndNavigation}
+                className="flex-1 py-3 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors"
               >
-                <ChevronDown className="text-white" size={16} />
-              </button>
-              <button className="w-8 h-8 bg-slate-700/50 rounded-full flex items-center justify-center">
-                <Volume2 className="text-white" size={16} />
+                End
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Top Bar - Google Maps Style (Hidden during turn-by-turn) */}
-      {!showTurnByTurn && (
+      {/* Trip summary bottom sheet */}
+      {showTripSummary && lastTripData && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center pointer-events-none">
+          <div className="absolute inset-0 bg-black/40 pointer-events-auto" onClick={handleDismissTripSummary} />
+          <div className="relative w-full max-w-md bg-white rounded-t-2xl shadow-[0_2px_8px_rgba(0,0,0,0.12)] p-4 pb-safe pointer-events-auto animate-slide-up transition-all duration-300 ease-in-out">
+            <h3 className="text-slate-800 font-bold text-lg mb-4">Trip Summary</h3>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-slate-500 text-[13px]">Distance</p>
+                <p className="text-slate-800 font-bold text-lg">{(lastTripData.distance as number)?.toFixed(1) ?? '--'} mi</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-slate-500 text-[13px]">Time</p>
+                <p className="text-slate-800 font-bold text-lg">{lastTripData.duration ?? '--'} min</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-slate-500 text-[13px]">Safety Score</p>
+                <p className="text-emerald-600 font-bold text-lg">{lastTripData.safety_score ?? '--'}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-slate-500 text-[13px]">Gems Earned</p>
+                <p className="text-amber-600 font-bold text-lg">{lastTripData.gems_earned ?? '--'}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleDismissTripSummary}
+              className="w-full py-3 bg-blue-500 text-white font-semibold rounded-xl hover:bg-blue-600 transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Top Bar - Google Maps Style (Hidden during turn-by-turn and active navigation) */}
+      {!showTurnByTurn && !isNavigating && (
       <div className="absolute top-3 left-3 right-3 z-30">
         {/* Search Bar with Menu */}
         <div className="flex gap-2">
           <button onClick={() => setShowMenu(true)} data-testid="menu-btn"
-            className="w-12 h-12 bg-slate-900/95 backdrop-blur rounded-full flex items-center justify-center shadow-lg">
-            <Menu className="text-white" size={20} />
+            className="w-12 h-12 bg-white/95 backdrop-blur border border-gray-200 rounded-full flex items-center justify-center shadow-[0_1px_4px_rgba(0,0,0,0.08)]">
+            <Menu className="text-slate-700" size={20} />
           </button>
           <button onClick={() => setShowSearch(true)} data-testid="search-btn" 
-            className="flex-1 bg-slate-900/95 backdrop-blur rounded-full px-4 h-12 flex items-center gap-3 shadow-lg">
+            className="flex-1 bg-white/95 backdrop-blur border border-gray-200 rounded-full px-4 h-12 flex items-center gap-3 shadow-[0_1px_4px_rgba(0,0,0,0.08)]">
             <Search className="text-slate-400" size={18} />
             <span className="flex-1 text-slate-400 text-sm text-left">{isNavigating ? 'Navigating...' : 'Search here'}</span>
             <button 
               onClick={(e) => { e.stopPropagation(); handleVoiceCommand() }}
-              className="p-1 hover:bg-slate-700 rounded-full transition-colors"
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
               data-testid="orion-btn"
             >
               <Mic className="text-slate-400" size={18} />
@@ -1551,7 +1775,7 @@ export default function DriverApp() {
             className={`flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 transition-all ${
               locationCategory === 'favorites' 
                 ? 'bg-blue-500 text-white' 
-                : 'bg-slate-900/90 text-white backdrop-blur'
+                : 'bg-white/95 text-slate-700 backdrop-blur border border-gray-100'
             }`}>
             <Star size={16} className={locationCategory === 'favorites' ? 'text-white' : 'text-yellow-400'} />
             <span className="text-sm font-medium">Favorites</span>
@@ -1562,7 +1786,7 @@ export default function DriverApp() {
             className={`flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 transition-all ${
               locationCategory === 'nearby' 
                 ? 'bg-blue-500 text-white' 
-                : 'bg-slate-900/90 text-white backdrop-blur'
+                : 'bg-white/95 text-slate-700 backdrop-blur border border-gray-100'
             }`}>
             <MapPin size={16} />
             <span className="text-sm font-medium">Nearby</span>
@@ -1589,24 +1813,24 @@ export default function DriverApp() {
             {/* Home Button */}
             {getHomeLocation() ? (
               <button onClick={() => handleStartNavigation(getHomeLocation()!.name)} data-testid="quick-home"
-                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
-                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
-                  <Home size={16} className="text-slate-300" />
+                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+                  <Home size={16} className="text-slate-500" />
                 </div>
                 <div className="text-left">
-                  <p className="text-white text-sm font-medium">Home</p>
+                  <p className="text-slate-700 text-sm font-medium">Home</p>
                   <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{getHomeLocation()!.address}</p>
                 </div>
               </button>
             ) : (
               <button onClick={() => { setNewLocation({ ...newLocation, category: 'home' }); setShowAddLocation(true) }} data-testid="add-home"
-                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
-                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
-                  <Home size={16} className="text-slate-300" />
+                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+                  <Home size={16} className="text-slate-500" />
                 </div>
                 <div className="text-left">
-                  <p className="text-white text-sm font-medium">Home</p>
-                  <p className="text-blue-400 text-[11px]">Set location</p>
+                  <p className="text-slate-700 text-sm font-medium">Home</p>
+                  <p className="text-blue-500 text-[11px]">Set location</p>
                 </div>
               </button>
             )}
@@ -1614,24 +1838,24 @@ export default function DriverApp() {
             {/* Work Button */}
             {getWorkLocation() ? (
               <button onClick={() => handleStartNavigation(getWorkLocation()!.name)} data-testid="quick-work"
-                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
-                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
-                  <Briefcase size={16} className="text-slate-300" />
+                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+                  <Briefcase size={16} className="text-slate-500" />
                 </div>
                 <div className="text-left">
-                  <p className="text-white text-sm font-medium">Work</p>
+                  <p className="text-slate-700 text-sm font-medium">Work</p>
                   <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{getWorkLocation()!.address}</p>
                 </div>
               </button>
             ) : (
               <button onClick={() => { setNewLocation({ ...newLocation, category: 'work' }); setShowAddLocation(true) }} data-testid="add-work"
-                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
-                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
-                  <Briefcase size={16} className="text-slate-300" />
+                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+                  <Briefcase size={16} className="text-slate-500" />
                 </div>
                 <div className="text-left">
-                  <p className="text-white text-sm font-medium">Work</p>
-                  <p className="text-blue-400 text-[11px]">Set location</p>
+                  <p className="text-slate-700 text-sm font-medium">Work</p>
+                  <p className="text-blue-500 text-[11px]">Set location</p>
                 </div>
               </button>
             )}
@@ -1639,12 +1863,12 @@ export default function DriverApp() {
             {/* Other Favorites */}
             {getFavoriteLocations().map(loc => (
               <button key={loc.id} onClick={() => handleStartNavigation(loc.name)} data-testid={`fav-${loc.id}`}
-                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full pl-3 pr-4 py-2 flex items-center gap-2">
-                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
+                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
                   <Star size={16} className="text-yellow-400" />
                 </div>
                 <div className="text-left">
-                  <p className="text-white text-sm font-medium truncate max-w-[60px]">{loc.name}</p>
+                  <p className="text-slate-700 text-sm font-medium truncate max-w-[60px]">{loc.name}</p>
                   <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{loc.address}</p>
                 </div>
               </button>
@@ -1652,11 +1876,11 @@ export default function DriverApp() {
 
             {/* More / Add Button */}
             <button onClick={() => setShowAddLocation(true)} data-testid="add-favorite"
-              className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full px-4 py-2 flex items-center gap-2">
-              <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center">
-                <Plus size={16} className="text-slate-300" />
+              className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full px-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+              <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+                <Plus size={16} className="text-slate-500" />
               </div>
-              <span className="text-white text-sm font-medium">More</span>
+              <span className="text-slate-700 text-sm font-medium">More</span>
             </button>
           </div>
         )}
@@ -1672,9 +1896,9 @@ export default function DriverApp() {
             ].map((item, i) => (
               <button key={i} onClick={() => { setActiveTab('rewards'); setRewardsTab('offers'); setOfferFilter(item.label.toLowerCase() === 'gas' ? 'gas' : item.label.toLowerCase() === 'coffee' ? 'cafe' : 'all') }}
                 data-testid={`nearby-${item.label.toLowerCase()}`}
-                className="flex-shrink-0 bg-slate-900/90 backdrop-blur rounded-full px-4 py-2 flex items-center gap-2">
+                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full px-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
                 <item.icon size={16} className={`text-${item.color}-400`} />
-                <span className="text-white text-sm">{item.label}</span>
+                <span className="text-slate-700 text-sm">{item.label}</span>
               </button>
             ))}
           </div>
@@ -1782,22 +2006,30 @@ export default function DriverApp() {
         onClose={() => setSelectedRoadStatus(null)}
       />
 
-      {/* Note: Offer gems and user marker are rendered in InteractiveMap component */}
+      {/* Note: Offer gems and user marker are rendered in MapKitMap component */}
 
-      {/* Camera report FAB - bottom left above speed indicator */}
+      {/* Camera report FAB - bottom left above speed indicator (hidden during nav) */}
+      {!isNavigating && (
         <button onClick={() => setShowQuickPhotoReport(true)} data-testid="report-btn"
-        className="absolute left-3 bottom-44 z-20 w-11 h-11 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg border border-white/10 active:scale-95 transition-transform">
-          <Camera className="text-white" size={18} />
+          className="absolute left-3 bottom-44 z-20 w-11 h-11 bg-white/95 backdrop-blur rounded-full flex items-center justify-center shadow-[0_1px_4px_rgba(0,0,0,0.08)] border border-gray-200 active:scale-95 transition-transform">
+          <Camera className="text-slate-600" size={18} />
         </button>
+      )}
 
       {/* Speed Display (when navigating or moving) */}
       {(isNavigating || (vehicle && vehicle.velocity > 0.5)) && (
-        <div className="absolute left-3 bottom-24 z-20">
-          <SpeedIndicator velocityMs={vehicle?.velocity ?? 0} mode={mode} />
-          <div className="flex items-center justify-center gap-1 mt-1">
-            <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-[10px] text-emerald-400">Safe</span>
-          </div>
+        <div className="absolute left-3 bottom-20 z-20">
+          <SpeedIndicator
+            velocityMs={vehicle?.velocity ?? (currentSpeed * 0.447)}
+            mode={mode}
+            speedLimitMph={isNavigating && navigationData ? (() => {
+              const text = (navigationData.steps?.[currentStepIndex]?.instruction || '') + ' ' + (navigationData.destination?.name || '')
+              if (/\bI-\d|Interstate/i.test(text)) return 65
+              if (/\bUS-\d|\bSR-\d|\bHwy\b/i.test(text)) return 55
+              if (/\bAve\b|\bSt\b|\bRd\b|\bDr\b/i.test(text)) return 35
+              return 45
+            })() : undefined}
+          />
         </div>
       )}
     </div>
@@ -2681,18 +2913,78 @@ export default function DriverApp() {
     </div>
   )
 
-  // Add Location Modal
+  // Add Location Modal (with Places autocomplete)
+  const [addrSuggestions, setAddrSuggestions] = useState<{ place_id: string; name: string; address: string }[]>([])
+  const addrDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const searchAddressForModal = useCallback(async (q: string) => {
+    if (q.length < 2) { setAddrSuggestions([]); return }
+    try {
+      const locParams = userLocation ? `&lat=${userLocation.lat}&lng=${userLocation.lng}` : ''
+      const res = await api.get<{ success?: boolean; data?: { place_id?: string; name?: string; address?: string; description?: string }[] }>(
+        `/api/places/autocomplete?q=${encodeURIComponent(q)}${locParams}`
+      )
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        setAddrSuggestions(res.data.data.map((p) => ({
+          place_id: p.place_id || '',
+          name: p.name || '',
+          address: p.address || p.description || '',
+        })))
+        return
+      }
+    } catch { /* degrade gracefully */ }
+    setAddrSuggestions([])
+  }, [userLocation])
+
+  const handleAddrInput = useCallback((val: string) => {
+    setNewLocation((prev: typeof newLocation) => ({ ...prev, address: val }))
+    if (addrDebounceRef.current) clearTimeout(addrDebounceRef.current)
+    addrDebounceRef.current = setTimeout(() => searchAddressForModal(val), 300)
+  }, [searchAddressForModal])
+
+  const selectAddrSuggestion = useCallback(async (s: { place_id: string; name: string; address: string }) => {
+    setNewLocation((prev: typeof newLocation) => ({ ...prev, name: prev.name || s.name, address: s.address || s.name }))
+    setAddrSuggestions([])
+    if (s.place_id) {
+      try {
+        const res = await fetch(`${API_URL}/api/places/details/${s.place_id}`)
+        if (res.ok) {
+          const json = await res.json()
+          if (json.success && json.data?.lat && json.data?.lng) {
+            setNewLocation((prev: typeof newLocation) => ({ ...prev, lat: json.data.lat, lng: json.data.lng }))
+          }
+        }
+      } catch { /* noop */ }
+    }
+  }, [])
+
   const renderAddLocationModal = () => showAddLocation && (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowAddLocation(false)}>
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => { setShowAddLocation(false); setAddrSuggestions([]) }}>
       <div className="w-full max-w-sm bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
         <h3 className="text-white font-semibold mb-4">Add Location</h3>
         <div className="space-y-3">
           <input type="text" placeholder="Location name" value={newLocation.name}
             onChange={e => setNewLocation({ ...newLocation, name: e.target.value })}
             className="w-full bg-slate-800 rounded-xl px-3 py-2 text-white text-sm outline-none" />
-          <input type="text" placeholder="Address" value={newLocation.address}
-            onChange={e => setNewLocation({ ...newLocation, address: e.target.value })}
-            className="w-full bg-slate-800 rounded-xl px-3 py-2 text-white text-sm outline-none" />
+          <div className="relative">
+            <input type="text" placeholder="Address" value={newLocation.address}
+              onChange={e => handleAddrInput(e.target.value)}
+              className="w-full bg-slate-800 rounded-xl px-3 py-2 text-white text-sm outline-none" />
+            {addrSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-slate-800 rounded-xl overflow-hidden max-h-40 overflow-y-auto z-10 border border-slate-700 shadow-xl">
+                {addrSuggestions.map((s, i) => (
+                  <button key={s.place_id || i} onClick={() => selectAddrSuggestion(s)}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-700 transition-colors flex items-start gap-2">
+                    <MapPin size={14} className="text-blue-400 mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-white truncate">{s.name}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{s.address}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <select value={newLocation.category} onChange={e => setNewLocation({ ...newLocation, category: e.target.value })}
             className="w-full bg-slate-800 rounded-xl px-3 py-2 text-white text-sm outline-none">
             <option value="home">Home</option>
@@ -2704,7 +2996,7 @@ export default function DriverApp() {
           </select>
         </div>
         <div className="flex gap-2 mt-4">
-          <button onClick={() => setShowAddLocation(false)} className="flex-1 bg-slate-700 text-white py-2 rounded-xl text-sm">Cancel</button>
+          <button onClick={() => { setShowAddLocation(false); setAddrSuggestions([]) }} className="flex-1 bg-slate-700 text-white py-2 rounded-xl text-sm">Cancel</button>
           <button onClick={handleAddLocation} data-testid="save-location-btn" className="flex-1 bg-blue-500 text-white py-2 rounded-xl text-sm">Save</button>
         </div>
       </div>
@@ -2887,8 +3179,8 @@ export default function DriverApp() {
           {activeTab === 'rewards' && renderRewards()}
           {activeTab === 'profile' && renderProfile()}
 
-          {/* Bottom Navigation - 4 Tabs */}
-          <div className="h-20 bg-white border-t border-slate-200 flex items-start pt-2 px-4">
+          {/* Bottom Navigation - 4 Tabs (smooth hide during navigation) */}
+          <div className={`bg-white border-t border-slate-200 flex items-start pt-2 px-4 transition-all duration-300 ${isNavigating ? 'h-0 overflow-hidden opacity-0 pointer-events-none' : 'h-20'}`}>
             {[
               { id: 'map', icon: MapPin, label: 'Map' },
               { id: 'routes', icon: Route, label: 'Routes' },

@@ -1,48 +1,59 @@
 /**
- * Route info bar: ETA, distance remaining, and route name shown during navigation.
+ * Route info bar: ETA, arrival time, distance remaining shown during navigation.
+ * Baidu-style: clean white/slate card, horizontal layout.
  */
 
-import { Clock, Route, MapPin } from 'lucide-react'
-import type { DrivingMode } from '@/core/types'
+function arrivalTimeFromEta(etaMinutes: number): string {
+  const now = new Date()
+  now.setMinutes(now.getMinutes() + Math.round(etaMinutes))
+  return now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
 
 interface RouteInfoBarProps {
   distanceMiles: number
   etaMinutes: number
   destination?: string
-  mode?: DrivingMode
+  mode?: 'calm' | 'adaptive' | 'sport'
 }
 
-export default function RouteInfoBar({ distanceMiles, etaMinutes, destination, mode = 'adaptive' }: RouteInfoBarProps) {
-  const accent =
-    mode === 'sport' ? 'border-red-500/40 bg-red-500/10' :
-    mode === 'calm' ? 'border-blue-500/40 bg-blue-500/10' :
-    'border-emerald-500/40 bg-emerald-500/10'
-
-  const iconAccent =
-    mode === 'sport' ? 'text-red-400/70' :
-    mode === 'calm' ? 'text-blue-400/70' :
-    'text-emerald-400/70'
-
-  const fmtDist = distanceMiles < 0.1 ? `${Math.round(distanceMiles * 5280)} ft` : `${distanceMiles.toFixed(1)} mi`
-  const fmtEta = etaMinutes < 1 ? '<1 min' : etaMinutes < 60 ? `${Math.round(etaMinutes)} min` : `${Math.floor(etaMinutes / 60)}h ${Math.round(etaMinutes % 60)}m`
+export default function RouteInfoBar({
+  distanceMiles,
+  etaMinutes,
+  destination,
+}: RouteInfoBarProps) {
+  const fmtDist =
+    distanceMiles < 0.1
+      ? `${Math.round(distanceMiles * 5280)} ft`
+      : `${distanceMiles.toFixed(1)} mi`
+  const fmtEta =
+    etaMinutes < 1
+      ? '<1 min'
+      : etaMinutes < 60
+        ? `${Math.round(etaMinutes)} min`
+        : `${Math.floor(etaMinutes / 60)}h ${Math.round(etaMinutes % 60)}m`
+  const arriveAt = arrivalTimeFromEta(etaMinutes)
 
   return (
-    <div className={`flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-900/90 backdrop-blur border shadow-lg transition-colors duration-300 ${accent}`}>
-      <div className="flex items-center gap-1.5">
-        <Clock size={14} className={iconAccent} />
-        <span className="text-sm font-semibold text-white tabular-nums">{fmtEta}</span>
+    <div className="flex items-center gap-4 px-4 py-3 rounded-xl bg-white shadow-[0_2px_8px_rgba(0,0,0,0.12)] border border-gray-100 transition-all duration-300 ease-in-out">
+      <div>
+        <p className="text-[13px] text-slate-500">Arrive</p>
+        <p className="text-lg font-semibold text-slate-800 tabular-nums">{arriveAt}</p>
       </div>
-      <div className="w-px h-4 bg-white/20" />
-      <div className="flex items-center gap-1.5">
-        <Route size={14} className={iconAccent} />
-        <span className="text-sm font-medium text-white/80 tabular-nums">{fmtDist}</span>
+      <div className="w-px h-8 bg-slate-200" />
+      <div>
+        <p className="text-[13px] text-slate-500">Distance</p>
+        <p className="text-lg font-semibold text-slate-800 tabular-nums">{fmtDist}</p>
+      </div>
+      <div className="w-px h-8 bg-slate-200" />
+      <div>
+        <p className="text-[13px] text-slate-500">Time</p>
+        <p className="text-lg font-semibold text-slate-800 tabular-nums">{fmtEta}</p>
       </div>
       {destination && (
         <>
-          <div className="w-px h-4 bg-white/20" />
-          <div className="flex items-center gap-1.5 min-w-0">
-            <MapPin size={14} className="text-white/60 shrink-0" />
-            <span className="text-xs text-white/60 truncate">{destination}</span>
+          <div className="w-px h-8 bg-slate-200" />
+          <div className="min-w-0 flex-1 truncate">
+            <p className="text-[13px] text-slate-500 truncate">{destination}</p>
           </div>
         </>
       )}

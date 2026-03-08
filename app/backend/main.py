@@ -37,11 +37,19 @@ def create_app() -> FastAPI:
     @app.get("/api/env-check")
     def env_check():
         """Verify .env is loaded and key vars are set (no secrets returned)."""
+        key_path = os.environ.get("MAPKIT_PRIVATE_KEY_PATH", "")
+        key_path_abs = key_path if (key_path and os.path.isabs(key_path)) else str(Path(__file__).resolve().parent / (key_path or ""))
         return {
             "env_file_path": str(Path(__file__).resolve().parent / ".env"),
             "env_file_exists": (Path(__file__).resolve().parent / ".env").is_file(),
             "jwt_configured": bool(JWT_SECRET),
             "supabase_configured": bool((SUPABASE_URL or "").strip() and (SUPABASE_SECRET_KEY or "").strip()),
+            "mapkit_configured": bool(
+                (os.environ.get("MAPKIT_KEY_ID") or "").strip()
+                and (os.environ.get("MAPKIT_TEAM_ID") or "").strip()
+                and key_path
+                and os.path.isfile(key_path_abs)
+            ),
         }
 
     # When using credentials, browsers require explicit origins (not "*").

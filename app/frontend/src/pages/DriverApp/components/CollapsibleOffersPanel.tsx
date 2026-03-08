@@ -89,12 +89,12 @@ export default function CollapsibleOffersPanel({
     return (
       <button
         onClick={() => setIsMinimized(false)}
-        className="absolute bottom-20 left-3 right-3 bg-slate-900/95 backdrop-blur rounded-full px-4 py-2 flex items-center justify-between shadow-lg z-20"
+        className="absolute bottom-20 left-3 right-3 bg-white/95 backdrop-blur border border-gray-200 rounded-full px-4 py-2 flex items-center justify-between shadow-[0_1px_4px_rgba(0,0,0,0.08)] z-20"
         data-testid="offers-minimized"
       >
         <div className="flex items-center gap-2">
           <Gift className="text-emerald-400" size={16} />
-          <span className="text-white text-sm font-medium">{availableOffers.length} Nearby Offers</span>
+          <span className="text-slate-700 text-sm font-medium">{availableOffers.length} Nearby Offers</span>
         </div>
         <ChevronUp className="text-slate-400" size={16} />
       </button>
@@ -103,13 +103,13 @@ export default function CollapsibleOffersPanel({
 
   return (
     <div 
-      className={`absolute bottom-20 left-3 right-3 bg-slate-900/95 backdrop-blur rounded-2xl shadow-lg z-20 transition-all duration-300 ${
-        isExpanded ? 'max-h-[60vh]' : 'max-h-48'
+      className={`absolute bottom-20 left-3 right-3 bg-white/95 backdrop-blur border border-gray-200 rounded-2xl shadow-[0_1px_4px_rgba(0,0,0,0.08)] z-20 transition-all duration-300 ${
+        isExpanded ? 'max-h-[40vh]' : 'max-h-48'
       }`}
       data-testid="offers-panel"
     >
       {/* Header - Always visible */}
-      <div className="p-3 border-b border-slate-700/50">
+      <div className="p-3 border-b border-gray-200/80">
         <div className="flex items-center justify-between">
           <button 
             onClick={() => setIsExpanded(!isExpanded)}
@@ -117,7 +117,7 @@ export default function CollapsibleOffersPanel({
             data-testid="toggle-offers-expand"
           >
             <Gift className="text-emerald-400" size={18} />
-            <span className="text-white font-medium">Nearby Offers</span>
+            <span className="text-slate-700 font-medium">Nearby Offers</span>
             <span className="bg-emerald-500/20 text-emerald-400 text-xs px-2 py-0.5 rounded-full">
               {availableOffers.length}
             </span>
@@ -125,7 +125,7 @@ export default function CollapsibleOffersPanel({
           </button>
           <button
             onClick={() => setIsMinimized(true)}
-            className="p-1 hover:bg-slate-700 rounded-lg"
+            className="p-1 hover:bg-gray-100 rounded-lg"
             data-testid="minimize-offers"
           >
             <X className="text-slate-400" size={16} />
@@ -143,11 +143,11 @@ export default function CollapsibleOffersPanel({
 
       {/* Filters - Show when expanded */}
       {isExpanded && businessTypes.length > 1 && (
-        <div className="px-3 py-2 border-b border-slate-700/50 flex gap-1 overflow-x-auto">
+        <div className="px-3 py-2 border-b border-gray-200/80 flex gap-1 overflow-x-auto">
           <button
             onClick={() => setActiveFilter('all')}
             className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
-              activeFilter === 'all' ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-300'
+              activeFilter === 'all' ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-slate-600'
             }`}
           >
             All
@@ -157,7 +157,7 @@ export default function CollapsibleOffersPanel({
               key={type}
               onClick={() => setActiveFilter(type)}
               className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap flex items-center gap-1 ${
-                activeFilter === type ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-300'
+                activeFilter === type ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-slate-600'
               }`}
             >
               {getBusinessIcon(type)} {type}
@@ -178,18 +178,18 @@ export default function CollapsibleOffersPanel({
             {filteredOffers.slice(0, isExpanded ? 10 : 3).map(offer => (
               <div 
                 key={offer.id}
-                className="bg-slate-800/80 rounded-xl p-3 flex items-center gap-3"
+                className="bg-gray-50 rounded-xl p-3 flex items-center gap-3"
                 data-testid={`offer-item-${offer.id}`}
               >
                 {/* Business Icon */}
-                <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center text-lg flex-shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-lg flex-shrink-0">
                   {getBusinessIcon(offer.business_type)}
                 </div>
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="text-white font-medium text-sm truncate">{offer.business_name}</p>
+                    <p className="text-slate-800 font-medium text-sm truncate">{offer.business_name}</p>
                     <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-1.5 py-0.5 rounded font-medium">
                       {offer.discount_percent}% off
                     </span>
@@ -223,10 +223,10 @@ export default function CollapsibleOffersPanel({
                   </button>
                   <button
                     onClick={() => onOfferSelect(offer)}
-                    className="w-8 h-8 bg-slate-700 rounded-lg flex items-center justify-center hover:bg-slate-600 transition-colors"
+                    className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200 transition-colors"
                     data-testid={`details-offer-${offer.id}`}
                   >
-                    <ExternalLink size={14} className="text-slate-300" />
+                    <ExternalLink size={14} className="text-slate-500" />
                   </button>
                 </div>
               </div>
