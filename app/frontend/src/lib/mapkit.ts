@@ -48,7 +48,12 @@ export async function fetchMapKitToken(): Promise<string> {
   return data.token
 }
 
-let initPromise: Promise<boolean> | null = null
+export interface MapKitInitResult {
+  ok: boolean
+  error?: string
+}
+
+let initPromise: Promise<MapKitInitResult> | null = null
 
 /** Normalize MapKit maneuverType to app's turn-left / turn-right / arrive. */
 function normalizeManeuver(raw: string): string {
@@ -176,11 +181,11 @@ export function getMapKitDirections(
 
 /**
  * Load MapKit JS script and initialize with token from our backend.
- * Call once before using mapkit. Returns true if ready, false if token/config missing.
+ * Returns { ok: true } on success, or { ok: false, error: "..." } with the real reason.
  */
-export function initMapKit(): Promise<boolean> {
+export function initMapKit(): Promise<MapKitInitResult> {
   if (initPromise) return initPromise
-  initPromise = (async () => {
+  initPromise = (async (): Promise<MapKitInitResult> => {
     try {
       await loadMapKitScript()
       const mapkit = (window as unknown as {
@@ -189,19 +194,20 @@ export function initMapKit(): Promise<boolean> {
           addEventListener?: (type: string, cb: (e: unknown) => void) => void
         }
       }).mapkit
-      if (!mapkit || !mapkit.init) return false
+      if (!mapkit || !mapkit.init) return { ok: false, error: 'MapKit JS script loaded but mapkit.init not available' }
 
       const token = await fetchMapKitToken()
 
-      const ready = await new Promise<boolean>((resolve) => {
+      const result = await new Promise<MapKitInitResult>((resolve) => {
         let settled = false
-        const settle = (v: boolean) => { if (!settled) { settled = true; resolve(v) } }
+        const settle = (r: MapKitInitResult) => { if (!settled) { settled = true; resolve(r) } }
 
         if (mapkit.addEventListener) {
-          mapkit.addEventListener('configuration-change', () => settle(true))
+          mapkit.addEventListener('configuration-change', () => settle({ ok: true }))
           mapkit.addEventListener('error', (e: unknown) => {
+            const msg = (e && typeof e === 'object' && 'message' in e) ? String((e as { message: unknown }).message) : 'Apple rejected the MapKit token (check domain restrictions in Apple Developer portal)'
             console.warn('MapKit error event during init:', e)
-            settle(false)
+            settle({ ok: false, error: msg })
           })
         }
 
@@ -209,14 +215,15 @@ export function initMapKit(): Promise<boolean> {
           authorizationCallback: (done: (t: string) => void) => done(token),
         })
 
-        setTimeout(() => settle(true), 5000)
+        setTimeout(() => settle({ ok: true }), 5000)
       })
 
-      return ready
+      return result
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'MapKit init failed'
       console.warn('MapKit init failed:', err)
       initPromise = null
-      return false
+      return { ok: false, error: msg }
     }
   })()
   return initPromise

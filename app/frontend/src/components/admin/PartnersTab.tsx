@@ -8,14 +8,18 @@ import type { Partner } from '@/types/admin'
 
 interface PartnersTabProps {
   theme: 'dark' | 'light'
+  onNavigate?: (tabId: string) => void
 }
 
-export default function PartnersTab({ theme }: PartnersTabProps) {
+export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('All Status')
   const [partners, setPartners] = useState<Partner[]>([])
   const [loading, setLoading] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingPartner, setEditingPartner] = useState<Partner | null>(null)
+  const [editForm, setEditForm] = useState({ business_name: '', email: '', business_type: '', address: '', phone: '' })
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [newPartner, setNewPartner] = useState({
     business_name: '',
@@ -109,6 +113,35 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
       }
     } catch (error) {
       showFeedback('error', 'Network error while creating partner')
+    }
+  }
+
+  const handleEditOpen = (partner: Partner) => {
+    setEditingPartner(partner)
+    setEditForm({
+      business_name: partner.business_name || '',
+      email: partner.email || '',
+      business_type: partner.business_type || '',
+      address: (partner as any).address || '',
+      phone: (partner as any).phone || '',
+    })
+    setShowEditModal(true)
+  }
+
+  const handleEditSave = async () => {
+    if (!editingPartner) return
+    try {
+      const res = await adminApi.updatePartner(editingPartner.id, editForm)
+      if (res.success) {
+        showFeedback('success', 'Partner updated successfully!')
+        setShowEditModal(false)
+        setEditingPartner(null)
+        loadPartners()
+      } else {
+        showFeedback('error', 'Failed to update partner')
+      }
+    } catch (error) {
+      showFeedback('error', 'Network error while updating partner')
     }
   }
 
@@ -261,12 +294,14 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
 
             <div className="flex gap-2 mt-4 pt-4 border-t border-slate-700/50">
               <button
+                onClick={() => handleEditOpen(partner)}
                 className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 text-sm"
               >
                 <Edit2 size={14} />
                 Edit
               </button>
               <button
+                onClick={() => onNavigate?.('offers')}
                 className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 text-sm"
               >
                 <Gift size={14} />
@@ -321,6 +356,95 @@ export default function PartnersTab({ theme }: PartnersTabProps) {
       {loading && (
         <div className="flex items-center justify-center py-20">
           <div className="w-12 h-12 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* Edit Partner Modal */}
+      {showEditModal && editingPartner && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className={`w-full max-w-md p-6 rounded-xl border ${card}`}>
+            <h3 className={`text-xl font-semibold ${textPrimary} mb-4`}>Edit Partner</h3>
+            <div className="space-y-4">
+              <div>
+                <label className={`block text-xs mb-1 ${textSecondary}`}>Business Name</label>
+                <input
+                  type="text"
+                  value={editForm.business_name}
+                  onChange={(e) => setEditForm({ ...editForm, business_name: e.target.value })}
+                  className={`w-full px-4 py-2 rounded-lg border ${
+                    isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+                  }`}
+                />
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${textSecondary}`}>Email</label>
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  className={`w-full px-4 py-2 rounded-lg border ${
+                    isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+                  }`}
+                />
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${textSecondary}`}>Business Type</label>
+                <select
+                  value={editForm.business_type}
+                  onChange={(e) => setEditForm({ ...editForm, business_type: e.target.value })}
+                  className={`w-full px-4 py-2 rounded-lg border ${
+                    isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+                  }`}
+                >
+                  <option value="">Select Type</option>
+                  <option value="fuel">Fuel Station</option>
+                  <option value="cafe">Cafe</option>
+                  <option value="restaurant">Restaurant</option>
+                  <option value="carwash">Car Wash</option>
+                  <option value="retail">Retail</option>
+                  <option value="entertainment">Entertainment</option>
+                </select>
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${textSecondary}`}>Address</label>
+                <input
+                  type="text"
+                  value={editForm.address}
+                  onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                  className={`w-full px-4 py-2 rounded-lg border ${
+                    isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+                  }`}
+                />
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${textSecondary}`}>Phone</label>
+                <input
+                  type="tel"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  className={`w-full px-4 py-2 rounded-lg border ${
+                    isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+                  }`}
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => { setShowEditModal(false); setEditingPartner(null) }}
+                className={`flex-1 px-4 py-2 rounded-lg border ${
+                  isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditSave}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg hover:from-blue-400 hover:to-cyan-400"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

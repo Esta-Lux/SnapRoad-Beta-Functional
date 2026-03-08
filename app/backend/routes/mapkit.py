@@ -3,28 +3,47 @@ MapKit JS token endpoint. Returns a JWT signed with your Apple MapKit private ke
 The key is read from env or file only — never committed to the repo.
 """
 import os
+import re
+import textwrap
 import time
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Query
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["MapKit"])
-
-
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _get_private_key() -> Optional[str]:
     path = os.environ.get("MAPKIT_PRIVATE_KEY_PATH")
-    if path:
-        abs_path = path if os.path.isabs(path) else os.path.join(_BACKEND_DIR, path)
-        if os.path.isfile(abs_path):
-            with open(abs_path, "r") as f:
-                return f.read()
+    if path and os.path.isfile(path):
+        with open(path, "r") as f:
+            return f.read()
+
     raw = os.environ.get("MAPKIT_PRIVATE_KEY")
-    if raw:
-        return raw.replace("\\n", "\n")
-    return None
+    if not raw:
+        return None
+
+    if "\n" in raw and "\\n" not in raw:
+        key = raw
+    else:
+        key = raw.replace("\\n", "\n")
+
+    key = key.strip()
+
+    m = re.match(
+        r"(-----BEGIN [A-Z ]+-----)\s*(.*?)\s*(-----END [A-Z ]+-----)",
+        key,
+        re.DOTALL,
+    )
+    if m:
+        header, body_raw, footer = m.group(1), m.group(2), m.group(3)
+        body = re.sub(r"\s+", "", body_raw)
+        wrapped = "\n".join(textwrap.wrap(body, 64))
+        key = f"{header}\n{wrapped}\n{footer}\n"
+
+    return key
 
 
 @router.get("/mapkit/token")
@@ -39,11 +58,18 @@ def get_mapkit_token(origin: str = Query("", description="Optional: restrict tok
     team_id = os.environ.get("MAPKIT_TEAM_ID")
     private_key = _get_private_key()
 
-    if not key_id or not team_id or not private_key:
-        return {
-            "success": False,
-            "error": "MapKit not configured. Set MAPKIT_KEY_ID, MAPKIT_TEAM_ID, and MAPKIT_PRIVATE_KEY (or MAPKIT_PRIVATE_KEY_PATH) in .env",
-        }
+    missing = []
+    if not key_id:
+        missing.append("MAPKIT_KEY_ID")
+    if not team_id:
+        missing.append("MAPKIT_TEAM_ID")
+    if not private_key:
+        missing.append("MAPKIT_PRIVATE_KEY")
+
+    if missing:
+        msg = f"MapKit not configured. Missing env vars: {', '.join(missing)}"
+        logger.warning(msg)
+        return {"success": False, "error": msg}
 
     try:
         import jwt
@@ -63,6 +89,8 @@ def get_mapkit_token(origin: str = Query("", description="Optional: restrict tok
         )
         if hasattr(token, "decode"):
             token = token.decode("utf-8")
+        logger.info(f"MapKit token generated for origin={origin.strip()}")
         return {"success": True, "token": token}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.error(f"MapKit JWT signing failed: {e}", exc_info=True)
+        return {"success": False, "error": f"JWT signing failed: {e}"}

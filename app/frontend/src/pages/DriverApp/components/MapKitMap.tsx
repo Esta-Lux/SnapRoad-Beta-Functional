@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { Locate, Mic, Navigation2, Layers } from 'lucide-react'
+import { Locate, Mic, Navigation2, Layers, Compass } from 'lucide-react'
 import type { DrivingMode } from '@/core/types'
 
 /* ------------------------------------------------------------------ */
@@ -81,7 +81,6 @@ export interface MapKitMapProps {
   bearing?: number
   userLocation: { lat: number; lng: number }
   vehicleHeading?: number
-  carColor?: string
   routePolyline?: { lat: number; lng: number }[]
   destinationCoordinate?: { lat: number; lng: number }
   traveledDistanceMeters?: number
@@ -162,18 +161,6 @@ function modeColors(mode: DrivingMode, glow: number) {
   return { stroke: '#3b82f6', width: 3 + glow * 3, opacity: 0.5 + glow * 0.5 }
 }
 
-function bearingToCardinal(deg: number): string {
-  const norm = ((deg % 360) + 360) % 360
-  if (norm < 22.5 || norm >= 337.5) return 'N'
-  if (norm < 67.5) return 'NE'
-  if (norm < 112.5) return 'E'
-  if (norm < 157.5) return 'SE'
-  if (norm < 202.5) return 'S'
-  if (norm < 247.5) return 'SW'
-  if (norm < 292.5) return 'W'
-  return 'NW'
-}
-
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
@@ -184,7 +171,6 @@ export default function MapKitMap({
   bearing = 0,
   userLocation,
   vehicleHeading = 0,
-  carColor = '#3b82f6',
   routePolyline,
   destinationCoordinate,
   traveledDistanceMeters,
@@ -260,6 +246,16 @@ export default function MapKitMap({
       }
 
       try {
+        const m = map as unknown as Record<string, unknown>
+        m.showsCompass = false
+        m.showsZoomControl = false
+        m.showsMapTypeControl = false
+        m.isScrollEnabled = true
+        m.isZoomEnabled = true
+        m.isRotationEnabled = true
+      } catch { /* non-critical */ }
+
+      try {
         const delta = DELTA_FOR_ZOOM(zoom)
         const coord = new mapkit.Coordinate(center.lat, center.lng)
         const span = new mapkit.CoordinateSpan(delta, delta * 1.2)
@@ -268,14 +264,12 @@ export default function MapKitMap({
       } catch { /* initial region non-critical */ }
 
       mapRef.current = map
-      setMapReady(true)
     }
 
     requestAnimationFrame(tryCreate)
 
     return () => {
       cancelled = true
-      setMapReady(false)
       const map = mapRef.current
       if (map) {
         try { map.destroy() } catch { /* already gone */ }
@@ -387,7 +381,7 @@ export default function MapKitMap({
     } catch (e) {
       console.warn('MapKit user annotation failed:', e)
     }
-  }, [userLocation.lat, userLocation.lng, vehicleHeading, carColor, mapReady])
+  }, [userLocation.lat, userLocation.lng, vehicleHeading])
 
   /* ---------- Effect 4: Ghost prediction annotation ---------- */
   useEffect(() => {
@@ -427,7 +421,7 @@ export default function MapKitMap({
     } catch (e) {
       console.warn('MapKit ghost annotation failed:', e)
     }
-  }, [predictedPosition, vehicleHeading, mapReady])
+  }, [predictedPosition, vehicleHeading])
 
   /* ---------- Effect 5: Gradient route polyline (blue→green, shadow, traveled gray) ---------- */
   useEffect(() => {
@@ -643,7 +637,7 @@ export default function MapKitMap({
         console.warn('MapKit offer annotation failed:', e)
       }
     })
-  }, [offers, onOfferClick, mapReady])
+  }, [offers, onOfferClick])
 
   /* ---------- Effect 8: Road report markers ---------- */
   useEffect(() => {
@@ -672,7 +666,7 @@ export default function MapKitMap({
         console.warn('MapKit report annotation failed:', e)
       }
     })
-  }, [roadReports, mapReady])
+  }, [roadReports])
 
   /* ---------- Mode edge tint ---------- */
   const edgeTint =
@@ -682,24 +676,7 @@ export default function MapKitMap({
         ? 'linear-gradient(180deg, rgba(96,165,250,0.1) 0%, transparent 30%, transparent 70%, rgba(96,165,250,0.06) 100%)'
         : 'none'
 
-  if (mapFailed) return (
-    <div className="absolute inset-0 z-0 bg-slate-900 flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800 flex items-center justify-center">
-          <Navigation2 className="text-blue-400 animate-pulse" size={28} />
-        </div>
-        <p className="text-slate-400 text-sm mb-2">Initializing Apple Maps...</p>
-        <button
-          onClick={() => { setMapFailed(false); window.location.reload() }}
-          className="text-blue-400 text-xs hover:text-blue-300 underline"
-        >
-          Tap to retry
-        </button>
-      </div>
-    </div>
-  )
-
-  const cardinal = bearingToCardinal(bearing)
+  if (mapFailed) return null
 
   const containerStyle =
     contentInsets
@@ -727,19 +704,16 @@ export default function MapKitMap({
         </div>
       )}
 
-      {/* ── Baidu-style floating control card (right side) ── */}
-      <div className="absolute right-3 bottom-28 z-30 flex flex-col items-center gap-2.5">
-
-        {/* Orion voice -- stays as SnapRoad branded */}
+      {/* Floating controls */}
+      <div className="absolute right-3 bottom-24 z-30 flex flex-col gap-2">
         <button
           type="button"
           onClick={onOrionClick}
-          className="w-10 h-10 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg active:scale-95 transition-transform"
-          style={{ boxShadow: '0 4px 12px rgba(139,92,246,0.35)' }}
+          className="w-11 h-11 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+          style={{ boxShadow: '0 4px 15px rgba(139,92,246,0.4)' }}
         >
-          <Mic className="text-white" size={18} />
+          <Mic className="text-white" size={20} />
         </button>
-
         {/* Grouped controls card - Baidu panel: light gray bg, subtle border, padding */}
         <div className="bg-gray-50/98 backdrop-blur-md rounded-xl border border-gray-200/90 shadow-[0_1px_4px_rgba(0,0,0,0.08)] overflow-hidden flex flex-col items-center w-11 py-1">
           {/* Cardinal direction */}
@@ -789,8 +763,24 @@ export default function MapKitMap({
           }}
           className="w-11 h-10 bg-gray-50/98 backdrop-blur-md rounded-xl border border-gray-200/90 shadow-[0_1px_4px_rgba(0,0,0,0.08)] flex items-center justify-center active:bg-gray-200/80 transition-colors"
         >
-          <Locate className="text-blue-500" size={19} />
+          <Locate className="text-white" size={20} />
         </button>
+      </div>
+
+      {/* Compass indicator -- shown when bearing is non-zero */}
+      {bearing !== 0 && (
+        <button
+          type="button"
+          onClick={onRecenter}
+          className="absolute top-[72px] left-3 z-20 w-9 h-9 bg-slate-900/90 backdrop-blur rounded-full flex items-center justify-center shadow-lg border border-white/10 active:scale-95 transition-transform"
+        >
+          <Compass size={18} className="text-white" style={{ transform: `rotate(${-bearing}deg)`, transition: 'transform .3s ease' }} />
+        </button>
+      )}
+
+      {/* Attribution */}
+      <div className="absolute bottom-1 left-1 z-20 text-[8px] text-slate-500">
+        © Apple MapKit
       </div>
     </div>
   )

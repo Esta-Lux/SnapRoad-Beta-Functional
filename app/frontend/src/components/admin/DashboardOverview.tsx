@@ -7,7 +7,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts'
 import { adminApi } from '@/services/adminApi'
-import type { AdminAnalytics } from '@/types/admin'
+import type { AdminAnalytics, AdminStats } from '@/types/admin'
 
 interface DashboardOverviewProps {
   theme: 'dark' | 'light'
@@ -15,22 +15,27 @@ interface DashboardOverviewProps {
 
 export default function DashboardOverview({ theme }: DashboardOverviewProps) {
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null)
+  const [stats, setStats] = useState<AdminStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<string>('Just now')
 
   useEffect(() => {
-    loadAnalytics()
+    loadAll()
   }, [])
 
-  const loadAnalytics = async () => {
+  const loadAll = async () => {
     try {
-      const res = await adminApi.getAnalytics()
-      if (res.success && res.data) {
-        setAnalytics(res.data)
+      const [analyticsRes, statsRes] = await Promise.all([
+        adminApi.getAnalytics(),
+        adminApi.getStats(),
+      ])
+      if (analyticsRes.success && analyticsRes.data) {
+        setAnalytics(analyticsRes.data)
         setLastUpdated('Just now')
       }
+      if (statsRes.success && statsRes.data) setStats(statsRes.data)
     } catch (e) {
-      console.error('Failed to load analytics:', e)
+      console.error('Failed to load dashboard data:', e)
     } finally {
       setLoading(false)
     }
@@ -43,23 +48,21 @@ export default function DashboardOverview({ theme }: DashboardOverviewProps) {
   const chartGrid = isDark ? '#334155' : '#E6ECF5'
   const chartText = isDark ? '#64748b' : '#94a3b8'
 
-  const revenueData = [
-    { week: 'W1', revenue: 12000 }, { week: 'W2', revenue: 14200 },
-    { week: 'W3', revenue: 15800 }, { week: 'W4', revenue: 16400 },
-    { week: 'W5', revenue: 17200 }, { week: 'W6', revenue: 18500 },
-    { week: 'W7', revenue: 19100 }, { week: 'W8', revenue: 20800 },
-    { week: 'W9', revenue: 22000 }, { week: 'W10', revenue: 23500 },
-    { week: 'W11', revenue: 25200 }, { week: 'W12', revenue: 27800 },
-  ]
+  const totalMrr = stats?.total_mrr || 0
+  const revenueData = Array.from({ length: 12 }, (_, i) => ({
+    week: `W${i + 1}`,
+    revenue: Math.round(totalMrr * (0.6 + (i / 12) * 0.4)),
+  }))
 
-  const heatmapData = [
-    { day: 'Mon', redemptions: 42 }, { day: 'Tue', redemptions: 38 },
-    { day: 'Wed', redemptions: 55 }, { day: 'Thu', redemptions: 48 },
-    { day: 'Fri', redemptions: 65 }, { day: 'Sat', redemptions: 58 },
-    { day: 'Sun', redemptions: 39 },
-  ]
+  const totalRedCount = stats?.total_redemptions || 0
+  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const weights = [0.14, 0.12, 0.17, 0.15, 0.19, 0.14, 0.09]
+  const heatmapData = dayNames.map((day, i) => ({
+    day,
+    redemptions: Math.round(totalRedCount * weights[i]),
+  }))
 
-  const totalRedemptions = heatmapData.reduce((acc, d) => acc + d.redemptions, 0)
+  const totalRedemptions = totalRedCount
 
   if (loading) {
     return (
@@ -269,12 +272,18 @@ export default function DashboardOverview({ theme }: DashboardOverviewProps) {
           <button className="text-sm text-blue-500 hover:text-blue-400 font-medium">View All</button>
         </div>
         <div className="space-y-3">
-          {[
-            { icon: UserPlus, color: 'text-blue-400 bg-blue-500/20', title: 'New user signup', detail: 'john.doe@email.com', time: '2 minutes ago' },
-            { icon: CheckCircle, color: 'text-green-400 bg-green-500/20', title: 'Incident approved', detail: 'Admin Sarah', time: '8 minutes ago' },
-            { icon: Building2, color: 'text-purple-400 bg-purple-500/20', title: 'New partner registered', detail: 'Shell Gas Station', time: '15 minutes ago' },
-            { icon: Navigation, color: 'text-emerald-400 bg-emerald-500/20', title: 'Trip milestone', detail: '10,000th trip completed', time: '1 hour ago' },
-          ].map((activity, i) => (
+          {(analytics?.recent_activity || [
+            { icon: 'user', title: `${stats?.total_users || 0} users registered`, detail: 'Total platform users', time: 'Overall' },
+            { icon: 'partner', title: `${stats?.active_partners || 0} active partners`, detail: 'Business partners', time: 'Current' },
+            { icon: 'trip', title: `${stats?.total_trips || 0} trips tracked`, detail: 'Total driving sessions', time: 'All time' },
+            { icon: 'offer', title: `${stats?.total_offers || 0} active offers`, detail: 'Partner offers', time: 'Current' },
+          ]).map((activity: any, i: number) => {
+            const iconMap: Record<string, any> = { user: UserPlus, partner: Building2, trip: Navigation, offer: CheckCircle }
+            const colorMap: Record<string, string> = { user: 'text-blue-400 bg-blue-500/20', partner: 'text-purple-400 bg-purple-500/20', trip: 'text-emerald-400 bg-emerald-500/20', offer: 'text-green-400 bg-green-500/20' }
+            const IconComp = iconMap[activity.icon] || UserPlus
+            const colorClass = colorMap[activity.icon] || 'text-blue-400 bg-blue-500/20'
+            return { ...activity, icon: IconComp, color: colorClass }
+          }).map((activity: any, i: number) => (
             <div key={i} className={`flex items-center gap-3 p-3 rounded-lg ${isDark ? 'bg-slate-700/30' : 'bg-[#F8FAFC]'}`}>
               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${activity.color}`}>
                 <activity.icon size={18} />

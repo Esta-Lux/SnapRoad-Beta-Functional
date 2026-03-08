@@ -88,25 +88,29 @@ class ApiService {
 
   // ==================== AUTH ====================
   async login(credentials: LoginRequest): Promise<ApiResponse<AuthResponse>> {
-    const result = await this.request<AuthResponse>('/api/auth/login', {
+    const result = await this.request<{ success?: boolean; data?: { user?: unknown; token?: string } }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
-    if (result.success && result.data?.token) {
-      this.setToken(result.data.token);
+    const payload = (result.data as { data?: { user?: unknown; token?: string } })?.data ?? result.data;
+    const authData = payload as { user?: unknown; token?: string } | undefined;
+    if (result.success && authData?.token) {
+      this.setToken(authData.token);
     }
-    return result;
+    return { success: result.success, data: authData as AuthResponse };
   }
 
   async signup(data: SignupRequest): Promise<ApiResponse<AuthResponse>> {
-    const result = await this.request<AuthResponse>('/api/auth/signup', {
+    const result = await this.request<{ success?: boolean; data?: { user?: unknown; token?: string } }>('/api/auth/signup', {
       method: 'POST',
       body: JSON.stringify(data),
     });
-    if (result.success && result.data?.token) {
-      this.setToken(result.data.token);
+    const payload = (result.data as { data?: { user?: unknown; token?: string } })?.data ?? result.data;
+    const authData = payload as { user?: unknown; token?: string } | undefined;
+    if (result.success && authData?.token) {
+      this.setToken(authData.token);
     }
-    return result;
+    return { success: result.success, data: authData as AuthResponse };
   }
 
   async logout(): Promise<void> {

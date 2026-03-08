@@ -18,6 +18,10 @@ interface Offer {
   expires_at: string
   distance_km?: number
   redeemed?: boolean
+  offer_source?: string
+  original_price?: number | null
+  yelp_rating?: number | null
+  yelp_review_count?: number | null
 }
 
 interface CollapsibleOffersPanelProps {
@@ -193,7 +197,21 @@ export default function CollapsibleOffersPanel({
                     <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-1.5 py-0.5 rounded font-medium">
                       {offer.discount_percent}% off
                     </span>
+                    {offer.offer_source === 'groupon' && (
+                      <span className="bg-orange-500/20 text-orange-400 text-[10px] px-1.5 py-0.5 rounded font-medium">Groupon</span>
+                    )}
+                    {offer.offer_source === 'affiliate' && (
+                      <span className="bg-purple-500/20 text-purple-400 text-[10px] px-1.5 py-0.5 rounded font-medium">Deal</span>
+                    )}
                   </div>
+                  {offer.yelp_rating != null && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star key={i} size={8} className={i < Math.round(offer.yelp_rating!) ? 'text-yellow-400 fill-yellow-400' : 'text-slate-600'} />
+                      ))}
+                      <span className="text-slate-400 text-[10px]">{offer.yelp_rating}</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1">
                     <span className="flex items-center gap-0.5">
                       <MapPin size={10} />

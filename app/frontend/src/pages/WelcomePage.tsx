@@ -1,20 +1,10 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { 
-  MapPin, Shield, Gem, Trophy, Zap, ArrowRight, X, Eye, EyeOff, Star, Car
+  Shield, Gem, Trophy, Zap, ArrowRight, X, Eye, EyeOff, Star
 } from 'lucide-react'
-import { api } from '@/services/api'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
-
-// Reset user state for fresh experience
-const resetUserSession = async () => {
-  try {
-    await fetch(`${API_URL}/api/auth/login?role=driver`, { method: 'POST' })
-  } catch (e) {
-    console.log('Session reset skipped')
-  }
-}
+import { useAuth } from '../contexts/AuthContext'
+import snaproadLogo from '../assets/images/f1ce41940925932061ca7e2e293db7cdf37e4b87.png'
 
 // Auth Modal - Driver Only (Partners/Admin use direct portal links)
 function AuthModal({ isOpen, onClose, mode, onModeChange }: {
@@ -24,6 +14,7 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
   onModeChange: (mode: 'signin' | 'signup') => void
 }) {
   const navigate = useNavigate()
+  const { login, signup } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -33,54 +24,22 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login'
-    const body = mode === 'signup'
-      ? { name, email, password }
-      : { email, password }
-    const url = API_URL ? `${API_URL}${endpoint}` : endpoint
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      })
-      let data: { success?: boolean; message?: string; detail?: string; token?: string; data?: { token?: string } }
-      const contentType = response.headers.get('content-type')
-      try {
-        data = contentType?.includes('application/json')
-          ? await response.json()
-          : { success: false, message: `Server returned ${response.status}` }
-      } catch {
-        alert(
-          response.ok
-            ? 'Connection error. Please try again.'
-            : 'Cannot reach the server. Is the backend running? Start it with: cd app/backend && python run_server.py'
-        )
-        setLoading(false)
-        return
-      }
-      if (data.success) {
-        const token = data.data?.token ?? data.token
-        if (token) api.setToken(token)
+      const success = mode === 'signup'
+        ? await signup(name, email, password)
+        : await login(email, password)
+      if (success) {
         onClose()
         navigate('/driver')
       } else {
-        const msg = typeof data.detail === 'string' ? data.detail : data.message || data.detail || 'Authentication failed'
-        alert(msg)
+        alert(mode === 'signup' ? 'Signup failed' : 'Invalid credentials')
       }
     } catch (error) {
       console.error('Auth error:', error)
-      const isNetwork =
-        error instanceof TypeError &&
-        (error.message === 'Failed to fetch' || error.message.includes('NetworkError'))
-      alert(
-        isNetwork
-          ? 'Cannot reach the server. Make sure the backend is running on port 8001 (e.g. cd app/backend && python run_server.py), then try again.'
-          : 'Connection error. Please try again.'
-      )
+      alert('Connection error. Please try again.')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   if (!isOpen) return null
@@ -108,9 +67,7 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
           <div className="p-8">
             {/* Header */}
             <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/25">
-                <Car className="text-white" size={28} />
-              </div>
+              <img src={snaproadLogo} alt="SnapRoad" className="h-14 w-auto mx-auto mb-4" />
               <h2 className="text-2xl font-bold text-white mb-1">
                 {mode === 'signin' ? 'Welcome back, Driver' : 'Start Your Journey'}
               </h2>
@@ -252,7 +209,7 @@ export default function WelcomePage() {
         <header className="p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img 
-              src="/assets/logo.png" 
+              src={snaproadLogo} 
               alt="SnapRoad" 
               className="h-10 w-auto"
             />
@@ -349,10 +306,17 @@ export default function WelcomePage() {
                 </Link>
                 <span className="text-slate-700">|</span>
                 <Link 
-                  to="/portal/partner" 
+                  to="/auth?tab=partner" 
                   className="text-slate-400 hover:text-emerald-400 transition-colors"
                 >
-                  Business Portal
+                  Partner Login
+                </Link>
+                <span className="text-slate-700">|</span>
+                <Link 
+                  to="/auth?tab=admin" 
+                  className="text-slate-400 hover:text-slate-300 transition-colors"
+                >
+                  Admin Login
                 </Link>
                 <span className="text-slate-700">|</span>
                 <a 

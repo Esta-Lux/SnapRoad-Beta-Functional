@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { MapPin, ChevronRight, Eye, EyeOff, Mail, Lock, User, Loader2, Check, ArrowLeft, Sparkles } from 'lucide-react'
+import { ChevronRight, Eye, EyeOff, Mail, Lock, User, Loader2, Check, ArrowLeft, Sparkles } from 'lucide-react'
+import snaproadLogo from '../../assets/images/f1ce41940925932061ca7e2e293db7cdf37e4b87.png'
 import toast from 'react-hot-toast'
 
 type AuthScreen = 'welcome' | 'login' | 'signup' | 'forgot' | 'verify'
@@ -105,9 +106,7 @@ export default function AuthFlow() {
         <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
           {/* Logo */}
           <div className="mb-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-emerald-400 to-blue-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <MapPin className="text-white" size={40} />
-            </div>
+            <img src={snaproadLogo} alt="SnapRoad" className="h-20 w-auto" />
           </div>
           
           {/* Brand */}

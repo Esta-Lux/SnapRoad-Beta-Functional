@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { 
   X, ChevronLeft, Gift, Gem, Fuel, Coffee, Car, ShoppingCart, 
-  MapPin, Clock, Check, Sparkles, Zap, Star, Lock
+  MapPin, Clock, Check, Sparkles, Zap, Star, Lock, ExternalLink
 } from 'lucide-react'
 
 interface Offer {
@@ -10,6 +10,9 @@ interface Offer {
   business_type: string
   description: string
   discount_percent: number
+  premium_discount_percent: number
+  free_discount_percent: number
+  is_free_item?: boolean
   gems_reward: number
   address?: string
   lat: number
@@ -19,6 +22,13 @@ interface Offer {
   is_admin_offer: boolean
   is_premium_offer: boolean
   redeemed: boolean
+  offer_source?: string
+  original_price?: number | null
+  affiliate_tracking_url?: string | null
+  external_id?: string | null
+  yelp_rating?: number | null
+  yelp_review_count?: number | null
+  yelp_image_url?: string | null
 }
 
 interface OffersModalProps {
@@ -203,17 +213,33 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="text-white font-semibold truncate">{offer.business_name}</h3>
-                      {offer.offer_url && (
-                        <span className="text-blue-400 bg-blue-500/10 text-[10px] px-1.5 py-0.5 rounded-full">Deal</span>
+                      {offer.offer_source === 'groupon' && (
+                        <span className="text-orange-400 bg-orange-500/10 text-[10px] px-1.5 py-0.5 rounded-full font-medium">Groupon</span>
                       )}
-                      {offer.is_premium_offer && !isPremium && (
-                        <span className="text-amber-400 text-xs flex items-center gap-0.5">
-                          <Lock size={10} />
-                          +{discountInfo.premium_discount - discountInfo.free_discount}%
-                        </span>
+                      {offer.offer_source === 'affiliate' && (
+                        <span className="text-purple-400 bg-purple-500/10 text-[10px] px-1.5 py-0.5 rounded-full font-medium">Partner</span>
+                      )}
+                      {offer.is_free_item && (
+                        <span className="text-emerald-400 bg-emerald-500/10 text-[10px] px-1.5 py-0.5 rounded-full">Free</span>
                       )}
                     </div>
                     <p className="text-slate-400 text-sm truncate">{offer.description}</p>
+                    
+                    {/* Yelp enrichment stars */}
+                    {offer.yelp_rating != null && (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className="flex items-center gap-0.5">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star key={i} size={10} className={i < Math.round(offer.yelp_rating!) ? 'text-yellow-400 fill-yellow-400' : 'text-slate-600'} />
+                          ))}
+                        </div>
+                        <span className="text-slate-400 text-[10px]">{offer.yelp_rating}</span>
+                        {offer.yelp_review_count != null && (
+                          <span className="text-slate-500 text-[10px]">({offer.yelp_review_count} reviews)</span>
+                        )}
+                      </div>
+                    )}
+
                     {offer.address && (
                       <p className="text-slate-500 text-xs truncate flex items-center gap-1 mt-0.5">
                         <MapPin size={10} /> {offer.address}
@@ -221,9 +247,18 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                     )}
                     
                     <div className="flex items-center gap-3 mt-2">
+                      {offer.original_price != null && offer.original_price > 0 && (
+                        <span className="text-slate-500 text-xs line-through">${offer.original_price.toFixed(2)}</span>
+                      )}
                       <span className={`font-bold ${offer.redeemed ? 'text-slate-500' : 'text-emerald-400'}`}>
-                        {offer.discount_percent}% OFF
+                        {isPremium ? (offer.premium_discount_percent || offer.discount_percent) : (offer.free_discount_percent || offer.discount_percent)}% OFF
                       </span>
+                      {!isPremium && (offer.premium_discount_percent || 0) > (offer.free_discount_percent || 0) && (
+                        <span className="text-amber-400 text-xs flex items-center gap-0.5 bg-amber-500/10 px-1.5 py-0.5 rounded-full">
+                          <Lock size={10} />
+                          {offer.premium_discount_percent}%
+                        </span>
+                      )}
                       <span className="text-slate-500 text-xs flex items-center gap-1">
                         <Gem size={12} className="text-cyan-400" />
                         +{offer.gems_reward}
@@ -238,6 +273,10 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                   {offer.redeemed ? (
                     <div className="bg-emerald-500/20 text-emerald-400 p-2 rounded-full">
                       <Check size={16} />
+                    </div>
+                  ) : offer.offer_source === 'groupon' || offer.offer_source === 'affiliate' ? (
+                    <div className="bg-blue-500/20 text-blue-400 px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1">
+                      <ExternalLink size={12} /> View
                     </div>
                   ) : (
                     <div className="bg-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-full text-xs font-medium">
@@ -274,6 +313,21 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
 
             {/* Compact Body */}
             <div className="p-4 space-y-3">
+              {/* Yelp enrichment section */}
+              {selectedOffer.yelp_rating != null && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 flex items-center gap-2">
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} size={12} className={i < Math.round(selectedOffer.yelp_rating!) ? 'text-yellow-400 fill-yellow-400' : 'text-slate-600'} />
+                    ))}
+                  </div>
+                  <span className="text-white text-xs font-medium">{selectedOffer.yelp_rating}</span>
+                  {selectedOffer.yelp_review_count != null && (
+                    <span className="text-slate-400 text-xs">({selectedOffer.yelp_review_count} reviews)</span>
+                  )}
+                </div>
+              )}
+
               {/* Gems & Discount Row */}
               <div className="flex gap-2">
                 <div className="flex-1 bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-2 text-center">
@@ -284,18 +338,26 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                   <p className="text-cyan-300/70 text-[10px]">Gems</p>
                 </div>
                 <div className="flex-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2 text-center">
-                  <p className="text-emerald-400 text-lg font-bold">{selectedOffer.discount_percent}%</p>
+                  {selectedOffer.original_price != null && selectedOffer.original_price > 0 && (
+                    <p className="text-slate-500 text-[10px] line-through">${selectedOffer.original_price.toFixed(2)}</p>
+                  )}
+                  <p className="text-emerald-400 text-lg font-bold">
+                    {isPremium
+                      ? (selectedOffer.premium_discount_percent || selectedOffer.discount_percent)
+                      : (selectedOffer.free_discount_percent || selectedOffer.discount_percent)}%
+                  </p>
                   <p className="text-emerald-300/70 text-[10px]">Your Discount</p>
                 </div>
               </div>
 
-              {/* Premium Upsell (if applicable) */}
-              {!isPremium && !selectedOffer.is_admin_offer && (
-                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 flex items-center gap-2">
-                  <Zap className="text-amber-400" size={14} />
+              {/* Premium Upsell with per-offer lock */}
+              {!isPremium && (selectedOffer.premium_discount_percent || 0) > (selectedOffer.free_discount_percent || 0) && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2.5 flex items-center gap-2">
+                  <Lock className="text-amber-400 shrink-0" size={14} />
                   <p className="text-amber-400 text-xs flex-1">
-                    Premium gets {discountInfo.premium_discount}% off
+                    Upgrade to Premium for <span className="font-bold">{selectedOffer.premium_discount_percent}% off</span>
                   </p>
+                  <Zap className="text-amber-400 shrink-0" size={14} />
                 </div>
               )}
 
@@ -307,43 +369,60 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                 </div>
               )}
 
-              {/* View Deal Button for third-party offers */}
-              {selectedOffer.offer_url && (
+              {/* Tier 2 (affiliate/groupon): Link-out button */}
+              {(selectedOffer.offer_source === 'groupon' || selectedOffer.offer_source === 'affiliate') ? (
                 <button
-                  onClick={() => onOpenUrl?.(selectedOffer.offer_url!, selectedOffer.business_name)}
-                  className="w-full py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 text-sm bg-blue-500/20 border border-blue-500/30 text-blue-400 hover:bg-blue-500/30 transition"
+                  onClick={() => {
+                    const url = selectedOffer.affiliate_tracking_url || selectedOffer.offer_url
+                    if (url) onOpenUrl?.(url, selectedOffer.business_name)
+                  }}
+                  className="w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 text-sm bg-gradient-to-r from-blue-500 to-indigo-500 text-white active:scale-[0.98]"
                   data-testid="view-deal-btn"
                 >
-                  <Star size={14} />
-                  View Deal
+                  <ExternalLink size={16} />
+                  View Deal{selectedOffer.offer_source === 'groupon' ? ' on Groupon' : ''}
                 </button>
-              )}
+              ) : (
+                <>
+                  {/* Tier 1 (direct): View Deal link if has URL */}
+                  {selectedOffer.offer_url && (
+                    <button
+                      onClick={() => onOpenUrl?.(selectedOffer.offer_url!, selectedOffer.business_name)}
+                      className="w-full py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 text-sm bg-blue-500/20 border border-blue-500/30 text-blue-400 hover:bg-blue-500/30 transition"
+                      data-testid="view-deal-link-btn"
+                    >
+                      <Star size={14} />
+                      View Deal
+                    </button>
+                  )}
 
-              {/* Redeem Button */}
-              <button
-                onClick={handleRedeem}
-                disabled={redeeming || selectedOffer.redeemed}
-                className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 text-sm ${
-                  selectedOffer.redeemed
-                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white active:scale-[0.98]'
-                }`}
-                data-testid="redeem-offer-btn"
-              >
-                {redeeming ? (
-                  <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                ) : selectedOffer.redeemed ? (
-                  <>
-                    <Check size={16} />
-                    Redeemed
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={16} />
-                    Redeem Offer
-                  </>
-                )}
-              </button>
+                  {/* Tier 1 (direct): Redeem Button with QR */}
+                  <button
+                    onClick={handleRedeem}
+                    disabled={redeeming || selectedOffer.redeemed}
+                    className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 text-sm ${
+                      selectedOffer.redeemed
+                        ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white active:scale-[0.98]'
+                    }`}
+                    data-testid="redeem-offer-btn"
+                  >
+                    {redeeming ? (
+                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                    ) : selectedOffer.redeemed ? (
+                      <>
+                        <Check size={16} />
+                        Redeemed
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={16} />
+                        Redeem Offer
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

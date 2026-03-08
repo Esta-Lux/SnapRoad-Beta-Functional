@@ -2,15 +2,19 @@
 SnapRoad Admin API Routes
 All endpoints use the Supabase DAO layer (supabase_service.py).
 """
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends, UploadFile, File
+from fastapi.responses import StreamingResponse
 from typing import Optional
 from datetime import datetime, timedelta
 import logging
+import io
+from middleware.auth import require_admin
 
 from models.schemas import (
     AdminOfferCreate, PricingUpdate, OfferImport, BulkOfferUpload,
     BoostCalculate, BoostCreate, AnalyticsEvent,
 )
+from services.offer_utils import calculate_auto_gems, calculate_free_discount
 from services.supabase_service import (
     sb_list_profiles, sb_get_profile, sb_update_profile,
     sb_suspend_profile, sb_activate_profile, sb_delete_profile,
@@ -37,7 +41,7 @@ from services.supabase_service import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["Admin"])
+router = APIRouter(prefix="/api", tags=["Admin"], dependencies=[Depends(require_admin)])
 
 BOOST_PRICING_ADMIN = {
     "base_daily_cost": 25, "additional_day_cost": 20,
@@ -235,19 +239,35 @@ def create_offer(offer_data: dict):
 
 @router.post("/admin/offers/create")
 def admin_create_offer(offer: AdminOfferCreate):
+    auto_gems = offer.base_gems if offer.base_gems is not None else calculate_auto_gems(offer.discount_percent, offer.is_free_item)
+    premium_discount = offer.discount_percent
+    free_discount = calculate_free_discount(premium_discount)
+
     data = {
         "business_name": offer.business_name,
         "business_type": offer.business_type,
         "description": offer.description,
-        "discount_percent": offer.discount_percent,
-        "base_gems": offer.base_gems,
+        "discount_percent": premium_discount,
+        "premium_discount_percent": premium_discount,
+        "free_discount_percent": free_discount,
+        "is_free_item": offer.is_free_item,
+        "base_gems": auto_gems,
         "lat": offer.lat,
         "lng": offer.lng,
         "is_admin_offer": True,
         "created_by": "admin",
         "status": "active",
         "title": offer.description[:60] if offer.description else "Admin Offer",
+        "offer_source": offer.offer_source,
     }
+    if offer.offer_url:
+        data["offer_url"] = offer.offer_url
+    if offer.original_price is not None:
+        data["original_price"] = offer.original_price
+    if offer.affiliate_tracking_url:
+        data["affiliate_tracking_url"] = offer.affiliate_tracking_url
+    if offer.external_id:
+        data["external_id"] = offer.external_id
     if offer.image_id:
         data["image_url"] = offer.image_id
     if offer.expires_hours:
@@ -264,11 +284,19 @@ def admin_create_offer(offer: AdminOfferCreate):
 def admin_bulk_offers(data: BulkOfferUpload):
     created = []
     for item in data.offers:
+        auto_gems = item.base_gems if item.base_gems is not None else calculate_auto_gems(item.discount_percent, item.is_free_item)
+        premium_discount = item.discount_percent
+        free_discount = calculate_free_discount(premium_discount)
+
         offer_data = {
             "business_name": item.business_name,
             "business_type": item.business_type,
             "description": item.description,
-            "base_gems": item.base_gems,
+            "discount_percent": premium_discount,
+            "premium_discount_percent": premium_discount,
+            "free_discount_percent": free_discount,
+            "is_free_item": item.is_free_item,
+            "base_gems": auto_gems,
             "address": item.address,
             "lat": item.lat or 39.9612,
             "lng": item.lng or -82.9988,
@@ -278,11 +306,174 @@ def admin_bulk_offers(data: BulkOfferUpload):
             "status": "active",
             "title": item.description[:60] if item.description else "Bulk Offer",
             "expires_at": (datetime.now() + timedelta(days=item.expires_days)).isoformat() if item.expires_days else None,
+            "offer_source": item.offer_source,
         }
+        if item.original_price is not None:
+            offer_data["original_price"] = item.original_price
+        if item.affiliate_tracking_url:
+            offer_data["affiliate_tracking_url"] = item.affiliate_tracking_url
+        if item.external_id:
+            offer_data["external_id"] = item.external_id
         result = sb_create_offer(offer_data)
         if result:
             created.append(result)
     return {"success": True, "message": f"Created {len(created)} offers", "data": {"created_count": len(created), "offers": created}}
+
+
+@router.post("/admin/offers/upload-excel")
+async def upload_excel_offers(file: UploadFile = File(...)):
+    """Parse an Excel (.xlsx) file and create offers. Auto-calculates gems and discounts."""
+    if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
+        return {"success": False, "message": "Please upload an .xlsx file"}
+
+    try:
+        import openpyxl
+    except ImportError:
+        return {"success": False, "message": "openpyxl not installed. Run: pip install openpyxl"}
+
+    contents = await file.read()
+    wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=True)
+    ws = wb.active
+
+    rows = list(ws.iter_rows(values_only=True))
+    if len(rows) < 2:
+        return {"success": False, "message": "File is empty or has no data rows"}
+
+    header = [str(h).strip().lower().replace(" ", "_") if h else "" for h in rows[0]]
+    col_map = {name: i for i, name in enumerate(header)}
+
+    required = ["business_name"]
+    for req in required:
+        if req not in col_map:
+            return {"success": False, "message": f"Missing required column: {req}. Found: {', '.join(header)}"}
+
+    created = []
+    errors = []
+    for row_idx, row in enumerate(rows[1:], start=2):
+        try:
+            def get(col: str, default=""):
+                idx = col_map.get(col)
+                if idx is None or idx >= len(row) or row[idx] is None:
+                    return default
+                return row[idx]
+
+            biz_name = str(get("business_name", "")).strip()
+            if not biz_name:
+                errors.append(f"Row {row_idx}: missing business_name")
+                continue
+
+            disc = int(float(get("discount_percent", 0)))
+            is_free = str(get("is_free_item", "")).lower() in ("true", "yes", "1")
+            auto_gems = calculate_auto_gems(disc, is_free)
+            free_disc = calculate_free_discount(disc)
+
+            source = str(get("source", get("offer_source", "direct"))).strip().lower() or "direct"
+            if source not in ("direct", "groupon", "affiliate", "yelp", "manual"):
+                source = "direct"
+
+            offer_data = {
+                "business_name": biz_name,
+                "business_type": str(get("business_type", "retail")),
+                "description": str(get("description", "")),
+                "title": str(get("title", ""))[:60] or str(get("description", ""))[:60] or "Uploaded Offer",
+                "discount_percent": disc,
+                "premium_discount_percent": disc,
+                "free_discount_percent": free_disc,
+                "is_free_item": is_free,
+                "base_gems": auto_gems,
+                "address": str(get("address", "")),
+                "offer_url": str(get("offer_url", "")) or None,
+                "lat": float(get("lat", 39.9612)),
+                "lng": float(get("lng", -82.9988)),
+                "is_admin_offer": True,
+                "created_by": "admin_excel",
+                "status": "active",
+                "expires_at": (datetime.now() + timedelta(days=int(float(get("expires_days", 30))))).isoformat(),
+                "offer_source": source,
+            }
+            orig_price = get("original_price", "")
+            if orig_price:
+                try:
+                    offer_data["original_price"] = float(orig_price)
+                except (ValueError, TypeError):
+                    pass
+            aff_url = str(get("affiliate_tracking_url", "")).strip()
+            if aff_url:
+                offer_data["affiliate_tracking_url"] = aff_url
+            ext_id = str(get("external_id", "")).strip()
+            if ext_id:
+                offer_data["external_id"] = ext_id
+            result = sb_create_offer(offer_data)
+            if result:
+                created.append(result)
+            else:
+                errors.append(f"Row {row_idx}: DB insert failed")
+        except Exception as e:
+            errors.append(f"Row {row_idx}: {str(e)}")
+
+    sb_create_audit_log("BULK_EXCEL_UPLOAD", "admin", "", f"Uploaded {len(created)} offers from {file.filename}")
+
+    return {
+        "success": True,
+        "message": f"Created {len(created)} offers from {file.filename}",
+        "data": {
+            "created_count": len(created),
+            "error_count": len(errors),
+            "errors": errors[:20],
+            "total_rows": len(rows) - 1,
+        },
+    }
+
+
+@router.get("/admin/offers/upload-template")
+def download_upload_template():
+    """Download a sample .xlsx template for bulk offer upload."""
+    try:
+        import openpyxl
+    except ImportError:
+        return {"success": False, "message": "openpyxl not installed"}
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Offers"
+    headers = [
+        "business_name", "title", "description", "business_type",
+        "discount_percent", "is_free_item", "address", "offer_url",
+        "lat", "lng", "expires_days",
+        "source", "original_price", "affiliate_tracking_url", "external_id",
+    ]
+    ws.append(headers)
+    ws.append([
+        "Coffee House", "15% off drinks", "Get 15% off any beverage", "cafe",
+        15, "no", "123 Main St, Columbus OH", "https://coffeehouse.com/snap",
+        39.9612, -82.9988, 30,
+        "direct", "", "", "",
+    ])
+    ws.append([
+        "Auto Spa", "Free car wash", "Complimentary full wash", "service",
+        100, "yes", "456 Oak Ave, Columbus OH", "",
+        39.97, -83.00, 14,
+        "direct", "", "", "",
+    ])
+    ws.append([
+        "Groupon Pizza", "50% off large pizza", "Half price large pizza deal", "restaurant",
+        50, "no", "789 Elm St, Columbus OH", "https://groupon.com/deals/pizza",
+        39.98, -82.99, 60,
+        "groupon", 24.99, "https://cj.com/track/pizza123", "GRP-12345",
+    ])
+
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or "")) for cell in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 30)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=snaproad_offers_template.xlsx"},
+    )
 
 
 @router.put("/admin/offers/{offer_id}")
@@ -346,6 +537,92 @@ def import_offers(import_data: OfferImport):
         except Exception as e:
             errors.append(str(e))
     return {"success": True, "message": f"Imported {imported} offers", "data": {"imported": imported, "errors": errors}}
+
+
+# ==================== GROUPON / CJ AFFILIATE IMPORT ====================
+
+@router.post("/admin/offers/import-groupon")
+async def import_groupon_deals(
+    area: str = "Columbus, OH",
+    category: Optional[str] = None,
+    limit: int = 20,
+):
+    """Fetch deals from Groupon via CJ Affiliate API and return a preview list."""
+    from services.groupon_service import fetch_groupon_deals, import_deals_to_offers
+
+    raw_deals = await fetch_groupon_deals(area=area, category=category, limit=limit)
+    if not raw_deals:
+        return {
+            "success": True,
+            "message": "No deals found (CJ_API_KEY may not be configured yet)",
+            "data": {"deals": [], "count": 0},
+        }
+
+    offer_previews = import_deals_to_offers(raw_deals)
+    return {
+        "success": True,
+        "message": f"Fetched {len(offer_previews)} deals from Groupon",
+        "data": {"deals": offer_previews, "count": len(offer_previews)},
+    }
+
+
+@router.post("/admin/offers/approve-imports")
+def approve_imported_deals(deals: list[dict]):
+    """
+    Receive a list of pre-normalised deal dicts (from import-groupon preview)
+    and insert them as active offers.
+    """
+    created = []
+    errors = []
+    for idx, deal in enumerate(deals):
+        try:
+            deal["status"] = "active"
+            result = sb_create_offer(deal)
+            if result:
+                created.append(result)
+            else:
+                errors.append(f"Deal {idx}: DB insert failed")
+        except Exception as e:
+            errors.append(f"Deal {idx}: {e}")
+
+    if created:
+        sb_create_audit_log(
+            "GROUPON_IMPORT_APPROVED", "admin", "",
+            f"Approved {len(created)} Groupon deals",
+        )
+
+    return {
+        "success": True,
+        "message": f"Approved {len(created)} of {len(deals)} deals",
+        "data": {"created_count": len(created), "error_count": len(errors), "errors": errors[:20]},
+    }
+
+
+# ==================== YELP ENRICHMENT ====================
+
+@router.post("/admin/offers/{offer_id}/enrich-yelp")
+async def enrich_offer_with_yelp(offer_id: str):
+    """Fetch Yelp rating, reviews and photo for an offer and update it."""
+    from services.yelp_service import enrich_offer
+
+    offers = sb_get_offers(status="all")
+    offer = next((o for o in offers if str(o.get("id")) == offer_id), None)
+    if not offer:
+        return {"success": False, "message": "Offer not found"}
+
+    enrichment = await enrich_offer(
+        business_name=offer.get("business_name", ""),
+        lat=offer.get("lat"),
+        lng=offer.get("lng"),
+    )
+    if not enrichment:
+        return {"success": False, "message": "No Yelp data found for this business"}
+
+    success = sb_update_offer(offer_id, enrichment)
+    if success:
+        sb_create_audit_log("OFFER_YELP_ENRICHED", "admin", offer_id, f"Enriched with Yelp: {enrichment.get('yelp_rating')}★")
+        return {"success": True, "message": "Offer enriched with Yelp data", "data": enrichment}
+    return {"success": False, "message": "Failed to update offer with Yelp data"}
 
 
 # ==================== PARTNERS CRUD ====================

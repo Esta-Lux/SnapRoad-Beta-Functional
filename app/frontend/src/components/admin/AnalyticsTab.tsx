@@ -91,10 +91,7 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
               <div className={`text-xs ${textSecondary}`}>Total Users</div>
             </div>
           </div>
-          <div className="mt-2 flex items-center gap-1 text-xs text-green-400">
-            <TrendingUp size={12} />
-            <span>+6.5%</span>
-          </div>
+          <div className={`mt-2 text-xs ${textSecondary}`}>{(stats?.total_users || 0).toLocaleString()} total</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
           <div className="flex items-center gap-3">
@@ -106,10 +103,7 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
               <div className={`text-xs ${textSecondary}`}>Active Partners</div>
             </div>
           </div>
-          <div className="mt-2 flex items-center gap-1 text-xs text-green-400">
-            <TrendingUp size={12} />
-            <span>+12%</span>
-          </div>
+          <div className={`mt-2 text-xs ${textSecondary}`}>{(stats?.total_partners || 0).toLocaleString()} total</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
           <div className="flex items-center gap-3">
@@ -121,10 +115,7 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
               <div className={`text-xs ${textSecondary}`}>Active Offers</div>
             </div>
           </div>
-          <div className="mt-2 flex items-center gap-1 text-xs text-green-400">
-            <TrendingUp size={12} />
-            <span>+8.3%</span>
-          </div>
+          <div className={`mt-2 text-xs ${textSecondary}`}>Across all partners</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
           <div className="flex items-center gap-3">
@@ -136,10 +127,7 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
               <div className={`text-xs ${textSecondary}`}>Total Redemptions</div>
             </div>
           </div>
-          <div className="mt-2 flex items-center gap-1 text-xs text-green-400">
-            <TrendingUp size={12} />
-            <span>+15.2%</span>
-          </div>
+          <div className={`mt-2 text-xs ${textSecondary}`}>{(stats?.total_trips || 0).toLocaleString()} trips</div>
         </div>
       </div>
 

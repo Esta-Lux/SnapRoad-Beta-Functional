@@ -2,8 +2,12 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/authStore'
 import { AuthProvider } from './contexts/AuthContext'
 import Layout from './components/Layout'
-import Login from './pages/Auth/Login'
 import AuthFlow from './pages/Auth/AuthFlow'
+import AuthPage from './pages/AuthPage'
+import PartnerSignup from './pages/PartnerSignup'
+import AdminGuard from './components/guards/AdminGuard'
+import PartnerGuard from './components/guards/PartnerGuard'
+import DriverGuard from './components/guards/DriverGuard'
 import Dashboard from './pages/Dashboard'
 import Users from './pages/Users'
 import UserDetail from './pages/Users/UserDetail'
@@ -23,6 +27,7 @@ import DriverApp from './pages/DriverApp'
 import PhonePreview from './pages/PhonePreview'
 import { NavigationCoreProvider } from './contexts/NavigationCoreContext'
 import { MapKitProvider } from './contexts/MapKitContext'
+import TeamScanPage from './pages/TeamScanPage'
 
 // New Figma UI Components
 import { SnapRoadApp } from './components/figma-ui'
@@ -45,34 +50,42 @@ function App() {
         {/* Welcome/Landing Page */}
         <Route path="/" element={<WelcomePage />} />
         
-        {/* Public routes */}
-        <Route path="/login" element={<Login />} />
-        
+        {/* Unified auth */}
+        <Route path="/auth" element={<AuthPage />} />
+        <Route path="/auth/partner-signup" element={<PartnerSignup />} />
+        <Route path="/join" element={<Navigate to="/auth/partner-signup" replace />} />
+
         {/* New SnapRoad UI - Figma Design System */}
         <Route path="/app/*" element={<SnapRoadApp />} />
         
         {/* Driver App - Web Preview (Phase 1: VehicleState + MapKit-ready map) */}
         <Route path="/driver" element={
-          <NavigationCoreProvider fallbackCenter={{ lat: 39.9612, lng: -82.9988 }} enableGps={true}>
+          <DriverGuard>
             <MapKitProvider>
-              <DriverApp />
+              <NavigationCoreProvider fallbackCenter={{ lat: 39.9612, lng: -82.9988 }} enableGps={true}>
+                <DriverApp />
+              </NavigationCoreProvider>
             </MapKitProvider>
-          </NavigationCoreProvider>
+          </DriverGuard>
         } />
         <Route path="/driver/auth" element={<AuthFlow />} />
         
         {/* Phone frame preview */}
         <Route path="/preview" element={<PhonePreview />} />
         
-        {/* Partner Portal - Separate URL for custom domain */}
-        <Route path="/portal/partner" element={<PartnerDashboard />} />
+        {/* Team QR scan page — no auth required (uses token from URL) */}
+        <Route path="/scan/:partnerId/:token" element={<TeamScanPage />} />
+
+        {/* Partner Portal - protected by partner auth */}
+        <Route path="/portal/partner" element={<PartnerGuard><PartnerDashboard /></PartnerGuard>} />
         
-        {/* Admin Console - Secret path (only accessible via direct link) */}
-        <Route path="/portal/admin-sr2025secure" element={<AdminDashboard />} />
+        {/* Admin Console - protected by admin auth */}
+        <Route path="/portal/admin-sr2025secure" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
         
-        {/* Legacy routes - redirect to new portal paths */}
+        {/* Short URLs - redirect to portal (guards handle auth redirect) */}
         <Route path="/partner" element={<Navigate to="/portal/partner" replace />} />
-        <Route path="/admin" element={<Navigate to="/" replace />} />
+        <Route path="/admin" element={<Navigate to="/portal/admin-sr2025secure" replace />} />
+        <Route path="/login" element={<Navigate to="/auth" replace />} />
         
         {/* Business Partner Dashboard - Legacy */}
         <Route path="/business" element={<BusinessDashboard />} />

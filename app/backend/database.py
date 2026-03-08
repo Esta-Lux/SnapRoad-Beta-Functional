@@ -18,3 +18,9 @@ def get_supabase():
             ) from None
         _client = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
     return _client
+
+
+def reset_supabase_client():
+    """Reset the cached Supabase client to handle stale connections"""
+    global _client
+    _client = None

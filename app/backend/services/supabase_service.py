@@ -43,14 +43,15 @@ def _safe_count(table: str, filters: Optional[dict] = None) -> int:
 
 def sb_get_user_by_email(email: str) -> Optional[dict]:
     try:
-        result = _sb().table("profiles").select("*").eq("email", email).maybe_single().execute()
-        return result.data
+        result = _sb().table("profiles").select("*").eq("email", email).limit(1).execute()
+        return result.data[0] if result.data else None
     except Exception as e:
         logger.warning(f"sb_get_user_by_email error: {e}")
         return None
 
 
 def sb_create_user(email: str, password: str, name: str, role: str = "driver") -> dict:
+    import hashlib
     sb = _sb()
     auth_resp = sb.auth.admin.create_user({
         "email": email,
@@ -62,7 +63,8 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
     profile = {
         "id": uid,
         "email": email,
-        "full_name": name,
+        "name": name,
+        "password_hash": hashlib.sha256(password.encode()).hexdigest(),
         "role": role,
         "status": "active",
         "xp": 0,
@@ -73,18 +75,56 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
     return {**profile, "id": str(uid)}
 
 
-def sb_login_user(email: str, password: str) -> Optional[dict]:
-    try:
-        sb = _sb()
-        auth_resp = sb.auth.sign_in_with_password({"email": email, "password": password})
-        uid = auth_resp.user.id
-        profile = sb.table("profiles").select("*").eq("id", str(uid)).maybe_single().execute()
-        if profile.data:
-            return profile.data
-        return {"id": str(uid), "email": email, "role": "driver"}
-    except Exception as e:
-        logger.warning(f"sb_login_user error: {e}")
-        return None
+def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[str]]:
+    """Returns (profile_dict, None) on success or (None, error_message) on failure."""
+    import hashlib
+    import time
+    
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            sb = _sb()
+            
+            # Fetch profile using service role client (bypasses RLS)
+            profile_result = sb.table("profiles").select("*").eq("email", email).limit(1).execute()
+            if not profile_result or not profile_result.data or len(profile_result.data) == 0:
+                logger.warning(f"Profile not found for {email}")
+                return None, "Invalid email or password"
+            
+            profile_data = profile_result.data[0]
+            logger.info(f"Profile fetch SUCCESS for {email}, role={profile_data.get('role')}")
+            
+            # Verify password using stored hash
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            stored_hash = profile_data.get("password_hash", "")
+            
+            if password_hash != stored_hash:
+                logger.warning(f"Password mismatch for {email}")
+                return None, "Invalid email or password"
+            
+            logger.info(f"Password verified for {email}")
+            return profile_data, None
+            
+        except Exception as e:
+            error_str = str(e)
+            # Check if it's a network/connection error
+            if any(err in error_str.lower() for err in ["timeout", "connection", "getaddrinfo", "disconnected"]):
+                if attempt < max_retries - 1:
+                    logger.warning(f"Network error for {email} (attempt {attempt + 1}/{max_retries}): {e}. Retrying...")
+                    # Reset client and retry
+                    from database import reset_supabase_client
+                    reset_supabase_client()
+                    time.sleep(0.5)  # Brief delay before retry
+                    continue
+                else:
+                    logger.error(f"Network error for {email} after {max_retries} attempts: {e}")
+                    return None, "Service temporarily unavailable. Please try again."
+            else:
+                # Non-network error, don't retry
+                logger.warning(f"sb_login_user error for {email}: {e}")
+                return None, str(e)
+    
+    return None, "Invalid email or password"
 
 
 # ─────────────────────────────────────────────

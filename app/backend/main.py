@@ -23,8 +23,7 @@ from routes.mapkit import router as mapkit_router
 from routes.ai import router as ai_router
 from routes.webhooks import router as webhooks_router
 from routes.payments import router as payments_router
-from routes.places import router as places_router
-from config import SUPABASE_URL, SUPABASE_SECRET_KEY, JWT_SECRET
+from config import JWT_SECRET, SUPABASE_URL, SUPABASE_SECRET_KEY
 
 
 def create_app() -> FastAPI:
@@ -80,7 +79,6 @@ def create_app() -> FastAPI:
     app.include_router(ai_router)
     app.include_router(webhooks_router)
     app.include_router(payments_router)
-    app.include_router(places_router)
 
     return app
 

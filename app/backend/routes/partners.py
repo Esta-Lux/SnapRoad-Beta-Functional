@@ -1,11 +1,14 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+import logging
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from typing import Optional
 from datetime import datetime, timedelta
 from models.schemas import (
     PartnerLocation, PartnerPlanUpdate, PartnerOfferCreate,
-    PartnerLoginRequest, TeamInviteRequest, ReferralRequest,
+    PartnerLoginRequest, PartnerRegisterRequest,
+    TeamInviteRequest, ReferralRequest,
     CreditUseRequest, QRRedemptionRequest, BoostRequest, BoostCreditsRequest,
 )
+from services.offer_utils import calculate_auto_gems, calculate_free_discount, get_fee_tier_info
 from services.supabase_service import (
     sb_get_partner, sb_get_partners, sb_update_partner, sb_create_partner,
     sb_get_partner_locations, sb_create_partner_location,
@@ -15,9 +18,12 @@ from services.supabase_service import (
     sb_get_boosts, sb_create_boost, sb_cancel_boost,
     sb_get_redemptions_by_partner,
     sb_get_partner_referrals, sb_create_partner_referral,
+    sb_login_user, sb_create_user, sb_get_user_by_email,
 )
 from services.mock_data import PARTNER_PLANS, BOOST_PRICING
+from middleware.auth import create_access_token, require_partner
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Partners"])
 
 
@@ -194,19 +200,23 @@ def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_p
         return {"success": False, "message": "Partner not found"}
 
     locations = sb_get_partner_locations(partner_id)
-    location = next((l for l in locations if l["id"] == str(offer.location_id)), None)
+    location = next((l for l in locations if l["id"] == offer.location_id), None)
     if not location:
         return {"success": False, "message": "Location not found"}
+
+    auto_gems = calculate_auto_gems(offer.discount_percent, offer.is_free_item)
+    free_discount = calculate_free_discount(offer.discount_percent)
 
     new_offer = sb_create_offer({
         "partner_id": partner_id,
         "location_id": location["id"],
         "title": offer.title,
         "description": offer.description,
-        "business_name": partner.get("business_name", ""),
-        "business_type": partner.get("business_type", "retail"),
         "discount_percent": offer.discount_percent,
-        "base_gems": offer.gems_reward,
+        "base_gems": auto_gems,
+        "premium_discount_percent": offer.discount_percent,
+        "free_discount_percent": free_discount,
+        "is_free_item": offer.is_free_item,
         "lat": location["lat"],
         "lng": location["lng"],
         "status": "active",
@@ -223,6 +233,47 @@ def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_p
 def get_partner_offers(partner_id: str = "default_partner"):
     offers = sb_get_offers_by_partner(partner_id)
     return {"success": True, "data": offers, "count": len(offers)}
+
+
+@router.put("/partner/offers/{offer_id}")
+def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, partner_id: str = "default_partner"):
+    partner = sb_get_partner(partner_id)
+    if not partner:
+        return {"success": False, "message": "Partner not found"}
+    
+    locations = sb_get_partner_locations(partner_id)
+    location = next((l for l in locations if l["id"] == str(offer.location_id)), None)
+    if not location:
+        return {"success": False, "message": "Location not found"}
+    
+    auto_gems = calculate_auto_gems(offer.discount_percent, offer.is_free_item)
+    premium_discount = offer.discount_percent
+    free_discount = calculate_free_discount(premium_discount)
+
+    updates = {
+        "title": offer.title,
+        "description": offer.description,
+        "discount_percent": premium_discount,
+        "premium_discount_percent": premium_discount,
+        "free_discount_percent": free_discount,
+        "is_free_item": offer.is_free_item,
+        "base_gems": auto_gems,
+        "image_url": offer.image_url,
+        "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
+    }
+    sb_update_offer(offer_id, updates)
+    return {"success": True, "message": "Offer updated successfully"}
+
+
+@router.delete("/partner/offers/{offer_id}")
+def delete_partner_offer(offer_id: str, partner_id: str = "default_partner"):
+    from services.supabase_service import _sb
+    try:
+        _sb().table("offers").delete().eq("id", offer_id).eq("partner_id", partner_id).execute()
+        return {"success": True, "message": "Offer deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting offer: {e}")
+        return {"success": False, "message": "Failed to delete offer"}
 
 
 # ==================== BOOST SYSTEM ====================
@@ -319,11 +370,48 @@ def add_partner_credits(credits_req: BoostCreditsRequest, partner_id: str = "def
 # ==================== PARTNER V2 ENDPOINTS ====================
 @router.post("/partner/v2/login")
 async def partner_login_v2(request: PartnerLoginRequest):
-    from services.partner_service import partner_service
-    result = partner_service.authenticate(request.email, request.password)
-    if not result:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    return result
+    user, _login_err = sb_login_user(request.email, request.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Get all partners and find matching partner record
+    partners = sb_get_partners(limit=200)
+    match = next((p for p in partners if p.get("email") == request.email), None)
+    
+    # Check if user has partner role or if partner record exists
+    role = user.get("role", "driver")
+    if role not in ("partner", "admin") and not match:
+        raise HTTPException(status_code=403, detail="No partner account linked to this email")
+    
+    # Use partner record ID if exists, otherwise use user ID
+    partner_id = match["id"] if match else str(user.get("id", ""))
+    business_name = match.get("business_name", "") if match else ""
+    
+    token = create_access_token({"sub": str(user["id"]), "email": request.email, "role": "partner", "partner_id": partner_id})
+    return {"success": True, "token": token, "partner_id": partner_id, "business_name": business_name}
+
+
+@router.post("/partner/v2/register")
+async def partner_register_v2(request: PartnerRegisterRequest):
+    import hashlib
+    existing = sb_get_user_by_email(request.email)
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    full_name = f"{request.first_name} {request.last_name}"
+    user = sb_create_user(request.email, request.password, full_name, "partner")
+    partner_data = {
+        "id": str(user["id"]),
+        "business_name": request.business_name,
+        "email": request.email,
+        "password_hash": hashlib.sha256(request.password.encode()).hexdigest(),
+        "plan": "starter",
+        "is_founders": True,
+        "status": "active",
+        "is_approved": True,
+    }
+    sb_create_partner(partner_data)
+    token = create_access_token({"sub": str(user["id"]), "email": request.email, "role": "partner", "partner_id": str(user["id"])})
+    return {"success": True, "token": token, "partner_id": str(user["id"]), "business_name": request.business_name}
 
 
 @router.get("/partner/v2/profile/{partner_id}")
@@ -438,10 +526,138 @@ async def redeem_offer(request: QRRedemptionRequest, background_tasks: Backgroun
     return result
 
 
+# ==================== TEAM LINKS ====================
+@router.post("/partner/v2/team-link/generate")
+async def generate_team_link(partner_id: str, label: str = "Team Link"):
+    """Generate a shareable QR scan link for partner team members."""
+    import secrets
+    from services.supabase_service import _sb
+
+    partner = sb_get_partner(partner_id)
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+
+    token = secrets.token_urlsafe(32)
+    try:
+        result = _sb().table("partner_team_links").insert({
+            "partner_id": partner_id,
+            "token": token,
+            "label": label,
+            "created_by": partner_id,
+            "is_active": True,
+        }).execute()
+        link_data = result.data[0] if result.data else {"token": token}
+    except Exception as e:
+        logger.warning(f"Team link DB error (table may not exist yet): {e}")
+        link_data = {"token": token, "partner_id": partner_id, "label": label}
+
+    scan_url = f"/scan/{partner_id}/{token}"
+    return {
+        "success": True,
+        "data": {
+            **link_data,
+            "scan_url": scan_url,
+            "full_url": f"{{base_url}}{scan_url}",
+        },
+    }
+
+
+@router.get("/partner/v2/team-links/{partner_id}")
+async def list_team_links(partner_id: str):
+    from services.supabase_service import _sb
+    try:
+        result = _sb().table("partner_team_links").select("*").eq("partner_id", partner_id).eq("is_active", True).execute()
+        links = result.data or []
+    except Exception:
+        links = []
+    return {"success": True, "data": links, "count": len(links)}
+
+
+@router.delete("/partner/v2/team-link/{link_id}")
+async def revoke_team_link(link_id: str):
+    from services.supabase_service import _sb
+    try:
+        _sb().table("partner_team_links").update({"is_active": False}).eq("id", link_id).execute()
+    except Exception as e:
+        logger.warning(f"Revoke team link error: {e}")
+    return {"success": True, "message": "Team link revoked"}
+
+
+@router.post("/partner/v2/scan/validate")
+async def validate_scan(token: str, qr_data: str):
+    """Validate a QR code scanned via a team link. Token auth instead of partner login."""
+    from services.supabase_service import _sb
+    import json
+
+    # Verify the team link token
+    try:
+        link = _sb().table("partner_team_links").select("*").eq("token", token).eq("is_active", True).maybe_single().execute()
+        if not link or not link.data:
+            raise HTTPException(status_code=403, detail="Invalid or expired team link")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    # Parse QR data
+    try:
+        data = json.loads(qr_data) if isinstance(qr_data, str) else qr_data
+    except Exception:
+        data = {"raw": qr_data}
+
+    offer_id = data.get("offerId") or data.get("offer_id")
+    if not offer_id:
+        return {"success": False, "message": "No offer ID in QR code"}
+
+    # Look up the offer
+    try:
+        offer = _sb().table("offers").select("*").eq("id", offer_id).maybe_single().execute()
+        if not offer or not offer.data:
+            return {"success": False, "message": "Offer not found"}
+    except Exception:
+        return {"success": False, "message": "Could not verify offer"}
+
+    return {
+        "success": True,
+        "message": "QR code validated",
+        "data": {
+            "offer": {
+                "id": offer.data.get("id"),
+                "title": offer.data.get("title", offer.data.get("description", "")[:60]),
+                "business_name": offer.data.get("business_name"),
+                "discount_percent": offer.data.get("discount_percent", 0),
+                "base_gems": offer.data.get("base_gems", 0),
+            },
+            "customer_id": data.get("customerId"),
+            "token": data.get("token"),
+        },
+    }
+
+
 @router.get("/partner/v2/redemptions/{partner_id}")
 async def get_recent_redemptions(partner_id: str, limit: int = 10):
     redemptions = sb_get_redemptions_by_partner(partner_id, limit)
     return {"success": True, "data": redemptions, "count": len(redemptions)}
+
+
+@router.get("/partner/v2/fees/{partner_id}")
+async def get_partner_fees(partner_id: str):
+    partner = sb_get_partner(partner_id)
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    total_redemptions = partner.get("total_redemptions", 0) or 0
+    total_owed = partner.get("total_fees_owed", 0) or 0
+    total_paid = partner.get("total_fees_paid", 0) or 0
+    tier_info = get_fee_tier_info(total_redemptions)
+    return {
+        "success": True,
+        "data": {
+            **tier_info,
+            "total_owed": round(total_owed, 2),
+            "total_paid": round(total_paid, 2),
+            "balance_due": round(total_owed - total_paid, 2),
+        },
+    }
 
 
 @router.get("/partner/v2/analytics/{partner_id}")
@@ -463,3 +679,174 @@ async def get_partner_analytics(partner_id: str):
             "conversion_rate": round((total_redemptions / max(total_views, 1)) * 100, 1),
         },
     }
+
+
+@router.get("/partner/v2/credits/history/{partner_id}")
+async def get_credit_history(partner_id: str):
+    """Credit transaction history from boosts, referrals, and bonuses."""
+    boosts = sb_get_boosts(partner_id)
+    referrals = sb_get_partner_referrals(partner_id)
+    history = []
+    for b in boosts:
+        history.append({
+            "id": b.get("id"),
+            "type": "debit",
+            "description": f"Boost: {b.get('boost_type', 'standard')} on offer",
+            "amount": -float(b.get("cost", 0) or 0),
+            "date": b.get("created_at", ""),
+        })
+    for r in referrals:
+        earned = float(r.get("credits_awarded", 0) or 0)
+        if earned > 0:
+            history.append({
+                "id": r.get("id"),
+                "type": "credit",
+                "description": "Partner Referral Reward",
+                "amount": earned,
+                "date": r.get("created_at", ""),
+            })
+    history.sort(key=lambda x: x.get("date", ""), reverse=True)
+
+    total_earned = sum(h["amount"] for h in history if h["amount"] > 0)
+    total_spent = abs(sum(h["amount"] for h in history if h["amount"] < 0))
+    return {
+        "success": True,
+        "data": {
+            "history": history[:20],
+            "total_earned": total_earned,
+            "total_spent": total_spent,
+        },
+    }
+
+
+@router.get("/partner/v2/referrals/leaderboard")
+async def get_referral_leaderboard():
+    """Top referrers across all partners."""
+    partners = sb_get_partners(limit=100)
+    leaderboard = []
+    for p in partners:
+        refs = sb_get_partner_referrals(p["id"])
+        total_credits = sum(float(r.get("credits_awarded", 0) or 0) for r in refs)
+        if refs:
+            leaderboard.append({
+                "name": p.get("business_name", "Unknown"),
+                "referrals": len(refs),
+                "credits": total_credits,
+                "partner_id": p["id"],
+            })
+    leaderboard.sort(key=lambda x: x["referrals"], reverse=True)
+    for i, entry in enumerate(leaderboard[:10]):
+        entry["rank"] = i + 1
+        badge = None
+        if i == 0: badge = "gold"
+        elif i == 1: badge = "silver"
+        elif i == 2: badge = "bronze"
+        entry["badge"] = badge
+    return {"success": True, "data": leaderboard[:10]}
+
+
+# ==================== STRIPE PAYMENT ENDPOINTS ====================
+@router.post("/partner/v2/subscribe")
+async def stripe_subscribe(partner_id: str = "default_partner", plan: str = "starter"):
+    """Create a Stripe Checkout session for plan subscription."""
+    from config import STRIPE_SECRET_KEY
+    if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
+        return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        plan_info = PARTNER_PLANS.get(plan)
+        if not plan_info:
+            raise HTTPException(status_code=400, detail="Invalid plan")
+        price = plan_info.get("price_founders") or plan_info.get("price_public")
+        if not price:
+            return {"success": False, "message": "Enterprise plans require contacting sales"}
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="subscription",
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": int(price * 100),
+                    "recurring": {"interval": "month"},
+                    "product_data": {"name": f"SnapRoad {plan_info['name']} Plan"},
+                },
+                "quantity": 1,
+            }],
+            metadata={"partner_id": partner_id, "plan": plan},
+            success_url="http://localhost:5173/portal/partner?payment=success",
+            cancel_url="http://localhost:5173/portal/partner?payment=cancelled",
+        )
+        return {"success": True, "checkout_url": session.url, "session_id": session.id}
+    except ImportError:
+        return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
+    except Exception as e:
+        logger.error(f"Stripe subscribe error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/partner/v2/boosts/purchase")
+async def stripe_boost_purchase(partner_id: str = "default_partner", offer_id: str = "", boost_type: str = "basic"):
+    """Create a Stripe payment intent for a boost purchase."""
+    from config import STRIPE_SECRET_KEY
+    if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
+        return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        boost_info = BOOST_PRICING.get(boost_type)
+        if not boost_info:
+            raise HTTPException(status_code=400, detail="Invalid boost type")
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="payment",
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": int(boost_info["price"] * 100),
+                    "product_data": {"name": f"SnapRoad {boost_info['name']}"},
+                },
+                "quantity": 1,
+            }],
+            metadata={"partner_id": partner_id, "offer_id": offer_id, "boost_type": boost_type},
+            success_url="http://localhost:5173/portal/partner?boost=success",
+            cancel_url="http://localhost:5173/portal/partner?boost=cancelled",
+        )
+        return {"success": True, "checkout_url": session.url, "session_id": session.id}
+    except ImportError:
+        return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
+    except Exception as e:
+        logger.error(f"Stripe boost error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/partner/v2/credits/purchase")
+async def stripe_credits_purchase(partner_id: str = "default_partner", amount: float = 50.0):
+    """Create a Stripe Checkout session to buy credits."""
+    from config import STRIPE_SECRET_KEY
+    if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
+        return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="payment",
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": int(amount * 100),
+                    "product_data": {"name": f"SnapRoad Partner Credits (${amount:.2f})"},
+                },
+                "quantity": 1,
+            }],
+            metadata={"partner_id": partner_id, "credits_amount": str(amount)},
+            success_url="http://localhost:5173/portal/partner?credits=success",
+            cancel_url="http://localhost:5173/portal/partner?credits=cancelled",
+        )
+        return {"success": True, "checkout_url": session.url, "session_id": session.id}
+    except ImportError:
+        return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
+    except Exception as e:
+        logger.error(f"Stripe credits error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

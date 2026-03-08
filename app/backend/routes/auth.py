@@ -3,14 +3,10 @@ from fastapi import APIRouter, HTTPException
 from models.schemas import SignupRequest, LoginRequest
 from services.mock_data import users_db, user_credentials, create_new_user
 from middleware.auth import create_access_token
-from config import SUPABASE_URL, SUPABASE_SECRET_KEY
 from services.supabase_service import sb_create_user, sb_get_user_by_email, sb_login_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
-
-def _supabase_configured() -> bool:
-    return bool((SUPABASE_URL or "").strip() and (SUPABASE_SECRET_KEY or "").strip())
 
 
 def _build_token(user_dict: dict) -> str:
@@ -36,23 +32,22 @@ def _clean(user: dict) -> dict:
 
 @router.post("/signup")
 def signup(request: SignupRequest):
+    # 1. Try Supabase first (skip if not configured)
     try:
-        # 1. Try Supabase first (only when configured)
-        if _supabase_configured():
-            try:
-                existing = sb_get_user_by_email(request.email)
-                if existing:
-                    raise HTTPException(status_code=400, detail="Email already registered")
-                user = sb_create_user(request.email, request.password, request.name, "driver")
-                token = _build_token(user)
-                logger.info(f"Supabase signup: {request.email}")
-                return {"success": True, "data": {"user": _clean(user), "token": token}}
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.warning("Supabase signup failed, using mock: %s", e)
+        existing = sb_get_user_by_email(request.email)
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        user = sb_create_user(request.email, request.password, request.name, "driver")
+        token = _build_token(user)
+        logger.info(f"Supabase signup: {request.email}")
+        return {"success": True, "data": {"user": _clean(user), "token": token}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Supabase signup failed, using mock: {e}")
 
-        # 2. Mock fallback
+    # 2. Mock fallback
+    try:
         if request.email in user_credentials:
             raise HTTPException(status_code=400, detail="Email already registered")
         import services.mock_data as mock_data
@@ -65,35 +60,40 @@ def signup(request: SignupRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Signup failed: %s", e)
+        logger.exception("Signup mock path failed: %s", e)
         raise HTTPException(status_code=500, detail="Signup failed. Please try again.")
 
 
 @router.post("/login")
 def login(request: LoginRequest):
+    sb_error: str | None = None
+
+    # 1. Try Supabase auth
     try:
-        # 1. Try Supabase auth (only when configured)
-        if _supabase_configured():
-            try:
-                sb_user = sb_login_user(request.email, request.password)
-                if sb_user:
-                    token = _build_token(sb_user)
-                    logger.info("Supabase login: %s", request.email)
-                    return {"success": True, "data": {"user": _clean(sb_user), "token": token}}
-            except Exception as e:
-                logger.warning("Supabase login error: %s", e)
-
-        # 2. Mock fallback
-        cred = user_credentials.get(request.email)
-        if not cred or cred["password"] != request.password:
-            raise HTTPException(status_code=401, detail="Invalid email or password")
-
-        uid = cred["user_id"]
-        user = users_db.get(uid, {})
-        token = create_access_token({"sub": uid, "email": request.email, "role": "user"})
-        return {"success": True, "data": {"user": _clean(user), "token": token}}
-    except HTTPException:
-        raise
+        sb_user, sb_error = sb_login_user(request.email, request.password)
+        if sb_user:
+            # Double-check the role by fetching profile again to avoid RLS issues
+            profile = sb_get_user_by_email(request.email)
+            if profile:
+                sb_user = profile
+                logger.info(f"Supabase login: {request.email}, role={profile.get('role')}")
+            token = _build_token(sb_user)
+            return {"success": True, "data": {"user": _clean(sb_user), "token": token}}
+        if sb_error:
+            logger.warning(f"Supabase login failed for {request.email}: {sb_error}")
     except Exception as e:
-        logger.exception("Login failed: %s", e)
-        raise HTTPException(status_code=500, detail="Login failed. Please try again.")
+        logger.warning(f"Supabase login error: {e}")
+        sb_error = str(e)
+
+    # 2. Mock fallback
+    cred = user_credentials.get(request.email)
+    if not cred or cred["password"] != request.password:
+        detail = "Invalid email or password"
+        if sb_error:
+            logger.info(f"Both Supabase and mock failed for {request.email}. Supabase reason: {sb_error}")
+        raise HTTPException(status_code=401, detail=detail)
+
+    uid = cred["user_id"]
+    user = users_db.get(uid, {})
+    token = create_access_token({"sub": uid, "email": request.email, "role": "user"})
+    return {"success": True, "data": {"user": _clean(user), "token": token}}

@@ -45,6 +45,53 @@ class PartnerApiService {
     }
   }
 
+  // Auth
+  async login(email: string, password: string): Promise<any> {
+    const result = await this.request('/api/partner/v2/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    })
+    if (result.success && result.token) {
+      this.setToken(result.token)
+      this.setPartnerId(result.partner_id)
+      localStorage.setItem('snaproad_partner_id', result.partner_id)
+    }
+    return result
+  }
+
+  async register(data: { first_name: string; last_name: string; business_name: string; business_address: string; email: string; password: string; referral_code?: string }): Promise<any> {
+    const result = await this.request('/api/partner/v2/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    if (result.success && result.token) {
+      this.setToken(result.token)
+      this.setPartnerId(result.partner_id)
+      localStorage.setItem('snaproad_partner_id', result.partner_id)
+    }
+    return result
+  }
+
+  logout() {
+    this.setToken(null)
+    this.partnerId = 'default_partner'
+    localStorage.removeItem('snaproad_partner_id')
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.getToken()
+  }
+
+  restoreSession(): boolean {
+    const token = this.getToken()
+    const pid = localStorage.getItem('snaproad_partner_id')
+    if (token && pid) {
+      this.partnerId = pid
+      return true
+    }
+    return false
+  }
+
   // Profile
   async getProfile(): Promise<any> {
     return this.request(`/api/partner/profile?partner_id=${this.partnerId}`)
@@ -81,20 +128,20 @@ class PartnerApiService {
     })
   }
 
-  async updateLocation(locationId: number, data: any): Promise<any> {
+  async updateLocation(locationId: string, data: any): Promise<any> {
     return this.request(`/api/partner/locations/${locationId}?partner_id=${this.partnerId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     })
   }
 
-  async deleteLocation(locationId: number): Promise<any> {
+  async deleteLocation(locationId: string): Promise<any> {
     return this.request(`/api/partner/locations/${locationId}?partner_id=${this.partnerId}`, {
       method: 'DELETE',
     })
   }
 
-  async setPrimaryLocation(locationId: number): Promise<any> {
+  async setPrimaryLocation(locationId: string): Promise<any> {
     return this.request(`/api/partner/locations/${locationId}/set-primary?partner_id=${this.partnerId}`, {
       method: 'POST',
     })
@@ -109,6 +156,19 @@ class PartnerApiService {
     return this.request(`/api/partner/offers?partner_id=${this.partnerId}`, {
       method: 'POST',
       body: JSON.stringify(data),
+    })
+  }
+
+  async updateOffer(offerId: string, data: any): Promise<any> {
+    return this.request(`/api/partner/offers/${offerId}?partner_id=${this.partnerId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteOffer(offerId: string): Promise<any> {
+    return this.request(`/api/partner/offers/${offerId}?partner_id=${this.partnerId}`, {
+      method: 'DELETE',
     })
   }
 
@@ -146,6 +206,31 @@ class PartnerApiService {
     })
   }
 
+  async getCreditHistory(): Promise<any> {
+    return this.request(`/api/partner/v2/credits/history/${this.partnerId}`)
+  }
+
+  async getFees(): Promise<any> {
+    return this.request(`/api/partner/v2/fees/${this.partnerId}`)
+  }
+
+  async getReferralLeaderboard(): Promise<any> {
+    return this.request('/api/partner/v2/referrals/leaderboard')
+  }
+
+  // Stripe payments
+  async subscribeToplan(plan: string): Promise<any> {
+    return this.request(`/api/partner/v2/subscribe?partner_id=${this.partnerId}&plan=${plan}`, { method: 'POST' })
+  }
+
+  async purchaseBoost(offerId: string, boostType: string): Promise<any> {
+    return this.request(`/api/partner/v2/boosts/purchase?partner_id=${this.partnerId}&offer_id=${offerId}&boost_type=${boostType}`, { method: 'POST' })
+  }
+
+  async purchaseCredits(amount: number): Promise<any> {
+    return this.request(`/api/partner/v2/credits/purchase?partner_id=${this.partnerId}&amount=${amount}`, { method: 'POST' })
+  }
+
   // Analytics (v2 partner-specific)
   async getAnalytics(): Promise<any> {
     try {
@@ -163,8 +248,8 @@ class PartnerApiService {
               ctr: d.conversion_rate || 0,
               conversion_rate: d.conversion_rate || 0,
             },
-            chart_data: d.chart_data || [],
-            geo_data: d.geo_data || [],
+            chart_data: [],
+            geo_data: [],
           },
         }
       }
@@ -182,6 +267,19 @@ class PartnerApiService {
   // Redemptions
   async getRedemptions(limit: number = 10): Promise<any> {
     return this.request(`/api/partner/v2/redemptions/${this.partnerId}?limit=${limit}`)
+  }
+
+  // Team Links
+  async generateTeamLink(label: string = 'Team Link'): Promise<any> {
+    return this.request(`/api/partner/v2/team-link/generate?partner_id=${this.partnerId}&label=${encodeURIComponent(label)}`, { method: 'POST' })
+  }
+
+  async getTeamLinks(): Promise<any> {
+    return this.request(`/api/partner/v2/team-links/${this.partnerId}`)
+  }
+
+  async revokeTeamLink(linkId: string): Promise<any> {
+    return this.request(`/api/partner/v2/team-link/${linkId}`, { method: 'DELETE' })
   }
 }
 
