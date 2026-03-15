@@ -88,12 +88,12 @@ export default function CollapsibleOffersPanel({
     return `${days}d left`
   }
 
-  // Completely minimized state - just show a small button
+  // Completely minimized state — pill in nav area (just above tab bar)
   if (isMinimized) {
     return (
       <button
         onClick={() => setIsMinimized(false)}
-        className="absolute bottom-20 left-3 right-3 bg-white/95 backdrop-blur border border-gray-200 rounded-full px-4 py-2 flex items-center justify-between shadow-[0_1px_4px_rgba(0,0,0,0.08)] z-20"
+        className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur border border-gray-200 rounded-full px-4 py-2.5 flex items-center justify-between shadow-[0_1px_4px_rgba(0,0,0,0.08)] z-20"
         data-testid="offers-minimized"
       >
         <div className="flex items-center gap-2">
@@ -107,7 +107,7 @@ export default function CollapsibleOffersPanel({
 
   return (
     <div 
-      className={`absolute bottom-20 left-3 right-3 bg-white/95 backdrop-blur border border-gray-200 rounded-2xl shadow-[0_1px_4px_rgba(0,0,0,0.08)] z-20 transition-all duration-300 ${
+      className={`absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur border border-gray-200 rounded-2xl shadow-[0_1px_4px_rgba(0,0,0,0.08)] z-20 transition-all duration-300 ${
         isExpanded ? 'max-h-[40vh]' : 'max-h-48'
       }`}
       data-testid="offers-panel"

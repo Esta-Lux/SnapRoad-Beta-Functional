@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Body
 from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
+from typing import Optional, List, Any
+from datetime import datetime, timedelta
 import random, math
 from models.schemas import NavigationRequest, Location, Route, Widget
 from services.mock_data import (
@@ -79,6 +79,171 @@ def toggle_notifications(route_id: int):
         return {"success": False, "message": "Route not found"}
     route["notifications"] = not route.get("notifications", True)
     return {"success": True, "data": route}
+
+
+# ==================== ROUTE NOTIFICATIONS (reminders, leave-early, faster route) ====================
+def _parse_time(hhmm: str) -> Optional[int]:
+    """Parse 'HH:MM' or 'H:MM' to minutes since midnight. Returns None if invalid."""
+    if not hhmm or ":" not in hhmm:
+        return None
+    parts = hhmm.strip().split(":")
+    if len(parts) != 2:
+        return None
+    try:
+        h, m = int(parts[0]), int(parts[1])
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return h * 60 + m
+    except ValueError:
+        pass
+    return None
+
+
+def _minutes_to_time(minutes: int) -> str:
+    """Convert minutes since midnight to 'HH:MM'."""
+    h = (minutes // 60) % 24
+    m = minutes % 60
+    return f"{h:02d}:{m:02d}"
+
+
+@router.get("/routes/notifications")
+def get_route_notifications(
+    lat: Optional[float] = Query(None, description="Current latitude for ETA/leave-by"),
+    lng: Optional[float] = Query(None, description="Current longitude for ETA/leave-by"),
+    window_minutes: int = Query(60, description="Notify when departure is within this many minutes"),
+):
+    """Return pending route notifications: reminders, leave-by, and optional faster-route suggestions."""
+    now = datetime.now()
+    today_weekday = now.strftime("%a")  # Mon, Tue, ...
+    current_minutes = now.hour * 60 + now.minute
+    notifications: List[Dict[str, Any]] = []
+
+    for route in saved_routes:
+        if not route.get("notifications") or not route.get("active", True):
+            continue
+        days = route.get("days_active") or []
+        if today_weekday not in days:
+            continue
+        dep = _parse_time(route.get("departure_time") or "08:00")
+        if dep is None:
+            continue
+        # Departure in the past today: skip (or could support “next occurrence”)
+        if dep < current_minutes:
+            continue
+        minutes_until_departure = dep - current_minutes
+        if minutes_until_departure > window_minutes:
+            continue
+
+        route_id = route.get("id")
+        route_name = route.get("name") or "Route"
+        destination = route.get("destination") or "destination"
+
+        # Route reminder
+        notifications.append({
+            "id": f"reminder-{route_id}-{now.timestamp()}",
+            "type": "route_reminder",
+            "route_id": route_id,
+            "route_name": route_name,
+            "destination": destination,
+            "departure_time": route.get("departure_time"),
+            "message": f"Leave soon for {route_name} — {destination}",
+        })
+
+        # Leave-by: if we have user position, compute ETA and leave_by time (mock dest for now)
+        if lat is not None and lng is not None:
+            # Mock destination: offset from origin so ETA is plausible (e.g. ~5–15 min)
+            dest_lat = lat + 0.03 + random.uniform(-0.01, 0.01)
+            dest_lng = lng + 0.02 + random.uniform(-0.01, 0.01)
+            dlat = abs(dest_lat - lat)
+            dlng = abs(dest_lng - lng)
+            distance_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+            distance_miles = distance_km * 0.621371
+            speed = 30
+            eta_minutes = max(5, min(45, round((distance_miles / speed) * 60)))
+            leave_by_minutes = dep - eta_minutes
+            if leave_by_minutes < current_minutes:
+                leave_by_minutes = current_minutes
+            leave_by_str = _minutes_to_time(leave_by_minutes)
+            notifications.append({
+                "id": f"leave_early-{route_id}-{now.timestamp()}",
+                "type": "leave_early",
+                "route_id": route_id,
+                "route_name": route_name,
+                "destination": destination,
+                "departure_time": route.get("departure_time"),
+                "leave_by": leave_by_str,
+                "eta_minutes": eta_minutes,
+                "message": f"Leave by {leave_by_str} to reach {destination} by {route.get('departure_time')}",
+            })
+
+    # Optional: one mock "faster route" suggestion
+    if saved_routes and random.random() < 0.3:
+        eligible = [x for x in saved_routes if x.get("notifications") and x.get("active", True)]
+        if eligible:
+            r = random.choice(eligible)
+            saved_min = random.randint(5, 15)
+            saved_d = round(random.uniform(1, 3), 2)
+            notifications.append({
+                "id": f"faster_route-{r.get('id')}-{now.timestamp()}",
+                "type": "faster_route",
+                "route_id": r.get("id"),
+                "route_name": r.get("name") or "Route",
+                "destination": r.get("destination") or "destination",
+                "saved_minutes": saved_min,
+                "saved_dollars": saved_d,
+                "message": f"A faster route could save ~{saved_min} min and ~${saved_d:.2f} on {r.get('name', 'this route')}",
+            })
+
+    return {"success": True, "data": notifications, "total": len(notifications)}
+
+
+class LeaveEarlyBody(BaseModel):
+    origin_lat: Optional[float] = None
+    origin_lng: Optional[float] = None
+    dest_lat: Optional[float] = None
+    dest_lng: Optional[float] = None
+    desired_arrival: Optional[str] = None  # "HH:MM"
+
+
+@router.post("/routes/{route_id}/notify-leave-early")
+def notify_leave_early(route_id: int, body: Optional[LeaveEarlyBody] = Body(None)):
+    """Compute leave-by time for a route so user can arrive by desired time. Returns leave_by and eta_minutes."""
+    route = next((r for r in saved_routes if r.get("id") == route_id), None)
+    if not route:
+        return {"success": False, "message": "Route not found"}
+    if body is None:
+        body = LeaveEarlyBody()
+    desired = body.desired_arrival or route.get("departure_time") or "08:00"
+    desired_min = _parse_time(desired)
+    if desired_min is None:
+        desired_min = 8 * 60
+
+    origin_lat = body.origin_lat if body.origin_lat is not None else 39.9612
+    origin_lng = body.origin_lng if body.origin_lng is not None else -82.9988
+    dest_lat = body.dest_lat if body.dest_lat is not None else origin_lat + 0.03
+    dest_lng = body.dest_lng if body.dest_lng is not None else origin_lng + 0.02
+
+    dlat = abs(dest_lat - origin_lat)
+    dlng = abs(dest_lng - origin_lng)
+    distance_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+    distance_miles = distance_km * 0.621371
+    eta_minutes = max(5, round((distance_miles / 30) * 60))
+    leave_by_minutes = desired_min - eta_minutes
+    now = datetime.now()
+    current_minutes = now.hour * 60 + now.minute
+    if leave_by_minutes < current_minutes:
+        leave_by_minutes = current_minutes
+    leave_by_str = _minutes_to_time(leave_by_minutes)
+
+    return {
+        "success": True,
+        "data": {
+            "route_id": route_id,
+            "leave_by": leave_by_str,
+            "eta_minutes": eta_minutes,
+            "desired_arrival": desired,
+            "destination": route.get("destination") or "destination",
+        },
+    }
 
 
 # ==================== NAVIGATION ====================
@@ -170,6 +335,7 @@ def update_widget_position(widget_id: str, body: dict):
 
 
 # ==================== MAP TRAFFIC ====================
+# When integrating an external cameras/traffic API, use config.CAMERAS_API_KEY for auth (header or query param).
 @router.get("/map/traffic")
 def get_map_traffic(lat: Optional[float] = None, lng: Optional[float] = None, radius: float = 15):
     """Return road reports formatted as map overlay data for traffic layer rendering."""

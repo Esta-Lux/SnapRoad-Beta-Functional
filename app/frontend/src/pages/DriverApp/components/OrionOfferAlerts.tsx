@@ -145,7 +145,26 @@ export default function OrionOfferAlerts({
   if (!showAlert || !currentAlert) return null
 
   return (
-    <div className="fixed bottom-24 left-4 right-4 z-40 animate-slide-up">
+    <div
+      className="animate-slide-up"
+      style={
+        isNavigating
+          ? {
+              position: 'fixed',
+              top: 'calc(env(safe-area-inset-top, 44px) + 100px)',
+              left: 16,
+              right: 16,
+              zIndex: 998,
+            }
+          : {
+              position: 'fixed',
+              bottom: 96,
+              left: 16,
+              right: 16,
+              zIndex: 40,
+            }
+      }
+    >
       <div className="bg-gradient-to-r from-slate-800 to-slate-900 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden">
         {/* Animated gradient border */}
         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-emerald-500/20 animate-pulse pointer-events-none" />

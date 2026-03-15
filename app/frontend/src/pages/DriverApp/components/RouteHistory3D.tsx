@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { 
   X, Map, Route, Calendar, Shield, TrendingUp, Filter,
   ChevronDown, ChevronUp, MapPin, Clock, Gem
@@ -207,6 +207,27 @@ export default function RouteHistory3D({ isOpen, onClose }: RouteHistory3DProps)
 
   const selectedRouteData = routes.find(r => r.id === selectedRoute)
 
+  // 2D map bounds and scale for the route map view (viewBox 0 0 300 300)
+  const routeMapView = useMemo(() => {
+    const coords = routes.flatMap(r => r.coordinates)
+    if (coords.length < 2) return null
+    const lats = coords.map(c => c.lat)
+    const lngs = coords.map(c => c.lng)
+    const minLat = Math.min(...lats)
+    const maxLat = Math.max(...lats)
+    const minLng = Math.min(...lngs)
+    const maxLng = Math.max(...lngs)
+    const pad = 0.003
+    const spanLng = Math.max(0.01, maxLng - minLng + pad * 2)
+    const spanLat = Math.max(0.01, maxLat - minLat + pad * 2)
+    const centerLat = (minLat + maxLat) / 2
+    const centerLng = (minLng + maxLng) / 2
+    const scale = 260 / Math.max(spanLng, spanLat)
+    const toX = (lng: number) => 150 + (lng - centerLng) * scale
+    const toY = (lat: number) => 150 - (lat - centerLat) * scale
+    return { toX, toY }
+  }, [routes])
+
   const getScoreColor = (score: number) => {
     if (score >= 90) return 'text-emerald-400'
     if (score >= 75) return 'text-blue-400'
@@ -216,7 +237,7 @@ export default function RouteHistory3D({ isOpen, onClose }: RouteHistory3DProps)
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-2" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/80 z-[1100] flex items-center justify-center p-2" onClick={onClose}>
       <div className="w-full max-w-md h-[90vh] bg-slate-900 rounded-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-4 flex-shrink-0">
@@ -248,6 +269,40 @@ export default function RouteHistory3D({ isOpen, onClose }: RouteHistory3DProps)
             </div>
           )}
         </div>
+
+        {/* 2D route map: geographic view of selected route or all routes */}
+        {routeMapView && (
+          <div className="px-4 pt-2 pb-1">
+            <p className="text-slate-400 text-xs mb-1 font-medium">Map</p>
+            <div className="w-full h-44 rounded-xl overflow-hidden bg-slate-800/80 border border-slate-700 relative">
+              <svg className="absolute inset-0 w-full h-full" viewBox="0 0 300 300" preserveAspectRatio="xMidYMid meet">
+                <defs>
+                  <pattern id="routeHistoryGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(100,116,139,0.15)" strokeWidth="0.5" />
+                  </pattern>
+                </defs>
+                <rect width="300" height="300" fill="url(#routeHistoryGrid)" />
+                {routes.filter(r => r.coordinates.length >= 2).map((route) => {
+                  const points = route.coordinates.map(c => `${routeMapView.toX(c.lng)},${routeMapView.toY(c.lat)}`).join(' ')
+                  const isSelected = selectedRoute === route.id
+                  const color = route.avg_safety_score >= 90 ? '#22c55e' : route.avg_safety_score >= 75 ? '#3b82f6' : '#f59e0b'
+                  return (
+                    <polyline
+                      key={route.id}
+                      points={points}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={isSelected ? 4 : 2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity={isSelected ? 1 : 0.5}
+                    />
+                  )
+                })}
+              </svg>
+            </div>
+          </div>
+        )}
 
         {/* 3D Map View */}
         <div className="p-4 pb-2">

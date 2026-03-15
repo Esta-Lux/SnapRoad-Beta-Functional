@@ -33,7 +33,7 @@ const darkTheme = {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('dark')
+  const [theme, setThemeState] = useState<Theme>('light')
 
   const applyTheme = (selectedTheme: Theme) => {
     const vars = selectedTheme === 'dark' ? darkTheme : lightTheme
@@ -44,7 +44,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const saved = localStorage.getItem('snaproad-theme') as Theme | null
-    const initialTheme = saved || 'dark'
+    const initialTheme = saved || 'light'
     setThemeState(initialTheme)
     applyTheme(initialTheme)
   }, [])

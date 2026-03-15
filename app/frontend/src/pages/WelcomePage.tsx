@@ -3,8 +3,20 @@ import { useNavigate, Link } from 'react-router-dom'
 import { 
   Shield, Gem, Trophy, Zap, ArrowRight, X, Eye, EyeOff, Star
 } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
+import { api } from '@/services/api'
+import { useAuth } from '@/contexts/AuthContext'
 import snaproadLogo from '../assets/images/f1ce41940925932061ca7e2e293db7cdf37e4b87.png'
+
+const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+
+// Reset user state for fresh experience
+const resetUserSession = async () => {
+  try {
+    await fetch(`${API_URL}/api/auth/login?role=driver`, { method: 'POST' })
+  } catch (e) {
+    console.log('Session reset skipped')
+  }
+}
 
 // Auth Modal - Driver Only (Partners/Admin use direct portal links)
 function AuthModal({ isOpen, onClose, mode, onModeChange }: {

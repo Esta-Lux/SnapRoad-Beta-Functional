@@ -174,36 +174,41 @@ export function NavigationCoreProvider({
       return
     }
 
+    const onPos = (pos: GeolocationPosition) => {
+      updateVehicle({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        speed: pos.coords.speed != null ? pos.coords.speed : null,
+        heading: pos.coords.heading != null && !isNaN(pos.coords.heading) ? pos.coords.heading : null,
+        accuracy: pos.coords.accuracy ?? null,
+        timestamp: pos.timestamp ?? Date.now(),
+      })
+    }
+
+    const onError = (err: GeolocationPositionError) => {
+      setState((prev) => ({
+        ...prev,
+        error: err.message,
+        vehicle: prev.vehicle ?? {
+          coordinate: fallbackCenter,
+          velocity: 0,
+          acceleration: 0,
+          heading: 0,
+          turnRate: 0,
+          confidence: 0,
+          timestamp: Date.now(),
+        },
+        camera: prev.camera ?? defaultCamera(fallbackCenter),
+      }))
+    }
+
     const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        updateVehicle({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          speed: pos.coords.speed != null ? pos.coords.speed : null,
-          heading: pos.coords.heading != null && !isNaN(pos.coords.heading) ? pos.coords.heading : null,
-          accuracy: pos.coords.accuracy ?? null,
-          timestamp: pos.timestamp ?? Date.now(),
-        })
-      },
-      (err) => {
-        setState((prev) => ({
-          ...prev,
-          error: err.message,
-          vehicle: prev.vehicle ?? {
-            coordinate: fallbackCenter,
-            velocity: 0,
-            acceleration: 0,
-            heading: 0,
-            turnRate: 0,
-            confidence: 0,
-            timestamp: Date.now(),
-          },
-          camera: prev.camera ?? defaultCamera(fallbackCenter),
-        }))
-      },
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+      onPos,
+      onError,
+      { enableHighAccuracy: false, maximumAge: 30000, timeout: 10000 }
     )
     watchIdRef.current = watchId
+
     return () => {
       if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current)
     }

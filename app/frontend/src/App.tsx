@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/authStore'
 import { AuthProvider } from './contexts/AuthContext'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import Layout from './components/Layout'
 import AuthFlow from './pages/Auth/AuthFlow'
 import AuthPage from './pages/AuthPage'
@@ -27,6 +28,7 @@ import DriverApp from './pages/DriverApp'
 import PhonePreview from './pages/PhonePreview'
 import { NavigationCoreProvider } from './contexts/NavigationCoreContext'
 import { MapKitProvider } from './contexts/MapKitContext'
+import { ThemeProvider } from './contexts/ThemeContext'
 import TeamScanPage from './pages/TeamScanPage'
 
 // New Figma UI Components
@@ -45,8 +47,9 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <Routes>
+    <ErrorBoundary>
+      <AuthProvider>
+        <Routes>
         {/* Welcome/Landing Page */}
         <Route path="/" element={<WelcomePage />} />
         
@@ -61,11 +64,13 @@ function App() {
         {/* Driver App - Web Preview (Phase 1: VehicleState + MapKit-ready map) */}
         <Route path="/driver" element={
           <DriverGuard>
-            <MapKitProvider>
-              <NavigationCoreProvider fallbackCenter={{ lat: 39.9612, lng: -82.9988 }} enableGps={true}>
-                <DriverApp />
-              </NavigationCoreProvider>
-            </MapKitProvider>
+            <ThemeProvider>
+              <MapKitProvider>
+                <NavigationCoreProvider fallbackCenter={{ lat: 39.9612, lng: -82.9988 }} enableGps={true}>
+                  <DriverApp />
+                </NavigationCoreProvider>
+              </MapKitProvider>
+            </ThemeProvider>
           </DriverGuard>
         } />
         <Route path="/driver/auth" element={<AuthFlow />} />
@@ -111,8 +116,9 @@ function App() {
         
         {/* Catch all - redirect to welcome */}
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AuthProvider>
+        </Routes>
+      </AuthProvider>
+    </ErrorBoundary>
   )
 }
 

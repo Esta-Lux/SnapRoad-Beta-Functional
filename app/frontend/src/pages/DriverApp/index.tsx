@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import toast from 'react-hot-toast'
@@ -6,12 +6,12 @@ import {
   MapPin, Gift, Trophy, Users, Search, Home, Briefcase, Bell, Menu, Mic,
   Navigation, ChevronRight, ChevronDown, ChevronUp, Settings, Camera,
   Gem, Award, X, Plus, Check, Star, Clock, Car, Fuel,
-  Coffee, AlertTriangle, Volume2, Route, LogOut, Play, Pause,
+  Coffee, AlertTriangle, Volume2, VolumeX, Route, LogOut, Play, Pause, Map,
   Trash2, Timer, RefreshCw, EyeOff, School, ShoppingCart, Dumbbell, 
   Building, Compass, Layers, GripVertical, Minimize2, Maximize2,
   Phone, MessageCircle, Battery, ChevronLeft, Shield, Zap,
   History, BarChart3, HelpCircle, Lock, Edit2, Share2, Swords,
-  DollarSign, Droplets, Leaf, Target, Map
+  DollarSign, Droplets, Leaf, Target, Sun, Moon
 } from 'lucide-react'
 import FriendsHub from './components/FriendsHub'
 import Leaderboard from './components/Leaderboard'
@@ -39,7 +39,7 @@ import WeeklyRecap from './components/WeeklyRecap'
 import OrionOfferAlerts from './components/OrionOfferAlerts'
 import MapKitMap from './components/MapKitMap'
 import { useMapKit } from '@/contexts/MapKitContext'
-import { getMapKitDirections, type DirectionsResult } from '@/lib/mapkit'
+import { getMapKitDirections, mapkitSearchAutocomplete, mapkitSearch, type DirectionsResult } from '@/lib/mapkit'
 import { ProfileCar, CAR_COLORS } from './components/Car3D'
 // New enhanced components
 import TripAnalytics from './components/TripAnalytics'
@@ -47,12 +47,11 @@ import RouteHistory3D from './components/RouteHistory3D'
 import CollapsibleOffersPanel from './components/CollapsibleOffersPanel'
 import InAppBrowser from './components/InAppBrowser'
 import GemOverlay from './components/GemOverlay'
-import MapSearchBar from './components/MapSearchBar'
 import RoutePreview from './components/RoutePreview'
-import RouteInfoBar from './components/RouteInfoBar'
 import SpeedIndicator from './components/SpeedIndicator'
 import { api } from '@/services/api'
 import { useNavigationCore } from '@/contexts/NavigationCoreContext'
+import { useTheme } from '@/contexts/ThemeContext'
 
 // Shared api returns { success, data: backendBody }. Backend often returns { data: payload }. Unwrap for payload.
 function payload<T>(res: { success?: boolean; data?: { data?: T } & Record<string, unknown> }): T | undefined {
@@ -134,18 +133,20 @@ interface NavigationDestination {
 interface NavigationState {
   origin?: NavigationDestination
   destination?: NavigationDestination
-  steps?: { instruction: string; distance: string; duration?: string; maneuver?: string; lat?: number; lng?: number }[]
+  steps?: { instruction: string; distance: string; distanceMeters?: number; duration?: string; maneuver?: string; lat?: number; lng?: number }[]
   /** Full road path from MapKit Directions; when set, route follows roads instead of straight line. */
   polyline?: { lat: number; lng: number }[]
   [key: string]: unknown
 }
 
 interface SearchResult {
+  id?: number | string
   name: string
   lat: number
   lng: number
   address?: string
   type?: string
+  distance_km?: number
 }
 
 // Category icons
@@ -161,12 +162,20 @@ const categoryIcons: Record<string, { icon: typeof Home; color: string }> = {
 export default function DriverApp() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const { vehicle, camera, predicted, isLive, recenter, setRoutePolyline, setMode, mode, experience, getDrivingMetrics } = useNavigationCore()
   const { ready: mapKitReady, error: mapKitError, reportError: reportMapKitError } = useMapKit()
+  const isLight = theme === 'light'
   const [mapKitFailed, setMapKitFailed] = useState(false)
   const [fallbackBannerDismissed, setFallbackBannerDismissed] = useState(false)
   const useAppleMap = mapKitReady && !mapKitError && !mapKitFailed
   const tripStartTimeRef = useRef<number | null>(null)
+  const isNavigatingRef = useRef(false)
+  const carHeadingRef = useRef(0)
+  const prevLocationRef = useRef<{ lat: number; lng: number } | null>(null)
+  const hasZoomedToUser = useRef(false)
+  const zoomToUserRef = useRef<((lat: number, lng: number, isNav: boolean) => void) | null>(null)
+  const traveledDistanceRef = useRef(0)
   
   // Main state - 4 tabs now
   const [activeTab, setActiveTab] = useState<TabType>('map')
@@ -220,6 +229,9 @@ export default function DriverApp() {
   const [showTripAnalytics, setShowTripAnalytics] = useState(false)
   const [showRouteHistory3D, setShowRouteHistory3D] = useState(false)
   const [showOffersPanel, setShowOffersPanel] = useState(true)
+  const [routeNotifications, setRouteNotifications] = useState<Array<{ id: string; type: string; route_id?: number; route_name?: string; destination?: string; message: string; leave_by?: string; eta_minutes?: number; saved_minutes?: number; saved_dollars?: number }>>([])
+  const [dismissedRouteNotifIds, setDismissedRouteNotifIds] = useState<Set<string>>(new Set())
+  const [leaveEarlyForRoute, setLeaveEarlyForRoute] = useState<{ routeId: number; leaveBy: string; etaMinutes: number; destination: string } | null>(null)
   
   // In-app browser state
   const [browserUrl, setBrowserUrl] = useState('')
@@ -234,9 +246,11 @@ export default function DriverApp() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [selectedDestination, setSelectedDestination] = useState<NavigationDestination | null>(null)
+  const [selectedPlace, setSelectedPlace] = useState<{ name: string; lat: number; lng: number } | null>(null)
   const [navigationData, setNavigationData] = useState<NavigationState | null>(null)
   const [liveEta, setLiveEta] = useState<{ distanceMiles: number; etaMinutes: number } | null>(null)
   const [showTurnByTurn, setShowTurnByTurn] = useState(false)
+  const [isOverviewMode, setIsOverviewMode] = useState(false)
   const [showRoutePreview, setShowRoutePreview] = useState(false)
   const [showEndConfirm, setShowEndConfirm] = useState(false)
   const [showTripSummary, setShowTripSummary] = useState(false)
@@ -292,6 +306,10 @@ export default function DriverApp() {
   
   // Navigation & settings states
   const [isNavigating, setIsNavigating] = useState(false)
+  const [traveledDistanceMeters, setTraveledDistanceMeters] = useState(0)
+  const [needsCompassPermission, setNeedsCompassPermission] = useState(
+    typeof (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission === 'function'
+  )
   const [isMuted, setIsMuted] = useState(false)
   const [currentSpeed, setCurrentSpeed] = useState(0)
   const [offerFilter, setOfferFilter] = useState<'all' | 'gas' | 'cafe'>('all')
@@ -342,22 +360,91 @@ export default function DriverApp() {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     )
 
+    const onWatch = (pos: GeolocationPosition) => {
+      const lat = pos.coords.latitude
+      const lng = pos.coords.longitude
+      const heading = pos.coords.heading
+      const speed = pos.coords.speed
+
+      const newLoc = { lat, lng }
+      setUserLocation(newLoc)
+
+      // Traveled distance tracking
+      const prev = prevLocationRef.current
+      if (prev && isNavigatingRef.current) {
+        const R = 6371000
+        const dLat = ((lat - prev.lat) * Math.PI) / 180
+        const dLng = ((lng - prev.lng) * Math.PI) / 180
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos((prev.lat * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+        const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        if (dist > 0 && dist < 100) {
+          traveledDistanceRef.current += dist
+          setTraveledDistanceMeters(traveledDistanceRef.current)
+        }
+      }
+      prevLocationRef.current = newLoc
+
+      // Heading calculation
+      if (typeof heading === 'number' && heading >= 0 && (speed ?? 0) > 0.5) {
+        setCarHeading(heading)
+        carHeadingRef.current = heading
+      } else if (prev) {
+        const dLng = ((lng - prev.lng) * Math.PI) / 180
+        const lat1 = (prev.lat * Math.PI) / 180
+        const lat2 = (lat * Math.PI) / 180
+        const y = Math.sin(dLng) * Math.cos(lat2)
+        const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
+        const h = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
+        setCarHeading(h)
+        carHeadingRef.current = h
+      }
+
+      // Speed
+      const speedMph = typeof speed === 'number' && speed >= 0 ? Math.round(speed * 2.237) : 0
+      setCurrentSpeed(speedMph)
+
+      // First zoom
+      if (!hasZoomedToUser.current && zoomToUserRef.current) {
+        hasZoomedToUser.current = true
+        zoomToUserRef.current(lat, lng, false)
+      }
+
+      // Follow during navigation
+      if (isNavigatingRef.current && zoomToUserRef.current) {
+        zoomToUserRef.current(lat, lng, true)
+      }
+    }
+
     const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        if (typeof pos.coords.heading === 'number' && pos.coords.heading >= 0 && (pos.coords.speed ?? 0) > 0.5) {
-          setCarHeading(pos.coords.heading)
-        }
-        if (typeof pos.coords.speed === 'number' && pos.coords.speed >= 0) {
-          setCurrentSpeed(Math.round(pos.coords.speed * 2.237))
-        }
-      },
+      onWatch,
       (err) => console.warn('Watch position failed:', err.message),
       { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
     )
 
     return () => navigator.geolocation.clearWatch(watchId)
   }, [])
+
+  // Device orientation (compass): auto-add when requestPermission not required; on iOS 13+ add only after user grants via banner
+  useEffect(() => {
+    const reqPerm = (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission
+    if (typeof reqPerm === 'function' && needsCompassPermission) return
+
+    let lastCompassUpdate = 0
+    const handler = (e: DeviceOrientationEvent) => {
+      const now = Date.now()
+      if (now - lastCompassUpdate < 500) return
+      lastCompassUpdate = now
+      const h = (e as unknown as { webkitCompassHeading?: number }).webkitCompassHeading
+      if (typeof h === 'number' && !Number.isNaN(h)) {
+        setCarHeading(h)
+        carHeadingRef.current = h
+      }
+    }
+    window.addEventListener('deviceorientation', handler)
+    return () => window.removeEventListener('deviceorientation', handler)
+  }, [needsCompassPermission])
 
   // Poll backend ETA endpoint during navigation
   useEffect(() => {
@@ -378,9 +465,26 @@ export default function DriverApp() {
       } catch { /* silent */ }
     }
     poll()
-    const id = setInterval(poll, 15000)
+    const id = setInterval(poll, 60000)
     return () => { cancelled = true; clearInterval(id) }
   }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng])
+
+  // Poll route notifications (reminders, leave-by, faster route) when user has routes with notifications on
+  const hasRouteNotificationsOn = routes.some((r: SavedRoute) => r.notifications && (r as { is_active?: boolean; active?: boolean }).is_active !== false && (r as { active?: boolean }).active !== false)
+  useEffect(() => {
+    if (!hasRouteNotificationsOn || isNavigating) return
+    const fetchNotifications = async () => {
+      try {
+        const res = await api.get<{ success?: boolean; data?: typeof routeNotifications }>(
+          `/api/routes/notifications?lat=${userLocation.lat}&lng=${userLocation.lng}&window_minutes=60`
+        )
+        if (res.success && Array.isArray((res.data as any)?.data)) setRouteNotifications((res.data as any).data)
+      } catch { /* silent */ }
+    }
+    fetchNotifications()
+    const id = setInterval(fetchNotifications, 60000)
+    return () => clearInterval(id)
+  }, [hasRouteNotificationsOn, isNavigating, userLocation.lat, userLocation.lng])
 
   // When navigating but not live GPS: don't fake speed — show 0 until real movement
   useEffect(() => {
@@ -388,7 +492,7 @@ export default function DriverApp() {
       const interval = setInterval(() => {
         setCurrentSpeed(0) // Don't fake speed — show 0 until real GPS movement
         setCarHeading((prev) => prev) // Don't randomly rotate heading either
-      }, 3000)
+      }, 5000)
       return () => clearInterval(interval)
     } else if (!isLive) {
       setCurrentSpeed(0)
@@ -422,7 +526,7 @@ export default function DriverApp() {
       const onboarding = payload(onboardingRes) ?? onboardingRes.data
 
       if (locRes.success && loc != null) setLocations(Array.isArray(loc) ? loc : [])
-      if (routeRes.success && route != null) setRoutes(Array.isArray(route) ? route : [])
+      if (routeRes.success && route != null) setRoutes((Array.isArray(route) ? route : []).map((r: SavedRoute & { active?: boolean }) => ({ ...r, is_active: r.is_active ?? r.active ?? true })))
       if (offerRes.success && offer != null) setOffers(Array.isArray(offer) ? offer : [])
       if (badgeRes.success && badge != null) setBadges(Array.isArray(badge) ? badge : (badge as { badges?: unknown[] })?.badges ?? [])
       if (skinRes.success && skin != null) setSkins(Array.isArray(skin) ? skin : [])
@@ -445,8 +549,8 @@ export default function DriverApp() {
       if (onboardingRes.success && onboarding != null && typeof onboarding === 'object') {
         const o = onboarding as { onboarding_complete?: boolean; plan_selected?: boolean; car_selected?: boolean }
         if (!o.onboarding_complete) {
-          if (!o.plan_selected) setShowPlanSelection(true)
-          else if (!o.car_selected) setShowCarOnboarding(true)
+          // Do not auto-show plan selection on map — user can choose plan in Profile > Upgrade
+          if (o.plan_selected && !o.car_selected) setShowCarOnboarding(true)
         }
       }
     } catch (e) {
@@ -784,7 +888,10 @@ export default function DriverApp() {
     const tripId = `trip_${Date.now()}`
     setActiveTripId(tripId)
     tripStartTimeRef.current = Date.now()
+    traveledDistanceRef.current = 0
+    setTraveledDistanceMeters(0)
     setIsNavigating(true)
+    isNavigatingRef.current = true
     setShowMenu(false)
     setShowSearch(false)
     if (mode === 'adaptive') {
@@ -803,6 +910,21 @@ export default function DriverApp() {
       }
     } catch (_e) {
       toast.error('Could not start navigation')
+    }
+  }
+
+  const handleLeaveEarlyForRoute = async (routeId: number) => {
+    try {
+      const res = await api.post<{ success?: boolean; data?: { leave_by: string; eta_minutes: number; destination: string } }>(
+        `/api/routes/${routeId}/notify-leave-early`,
+        { origin_lat: userLocation.lat, origin_lng: userLocation.lng }
+      )
+      if (res.success && (res.data as any)?.data) {
+        const d = (res.data as any).data
+        setLeaveEarlyForRoute({ routeId, leaveBy: d.leave_by, etaMinutes: d.eta_minutes, destination: d.destination })
+      }
+    } catch {
+      toast.error('Could not get leave-by time')
     }
   }
 
@@ -849,6 +971,7 @@ export default function DriverApp() {
       is_safe_drive: safetyScore >= 80,
     })
     setIsNavigating(false)
+    isNavigatingRef.current = false
     setShowTurnByTurn(false)
     setNavigationData(null)
     setSelectedDestination(null)
@@ -862,14 +985,59 @@ export default function DriverApp() {
     toast.success('Trip completed!')
   }
 
-  // Search location with API
+  // Search location: MapKit (real places worldwide) first, then backend fallback
   const handleSearchLocations = async (query: string) => {
     if (query.length < 1) {
       setSearchResults([])
       return
     }
     setIsSearching(true)
+    setSearchResults([])
+    const region = { center: { lat: userLocation.lat, lng: userLocation.lng }, span: { latDelta: 0.5, lngDelta: 0.5 } }
     try {
+      const mk = (window as unknown as { mapkit?: { Search?: unknown } }).mapkit
+      if (mk?.Search) {
+        try {
+          const ac = await mapkitSearchAutocomplete(query, region)
+          if (ac?.length > 0) {
+            const list: SearchResult[] = ac.map((r, i) => ({
+              id: `mk-${i}-${r.name}`,
+              name: r.name,
+              lat: r.lat,
+              lng: r.lng,
+              address: r.address,
+              ...(userLocation && (r.lat !== 0 || r.lng !== 0) && {
+                distance_km: Math.round(
+                  (111 * Math.sqrt(Math.pow((r.lat - userLocation.lat), 2) + Math.pow((r.lng - userLocation.lng), 2))) * 100
+                ) / 100,
+              }),
+            }))
+            setSearchResults(list)
+            setIsSearching(false)
+            return
+          }
+        } catch { /* autocomplete failed, try full search */ }
+        try {
+          const full = await mapkitSearch(query, region)
+          if (full?.length > 0) {
+            const list: SearchResult[] = full.map((r, i) => ({
+              id: `mk-full-${i}-${r.name}`,
+              name: r.name,
+              lat: r.lat,
+              lng: r.lng,
+              address: r.address,
+              ...(userLocation && (r.lat !== 0 || r.lng !== 0) && {
+                distance_km: Math.round(
+                  (111 * Math.sqrt(Math.pow((r.lat - userLocation.lat), 2) + Math.pow((r.lng - userLocation.lng), 2))) * 100
+                ) / 100,
+              }),
+            }))
+            setSearchResults(list)
+            setIsSearching(false)
+            return
+          }
+        } catch { /* fall through to backend */ }
+      }
       const params = new URLSearchParams({
         q: query,
         lat: userLocation.lat.toString(),
@@ -934,6 +1102,7 @@ export default function DriverApp() {
         steps: first.steps.map(s => ({
           instruction: s.instructions,
           distance: s.distance > 1609 ? `${(s.distance / 1609.34).toFixed(1)} mi` : `${Math.round(s.distance)} ft`,
+          distanceMeters: s.distance,
           maneuver: s.maneuver,
         })),
         polyline: first.polyline,
@@ -946,6 +1115,8 @@ export default function DriverApp() {
       setRoutePolyline(first.polyline)
       setShowRoutePreview(true)
       setCurrentStepIndex(0)
+      // Allow map to re-zoom to show full route
+      if (zoomToUserRef.current) hasZoomedToUser.current = false
     } catch (e) {
       console.error('Directions error:', e)
       toast.error('Could not get route')
@@ -964,7 +1135,10 @@ export default function DriverApp() {
   }
 
   const handleGoFromRoutePreview = () => {
+    traveledDistanceRef.current = 0
+    setTraveledDistanceMeters(0)
     setIsNavigating(true)
+    isNavigatingRef.current = true
     setShowTurnByTurn(true)
     setShowRoutePreview(false)
     toast.success(`Navigating to ${navigationData?.destination?.name ?? 'destination'}`)
@@ -1223,7 +1397,7 @@ export default function DriverApp() {
 
   // Hamburger Menu
   const renderMenu = () => (
-    <div className="fixed inset-0 bg-black/80 z-50 flex" onClick={() => setShowMenu(false)}>
+    <div className="fixed inset-0 bg-black/80 z-[1100] flex" onClick={() => setShowMenu(false)}>
       <div className="w-72 bg-slate-900 h-full animate-slide-right" onClick={e => e.stopPropagation()}>
         <div className="p-4 bg-gradient-to-r from-blue-600 to-blue-500">
           <div className="flex items-center gap-3">
@@ -1388,14 +1562,81 @@ export default function DriverApp() {
 
   // Content insets when turn-by-turn is active so the route stays visible below/above panels
   const mapContentInsets = useMemo(() => {
-    if (!showTurnByTurn || !isNavigating) return undefined
-    return { top: 200, bottom: 88, left: 16, right: 16 }
-  }, [showTurnByTurn, isNavigating])
+    if (isNavigating) return { top: 120, bottom: 88, left: 0, right: 0 }
+    return { top: 180, bottom: 70, left: 0, right: 0 }
+  }, [isNavigating])
 
   // Effective map center/zoom/bearing during navigation: follow user at street level
   const navCenter = vehicle?.coordinate ?? userLocation
   const navZoom = 17
   const navBearing = vehicle?.heading ?? carHeading ?? 0
+
+  // Navigation UI helpers — Apple/Google Maps style turn icon (no emoji)
+  const getTurnManeuver = (instruction?: string): 'left' | 'right' | 'straight' | 'arrive' | 'uturn' | 'merge' => {
+    if (!instruction) return 'straight'
+    const i = instruction.toLowerCase()
+    if (i.includes('right')) return 'right'
+    if (i.includes('left')) return 'left'
+    if (i.includes('u-turn') || i.includes('uturn')) return 'uturn'
+    if (i.includes('merge')) return 'merge'
+    if (i.includes('arrive') || i.includes('destination')) return 'arrive'
+    return 'straight'
+  }
+  const renderTurnIcon = (instruction?: string) => {
+    const m = getTurnManeuver(instruction)
+    const white = '#FFFFFF'
+    const size = 28
+    if (m === 'left') {
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={white} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V6l-6 6 6 6z"/><path d="M9 12h10"/></svg>
+      )
+    }
+    if (m === 'right') {
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={white} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18V6l6 6-6 6z"/><path d="M5 12h10"/></svg>
+      )
+    }
+    if (m === 'arrive') {
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={white} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2 2"/></svg>
+      )
+    }
+    if (m === 'uturn') {
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={white} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 18V9a5 5 0 0 1 10 0v9"/><path d="M12 14v4"/></svg>
+      )
+    }
+    if (m === 'merge') {
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={white} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6v12M16 6v12M12 4v16M4 12h6M14 12h6"/></svg>
+      )
+    }
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={white} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M8 12l4 4 4-4"/></svg>
+    )
+  }
+  const formatDistance = (miles: number) => {
+    if (miles < 0.01) return `${Math.round(miles * 5280)} ft`
+    return `${miles.toFixed(1)} mi`
+  }
+  const arrivalTime = useMemo(() => {
+    if (typeof liveEta?.etaMinutes !== 'number') return '--'
+    const now = new Date()
+    now.setMinutes(now.getMinutes() + Math.round(liveEta.etaMinutes))
+    return now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  }, [liveEta?.etaMinutes])
+  const distanceToNextStep = useMemo(() => {
+    const d = liveEta?.distanceMiles
+    if (typeof d === 'number') return d
+    const v = vehicle?.coordinate ?? userLocation
+    const dest = navigationData?.destination
+    if (!dest) return 0
+    const R = 3958.8
+    const dLat = (dest.lat - v.lat) * Math.PI / 180
+    const dLon = (dest.lng - v.lng) * Math.PI / 180
+    const a = Math.sin(dLat/2)**2 + Math.cos(v.lat*Math.PI/180)*Math.cos(dest.lat*Math.PI/180)*Math.sin(dLon/2)**2
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  }, [liveEta?.distanceMiles, vehicle?.coordinate, userLocation, navigationData?.destination])
 
   // Fraction through current step (0–1) for progress bar, from traveled distance
   const currentStepProgress = useMemo(() => {
@@ -1422,6 +1663,97 @@ export default function DriverApp() {
       onTouchMove={draggingWidget ? handleWidgetDrag : undefined}
       onTouchEnd={handleWidgetDragEnd}>
       
+      {/* Compass permission banner (iOS 13+): tap to enable heading beam */}
+      {useAppleMap && needsCompassPermission && !isNavigating && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={async () => {
+            try {
+              const reqPerm = (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission
+              if (typeof reqPerm !== 'function') return
+              const perm = await reqPerm.call(DeviceOrientationEvent)
+              if (perm === 'granted') {
+                window.addEventListener('deviceorientation', (e: DeviceOrientationEvent) => {
+                  const c = (e as unknown as { webkitCompassHeading?: number }).webkitCompassHeading
+                  if (typeof c === 'number' && c >= 0) {
+                    setCarHeading(c)
+                    carHeadingRef.current = c
+                  }
+                }, true)
+                setNeedsCompassPermission(false)
+              }
+            } catch { /* user denied or error */ }
+          }}
+          onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLDivElement).click()}
+          style={{
+            position: 'fixed',
+            top: 'calc(env(safe-area-inset-top, 44px) + 160px)',
+            left: 16,
+            right: 16,
+            zIndex: 40,
+            background: '#007AFF',
+            borderRadius: 14,
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            cursor: 'pointer',
+            boxShadow: '0 4px 16px rgba(0,122,255,0.3)',
+          }}
+        >
+          <span style={{ fontSize: 20 }}>🧭</span>
+          <div>
+            <div style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>
+              Enable Compass Heading
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>
+              Tap to show direction beam like Apple Maps
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Route notifications panel: reminders, leave-by, faster route */}
+      {useAppleMap && !isNavigating && routeNotifications.length > 0 && (
+        <div className="absolute top-4 left-4 right-4 z-[40] space-y-2" style={{ top: 'calc(env(safe-area-inset-top, 44px) + 8px)' }}>
+          {routeNotifications.filter((n) => !dismissedRouteNotifIds.has(n.id)).slice(0, 3).map((n) => (
+            <div key={n.id} className="bg-white/95 dark:bg-slate-800/95 backdrop-blur rounded-xl p-3 shadow-lg border border-slate-200/50 flex items-start justify-between gap-2">
+              <p className="text-sm text-slate-800 dark:text-slate-200 flex-1">{n.message}</p>
+              <div className="flex items-center gap-1 shrink-0">
+                {(n.type === 'route_reminder' || n.type === 'leave_early') && n.destination && (
+                  <button onClick={() => { handleStartNavigation(n.destination); setDismissedRouteNotifIds((s) => new Set([...s, n.id])) }} className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-lg">
+                    Start
+                  </button>
+                )}
+                {n.type === 'faster_route' && n.route_id && (
+                  <button onClick={() => { handleStartNavigation(n.destination ?? ''); setDismissedRouteNotifIds((s) => new Set([...s, n.id])) }} className="px-2 py-1 bg-emerald-500 text-white text-xs font-medium rounded-lg">
+                    View
+                  </button>
+                )}
+                <button onClick={() => setDismissedRouteNotifIds((s) => new Set([...s, n.id]))} className="p-1 text-slate-400 hover:text-slate-600" aria-label="Dismiss"> <X size={14} /> </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Leave-early bar: show when user tapped "Leave early" on a route */}
+      {leaveEarlyForRoute && !isNavigating && (
+        <div className="absolute left-4 right-4 z-[40] bg-blue-600 text-white rounded-xl p-4 shadow-lg flex items-center justify-between gap-3" style={{ top: 'calc(env(safe-area-inset-top, 44px) + 8px)' }}>
+          <div>
+            <p className="font-semibold">Leave by {leaveEarlyForRoute.leaveBy}</p>
+            <p className="text-sm opacity-90">Arrive in ~{leaveEarlyForRoute.etaMinutes} min — {leaveEarlyForRoute.destination}</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => { handleStartNavigation(leaveEarlyForRoute!.destination); setLeaveEarlyForRoute(null) }} className="px-4 py-2 bg-white text-blue-600 font-medium rounded-lg text-sm">
+              Start
+            </button>
+            <button onClick={() => setLeaveEarlyForRoute(null)} className="p-2 rounded-lg hover:bg-white/20" aria-label="Cancel"> <X size={18} /> </button>
+          </div>
+        </div>
+      )}
+
       {/* Map: Apple MapKit (when token ready) or loading/error state */}
       {useAppleMap && (
         <MapKitMap
@@ -1432,9 +1764,7 @@ export default function DriverApp() {
           vehicleHeading={vehicle?.heading ?? carHeading}
           routePolyline={routePolylineForMap}
           destinationCoordinate={isNavigating && navigationData?.destination ? { lat: navigationData.destination.lat, lng: navigationData.destination.lng } : undefined}
-          traveledDistanceMeters={isNavigating && navigationData?.distance?.meters && liveEta
-            ? Math.max(0, (navigationData.distance.meters as number) - liveEta.distanceMiles * 1609.34)
-            : undefined}
+          traveledDistanceMeters={isNavigating ? traveledDistanceMeters : undefined}
           predictedPosition={predicted ? { coordinate: predicted.coordinate, confidence: predicted.confidence } : null}
           routeGlow={experience?.routeGlow}
           mode={mode}
@@ -1447,6 +1777,11 @@ export default function DriverApp() {
           roadReports={roadReports}
           isNavigating={isNavigating}
           contentInsets={mapContentInsets}
+          colorScheme={theme}
+          onPlaceSelected={(p) => setSelectedPlace(p)}
+          onMapReady={(map, zoomToUser) => {
+            zoomToUserRef.current = zoomToUser
+          }}
         />
       )}
       {!useAppleMap && (
@@ -1470,27 +1805,70 @@ export default function DriverApp() {
         </div>
       )}
 
-      {/* Driving mode selector: Calm / Adaptive / Sport -- positioned below top bar */}
-      {!showTurnByTurn && (
-        <div className="absolute top-[72px] right-3 z-20 flex rounded-full bg-white/95 backdrop-blur border border-gray-200 overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,0.08)]">
-          {(['calm', 'adaptive', 'sport'] as const).map((m) => {
-            const active = mode === m
-            const colors: Record<string, string> = { calm: 'bg-blue-500', adaptive: 'bg-emerald-500', sport: 'bg-red-500' }
-            return (
-              <button
-                key={m}
-                onClick={() => { setMode(m); api.post('/api/analytics/track', { event: 'mode_switch', properties: { mode: m } }).catch(() => {}) }}
-                className={`relative px-3 py-1.5 text-[10px] font-semibold capitalize transition-all duration-300 ${active ? `${colors[m]} text-white` : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                {active && <span className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ background: m === 'sport' ? '#ef4444' : m === 'calm' ? '#3b82f6' : '#10b981' }} />}
-                {m}
-              </button>
-            )
-          })}
+      {/* POI tap bottom sheet - when user taps a place on the map */}
+      {selectedPlace && !isNavigating && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 'calc(60px + env(safe-area-inset-bottom, 20px))',
+            left: 16,
+            right: 16,
+            zIndex: 600,
+            background: 'white',
+            borderRadius: 20,
+            padding: '16px 20px',
+            boxShadow: '0 -4px 24px rgba(0,0,0,0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>{selectedPlace.name}</div>
+            <div style={{ color: '#666', fontSize: 13, marginTop: 2 }}>
+              Tap Navigate to get directions
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => setSelectedPlace(null)}
+              style={{
+                background: '#f0f0f0',
+                border: 'none',
+                borderRadius: 12,
+                padding: '10px 14px',
+                fontSize: 14,
+                cursor: 'pointer',
+              }}
+            >
+              ✕
+            </button>
+            <button
+              onClick={() => {
+                handleSelectDestination(selectedPlace)
+                setSelectedPlace(null)
+              }}
+              style={{
+                background: '#7C3AED',
+                color: 'white',
+                border: 'none',
+                borderRadius: 12,
+                padding: '10px 18px',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Navigate
+            </button>
+          </div>
         </div>
       )}
-      {showTurnByTurn && (
-        <div className="absolute top-2 right-3 z-20 flex rounded-full bg-white/95 backdrop-blur border border-gray-200 overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,0.08)]">
+
+      {/* Driving mode selector: Calm / Adaptive / Sport -- positioned below top bar */}
+      {/* Driving mode selector - hidden during navigation (clean nav mode) */}
+      {!isNavigating && (
+        <div className="absolute top-[72px] right-3 z-20 flex rounded-full bg-white/95 backdrop-blur border border-gray-200 overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,0.08)]">
           {(['calm', 'adaptive', 'sport'] as const).map((m) => {
             const active = mode === m
             const colors: Record<string, string> = { calm: 'bg-blue-500', adaptive: 'bg-emerald-500', sport: 'bg-red-500' }
@@ -1510,27 +1888,17 @@ export default function DriverApp() {
 
       {/* Speed HUD -- replaced by SpeedIndicator component in bottom-left */}
 
-      {/* Map search bar */}
-      {!isNavigating && (
-        <MapSearchBar
-          userLocation={userLocation}
-          onSelect={(r) => {
-            setSelectedDestination({ name: r.name, lat: r.lat, lng: r.lng })
-          }}
-          onNavigate={(r) => {
-            const dest = { name: r.name, lat: r.lat, lng: r.lng }
-            setSelectedDestination(dest)
-            setSearchQuery(r.name)
-            setSearchResults([])
-            setShowSearch(false)
-            toast.loading('Calculating route...', { duration: 1500 })
-            fetchDirections(dest).then(() => toast.success('Route ready'))
-          }}
-        />
-      )}
-
-      {/* Route Preview - pre-navigation bottom sheet */}
+      {/* Route Preview - pre-navigation bottom sheet (below modal layer) */}
       {showRoutePreview && navigationData && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 40,
+          }}
+        >
         <RoutePreview
           data={{
             destination: navigationData.destination,
@@ -1546,40 +1914,20 @@ export default function DriverApp() {
           onGo={handleGoFromRoutePreview}
           onCancel={handleCancelRoutePreview}
         />
-      )}
-
-      {/* Route info bar during navigation */}
-      {isNavigating && navigationData?.destination && (
-        <div className="absolute top-2 left-2 right-28 z-20">
-          <RouteInfoBar
-            distanceMiles={liveEta?.distanceMiles ?? (() => {
-              const v = vehicle?.coordinate ?? userLocation
-              const d = navigationData.destination
-              const R = 3958.8
-              const dLat = (d.lat - v.lat) * Math.PI / 180
-              const dLon = (d.lng - v.lng) * Math.PI / 180
-              const a = Math.sin(dLat / 2) ** 2 + Math.cos(v.lat * Math.PI / 180) * Math.cos(d.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2
-              return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-            })()}
-            etaMinutes={liveEta?.etaMinutes ?? (() => {
-              const v = vehicle?.coordinate ?? userLocation
-              const d = navigationData.destination
-              const R = 3958.8
-              const dLat = (d.lat - v.lat) * Math.PI / 180
-              const dLon = (d.lng - v.lng) * Math.PI / 180
-              const a = Math.sin(dLat / 2) ** 2 + Math.cos(v.lat * Math.PI / 180) * Math.cos(d.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2
-              const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-              const speed = vehicle?.velocity && vehicle.velocity > 1 ? vehicle.velocity * 2.237 : 30
-              return (dist / speed) * 60
-            })()}
-            destination={navigationData.destination.name || 'Destination'}
-            mode={mode}
-          />
         </div>
       )}
 
-      {/* Collapsible Offers Panel - On Map */}
-      {activeTab === 'map' && showOffersPanel && !isNavigating && (
+      {/* Collapsible Offers Panel - Just above tab bar; z-index below modals so overlays can open on top */}
+      {activeTab === 'map' && !isNavigating && !showMenu && !showRoutePreview && !showSearch && !showTripSummary && offers?.length > 0 && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 'calc(60px + env(safe-area-inset-bottom, 20px) + 8px)',
+            left: 16,
+            right: 16,
+            zIndex: 40,
+          }}
+        >
         <CollapsibleOffersPanel
           offers={offers}
           userLocation={userLocation}
@@ -1597,123 +1945,227 @@ export default function DriverApp() {
           }}
           isPremium={userPlan === 'premium'}
         />
+        </div>
       )}
 
-      {/* Turn-by-Turn Navigation Panel */}
-      {showTurnByTurn && navigationData && (
-        <div className="absolute top-0 left-0 right-0 z-30 pt-[env(safe-area-inset-top)] transition-all duration-300 ease-in-out">
-          <div className="bg-white mx-3 mt-2 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden">
-            <div className="flex items-center gap-4 px-4 py-3">
-              <div className="w-14 h-14 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
-                {navigationData.steps[currentStepIndex]?.maneuver === 'turn-right' ? (
-                  <ChevronRight className="text-white" size={30} />
-                ) : navigationData.steps[currentStepIndex]?.maneuver === 'turn-left' ? (
-                  <ChevronLeft className="text-white" size={30} />
-                ) : navigationData.steps[currentStepIndex]?.maneuver === 'arrive' ? (
-                  <MapPin className="text-white" size={26} />
-                ) : navigationData.steps[currentStepIndex]?.maneuver === 'u-turn' ? (
-                  <RefreshCw className="text-white" size={26} />
-                ) : navigationData.steps[currentStepIndex]?.maneuver === 'merge' ? (
-                  <Zap className="text-white" size={26} />
-                ) : (
-                  <Navigation className="text-white" size={26} />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-slate-900 font-bold text-xl truncate" style={{ fontSize: '20px' }}>
-                  {navigationData.steps[currentStepIndex]?.instruction || 'Continue'}
-                </p>
-              </div>
-              <span className="text-slate-500 text-base font-medium flex-shrink-0">
-                {navigationData.steps[currentStepIndex]?.distance}
-              </span>
+      {/* Navigation mode - TOP: instruction card (below modal layer) */}
+      {isNavigating && navigationData && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 40,
+            background: '#007AFF',
+            paddingTop: 'env(safe-area-inset-top, 44px)',
+            paddingLeft: 16,
+            paddingRight: 16,
+            paddingBottom: 16,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+            <div style={{
+              width: 48, height: 48, borderRadius: 12,
+              background: 'rgba(255,255,255,0.2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              {renderTurnIcon(navigationData.steps?.[currentStepIndex]?.instruction)}
             </div>
-            <div className="h-1 bg-gray-100 overflow-hidden">
-              <div
-                className="h-full bg-blue-500 transition-all duration-300 ease-in-out"
-                style={{ width: `${currentStepProgress * 100}%` }}
-              />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: 20, fontWeight: 700, color: 'white',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {navigationData.steps?.[currentStepIndex]?.instruction || 'Continue'}
+              </div>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>
+                {navigationData.steps?.[currentStepIndex + 1]?.instruction
+                  ? `Then: ${navigationData.steps[currentStepIndex + 1].instruction}`
+                  : 'Arriving at destination'}
+              </div>
             </div>
-          </div>
-
-          <div className="mx-3 mt-2">
-            <RouteInfoBar
-              distanceMiles={liveEta?.distanceMiles ?? (() => {
-                const v = vehicle?.coordinate ?? userLocation
-                const d = navigationData.destination
-                if (!d) return 0
-                const R = 3958.8
-                const dLat = (d.lat - v.lat) * Math.PI / 180
-                const dLon = (d.lng - v.lng) * Math.PI / 180
-                const a = Math.sin(dLat/2)**2 + Math.cos(v.lat*Math.PI/180)*Math.cos(d.lat*Math.PI/180)*Math.sin(dLon/2)**2
-                return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-              })()}
-              etaMinutes={liveEta?.etaMinutes ?? (() => {
-                const v = vehicle?.coordinate ?? userLocation
-                const d = navigationData.destination
-                if (!d) return 0
-                const R = 3958.8
-                const dLat = (d.lat - v.lat) * Math.PI / 180
-                const dLon = (d.lng - v.lng) * Math.PI / 180
-                const a = Math.sin(dLat/2)**2 + Math.cos(v.lat*Math.PI/180)*Math.cos(d.lat*Math.PI/180)*Math.sin(dLon/2)**2
-                const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-                const speed = vehicle?.velocity && vehicle.velocity > 1 ? vehicle.velocity * 2.237 : 30
-                return (dist / speed) * 60
-              })()}
-              destination={navigationData.destination?.name}
-              mode={mode}
-            />
+            <div style={{ fontSize: 20, fontWeight: 800, color: 'white', flexShrink: 0 }}>
+              {formatDistance(distanceToNextStep)}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Bottom floating pill - End + Recenter */}
-      {showTurnByTurn && isNavigating && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 bg-white/95 backdrop-blur rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.12)] transition-all duration-300">
+      {/* Navigation mode - BOTTOM STATS */}
+      {isNavigating && (() => {
+        const remainingDistanceMiles = liveEta?.distanceMiles
+        const remainingMinutes = typeof liveEta?.etaMinutes === 'number' ? Math.round(liveEta.etaMinutes) : undefined
+        return (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 'calc(80px + env(safe-area-inset-bottom, 20px))',
+            left: 0,
+            right: 0,
+            zIndex: 40,
+            background: 'white',
+            padding: '12px 24px',
+            display: 'flex',
+            justifyContent: 'space-around',
+            alignItems: 'center',
+            borderTop: '1px solid #f0f0f0',
+          }}
+        >
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#999' }}>Arrive</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{arrivalTime}</div>
+          </div>
+          <div style={{ width: 1, height: 28, background: '#e0e0e0' }} />
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#999' }}>Distance</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>
+              {remainingDistanceMiles?.toFixed(1) ?? '--'} mi
+            </div>
+          </div>
+          <div style={{ width: 1, height: 28, background: '#e0e0e0' }} />
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#999' }}>Time</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>
+              {remainingMinutes ?? '--'} min
+            </div>
+          </div>
+        </div>
+        )
+      })()}
+
+      {/* Navigation mode - BOTTOM BAR */}
+      {isNavigating && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 1000,
+            background: 'white',
+            paddingTop: 12,
+            paddingBottom: 'env(safe-area-inset-bottom, 24px)',
+            paddingLeft: 20,
+            paddingRight: 20,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            borderTop: '1px solid #f0f0f0',
+            boxShadow: '0 -2px 12px rgba(0,0,0,0.08)',
+          }}
+        >
+          <button
+            onClick={handleToggleVoice}
+            aria-label={isMuted ? 'Unmute voice' : 'Mute voice'}
+            style={{
+              width: 46, height: 46, borderRadius: 12,
+              background: '#f5f5f7', border: 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', flexShrink: 0,
+            }}
+          >
+            {isMuted ? <VolumeX size={22} className="text-slate-600" /> : <Volume2 size={22} className="text-slate-600" />}
+          </button>
           <button
             onClick={handleRequestEndNavigation}
-            className="text-red-500 text-sm font-medium hover:text-red-600 px-2"
             data-testid="end-navigation-btn"
+            style={{
+              flex: 1, height: 46,
+              background: '#FF3B30', color: 'white',
+              border: 'none', borderRadius: 12,
+              fontSize: 16, fontWeight: 700, cursor: 'pointer',
+            }}
           >
-            End
+            End Navigation
           </button>
-          <div className="w-px h-4 bg-slate-200" />
           <button
-            onClick={() => { recenter(); toast.success('Centered') }}
-            className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors"
+            onClick={() => setIsOverviewMode(v => !v)}
+            aria-label={isOverviewMode ? 'Follow position' : 'Overview'}
+            style={{
+              width: 46, height: 46, borderRadius: 12,
+              background: '#f5f5f7', border: 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', flexShrink: 0,
+            }}
           >
-            <Compass className="text-slate-600" size={18} />
+            <Map size={22} className="text-slate-600" />
           </button>
         </div>
       )}
 
-      {/* End confirmation bottom sheet */}
+      {/* End confirmation dialog - dark backdrop, above nav UI */}
       {showEndConfirm && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center pointer-events-none">
-          <div className="absolute inset-0 bg-black/40 pointer-events-auto" onClick={() => setShowEndConfirm(false)} />
-          <div className="relative w-full max-w-md bg-white rounded-t-2xl shadow-[0_2px_8px_rgba(0,0,0,0.12)] p-4 pb-safe pointer-events-auto animate-slide-up transition-all duration-300 ease-in-out">
-            <p className="text-slate-800 font-semibold text-lg mb-4">End navigation?</p>
-            <div className="flex gap-3">
+        <>
+          <div
+            onClick={() => setShowEndConfirm(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.6)',
+              zIndex: 1999,
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 'calc(100px + env(safe-area-inset-bottom, 20px))',
+              left: 20,
+              right: 20,
+              zIndex: 2000,
+              background: 'white',
+              borderRadius: 20,
+              padding: '24px 20px',
+              boxShadow: '0 8px 40px rgba(0,0,0,0.3)',
+            }}
+          >
+            <div style={{ fontSize: 17, fontWeight: 700, textAlign: 'center', marginBottom: 6 }}>
+              End Navigation?
+            </div>
+            <div style={{ fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 20 }}>
+              Your trip will be saved and gems awarded.
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
               <button
                 onClick={() => setShowEndConfirm(false)}
-                className="flex-1 py-3 rounded-xl bg-gray-100 text-slate-600 font-medium hover:bg-gray-200 transition-colors"
+                style={{
+                  flex: 1,
+                  height: 46,
+                  borderRadius: 12,
+                  background: '#f5f5f7',
+                  border: 'none',
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
               >
-                Cancel
+                Continue
               </button>
               <button
                 onClick={handleConfirmEndNavigation}
-                className="flex-1 py-3 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors"
+                style={{
+                  flex: 1,
+                  height: 46,
+                  borderRadius: 12,
+                  background: '#FF3B30',
+                  color: 'white',
+                  border: 'none',
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
               >
-                End
+                End Trip
               </button>
             </div>
           </div>
-        </div>
+        </>
       )}
 
-      {/* Trip summary bottom sheet */}
+      {/* Trip summary bottom sheet - modal layer */}
       {showTripSummary && lastTripData && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center pointer-events-none">
+        <div className="fixed inset-0 z-[1100] flex items-end justify-center pointer-events-none">
           <div className="absolute inset-0 bg-black/40 pointer-events-auto" onClick={handleDismissTripSummary} />
           <div className="relative w-full max-w-md bg-white rounded-t-2xl shadow-[0_2px_8px_rgba(0,0,0,0.12)] p-4 pb-safe pointer-events-auto animate-slide-up transition-all duration-300 ease-in-out">
             <h3 className="text-slate-800 font-bold text-lg mb-4">Trip Summary</h3>
@@ -1745,164 +2197,170 @@ export default function DriverApp() {
         </div>
       )}
 
-      {/* Top Bar - Google Maps Style (Hidden during turn-by-turn and active navigation) */}
-      {!showTurnByTurn && !isNavigating && (
-      <div className="absolute top-3 left-3 right-3 z-30">
-        {/* Search Bar with Menu */}
-        <div className="flex gap-2">
-          <button onClick={() => setShowMenu(true)} data-testid="menu-btn"
-            className="w-12 h-12 bg-white/95 backdrop-blur border border-gray-200 rounded-full flex items-center justify-center shadow-[0_1px_4px_rgba(0,0,0,0.08)]">
-            <Menu className="text-slate-700" size={20} />
+      {/* Top Bar - single search bar (below modal layer so dialogs open on top) */}
+      {!isNavigating && (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 40,
+          background: 'white',
+          paddingTop: 'env(safe-area-inset-top, 44px)',
+          paddingLeft: 12,
+          paddingRight: 12,
+          paddingBottom: 8,
+          boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+        }}
+      >
+        {/* Row 1: hamburger + search input + mic */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 8,
+        }}>
+          <button
+            onClick={() => setShowMenu(true)}
+            data-testid="menu-btn"
+            style={{
+              width: 38, height: 38,
+              borderRadius: 10,
+              background: '#f5f5f7',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              cursor: 'pointer',
+            }}
+          >
+            <Menu size={18} color="#333" />
           </button>
-          <button onClick={() => setShowSearch(true)} data-testid="search-btn" 
-            className="flex-1 bg-white/95 backdrop-blur border border-gray-200 rounded-full px-4 h-12 flex items-center gap-3 shadow-[0_1px_4px_rgba(0,0,0,0.08)]">
-            <Search className="text-slate-400" size={18} />
-            <span className="flex-1 text-slate-400 text-sm text-left">{isNavigating ? 'Navigating...' : 'Search here'}</span>
-            <button 
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowSearch(true)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setShowSearch(true) }}
+            data-testid="search-btn"
+            style={{
+              flex: 1,
+              height: 40,
+              background: '#f5f5f7',
+              borderRadius: 20,
+              display: 'flex',
+              alignItems: 'center',
+              paddingLeft: 14,
+              paddingRight: 12,
+              cursor: 'text',
+              gap: 8,
+            }}
+          >
+            <Search size={15} color="#999" />
+            <span style={{ color: '#999', fontSize: 15, flex: 1 }}>Search here</span>
+            <button
+              type="button"
               onClick={(e) => { e.stopPropagation(); handleVoiceCommand() }}
-              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
               data-testid="orion-btn"
+              style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', display: 'flex' }}
             >
-              <Mic className="text-slate-400" size={18} />
+              <Mic size={15} color="#999" />
             </button>
-          </button>
+          </div>
         </div>
-
-        {/* Quick Action Pills - Google Maps Style */}
-        <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
-          {/* Favorites Tab */}
-          <button onClick={() => setLocationCategory('favorites')} data-testid="tab-favorites"
-            className={`flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 transition-all ${
-              locationCategory === 'favorites' 
-                ? 'bg-blue-500 text-white' 
-                : 'bg-white/95 text-slate-700 backdrop-blur border border-gray-100'
-            }`}>
-            <Star size={16} className={locationCategory === 'favorites' ? 'text-white' : 'text-yellow-400'} />
-            <span className="text-sm font-medium">Favorites</span>
-          </button>
-
-          {/* Nearby Tab */}
-          <button onClick={() => setLocationCategory('nearby')} data-testid="tab-nearby"
-            className={`flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 transition-all ${
-              locationCategory === 'nearby' 
-                ? 'bg-blue-500 text-white' 
-                : 'bg-white/95 text-slate-700 backdrop-blur border border-gray-100'
-            }`}>
-            <MapPin size={16} />
-            <span className="text-sm font-medium">Nearby</span>
-          </button>
-
-          {/* Report Hazard Button */}
-          <button onClick={() => setShowRoadReports(true)} data-testid="report-hazard-btn"
-            className="flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 bg-amber-500/90 text-white backdrop-blur hover:bg-amber-500 transition-all">
-            <AlertTriangle size={16} />
-            <span className="text-sm font-medium">Report</span>
-          </button>
-
-          {/* Quick Photo Button */}
-          <button onClick={() => setShowQuickPhotoReport(true)} data-testid="quick-photo-btn"
-            className="flex-shrink-0 px-4 py-2 rounded-full flex items-center gap-2 bg-blue-500/90 text-white backdrop-blur hover:bg-blue-500 transition-all">
-            <Camera size={16} />
-            <span className="text-sm font-medium">Photo</span>
-          </button>
+        {/* Row 2: filter chips - horizontal scroll */}
+        <div style={{
+          display: 'flex',
+          gap: 8,
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+          paddingBottom: 2,
+        }}>
+          {[
+            { label: 'Favorites', color: '#007AFF', active: locationCategory === 'favorites' },
+            { label: 'Nearby', color: '#666', active: locationCategory === 'nearby' },
+            { label: 'Report', color: '#FF9500', active: false },
+            { label: 'Photo', color: '#34C759', active: false },
+          ].map(chip => (
+            <button
+              key={chip.label}
+              onClick={() => {
+                if (chip.label === 'Favorites') setLocationCategory('favorites')
+                else if (chip.label === 'Nearby') setLocationCategory('nearby')
+                else if (chip.label === 'Report') setShowRoadReports(true)
+                else if (chip.label === 'Photo') setShowQuickPhotoReport(true)
+              }}
+              data-testid={chip.label === 'Favorites' ? 'tab-favorites' : chip.label === 'Nearby' ? 'tab-nearby' : chip.label === 'Report' ? 'report-hazard-btn' : 'quick-photo-btn'}
+              style={{
+                flexShrink: 0,
+                height: 30,
+                paddingLeft: 14,
+                paddingRight: 14,
+                borderRadius: 15,
+                background: chip.active ? chip.color : '#f5f5f7',
+                color: chip.active ? 'white' : '#333',
+                border: 'none',
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {chip.label}
+            </button>
+          ))}
         </div>
-
-        {/* Favorites Content - Shows when Favorites is selected */}
-        {locationCategory === 'favorites' && (
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-            {/* Home Button */}
-            {getHomeLocation() ? (
-              <button onClick={() => handleStartNavigation(getHomeLocation()!.name)} data-testid="quick-home"
-                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Home size={16} className="text-slate-500" />
-                </div>
-                <div className="text-left">
-                  <p className="text-slate-700 text-sm font-medium">Home</p>
-                  <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{getHomeLocation()!.address}</p>
-                </div>
-              </button>
-            ) : (
-              <button onClick={() => { setNewLocation({ ...newLocation, category: 'home' }); setShowAddLocation(true) }} data-testid="add-home"
-                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Home size={16} className="text-slate-500" />
-                </div>
-                <div className="text-left">
-                  <p className="text-slate-700 text-sm font-medium">Home</p>
-                  <p className="text-blue-500 text-[11px]">Set location</p>
-                </div>
-              </button>
-            )}
-
-            {/* Work Button */}
-            {getWorkLocation() ? (
-              <button onClick={() => handleStartNavigation(getWorkLocation()!.name)} data-testid="quick-work"
-                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Briefcase size={16} className="text-slate-500" />
-                </div>
-                <div className="text-left">
-                  <p className="text-slate-700 text-sm font-medium">Work</p>
-                  <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{getWorkLocation()!.address}</p>
-                </div>
-              </button>
-            ) : (
-              <button onClick={() => { setNewLocation({ ...newLocation, category: 'work' }); setShowAddLocation(true) }} data-testid="add-work"
-                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Briefcase size={16} className="text-slate-500" />
-                </div>
-                <div className="text-left">
-                  <p className="text-slate-700 text-sm font-medium">Work</p>
-                  <p className="text-blue-500 text-[11px]">Set location</p>
-                </div>
-              </button>
-            )}
-
-            {/* Other Favorites */}
-            {getFavoriteLocations().map(loc => (
-              <button key={loc.id} onClick={() => handleStartNavigation(loc.name)} data-testid={`fav-${loc.id}`}
-                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Star size={16} className="text-yellow-400" />
-                </div>
-                <div className="text-left">
-                  <p className="text-slate-700 text-sm font-medium truncate max-w-[60px]">{loc.name}</p>
-                  <p className="text-slate-400 text-[11px] truncate max-w-[80px]">{loc.address}</p>
-                </div>
-              </button>
-            ))}
-
-            {/* More / Add Button */}
-            <button onClick={() => setShowAddLocation(true)} data-testid="add-favorite"
-              className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full px-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-              <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                <Plus size={16} className="text-slate-500" />
+        {/* Row 3: quick destinations */}
+        <div style={{
+          display: 'flex',
+          gap: 8,
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+          marginTop: 6,
+        }}>
+          {[
+            { label: 'Home', sub: getHomeLocation() ? getHomeLocation()!.address : 'Set location', icon: Home, isSet: !!getHomeLocation() },
+            { label: 'Work', sub: getWorkLocation() ? getWorkLocation()!.address : 'Set location', icon: Briefcase, isSet: !!getWorkLocation() },
+            { label: 'More', sub: '', icon: Plus, isSet: false },
+          ].map(item => (
+            <button
+              key={item.label}
+              onClick={() => {
+                if (item.label === 'Home') {
+                  if (getHomeLocation()) handleStartNavigation(getHomeLocation()!.name)
+                  else { setNewLocation({ ...newLocation, category: 'home' }); setShowAddLocation(true) }
+                } else if (item.label === 'Work') {
+                  if (getWorkLocation()) handleStartNavigation(getWorkLocation()!.name)
+                  else { setNewLocation({ ...newLocation, category: 'work' }); setShowAddLocation(true) }
+                } else setShowAddLocation(true)
+              }}
+              data-testid={item.label === 'Home' ? (item.isSet ? 'quick-home' : 'add-home') : item.label === 'Work' ? (item.isSet ? 'quick-work' : 'add-work') : 'add-favorite'}
+              style={{
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                height: 44,
+                paddingLeft: 14,
+                paddingRight: 14,
+                borderRadius: 12,
+                background: '#f5f5f7',
+                border: 'none',
+                cursor: 'pointer',
+                minWidth: 110,
+              }}
+            >
+              <item.icon size={16} color="#666" />
+              <div style={{ textAlign: 'left', minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>{item.label}</div>
+                {item.sub ? (
+                  <div style={{ fontSize: 11, color: item.isSet ? '#666' : '#007AFF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 90 }}>{item.sub}</div>
+                ) : null}
               </div>
-              <span className="text-slate-700 text-sm font-medium">More</span>
             </button>
-          </div>
-        )}
-
-        {/* Nearby Content - Shows when Nearby is selected */}
-        {locationCategory === 'nearby' && (
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-            {[
-              { icon: Fuel, label: 'Gas', color: 'blue' },
-              { icon: Coffee, label: 'Coffee', color: 'orange' },
-              { icon: ShoppingCart, label: 'Shopping', color: 'pink' },
-              { icon: Dumbbell, label: 'Gym', color: 'purple' },
-            ].map((item, i) => (
-              <button key={i} onClick={() => { setActiveTab('rewards'); setRewardsTab('offers'); setOfferFilter(item.label.toLowerCase() === 'gas' ? 'gas' : item.label.toLowerCase() === 'coffee' ? 'cafe' : 'all') }}
-                data-testid={`nearby-${item.label.toLowerCase()}`}
-                className="flex-shrink-0 bg-white/95 backdrop-blur border border-gray-100 rounded-full px-4 py-2 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-                <item.icon size={16} className={`text-${item.color}-400`} />
-                <span className="text-slate-700 text-sm">{item.label}</span>
-              </button>
-            ))}
-          </div>
-        )}
+          ))}
+        </div>
       </div>
       )}
 
@@ -2016,13 +2474,13 @@ export default function DriverApp() {
         </button>
       )}
 
-      {/* Speed Display (when navigating or moving) */}
-      {(isNavigating || (vehicle && vehicle.velocity > 0.5)) && (
+      {/* Speed Display (when moving, hidden during navigation for clean nav mode) */}
+      {!isNavigating && (vehicle && vehicle.velocity > 0.5) && (
         <div className="absolute left-3 bottom-20 z-20">
           <SpeedIndicator
             velocityMs={vehicle?.velocity ?? (currentSpeed * 0.447)}
             mode={mode}
-            speedLimitMph={isNavigating && navigationData ? (() => {
+            speedLimitMph={navigationData ? (() => {
               const text = (navigationData.steps?.[currentStepIndex]?.instruction || '') + ' ' + (navigationData.destination?.name || '')
               if (/\bI-\d|Interstate/i.test(text)) return 65
               if (/\bUS-\d|\bSR-\d|\bHwy\b/i.test(text)) return 55
@@ -2037,7 +2495,17 @@ export default function DriverApp() {
 
   // Rewards Tab - Combines Offers, Challenges, Badges, Skins
   const renderRewards = () => (
-    <div className="flex-1 bg-slate-100 overflow-auto">
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 'calc(60px + env(safe-area-inset-bottom, 20px))',
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      background: isLight ? '#f5f5f7' : '#0f172a',
+      paddingTop: 'env(safe-area-inset-top, 44px)',
+    }}>
       {/* Header with Gems */}
       <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-4 pt-3 pb-4">
         <div className="flex items-center justify-between mb-3">
@@ -2342,7 +2810,17 @@ export default function DriverApp() {
 
   // Routes Tab - More Detailed
   const renderRoutes = () => (
-    <div className="flex-1 bg-slate-100 overflow-auto">
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 'calc(60px + env(safe-area-inset-bottom, 20px))',
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      background: isLight ? '#f5f5f7' : '#0f172a',
+      paddingTop: 'env(safe-area-inset-top, 44px)',
+    }}>
       <div className="bg-white px-4 pt-3 pb-3 sticky top-0 z-10 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
@@ -2434,10 +2912,16 @@ export default function DriverApp() {
                   {route.notifications ? <Bell size={12} className="text-blue-500" /> : <EyeOff size={12} />}
                   {route.notifications ? 'Alerts on' : 'Alerts off'}
                 </button>
-                <button onClick={() => handleStartNavigation(route.destination)} data-testid={`start-route-${route.id}`}
-                  className="bg-blue-500 text-white px-4 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1">
-                  <Navigation size={12} /> Start
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => handleLeaveEarlyForRoute(route.id)} data-testid={`leave-early-route-${route.id}`}
+                    className="text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1">
+                    <Clock size={12} /> Leave early
+                  </button>
+                  <button onClick={() => handleStartNavigation(route.destination)} data-testid={`start-route-${route.id}`}
+                    className="bg-blue-500 text-white px-4 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1">
+                    <Navigation size={12} /> Start
+                  </button>
+                </div>
               </div>
             </div>
           ))
@@ -2448,7 +2932,17 @@ export default function DriverApp() {
 
   // Profile Tab
   const renderProfile = () => (
-    <div className="flex-1 bg-slate-100 overflow-auto">
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 'calc(60px + env(safe-area-inset-bottom, 20px))',
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      background: isLight ? '#f5f5f7' : '#0f172a',
+      paddingTop: 'env(safe-area-inset-top, 44px)',
+    }}>
       {/* Header with Car */}
       <div className="bg-gradient-to-b from-blue-500 to-blue-600 px-4 pt-4 pb-6">
         <div className="flex items-center gap-3">
@@ -2749,6 +3243,19 @@ export default function DriverApp() {
 
       {profileTab === 'settings' && (
         <div className="p-4 space-y-2">
+          {/* Appearance - Light / Dark mode */}
+          <button
+            onClick={toggleTheme}
+            data-testid="appearance-toggle"
+            className={`w-full rounded-xl p-4 flex items-center gap-3 shadow-sm ${isLight ? 'bg-white' : 'bg-slate-800'} ${isLight ? 'text-slate-900' : 'text-white'}`}
+          >
+            {isLight ? <Sun className="text-amber-500" size={20} /> : <Moon className="text-indigo-400" size={20} />}
+            <div className="flex-1 text-left">
+              <p className="text-sm font-medium">Appearance</p>
+              <p className="text-xs opacity-75">{isLight ? 'Light mode' : 'Dark mode'} — tap to switch</p>
+            </div>
+            <ChevronRight className="opacity-50" size={16} />
+          </button>
           {/* Plan Management Card */}
           <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-4 mb-2">
             <div className="flex items-center justify-between mb-2">
@@ -2787,13 +3294,13 @@ export default function DriverApp() {
             { icon: HelpCircle, label: 'Help & Support', id: 'help', desc: 'Get assistance', action: () => setShowHelpSupport(true) },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`settings-${item.id}`}
-              className="w-full bg-white rounded-xl p-4 flex items-center gap-3 shadow-sm">
-              <item.icon className="text-slate-600" size={20} />
+              className={`w-full rounded-xl p-4 flex items-center gap-3 shadow-sm ${isLight ? 'bg-white text-slate-900' : 'bg-slate-800 text-white'}`}>
+              <item.icon className={isLight ? 'text-slate-600' : 'text-slate-300'} size={20} />
               <div className="flex-1 text-left">
-                <p className="text-sm font-medium text-slate-900">{item.label}</p>
-                <p className="text-xs text-slate-500">{item.desc}</p>
+                <p className="text-sm font-medium">{item.label}</p>
+                <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{item.desc}</p>
               </div>
-              <ChevronRight className="text-slate-400" size={16} />
+              <ChevronRight className={isLight ? 'text-slate-400' : 'text-slate-500'} size={16} />
             </button>
           ))}
         </div>
@@ -2803,12 +3310,35 @@ export default function DriverApp() {
 
   // ==================== MODALS ====================
 
-  // Search Modal - Enhanced with backend API integration
+  // Search Modal - uses modal layer so it opens above map chrome
   const renderSearchModal = () => showSearch && (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-start justify-center pt-4" onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]) }}>
-      <div className="w-[95%] max-w-md bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
-        {/* Search Input */}
-        <div className="flex items-center gap-2 bg-slate-800 rounded-xl px-3 py-3 mb-3">
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1100,
+        background: 'white',
+        overflowY: 'auto',
+        paddingTop: 'env(safe-area-inset-top, 44px)',
+      }}
+      onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]) }}
+    >
+      <div className="w-[95%] max-w-md mx-auto p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
+        {/* Search Input - sticky at top when scrolling */}
+        <div
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
+            background: 'white',
+            padding: '12px 16px',
+            borderBottom: '1px solid #f0f0f0',
+          }}
+          className="flex items-center gap-2 rounded-xl mb-3"
+        >
           <Search className="text-slate-400" size={18} />
           <input 
             type="text" 
@@ -2817,7 +3347,7 @@ export default function DriverApp() {
             value={searchQuery}
             onChange={e => handleSearchChange(e.target.value)}
             data-testid="search-modal-input"
-            className="flex-1 bg-transparent text-white text-sm outline-none" 
+            className="flex-1 bg-transparent text-slate-900 text-sm outline-none" 
           />
           {searchQuery && (
             <button onClick={() => { setSearchQuery(''); setSearchResults([]) }}>
@@ -2837,11 +3367,11 @@ export default function DriverApp() {
         {/* Search Results */}
         {!isSearching && searchResults.length > 0 && (
           <div className="space-y-2 max-h-64 overflow-y-auto mb-3">
-            {searchResults.map(result => (
+            {searchResults.map((result, idx) => (
               <button 
-                key={result.id} 
+                key={result.id ?? `result-${idx}-${result.name}`} 
                 onClick={() => handleSelectDestination(result)} 
-                data-testid={`search-result-${result.id}`}
+                data-testid={`search-result-${result.id ?? idx}`}
                 className="w-full p-3 bg-slate-800 rounded-xl text-left hover:bg-slate-700 flex items-start gap-3 transition-colors"
               >
                 <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -2893,7 +3423,7 @@ export default function DriverApp() {
 
   // Notifications Modal
   const renderNotificationsModal = () => showNotifications && (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-start justify-center pt-20" onClick={() => setShowNotifications(false)}>
+    <div className="fixed inset-0 bg-black/80 z-[1100] flex items-start justify-center pt-20" onClick={() => setShowNotifications(false)}>
       <div className="w-80 bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
         <h3 className="text-white font-semibold mb-3">Notifications</h3>
         <div className="space-y-2">
@@ -2959,7 +3489,7 @@ export default function DriverApp() {
   }, [])
 
   const renderAddLocationModal = () => showAddLocation && (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => { setShowAddLocation(false); setAddrSuggestions([]) }}>
+    <div className="fixed inset-0 bg-black/80 z-[1100] flex items-center justify-center p-4" onClick={() => { setShowAddLocation(false); setAddrSuggestions([]) }}>
       <div className="w-full max-w-sm bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
         <h3 className="text-white font-semibold mb-4">Add Location</h3>
         <div className="space-y-3">
@@ -3005,7 +3535,7 @@ export default function DriverApp() {
 
   // Add Route Modal
   const renderAddRouteModal = () => showAddRoute && (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowAddRoute(false)}>
+    <div className="fixed inset-0 bg-black/80 z-[1100] flex items-center justify-center p-4" onClick={() => setShowAddRoute(false)}>
       <div className="w-full max-w-sm bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
         <h3 className="text-white font-semibold mb-4">Add Route</h3>
         <div className="space-y-3">
@@ -3032,7 +3562,7 @@ export default function DriverApp() {
 
   // Widget Settings Modal
   const renderWidgetSettingsModal = () => showWidgetSettings && (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowWidgetSettings(false)}>
+    <div className="fixed inset-0 bg-black/80 z-[1100] flex items-center justify-center p-4" onClick={() => setShowWidgetSettings(false)}>
       <div className="w-full max-w-sm bg-slate-900 rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
         <h3 className="text-white font-semibold mb-4">Map Widgets</h3>
         <div className="space-y-3">
@@ -3054,7 +3584,7 @@ export default function DriverApp() {
 
   // Offer Detail Modal
   const renderOfferDetailModal = () => showOfferDetail && (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-end justify-center" onClick={() => setShowOfferDetail(null)}>
+    <div className="fixed inset-0 bg-black/80 z-[1100] flex items-end justify-center" onClick={() => setShowOfferDetail(null)}>
       <div className="w-full max-w-md bg-white rounded-t-3xl p-4 animate-slide-up" onClick={e => e.stopPropagation()}>
         <div className="w-12 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
         <div className="flex items-center gap-3 mb-4">
@@ -3096,7 +3626,7 @@ export default function DriverApp() {
 
   // Report Modal
   const renderReportModal = () => showReportModal && (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-end justify-center" onClick={() => setShowReportModal(false)}>
+    <div className="fixed inset-0 bg-black/80 z-[1100] flex items-end justify-center" onClick={() => setShowReportModal(false)}>
       <div className="w-full max-w-md bg-white rounded-t-3xl p-4 animate-slide-up" onClick={e => e.stopPropagation()}>
         <div className="w-12 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
         <h3 className="text-lg font-bold text-slate-900 mb-4">Report Hazard</h3>
@@ -3121,7 +3651,7 @@ export default function DriverApp() {
 
   // Family Member Modal
   const renderFamilyMemberModal = () => showFamilyMember && (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowFamilyMember(null)}>
+    <div className="fixed inset-0 bg-black/80 z-[1100] flex items-center justify-center p-4" onClick={() => setShowFamilyMember(null)}>
       <div className="w-full max-w-sm bg-white rounded-2xl p-4 animate-scale-in" onClick={e => e.stopPropagation()}>
         <div className="text-center mb-4">
           <div className="w-16 h-16 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-2xl mx-auto mb-2">
@@ -3156,46 +3686,47 @@ export default function DriverApp() {
 
   // ==================== MAIN RENDER ====================
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      {/* iPhone Frame */}
-      <div className="w-full max-w-[390px] h-[844px] bg-black rounded-[55px] p-3 shadow-2xl relative overflow-hidden">
-        {/* Dynamic Island */}
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 w-32 h-8 bg-black rounded-full z-50" />
-        
-        {/* Screen */}
-        <div className="w-full h-full bg-slate-900 rounded-[45px] overflow-hidden flex flex-col relative">
-          {/* Status Bar */}
-          <div className="h-12 bg-slate-900 flex items-end justify-between px-6 pb-1 text-white text-xs font-medium">
-            <span>9:41</span>
-            <div className="flex items-center gap-1">
-              <span>5G</span>
-              <Battery size={16} />
-            </div>
-          </div>
+    <div className="min-h-screen bg-slate-900">
+      {/* Content */}
+      {activeTab === 'map' && renderMap()}
+      {activeTab === 'routes' && renderRoutes()}
+      {activeTab === 'rewards' && renderRewards()}
+      {activeTab === 'profile' && renderProfile()}
 
-          {/* Content */}
-          {activeTab === 'map' && renderMap()}
-          {activeTab === 'routes' && renderRoutes()}
-          {activeTab === 'rewards' && renderRewards()}
-          {activeTab === 'profile' && renderProfile()}
-
-          {/* Bottom Navigation - 4 Tabs (smooth hide during navigation) */}
-          <div className={`bg-white border-t border-slate-200 flex items-start pt-2 px-4 transition-all duration-300 ${isNavigating ? 'h-0 overflow-hidden opacity-0 pointer-events-none' : 'h-20'}`}>
-            {[
-              { id: 'map', icon: MapPin, label: 'Map' },
-              { id: 'routes', icon: Route, label: 'Routes' },
-              { id: 'rewards', icon: Gift, label: 'Rewards' },
-              { id: 'profile', icon: Settings, label: 'Profile' },
-            ].map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id as TabType)} data-testid={`nav-${tab.id}`}
-                className={`flex-1 flex flex-col items-center py-1 ${activeTab === tab.id ? 'text-blue-500' : 'text-slate-400'}`}>
-                <tab.icon size={22} />
-                <span className="text-[11px] mt-0.5 font-medium">{tab.label}</span>
-              </button>
-            ))}
-          </div>
+      {/* Bottom Navigation - 4 Tabs (below modal layer so dialogs open on top) */}
+      {!isNavigating && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 40,
+            background: isLight ? 'rgba(255,255,255,0.98)' : 'rgba(30,41,59,0.98)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            borderTop: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)',
+            paddingBottom: 'env(safe-area-inset-bottom, 20px)',
+            display: 'flex',
+            justifyContent: 'space-around',
+            paddingTop: 10,
+            height: 'calc(60px + env(safe-area-inset-bottom, 20px))',
+          }}
+        >
+          {[
+            { id: 'map', icon: MapPin, label: 'Map' },
+            { id: 'routes', icon: Route, label: 'Routes' },
+            { id: 'rewards', icon: Gift, label: 'Rewards' },
+            { id: 'profile', icon: Settings, label: 'Profile' },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as TabType)} data-testid={`nav-${tab.id}`}
+              className={`flex-1 flex flex-col items-center py-1 ${activeTab === tab.id ? 'text-blue-500' : isLight ? 'text-slate-400' : 'text-slate-400'}`}>
+              <tab.icon size={22} />
+              <span className="text-[11px] mt-0.5 font-medium">{tab.label}</span>
+            </button>
+          ))}
         </div>
-      </div>
+      )}
 
       {/* Modals */}
       {showMenu && renderMenu()}
@@ -3249,7 +3780,7 @@ export default function DriverApp() {
 
       {/* Comprehensive Analytics Dashboard */}
       {showFuelDashboard && (
-        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setShowFuelDashboard(false)}>
+        <div className="fixed inset-0 bg-black/90 z-[1100] flex items-center justify-center p-4" onClick={() => setShowFuelDashboard(false)}>
           <div className="w-full max-w-md max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden animate-scale-in flex flex-col" onClick={e => e.stopPropagation()}>
             {/* Header - Fixed */}
             <div className="flex-shrink-0 bg-gradient-to-r from-emerald-600 to-teal-500 p-4 relative overflow-hidden">
@@ -3470,7 +4001,7 @@ export default function DriverApp() {
 
       {/* App Tour for New Users */}
       {showAppTour && (
-        <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={() => setShowAppTour(false)}>
+        <div className="fixed inset-0 bg-black/90 z-[1100] flex items-center justify-center p-4" onClick={() => setShowAppTour(false)}>
           <div className="w-full max-w-sm max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden animate-scale-in flex flex-col" onClick={e => e.stopPropagation()}>
             {/* Tour Header - Fixed */}
             <div className="flex-shrink-0 bg-gradient-to-r from-blue-600 to-purple-600 p-5 relative">
@@ -3615,14 +4146,16 @@ export default function DriverApp() {
         isPremium={userPlan === 'premium'}
       />
       
-      {/* Orion Offer Alerts (during navigation) */}
-      <OrionOfferAlerts
-        isNavigating={isNavigating}
-        userLocation={userLocation}
-        offers={offers}
-        onOfferSelect={handleDirectRedemption}
-        isPremium={userPlan === 'premium'}
-      />
+      {/* Orion Offer Alerts (during navigation only) */}
+      {isNavigating && (
+        <OrionOfferAlerts
+          isNavigating={isNavigating}
+          userLocation={userLocation}
+          offers={offers}
+          onOfferSelect={handleDirectRedemption}
+          isPremium={userPlan === 'premium'}
+        />
+      )}
       
       {/* Trip Analytics Modal */}
       <TripAnalytics

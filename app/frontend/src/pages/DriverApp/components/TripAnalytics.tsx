@@ -75,7 +75,7 @@ export default function TripAnalytics({ isOpen, onClose }: TripAnalyticsProps) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-2" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/80 z-[1100] flex items-center justify-center p-2" onClick={onClose}>
       <div className="w-full max-w-md h-[90vh] bg-slate-900 rounded-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-cyan-500 p-4 flex-shrink-0">

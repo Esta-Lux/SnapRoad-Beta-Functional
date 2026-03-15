@@ -18,6 +18,14 @@ interface User {
   rank: number
 }
 
+/** API login/signup response user shape (id, email, name or full_name) */
+export interface ApiUser {
+  id?: string
+  email?: string
+  name?: string
+  full_name?: string
+}
+
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
@@ -26,7 +34,8 @@ interface AuthContextType {
   signup: (name: string, email: string, password: string) => Promise<boolean>
   logout: () => void
   updateUser: (updates: Partial<User>) => void
-  setUserFromApiResponse: (apiUser: Record<string, unknown>) => void
+  /** Set user from API login/signup response so post-login pages have auth state */
+  setUserFromApi: (apiUser: ApiUser | null) => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -119,12 +128,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) setUser({ ...user, ...updates })
   }
 
-  const setUserFromApiResponse = (apiUser: Record<string, unknown>) => {
-    setUser(mapApiUserToContext(apiUser))
+  const setUserFromApi = (apiUser: ApiUser | null) => {
+    if (!apiUser) {
+      setUser(null)
+      return
+    }
+    const record = { ...apiUser, name: apiUser.name ?? apiUser.full_name } as Record<string, unknown>
+    setUser(mapApiUserToContext(record))
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, signup, logout, updateUser, setUserFromApiResponse }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, signup, logout, updateUser, setUserFromApi }}>
       {children}
     </AuthContext.Provider>
   )

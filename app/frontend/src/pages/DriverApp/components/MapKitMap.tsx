@@ -1,12 +1,13 @@
 /**
- * Apple MapKit JS map component.
+ * Map component (SnapRoad Map).
  * Stable lifecycle: map created once on mount, props update via separate effects.
  * Supports driving modes (route glow, bearing, ghost prediction).
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { Locate, Mic, Navigation2, Layers, Compass } from 'lucide-react'
+import { Locate, Mic, Navigation2, Layers, Compass, Eye } from 'lucide-react'
 import type { DrivingMode } from '@/core/types'
+import { createLookAroundScene } from '@/lib/mapkit'
 
 /* ------------------------------------------------------------------ */
 /*  MapKit JS type declarations                                        */
@@ -27,6 +28,8 @@ interface MKMap {
   addOverlay(o: unknown): void
   removeOverlay(o: unknown): void
   destroy(): void
+  showsUserLocation?: boolean
+  tracksUserLocation?: boolean
 }
 
 interface MKStyle {
@@ -79,7 +82,9 @@ export interface MapKitMapProps {
   center: { lat: number; lng: number }
   zoom: number
   bearing?: number
+  pitch?: number
   userLocation: { lat: number; lng: number }
+  gpsAccuracyMeters?: number
   vehicleHeading?: number
   routePolyline?: { lat: number; lng: number }[]
   destinationCoordinate?: { lat: number; lng: number }
@@ -96,6 +101,12 @@ export interface MapKitMapProps {
   onOfferClick?: (offer: Offer) => void
   roadReports?: RoadReport[]
   isNavigating?: boolean
+  showLookAround?: boolean
+  onDestinationDrag?: (coord: { lat: number; lng: number }) => void
+  offerZoneRadiusMeters?: number
+  colorScheme?: 'light' | 'dark'
+  onMapReady?: (map: MKMap, zoomToUser: (lat: number, lng: number, isNavigating: boolean) => void) => void
+  onPlaceSelected?: (place: { name: string; lat: number; lng: number }) => void
 }
 
 /* ------------------------------------------------------------------ */
@@ -136,6 +147,7 @@ function cumulativeDistance(pts: { lat: number; lng: number }[]): number[] {
   return out
 }
 
+
 function chunkPolyline(
   pts: { lat: number; lng: number }[],
   n: number
@@ -169,13 +181,14 @@ export default function MapKitMap({
   center,
   zoom,
   bearing = 0,
+  pitch = 0,
   userLocation,
+  gpsAccuracyMeters,
   vehicleHeading = 0,
   routePolyline,
   destinationCoordinate,
   traveledDistanceMeters,
   contentInsets,
-  predictedPosition,
   routeGlow = 0.7,
   mode = 'adaptive',
   onRecenter,
@@ -186,11 +199,15 @@ export default function MapKitMap({
   onOfferClick,
   roadReports = [],
   isNavigating,
+  showLookAround,
+  onDestinationDrag,
+  offerZoneRadiusMeters,
+  colorScheme = 'light',
+  onMapReady,
+  onPlaceSelected,
 }: MapKitMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MKMap | null>(null)
-  const userAnnRef = useRef<MKAnnotation | null>(null)
-  const ghostAnnRef = useRef<MKAnnotation | null>(null)
   const routeOverlaysRef = useRef<unknown[]>([])
   const destAnnRef = useRef<MKAnnotation | null>(null)
   const offerAnnsRef = useRef<MKAnnotation[]>([])
@@ -200,6 +217,25 @@ export default function MapKitMap({
   const navStartRef = useRef<number>(0)
   const traveledRef = useRef<{ lat: number; lng: number }[]>([])
   const traveledOverlayRef = useRef<unknown>(null)
+  const attributionObserverRef = useRef<MutationObserver | null>(null)
+  const [showTraffic, setShowTraffic] = useState(false)
+  const gpsCircleRef = useRef<unknown>(null)
+  const offerZoneOverlaysRef = useRef<unknown[]>([])
+  const lookAroundRef = useRef<{ destroy: () => void } | null>(null)
+  const lookAroundContainerRef = useRef<HTMLDivElement>(null)
+  const [lookAroundActive, setLookAroundActive] = useState(false)
+  const userInteractingRef = useRef(false)
+  const interactionTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const lastAutoZoomRef = useRef(0)
+  const pinnedAnnotationRef = useRef<MKAnnotation | null>(null)
+  const userAnnRef = useRef<MKAnnotation | null>(null)
+
+  // Cardinal direction label from map rotation (bearing)
+  const cardinal = (() => {
+    const b = ((bearing % 360) + 360) % 360
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const
+    return dirs[Math.round(b / 45) % 8]
+  })()
 
   /* ---------- Effect 1: Create map once on mount ---------- */
   useEffect(() => {
@@ -231,12 +267,14 @@ export default function MapKitMap({
           isScrollEnabled: true,
           isZoomEnabled: true,
           isRotationEnabled: true,
-          showsCompass: 0,
+          showsCompass: mapkit.FeatureVisibility.Hidden,
           showsZoomControl: false,
           showsMapTypeControl: false,
+          showsScale: mapkit.FeatureVisibility.Adaptive,
           showsUserLocation: false,
           tracksUserLocation: false,
           mapType: 'standard',
+          colorScheme: colorScheme,
         } as Record<string, unknown>)
       } catch (e) {
         console.warn('MapKit Map creation failed:', e)
@@ -247,9 +285,11 @@ export default function MapKitMap({
 
       try {
         const m = map as unknown as Record<string, unknown>
-        m.showsCompass = false
+        m.showsCompass = mapkit.FeatureVisibility.Hidden
         m.showsZoomControl = false
         m.showsMapTypeControl = false
+        m.showsScale = mapkit.FeatureVisibility.Adaptive
+        // showsUserLocation/tracksUserLocation set below after mapRef assignment
         m.isScrollEnabled = true
         m.isZoomEnabled = true
         m.isRotationEnabled = true
@@ -264,55 +304,182 @@ export default function MapKitMap({
       } catch { /* initial region non-critical */ }
 
       mapRef.current = map
+
+      // Custom user location marker with heading beam used instead of native dot
+      try {
+        const m = map as unknown as Record<string, unknown>
+        m.showsUserLocation = false
+        m.tracksUserLocation = false
+      } catch { /* non-critical */ }
+
+      // Listen for user interaction: stop following and don't overwrite zoom/pan
+      const stopFollowing = () => {
+        userInteractingRef.current = true
+        clearTimeout(interactionTimeoutRef.current)
+        interactionTimeoutRef.current = setTimeout(() => {
+          userInteractingRef.current = false
+        }, 8000)
+        try {
+          const m = map as unknown as Record<string, unknown>
+          if (m.tracksUserLocation !== undefined) m.tracksUserLocation = false
+        } catch { /* non-critical */ }
+      }
+      try {
+        const m = map as unknown as { addEventListener?: (e: string, cb: () => void) => void }
+        if (m.addEventListener) {
+          m.addEventListener('zoom-start', stopFollowing)
+          m.addEventListener('pan-start', stopFollowing)
+          m.addEventListener('scroll-start', stopFollowing)
+        }
+      } catch { /* MapKit event API may vary */ }
+
+      const zoomToUser = (lat: number, lng: number, isNav: boolean) => {
+        if (userInteractingRef.current) return
+        const now = Date.now()
+        if (now - lastAutoZoomRef.current < 10000) return
+        lastAutoZoomRef.current = now
+        try {
+          const span = isNav
+            ? new mapkit.CoordinateSpan(0.004, 0.004)
+            : new mapkit.CoordinateSpan(0.01, 0.01)
+          map.setRegionAnimated(
+            new mapkit.CoordinateRegion(new mapkit.Coordinate(lat, lng), span),
+            true
+          )
+        } catch { /* noop */ }
+      }
+      onMapReady?.(map, zoomToUser)
+
+      // Enable selectable POI annotations
+      if (onPlaceSelected) {
+        try {
+          const m = map as unknown as Record<string, unknown>
+          if (m.selectableMapFeatures !== undefined) {
+            const MapFeatureType = (window as unknown as { mapkit?: { MapFeatureType?: { PointOfInterest?: unknown } } }).mapkit?.MapFeatureType
+            if (MapFeatureType?.PointOfInterest) {
+              m.selectableMapFeatures = [MapFeatureType.PointOfInterest]
+            }
+          }
+          const addEvent = m.addEventListener as ((e: string, cb: (ev: { annotation?: MKAnnotation; place?: { coordinate?: MKCoordinate; name?: string }; coordinate?: MKCoordinate }) => void) => void) | undefined
+          if (addEvent) {
+            addEvent('select', (event) => {
+              const annotation = event.annotation
+              const place = event.place
+              const coord = place?.coordinate ?? (annotation as MKAnnotation)?.coordinate ?? event.coordinate
+              const name = place?.name ?? (annotation as { title?: string })?.title ?? 'Selected Location'
+              if (coord && onPlaceSelected) {
+                if (pinnedAnnotationRef.current) {
+                  try { map.removeAnnotation(pinnedAnnotationRef.current) } catch { /* noop */ }
+                }
+                const pin = new mapkit.MarkerAnnotation(
+                  new mapkit.Coordinate(coord.latitude, coord.longitude),
+                  { title: name, color: '#7C3AED', glyphColor: 'white', selected: true, calloutEnabled: true } as Record<string, unknown>
+                )
+                map.addAnnotation(pin)
+                pinnedAnnotationRef.current = pin
+                onPlaceSelected({ name, lat: coord.latitude, lng: coord.longitude })
+              }
+            })
+          }
+        } catch { /* MapKit POI API may vary */ }
+      }
+
+      // Reposition Apple Maps branding (safer than hiding - respects ToS)
+      const isInsideAnnotation = (node: Element): boolean => {
+        let cur: Element | null = node
+        while (cur && cur !== el) {
+          const cls = cur.className ?? ''
+          const clsStr = typeof cls === 'string' ? cls : ''
+          if (
+            clsStr.includes('mk-annotation') ||
+            clsStr.includes('mk-user-location') ||
+            clsStr.includes('mk-marker') ||
+            clsStr.includes('mk-overlay') ||
+            cur.getAttribute('role') === 'img'
+          ) return true
+          cur = cur.parentElement
+        }
+        return false
+      }
+
+      const repositionBranding = () => {
+        if (!el) return
+        const style = document.createElement('style')
+        style.textContent = `
+          .mk-attribution, .mk-controls-container .mk-legal,
+          [aria-label="Legal"], .mapkit-legal-link {
+            opacity: 0.3 !important;
+            transform: scale(0.7) !important;
+            bottom: 4px !important;
+          }
+        `
+        if (!document.getElementById('mapkit-branding-style')) {
+          style.id = 'mapkit-branding-style'
+          document.head.appendChild(style)
+        }
+      }
+      const removeAttribution = repositionBranding
+      removeAttribution()
+      setTimeout(removeAttribution, 100)
+      setTimeout(removeAttribution, 500)
+      setTimeout(removeAttribution, 1500)
+      const observer = new MutationObserver(removeAttribution)
+      observer.observe(el, { childList: true, subtree: true })
+      attributionObserverRef.current = observer
+      setMapReady(true)
     }
 
     requestAnimationFrame(tryCreate)
 
     return () => {
       cancelled = true
+      clearTimeout(interactionTimeoutRef.current)
+      attributionObserverRef.current?.disconnect()
+      attributionObserverRef.current = null
       const map = mapRef.current
       if (map) {
         try { map.destroy() } catch { /* already gone */ }
         mapRef.current = null
       }
-      userAnnRef.current = null
-      ghostAnnRef.current = null
       destAnnRef.current = null
+      pinnedAnnotationRef.current = null
+      userAnnRef.current = null
       routeOverlaysRef.current = []
     }
     // mount-only: we update region/annotations via separate effects
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  /* ---------- Effect 2: Update region (center + zoom + bearing) ---------- */
+  /* ---------- Effect 2: Update region (center + zoom + bearing) — skip when user is interacting so zoom/pan aren't overwritten ---------- */
   const setRegion = useCallback(() => {
     const mapkit = mk()
     const map = mapRef.current
     if (!mapkit || !map) return
+    if (userInteractingRef.current) return
+    const m = map as unknown as Record<string, unknown>
     try {
       if (isNavigating) {
-        const elapsed = Date.now() - navStartRef.current
-        if (elapsed > 2000) {
-          const coord = new mapkit.Coordinate(userLocation.lat, userLocation.lng)
-          const span = new mapkit.CoordinateSpan(0.003, 0.004)
-          const region = new mapkit.CoordinateRegion(coord, span)
-          map.setRegionAnimated(region, true)
-          map.rotation = -vehicleHeading
-          return
-        }
+        m.tracksUserLocation = false
+        const delta = DELTA_FOR_ZOOM(zoom)
+        const span = new mapkit.CoordinateSpan(delta, delta * 1.2)
+        const coord = new mapkit.Coordinate(center.lat, center.lng)
+        const region = new mapkit.CoordinateRegion(coord, span)
+        map.setRegionAnimated(region, true)
+        map.rotation = -vehicleHeading
+        return
       }
-      const delta = DELTA_FOR_ZOOM(zoom)
-      const coord = new mapkit.Coordinate(center.lat, center.lng)
-      const span = new mapkit.CoordinateSpan(delta, delta * 1.2)
-      const region = new mapkit.CoordinateRegion(coord, span)
-      map.setRegionAnimated(region, true)
-      if (typeof bearing === 'number') {
+      // When not navigating: use MapKit native follow (like Apple Maps) so the map moves with you
+      m.tracksUserLocation = true
+      // Do not set region from props — let the map follow the user natively and preserve user's zoom/pan
+      if (typeof bearing === 'number' && bearing !== 0) {
         map.rotation = -bearing
+      } else {
+        map.rotation = 0
       }
     } catch (e) {
       console.warn('MapKit setRegion failed:', e)
     }
-  }, [center.lat, center.lng, zoom, bearing, isNavigating, userLocation.lat, userLocation.lng, vehicleHeading])
+  }, [center.lat, center.lng, zoom, bearing, pitch, isNavigating, vehicleHeading])
 
   useEffect(() => { setRegion() }, [setRegion])
 
@@ -323,107 +490,7 @@ export default function MapKitMap({
     }
   }, [isNavigating])
 
-  /* ---------- Effect 3: User location annotation ---------- */
-  useEffect(() => {
-    const mapkit = mk()
-    const map = mapRef.current
-    if (!mapkit || !map) return
-
-    if (userAnnRef.current) {
-      try {
-        (userAnnRef.current as unknown as { coordinate: unknown }).coordinate =
-          new mapkit.Coordinate(userLocation.lat, userLocation.lng)
-        const el = (userAnnRef.current as unknown as { element?: HTMLElement }).element
-        if (el) {
-          const carDiv = el.querySelector('div:last-child') as HTMLElement | null
-          if (carDiv) carDiv.style.transform = `rotate(${vehicleHeading}deg)`
-        }
-        return
-      } catch { /* fall through to recreate */ }
-    }
-
-    try {
-      const coord = new mapkit.Coordinate(userLocation.lat, userLocation.lng)
-
-      const factory = () => {
-        const el = document.createElement('div')
-        el.style.cssText = 'width:40px;height:52px;position:relative;'
-        const pulse = document.createElement('div')
-        pulse.style.cssText = 'position:absolute;left:4px;top:10px;width:32px;height:32px;border-radius:50%;background:rgba(59,130,246,0.18);animation:pulse 2s infinite;'
-        el.appendChild(pulse)
-        const car = document.createElement('div')
-        const c = carColor
-        car.innerHTML = `<svg width="24" height="38" viewBox="0 0 22 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="2" y="3" width="18" height="30" rx="5" fill="${c}"/>
-          <rect x="0" y="9" width="2.5" height="5" rx="1.2" fill="${c}" opacity="0.7"/>
-          <rect x="19.5" y="9" width="2.5" height="5" rx="1.2" fill="${c}" opacity="0.7"/>
-          <rect x="0" y="22" width="2.5" height="5" rx="1.2" fill="${c}" opacity="0.7"/>
-          <rect x="19.5" y="22" width="2.5" height="5" rx="1.2" fill="${c}" opacity="0.7"/>
-          <rect x="4" y="10" width="14" height="12" rx="2.5" fill="rgba(0,0,0,0.18)"/>
-          <rect x="5" y="11" width="12" height="5.5" rx="1.5" fill="rgba(180,220,255,0.45)"/>
-          <rect x="5.5" y="19" width="11" height="2.5" rx="1.2" fill="rgba(180,220,255,0.3)"/>
-          <rect x="3.5" y="4.5" width="4" height="1.5" rx="0.75" fill="rgba(255,255,255,0.9)"/>
-          <rect x="14.5" y="4.5" width="4" height="1.5" rx="0.75" fill="rgba(255,255,255,0.9)"/>
-          <rect x="3.5" y="30" width="3.5" height="1.5" rx="0.75" fill="#ef4444"/>
-          <rect x="15" y="30" width="3.5" height="1.5" rx="0.75" fill="#ef4444"/>
-        </svg>`
-        car.style.cssText = `position:absolute;left:8px;top:7px;transform:rotate(${vehicleHeading}deg);transition:transform .3s ease;transform-origin:center center;`
-        el.appendChild(car)
-        return el
-      }
-
-      const ann = new mapkit.Annotation(coord, factory, {
-        anchorOffset: new DOMPoint(0, -24),
-        animates: false,
-      })
-      map.addAnnotation(ann)
-      userAnnRef.current = ann
-    } catch (e) {
-      console.warn('MapKit user annotation failed:', e)
-    }
-  }, [userLocation.lat, userLocation.lng, vehicleHeading])
-
-  /* ---------- Effect 4: Ghost prediction annotation ---------- */
-  useEffect(() => {
-    const mapkit = mk()
-    const map = mapRef.current
-    if (!mapkit || !map) return
-
-    if (ghostAnnRef.current) {
-      try { map.removeAnnotation(ghostAnnRef.current) } catch { /* noop */ }
-      ghostAnnRef.current = null
-    }
-
-    if (!predictedPosition || predictedPosition.confidence <= 0) return
-
-    try {
-      const coord = new mapkit.Coordinate(
-        predictedPosition.coordinate.lat,
-        predictedPosition.coordinate.lng
-      )
-      const opacity = Math.max(0.15, Math.min(0.6, predictedPosition.confidence))
-
-      const factory = () => {
-        const el = document.createElement('div')
-        el.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-          <path d="M12 2L4 20l8-5 8 5L12 2z" fill="#60a5fa" stroke="white" stroke-width="1"/>
-        </svg>`
-        el.style.cssText = `opacity:${opacity};transform:rotate(${vehicleHeading}deg);transition:opacity .3s;`
-        return el
-      }
-
-      const ann = new mapkit.Annotation(coord, factory, {
-        anchorOffset: new DOMPoint(0, 0),
-        animates: false,
-      })
-      map.addAnnotation(ann)
-      ghostAnnRef.current = ann
-    } catch (e) {
-      console.warn('MapKit ghost annotation failed:', e)
-    }
-  }, [predictedPosition, vehicleHeading])
-
-  /* ---------- Effect 5: Gradient route polyline (blue→green, shadow, traveled gray) ---------- */
+  /* ---------- Effect 3: Gradient route polyline (blue→green, shadow, traveled gray) ---------- */
   useEffect(() => {
     const mapkit = mk()
     const map = mapRef.current
@@ -597,9 +664,21 @@ export default function MapKitMap({
       }
 
       const ann = new mapkit.Annotation(coord, factory, {
-        anchorOffset: new DOMPoint(20, 52),
+        anchorOffset: new DOMPoint(0, 0),
         animates: false,
+        draggable: !!onDestinationDrag,
       })
+      if (onDestinationDrag) {
+        try {
+          (ann as unknown as { addEventListener?: (type: string, cb: (e: unknown) => void) => void })
+            .addEventListener?.('drag-end', (e: unknown) => {
+              const evt = e as { coordinate?: { latitude: number; longitude: number } }
+              if (evt.coordinate) {
+                onDestinationDrag({ lat: evt.coordinate.latitude, lng: evt.coordinate.longitude })
+              }
+            })
+        } catch { /* noop */ }
+      }
       map.addAnnotation(ann)
       destAnnRef.current = ann
     } catch (e) {
@@ -607,7 +686,100 @@ export default function MapKitMap({
     }
   }, [destinationCoordinate?.lat, destinationCoordinate?.lng, mapReady])
 
-  /* ---------- Effect 7: Offer markers ---------- */
+  /* ---------- Effect 6b: Custom user location marker (cone + ring + dot, heading beam) ---------- */
+  useEffect(() => {
+    const mapkit = mk()
+    const map = mapRef.current
+    if (!mapkit || !map || !mapReady) return
+
+    if (userAnnRef.current) {
+      try { map.removeAnnotation(userAnnRef.current) } catch { /* noop */ }
+      userAnnRef.current = null
+    }
+
+    const factory = () => {
+      const container = document.createElement('div')
+      container.id = 'user-location-marker'
+      container.style.cssText = `
+        width: 80px;
+        height: 80px;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+      `
+      const cone = document.createElement('div')
+      cone.id = 'user-heading-cone'
+      cone.style.cssText = `
+        position: absolute;
+        bottom: calc(50% - 2px);
+        left: 50%;
+        transform: translateX(-50%);
+        width: 0;
+        height: 0;
+        border-left: 18px solid transparent;
+        border-right: 18px solid transparent;
+        border-bottom: 42px solid rgba(0,122,255,0.2);
+        filter: blur(3px);
+        transform-origin: 50% 100%;
+      `
+      const ring = document.createElement('div')
+      ring.style.cssText = `
+        position: absolute;
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        background: rgba(0,122,255,0.1);
+        border: 1.5px solid rgba(0,122,255,0.25);
+        animation: sr-pulse 2.5s ease-out infinite;
+      `
+      const dot = document.createElement('div')
+      dot.style.cssText = `
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #007AFF;
+        border: 3px solid white;
+        box-shadow: 0 2px 8px rgba(0,122,255,0.6);
+        z-index: 2;
+      `
+      container.appendChild(cone)
+      container.appendChild(ring)
+      container.appendChild(dot)
+      return container
+    }
+
+    try {
+      const coord = new mapkit.Coordinate(userLocation.lat, userLocation.lng)
+      const ann = new mapkit.Annotation(coord, factory, {
+        anchorOffset: new DOMPoint(0, 0),
+        animates: false,
+      } as Record<string, unknown>)
+      map.addAnnotation(ann)
+      userAnnRef.current = ann
+    } catch (e) {
+      console.warn('MapKit user location annotation failed:', e)
+    }
+  }, [mapReady])
+
+  /* ---------- Effect 6c: Update user marker position and rotation ---------- */
+  useEffect(() => {
+    const mapkit = mk()
+    if (!mapkit || !userAnnRef.current) return
+    try {
+      const ann = userAnnRef.current as unknown as { coordinate?: unknown }
+      ann.coordinate = new mapkit.Coordinate(userLocation.lat, userLocation.lng)
+      const markerEl = document.getElementById('user-location-marker')
+      if (markerEl && typeof vehicleHeading === 'number') {
+        markerEl.style.transform = `rotate(${vehicleHeading}deg)`
+        markerEl.style.transition = 'transform 0.3s ease'
+      }
+    } catch { /* noop */ }
+  }, [userLocation.lat, userLocation.lng, vehicleHeading])
+
+  /* ---------- Effect 7: Offer markers with clustering ---------- */
   useEffect(() => {
     const mapkit = mk()
     const map = mapRef.current
@@ -617,6 +789,8 @@ export default function MapKitMap({
     offerAnnsRef.current = []
 
     const visible = offers.filter((o) => !o.redeemed && o.lat && o.lng).slice(0, 8)
+    const annotations: MKAnnotation[] = []
+
     visible.forEach((offer) => {
       try {
         const coord = new mapkit.Coordinate(offer.lat!, offer.lng!)
@@ -630,13 +804,58 @@ export default function MapKitMap({
           el.onclick = (e) => { e.stopPropagation(); onOfferClick?.(offer) }
           return el
         }
-        const ann = new mapkit.Annotation(coord, factory, { anchorOffset: new DOMPoint(0, 0), animates: false })
-        map.addAnnotation(ann)
-        offerAnnsRef.current.push(ann)
+        const ann = new mapkit.Annotation(coord, factory, {
+          anchorOffset: new DOMPoint(0, 0),
+          animates: false,
+          clusteringIdentifier: 'offers',
+        })
+        annotations.push(ann)
       } catch (e) {
         console.warn('MapKit offer annotation failed:', e)
       }
     })
+
+    const MK = mapkit as unknown as {
+      AnnotationClusterFactory?: {
+        create?: (anns: unknown[], opts?: Record<string, unknown>) => unknown
+      }
+    }
+
+    if (annotations.length > 0) {
+      try {
+        const clusterFactory = () => {
+          const el = document.createElement('div')
+          el.style.cssText = 'width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#10b981);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(59,130,246,0.4);border:2px solid white;font-size:12px;font-weight:700;color:white;'
+          el.textContent = String(annotations.length)
+          return el
+        }
+
+        const mapAny = map as unknown as { annotationForCluster?: (cluster: unknown) => unknown }
+        if (typeof mapAny.annotationForCluster === 'undefined') {
+          try {
+            (map as unknown as Record<string, unknown>).annotationForCluster = (cluster: unknown) => {
+              const c = cluster as { memberAnnotations?: unknown[]; coordinate?: MKCoordinate }
+              const count = c.memberAnnotations?.length ?? 0
+              return new mapkit.Annotation(
+                c.coordinate ?? new mapkit.Coordinate(0, 0),
+                () => {
+                  const el = document.createElement('div')
+                  el.style.cssText = 'width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#10b981);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(59,130,246,0.4);border:2px solid white;font-size:12px;font-weight:700;color:white;'
+                  el.textContent = String(count)
+                  return el
+                },
+                { anchorOffset: new DOMPoint(0, 0), animates: false }
+              )
+            }
+          } catch { /* noop */ }
+        }
+      } catch { /* clustering setup non-critical */ }
+
+      annotations.forEach(ann => {
+        map.addAnnotation(ann)
+        offerAnnsRef.current.push(ann)
+      })
+    }
   }, [offers, onOfferClick])
 
   /* ---------- Effect 8: Road report markers ---------- */
@@ -668,6 +887,128 @@ export default function MapKitMap({
     })
   }, [roadReports])
 
+  /* ---------- Effect: Apply colorScheme prop to map ---------- */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    try {
+      (map as unknown as Record<string, unknown>).colorScheme = colorScheme
+    } catch { /* noop */ }
+  }, [colorScheme, mapReady])
+
+  /* ---------- Effect: Rotate map to face direction of travel during navigation ---------- */
+  useEffect(() => {
+    const map = mapRef.current as unknown as MKMap & { rotation?: number }
+    if (!map || !mapReady) return
+    try {
+      if (isNavigating && typeof vehicleHeading === 'number') {
+        map.rotation = -vehicleHeading
+      } else {
+        map.rotation = 0
+      }
+    } catch { /* noop */ }
+  }, [vehicleHeading, isNavigating, mapReady])
+
+  /* ---------- Effect 9: Traffic overlay toggle ---------- */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    try {
+      (map as unknown as Record<string, unknown>).showsTrafficIncidents = showTraffic
+    } catch { /* noop */ }
+  }, [showTraffic, mapReady])
+
+  /* ---------- Effect 10: GPS accuracy circle ---------- */
+  useEffect(() => {
+    const mapkit = mk()
+    const map = mapRef.current
+    if (!mapkit || !map || !mapReady) return
+
+    if (gpsCircleRef.current) {
+      try { map.removeOverlay(gpsCircleRef.current as Parameters<typeof map.removeOverlay>[0]) } catch { /* noop */ }
+      gpsCircleRef.current = null
+    }
+
+    if (!gpsAccuracyMeters || gpsAccuracyMeters < 10) return
+
+    try {
+      const MK = mapkit as unknown as { CircleOverlay?: new (coord: unknown, radius: number, opts?: Record<string, unknown>) => unknown }
+      if (!MK.CircleOverlay) return
+      const coord = new mapkit.Coordinate(userLocation.lat, userLocation.lng)
+      const style = new mapkit.Style({
+        strokeColor: '#3b82f6',
+        strokeOpacity: 0.3,
+        lineWidth: 1,
+        fillColor: '#3b82f6',
+        fillOpacity: 0.08,
+      } as Record<string, unknown>)
+      const circle = new MK.CircleOverlay(coord, gpsAccuracyMeters, { style })
+      map.addOverlay(circle)
+      gpsCircleRef.current = circle
+    } catch { /* CircleOverlay may not be available */ }
+  }, [userLocation.lat, userLocation.lng, gpsAccuracyMeters, mapReady])
+
+  /* ---------- Effect 11: Offer zone circle overlays ---------- */
+  useEffect(() => {
+    const mapkit = mk()
+    const map = mapRef.current
+    if (!mapkit || !map || !mapReady) return
+
+    offerZoneOverlaysRef.current.forEach(o => {
+      try { map.removeOverlay(o as Parameters<typeof map.removeOverlay>[0]) } catch { /* noop */ }
+    })
+    offerZoneOverlaysRef.current = []
+
+    if (!offerZoneRadiusMeters || offerZoneRadiusMeters < 1) return
+
+    const MK = mapkit as unknown as { CircleOverlay?: new (coord: unknown, radius: number, opts?: Record<string, unknown>) => unknown }
+    if (!MK.CircleOverlay) return
+
+    const visible = offers.filter(o => !o.redeemed && o.lat && o.lng).slice(0, 8)
+    visible.forEach(offer => {
+      try {
+        const coord = new mapkit.Coordinate(offer.lat!, offer.lng!)
+        const style = new mapkit.Style({
+          strokeColor: '#10b981',
+          strokeOpacity: 0.25,
+          lineWidth: 1,
+          fillColor: '#10b981',
+          fillOpacity: 0.06,
+        } as Record<string, unknown>)
+        const circle = new MK.CircleOverlay(coord, offerZoneRadiusMeters, { style })
+        map.addOverlay(circle)
+        offerZoneOverlaysRef.current.push(circle)
+      } catch { /* noop */ }
+    })
+  }, [offers, offerZoneRadiusMeters, mapReady])
+
+  /* ---------- Effect 12: Look Around viewer ---------- */
+  useEffect(() => {
+    if (lookAroundRef.current) {
+      lookAroundRef.current.destroy()
+      lookAroundRef.current = null
+    }
+    setLookAroundActive(false)
+
+    if (!showLookAround || !destinationCoordinate?.lat || !destinationCoordinate?.lng) return
+    if (!lookAroundContainerRef.current) return
+
+    const scene = createLookAroundScene(
+      lookAroundContainerRef.current,
+      destinationCoordinate.lat,
+      destinationCoordinate.lng
+    )
+    if (scene) {
+      lookAroundRef.current = scene
+      setLookAroundActive(true)
+    }
+
+    return () => {
+      lookAroundRef.current?.destroy()
+      lookAroundRef.current = null
+    }
+  }, [showLookAround, destinationCoordinate?.lat, destinationCoordinate?.lng])
+
   /* ---------- Mode edge tint ---------- */
   const edgeTint =
     mode === 'sport'
@@ -678,33 +1019,41 @@ export default function MapKitMap({
 
   if (mapFailed) return null
 
-  const containerStyle =
-    contentInsets
-      ? {
-          paddingTop: contentInsets.top,
-          paddingRight: contentInsets.right,
-          paddingBottom: contentInsets.bottom,
-          paddingLeft: contentInsets.left,
-          transition: 'padding 300ms ease-in-out',
-        }
-      : undefined
-
   return (
-    <div className="absolute inset-0 z-0 bg-slate-900">
-      {/* MapKit container -- hide built-in attribution/legal; padding when contentInsets for nav panels */}
-      <div ref={containerRef} className="absolute inset-0 mapkit-clean" style={containerStyle} />
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        zIndex: 0,
+      }}
+    >
+      <div
+        ref={containerRef}
+        className="mapkit-clean"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: 0,
+        }}
+      />
 
       {/* Mode edge tint overlay */}
       <div className="absolute inset-0 pointer-events-none z-[5]" style={{ background: edgeTint }} />
 
-      {/* Live GPS badge */}
-      {isLiveGps && (
+      {/* Live GPS badge - hidden during navigation for clean nav mode */}
+      {!isNavigating && isLiveGps && (
         <div className="absolute top-2 left-2 z-20 px-2 py-0.5 rounded-full bg-emerald-500/90 text-white text-[10px] font-medium flex items-center gap-1">
           <Navigation2 size={10} className="animate-pulse" /> Live GPS
         </div>
       )}
 
-      {/* Floating controls */}
+      {/* Floating controls - hidden during navigation for clean nav mode */}
+      {!isNavigating && (
       <div className="absolute right-3 bottom-24 z-30 flex flex-col gap-2">
         <button
           type="button"
@@ -715,7 +1064,7 @@ export default function MapKitMap({
           <Mic className="text-white" size={20} />
         </button>
         {/* Grouped controls card - Baidu panel: light gray bg, subtle border, padding */}
-        <div className="bg-gray-50/98 backdrop-blur-md rounded-xl border border-gray-200/90 shadow-[0_1px_4px_rgba(0,0,0,0.08)] overflow-hidden flex flex-col items-center w-11 py-1">
+        <div className="bg-gray-50/98 backdrop-blur-md rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col items-center w-11 py-1">
           {/* Cardinal direction */}
           <button
             type="button"
@@ -729,46 +1078,67 @@ export default function MapKitMap({
             <span className="text-[13px] font-bold text-slate-700 select-none">{cardinal}</span>
           </button>
           <div className="w-7 h-px bg-gray-200" />
-          {/* Layers / map type toggle */}
+          {/* Layers / map type toggle — cycles: standard → satellite → hybrid → standard+traffic */}
           <button
             type="button"
             onClick={() => {
               const m = mapRef.current
               if (!m) return
-              const types = ['standard', 'satellite', 'mutedStandard'] as const
-              const cur = (m as unknown as { mapType: string }).mapType || 'standard'
-              const idx = types.indexOf(cur as typeof types[number])
-              const next = types[(idx + 1) % types.length]
-              ;(m as unknown as { mapType: string }).mapType = next
+              const mAny = m as unknown as { mapType: string }
+              const cur = mAny.mapType || 'standard'
+              if (cur === 'standard' && !showTraffic) {
+                mAny.mapType = 'satellite'
+              } else if (cur === 'satellite') {
+                mAny.mapType = 'hybrid'
+              } else if (cur === 'hybrid') {
+                mAny.mapType = 'standard'
+                setShowTraffic(true)
+              } else {
+                mAny.mapType = 'standard'
+                setShowTraffic(false)
+              }
             }}
-            className="w-11 h-10 flex items-center justify-center active:bg-gray-200/80 transition-colors"
+            className="w-11 h-10 flex items-center justify-center active:bg-gray-200/80 transition-colors rounded-b-lg"
           >
-            <Layers className="text-slate-600" size={17} />
+            <Layers className={showTraffic ? 'text-orange-500' : 'text-slate-600'} size={17} />
           </button>
         </div>
 
-        {/* Recenter / location button */}
+        {/* Recenter / location button — re-enable follow mode so map moves with you like Apple Maps */}
         <button
           type="button"
           onClick={() => {
-            const mapkit = mk()
+            userInteractingRef.current = false
+            clearTimeout(interactionTimeoutRef.current)
             const map = mapRef.current
-            if (mapkit && map) {
-              const coord = new mapkit.Coordinate(userLocation.lat, userLocation.lng)
-              const span = new mapkit.CoordinateSpan(0.005, 0.006)
-              const region = new mapkit.CoordinateRegion(coord, span)
-              map.setRegionAnimated(region, true)
+            if (map) {
+              try {
+                const m = map as unknown as Record<string, unknown>
+                if (m.tracksUserLocation !== undefined) m.tracksUserLocation = true
+              } catch { /* noop */ }
+              if (isNavigating) {
+                const mapkit = mk()
+                if (mapkit) {
+                  const span = new mapkit.CoordinateSpan(0.003, 0.003)
+                  const region = new mapkit.CoordinateRegion(
+                    new mapkit.Coordinate(userLocation.lat, userLocation.lng),
+                    span
+                  )
+                  map.setRegionAnimated(region, true)
+                }
+              }
             }
             onRecenter?.()
           }}
-          className="w-11 h-10 bg-gray-50/98 backdrop-blur-md rounded-xl border border-gray-200/90 shadow-[0_1px_4px_rgba(0,0,0,0.08)] flex items-center justify-center active:bg-gray-200/80 transition-colors"
+          className="w-11 h-10 bg-gray-50/98 backdrop-blur-md rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.12)] flex items-center justify-center active:bg-gray-200/80 transition-colors"
         >
-          <Locate className="text-white" size={20} />
+          <Locate className="text-slate-600" size={18} />
         </button>
       </div>
+      )}
 
-      {/* Compass indicator -- shown when bearing is non-zero */}
-      {bearing !== 0 && (
+      {/* Compass indicator -- shown when bearing is non-zero, hidden during navigation */}
+      {!isNavigating && bearing !== 0 && (
         <button
           type="button"
           onClick={onRecenter}
@@ -778,9 +1148,21 @@ export default function MapKitMap({
         </button>
       )}
 
-      {/* Attribution */}
-      <div className="absolute bottom-1 left-1 z-20 text-[8px] text-slate-500">
-        © Apple MapKit
+      {/* Look Around street-level viewer - hidden during navigation */}
+      {!isNavigating && showLookAround && destinationCoordinate && (
+        <div className={`absolute top-2 left-2 right-14 z-40 rounded-xl overflow-hidden shadow-xl border border-white/20 transition-all duration-300 ${lookAroundActive ? 'h-48 opacity-100' : 'h-0 opacity-0'}`}>
+          <div ref={lookAroundContainerRef} className="w-full h-full bg-slate-800" />
+          <div className="absolute top-2 right-2 flex items-center gap-1">
+            <div className="px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-medium flex items-center gap-1">
+              <Eye size={10} /> Look Around
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SnapRoad Map branding (replaces third-party attribution) */}
+      <div className="absolute bottom-1 left-1 z-20 text-[10px] font-medium text-slate-500 pointer-events-none">
+        SnapRoad Map
       </div>
     </div>
   )
