@@ -117,6 +117,57 @@ async def place_details(place_id: str):
     }
 
 
+@router.get("/nearby")
+async def nearby_places(
+    lat: float = Query(..., ge=-90, le=90),
+    lng: float = Query(..., ge=-180, le=180),
+    radius: int = Query(100, ge=20, le=5000),
+):
+    """Return places near a point (for map click). Uses Google Places Nearby Search."""
+    key = _KEY()
+    if not key:
+        return {"success": False, "error": "Google Places API key not configured", "data": []}
+
+    params = {
+        "location": f"{lat},{lng}",
+        "radius": radius,
+        "key": key,
+        "language": "en",
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{_BASE}/nearbysearch/json", params=params)
+        data = r.json()
+
+    raw = []
+    for p in data.get("results", [])[:15]:
+        geo = p.get("geometry", {}).get("location", {})
+        plat = geo.get("lat")
+        plng = geo.get("lng")
+        if plat is None or plng is None:
+            continue
+        photos = p.get("photos", [])
+        ref = photos[0].get("photo_reference") if photos else None
+        raw.append({
+            "place_id": p.get("place_id"),
+            "name": p.get("name", ""),
+            "address": p.get("vicinity", ""),
+            "lat": plat,
+            "lng": plng,
+            "photo_reference": ref,
+            "rating": p.get("rating"),
+            "types": p.get("types", []),
+        })
+
+    # Sort by distance from click so the POI under the tap is first (fixes wrong destination)
+    def dist_sq(a: dict, b: dict) -> float:
+        return (a.get("lat", 0) - b.get("lat", 0)) ** 2 + (a.get("lng", 0) - b.get("lng", 0)) ** 2
+
+    click_point = {"lat": lat, "lng": lng}
+    results = sorted(raw, key=lambda r: dist_sq(r, click_point))[:10]
+
+    return {"success": True, "data": results}
+
+
 @router.get("/photo")
 async def place_photo(
     ref: str = Query(..., min_length=1),

@@ -22,3 +22,7 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
 
 # Cameras / Traffic API - used for auth when calling external cameras or traffic APIs (e.g. /api/map/traffic)
 CAMERAS_API_KEY = os.environ.get("CAMERAS_API_KEY")
+# Optional: base URL for cameras API. If set, GET /api/map/traffic calls it with lat, lng, radius and the key.
+CAMERAS_API_URL = (os.environ.get("CAMERAS_API_URL") or "").strip().rstrip("/")
+# If set to "true" or "1", send API key in X-API-Key header instead of query param "key".
+CAMERAS_API_KEY_AS_HEADER = (os.environ.get("CAMERAS_API_KEY_AS_HEADER") or "").strip().lower() in ("1", "true", "yes")

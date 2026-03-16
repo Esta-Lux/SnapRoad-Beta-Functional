@@ -1,14 +1,28 @@
 import { useState, useRef, useEffect } from 'react'
-import { Camera, X, Image, Upload, AlertTriangle, Shield, Check, MapPin, User, Loader2 } from 'lucide-react'
+import { Camera, X, Image, AlertTriangle, Shield, Check, MapPin, User, Loader2, Car, CloudRain, Construction } from 'lucide-react'
 
 interface QuickPhotoReportProps {
   isOpen: boolean
   onClose: () => void
   onSubmit: (report: { type: string; photo_url: string; lat: number; lng: number }) => Promise<any>
   currentLocation: { lat: number; lng: number }
-  isMoving: boolean  // Vehicle in motion
-  currentSpeed: number  // mph
+  isMoving: boolean
+  currentSpeed: number
+  /** When true, show only a compact bottom sheet (icons + submit) for quick report during nav. */
+  compact?: boolean
+  /** When true in compact mode, user will tap the map to place the incident instead of using currentLocation directly. */
+  useMapPlacement?: boolean
+  /** Optional callback fired from compact mode when the user confirms they want to place an incident on the map. */
+  onRequestPlacement?: (type: string) => void
 }
+
+const REPORT_ICONS: { type: string; label: string; icon: typeof AlertTriangle }[] = [
+  { type: 'hazard', label: 'Hazard', icon: AlertTriangle },
+  { type: 'police', label: 'Police', icon: Shield },
+  { type: 'accident', label: 'Accident', icon: Car },
+  { type: 'construction', label: 'Construction', icon: Construction },
+  { type: 'weather', label: 'Weather', icon: CloudRain },
+]
 
 export default function QuickPhotoReport({ 
   isOpen, 
@@ -16,7 +30,10 @@ export default function QuickPhotoReport({
   onSubmit, 
   currentLocation,
   isMoving,
-  currentSpeed 
+  currentSpeed,
+  compact = false,
+  useMapPlacement = false,
+  onRequestPlacement,
 }: QuickPhotoReportProps) {
   const [isPassengerMode, setIsPassengerMode] = useState(false)
   const [showSafetyWarning, setShowSafetyWarning] = useState(false)
@@ -62,19 +79,17 @@ export default function QuickPhotoReport({
     }
   }
 
-  const handleSubmit = async () => {
-    if (!selectedImage) return
-    
+  const handleSubmit = async (photoUrl: string = '') => {
+    const url = photoUrl || selectedImage || ''
+    if (!url && !reportType) return
     setIsSubmitting(true)
     try {
       await onSubmit({
         type: reportType,
-        photo_url: selectedImage,
+        photo_url: url,
         lat: currentLocation.lat,
         lng: currentLocation.lng
       })
-      
-      // Reset and close
       setSelectedImage(null)
       onClose()
     } catch (e) {
@@ -84,6 +99,15 @@ export default function QuickPhotoReport({
     }
   }
 
+  const handleIconOnlyReport = async () => {
+    if (compact && useMapPlacement && onRequestPlacement) {
+      onRequestPlacement(reportType)
+      onClose()
+      return
+    }
+    await handleSubmit('')
+  }
+
   const enablePassengerMode = () => {
     setIsPassengerMode(true)
     setShowSafetyWarning(false)
@@ -91,35 +115,74 @@ export default function QuickPhotoReport({
 
   if (!isOpen) return null
 
+  if (compact) {
+    return (
+      <>
+        <div className="fixed inset-0 bg-black/50 z-[1001]" onClick={onClose} aria-hidden />
+        <div
+          className="fixed left-4 right-4 bottom-[calc(80px+env(safe-area-inset-bottom,18px))] z-[1002] rounded-2xl border border-slate-600/50 bg-slate-800/95 backdrop-blur-xl shadow-xl overflow-hidden"
+          style={{ maxHeight: '40vh' }}
+        >
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-600/50">
+            <span className="text-white font-semibold text-sm">Report incident</span>
+            <button onClick={onClose} className="p-2 rounded-lg text-slate-400 hover:text-white" aria-label="Close">
+              <X size={20} />
+            </button>
+          </div>
+          <div className="p-3">
+            <p className="text-slate-400 text-xs mb-2">Tap type, then submit</p>
+            <div className="flex gap-2 flex-wrap">
+              {REPORT_ICONS.map(({ type, label, icon: Icon }) => (
+                <button
+                  key={type}
+                  onClick={() => setReportType(type)}
+                  className={`flex-1 min-w-[72px] flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl border-2 transition-colors ${
+                    reportType === type ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-700/80 border-slate-600 text-slate-300'
+                  }`}
+                >
+                  <Icon size={20} />
+                  <span className="text-[11px] font-medium capitalize">{label}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={handleIconOnlyReport}
+              disabled={isSubmitting}
+              className="w-full mt-3 py-2.5 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 font-medium text-sm flex items-center justify-center gap-2"
+            >
+              {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+              Report {reportType}
+            </button>
+          </div>
+        </div>
+      </>
+    )
+  }
+
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col">
-      {/* Hidden file inputs */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleFileSelect}
-      />
-      <input
-        ref={cameraInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={handleFileSelect}
-      />
+    <>
+      <div className="fixed inset-0 bg-black/50 z-[1000]" onClick={onClose} aria-hidden />
+      <div
+        className="fixed left-4 right-4 bottom-[calc(80px+env(safe-area-inset-bottom,18px))] z-[1001] rounded-2xl border border-slate-600/50 bg-slate-800/95 backdrop-blur-xl shadow-xl overflow-hidden flex flex-col"
+        style={{ maxHeight: '55vh' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileSelect} />
 
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 bg-slate-900">
-        <button onClick={onClose} className="text-white" data-testid="photo-report-close">
-          <X size={24} />
-        </button>
-        <h2 className="text-white font-bold">Quick Report</h2>
-        <div className="w-6" /> {/* Spacer */}
-      </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-600/50 flex-shrink-0">
+          <button onClick={onClose} className="flex items-center gap-2 text-slate-300 hover:text-white p-2 -ml-2 rounded-lg" data-testid="photo-report-close" aria-label="Close">
+            <X size={22} />
+            <span className="text-sm font-medium">Close</span>
+          </button>
+          <h2 className="text-white font-bold text-sm">Report incident</h2>
+          <button onClick={onClose} className="p-2 rounded-lg text-slate-300 hover:text-white" aria-label="Cancel">
+            <X size={20} />
+          </button>
+        </div>
 
-      {/* Safety Warning Modal */}
+        {/* Safety Warning Modal */}
       {showSafetyWarning && (
         <div className="absolute inset-0 bg-black/90 z-10 flex items-center justify-center p-6">
           <div className="bg-slate-800 rounded-2xl p-6 max-w-sm w-full">
@@ -177,37 +240,34 @@ export default function QuickPhotoReport({
         </div>
       )}
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {/* Preview Area */}
-        <div className="flex-1 relative bg-slate-900 flex items-center justify-center">
-          {selectedImage ? (
-            <img 
-              src={selectedImage} 
-              alt="Report preview" 
-              className="max-w-full max-h-full object-contain"
-            />
-          ) : (
-            <div className="text-center">
-              <Camera className="text-slate-600 mx-auto mb-4" size={64} />
-              <p className="text-slate-500">Take or select a photo</p>
+        {/* Main Content - photo-only flow (no top incident buttons) */}
+        <div className="flex flex-col flex-1 min-h-0">
+          <div
+            className="relative bg-slate-900/80 flex items-center justify-center rounded-lg mx-3 mt-3"
+            style={{ minHeight: 160, maxHeight: 220 }}
+          >
+            {selectedImage ? (
+              <img
+                src={selectedImage}
+                alt="Report preview"
+                className="w-full h-full object-contain rounded-lg"
+              />
+            ) : (
+              <div className="text-center py-2">
+                <Camera className="text-slate-600 mx-auto mb-1" size={36} />
+                <p className="text-slate-500 text-xs">Take or select a photo</p>
+              </div>
+            )}
+            {isPassengerMode && (
+              <div className="absolute top-1 left-1 bg-emerald-500/20 border border-emerald-500/50 rounded-full px-2 py-0.5 flex items-center gap-1">
+                <User size={12} className="text-emerald-400" />
+                <span className="text-emerald-400 text-[10px] font-medium">Passenger</span>
+              </div>
+            )}
+            <div className="absolute bottom-1 left-1 bg-slate-800/90 rounded-full px-2 py-1 flex items-center gap-1">
+              <MapPin size={10} className="text-blue-400" />
+              <span className="text-white text-[10px]">{currentLocation.lat.toFixed(4)}, {currentLocation.lng.toFixed(4)}</span>
             </div>
-          )}
-
-          {/* Passenger Mode Badge */}
-          {isPassengerMode && (
-            <div className="absolute top-4 left-4 bg-emerald-500/20 border border-emerald-500/50 rounded-full px-3 py-1 flex items-center gap-2">
-              <User size={14} className="text-emerald-400" />
-              <span className="text-emerald-400 text-xs font-medium">Passenger Mode</span>
-            </div>
-          )}
-
-          {/* Location Badge */}
-          <div className="absolute bottom-4 left-4 bg-slate-800/80 rounded-full px-3 py-1.5 flex items-center gap-2">
-            <MapPin size={14} className="text-blue-400" />
-            <span className="text-white text-xs">
-              {currentLocation.lat.toFixed(4)}, {currentLocation.lng.toFixed(4)}
-            </span>
           </div>
         </div>
 
@@ -234,11 +294,10 @@ export default function QuickPhotoReport({
         )}
 
         {/* Action Buttons */}
-        <div className="bg-slate-900 p-4 border-t border-slate-800">
+        <div className="bg-slate-900 p-4 border-t border-slate-800 flex-shrink-0">
           {selectedImage ? (
-            /* Submit Button */
             <button
-              onClick={handleSubmit}
+              onClick={() => handleSubmit(selectedImage)}
               disabled={isSubmitting}
               className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2"
               data-testid="submit-photo-report"
@@ -256,7 +315,6 @@ export default function QuickPhotoReport({
               )}
             </button>
           ) : (
-            /* Camera/Gallery Buttons */
             <div className="flex gap-3">
               <button
                 onClick={handleCameraClick}
@@ -282,48 +340,26 @@ export default function QuickPhotoReport({
             </div>
           )}
 
-          {/* Speed indicator */}
           {isMoving && (
             <p className="text-center text-slate-500 text-xs mt-2">
-              {currentSpeed < 10 
-                ? "Low speed - Camera enabled" 
-                : isPassengerMode 
-                  ? "Passenger mode active"
-                  : "Vehicle in motion - Use gallery or passenger mode"
-              }
+              {currentSpeed < 10 ? 'Low speed - Camera enabled' : isPassengerMode ? 'Passenger mode active' : 'Vehicle in motion - Use gallery or passenger mode'}
             </p>
           )}
+          <button onClick={onClose} className="w-full mt-3 py-2.5 text-slate-400 hover:text-white text-sm font-medium" data-testid="quick-report-cancel">
+            Cancel
+          </button>
         </div>
       </div>
 
       {/* 
         iOS IMPLEMENTATION NOTES:
         --------------------------
-        1. Use CMMotionActivityManager to detect driving:
-           let activityManager = CMMotionActivityManager()
-           activityManager.startActivityUpdates(to: .main) { activity in
-             if activity?.automotive == true { isMoving = true }
-           }
-        
-        2. Use CLLocationManager for speed:
-           locationManager.delegate = self
-           func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-             let speed = locations.last?.speed ?? 0 // m/s
-             currentSpeedMph = speed * 2.237
-           }
-        
-        3. For Orion voice warning:
-           let utterance = AVSpeechUtterance(string: "Using your phone while driving isn't safe")
-           utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-           synthesizer.speak(utterance)
-        
-        4. Camera roll access with PHPhotoLibrary:
-           PHPhotoLibrary.requestAuthorization { status in ... }
-        
-        5. Get photo location from EXIF:
-           let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject
-           let location = asset?.location // CLLocation with lat/lng
+        1. Use CMMotionActivityManager to detect driving
+        2. Use CLLocationManager for speed
+        3. For Orion voice warning use AVSpeechUtterance
+        4. Camera roll access with PHPhotoLibrary
+        5. Get photo location from EXIF (asset?.location)
       */}
-    </div>
+    </>
   )
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Trophy, Medal, MapPin, ChevronDown, Shield, Crown, X, Gem, Zap, Clock, Calendar, TrendingUp, Swords, Star, Users } from 'lucide-react'
+import { Trophy, Medal, MapPin, ChevronDown, Shield, Crown, X, Gem, Zap, Calendar, TrendingUp, Swords, Star, Users, Award } from 'lucide-react'
+import { useTheme } from '@/contexts/ThemeContext'
 import ChallengeModal from './ChallengeModal'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
@@ -13,6 +14,7 @@ interface LeaderboardEntry {
   level: number
   state: string
   badges_count: number
+  challenges_participated?: number
   total_miles: number
   is_premium: boolean
 }
@@ -27,17 +29,20 @@ interface LeaderboardProps {
 type TimeFilter = 'all_time' | 'weekly' | 'monthly'
 
 export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: LeaderboardProps) {
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
-  const [selectedState, setSelectedState] = useState<string>('OH')
+  const [selectedState, setSelectedState] = useState<string>('all')
   const [states, setStates] = useState<string[]>([])
   const [myRank, setMyRank] = useState<number | null>(null)
   const [myData, setMyData] = useState<any>(null)
   const [showStateDropdown, setShowStateDropdown] = useState(false)
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all_time')
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('weekly')
   const [loading, setLoading] = useState(false)
   const [totalUsers, setTotalUsers] = useState(0)
   const [challengeTarget, setChallengeTarget] = useState<LeaderboardEntry | null>(null)
   const [showChallengeModal, setShowChallengeModal] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<LeaderboardEntry | null>(null)
 
   useEffect(() => {
     if (isOpen) {
@@ -48,21 +53,23 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
   const loadLeaderboard = async () => {
     setLoading(true)
     try {
-      let url = `${API_URL}/api/leaderboard?limit=50`
-      if (selectedState) url += `&state=${selectedState}`
-      if (timeFilter !== 'all_time') url += `&time_filter=${timeFilter}`
-      
+      let url = `${API_URL}/api/leaderboard?limit=10`
+      if (selectedState && selectedState !== 'all') url += `&state=${selectedState}`
+      url += `&time_filter=${timeFilter}`
       const res = await fetch(url)
       const data = await res.json()
-      if (data.success) {
-        setLeaderboard(data.data)
-        setMyRank(data.my_rank)
-        setMyData(data.my_data)
-        setTotalUsers(data.total_users)
-        if (data.states) setStates(data.states)
+      if (data.success && data.data) {
+        const payload = data.data
+        const list = Array.isArray(payload.leaderboard) ? payload.leaderboard : Array.isArray(payload) ? payload : []
+        setLeaderboard(list)
+        setMyRank(payload.my_rank ?? null)
+        setMyData(payload.my_data ?? null)
+        setTotalUsers(payload.total_drivers ?? payload.total_users ?? 0)
+        if (Array.isArray(payload.states)) setStates(payload.states)
       }
     } catch (e) {
       console.log('Could not load leaderboard')
+      setLeaderboard([])
     } finally {
       setLoading(false)
     }
@@ -90,8 +97,8 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
       </div>
     )
     return (
-      <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center">
-        <span className="text-slate-400 font-bold text-sm">#{rank}</span>
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isLight ? 'bg-slate-200' : 'bg-slate-800'}`}>
+        <span className={`font-bold text-sm ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>#{rank}</span>
       </div>
     )
   }
@@ -105,10 +112,16 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
 
   if (!isOpen) return null
 
+  const modalBg = isLight ? 'bg-white' : 'bg-slate-900'
+  const cardBg = isLight ? 'bg-slate-100' : 'bg-slate-800/50'
+  const textPrimary = isLight ? 'text-slate-800' : 'text-white'
+  const textMuted = isLight ? 'text-slate-500' : 'text-slate-400'
+  const borderCls = isLight ? 'border-slate-200' : 'border-slate-700/50'
+
   return (
-    <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="w-full max-w-md max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden animate-scale-in flex flex-col" onClick={e => e.stopPropagation()}>
-        {/* Premium Header */}
+    <div className={`fixed inset-0 z-[1100] flex items-center justify-center p-4 ${isLight ? 'bg-black/50' : 'bg-black/90'}`} onClick={onClose}>
+      <div className={`w-full max-w-md max-h-[90vh] ${modalBg} rounded-2xl overflow-hidden animate-scale-in flex flex-col shadow-xl`} onClick={e => e.stopPropagation()}>
+        {/* Header */}
         <div className="flex-shrink-0 bg-gradient-to-br from-purple-600 via-pink-500 to-rose-500 p-4 relative overflow-hidden">
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full" />
           <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-white/5 rounded-full" />
@@ -121,9 +134,9 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
                 </div>
                 <div>
                   <h2 className="text-white font-bold text-xl">Leaderboard</h2>
-                  <p className="text-white/70 text-xs flex items-center gap-1">
+                  <p className="text-white/80 text-xs flex items-center gap-1">
                     <Users size={12} />
-                    {totalUsers?.toLocaleString() || '0'} drivers competing
+                    Top 10 by state · Weekly · Ranked by safety score & gems
                   </p>
                 </div>
               </div>
@@ -159,10 +172,10 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
         </div>
 
         {/* Filters */}
-        <div className="flex-shrink-0 bg-slate-800/50 p-3 border-b border-slate-700/50">
+        <div className={`flex-shrink-0 p-3 border-b ${isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-800/50 border-slate-700/50'}`}>
           <div className="flex gap-2">
             {/* Time Filter Pills */}
-            <div className="flex-1 flex gap-1 bg-slate-800 rounded-lg p-1">
+            <div className={`flex-1 flex gap-1 rounded-lg p-1 ${isLight ? 'bg-slate-200' : 'bg-slate-800'}`}>
               {[
                 { key: 'all_time', label: 'All Time', icon: Star },
                 { key: 'weekly', label: 'Week', icon: Calendar },
@@ -188,31 +201,30 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
             <div className="relative">
               <button 
                 onClick={() => setShowStateDropdown(!showStateDropdown)}
-                className="h-full px-3 bg-slate-800 rounded-lg flex items-center gap-2 text-white text-xs hover:bg-slate-700"
+                className={`h-full px-3 rounded-lg flex items-center gap-2 text-xs ${isLight ? 'bg-slate-200 text-slate-800 hover:bg-slate-300' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
                 data-testid="state-filter"
               >
                 <MapPin size={12} />
-                {selectedState || 'All'}
+                {selectedState === 'all' || !selectedState ? 'All' : selectedState}
                 <ChevronDown size={12} className={`transition-transform ${showStateDropdown ? 'rotate-180' : ''}`} />
               </button>
-              
               {showStateDropdown && (
-                <div className="absolute top-full right-0 mt-1 w-36 bg-slate-800 rounded-xl max-h-48 overflow-auto z-20 shadow-xl border border-slate-700">
+                <div className={`absolute top-full right-0 mt-1 w-36 rounded-xl max-h-48 overflow-auto z-20 shadow-xl border ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-slate-700'}`}>
                   <button 
-                    onClick={() => { setSelectedState(''); setShowStateDropdown(false) }}
-                    className="w-full px-3 py-2 text-left text-white hover:bg-slate-700 text-xs"
+                    onClick={() => { setSelectedState('all'); setShowStateDropdown(false) }}
+                    className={`w-full px-3 py-2 text-left text-xs ${isLight ? 'hover:bg-slate-100 text-slate-800' : 'text-white hover:bg-slate-700'}`}
                     data-testid="state-all"
                   >
                     All States
                   </button>
-                  {states.map(state => (
+                  {states.map(s => (
                     <button 
-                      key={state} 
-                      onClick={() => { setSelectedState(state); setShowStateDropdown(false) }}
-                      className={`w-full px-3 py-2 text-left text-xs hover:bg-slate-700 ${selectedState === state ? 'text-purple-400 bg-slate-700/50' : 'text-white'}`}
-                      data-testid={`state-${state}`}
+                      key={s} 
+                      onClick={() => { setSelectedState(s); setShowStateDropdown(false) }}
+                      className={`w-full px-3 py-2 text-left text-xs ${selectedState === s ? 'text-purple-600 bg-purple-100' : isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-white hover:bg-slate-700'}`}
+                      data-testid={`state-${s}`}
                     >
-                      {state}
+                      {s}
                     </button>
                   ))}
                 </div>
@@ -229,11 +241,11 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
             </div>
           ) : (
             <div className="p-3 space-y-2">
-              {/* Top 3 Podium */}
+              {/* Top 3 Podium — click to see badges & challenges */}
               {leaderboard.length >= 3 && (
                 <div className="flex items-end justify-center gap-2 py-4 mb-4">
                   {/* 2nd Place */}
-                  <div className="flex flex-col items-center">
+                  <button type="button" onClick={() => leaderboard[1] && setSelectedUser(leaderboard[1])} className="flex flex-col items-center cursor-pointer hover:opacity-90 transition-opacity">
                     <div className="w-14 h-14 bg-gradient-to-br from-slate-300 to-slate-400 rounded-full flex items-center justify-center mb-2 border-2 border-slate-300">
                       <span className="text-white font-bold text-lg">{leaderboard[1]?.name?.charAt(0)}</span>
                     </div>
@@ -242,10 +254,10 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
                       <span className="text-white text-xs font-bold">2nd</span>
                     </div>
                     <p className="text-slate-400 text-[10px] mt-1 truncate w-20 text-center">{leaderboard[1]?.name}</p>
-                  </div>
+                  </button>
 
                   {/* 1st Place */}
-                  <div className="flex flex-col items-center -mb-4">
+                  <button type="button" onClick={() => leaderboard[0] && setSelectedUser(leaderboard[0])} className="flex flex-col items-center -mb-4 cursor-pointer hover:opacity-90 transition-opacity">
                     <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center mb-2 border-2 border-yellow-300 shadow-lg shadow-yellow-500/30">
                       <span className="text-white font-bold text-xl">{leaderboard[0]?.name?.charAt(0)}</span>
                     </div>
@@ -255,10 +267,10 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
                       <span className="text-white/80 text-[10px]">{leaderboard[0]?.safety_score} pts</span>
                     </div>
                     <p className="text-white text-xs mt-1 font-medium">{leaderboard[0]?.name}</p>
-                  </div>
+                  </button>
 
                   {/* 3rd Place */}
-                  <div className="flex flex-col items-center">
+                  <button type="button" onClick={() => leaderboard[2] && setSelectedUser(leaderboard[2])} className="flex flex-col items-center cursor-pointer hover:opacity-90 transition-opacity">
                     <div className="w-14 h-14 bg-gradient-to-br from-amber-600 to-amber-700 rounded-full flex items-center justify-center mb-2 border-2 border-amber-600">
                       <span className="text-white font-bold text-lg">{leaderboard[2]?.name?.charAt(0)}</span>
                     </div>
@@ -267,38 +279,46 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
                       <span className="text-white text-xs font-bold">3rd</span>
                     </div>
                     <p className="text-slate-400 text-[10px] mt-1 truncate w-20 text-center">{leaderboard[2]?.name}</p>
-                  </div>
+                  </button>
                 </div>
               )}
 
               {/* Rest of the list */}
-              {leaderboard.slice(3).map((entry) => {
+              {(Array.isArray(leaderboard) ? leaderboard.slice(3) : []).map((entry) => {
                 const isCurrentUser = entry.id === userId
                 return (
                   <div
                     key={entry.id}
-                    className={`rounded-xl p-3 flex items-center gap-3 transition-all ${
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedUser(entry)}
+                    onKeyDown={(e) => e.key === 'Enter' && setSelectedUser(entry)}
+                    className={`rounded-xl p-3 flex items-center gap-3 transition-all cursor-pointer ${
                       isCurrentUser 
-                        ? 'bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/50' 
-                        : 'bg-slate-800/50 hover:bg-slate-800'
+                        ? isLight ? 'bg-blue-50 border border-blue-200' : 'bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/50'
+                        : isLight ? 'bg-slate-100 hover:bg-slate-200' : 'bg-slate-800/50 hover:bg-slate-800'
                     }`}
                   >
                     {getRankDisplay(entry.rank)}
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className={`font-semibold text-sm truncate ${isCurrentUser ? 'text-blue-400' : 'text-white'}`}>
+                        <p className={`font-semibold text-sm truncate ${isCurrentUser ? 'text-blue-600' : textPrimary}`}>
                           {entry.name}
                         </p>
                         {entry.is_premium && <Zap className="text-yellow-400" size={12} />}
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-slate-400">
-                        <span className="flex items-center gap-1">
+                      <div className={`flex items-center gap-3 text-xs ${textMuted}`}>
+                        <span className="flex items-center gap-1" title="Safety score">
                           <Shield size={10} />
                           {entry.safety_score}
                         </span>
+                        <span className="flex items-center gap-1" title="Challenges">
+                          <Swords size={10} />
+                          {entry.challenges_participated ?? 0}
+                        </span>
                         <span>Lvl {entry.level}</span>
-                        <span className="text-slate-500">{entry.state}</span>
+                        {entry.state && <span className={textMuted}>{entry.state}</span>}
                       </div>
                     </div>
 
@@ -312,7 +332,7 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
                       
                       {!isCurrentUser && (
                         <button
-                          onClick={() => handleChallengeClick(entry)}
+                          onClick={(e) => { e.stopPropagation(); handleChallengeClick(entry) }}
                           className="w-9 h-9 bg-gradient-to-br from-red-500 to-orange-500 rounded-lg flex items-center justify-center hover:from-red-400 hover:to-orange-400 transition-colors shadow-lg"
                           data-testid={`challenge-${entry.id}`}
                           title={`Challenge ${entry.name}`}
@@ -327,6 +347,63 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
             </div>
           )}
         </div>
+
+        {/* User detail modal — badges & challenges when clicking a top 10 user */}
+        {selectedUser && (
+          <div className="fixed inset-0 bg-black/60 z-[1200] flex items-center justify-center p-4" onClick={() => setSelectedUser(null)}>
+            <div
+              className={`w-full max-w-sm rounded-2xl overflow-hidden shadow-xl ${isLight ? 'bg-white' : 'bg-slate-800'}`}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg">
+                    {selectedUser.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                  </div>
+                  <div>
+                    <h3 className={`font-bold text-lg ${isLight ? 'text-slate-800' : 'text-white'}`}>{selectedUser.name}</h3>
+                    <p className={`text-sm ${textMuted}`}>Rank #{selectedUser.rank} · {selectedUser.state || '—'}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedUser(null)} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">
+                  <X size={20} className={textMuted} />
+                </button>
+              </div>
+              <div className="p-4 space-y-4">
+                <div className={`rounded-xl p-4 flex items-center gap-4 ${isLight ? 'bg-slate-100' : 'bg-slate-700/50'}`}>
+                  <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">
+                    <Award className="text-amber-500" size={24} />
+                  </div>
+                  <div>
+                    <p className={`font-bold text-xl ${isLight ? 'text-slate-800' : 'text-white'}`}>{selectedUser.badges_count ?? 0}</p>
+                    <p className={`text-sm ${textMuted}`}>Badges earned</p>
+                  </div>
+                </div>
+                <div className={`rounded-xl p-4 flex items-center gap-4 ${isLight ? 'bg-slate-100' : 'bg-slate-700/50'}`}>
+                  <div className="w-12 h-12 rounded-xl bg-red-500/20 flex items-center justify-center">
+                    <Swords className="text-red-500" size={24} />
+                  </div>
+                  <div>
+                    <p className={`font-bold text-xl ${isLight ? 'text-slate-800' : 'text-white'}`}>{selectedUser.challenges_participated ?? 0}</p>
+                    <p className={`text-sm ${textMuted}`}>Challenges participated</p>
+                  </div>
+                </div>
+                <div className={`flex gap-3 text-sm ${textMuted}`}>
+                  <span className="flex items-center gap-1"><Shield size={14} /> Safety: {selectedUser.safety_score}</span>
+                  <span className="flex items-center gap-1"><Gem size={14} /> {formatGems(selectedUser.gems)} gems</span>
+                </div>
+                {selectedUser.id !== userId && (
+                  <button
+                    onClick={() => { setChallengeTarget(selectedUser); setSelectedUser(null); setShowChallengeModal(true) }}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-red-500 to-orange-500 text-white font-medium flex items-center justify-center gap-2"
+                  >
+                    <Swords size={18} /> Challenge
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Challenge Modal */}
         <ChallengeModal

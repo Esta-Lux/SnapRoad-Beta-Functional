@@ -127,20 +127,20 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-slate-900 z-50 flex flex-col">
+    <div className="fixed inset-0 bg-[#f5f5f7] z-50 flex flex-col">
       {/* Header */}
-      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-4 flex items-center gap-3">
+      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-4 flex items-center gap-3 shadow-sm">
         <button onClick={onClose} className="text-white" data-testid="offers-close">
           <ChevronLeft size={24} />
         </button>
         <div className="flex-1">
           <h1 className="text-white font-bold text-lg">Local Offers</h1>
-          <p className="text-emerald-100 text-xs">
+          <p className="text-white/90 text-xs">
             {isPremium ? `Premium: ${discountInfo.premium_discount}% off` : `Basic: ${discountInfo.free_discount}% off`}
           </p>
         </div>
         {!isPremium && (
-          <div className="bg-amber-500 text-amber-900 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+          <div className="bg-amber-400 text-amber-900 text-xs font-bold px-2.5 py-1.5 rounded-full flex items-center gap-1 shadow-sm">
             <Zap size={12} />
             Upgrade for {discountInfo.premium_discount}%
           </div>
@@ -148,13 +148,13 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
       </div>
 
       {/* Discount Info Banner */}
-      <div className="bg-emerald-500/10 px-4 py-3 border-b border-emerald-500/20">
+      <div className="bg-white px-4 py-3 border-b border-slate-200 shadow-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className={`px-3 py-1.5 rounded-full text-sm font-medium ${
               isPremium 
                 ? 'bg-gradient-to-r from-amber-400 to-orange-400 text-amber-900' 
-                : 'bg-slate-700 text-slate-300'
+                : 'bg-slate-200 text-slate-700'
             }`}>
               {isPremium ? (
                 <span className="flex items-center gap-1">
@@ -165,7 +165,7 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
               )}
             </div>
           </div>
-          <p className="text-emerald-400 text-xs">
+          <p className="text-emerald-600 text-xs font-medium">
             {offers.filter(o => !o.redeemed).length} offers available
           </p>
         </div>
@@ -175,12 +175,12 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
       <div className="flex-1 overflow-auto p-4 space-y-3">
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="animate-spin w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full" />
+            <div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full" />
           </div>
         ) : offers.length === 0 ? (
-          <div className="text-center py-12">
-            <Gift className="text-slate-600 mx-auto mb-3" size={48} />
-            <h3 className="text-slate-400 font-medium mb-1">No offers yet</h3>
+          <div className="text-center py-12 bg-white rounded-2xl shadow-sm">
+            <Gift className="text-slate-300 mx-auto mb-3" size={48} />
+            <h3 className="text-slate-600 font-medium mb-1">No offers yet</h3>
             <p className="text-slate-500 text-sm">Check back soon for local deals!</p>
           </div>
         ) : (
@@ -192,27 +192,24 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                 key={offer.id}
                 onClick={() => !offer.redeemed && setSelectedOffer(offer)}
                 disabled={offer.redeemed}
-                className={`w-full text-left rounded-2xl p-4 transition-all border ${
+                className={`w-full text-left rounded-2xl p-4 transition-all border shadow-sm ${
                   offer.redeemed 
-                    ? 'bg-slate-800/50 border-slate-700 opacity-60' 
-                    : 'bg-gradient-to-r from-slate-800 to-slate-800/80 border-emerald-500/30 hover:border-emerald-500/50'
+                    ? 'bg-white border-slate-200 opacity-70' 
+                    : 'bg-white border-slate-200 hover:border-emerald-400 hover:shadow-md'
                 }`}
                 data-testid={`offer-${offer.id}`}
               >
                 <div className="flex items-start gap-3">
-                  {/* Icon with glow effect */}
+                  {/* Icon */}
                   <div className={`relative p-3 rounded-xl ${
-                    offer.redeemed ? 'bg-slate-700' : 'bg-emerald-500/20'
+                    offer.redeemed ? 'bg-slate-100' : 'bg-emerald-50'
                   }`}>
-                    <Icon size={24} className={offer.redeemed ? 'text-slate-500' : 'text-emerald-400'} />
-                    {!offer.redeemed && (
-                      <div className="absolute inset-0 bg-emerald-400/20 rounded-xl animate-pulse" />
-                    )}
+                    <Icon size={24} className={offer.redeemed ? 'text-slate-400' : 'text-emerald-600'} />
                   </div>
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-white font-semibold truncate">{offer.business_name}</h3>
+                      <h3 className="text-slate-900 font-semibold truncate">{offer.business_name}</h3>
                       {offer.offer_source === 'groupon' && (
                         <span className="text-orange-400 bg-orange-500/10 text-[10px] px-1.5 py-0.5 rounded-full font-medium">Groupon</span>
                       )}
@@ -223,19 +220,18 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                         <span className="text-emerald-400 bg-emerald-500/10 text-[10px] px-1.5 py-0.5 rounded-full">Free</span>
                       )}
                     </div>
-                    <p className="text-slate-400 text-sm truncate">{offer.description}</p>
+                    <p className="text-slate-500 text-sm truncate">{offer.description}</p>
                     
-                    {/* Yelp enrichment stars */}
                     {offer.yelp_rating != null && (
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <div className="flex items-center gap-0.5">
                           {Array.from({ length: 5 }).map((_, i) => (
-                            <Star key={i} size={10} className={i < Math.round(offer.yelp_rating!) ? 'text-yellow-400 fill-yellow-400' : 'text-slate-600'} />
+                            <Star key={i} size={10} className={i < Math.round(offer.yelp_rating!) ? 'text-amber-400 fill-amber-400' : 'text-slate-300'} />
                           ))}
                         </div>
-                        <span className="text-slate-400 text-[10px]">{offer.yelp_rating}</span>
+                        <span className="text-slate-500 text-[10px]">{offer.yelp_rating}</span>
                         {offer.yelp_review_count != null && (
-                          <span className="text-slate-500 text-[10px]">({offer.yelp_review_count} reviews)</span>
+                          <span className="text-slate-400 text-[10px]">({offer.yelp_review_count} reviews)</span>
                         )}
                       </div>
                     )}
@@ -246,21 +242,21 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                       </p>
                     )}
                     
-                    <div className="flex items-center gap-3 mt-2">
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
                       {offer.original_price != null && offer.original_price > 0 && (
-                        <span className="text-slate-500 text-xs line-through">${offer.original_price.toFixed(2)}</span>
+                        <span className="text-slate-400 text-xs line-through">${offer.original_price.toFixed(2)}</span>
                       )}
-                      <span className={`font-bold ${offer.redeemed ? 'text-slate-500' : 'text-emerald-400'}`}>
+                      <span className={`font-bold ${offer.redeemed ? 'text-slate-400' : 'text-emerald-600'}`}>
                         {isPremium ? (offer.premium_discount_percent || offer.discount_percent) : (offer.free_discount_percent || offer.discount_percent)}% OFF
                       </span>
                       {!isPremium && (offer.premium_discount_percent || 0) > (offer.free_discount_percent || 0) && (
-                        <span className="text-amber-400 text-xs flex items-center gap-0.5 bg-amber-500/10 px-1.5 py-0.5 rounded-full">
+                        <span className="text-amber-600 text-xs flex items-center gap-0.5 bg-amber-100 px-1.5 py-0.5 rounded-full">
                           <Lock size={10} />
                           {offer.premium_discount_percent}%
                         </span>
                       )}
-                      <span className="text-slate-500 text-xs flex items-center gap-1">
-                        <Gem size={12} className="text-cyan-400" />
+                      <span className="text-slate-600 text-xs flex items-center gap-1">
+                        <Gem size={12} className="text-cyan-500" />
                         +{offer.gems_reward}
                       </span>
                       <span className="text-slate-500 text-xs flex items-center gap-1">
@@ -271,15 +267,15 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                   </div>
 
                   {offer.redeemed ? (
-                    <div className="bg-emerald-500/20 text-emerald-400 p-2 rounded-full">
+                    <div className="bg-emerald-100 text-emerald-600 p-2 rounded-full">
                       <Check size={16} />
                     </div>
                   ) : offer.offer_source === 'groupon' || offer.offer_source === 'affiliate' ? (
-                    <div className="bg-blue-500/20 text-blue-400 px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1">
+                    <div className="bg-blue-100 text-blue-600 px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1">
                       <ExternalLink size={12} /> View
                     </div>
                   ) : (
-                    <div className="bg-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-full text-xs font-medium">
+                    <div className="bg-emerald-500 text-white px-3 py-1.5 rounded-full text-xs font-medium shadow-sm">
                       Redeem
                     </div>
                   )}
@@ -312,59 +308,55 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
             </div>
 
             {/* Compact Body */}
-            <div className="p-4 space-y-3">
-              {/* Yelp enrichment section */}
+            <div className="p-4 space-y-3 bg-slate-50">
               {selectedOffer.yelp_rating != null && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 flex items-center gap-2">
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center gap-2">
                   <div className="flex items-center gap-1">
                     {Array.from({ length: 5 }).map((_, i) => (
-                      <Star key={i} size={12} className={i < Math.round(selectedOffer.yelp_rating!) ? 'text-yellow-400 fill-yellow-400' : 'text-slate-600'} />
+                      <Star key={i} size={12} className={i < Math.round(selectedOffer.yelp_rating!) ? 'text-amber-400 fill-amber-400' : 'text-slate-300'} />
                     ))}
                   </div>
-                  <span className="text-white text-xs font-medium">{selectedOffer.yelp_rating}</span>
+                  <span className="text-slate-700 text-xs font-medium">{selectedOffer.yelp_rating}</span>
                   {selectedOffer.yelp_review_count != null && (
-                    <span className="text-slate-400 text-xs">({selectedOffer.yelp_review_count} reviews)</span>
+                    <span className="text-slate-500 text-xs">({selectedOffer.yelp_review_count} reviews)</span>
                   )}
                 </div>
               )}
 
-              {/* Gems & Discount Row */}
               <div className="flex gap-2">
-                <div className="flex-1 bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-2 text-center">
+                <div className="flex-1 bg-cyan-50 border border-cyan-200 rounded-xl p-2 text-center">
                   <div className="flex items-center justify-center gap-1">
-                    <Gem className="text-cyan-400" size={16} />
-                    <span className="text-cyan-400 text-lg font-bold">+{selectedOffer.gems_reward}</span>
+                    <Gem className="text-cyan-600" size={16} />
+                    <span className="text-cyan-700 text-lg font-bold">+{selectedOffer.gems_reward}</span>
                   </div>
-                  <p className="text-cyan-300/70 text-[10px]">Gems</p>
+                  <p className="text-cyan-600/80 text-[10px]">Gems</p>
                 </div>
-                <div className="flex-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2 text-center">
+                <div className="flex-1 bg-emerald-50 border border-emerald-200 rounded-xl p-2 text-center">
                   {selectedOffer.original_price != null && selectedOffer.original_price > 0 && (
                     <p className="text-slate-500 text-[10px] line-through">${selectedOffer.original_price.toFixed(2)}</p>
                   )}
-                  <p className="text-emerald-400 text-lg font-bold">
+                  <p className="text-emerald-700 text-lg font-bold">
                     {isPremium
                       ? (selectedOffer.premium_discount_percent || selectedOffer.discount_percent)
                       : (selectedOffer.free_discount_percent || selectedOffer.discount_percent)}%
                   </p>
-                  <p className="text-emerald-300/70 text-[10px]">Your Discount</p>
+                  <p className="text-emerald-600/80 text-[10px]">Your Discount</p>
                 </div>
               </div>
 
-              {/* Premium Upsell with per-offer lock */}
               {!isPremium && (selectedOffer.premium_discount_percent || 0) > (selectedOffer.free_discount_percent || 0) && (
-                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2.5 flex items-center gap-2">
-                  <Lock className="text-amber-400 shrink-0" size={14} />
-                  <p className="text-amber-400 text-xs flex-1">
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center gap-2">
+                  <Lock className="text-amber-600 shrink-0" size={14} />
+                  <p className="text-amber-800 text-xs flex-1">
                     Upgrade to Premium for <span className="font-bold">{selectedOffer.premium_discount_percent}% off</span>
                   </p>
-                  <Zap className="text-amber-400 shrink-0" size={14} />
+                  <Zap className="text-amber-600 shrink-0" size={14} />
                 </div>
               )}
 
-              {/* Address */}
               {selectedOffer.address && (
-                <div className="flex items-center gap-2 text-slate-400 text-xs">
-                  <MapPin size={12} className="text-emerald-400 shrink-0" />
+                <div className="flex items-center gap-2 text-slate-500 text-xs">
+                  <MapPin size={12} className="text-emerald-500 shrink-0" />
                   <span className="truncate">{selectedOffer.address}</span>
                 </div>
               )}

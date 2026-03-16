@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 from typing import Optional
 from datetime import datetime, timedelta
-import random
 from models.schemas import TripResult, FuelLog, ReportIncident
 from services.mock_data import (
     users_db, current_user_id, trips_db, fuel_history, FUEL_PRICES, XP_CONFIG,
@@ -40,11 +39,13 @@ def complete_trip(distance: float = 5.0, duration: int = 15):
 @router.post("/trips/complete-with-safety")
 def complete_trip_with_safety(trip: TripResult):
     user = users_db.get(current_user_id, {})
-    metrics = trip.safety_metrics
+    metrics = trip.safety_metrics or {}
     is_safe_drive = metrics.get("hard_brakes", 0) == 0 and metrics.get("speeding_incidents", 0) == 0 and metrics.get("phone_usage", 0) == 0
     old_safety_score = user.get("safety_score", 85)
     penalties = metrics.get("hard_brakes", 0) * 2 + metrics.get("speeding_incidents", 0) * 3 + metrics.get("phone_usage", 0) * 5
     new_safety_score = min(100, old_safety_score + 1) if is_safe_drive else max(0, old_safety_score - penalties)
+    if trip.safety_score is not None:
+        new_safety_score = round(float(trip.safety_score), 1)
 
     if current_user_id in users_db:
         users_db[current_user_id]["safety_score"] = new_safety_score
@@ -74,6 +75,33 @@ def complete_trip_with_safety(trip: TripResult):
     if current_user_id in users_db:
         users_db[current_user_id]["gems"] = user.get("gems", 0) + gems_earned
 
+    # Record trip for real-time history and analytics (single source of truth for map, route history, trip analytics)
+    now = datetime.now()
+    route_coords = trip.route_coordinates
+    if route_coords and isinstance(route_coords[0], dict):
+        route_coords = [{"lat": float(c.get("lat", 0)), "lng": float(c.get("lng", 0))} for c in route_coords]
+    else:
+        route_coords = []
+    duration_min = max(1, trip.duration)
+    fuel_used = trip.distance / 30.0 if trip.distance else 0.1
+    new_id = max([t.get("id", 0) for t in trips_db], default=0) + 1
+    trips_db.append({
+        "id": new_id,
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%I:%M %p"),
+        "origin": trip.origin or "Start",
+        "destination": trip.destination or "End",
+        "distance_miles": round(trip.distance, 1),
+        "duration_minutes": duration_min,
+        "safety_score": new_safety_score,
+        "gems_earned": gems_earned,
+        "xp_earned": total_xp or int(trip.distance * 10),
+        "fuel_used_gallons": round(fuel_used, 3),
+        "avg_speed_mph": round(trip.distance / (duration_min / 60), 1) if duration_min else 0,
+        "route_coordinates": route_coords,
+        "events": [],
+    })
+
     return {
         "success": True,
         "message": "Trip completed!",
@@ -83,6 +111,7 @@ def complete_trip_with_safety(trip: TripResult):
             "xp": {"changes": xp_changes, "total_earned": total_xp, "result": xp_result},
             "gems": {"earned": gems_earned, "multiplier": gem_multiplier},
             "safe_drive_streak": users_db[current_user_id].get("safe_drive_streak", 0),
+            "trip_id": new_id,
         },
     }
 
@@ -196,6 +225,13 @@ def get_route_history_3d(days: int = 90, limit: int = 100):
     routes_3d = []
     for key, data in route_groups.items():
         avg_safety = sum(t["safety_score"] for t in data["trips"]) / len(data["trips"])
-        routes_3d.append({"id": key, "route_name": data["route_name"], "origin": data["origin"], "destination": data["destination"], "total_trips": data["total_trips"], "total_distance_miles": round(data["total_distance"], 1), "avg_safety_score": round(avg_safety, 1), "coordinates": data["coordinates"], "color_intensity": min(data["total_trips"] / 10, 1)})
+        last_traveled = max(t.get("date", "") for t in data["trips"]) if data["trips"] else None
+        routes_3d.append({
+            "id": key, "route_name": data["route_name"], "origin": data["origin"], "destination": data["destination"],
+            "total_trips": data["total_trips"], "total_distance_miles": round(data["total_distance"], 1),
+            "avg_safety_score": round(avg_safety, 1), "coordinates": data["coordinates"],
+            "color_intensity": min(data["total_trips"] / 10, 1), "last_traveled": last_traveled
+        })
     routes_3d.sort(key=lambda x: x["total_trips"], reverse=True)
-    return {"success": True, "data": {"routes": routes_3d, "center": {"lat": 39.9612, "lng": -82.9988}, "total_unique_routes": len(routes_3d), "total_trips": sum(r["total_trips"] for r in routes_3d)}}
+    total_distance = sum(r["total_distance_miles"] for r in routes_3d)
+    return {"success": True, "data": {"routes": routes_3d, "center": {"lat": 39.9612, "lng": -82.9988}, "total_unique_routes": len(routes_3d), "total_trips": sum(r["total_trips"] for r in routes_3d), "total_distance": total_distance}}

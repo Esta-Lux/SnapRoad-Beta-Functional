@@ -19,11 +19,13 @@ from routes.trips import router as trips_router
 from routes.admin import router as admin_router
 from routes.social import router as social_router
 from routes.navigation import router as navigation_router
+from routes.directions import router as directions_router
+from routes.places import router as places_router
 from routes.mapkit import router as mapkit_router
 from routes.ai import router as ai_router
 from routes.webhooks import router as webhooks_router
 from routes.payments import router as payments_router
-from config import JWT_SECRET, SUPABASE_URL, SUPABASE_SECRET_KEY
+from config import JWT_SECRET, SUPABASE_URL, SUPABASE_SECRET_KEY, OPENAI_API_KEY
 
 
 def create_app() -> FastAPI:
@@ -49,6 +51,10 @@ def create_app() -> FastAPI:
                 and key_path
                 and os.path.isfile(key_path_abs)
             ),
+            "google_maps_configured": bool(
+                (os.environ.get("GOOGLE_PLACES_API_KEY") or os.environ.get("GOOGLE_MAPS_API_KEY") or "").strip()
+            ),
+            "openai_configured": bool((OPENAI_API_KEY or "").strip()),
         }
 
     # When using credentials, browsers require explicit origins (not "*").
@@ -75,6 +81,8 @@ def create_app() -> FastAPI:
     app.include_router(admin_router)
     app.include_router(social_router)
     app.include_router(navigation_router)
+    app.include_router(directions_router)
+    app.include_router(places_router)
     app.include_router(mapkit_router)
     app.include_router(ai_router)
     app.include_router(webhooks_router)

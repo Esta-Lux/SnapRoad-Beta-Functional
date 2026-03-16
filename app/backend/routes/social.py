@@ -1,13 +1,24 @@
 from fastapi import APIRouter
 from typing import Optional
 from datetime import datetime, timedelta
-from models.schemas import FriendRequest, RoadReport
+from models.schemas import (
+    FriendRequest,
+    RoadReport,
+    LocationUpdateBody,
+    LocationSharingBody,
+    LocationTagBody,
+)
 from services.mock_data import (
     users_db, current_user_id, road_reports_db, XP_CONFIG,
 )
 from routes.gamification import add_xp_to_user, check_community_badges
 
 router = APIRouter(prefix="/api", tags=["Social"])
+
+
+def _get_uid():
+    """Current user id for friends/location endpoints (mock)."""
+    return current_user_id
 
 
 # ==================== FRIENDS ====================
@@ -17,21 +28,42 @@ def get_friends():
     friend_ids = user.get("friends", [])
     friends = []
     for fid in friend_ids:
-        f = users_db.get(fid, {})
+        f = users_db.get(str(fid), {})
         if f:
-            friends.append({"id": fid, "name": f.get("name", "Driver"), "level": f.get("level", 1), "safety_score": f.get("safety_score", 0), "gems": f.get("gems", 0), "is_premium": f.get("is_premium", False)})
-    return {"success": True, "data": friends}
+            friends.append({
+                "id": str(fid),
+                "name": f.get("name", "Driver"),
+                "level": f.get("level", 1),
+                "safety_score": f.get("safety_score", 0),
+                "gems": f.get("gems", 0),
+                "state": f.get("state", ""),
+                "is_premium": f.get("is_premium", False),
+            })
+    return {"success": True, "data": friends, "count": len(friends)}
 
 
 @router.get("/friends/search")
 def search_friends(q: str = "", user_id: str = ""):
+    query = (q or user_id).strip()
+    if not query:
+        return {"success": True, "data": []}
+    current_friends = users_db.get(current_user_id, {}).get("friends", [])
     results = []
-    query = (q or user_id).lower()
     for uid, user in users_db.items():
-        if uid == current_user_id:
+        if str(uid) == str(current_user_id):
             continue
-        if query in user.get("name", "").lower() or query == uid:
-            results.append({"id": uid, "name": user.get("name", "Driver"), "level": user.get("level", 1), "safety_score": user.get("safety_score", 0)})
+        if query == str(uid) or (len(query) >= 2 and query in user.get("name", "").lower()):
+            results.append({
+                "id": str(uid),
+                "name": user.get("name", "Driver"),
+                "level": user.get("level", 1),
+                "safety_score": user.get("safety_score", 0),
+                "state": user.get("state", ""),
+                "gems": user.get("gems", 0),
+                "is_friend": str(uid) in current_friends,
+            })
+    if len(query) >= 5 and query.isdigit():
+        results = [r for r in results if r["id"] == query][:1] or results[:1]
     return {"success": True, "data": results[:20]}
 
 
@@ -60,6 +92,109 @@ def remove_friend(friend_id: str):
         if current_user_id in other_friends:
             other_friends.remove(current_user_id)
     return {"success": True, "message": "Friend removed"}
+
+
+@router.get("/friends/list")
+def get_friends_list():
+    """List friends with friend_id and status for location sharing."""
+    uid = _get_uid()
+    user = users_db.get(uid, {})
+    friend_ids = user.get("friends", [])
+    out = []
+    for fid in friend_ids:
+        out.append({"friend_id": str(fid), "id": str(fid), "status": "accepted"})
+    return {"success": True, "data": out}
+
+
+@router.get("/friends/requests")
+def get_friend_requests():
+    """Pending friend requests (incoming)."""
+    uid = _get_uid()
+    user = users_db.get(uid, {})
+    requests = user.get("friend_requests", [])
+    return {"success": True, "data": [{"id": r.get("id"), "from_user_id": r.get("from_user_id"), "status": "pending"} for r in requests]}
+
+
+@router.post("/friends/accept")
+def accept_friend_request(request: FriendRequest):
+    """Accept a friend request (request.user_id = requester)."""
+    uid = _get_uid()
+    if uid not in users_db:
+        return {"success": False, "message": "User not found"}
+    if request.user_id not in users_db:
+        return {"success": False, "message": "Requester not found"}
+    friends = users_db[uid].setdefault("friends", [])
+    if request.user_id in friends:
+        return {"success": True, "message": "Already friends"}
+    req_list = users_db[uid].get("friend_requests", [])
+    users_db[uid]["friend_requests"] = [r for r in req_list if str(r.get("from_user_id")) != str(request.user_id)]
+    friends.append(request.user_id)
+    users_db[request.user_id].setdefault("friends", []).append(uid)
+    return {"success": True, "message": "Friend request accepted"}
+
+
+@router.post("/friends/location/update")
+def update_my_location(body: LocationUpdateBody):
+    """Update current user's live location (Supabase: live_locations upsert; mock: no-op)."""
+    uid = _get_uid()
+    try:
+        from database import get_supabase
+        from config import SUPABASE_URL, SUPABASE_SECRET_KEY
+        if SUPABASE_URL and SUPABASE_SECRET_KEY:
+            sb = get_supabase()
+            sb.table("live_locations").upsert({
+                "user_id": uid,
+                "lat": body.lat,
+                "lng": body.lng,
+                "heading": body.heading,
+                "speed_mph": body.speed_mph,
+                "is_navigating": body.is_navigating,
+                "destination_name": body.destination_name or None,
+                "last_updated": datetime.utcnow().isoformat() + "Z",
+                "is_sharing": True,
+            }).execute()
+    except Exception:
+        pass
+    return {"success": True}
+
+
+@router.put("/friends/location/sharing")
+def set_location_sharing(body: LocationSharingBody):
+    """Turn location sharing on or off."""
+    uid = _get_uid()
+    try:
+        from database import get_supabase
+        from config import SUPABASE_URL, SUPABASE_SECRET_KEY
+        if SUPABASE_URL and SUPABASE_SECRET_KEY:
+            sb = get_supabase()
+            sb.table("live_locations").update({
+                "is_sharing": body.is_sharing,
+                "last_updated": datetime.utcnow().isoformat() + "Z",
+            }).eq("user_id", uid).execute()
+    except Exception:
+        pass
+    return {"success": True}
+
+
+@router.post("/friends/tag")
+def send_location_tag(body: LocationTagBody):
+    """Send a location tag to a friend."""
+    uid = _get_uid()
+    try:
+        from database import get_supabase
+        from config import SUPABASE_URL, SUPABASE_SECRET_KEY
+        if SUPABASE_URL and SUPABASE_SECRET_KEY:
+            sb = get_supabase()
+            sb.table("location_tags").insert({
+                "from_user_id": uid,
+                "to_user_id": body.to_user_id,
+                "lat": body.lat,
+                "lng": body.lng,
+                "message": body.message or "Check out where I am!",
+            }).execute()
+    except Exception:
+        pass
+    return {"success": True, "message": "Location tag sent"}
 
 
 # ==================== FAMILY ====================

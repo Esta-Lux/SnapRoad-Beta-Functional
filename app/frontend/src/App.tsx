@@ -27,7 +27,7 @@ import AdminDashboard from './pages/AdminDashboard'
 import DriverApp from './pages/DriverApp'
 import PhonePreview from './pages/PhonePreview'
 import { NavigationCoreProvider } from './contexts/NavigationCoreContext'
-import { MapKitProvider } from './contexts/MapKitContext'
+import { GoogleMapsProvider } from './contexts/GoogleMapsContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import TeamScanPage from './pages/TeamScanPage'
 
@@ -61,15 +61,15 @@ function App() {
         {/* New SnapRoad UI - Figma Design System */}
         <Route path="/app/*" element={<SnapRoadApp />} />
         
-        {/* Driver App - Web Preview (Phase 1: VehicleState + MapKit-ready map) */}
+        {/* Driver App - Web Preview (VehicleState + Google Maps) */}
         <Route path="/driver" element={
           <DriverGuard>
             <ThemeProvider>
-              <MapKitProvider>
+              <GoogleMapsProvider>
                 <NavigationCoreProvider fallbackCenter={{ lat: 39.9612, lng: -82.9988 }} enableGps={true}>
                   <DriverApp />
                 </NavigationCoreProvider>
-              </MapKitProvider>
+              </GoogleMapsProvider>
             </ThemeProvider>
           </DriverGuard>
         } />

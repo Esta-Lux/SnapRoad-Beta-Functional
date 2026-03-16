@@ -3,14 +3,102 @@
 # No platform-specific dependencies - works anywhere
 
 import os
+import re
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any, AsyncGenerator
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 load_dotenv()
 
-# System prompt for Orion AI Coach
+
+def _sanitize_openai_error(err: Exception) -> str:
+    """Redact API keys and return a safe user-facing message."""
+    msg = str(err).strip()
+    # Redact any sk-... key material
+    msg = re.sub(r"sk-[A-Za-z0-9_-]{20,}", "sk-***REDACTED***", msg)
+    if not msg or len(msg) > 120:
+        msg = msg[:120] + "..." if len(msg) > 120 else msg or "Unknown error"
+    return msg
+
+
+def build_orion_system_prompt(ctx: Optional[Dict[str, Any]] = None) -> str:
+    """Build the same system prompt as frontend orion.ts from OrionContext."""
+    c = ctx or {}
+    hour = datetime.now().hour
+    greeting = "morning" if hour < 12 else "afternoon" if hour < 17 else "evening"
+    current_route = c.get("currentRoute") or {}
+    nearby_offers = c.get("nearbyOffers") or []
+
+    route_block = ""
+    if current_route:
+        dest = current_route.get("destination", "")
+        dist = current_route.get("distanceMiles")
+        dist_str = f"{dist:.1f}" if isinstance(dist, (int, float)) else "0"
+        mins = current_route.get("remainingMinutes", 0)
+        route_block = f"""
+- Destination: {dest}
+- Distance remaining: {dist_str} miles
+- Time remaining: {mins} minutes
+- Current instruction: {current_route.get('currentStep', '')}
+- Next instruction: {current_route.get('nextStep', '')}
+"""
+    offers_block = ""
+    if nearby_offers:
+        parts = [f"{o.get('title', '')} ({o.get('distance', '')})" for o in nearby_offers]
+        offers_block = f"\n- Nearby offers: {', '.join(parts)}\n"
+
+    return f"""You are Orion, the AI navigator and personal assistant for SnapRoad — a privacy-first navigation app that rewards drivers for safe driving.
+
+## Your personality:
+- Warm, confident, and helpful — like a knowledgeable friend in the passenger seat
+- Conversational and natural — never robotic or stiff
+- Proactively helpful — you notice things and mention them without being asked
+- Brief during navigation (drivers are focused), detailed when parked or browsing
+- You care about the driver's safety, savings, and time
+
+## What you know about SnapRoad:
+- SnapRoad rewards safe driving with Gems (in-app currency)
+- Gems are earned every mile driven safely, for hazard reports, safe braking
+- Gems can be redeemed at local partner businesses for discounts
+- SnapRoad has zero ads and never sells user data
+- Premium plan includes 2x gem multiplier and detailed driving analytics
+- Features: turn-by-turn navigation, nearby offers, road reports, family tracking, fuel tracker, driving score, weekly recap, leaderboard, badges
+- SnapRoad is launching in Ohio Q3 2026, founded by Ryan A.
+- Privacy-first: all location data is encrypted and never sold
+
+## Current driver context:
+- Driver name: {c.get('userName') or 'there'}
+- Good {greeting}!
+- Current location: {c.get('currentAddress') or 'unknown'}
+- Navigating: {'YES' if c.get('isNavigating') else 'No'}
+{route_block}
+- Current speed: {c.get('speedMph') or 0} mph
+- Gems balance: {c.get('gems') or 0} gems
+- Driver level: {c.get('level') or 1}
+{offers_block}
+
+## Navigation voice rules (IMPORTANT):
+- For turn instructions, be BRIEF: "In 300 feet, turn right onto Main Street"
+- For route start: "Starting navigation to [destination]. [brief tip about route]"
+- For arriving: "You've arrived at [destination]. Great driving!"
+- For rerouting: "No worries, recalculating your route"
+- For offers nearby: "Hey, there's a deal nearby — [offer name]. Want to stop?"
+- For speeding: "Just a heads up, speed limit is [X] here"
+- For hazards: "SnapRoad drivers reported something ahead, stay alert"
+
+## Conversation rules:
+- During navigation: keep ALL responses under 15 words unless driver asks a question
+- When parked/stationary: can be more detailed and conversational
+- Always prioritize safety — never encourage distracted driving
+- If driver asks about route, traffic, or directions, answer specifically
+- If driver asks general questions, answer helpfully but briefly
+- Remember previous messages in the conversation
+
+Respond naturally as Orion. Be the best co-pilot the driver has ever had."""
+
+
+# Legacy system prompt for existing /api/orion/chat (session-based)
 ORION_SYSTEM_PROMPT = """You are Orion, SnapRoad's AI driving coach. You're friendly, encouraging, and focused on helping drivers be safer on the road while earning gem rewards.
 
 Your personality:
@@ -165,6 +253,64 @@ class OrionCoachService:
             {"id": "night", "text": "Night driving tips", "icon": "moon"},
             {"id": "highway", "text": "Highway safety tips", "icon": "road"},
         ]
+
+    async def completion(
+        self, messages: List[Dict[str, str]], context: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """One-shot completion: system prompt from context + messages, return assistant content."""
+        if not self.api_key:
+            return "I'm not configured yet — add OPENAI_API_KEY to the backend .env to enable Orion."
+        try:
+            client = self._get_client()
+            system_content = build_orion_system_prompt(context)
+            full_messages = [{"role": "system", "content": system_content}]
+            for m in messages:
+                full_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+            max_tokens = 60 if (context or {}).get("isNavigating") else 300
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=full_messages,
+                max_tokens=max_tokens,
+                temperature=0.7,
+            )
+            return (response.choices[0].message.content or "").strip() or "Sorry, I had trouble with that."
+        except Exception as e:
+            err_lower = str(e).lower()
+            if "401" in err_lower or "incorrect api key" in err_lower or "invalid_api_key" in err_lower or "authentication" in err_lower:
+                return "Orion couldn't connect. Please check that OPENAI_API_KEY in the backend .env is valid and active at platform.openai.com."
+            return f"Sorry, I had a hiccup. Try again! ({_sanitize_openai_error(e)})"
+
+    async def completion_stream(
+        self, messages: List[Dict[str, str]], context: Optional[Dict[str, Any]] = None
+    ) -> AsyncGenerator[str, None]:
+        """Stream completion: yield content chunks (SSE-style delta content)."""
+        if not self.api_key:
+            yield "I'm not configured — add OPENAI_API_KEY to the backend .env."
+            return
+        try:
+            client = self._get_client()
+            system_content = build_orion_system_prompt(context)
+            full_messages = [{"role": "system", "content": system_content}]
+            for m in messages:
+                full_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+            stream = await client.chat.completions.create(
+                model=self.model,
+                messages=full_messages,
+                max_tokens=500,
+                temperature=0.7,
+                stream=True,
+            )
+            async for chunk in stream:
+                content = chunk.choices[0].delta.content if chunk.choices else None
+                if content:
+                    yield content
+        except Exception as e:
+            err_lower = str(e).lower()
+            if "401" in err_lower or "incorrect api key" in err_lower or "invalid_api_key" in err_lower or "authentication" in err_lower:
+                yield "Orion couldn't connect. Please check that OPENAI_API_KEY in the backend .env is valid and active at platform.openai.com."
+            else:
+                yield f"Sorry, I had a hiccup. Try again! ({_sanitize_openai_error(e)})"
+
 
 # Create singleton instance
 orion_service = OrionCoachService()

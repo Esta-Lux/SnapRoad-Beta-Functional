@@ -93,6 +93,26 @@ class Widget(BaseModel):
 class FriendRequest(BaseModel):
     user_id: str
 
+
+class LocationUpdateBody(BaseModel):
+    lat: float
+    lng: float
+    heading: Optional[float] = None
+    speed_mph: Optional[float] = None
+    is_navigating: bool = False
+    destination_name: Optional[str] = None
+
+
+class LocationSharingBody(BaseModel):
+    is_sharing: bool
+
+
+class LocationTagBody(BaseModel):
+    to_user_id: str
+    lat: float
+    lng: float
+    message: Optional[str] = "Check out where I am!"
+
 class RoadReport(BaseModel):
     type: str
     title: str
@@ -131,6 +151,10 @@ class TripResult(BaseModel):
     distance: float
     duration: int
     safety_metrics: dict
+    origin: Optional[str] = None
+    destination: Optional[str] = None
+    route_coordinates: Optional[List[Dict[str, float]]] = None
+    safety_score: Optional[float] = None  # from client if available
 
 class FuelLog(BaseModel):
     date: str
@@ -239,6 +263,17 @@ class AdminOfferCreate(BaseModel):
 class OrionMessageRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+
+
+class OrionMessageItem(BaseModel):
+    role: str  # 'user' | 'assistant' | 'system'
+    content: str
+
+
+class OrionCompletionRequest(BaseModel):
+    """Request body for /api/orion/completions (matches frontend OrionContext + messages)."""
+    messages: List[OrionMessageItem]
     context: Optional[Dict[str, Any]] = None
 
 class PhotoAnalysisRequest(BaseModel):

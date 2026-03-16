@@ -1,18 +1,16 @@
 /**
- * Map search bar with live MapKit JS Search (when available).
- * Calls window.mapkit.Search directly for real-world address results.
- * Falls back to backend /api/map/search only if MapKit is unavailable.
+ * Map search bar using Google Places (via backend) and backend /api/map/search fallback.
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Search, X, MapPin, Navigation, Fuel, ParkingCircle, Coffee, ShoppingBag, Utensils, Zap } from 'lucide-react'
-import { useMapKit } from '@/contexts/MapKitContext'
-import { mapkitPOISearch, type POICategory } from '@/lib/mapkit'
+import { useGoogleMaps } from '@/contexts/GoogleMapsContext'
+import { api } from '@/services/api'
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || ''
+/** POI categories for quick-search pills (no MapKit dependency). */
+type POICategory = 'gasStation' | 'parking' | 'restaurant' | 'cafe' | 'evCharger' | 'grocery'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getMK(): any { return (window as any).mapkit }
+const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -37,63 +35,32 @@ interface MapSearchBarProps {
   userLocation?: { lat: number; lng: number }
 }
 
-/**
- * Call window.mapkit.Search.autocomplete directly (no abstraction layer).
- * Returns a promise of SearchResult[].
- */
-function mkAutocomplete(q: string, loc?: { lat: number; lng: number }): Promise<SearchResult[]> {
-  return new Promise((resolve, reject) => {
-    const mk = getMK()
-    if (!mk || !mk.Search) { reject(new Error('no mapkit.Search')); return }
-    const opts: Record<string, unknown> = {}
-    if (loc) {
-      opts.region = new mk.CoordinateRegion(
-        new mk.Coordinate(loc.lat, loc.lng),
-        new mk.CoordinateSpan(0.5, 0.5)
-      )
-    }
-    const search = new mk.Search(opts)
-    search.autocomplete(q, (err: unknown, data: { results?: Array<{ displayLines?: string[]; coordinate?: { latitude: number; longitude: number } }> }) => {
-      if (err) { reject(err); return }
-      const out: SearchResult[] = (data?.results ?? []).map((r, i) => ({
-        id: `mk-ac-${i}`,
-        name: r.displayLines?.[0] ?? '',
-        address: r.displayLines?.slice(1).join(', ') ?? '',
-        lat: r.coordinate?.latitude ?? 0,
-        lng: r.coordinate?.longitude ?? 0,
-      }))
-      resolve(out)
-    })
-  })
+/** Google Places autocomplete via backend; returns predictions (place_id, name, address). */
+async function placesAutocomplete(q: string, loc?: { lat: number; lng: number }): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q })
+  if (loc) {
+    params.set('lat', String(loc.lat))
+    params.set('lng', String(loc.lng))
+  }
+  const res = await api.get<{ success?: boolean; data?: Array<{ place_id?: string; name?: string; address?: string; description?: string }> }>(`/api/places/autocomplete?${params}`)
+  const data = res.data as { success?: boolean; data?: Array<{ place_id?: string; name?: string; address?: string; description?: string }> } | undefined
+  if (!data?.success || !Array.isArray(data.data)) return []
+  return (data.data as Array<{ place_id?: string; name?: string; address?: string; description?: string }>).map((p, i) => ({
+    id: p.place_id ?? `ac-${i}`,
+    name: p.name ?? p.description ?? '',
+    address: p.address ?? '',
+    lat: 0,
+    lng: 0,
+    place_id: p.place_id,
+  }))
 }
 
-/**
- * Call window.mapkit.Search.search directly for full place results with coordinates.
- */
-function mkSearch(q: string, loc?: { lat: number; lng: number }): Promise<SearchResult[]> {
-  return new Promise((resolve, reject) => {
-    const mk = getMK()
-    if (!mk || !mk.Search) { reject(new Error('no mapkit.Search')); return }
-    const opts: Record<string, unknown> = {}
-    if (loc) {
-      opts.region = new mk.CoordinateRegion(
-        new mk.Coordinate(loc.lat, loc.lng),
-        new mk.CoordinateSpan(0.5, 0.5)
-      )
-    }
-    const search = new mk.Search(opts)
-    search.search(q, (err: unknown, data: { places?: Array<{ name?: string; formattedAddress?: string; coordinate?: { latitude: number; longitude: number } }> }) => {
-      if (err) { reject(err); return }
-      const out: SearchResult[] = (data?.places ?? []).map((p, i) => ({
-        id: `mk-s-${i}`,
-        name: p.name ?? '',
-        address: p.formattedAddress ?? '',
-        lat: p.coordinate?.latitude ?? 0,
-        lng: p.coordinate?.longitude ?? 0,
-      }))
-      resolve(out)
-    })
-  })
+/** Resolve place_id to lat/lng via backend details. */
+async function placeDetails(place_id: string): Promise<{ lat: number; lng: number; name?: string; address?: string } | null> {
+  const res = await api.get<{ success?: boolean; data?: { lat?: number; lng?: number; name?: string; address?: string } }>(`/api/places/details/${encodeURIComponent(place_id)}`)
+  const data = res.data as { success?: boolean; data?: { lat?: number; lng?: number; name?: string; address?: string } } | undefined
+  if (!data?.success || !data.data?.lat || !data.data?.lng) return null
+  return { lat: data.data.lat, lng: data.data.lng, name: data.data.name, address: data.data.address }
 }
 
 const POI_PILLS: { key: POICategory; label: string; icon: typeof Fuel }[] = [
@@ -113,41 +80,32 @@ export default function MapSearchBar({ onSelect, onNavigate, userLocation }: Map
   const [activePOI, setActivePOI] = useState<POICategory | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const { ready: mapKitReady } = useMapKit()
+  const { ready: mapReady } = useGoogleMaps()
 
   const search = useCallback(async (q: string) => {
     if (q.length < 2) { setResults([]); return }
     setLoading(true)
 
-    const mk = getMK()
-
-    // 1. MapKit autocomplete (live worldwide results) — 5s timeout
-    if (mapKitReady && mk?.Search) {
+    // 1. Google Places autocomplete via backend
+    if (mapReady) {
       try {
-        const res = await withTimeout(mkAutocomplete(q, userLocation), 5000)
+        const res = await withTimeout(placesAutocomplete(q, userLocation), 5000)
         if (res.length > 0) { setResults(res); setLoading(false); return }
       } catch { /* fall through */ }
     }
 
-    // 2. MapKit full search — 5s timeout
-    if (mapKitReady && mk?.Search) {
-      try {
-        const res = await withTimeout(mkSearch(q, userLocation), 5000)
-        if (res.length > 0) { setResults(res); setLoading(false); return }
-      } catch { /* fall through */ }
-    }
-
-    // 3. Backend hardcoded map search (last resort)
+    // 2. Backend /api/map/search fallback
     try {
-      const fallback = await fetch(`${API_URL}/api/map/search?q=${encodeURIComponent(q)}`)
+      const fallback = await fetch(`${API_URL}/api/map/search?q=${encodeURIComponent(q)}`, { credentials: 'include' })
       if (fallback.ok) {
         const data = await fallback.json()
-        setResults(Array.isArray(data.data) ? data.data : data.results ?? [])
+        const list = Array.isArray(data.data) ? data.data : data.results ?? []
+        setResults(list.map((r: SearchResult, i: number) => ({ ...r, id: r.id ?? `sb-${i}` })))
       }
     } catch { /* exhausted */ }
 
     setLoading(false)
-  }, [userLocation, mapKitReady])
+  }, [userLocation, mapReady])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -162,16 +120,25 @@ export default function MapSearchBar({ onSelect, onNavigate, userLocation }: Map
   const handleSelect = async (r: SearchResult) => {
     setQuery(r.name)
     setOpen(false)
-    if ((!r.lat || !r.lng) && mapKitReady && getMK()?.Search) {
+    if ((!r.lat || !r.lng) && r.place_id) {
       try {
-        const resolved = await mkSearch(r.name, userLocation)
-        if (resolved[0]?.lat && resolved[0]?.lng) {
-          onSelect({ ...r, lat: resolved[0].lat, lng: resolved[0].lng })
+        const details = await placeDetails(r.place_id)
+        if (details) {
+          onSelect({ ...r, lat: details.lat, lng: details.lng, name: details.name ?? r.name, address: details.address ?? r.address })
           return
         }
       } catch { /* use as-is */ }
     }
     onSelect(r)
+  }
+
+  const POI_QUERIES: Record<POICategory, string> = {
+    gasStation: 'gas station',
+    parking: 'parking',
+    restaurant: 'restaurant',
+    cafe: 'coffee shop',
+    evCharger: 'ev charger',
+    grocery: 'grocery store',
   }
 
   const handlePOISearch = useCallback(async (category: POICategory) => {
@@ -181,9 +148,16 @@ export default function MapSearchBar({ onSelect, onNavigate, userLocation }: Map
     setOpen(true)
     setQuery('')
     try {
-      const center = userLocation ?? { lat: 39.9612, lng: -82.9988 }
-      const res = await mapkitPOISearch(category, { center })
-      setResults(res.map((r, i) => ({ ...r, id: `poi-${i}` })))
+      const q = POI_QUERIES[category] ?? category
+      const res = await withTimeout(placesAutocomplete(q, userLocation ?? undefined), 5000)
+      setResults(res.length > 0 ? res.map((r, i) => ({ ...r, id: `poi-${i}` })) : [])
+      if (res.length === 0) {
+        const fallback = await fetch(`${API_URL}/api/map/search?q=${encodeURIComponent(q)}`, { credentials: 'include' })
+        if (fallback.ok) {
+          const data = await fallback.json()
+          setResults(Array.isArray(data.data) ? data.data.map((r: SearchResult, i: number) => ({ ...r, id: `poi-${i}` })) : [])
+        }
+      }
     } catch {
       setResults([])
     }
@@ -191,11 +165,11 @@ export default function MapSearchBar({ onSelect, onNavigate, userLocation }: Map
   }, [activePOI, userLocation])
 
   const handleNavigate = async (r: SearchResult) => {
-    if ((!r.lat || !r.lng) && mapKitReady && getMK()?.Search) {
+    if ((!r.lat || !r.lng) && r.place_id) {
       try {
-        const resolved = await mkSearch(r.name, userLocation)
-        if (resolved[0]?.lat && resolved[0]?.lng) {
-          onNavigate?.({ ...r, lat: resolved[0].lat, lng: resolved[0].lng })
+        const details = await placeDetails(r.place_id)
+        if (details) {
+          onNavigate?.({ ...r, lat: details.lat, lng: details.lng, name: details.name ?? r.name, address: details.address ?? r.address })
           setOpen(false)
           return
         }

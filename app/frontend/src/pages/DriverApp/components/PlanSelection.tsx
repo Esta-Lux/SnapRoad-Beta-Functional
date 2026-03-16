@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Check, Zap, Shield, Gift, BarChart3, Gem, Headphones, Navigation, Camera, MapPin, Sparkles, Star } from 'lucide-react'
+import { useTheme } from '@/contexts/ThemeContext'
+import { Check, Zap, Shield, Gift, BarChart3, Gem, Headphones, Navigation, Camera, MapPin, Sparkles, Star, Users, Bell, Route } from 'lucide-react'
 
 interface PlanSelectionProps {
   onSelectPlan: (plan: 'basic' | 'premium') => void
@@ -15,6 +16,8 @@ interface PricingConfig {
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 export default function PlanSelection({ onSelectPlan, onSkip }: PlanSelectionProps) {
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
   const [selectedPlan, setSelectedPlan] = useState<'basic' | 'premium' | null>(null)
   const [pricing, setPricing] = useState<PricingConfig>({
     founders_price: 10.99,
@@ -57,41 +60,49 @@ export default function PlanSelection({ onSelectPlan, onSkip }: PlanSelectionPro
   const basicFeatures = [
     { icon: Navigation, text: 'Manual rerouting' },
     { icon: Shield, text: 'Privacy-first navigation' },
-    { icon: Camera, text: 'Auto-blur photos' },
     { icon: MapPin, text: 'Local offers' },
     { icon: Gem, text: 'Earn Gems (1×)' },
+    { icon: Route, text: '5 saved routes' },
   ]
 
   const premiumFeatures = [
     { icon: Check, text: 'Everything in Basic', highlight: true },
-    { icon: Navigation, text: 'Automatic rerouting' },
+    { icon: Users, text: 'Share location & track friends', highlight: true },
+    { icon: Camera, text: 'Traffic cameras on map', highlight: true },
+    { icon: Bell, text: 'Delay alerts (2 hr ahead)', highlight: true },
+    { icon: Route, text: '20 saved routes' },
     { icon: Gift, text: 'Advanced local offers' },
     { icon: Gem, text: 'Gem multiplier (2×)', highlight: true },
     { icon: BarChart3, text: 'Smart commute analytics' },
     { icon: Headphones, text: 'Priority support' },
   ]
 
+  const bg = isLight ? 'bg-slate-100' : 'bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900'
+  const cardBase = isLight ? 'bg-white border-slate-200' : 'bg-slate-800/40 border-slate-700'
+  const cardSelectedBasic = isLight ? 'bg-blue-50 border-blue-500' : 'bg-slate-800/80 border-blue-500'
+  const cardSelectedPremium = isLight ? 'bg-amber-50/80 border-amber-500' : 'bg-gradient-to-br from-amber-900/40 to-orange-900/40 border-amber-500'
+  const textPrimary = isLight ? 'text-slate-900' : 'text-white'
+  const textMuted = isLight ? 'text-slate-500' : 'text-slate-400'
+
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 z-50 flex items-center justify-center">
-        <div className="animate-spin w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full" />
+      <div className={`fixed inset-0 ${bg} z-50 flex items-center justify-center`}>
+        <div className="animate-spin w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full" />
       </div>
     )
   }
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 z-50 flex flex-col overflow-auto">
-      {/* Header */}
+    <div className={`fixed inset-0 ${bg} z-50 flex flex-col overflow-auto`}>
       <div className="px-4 pt-8 pb-4 text-center">
         <div className="flex items-center justify-center gap-2 mb-3">
-          <Sparkles className="text-amber-400" size={20} />
-          <span className="text-amber-400 text-sm font-medium tracking-wide">CHOOSE YOUR PLAN</span>
+          <Sparkles className="text-amber-500" size={20} />
+          <span className="text-amber-600 text-sm font-medium tracking-wide">CHOOSE YOUR PLAN</span>
         </div>
-        
-        <h1 className="text-2xl font-bold text-white">
+        <h1 className={`text-2xl font-bold ${textPrimary}`}>
           Start Your Journey
         </h1>
-        <p className="text-slate-400 text-sm mt-2">
+        <p className={`text-sm mt-2 ${textMuted}`}>
           Drive safer. Earn rewards. Privacy guaranteed.
         </p>
       </div>
@@ -104,16 +115,16 @@ export default function PlanSelection({ onSelectPlan, onSkip }: PlanSelectionPro
           data-testid="plan-basic"
           className={`w-full text-left rounded-2xl p-4 transition-all border-2 ${
             selectedPlan === 'basic'
-              ? 'bg-slate-800/80 border-blue-500 shadow-lg shadow-blue-500/20'
-              : 'bg-slate-800/40 border-slate-700 hover:border-slate-600'
+              ? `${cardSelectedBasic} shadow-lg shadow-blue-500/20`
+              : `${cardBase} hover:border-slate-600`
           }`}
         >
           <div className="flex items-start justify-between mb-3">
             <div>
-              <h3 className="text-white font-bold text-lg">BASIC</h3>
+              <h3 className={`font-bold text-lg ${textPrimary}`}>BASIC</h3>
               <div className="flex items-baseline gap-1">
-                <span className="text-3xl font-bold text-white">$0</span>
-                <span className="text-slate-400 text-sm">/mo</span>
+                <span className={`text-3xl font-bold ${textPrimary}`}>$0</span>
+                <span className={`text-sm ${textMuted}`}>/mo</span>
               </div>
             </div>
             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
@@ -123,28 +134,26 @@ export default function PlanSelection({ onSelectPlan, onSkip }: PlanSelectionPro
             </div>
           </div>
           
-          <p className="text-slate-400 text-xs mb-3">
+          <p className={`text-xs mb-3 ${textMuted}`}>
             Privacy-first navigation for everyday driving.
           </p>
-          
           <div className="space-y-2">
             {basicFeatures.map((feature, i) => (
-              <div key={i} className="flex items-center gap-2 text-slate-300 text-sm">
-                <feature.icon size={14} className="text-slate-500" />
+              <div key={i} className={`flex items-center gap-2 text-sm ${textMuted}`}>
+                <feature.icon size={14} className={textMuted} />
                 <span>{feature.text}</span>
               </div>
             ))}
           </div>
         </button>
 
-        {/* Premium Plan */}
         <button
           onClick={() => setSelectedPlan('premium')}
           data-testid="plan-premium"
           className={`w-full text-left rounded-2xl p-4 transition-all border-2 relative overflow-hidden ${
             selectedPlan === 'premium'
-              ? 'bg-gradient-to-br from-amber-900/40 to-orange-900/40 border-amber-500 shadow-lg shadow-amber-500/20'
-              : 'bg-gradient-to-br from-slate-800/60 to-slate-800/40 border-slate-700 hover:border-amber-600/50'
+              ? `${cardSelectedPremium} shadow-lg shadow-amber-500/20`
+              : `${cardBase} hover:border-amber-600/50`
           }`}
         >
           {/* Most Popular Badge */}
@@ -155,28 +164,25 @@ export default function PlanSelection({ onSelectPlan, onSkip }: PlanSelectionPro
           <div className="flex items-start justify-between mb-3">
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-amber-400 font-bold text-lg flex items-center gap-1">
+                <h3 className="text-amber-500 font-bold text-lg flex items-center gap-1">
                   <Zap size={16} /> PREMIUM
                 </h3>
               </div>
-              
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-3xl font-bold text-white">${currentPrice.toFixed(2)}</span>
-                <span className="text-slate-400 text-sm">/mo</span>
-                
+                <span className={`text-3xl font-bold ${textPrimary}`}>${currentPrice.toFixed(2)}</span>
+                <span className={`text-sm ${textMuted}`}>/mo</span>
                 {discountPercent > 0 && (
                   <>
-                    <span className="text-slate-500 line-through text-sm">${pricing.public_price.toFixed(2)}/mo</span>
-                    <span className="bg-emerald-500/20 text-emerald-400 text-xs font-bold px-2 py-0.5 rounded-full">
+                    <span className={`line-through text-sm ${textMuted}`}>${pricing.public_price.toFixed(2)}/mo</span>
+                    <span className="bg-emerald-500/20 text-emerald-500 text-xs font-bold px-2 py-0.5 rounded-full">
                       {discountPercent}% OFF
                     </span>
                   </>
                 )}
               </div>
-              
               {pricing.is_founders_active && (
-                <p className="text-amber-400/80 text-xs mt-1 flex items-center gap-1">
-                  <Star size={10} className="fill-amber-400" />
+                <p className="text-amber-500/90 text-xs mt-1 flex items-center gap-1">
+                  <Star size={10} className="fill-amber-500" />
                   Founders pricing
                 </p>
               )}
@@ -205,9 +211,9 @@ export default function PlanSelection({ onSelectPlan, onSkip }: PlanSelectionPro
           <div className="space-y-2">
             {premiumFeatures.map((feature, i) => (
               <div key={i} className={`flex items-center gap-2 text-sm ${
-                feature.highlight ? 'text-amber-300' : 'text-slate-300'
+                feature.highlight ? 'text-amber-600' : textMuted
               }`}>
-                <feature.icon size={14} className={feature.highlight ? 'text-amber-400' : 'text-slate-500'} />
+                <feature.icon size={14} className={feature.highlight ? 'text-amber-500' : textMuted} />
                 <span>{feature.text}</span>
               </div>
             ))}
@@ -215,8 +221,7 @@ export default function PlanSelection({ onSelectPlan, onSkip }: PlanSelectionPro
         </button>
       </div>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-slate-800 bg-slate-900/80 backdrop-blur-sm">
+      <div className={`p-4 border-t backdrop-blur-sm ${isLight ? 'border-slate-200 bg-white' : 'border-slate-800 bg-slate-900/80'}`}>
         <button
           onClick={handleContinue}
           disabled={!selectedPlan}
@@ -244,8 +249,8 @@ export default function PlanSelection({ onSelectPlan, onSkip }: PlanSelectionPro
           )}
         </button>
         
-        <p className="text-center text-slate-500 text-xs mt-3">
-          No contracts - cancel anytime
+        <p className={`text-center text-xs mt-3 ${textMuted}`}>
+          No contracts - cancel anytime. Car Studio coming soon.
         </p>
       </div>
     </div>

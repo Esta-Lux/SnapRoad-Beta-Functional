@@ -1,491 +1,595 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { Mic, MicOff, X, Volume2, AlertTriangle, Shield, Car, Construction, Cloud, MapPin, Check, Gift, Navigation, Gem, Star, SkipForward } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Volume2, VolumeX, X, Mic, Square } from 'lucide-react'
+import {
+  chatWithOrion,
+  chatWithOrionWithTools,
+  streamOrion,
+  orionSpeak,
+  startListening,
+  type OrionMessage,
+  type OrionContext,
+} from '@/lib/orion'
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || ''
-
-interface PersonalizedOffer {
-  id: number
-  business_name: string
-  business_type: string
-  description: string
-  discount_percent: number
-  gems_reward: number
-  lat: number
-  lng: number
-  distance_km: number
-  personalization_reason: string
-}
-
-interface OrionVoiceProps {
+interface Props {
   isOpen: boolean
   onClose: () => void
-  onReportCreated: (report: { type: string; direction: string; lat: number; lng: number }) => void
-  isNavigating: boolean
-  currentLocation: { lat: number; lng: number }
-  onNavigateToOffer?: (offer: PersonalizedOffer) => void
+  context: OrionContext
+  isMuted: boolean
+  onMuteToggle: () => void
+  /** When Orion decides to start navigation (e.g. user said "start the route"), call with place name to resolve and start. */
+  onStartNavigation?: (destinationName: string) => void
+  /** When user asks to go to a nearby offer (e.g. "take me to that Starbucks offer"), call with offer/business name. */
+  onNavigateToOffer?: (offerName: string) => void
+  /** When user reports an incident by voice during nav (e.g. "cop on my left 100 feet"), call with type and optional side/distance. */
+  onVoiceReport?: (report: { type: string; side?: string; distance_feet?: number }) => void
 }
 
-// Voice commands mapping
-const VOICE_COMMANDS = [
-  { phrases: ['cop', 'police', 'officer', 'speed trap'], type: 'police', icon: Shield },
-  { phrases: ['hazard', 'debris', 'object', 'pothole'], type: 'hazard', icon: AlertTriangle },
-  { phrases: ['accident', 'crash', 'collision', 'fender bender'], type: 'accident', icon: Car },
-  { phrases: ['construction', 'road work', 'work zone'], type: 'construction', icon: Construction },
-  { phrases: ['weather', 'rain', 'fog', 'ice', 'snow'], type: 'weather', icon: Cloud },
-]
-
-const DIRECTIONS = ['left', 'right', 'ahead', 'behind']
-
-// Check if Web Speech API is available
-const SpeechRecognition = typeof window !== 'undefined' 
-  ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition 
-  : null
-
-export default function OrionVoice({ isOpen, onClose, onReportCreated, isNavigating, currentLocation, onNavigateToOffer }: OrionVoiceProps) {
+export default function OrionVoice({
+  isOpen,
+  onClose,
+  context: contextProp,
+  isMuted,
+  onMuteToggle,
+  onStartNavigation,
+  onNavigateToOffer,
+  onVoiceReport,
+}: Props) {
+  const context = contextProp ?? {}
+  const [messages, setMessages] = useState<OrionMessage[]>([])
+  const [input, setInput] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
   const [isListening, setIsListening] = useState(false)
-  const [transcript, setTranscript] = useState('')
-  const [detectedCommand, setDetectedCommand] = useState<{ type: string; direction: string } | null>(null)
-  const [orionMessage, setOrionMessage] = useState("Hi! I'm Orion. Say something like 'cop on my left' or 'hazard ahead'")
-  const [showQuickActions, setShowQuickActions] = useState(false)
-  const [speechSupported, setSpeechSupported] = useState(false)
-  const recognitionRef = useRef<any>(null)
-  
-  // Personalized offers state
-  const [mode, setMode] = useState<'report' | 'offers'>('report')
-  const [personalizedOffers, setPersonalizedOffers] = useState<PersonalizedOffer[]>([])
-  const [currentOfferIndex, setCurrentOfferIndex] = useState(0)
-  const [loadingOffers, setLoadingOffers] = useState(false)
-
-  // Load personalized offers when opened
-  useEffect(() => {
-    if (isOpen) {
-      loadPersonalizedOffers()
-    }
-  }, [isOpen, currentLocation])
-
-  const loadPersonalizedOffers = async () => {
-    setLoadingOffers(true)
-    try {
-      const res = await fetch(`${API_URL}/api/offers/personalized?lat=${currentLocation.lat}&lng=${currentLocation.lng}&limit=2`)
-      const data = await res.json()
-      if (data.success && data.data.length > 0) {
-        setPersonalizedOffers(data.data)
-      }
-    } catch (e) {
-      console.log('Could not load personalized offers')
-    }
-    setLoadingOffers(false)
-  }
-
-  const handleAcceptOffer = async (offer: PersonalizedOffer) => {
-    try {
-      const res = await fetch(`${API_URL}/api/offers/${offer.id}/accept-voice`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ add_as_stop: true })
-      })
-      const data = await res.json()
-      if (data.success) {
-        toast.success(`Adding ${offer.business_name} as a stop!`)
-        setOrionMessage(`Great! I've added ${offer.business_name} to your route.`)
-        onNavigateToOffer?.(offer)
-        
-        // Move to next offer or close
-        if (currentOfferIndex < personalizedOffers.length - 1) {
-          setCurrentOfferIndex(prev => prev + 1)
-        } else {
-          setTimeout(() => {
-            setMode('report')
-            setOrionMessage("Offer added! What else can I help with?")
-          }, 2000)
-        }
-      }
-    } catch (e) {
-      toast.error('Could not add stop')
-    }
-  }
-
-  const handleSkipOffer = () => {
-    if (currentOfferIndex < personalizedOffers.length - 1) {
-      setCurrentOfferIndex(prev => prev + 1)
-      setOrionMessage("No problem! Here's another one...")
-    } else {
-      setMode('report')
-      setOrionMessage("No worries! What else can I help with?")
-    }
-  }
+  const [streamingText, setStreamingText] = useState('')
+  const [orionTyping, setOrionTyping] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const stopListeningRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
-    // Check speech support
-    setSpeechSupported(!!SpeechRecognition)
-    
-    if (SpeechRecognition) {
-      recognitionRef.current = new SpeechRecognition()
-      recognitionRef.current.continuous = false
-      recognitionRef.current.interimResults = true
-      recognitionRef.current.lang = 'en-US'
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, streamingText])
 
-      recognitionRef.current.onresult = (event: any) => {
-        const current = event.resultIndex
-        const text = event.results[current][0].transcript.toLowerCase()
-        setTranscript(text)
-        
-        // Try to detect command
-        if (event.results[current].isFinal) {
-          processCommand(text)
+  useEffect(() => {
+    if (!isOpen || messages.length > 0) return
+    const greet = async () => {
+      setOrionTyping(true)
+      try {
+        const greeting = await chatWithOrion(
+          [{ role: 'user', content: 'greet me briefly' }],
+          context
+        )
+        setMessages([{ role: 'assistant', content: greeting }])
+        orionSpeak(greeting, 'normal', isMuted)
+      } catch {
+        setMessages([{ role: 'assistant', content: "Hey! I'm Orion. Ask me about your route, nearby offers, or anything SnapRoad." }])
+      }
+      setOrionTyping(false)
+    }
+    greet()
+  }, [isOpen])
+
+  const sendMessage = useCallback(async (text: string) => {
+    if (!text.trim() || isLoading) return
+
+    const userMsg: OrionMessage = { role: 'user', content: text }
+    const newMessages = [...messages, userMsg]
+    setMessages(newMessages)
+    setInput('')
+    setIsLoading(true)
+    setStreamingText('')
+    setOrionTyping(true)
+
+    const hasToolCallbacks = onStartNavigation || onNavigateToOffer || onVoiceReport
+    try {
+      if (context.isNavigating && !hasToolCallbacks) {
+        const reply = await chatWithOrion(newMessages, context)
+        setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
+        orionSpeak(reply, 'normal', isMuted)
+      } else if (hasToolCallbacks) {
+        const result = await chatWithOrionWithTools(newMessages, context)
+        let didStartNav = false
+        for (const t of result.toolCalls ?? []) {
+          if (t.name === 'start_navigation' && onStartNavigation) {
+            const dest = t.arguments?.destination
+            if (typeof dest === 'string' && dest.trim()) {
+              onStartNavigation(dest.trim())
+              orionSpeak(`Taking you now.`, 'high', isMuted)
+              didStartNav = true
+            }
+          } else if (t.name === 'navigate_to_nearby_offer' && onNavigateToOffer) {
+            const name = t.arguments?.offer_name
+            if (typeof name === 'string' && name.trim()) {
+              onNavigateToOffer(name.trim())
+              orionSpeak(`Taking you now.`, 'high', isMuted)
+              didStartNav = true
+            }
+          } else if (t.name === 'add_voice_road_report' && onVoiceReport) {
+            const type = t.arguments?.type
+            if (typeof type === 'string') {
+              onVoiceReport({
+                type,
+                side: typeof t.arguments?.side === 'string' ? t.arguments.side : undefined,
+                distance_feet: typeof t.arguments?.distance_feet === 'number' ? t.arguments.distance_feet : undefined,
+              })
+              orionSpeak(`Reported ${type}. Thanks for keeping the road safe.`, 'normal', isMuted)
+            }
+          }
         }
-      }
-
-      recognitionRef.current.onerror = (event: any) => {
-        console.log('Speech recognition error:', event.error)
-        setIsListening(false)
-        if (event.error === 'not-allowed') {
-          setOrionMessage("Microphone access denied. Use quick actions below instead.")
-          setShowQuickActions(true)
+        const displayContent = didStartNav ? 'Taking you now!' : (result.content || (result.toolCalls?.length ? 'Done.' : 'Done.'))
+        setMessages((prev) => [...prev, { role: 'assistant', content: displayContent }])
+        if (displayContent && !result.toolCalls?.length) orionSpeak(displayContent, 'normal', isMuted)
+      } else {
+        let fullReply = ''
+        for await (const chunk of streamOrion(newMessages, context)) {
+          fullReply += chunk
+          setStreamingText(fullReply)
         }
+        setStreamingText('')
+        setMessages((prev) => [...prev, { role: 'assistant', content: fullReply }])
+        orionSpeak(fullReply, 'normal', isMuted)
       }
-
-      recognitionRef.current.onend = () => {
-        setIsListening(false)
-      }
+    } catch {
+      const err = 'Sorry, I had a hiccup. Try again!'
+      setMessages((prev) => [...prev, { role: 'assistant', content: err }])
     }
 
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort()
-      }
-    }
-  }, [])
+    setIsLoading(false)
+    setOrionTyping(false)
+  }, [messages, context, isMuted, isLoading, onStartNavigation, onNavigateToOffer, onVoiceReport])
 
-  const processCommand = useCallback((text: string) => {
-    // Send raw transcript to backend voice-command endpoint for NLP processing
-    fetch(`${API_URL}/api/navigation/voice-command`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: text, lat: currentLocation.lat, lng: currentLocation.lng }),
-    }).catch(() => {})
-
-    let foundType: string | null = null
-    for (const cmd of VOICE_COMMANDS) {
-      if (cmd.phrases.some(phrase => text.includes(phrase))) {
-        foundType = cmd.type
-        break
-      }
-    }
-
-    let foundDirection = 'ahead'
-    for (const dir of DIRECTIONS) {
-      if (text.includes(dir)) {
-        foundDirection = dir
-        break
-      }
-    }
-
-    if (foundType) {
-      setDetectedCommand({ type: foundType, direction: foundDirection })
-      setOrionMessage(`Got it! ${foundType.charAt(0).toUpperCase() + foundType.slice(1)} ${foundDirection}. Posting report...`)
-      setTimeout(() => {
-        submitReport(foundType, foundDirection)
-      }, 1500)
-    } else {
-      setOrionMessage("I didn't catch that. Try saying 'cop on my left' or 'hazard ahead'")
-      setShowQuickActions(true)
-    }
-  }, [currentLocation])
-
-  const submitReport = (type: string, direction: string) => {
-    // Calculate offset based on direction (mock - in real app would use GPS heading)
-    const offset = 0.001 // ~100 meters
-    let lat = currentLocation.lat
-    let lng = currentLocation.lng
-
-    switch (direction) {
-      case 'ahead': lat += offset; break
-      case 'behind': lat -= offset; break
-      case 'left': lng -= offset; break
-      case 'right': lng += offset; break
-    }
-
-    onReportCreated({ type, direction, lat, lng })
-    setOrionMessage(`Report posted! Other drivers will be alerted.`)
-    
-    // Reset after delay
-    setTimeout(() => {
-      setDetectedCommand(null)
-      setTranscript('')
-      setOrionMessage("Report sent! Say another command or close.")
-    }, 2000)
-  }
-
-  const startListening = () => {
-    if (!speechSupported) {
-      setShowQuickActions(true)
-      setOrionMessage("Voice not available. Use quick actions below.")
+  const handleVoiceInput = useCallback(() => {
+    if (isListening) {
+      stopListeningRef.current?.()
+      setIsListening(false)
       return
     }
 
-    setTranscript('')
-    setDetectedCommand(null)
-    setOrionMessage("Listening... Say something like 'cop on my left'")
     setIsListening(true)
-    
-    try {
-      recognitionRef.current?.start()
-    } catch (e) {
-      console.log('Speech already started')
-    }
-  }
-
-  const stopListening = () => {
-    setIsListening(false)
-    recognitionRef.current?.stop()
-  }
-
-  const handleQuickAction = (type: string, direction: string) => {
-    setDetectedCommand({ type, direction })
-    setOrionMessage(`${type.charAt(0).toUpperCase() + type.slice(1)} ${direction}. Posting...`)
-    setTimeout(() => submitReport(type, direction), 1000)
-  }
+    const stop = startListening(
+      (text) => {
+        setIsListening(false)
+        sendMessage(text)
+      },
+      () => setIsListening(false)
+    )
+    stopListeningRef.current = stop ?? null
+  }, [isListening, sendMessage])
 
   if (!isOpen) return null
 
-  const currentOffer = personalizedOffers[currentOfferIndex]
-
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-            <Volume2 className="text-white" size={20} />
-          </div>
-          <div>
-            <h2 className="text-white font-bold">Orion</h2>
-            <p className="text-blue-300 text-xs">Voice Assistant</p>
-          </div>
-        </div>
-        <button onClick={onClose} className="text-white/60 hover:text-white" data-testid="orion-close">
-          <X size={24} />
-        </button>
-      </div>
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.5)',
+          zIndex: 2000,
+          backdropFilter: 'blur(4px)',
+        }}
+      />
 
-      {/* Mode Tabs */}
-      <div className="px-4 mb-4">
-        <div className="flex gap-1 bg-slate-800 rounded-xl p-1">
-          <button
-            onClick={() => setMode('report')}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 ${mode === 'report' ? 'bg-blue-500 text-white' : 'text-slate-400'}`}
-            data-testid="mode-report"
+      <div
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 2001,
+          background: '#0D0D0F',
+          borderRadius: '24px 24px 0 0',
+          paddingBottom: 'env(safe-area-inset-bottom, 24px)',
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 -8px 40px rgba(0,0,0,0.5)',
+        }}
+      >
+        <div
+          style={{
+            width: 36,
+            height: 4,
+            background: 'rgba(255,255,255,0.15)',
+            borderRadius: 2,
+            margin: '12px auto 0',
+            flexShrink: 0,
+          }}
+        />
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '12px 16px',
+            flexShrink: 0,
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+          }}
+        >
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              background: 'linear-gradient(135deg, #7C3AED, #5B21B6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 20,
+              marginRight: 12,
+              flexShrink: 0,
+              boxShadow: '0 0 16px rgba(124,58,237,0.5)',
+            }}
           >
-            <AlertTriangle size={14} /> Report
-          </button>
+            &#10022;
+          </div>
+
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'white' }}>
+              Orion
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+              {context.isNavigating ? 'Navigating mode' : 'AI Assistant'}
+            </div>
+          </div>
+
           <button
-            onClick={() => setMode('offers')}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 ${mode === 'offers' ? 'bg-emerald-500 text-white' : 'text-slate-400'}`}
-            data-testid="mode-offers"
+            onClick={onMuteToggle}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              background: isMuted ? 'rgba(255,59,48,0.2)' : 'rgba(255,255,255,0.08)',
+              border: 'none',
+              color: isMuted ? '#FF3B30' : 'rgba(255,255,255,0.5)',
+              cursor: 'pointer',
+              marginRight: 8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
-            <Gift size={14} /> Offers
-            {personalizedOffers.length > 0 && (
-              <span className="bg-white/20 text-xs px-1.5 rounded-full">{personalizedOffers.length}</span>
-            )}
+            {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+          </button>
+
+          <button
+            onClick={onClose}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              background: 'rgba(255,255,255,0.08)',
+              border: 'none',
+              color: 'rgba(255,255,255,0.5)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <X size={18} />
           </button>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6">
-        {/* Orion Message */}
-        <div className="bg-slate-800/80 rounded-2xl px-6 py-4 mb-8 max-w-sm">
-          <p className="text-white text-center">{orionMessage}</p>
-        </div>
-
-        {/* REPORT MODE */}
-        {mode === 'report' && (
-          <>
-            {/* Transcript Display */}
-            {transcript && (
-              <div className="bg-blue-500/20 border border-blue-500/30 rounded-xl px-4 py-2 mb-4">
-                <p className="text-blue-300 text-sm">"{transcript}"</p>
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            minHeight: 0,
+          }}
+        >
+          {messages.length === 0 && !orionTyping && (
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>&#10022;</div>
+              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>
+                Ask Orion anything about your route, nearby offers, or SnapRoad
               </div>
-            )}
-
-            {/* Detected Command */}
-            {detectedCommand && (
-              <div className="bg-emerald-500/20 border border-emerald-500/30 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
-                <Check className="text-emerald-400" size={20} />
-                <span className="text-emerald-300">
-                  {detectedCommand.type.charAt(0).toUpperCase() + detectedCommand.type.slice(1)} {detectedCommand.direction}
-                </span>
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                  justifyContent: 'center',
+                  marginTop: 16,
+                }}
+              >
+                {[
+                  'How long until I arrive?',
+                  'Any offers nearby?',
+                  'How are my gems?',
+                  'Whats the traffic like?',
+                ].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => sendMessage(suggestion)}
+                    style={{
+                      background: 'rgba(124,58,237,0.15)',
+                      border: '1px solid rgba(124,58,237,0.3)',
+                      borderRadius: 20,
+                      padding: '6px 14px',
+                      color: '#A78BFA',
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Mic Button */}
-            <button
-              onClick={isListening ? stopListening : startListening}
-              className={`w-24 h-24 rounded-full flex items-center justify-center transition-all ${
-                isListening 
-                  ? 'bg-red-500 animate-pulse scale-110' 
-                  : 'bg-gradient-to-br from-blue-500 to-indigo-600 hover:scale-105'
-              }`}
-              data-testid="orion-mic-btn"
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                gap: 8,
+                alignItems: 'flex-end',
+              }}
             >
-              {isListening ? (
-                <MicOff className="text-white" size={36} />
-              ) : (
-                <Mic className="text-white" size={36} />
+              {msg.role === 'assistant' && (
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 14,
+                    background: 'linear-gradient(135deg, #7C3AED, #5B21B6)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 13,
+                    flexShrink: 0,
+                  }}
+                >
+                  &#10022;
+                </div>
               )}
-            </button>
-
-            <p className="text-slate-400 text-sm mt-4">
-              {isListening ? 'Tap to stop' : speechSupported ? 'Tap to speak' : 'Voice not available'}
-            </p>
-
-            {/* Speech Not Supported Notice */}
-            {!speechSupported && (
-              <div className="bg-amber-500/20 border border-amber-500/30 rounded-xl px-4 py-2 mt-4">
-                <p className="text-amber-300 text-xs text-center">
-                  Voice recognition requires Chrome/Safari. Use quick actions below.
-                </p>
+              <div
+                style={{
+                  maxWidth: '75%',
+                  padding: '10px 14px',
+                  borderRadius:
+                    msg.role === 'user'
+                      ? '18px 18px 4px 18px'
+                      : '18px 18px 18px 4px',
+                  background:
+                    msg.role === 'user'
+                      ? 'linear-gradient(135deg, #7C3AED, #5B21B6)'
+                      : 'rgba(255,255,255,0.08)',
+                  color: 'white',
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                }}
+              >
+                {msg.content}
               </div>
+            </div>
+          ))}
+
+          {streamingText && (
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-start',
+                gap: 8,
+                alignItems: 'flex-end',
+              }}
+            >
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  background: 'linear-gradient(135deg, #7C3AED, #5B21B6)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 13,
+                  flexShrink: 0,
+                }}
+              >
+                &#10022;
+              </div>
+              <div
+                style={{
+                  maxWidth: '75%',
+                  padding: '10px 14px',
+                  borderRadius: '18px 18px 18px 4px',
+                  background: 'rgba(255,255,255,0.08)',
+                  color: 'white',
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                }}
+              >
+                {streamingText}
+                <span
+                  className="orion-cursor"
+                  style={{
+                    display: 'inline-block',
+                    width: 6,
+                    height: 14,
+                    background: '#7C3AED',
+                    marginLeft: 2,
+                    borderRadius: 2,
+                    verticalAlign: 'middle',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {orionTyping && !streamingText && (
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                alignItems: 'flex-end',
+              }}
+            >
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  background: 'linear-gradient(135deg, #7C3AED, #5B21B6)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 13,
+                  flexShrink: 0,
+                }}
+              >
+                &#10022;
+              </div>
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '18px 18px 18px 4px',
+                  background: 'rgba(255,255,255,0.08)',
+                  display: 'flex',
+                  gap: 4,
+                  alignItems: 'center',
+                }}
+              >
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="orion-dot"
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      background: '#7C3AED',
+                      animationDelay: `${i * 0.2}s`,
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        <div
+          style={{
+            padding: '12px 16px',
+            borderTop: '1px solid rgba(255,255,255,0.06)',
+            display: 'flex',
+            gap: 10,
+            alignItems: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              background: 'rgba(255,255,255,0.08)',
+              borderRadius: 20,
+              display: 'flex',
+              alignItems: 'center',
+              paddingLeft: 16,
+              paddingRight: 8,
+            }}
+          >
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') sendMessage(input)
+              }}
+              placeholder={
+                context.isNavigating ? 'Ask Orion...' : 'Message Orion...'
+              }
+              style={{
+                flex: 1,
+                background: 'none',
+                border: 'none',
+                outline: 'none',
+                color: 'white',
+                fontSize: 14,
+                height: 40,
+              }}
+            />
+            {input.length > 0 && (
+              <button
+                onClick={() => sendMessage(input)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  background: '#7C3AED',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 14,
+                  color: 'white',
+                }}
+              >
+                ↑
+              </button>
             )}
-          </>
-        )}
+          </div>
 
-        {/* OFFERS MODE */}
-        {mode === 'offers' && (
-          <>
-            {loadingOffers ? (
-              <div className="text-slate-400">Finding personalized offers...</div>
-            ) : personalizedOffers.length === 0 ? (
-              <div className="text-center">
-                <Gift className="mx-auto text-slate-600 mb-3" size={48} />
-                <p className="text-slate-400">No personalized offers right now</p>
-                <p className="text-slate-500 text-sm mt-1">Keep driving to unlock more!</p>
-              </div>
-            ) : currentOffer ? (
-              <div className="w-full max-w-sm">
-                {/* Offer Card */}
-                <div className="bg-gradient-to-br from-emerald-600/20 to-teal-600/20 border border-emerald-500/30 rounded-2xl p-4 mb-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-                        <Gift className="text-emerald-400" size={24} />
-                      </div>
-                      <div>
-                        <p className="text-white font-bold">{currentOffer.business_name}</p>
-                        <p className="text-emerald-300 text-xs">{currentOffer.personalization_reason}</p>
-                      </div>
-                    </div>
-                    <div className="bg-emerald-500 text-white text-sm font-bold px-2 py-1 rounded-lg">
-                      {currentOffer.discount_percent}% off
-                    </div>
-                  </div>
-
-                  <p className="text-slate-300 text-sm mb-3">{currentOffer.description}</p>
-
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-3 text-slate-400">
-                      <span className="flex items-center gap-1">
-                        <MapPin size={14} /> {currentOffer.distance_km.toFixed(1)} km
-                      </span>
-                      <span className="flex items-center gap-1 text-emerald-400">
-                        <Gem size={14} /> +{currentOffer.gems_reward}
-                      </span>
-                    </div>
-                    <span className="text-slate-500 text-xs">
-                      {currentOfferIndex + 1} of {personalizedOffers.length}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Voice prompt */}
-                <div className="bg-slate-800/60 rounded-xl p-3 mb-4 text-center">
-                  <p className="text-blue-300 text-sm">
-                    Say <span className="text-white font-medium">"Take me there"</span> or <span className="text-white font-medium">"Skip"</span>
-                  </p>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleSkipOffer}
-                    className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2"
-                    data-testid="skip-offer"
-                  >
-                    <SkipForward size={18} /> Skip
-                  </button>
-                  <button
-                    onClick={() => handleAcceptOffer(currentOffer)}
-                    className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2"
-                    data-testid="accept-offer"
-                  >
-                    <Navigation size={18} /> Take me there
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </>
-        )}
+          <button
+            onClick={handleVoiceInput}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              background: isListening
+                ? 'linear-gradient(135deg, #FF3B30, #CC0000)'
+                : 'linear-gradient(135deg, #7C3AED, #5B21B6)',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: isListening
+                ? '0 0 20px rgba(255,59,48,0.5)'
+                : '0 0 16px rgba(124,58,237,0.4)',
+              animation: isListening ? 'orion-pulse 1s infinite' : 'none',
+            }}
+          >
+            {isListening ? (
+              <Square size={18} style={{ color: 'white' }} />
+            ) : (
+              <Mic size={18} style={{ color: 'white' }} />
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* Quick Actions - Only in Report Mode */}
-      {mode === 'report' && (showQuickActions || !speechSupported) && (
-        <div className="bg-slate-900 border-t border-slate-800 p-4">
-          <p className="text-slate-400 text-xs text-center mb-3">Quick Report</p>
-          
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            {VOICE_COMMANDS.slice(0, 4).map(cmd => (
-              <button
-                key={cmd.type}
-                onClick={() => handleQuickAction(cmd.type, 'ahead')}
-                className="bg-slate-800 hover:bg-slate-700 rounded-xl p-3 flex items-center gap-2"
-                data-testid={`quick-${cmd.type}`}
-              >
-                <cmd.icon size={18} className="text-slate-400" />
-                <span className="text-white text-sm capitalize">{cmd.type}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Direction Selector */}
-          <div className="flex gap-2 justify-center">
-            {DIRECTIONS.map(dir => (
-              <button
-                key={dir}
-                className="bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs px-3 py-1.5 rounded-lg capitalize"
-                onClick={() => detectedCommand && handleQuickAction(detectedCommand.type, dir)}
-              >
-                {dir}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Instructions for iOS Implementation */}
-      {/* 
-        iOS IMPLEMENTATION NOTES:
-        --------------------------
-        1. Replace Web Speech API with Apple's Speech framework:
-           import Speech
-           let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-        
-        2. For Orion TTS, use AVSpeechSynthesizer:
-           let utterance = AVSpeechUtterance(string: "Cop reported on your left")
-           synthesizer.speak(utterance)
-        
-        3. For "Is it still there?" prompts to other drivers:
-           - Store reports with expiry (12 hours)
-           - When driver approaches report location:
-             synthesizer.speak("Police was reported ahead. Is it still there?")
-           - Listen for "yes/no" response
-           - Update report verification status
-        
-        4. Hotword detection ("Hey Orion"):
-           - Use Vosk or custom Core ML model for offline wake word
-           - Or use Apple's built-in Siri shortcuts
-      */}
-    </div>
+      <style>{`
+        @keyframes orion-dot {
+          0%, 100% { transform: translateY(0); opacity: 0.4; }
+          50% { transform: translateY(-4px); opacity: 1; }
+        }
+        .orion-dot {
+          animation: orion-dot 1.2s infinite;
+        }
+        @keyframes orion-cursor {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+        .orion-cursor {
+          animation: orion-cursor 0.8s infinite;
+        }
+        @keyframes orion-pulse {
+          0%, 100% { box-shadow: 0 0 16px rgba(255,59,48,0.4); }
+          50% { box-shadow: 0 0 32px rgba(255,59,48,0.8); }
+        }
+      `}</style>
+    </>
   )
 }

@@ -126,18 +126,64 @@ def get_community_badges():
 
 
 # ==================== LEADERBOARD ====================
+# Top 10 by state; weekly default. Ranked by safety_score (primary), then gems (secondary).
+# Each entry includes challenges_participated and badges_count (show on click).
 @router.get("/leaderboard")
-def get_leaderboard(state: str = "all", limit: int = 50):
+def get_leaderboard(state: str = "all", limit: int = 10, time_filter: str = "weekly"):
     all_users = list(users_db.values())
-    if state != "all":
-        all_users = [u for u in all_users if u.get("state", "").upper() == state.upper()]
-    sorted_users = sorted(all_users, key=lambda x: x.get("safety_score", 0), reverse=True)[:limit]
+    if state and state.lower() != "all":
+        all_users = [u for u in all_users if (u.get("state") or "").upper() == state.upper()]
+    # Count challenges participated per user (challenger or opponent)
+    def challenges_count(uid):
+        return sum(
+            1 for c in challenges_db
+            if str(c.get("challenger_id")) == str(uid) or str(c.get("opponent_id")) == str(uid)
+        )
+    # Sort by safety_score desc, then gems desc (tie-break)
+    sorted_users = sorted(
+        all_users,
+        key=lambda x: (x.get("safety_score", 0), x.get("gems", 0)),
+        reverse=True,
+    )[:limit]
     leaderboard = []
     for i, u in enumerate(sorted_users):
-        leaderboard.append({"rank": i + 1, "id": u["id"], "name": u.get("name", "Driver"), "safety_score": u.get("safety_score", 0), "level": u.get("level", 1), "gems": u.get("gems", 0), "total_miles": u.get("total_miles", 0), "streak": u.get("streak", 0), "state": u.get("state", ""), "is_premium": u.get("is_premium", False)})
+        uid = str(u["id"])
+        leaderboard.append({
+            "rank": i + 1,
+            "id": uid,
+            "name": u.get("name", "Driver"),
+            "safety_score": u.get("safety_score", 0),
+            "level": u.get("level", 1),
+            "gems": u.get("gems", 0),
+            "total_miles": u.get("total_miles", 0),
+            "streak": u.get("streak", 0),
+            "state": u.get("state", ""),
+            "is_premium": u.get("is_premium", False),
+            "badges_count": len(u.get("badges_earned", [])),
+            "challenges_participated": challenges_count(uid),
+        })
     current_user = users_db.get(current_user_id, {})
-    my_rank = next((e["rank"] for e in leaderboard if e["id"] == current_user_id), len(sorted_users) + 1)
-    return {"success": True, "data": {"leaderboard": leaderboard, "my_rank": my_rank, "my_score": current_user.get("safety_score", 0), "total_drivers": len(all_users)}}
+    my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == str(current_user_id)), len(leaderboard) + 1)
+    # Current user summary for "Your Rank" card
+    my_data = {
+        "name": current_user.get("name", "Driver"),
+        "safety_score": current_user.get("safety_score", 0),
+        "gems": current_user.get("gems", 0),
+        "level": current_user.get("level", 1),
+        "state": current_user.get("state", ""),
+    }
+    states = sorted(set(u.get("state", "") for u in list(users_db.values()) if u.get("state")))
+    return {
+        "success": True,
+        "data": {
+            "leaderboard": leaderboard,
+            "my_rank": my_rank,
+            "my_score": current_user.get("safety_score", 0),
+            "total_drivers": len(all_users),
+            "my_data": my_data,
+            "states": states,
+        },
+    }
 
 
 # ==================== CHALLENGES ====================

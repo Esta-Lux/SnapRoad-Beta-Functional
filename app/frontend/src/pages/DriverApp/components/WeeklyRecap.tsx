@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTheme } from '@/contexts/ThemeContext'
 import { 
   X, Trophy, Gem, Shield, TrendingUp, Flame, Car, Clock, 
   Zap, Star, ChevronRight, Award, Target, MapPin
@@ -30,9 +31,16 @@ interface WeeklyRecapProps {
 }
 
 export default function WeeklyRecap({ isOpen, onClose, isPremium }: WeeklyRecapProps) {
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
   const [stats, setStats] = useState<WeeklyStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [currentSlide, setCurrentSlide] = useState(0)
+
+  const backdrop = isLight ? 'bg-black/50' : 'bg-black/80'
+  const gateCardBg = isLight ? 'bg-white' : 'bg-slate-900'
+  const gateTextMuted = isLight ? 'text-slate-500' : 'text-slate-400'
+  const loadingBg = isLight ? 'bg-white' : 'bg-slate-900'
 
   useEffect(() => {
     if (isOpen && isPremium) {
@@ -77,25 +85,28 @@ export default function WeeklyRecap({ isOpen, onClose, isPremium }: WeeklyRecapP
 
   if (!isOpen) return null
 
-  // Non-premium gate
+  // Non-premium gate - theme-aware
   if (!isPremium) {
     return (
-      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
-        <div className="w-full max-w-sm bg-slate-900 rounded-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className={`fixed inset-0 ${backdrop} z-50 flex items-center justify-center p-4`} onClick={onClose}>
+        <div className={`w-full max-w-sm ${gateCardBg} rounded-2xl overflow-hidden shadow-xl border ${isLight ? 'border-slate-200' : 'border-slate-700'}`} onClick={e => e.stopPropagation()}>
           <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-center">
-            <Trophy className="text-yellow-300 mx-auto mb-3" size={48} />
+            <Trophy className="text-yellow-200 mx-auto mb-3" size={48} />
             <h2 className="text-white font-bold text-xl mb-2">Weekly Recap</h2>
-            <p className="text-purple-100 text-sm">Premium Feature</p>
+            <p className="text-white/90 text-sm">Premium Feature</p>
           </div>
-          <div className="p-6 text-center">
-            <p className="text-slate-400 text-sm mb-4">
+          <div className={`p-6 text-center ${isLight ? 'bg-slate-50' : 'bg-slate-900'}`}>
+            <p className={`${gateTextMuted} text-sm mb-4`}>
               Get personalized weekly summaries of your driving stats, achievements, and progress!
             </p>
             <button 
               onClick={onClose}
-              className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold py-3 rounded-xl"
+              className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold py-3 rounded-xl shadow-lg"
             >
               Upgrade to Premium
+            </button>
+            <button onClick={onClose} className={`w-full mt-2 ${gateTextMuted} text-sm py-2`}>
+              Maybe Later
             </button>
           </div>
         </div>
@@ -257,14 +268,14 @@ export default function WeeklyRecap({ isOpen, onClose, isPremium }: WeeklyRecapP
   ] : []
 
   return (
-    <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className={`fixed inset-0 ${backdrop} z-50 flex items-center justify-center p-4`} onClick={onClose}>
       <div 
-        className="w-full max-w-sm overflow-hidden animate-scale-in"
+        className="w-full max-w-sm overflow-hidden animate-scale-in shadow-2xl rounded-2xl"
         onClick={e => e.stopPropagation()}
       >
         {loading ? (
-          <div className="bg-slate-900 rounded-2xl p-12 flex items-center justify-center">
-            <div className="animate-spin w-8 h-8 border-2 border-purple-400 border-t-transparent rounded-full" />
+          <div className={`${loadingBg} rounded-2xl p-12 flex items-center justify-center border ${isLight ? 'border-slate-200' : 'border-slate-700'}`}>
+            <div className="animate-spin w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full" />
           </div>
         ) : stats && (
           <div className={`bg-gradient-to-b ${slides[currentSlide].bg} rounded-2xl overflow-hidden`}>

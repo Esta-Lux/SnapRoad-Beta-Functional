@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { useTheme } from '@/contexts/ThemeContext'
 import { X, Share2, Download, Twitter, Instagram, Copy, Check, Gem, Shield, Route, Clock, Zap } from 'lucide-react'
 
 interface TripSummary {
@@ -22,8 +23,18 @@ interface ShareTripScoreProps {
 }
 
 export default function ShareTripScore({ isOpen, onClose, tripData, userName, userLevel }: ShareTripScoreProps) {
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
   const [copied, setCopied] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
+
+  const backdrop = isLight ? 'bg-black/50' : 'bg-black/90'
+  const cardBg = isLight ? 'bg-white border-slate-200' : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-slate-700'
+  const textPrimary = isLight ? 'text-slate-900' : 'text-white'
+  const textMuted = isLight ? 'text-slate-500' : 'text-slate-400'
+  const statCardBg = isLight ? 'bg-slate-100' : 'bg-slate-800/50'
+  const copyBtnBg = copied ? 'bg-emerald-500 text-white' : isLight ? 'bg-slate-200 hover:bg-slate-300 text-slate-800' : 'bg-slate-700 hover:bg-slate-600 text-white'
+  const downloadBtnBg = isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
 
   if (!isOpen || !tripData) return null
 
@@ -51,23 +62,22 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
     handleCopyText()
   }
 
-  const scoreColor = tripData.safety_score >= 90 ? 'text-emerald-400' : 
-                     tripData.safety_score >= 70 ? 'text-amber-400' : 'text-red-400'
+  const score = Number(tripData.safety_score) ?? 0
+  const scoreColor = score >= 90 ? 'text-emerald-400' : score >= 70 ? 'text-amber-400' : 'text-red-400'
 
   return (
-    <div className="fixed inset-0 bg-black/90 z-50 flex flex-col items-center justify-center p-4">
+    <div className={`fixed inset-0 ${backdrop} z-50 flex flex-col items-center justify-center p-4`}>
       <button 
         onClick={onClose}
-        className="absolute top-4 right-4 text-white/60 hover:text-white"
+        className={`absolute top-4 right-4 ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-white/60 hover:text-white'}`}
         data-testid="share-close"
       >
         <X size={24} />
       </button>
 
-      {/* Share Card */}
       <div 
         ref={cardRef}
-        className="w-full max-w-sm bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-slate-700"
+        className={`w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl border ${cardBg}`}
       >
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-center relative overflow-hidden">
@@ -86,13 +96,12 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
           </div>
         </div>
 
-        {/* Route Info */}
-        <div className="px-6 py-4 border-b border-slate-700">
+        <div className={`px-6 py-4 border-b ${isLight ? 'border-slate-200' : 'border-slate-700'}`}>
           <div className="flex items-center gap-3">
-            <Route className="text-blue-400" size={20} />
+            <Route className="text-blue-500" size={20} />
             <div className="flex-1">
-              <p className="text-white font-medium">{tripData.origin}</p>
-              <p className="text-slate-400 text-sm">to {tripData.destination}</p>
+              <p className={`font-medium ${textPrimary}`}>{tripData.origin}</p>
+              <p className={`text-sm ${textMuted}`}>to {tripData.destination}</p>
             </div>
           </div>
         </div>
@@ -104,16 +113,16 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
               <circle cx="64" cy="64" r="56" stroke="#334155" strokeWidth="8" fill="none" />
               <circle 
                 cx="64" cy="64" r="56" 
-                stroke={tripData.safety_score >= 90 ? '#10b981' : tripData.safety_score >= 70 ? '#f59e0b' : '#ef4444'}
+                stroke={score >= 90 ? '#10b981' : score >= 70 ? '#f59e0b' : '#ef4444'}
                 strokeWidth="8" 
                 fill="none" 
-                strokeDasharray={`${(tripData.safety_score / 100) * 352} 352`} 
+                strokeDasharray={`${((Number(tripData.safety_score) ?? 0) / 100) * 352} 352`} 
                 strokeLinecap="round"
                 className="transition-all duration-1000"
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className={`text-4xl font-bold ${scoreColor}`}>{tripData.safety_score}</span>
+              <span className={`text-4xl font-bold ${scoreColor}`}>{Number(tripData.safety_score) ?? 0}</span>
               <span className="text-slate-400 text-xs">Safety Score</span>
             </div>
           </div>
@@ -126,24 +135,21 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
           )}
         </div>
 
-        {/* Stats Grid */}
         <div className="px-6 pb-6 grid grid-cols-3 gap-3">
-          <div className="bg-slate-800/50 rounded-xl p-3 text-center">
-            <Route size={18} className="text-blue-400 mx-auto mb-1" />
-            <p className="text-white font-bold">{tripData.distance.toFixed(1)}</p>
-            <p className="text-slate-500 text-xs">miles</p>
+          <div className={`${statCardBg} rounded-xl p-3 text-center border ${isLight ? 'border-slate-200' : 'border-slate-700'}`}>
+            <Route size={18} className="text-blue-500 mx-auto mb-1" />
+            <p className={`font-bold ${textPrimary}`}>{(Number(tripData.distance) ?? 0).toFixed(1)}</p>
+            <p className={`text-xs ${textMuted}`}>miles</p>
           </div>
-          
-          <div className="bg-slate-800/50 rounded-xl p-3 text-center">
-            <Clock size={18} className="text-purple-400 mx-auto mb-1" />
-            <p className="text-white font-bold">{tripData.duration}</p>
-            <p className="text-slate-500 text-xs">mins</p>
+          <div className={`${statCardBg} rounded-xl p-3 text-center border ${isLight ? 'border-slate-200' : 'border-slate-700'}`}>
+            <Clock size={18} className="text-purple-500 mx-auto mb-1" />
+            <p className={`font-bold ${textPrimary}`}>{Number(tripData.duration) ?? 0}</p>
+            <p className={`text-xs ${textMuted}`}>mins</p>
           </div>
-          
-          <div className="bg-slate-800/50 rounded-xl p-3 text-center">
-            <Gem size={18} className="text-cyan-400 mx-auto mb-1" />
-            <p className="text-white font-bold">+{tripData.gems_earned}</p>
-            <p className="text-slate-500 text-xs">gems</p>
+          <div className={`${statCardBg} rounded-xl p-3 text-center border ${isLight ? 'border-slate-200' : 'border-slate-700'}`}>
+            <Gem size={18} className="text-cyan-500 mx-auto mb-1" />
+            <p className={`font-bold ${textPrimary}`}>+{Number(tripData.gems_earned) ?? 0}</p>
+            <p className={`text-xs ${textMuted}`}>gems</p>
           </div>
         </div>
 
@@ -154,21 +160,19 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
               <Zap className="text-blue-400" size={18} />
               <span className="text-blue-300 text-sm">XP Earned</span>
             </div>
-            <span className="text-white font-bold">+{tripData.xp_earned}</span>
+            <span className="text-white font-bold">+{Number(tripData.xp_earned) ?? 0}</span>
           </div>
         </div>
 
-        {/* User Info */}
-        <div className="px-6 pb-6 flex items-center justify-between border-t border-slate-700 pt-4">
+        <div className={`px-6 pb-6 flex items-center justify-between border-t pt-4 ${isLight ? 'border-slate-200' : 'border-slate-700'}`}>
           <div>
-            <p className="text-white font-medium">{userName}</p>
-            <p className="text-slate-400 text-xs">Level {userLevel}</p>
+            <p className={`font-medium ${textPrimary}`}>{userName}</p>
+            <p className={`text-xs ${textMuted}`}>Level {userLevel}</p>
           </div>
-          <p className="text-slate-500 text-xs">{tripData.date}</p>
+          <p className={`text-xs ${textMuted}`}>{tripData.date}</p>
         </div>
       </div>
 
-      {/* Share Buttons */}
       <div className="mt-6 flex flex-col gap-3 w-full max-w-sm">
         <div className="flex gap-3">
           <button
@@ -179,7 +183,6 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
             <Twitter size={18} />
             Twitter
           </button>
-          
           <button
             onClick={handleCopyText}
             className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2"
@@ -192,11 +195,7 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
 
         <button
           onClick={handleCopyText}
-          className={`w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors ${
-            copied 
-              ? 'bg-emerald-500 text-white' 
-              : 'bg-slate-700 hover:bg-slate-600 text-white'
-          }`}
+          className={`w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors ${copyBtnBg}`}
           data-testid="copy-text"
         >
           {copied ? (
@@ -214,7 +213,7 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
 
         <button
           onClick={handleDownloadImage}
-          className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 rounded-xl font-medium flex items-center justify-center gap-2"
+          className={`w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 ${downloadBtnBg}`}
           data-testid="download-image"
         >
           <Download size={18} />

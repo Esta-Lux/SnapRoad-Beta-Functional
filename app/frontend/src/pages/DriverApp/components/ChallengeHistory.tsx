@@ -146,57 +146,56 @@ export default function ChallengeHistory({ isOpen, onClose }: ChallengeHistoryPr
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="w-full max-w-md bg-slate-900 rounded-2xl overflow-hidden animate-scale-in" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-xl border border-slate-200 animate-scale-in" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="bg-gradient-to-r from-red-500 to-orange-500 p-4">
+        <div className="bg-gradient-to-r from-blue-500 to-indigo-500 p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Swords className="text-white" size={20} />
               <h2 className="text-white font-bold text-lg">Challenge History</h2>
             </div>
-            <button onClick={onClose} className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center" data-testid="challenge-history-close">
+            <button onClick={onClose} className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30" data-testid="challenge-history-close">
               <X className="text-white" size={16} />
             </button>
           </div>
 
-          {/* Stats Summary */}
           {stats && (
             <div className="grid grid-cols-4 gap-2">
-              <div className="bg-white/10 rounded-lg p-2 text-center">
+              <div className="bg-white/20 rounded-xl p-2 text-center backdrop-blur-sm">
                 <p className="text-white text-lg font-bold">{stats.wins}</p>
-                <p className="text-white/60 text-[10px]">Wins</p>
+                <p className="text-white/80 text-[10px]">Wins</p>
               </div>
-              <div className="bg-white/10 rounded-lg p-2 text-center">
+              <div className="bg-white/20 rounded-xl p-2 text-center backdrop-blur-sm">
                 <p className="text-white text-lg font-bold">{stats.losses}</p>
-                <p className="text-white/60 text-[10px]">Losses</p>
+                <p className="text-white/80 text-[10px]">Losses</p>
               </div>
-              <div className="bg-white/10 rounded-lg p-2 text-center">
-                <p className="text-emerald-300 text-lg font-bold">{stats.win_rate}%</p>
-                <p className="text-white/60 text-[10px]">Win Rate</p>
+              <div className="bg-white/20 rounded-xl p-2 text-center backdrop-blur-sm">
+                <p className="text-emerald-200 text-lg font-bold">{stats.win_rate}%</p>
+                <p className="text-white/80 text-[10px]">Win Rate</p>
               </div>
-              <div className="bg-white/10 rounded-lg p-2 text-center">
-                <p className="text-cyan-300 text-lg font-bold flex items-center justify-center gap-0.5">
+              <div className="bg-white/20 rounded-xl p-2 text-center backdrop-blur-sm">
+                <p className="text-amber-200 text-lg font-bold flex items-center justify-center gap-0.5">
                   <Gem size={12} />{stats.total_gems_won - stats.total_gems_lost}
                 </p>
-                <p className="text-white/60 text-[10px]">Net Gems</p>
+                <p className="text-white/80 text-[10px]">Net Gems</p>
               </div>
             </div>
           )}
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-800">
+        <div className="flex border-b border-slate-200 bg-slate-50">
           {[
             { id: 'history', label: 'History', icon: Swords },
             { id: 'badges', label: 'Badges', icon: Award },
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as 'history' | 'badges')}
               className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 ${
                 activeTab === tab.id
-                  ? 'text-white border-b-2 border-red-500'
+                  ? 'text-blue-600 border-b-2 border-blue-500 bg-white'
                   : 'text-slate-500'
               }`}
               data-testid={`tab-${tab.id}`}
@@ -208,24 +207,24 @@ export default function ChallengeHistory({ isOpen, onClose }: ChallengeHistoryPr
         </div>
 
         {/* Content */}
-        <div className="max-h-[350px] overflow-auto">
+        <div className="max-h-[350px] overflow-auto bg-slate-50">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin w-6 h-6 border-2 border-red-400 border-t-transparent rounded-full" />
+              <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full" />
             </div>
           ) : activeTab === 'history' ? (
             <div className="p-3 space-y-2">
               {challenges.length === 0 ? (
-                <div className="text-center py-8">
-                  <Swords className="text-slate-600 mx-auto mb-2" size={32} />
-                  <p className="text-slate-500 text-sm">No challenges yet</p>
-                  <p className="text-slate-600 text-xs">Challenge friends from the Leaderboard!</p>
+                <div className="text-center py-8 bg-white rounded-xl mx-2">
+                  <Swords className="text-slate-300 mx-auto mb-2" size={32} />
+                  <p className="text-slate-600 text-sm">No challenges yet</p>
+                  <p className="text-slate-500 text-xs">Challenge friends from the Leaderboard!</p>
                 </div>
               ) : (
                 challenges.map(challenge => (
                   <div
                     key={challenge.id}
-                    className="bg-slate-800/50 rounded-xl p-3 border border-slate-700"
+                    className="bg-white rounded-xl p-3 border border-slate-200 shadow-sm"
                     data-testid={`challenge-history-${challenge.id}`}
                   >
                     <div className="flex items-center justify-between mb-2">
@@ -236,7 +235,7 @@ export default function ChallengeHistory({ isOpen, onClose }: ChallengeHistoryPr
                            <Swords size={14} />}
                         </div>
                         <div>
-                          <p className="text-white text-sm font-medium">vs {challenge.opponent_name}</p>
+                          <p className="text-slate-900 text-sm font-medium">vs {challenge.opponent_name}</p>
                           <p className="text-slate-500 text-[10px]">
                             {challenge.duration_hours}h challenge
                           </p>
@@ -249,16 +248,16 @@ export default function ChallengeHistory({ isOpen, onClose }: ChallengeHistoryPr
                     
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-3">
-                        <span className="text-slate-400">
-                          You: <span className={challenge.your_score > challenge.opponent_score ? 'text-emerald-400' : 'text-slate-300'}>{challenge.your_score}</span>
+                        <span className="text-slate-500">
+                          You: <span className={challenge.your_score > challenge.opponent_score ? 'text-emerald-600 font-medium' : 'text-slate-600'}>{challenge.your_score}</span>
                         </span>
-                        <span className="text-slate-400">
-                          Them: <span className={challenge.opponent_score > challenge.your_score ? 'text-red-400' : 'text-slate-300'}>{challenge.opponent_score}</span>
+                        <span className="text-slate-500">
+                          Them: <span className={challenge.opponent_score > challenge.your_score ? 'text-red-500 font-medium' : 'text-slate-600'}>{challenge.opponent_score}</span>
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Gem size={12} className={challenge.status === 'won' ? 'text-emerald-400' : 'text-red-400'} />
-                        <span className={challenge.status === 'won' ? 'text-emerald-400' : 'text-red-400'}>
+                        <Gem size={12} className={challenge.status === 'won' ? 'text-emerald-500' : 'text-red-500'} />
+                        <span className={challenge.status === 'won' ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
                           {challenge.status === 'won' ? '+' : '-'}{challenge.stake}
                         </span>
                       </div>
@@ -269,26 +268,26 @@ export default function ChallengeHistory({ isOpen, onClose }: ChallengeHistoryPr
             </div>
           ) : (
             <div className="p-3 grid grid-cols-2 gap-2">
-              {badges.map(badge => {
+              {Array.isArray(badges) ? badges.map(badge => {
                 const Icon = BADGE_ICONS[badge.icon] || Medal
                 return (
                   <div
                     key={badge.id}
-                    className={`rounded-xl p-3 border ${
+                    className={`rounded-xl p-3 border shadow-sm ${
                       badge.unlocked
-                        ? 'bg-gradient-to-br from-amber-500/20 to-orange-500/20 border-amber-500/30'
-                        : 'bg-slate-800/50 border-slate-700'
+                        ? 'bg-amber-50 border-amber-200'
+                        : 'bg-white border-slate-200'
                     }`}
                     data-testid={`badge-${badge.id}`}
                   >
                     <div className="flex items-start gap-2">
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        badge.unlocked ? 'bg-amber-500/30' : 'bg-slate-700'
+                        badge.unlocked ? 'bg-amber-100' : 'bg-slate-100'
                       }`}>
-                        <Icon size={16} className={badge.unlocked ? 'text-amber-400' : 'text-slate-500'} />
+                        <Icon size={16} className={badge.unlocked ? 'text-amber-600' : 'text-slate-400'} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-medium truncate ${badge.unlocked ? 'text-white' : 'text-slate-400'}`}>
+                        <p className={`text-xs font-medium truncate ${badge.unlocked ? 'text-slate-900' : 'text-slate-600'}`}>
                           {badge.name}
                         </p>
                         <p className="text-[10px] text-slate-500 line-clamp-2">{badge.description}</p>
@@ -296,7 +295,7 @@ export default function ChallengeHistory({ isOpen, onClose }: ChallengeHistoryPr
                     </div>
                     {badge.progress !== undefined && badge.total && !badge.unlocked && (
                       <div className="mt-2">
-                        <div className="h-1 bg-slate-700 rounded-full overflow-hidden">
+                        <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
                           <div 
                             className="h-full bg-amber-500 rounded-full"
                             style={{ width: `${(badge.progress / badge.total) * 100}%` }}
@@ -309,17 +308,16 @@ export default function ChallengeHistory({ isOpen, onClose }: ChallengeHistoryPr
                     )}
                   </div>
                 )
-              })}
+              }) : null}
             </div>
           )}
         </div>
 
-        {/* Streak Info */}
         {stats && stats.current_streak > 0 && (
-          <div className="p-3 border-t border-slate-800 bg-slate-900/80">
+          <div className="p-3 border-t border-slate-200 bg-amber-50">
             <div className="flex items-center justify-center gap-2">
-              <Flame className="text-orange-400" size={16} />
-              <span className="text-orange-400 text-sm font-medium">
+              <Flame className="text-orange-500" size={16} />
+              <span className="text-orange-700 text-sm font-medium">
                 {stats.current_streak} Win Streak!
               </span>
               <span className="text-slate-500 text-xs">

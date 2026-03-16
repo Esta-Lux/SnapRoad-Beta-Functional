@@ -86,7 +86,22 @@ user_credentials = {
 }
 
 # ==================== ROAD REPORTS ====================
-road_reports_db = []
+# Seed traffic cameras and road reports (Columbus OH area) so map overlay has data to show
+_now = datetime.now()
+_expiry = (_now + timedelta(hours=24)).isoformat()
+_created = _now.isoformat()
+road_reports_db = [
+    # Traffic cameras
+    {"id": 9001, "type": "camera", "lat": 39.9612, "lng": -83.0040, "title": "Traffic camera I-70 E", "description": "ODOT camera", "upvotes": 0, "created_at": _created, "expires_at": _expiry},
+    {"id": 9002, "type": "camera", "lat": 39.9680, "lng": -82.9988, "title": "Traffic camera I-71 N", "description": "ODOT camera", "upvotes": 0, "created_at": _created, "expires_at": _expiry},
+    {"id": 9003, "type": "camera", "lat": 39.9550, "lng": -83.0120, "title": "Traffic camera High St", "description": "City camera", "upvotes": 0, "created_at": _created, "expires_at": _expiry},
+    {"id": 9004, "type": "camera", "lat": 39.9720, "lng": -82.9880, "title": "Traffic camera 5th Ave", "description": "ODOT camera", "upvotes": 0, "created_at": _created, "expires_at": _expiry},
+    {"id": 9005, "type": "camera", "lat": 39.9480, "lng": -82.9950, "title": "Traffic camera I-70 W", "description": "ODOT camera", "upvotes": 0, "created_at": _created, "expires_at": _expiry},
+    # Hazards / congestion so road status markers show
+    {"id": 9006, "type": "hazard", "lat": 39.9612, "lng": -83.0100, "title": "I-70 Downtown", "description": "Rush hour traffic", "upvotes": 2, "created_at": _created, "expires_at": _expiry},
+    {"id": 9007, "type": "construction", "lat": 39.9700, "lng": -82.9988, "title": "I-71 North", "description": "Construction zone", "upvotes": 1, "created_at": _created, "expires_at": _expiry},
+    {"id": 9008, "type": "hazard", "lat": 39.9400, "lng": -83.0500, "title": "I-270 West", "description": "Accident reported", "upvotes": 3, "created_at": _created, "expires_at": _expiry},
+]
 
 # ==================== OFFERS ====================
 offers_db = [
@@ -256,38 +271,5 @@ CAR_SKINS = [
 ]
 
 # ==================== TRIPS ====================
-def generate_sample_trips():
-    trips = []
-    base_date = datetime.now()
-    routes = [
-        {"origin": "Home", "destination": "Work", "distance": 12.5, "duration": 25},
-        {"origin": "Work", "destination": "Home", "distance": 12.5, "duration": 28},
-        {"origin": "Home", "destination": "Grocery Store", "distance": 3.2, "duration": 8},
-        {"origin": "Home", "destination": "Gym", "distance": 5.1, "duration": 12},
-        {"origin": "Home", "destination": "Downtown", "distance": 8.7, "duration": 18},
-    ]
-    for i in range(60):
-        trip_date = base_date - timedelta(days=i // 3, hours=random.randint(6, 20))
-        route = random.choice(routes)
-        safety_score = random.randint(82, 100)
-        fuel_used = route["distance"] / random.uniform(28, 35)
-        trips.append({
-            "id": i + 1, "date": trip_date.strftime("%Y-%m-%d"),
-            "time": trip_date.strftime("%I:%M %p"),
-            "origin": route["origin"], "destination": route["destination"],
-            "distance_miles": route["distance"],
-            "duration_minutes": route["duration"] + random.randint(-3, 5),
-            "safety_score": safety_score,
-            "gems_earned": (route["distance"] * 0.5 + (10 if safety_score >= 90 else 0)),
-            "xp_earned": int(route["distance"] * 100 + safety_score * 5),
-            "fuel_used_gallons": round(fuel_used, 3),
-            "avg_speed_mph": round(route["distance"] / (route["duration"] / 60), 1),
-            "route_coordinates": [
-                {"lat": 39.9612 + random.uniform(-0.05, 0.05), "lng": -82.9988 + random.uniform(-0.05, 0.05)},
-                {"lat": 39.9612 + random.uniform(-0.05, 0.05), "lng": -82.9988 + random.uniform(-0.05, 0.05)},
-            ],
-            "events": [],
-        })
-    return trips
-
-trips_db = generate_sample_trips()
+# Real-time only: trips added when user completes a trip via app (no mock seed).
+trips_db = []

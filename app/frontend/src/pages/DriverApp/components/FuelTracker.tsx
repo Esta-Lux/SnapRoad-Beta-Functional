@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTheme } from '@/contexts/ThemeContext'
 import { X, Fuel, Plus, TrendingUp, TrendingDown, DollarSign, Droplet, Calendar, BarChart3, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -21,6 +22,8 @@ interface FuelTrackerProps {
 }
 
 export default function FuelTracker({ isOpen, onClose, isPremium }: FuelTrackerProps) {
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
   const [tab, setTab] = useState<'history' | 'log' | 'trends' | 'prices' | 'analytics'>('history')
   const [history, setHistory] = useState<FuelEntry[]>([])
   const [stats, setStats] = useState<any>(null)
@@ -134,9 +137,12 @@ export default function FuelTracker({ isOpen, onClose, isPremium }: FuelTrackerP
 
   if (!isOpen) return null
 
+  const modalBg = isLight ? 'bg-white' : 'bg-slate-900'
+  const backdrop = isLight ? 'bg-black/50' : 'bg-black/80'
+
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-2" onClick={onClose}>
-      <div className="w-full max-w-md h-[85vh] bg-slate-900 rounded-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className={`fixed inset-0 ${backdrop} z-50 flex items-center justify-center p-2`} onClick={onClose}>
+      <div className={`w-full max-w-md h-[85vh] ${modalBg} rounded-2xl overflow-hidden flex flex-col shadow-xl border ${isLight ? 'border-slate-200' : 'border-slate-700'}`} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="bg-gradient-to-r from-amber-600 to-orange-600 p-4 flex-shrink-0">
           <div className="flex items-center justify-between mb-3">

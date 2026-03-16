@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Query, Body
 from pydantic import BaseModel
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from datetime import datetime, timedelta
 import random, math
+import httpx
 from models.schemas import NavigationRequest, Location, Route, Widget
 from services.mock_data import (
     saved_locations, saved_routes, widget_settings, MAP_LOCATIONS,
-    road_reports_db,
+    road_reports_db, current_user_id, users_db,
 )
+from config import CAMERAS_API_KEY, CAMERAS_API_URL, CAMERAS_API_KEY_AS_HEADER
 
 
 class VoiceCommandBody(BaseModel):
@@ -111,7 +113,10 @@ def get_route_notifications(
     lng: Optional[float] = Query(None, description="Current longitude for ETA/leave-by"),
     window_minutes: int = Query(60, description="Notify when departure is within this many minutes"),
 ):
-    """Return pending route notifications: reminders, leave-by, and optional faster-route suggestions."""
+    """Return pending route notifications for premium users only. Free users get no real-time alerts (leave early, faster route)."""
+    user = users_db.get(str(current_user_id), {})
+    if not user.get("is_premium"):
+        return {"success": True, "data": [], "total": 0}
     now = datetime.now()
     today_weekday = now.strftime("%a")  # Mon, Tue, ...
     current_minutes = now.hour * 60 + now.minute
@@ -334,26 +339,97 @@ def update_widget_position(widget_id: str, body: dict):
     return {"success": True, "data": widget_settings}
 
 
+def _normalize_camera_item(item: Any, index: int) -> Optional[dict]:
+    """Convert a single item from an external cameras API into our report shape."""
+    if not isinstance(item, dict):
+        return None
+    lat = item.get("lat") or item.get("latitude")
+    lng = item.get("lng") or item.get("longitude")
+    if lat is None or lng is None:
+        return None
+    try:
+        lat_f, lng_f = float(lat), float(lng)
+    except (TypeError, ValueError):
+        return None
+    title = item.get("title") or item.get("name") or item.get("description") or "Traffic camera"
+    return {
+        "id": item.get("id", f"cam-{index}"),
+        "type": "camera",
+        "lat": lat_f,
+        "lng": lng_f,
+        "title": str(title)[:200],
+        "description": str(item.get("description") or item.get("name") or "")[:500],
+        "severity": "medium",
+        "upvotes": 0,
+        "created_at": item.get("created_at"),
+        "expires_at": item.get("expires_at"),
+    }
+
+
+def _fetch_cameras_from_api(lat: float, lng: float, radius_km: float) -> List[dict]:
+    """Call external cameras API using CAMERAS_API_KEY and CAMERAS_API_URL. Returns list of normalized report dicts."""
+    if not CAMERAS_API_KEY or not (CAMERAS_API_URL or "").strip():
+        return []
+    url = (CAMERAS_API_URL or "").strip()
+    params: dict = {"lat": lat, "lng": lng, "radius": radius_km}
+    if not CAMERAS_API_KEY_AS_HEADER and CAMERAS_API_KEY:
+        params["key"] = CAMERAS_API_KEY
+    headers: dict = {}
+    if CAMERAS_API_KEY_AS_HEADER and CAMERAS_API_KEY:
+        headers["X-API-Key"] = CAMERAS_API_KEY
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(url, params=params, headers=headers or None)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Cameras API request failed: %s", e)
+        return []
+    # Support common response shapes: list, or { data: [] }, or { cameras: [] }, or { results: [] }
+    raw_list = data if isinstance(data, list) else None
+    if raw_list is None and isinstance(data, dict):
+        raw_list = data.get("data") or data.get("cameras") or data.get("results") or data.get("items")
+    if not isinstance(raw_list, list):
+        return []
+    out = []
+    for i, item in enumerate(raw_list):
+        norm = _normalize_camera_item(item, i)
+        if norm:
+            out.append(norm)
+    return out
+
+
 # ==================== MAP TRAFFIC ====================
-# When integrating an external cameras/traffic API, use config.CAMERAS_API_KEY for auth (header or query param).
 @router.get("/map/traffic")
 def get_map_traffic(lat: Optional[float] = None, lng: Optional[float] = None, radius: float = 15):
-    """Return road reports formatted as map overlay data for traffic layer rendering."""
-    reports = road_reports_db
+    """Return road reports and traffic cameras for map overlay. Uses CAMERAS_API_KEY when CAMERAS_API_URL is set."""
+    reports = list(road_reports_db)
+    # Fetch cameras from external API when key and URL are configured
+    if lat is not None and lng is not None and CAMERAS_API_KEY and (CAMERAS_API_URL or "").strip():
+        external = _fetch_cameras_from_api(lat, lng, radius)
+        reports.extend(external)
+    # Filter by distance only when lat/lng provided (so external + DB reports near user are shown)
     if lat is not None and lng is not None:
         filtered = []
         for r in reports:
-            dlat = abs(r.get("lat", 0) - lat)
-            dlng = abs(r.get("lng", 0) - lng)
-            dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
-            if dist <= radius:
+            rlat, rlng = r.get("lat"), r.get("lng")
+            if rlat is None or rlng is None:
+                continue
+            dlat = abs(rlat - lat)
+            dlng = abs(rlng - lng)
+            dist_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+            if dist_km <= radius:
                 filtered.append(r)
         reports = filtered
+    # If nothing in radius, still return seed data so map always has cameras to show
+    if not reports and road_reports_db:
+        reports = list(road_reports_db)
 
     overlays = []
     for r in reports:
         rtype = r.get("type", "hazard")
-        severity = "high" if rtype in ("accident", "police") else "medium" if rtype in ("construction", "hazard") else "low"
+        severity = "high" if rtype in ("accident", "police") else "medium" if rtype in ("construction", "hazard", "camera") else "low"
         overlays.append({
             "id": r.get("id"),
             "type": rtype,

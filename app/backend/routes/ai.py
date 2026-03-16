@@ -1,8 +1,38 @@
 from fastapi import APIRouter, HTTPException
-from models.schemas import OrionMessageRequest, PhotoAnalysisRequest
+from fastapi.responses import StreamingResponse
+from models.schemas import OrionMessageRequest, OrionCompletionRequest, PhotoAnalysisRequest
 import uuid
+import json
 
 router = APIRouter(prefix="/api", tags=["AI"])
+
+
+@router.post("/orion/completions")
+async def orion_completions(request: OrionCompletionRequest):
+    """Orion chat completions using backend OPENAI_API_KEY (no key in frontend)."""
+    from services.orion_coach import orion_service
+    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    content = await orion_service.completion(messages, request.context)
+    return {"content": content}
+
+
+@router.post("/orion/completions/stream")
+async def orion_completions_stream(request: OrionCompletionRequest):
+    """Orion streaming completions; returns SSE in OpenAI-compatible format."""
+    from services.orion_coach import orion_service
+
+    async def generate():
+        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        async for chunk in orion_service.completion_stream(messages, request.context):
+            # SSE line in same shape as OpenAI so frontend can reuse parsing
+            payload = json.dumps({"choices": [{"delta": {"content": chunk}}]})
+            yield f"data: {payload}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/orion/chat")

@@ -10,7 +10,7 @@ import {
   Loader2,
 } from 'lucide-react'
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || ''
+const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -164,7 +164,7 @@ export default function PlaceDetail({ placeId, summary, onClose, onDirections }:
     )
   }
 
-  const visibleReviews = showAllReviews ? data.reviews : data.reviews.slice(0, 2)
+  const visibleReviews = showAllReviews ? data.reviews : data.reviews.slice(0, 3)
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
@@ -185,43 +185,93 @@ export default function PlaceDetail({ placeId, summary, onClose, onDirections }:
           <X size={16} className="text-slate-400" />
         </button>
 
-        {/* Photo carousel */}
+        {/* Hero image + title block (premium feel) */}
         {data.photos.length > 0 && (
-          <div className="flex gap-2 px-4 pb-3 overflow-x-auto scrollbar-hide">
-            {data.photos.slice(0, 6).map((ph, i) => (
+          <div className="relative w-full aspect-[2/1] bg-slate-800 overflow-hidden">
+            <img
+              src={`${API_URL}/api/places/photo?ref=${data.photos[0].reference}&maxwidth=800`}
+              alt=""
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-transparent to-transparent" />
+            <div className="absolute bottom-0 left-0 right-0 p-4">
+              <h2 className="text-xl font-bold text-white drop-shadow-md">{data.name}</h2>
+              <div className="flex items-center gap-2 flex-wrap mt-1">
+                {data.rating != null && (
+                  <span className="text-white font-semibold text-sm flex items-center gap-1">
+                    <Star size={14} className="fill-amber-400 text-amber-400" />
+                    {data.rating.toFixed(1)}
+                  </span>
+                )}
+                {data.total_reviews > 0 && (
+                  <span className="text-slate-300 text-xs">({data.total_reviews.toLocaleString()} reviews)</span>
+                )}
+                <span className="text-xs px-2 py-0.5 bg-white/20 rounded-full text-white">{typeLabel(data.types)}</span>
+                {data.open_now !== null && (
+                  <span className={`text-xs font-medium ${data.open_now ? 'text-emerald-300' : 'text-red-300'}`}>
+                    {data.open_now ? 'Open' : 'Closed'}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        {data.photos.length > 1 && (
+          <div className="flex gap-2 px-4 py-2 overflow-x-auto scrollbar-hide">
+            {data.photos.slice(1, 6).map((ph, i) => (
               <img
                 key={i}
-                src={`${API_URL}/api/places/photo?ref=${ph.reference}&maxwidth=400`}
+                src={`${API_URL}/api/places/photo?ref=${ph.reference}&maxwidth=200`}
                 alt=""
-                className="h-36 w-auto rounded-xl object-cover flex-shrink-0 bg-slate-800"
+                className="h-20 w-24 rounded-lg object-cover flex-shrink-0 bg-slate-800"
                 loading="lazy"
               />
             ))}
           </div>
         )}
 
-        {/* Header */}
-        <div className="px-4 pb-3">
-          <h2 className="text-xl font-bold text-white mb-1">{data.name}</h2>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs px-2 py-0.5 bg-slate-800 rounded-full text-slate-300">{typeLabel(data.types)}</span>
-            {data.price_level != null && (
-              <span className="text-xs text-emerald-400 font-medium">{priceDollars(data.price_level)}</span>
-            )}
-            {data.open_now !== null && (
-              <span className={`text-xs font-medium ${data.open_now ? 'text-emerald-400' : 'text-red-400'}`}>
-                {data.open_now ? 'Open' : 'Closed'}
-              </span>
-            )}
+        {/* Placeholder when no photos - still show section for premium feel */}
+        {data.photos.length === 0 && (
+          <div className="mx-4 mt-2 mb-3 rounded-2xl bg-slate-800/80 aspect-[2/1] flex items-center justify-center border border-slate-700/50">
+            <div className="text-center">
+              <MapPin size={40} className="text-slate-500 mx-auto mb-2" />
+              <p className="text-slate-500 text-sm">No photos for this place</p>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Rating */}
-        {data.rating != null && (
-          <div className="px-4 pb-3 flex items-center gap-2">
-            <span className="text-white font-semibold text-lg">{data.rating.toFixed(1)}</span>
+        {/* Header when no photos */}
+        {data.photos.length === 0 && (
+          <div className="px-4 pt-0 pb-3">
+            <h2 className="text-xl font-bold text-white mb-1">{data.name}</h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              {data.rating != null && (
+                <span className="text-white font-semibold text-sm flex items-center gap-1">
+                  <Star size={14} className="fill-amber-400 text-amber-400" />
+                  {data.rating.toFixed(1)}
+                </span>
+              )}
+              {data.total_reviews > 0 && (
+                <span className="text-slate-400 text-xs">({data.total_reviews.toLocaleString()} reviews)</span>
+              )}
+              <span className="text-xs px-2 py-0.5 bg-slate-800 rounded-full text-slate-300">{typeLabel(data.types)}</span>
+              {data.price_level != null && (
+                <span className="text-xs text-emerald-400 font-medium">{priceDollars(data.price_level)}</span>
+              )}
+              {data.open_now !== null && (
+                <span className={`text-xs font-medium ${data.open_now ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {data.open_now ? 'Open' : 'Closed'}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Rating row when we have photos (duplicate for consistency) */}
+        {data.photos.length > 0 && data.rating != null && (
+          <div className="px-4 pb-2 flex items-center gap-2">
             <Stars rating={data.rating} />
-            <span className="text-slate-400 text-xs">({data.total_reviews.toLocaleString()} reviews)</span>
+            <span className="text-slate-400 text-sm">{data.rating.toFixed(1)} · {data.total_reviews.toLocaleString()} reviews</span>
           </div>
         )}
 
@@ -273,59 +323,71 @@ export default function PlaceDetail({ placeId, summary, onClose, onDirections }:
             </a>
           )}
 
-          {/* Hours */}
-          {data.hours.length > 0 && (
-            <div className="border-t border-slate-800">
-              <button onClick={() => setShowHours(!showHours)} className="w-full flex items-center gap-3 py-3">
-                <Clock size={16} className="text-slate-500 shrink-0" />
-                <span className="text-sm text-slate-300 flex-1 text-left">Hours</span>
-                {showHours ? <ChevronUp size={14} className="text-slate-600" /> : <ChevronDown size={14} className="text-slate-600" />}
-              </button>
-              {showHours && (
-                <div className="pl-9 pb-3 space-y-1">
-                  {data.hours.map((h, i) => (
-                    <p key={i} className="text-xs text-slate-400">{h}</p>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Hours - always show */}
+          <div className="border-t border-slate-800">
+            <button onClick={() => setShowHours(!showHours)} className="w-full flex items-center gap-3 py-3">
+              <Clock size={16} className="text-slate-500 shrink-0" />
+              <span className="text-sm text-slate-300 flex-1 text-left">Hours</span>
+              {data.hours.length > 0 ? (showHours ? <ChevronUp size={14} className="text-slate-600" /> : <ChevronDown size={14} className="text-slate-600" />) : null}
+            </button>
+            {showHours && data.hours.length > 0 && (
+              <div className="pl-9 pb-3 space-y-1">
+                {data.hours.map((h, i) => (
+                  <p key={i} className="text-xs text-slate-400">{h}</p>
+                ))}
+              </div>
+            )}
+            {showHours && data.hours.length === 0 && (
+              <div className="pl-9 pb-3">
+                <p className="text-xs text-slate-500">Hours not available</p>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Reviews */}
-        {data.reviews.length > 0 && (
-          <div className="px-4 pb-6">
-            <h3 className="text-white font-semibold text-sm mb-3">Reviews</h3>
+        {/* User reviews - always show section */}
+        <div className="px-4 pb-6">
+          <h3 className="text-white font-semibold text-sm mb-3">User reviews</h3>
+          {data.reviews.length > 0 ? (
+            <>
             <div className="space-y-3">
               {visibleReviews.map((rv, i) => (
-                <div key={i} className="bg-slate-800/60 rounded-xl p-3">
+                <div key={i} className="bg-slate-800/60 rounded-xl p-3 border border-slate-700/50">
                   <div className="flex items-center gap-2 mb-1.5">
                     {rv.profile_photo ? (
-                      <img src={rv.profile_photo} alt="" className="w-6 h-6 rounded-full bg-slate-700" />
+                      <img src={rv.profile_photo} alt="" className="w-7 h-7 rounded-full bg-slate-700 object-cover" />
                     ) : (
-                      <div className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400">{rv.author?.[0]}</div>
+                      <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-xs text-slate-400 font-medium">{rv.author?.[0]}</div>
                     )}
-                    <span className="text-xs text-white font-medium flex-1 truncate">{rv.author}</span>
-                    <span className="text-[10px] text-slate-500">{rv.time}</span>
-                  </div>
-                  {rv.rating != null && (
-                    <div className="mb-1.5">
-                      <Stars rating={rv.rating} />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm text-white font-medium truncate block">{rv.author}</span>
+                      {rv.rating != null && (
+                        <div className="mt-0.5">
+                          <Stars rating={rv.rating} />
+                        </div>
+                      )}
                     </div>
-                  )}
+                    <span className="text-[10px] text-slate-500 shrink-0">{rv.time}</span>
+                  </div>
                   {rv.text && (
-                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-4">{rv.text}</p>
+                    <p className="text-xs text-slate-300 leading-relaxed mt-2 line-clamp-4">{rv.text}</p>
                   )}
                 </div>
               ))}
             </div>
-            {data.reviews.length > 2 && !showAllReviews && (
-              <button onClick={() => setShowAllReviews(true)} className="mt-2 text-blue-400 text-xs font-medium">
+            {data.reviews.length > 3 && !showAllReviews && (
+              <button onClick={() => setShowAllReviews(true)} className="mt-3 w-full py-2 rounded-xl border border-slate-600 text-slate-300 text-sm font-medium">
                 Show all {data.reviews.length} reviews
               </button>
             )}
-          </div>
-        )}
+            </>
+          ) : (
+            <div className="rounded-xl bg-slate-800/60 border border-slate-700/50 p-4 text-center">
+              <p className="text-slate-400 text-sm">No reviews yet</p>
+              <p className="text-slate-500 text-xs mt-1">Be the first to share your experience</p>
+            </div>
+          )}
+        </div>
 
         {/* Bottom safe area */}
         <div className="h-6" />

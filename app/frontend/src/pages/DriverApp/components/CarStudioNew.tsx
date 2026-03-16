@@ -71,6 +71,13 @@ export default function CarStudio({
       {/* Premium Dark Background */}
       <div className="absolute inset-0 bg-[#0a0a0f]" />
       
+      {/* Coming Soon banner - dark theme */}
+      <div className="relative z-20 flex items-center justify-center gap-2 py-2 px-4 bg-amber-500/15 border-b border-amber-500/30">
+        <Sparkles className="text-amber-400" size={16} />
+        <span className="text-amber-300 font-semibold text-sm tracking-wide">Car Studio — Coming Soon</span>
+        <span className="text-amber-500/70 text-xs">Full customization in a future update</span>
+      </div>
+      
       {/* Ambient Lighting Effects */}
       <div className="absolute top-20 left-1/4 w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[120px] animate-pulse" />
       <div className="absolute bottom-20 right-1/4 w-[400px] h-[400px] bg-purple-600/10 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: '1s' }} />

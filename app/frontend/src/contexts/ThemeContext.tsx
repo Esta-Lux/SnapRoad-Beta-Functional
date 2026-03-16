@@ -40,6 +40,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     Object.entries(vars).forEach(([key, value]) => {
       document.documentElement.style.setProperty(key, value)
     })
+    document.documentElement.setAttribute('data-theme', selectedTheme)
   }
 
   useEffect(() => {
@@ -56,7 +57,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }
 
   const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark')
+    setThemeState((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark'
+      localStorage.setItem('snaproad-theme', next)
+      applyTheme(next)
+      return next
+    })
   }
 
   return (

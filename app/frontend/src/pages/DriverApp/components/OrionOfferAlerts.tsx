@@ -1,7 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import { Gift, X, MapPin, Gem, ChevronRight, Volume2, VolumeX, Navigation } from 'lucide-react'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 interface Offer {
   id: number
@@ -21,6 +18,8 @@ interface OrionOfferAlertsProps {
   offers: Offer[]
   onOfferSelect: (offer: Offer) => void
   isPremium: boolean
+  isMuted?: boolean
+  onMuteToggle?: () => void
 }
 
 export default function OrionOfferAlerts({ 
@@ -28,14 +27,19 @@ export default function OrionOfferAlerts({
   userLocation, 
   offers, 
   onOfferSelect,
-  isPremium 
+  isPremium,
+  isMuted: isMutedProp,
+  onMuteToggle: onMuteToggleProp,
 }: OrionOfferAlertsProps) {
   const [currentAlert, setCurrentAlert] = useState<Offer | null>(null)
   const [showAlert, setShowAlert] = useState(false)
   const [muted, setMuted] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
   const [shownOffers, setShownOffers] = useState<Set<number>>(new Set())
   const [lastAlertTime, setLastAlertTime] = useState(0)
   const alertTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isMuted = isMutedProp ?? muted
+  const onMuteToggle = onMuteToggleProp ?? (() => setMuted((m) => !m))
 
   // Check for nearby offers periodically during navigation
   useEffect(() => {
@@ -79,10 +83,10 @@ export default function OrionOfferAlerts({
           speakAlert(offerWithDistance as Offer)
         }
         
-        // Auto-dismiss after 15 seconds
+        // Auto-dismiss after 8 seconds
         alertTimeoutRef.current = setTimeout(() => {
           setShowAlert(false)
-        }, 15000)
+        }, 8000)
       }
     }, 30000) // Check every 30 seconds
 
@@ -104,7 +108,7 @@ export default function OrionOfferAlerts({
         
         alertTimeoutRef.current = setTimeout(() => {
           setShowAlert(false)
-        }, 15000)
+        }, 8000)
       }
     }, 5000)
 
@@ -116,6 +120,10 @@ export default function OrionOfferAlerts({
       }
     }
   }, [isNavigating, offers, muted, lastAlertTime, shownOffers])
+
+  useEffect(() => {
+    setDismissed(false)
+  }, [currentAlert?.id])
 
   const speakAlert = (offer: Offer) => {
     if ('speechSynthesis' in window) {
@@ -142,110 +150,120 @@ export default function OrionOfferAlerts({
     }
   }
 
-  if (!showAlert || !currentAlert) return null
+  const currentOffer = currentAlert
+  if (!showAlert || !currentOffer || dismissed) return null
 
   return (
     <div
-      className="animate-slide-up"
-      style={
-        isNavigating
-          ? {
-              position: 'fixed',
-              top: 'calc(env(safe-area-inset-top, 44px) + 100px)',
-              left: 16,
-              right: 16,
-              zIndex: 998,
-            }
-          : {
-              position: 'fixed',
-              bottom: 96,
-              left: 16,
-              right: 16,
-              zIndex: 40,
-            }
-      }
+      style={{
+        position: 'fixed',
+        bottom: 'calc(90px + env(safe-area-inset-bottom, 20px))',
+        left: 16,
+        right: 16,
+        zIndex: 997,
+        background: '#1C2A1C',
+        borderRadius: 16,
+        padding: '12px 14px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        animation: 'slideUpOffer 0.3s ease',
+      }}
     >
-      <div className="bg-gradient-to-r from-slate-800 to-slate-900 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden">
-        {/* Animated gradient border */}
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-emerald-500/20 animate-pulse pointer-events-none" />
-        
-        {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-600/20 to-teal-600/20 px-4 py-2 flex items-center justify-between border-b border-white/10">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center animate-pulse">
-              <Navigation className="text-white" size={12} />
-            </div>
-            <span className="text-emerald-400 text-xs font-medium">Orion found a deal nearby!</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setMuted(!muted)}
-              className="text-slate-400 hover:text-white p-1"
-            >
-              {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-            </button>
-            <button 
-              onClick={handleDismiss}
-              className="text-slate-400 hover:text-white p-1"
-            >
-              <X size={16} />
-            </button>
-          </div>
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 10,
+          background: '#34C759',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 20,
+          flexShrink: 0,
+        }}
+      >
+        🎁
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, color: '#34C759', fontWeight: 600, marginBottom: 2 }}>
+          Orion found a deal nearby!
         </div>
-        
-        {/* Content */}
-        <div className="p-4">
-          <div className="flex items-center gap-4">
-            {/* Icon */}
-            <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Gift className="text-white" size={24} />
-            </div>
-            
-            {/* Info */}
-            <div className="flex-1 min-w-0">
-              <h3 className="text-white font-semibold text-base truncate">{currentAlert.business_name}</h3>
-              <p className="text-slate-400 text-sm truncate">{currentAlert.description}</p>
-              <div className="flex items-center gap-3 mt-1">
-                <span className="text-emerald-400 text-sm font-medium">{currentAlert.discount_percent}% off</span>
-                <span className="text-slate-500">•</span>
-                <span className="text-cyan-400 text-sm flex items-center gap-1">
-                  <Gem size={12} /> +{currentAlert.gems_reward}
-                </span>
-                <span className="text-slate-500">•</span>
-                <span className="text-slate-400 text-sm flex items-center gap-1">
-                  <MapPin size={12} /> {currentAlert.distance} mi
-                </span>
-              </div>
-            </div>
-          </div>
-          
-          {/* Action Button */}
-          <button
-            onClick={handleSelect}
-            className="w-full mt-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 active:scale-[0.98]"
-          >
-            View Offer
-            <ChevronRight size={18} />
-          </button>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: 'white',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {(currentOffer as { title?: string; discount_text?: string }).title ??
+            (currentOffer as { discount_text?: string }).discount_text ??
+            currentOffer.business_name ??
+            'Special offer'}
+        </div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 1 }}>
+          +{(currentOffer as { gems_reward?: number }).gems_reward ?? 25} gems
+          {currentOffer.distance != null ? ` • ${currentOffer.distance}` : ''}
         </div>
       </div>
-      
-      {/* Animation styles */}
-      <style>{`
-        @keyframes slide-up {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        .animate-slide-up {
-          animation: slide-up 0.3s ease-out;
-        }
-      `}</style>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+        <button
+          type="button"
+          onClick={() => onOfferSelect(currentOffer)}
+          style={{
+            background: '#34C759',
+            border: 'none',
+            borderRadius: 8,
+            color: 'white',
+            fontSize: 11,
+            fontWeight: 700,
+            padding: '5px 10px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          View →
+        </button>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          style={{
+            background: 'rgba(255,255,255,0.1)',
+            border: 'none',
+            borderRadius: 8,
+            color: 'rgba(255,255,255,0.6)',
+            fontSize: 11,
+            padding: '5px 10px',
+            cursor: 'pointer',
+          }}
+        >
+          Skip
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={onMuteToggle}
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 8,
+          background: 'rgba(255,255,255,0.1)',
+          border: 'none',
+          color: 'rgba(255,255,255,0.6)',
+          fontSize: 14,
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}
+      >
+        {isMuted ? '🔇' : '🔊'}
+      </button>
     </div>
   )
 }
