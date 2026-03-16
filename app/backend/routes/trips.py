@@ -2,8 +2,10 @@ from fastapi import APIRouter
 from typing import Optional
 from datetime import datetime, timedelta
 from models.schemas import TripResult, FuelLog, ReportIncident
+from pydantic import BaseModel
+from uuid import uuid4
 from services.mock_data import (
-    users_db, current_user_id, trips_db, fuel_history, FUEL_PRICES, XP_CONFIG,
+    users_db, current_user_id, trips_db, fuel_history, fuel_stats, FUEL_PRICES, XP_CONFIG,
 )
 from routes.gamification import add_xp_to_user
 
@@ -11,6 +13,67 @@ router = APIRouter(prefix="/api", tags=["Trips"])
 
 
 # ==================== TRIP HISTORY ====================
+
+@router.get("/trips")
+def get_trips(page: int = 1, limit: int = 20):
+    
+    start = (page - 1) * limit
+    end = start + limit
+
+    total = len(trips_db)
+    trips = trips_db[start:end]
+
+    return {
+        "success": True,
+        "data": {
+            "items": trips,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total,
+                "total_pages": (total + limit - 1) // limit
+            }
+        }
+    }
+
+@router.get("/trips/${id}")
+def get_trip_by_id(trip_id: int):
+    trip = next((t for t in trips_db if t[trip_id] == trip_id), None) # Consider switching to a dictionary system for Trips_db because this is O(n)
+
+    if not trip:
+        return {
+            "success": False,
+            "message": "Trip not found"
+        }
+
+    return {
+        "success": True,
+        "data": trip
+    }
+
+@router.post("/trips/start") # TODO: Determine how we're going to format trips ultimately
+def start_trip(startLocation: str): # Consider Implementing BaseModel later, instead of raw strings/dicts
+    new_id = str(uuid4())
+    now = datetime.now()
+
+    trip = {
+        "id": new_id,
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%I:%M %p"),
+        "origin": startLocation,
+        "destination": trip.destination or "End",
+        "active": True,
+        "events": [],
+        
+    }
+
+    trips_db.append(trip)
+    return {
+        "success": True,
+        "data": trip
+    }
+
+
 @router.get("/trips/history")
 def get_trip_history():
     user = users_db.get(current_user_id, {})
@@ -23,8 +86,35 @@ def get_trip_history():
         },
     }
 
+@router.post("/trips/${tripId}/end")
+def end_trip(trip_id: str, endLocation: str):
+    user = users_db.get(current_user_id, {})
+    user = users_db.get(current_user_id, {})
 
-@router.post("/trips/complete")
+    #TODO: Calculate distance / implement
+    #gems_earned = int(distance * 2)
+    #xp_earned = int(distance * 100)
+    #if current_user_id in users_db:
+        #users_db[current_user_id]["total_trips"] = user.get("total_trips", 0) + 1
+        #users_db[current_user_id]["total_miles"] = user.get("total_miles", 0) + distance
+        #users_db[current_user_id]["gems"] = user.get("gems", 0) + gems_earned
+    trip = next((t for t in trips_db if t["id"] == trip_id), None)
+    if not trip:
+        return {"success": False, "message": "Trip not found"}
+    trip["active"] = False
+
+    return {
+        "success": True,
+        "data": {
+            "id": trip_id,
+            "message": "Trip completed!",
+        }
+    }
+
+
+
+
+@router.post("/trips/complete") # TODO: Unsure how to reconcile this with end trip, have replaced
 def complete_trip(distance: float = 5.0, duration: int = 15):
     user = users_db.get(current_user_id, {})
     gems_earned = int(distance * 2)
@@ -84,7 +174,7 @@ def complete_trip_with_safety(trip: TripResult):
         route_coords = []
     duration_min = max(1, trip.duration)
     fuel_used = trip.distance / 30.0 if trip.distance else 0.1
-    new_id = max([t.get("id", 0) for t in trips_db], default=0) + 1
+    new_id = str(uuid4())
     trips_db.append({
         "id": new_id,
         "date": now.strftime("%Y-%m-%d"),
@@ -145,7 +235,7 @@ def get_detailed_trip_history(days: int = 30, limit: int = 50, sort_by: str = "d
 
 
 @router.post("/trips/{trip_id}/share")
-def share_trip(trip_id: int):
+def share_trip(trip_id: int): 
     trip = next((t for t in trips_db if t["id"] == trip_id), None)
     if not trip:
         return {"success": False, "message": "Trip not found"}
@@ -161,7 +251,7 @@ def get_fuel_history():
 
 @router.post("/fuel/log")
 def log_fuel(entry: FuelLog):
-    new_id = max([f["id"] for f in fuel_history], default=0) + 1
+    new_id = str(uuid4())
     new_entry = {"id": new_id, "date": entry.date, "station": entry.station, "price_per_gallon": entry.price_per_gallon, "gallons": entry.gallons, "total": entry.total}
     fuel_history.insert(0, new_entry)
     return {"success": True, "message": "Fuel log entry added", "data": new_entry}
@@ -188,6 +278,13 @@ def get_fuel_prices(lat: float = 39.9612, lng: float = -82.9988):
             ],
             "location": {"lat": lat, "lng": lng},
         },
+    }
+
+@router.get("/api/fuel/stats")
+def get_fuel_stats():
+    return {
+        "success": True,
+        "data": fuel_stats
     }
 
 

@@ -140,6 +140,17 @@ fuel_history = [
 
 FUEL_PRICES = {"regular": 3.29, "midgrade": 3.59, "premium": 3.89, "diesel": 3.79, "last_updated": datetime.now().isoformat(), "source": "local_average"}
 
+fuel_stats = {
+    "totalSpent": 20,
+    "totalGallons": 10,
+    "averageMpg": 10,
+    "fuelSaved": 20,
+    "moneySaved": 5,
+    "co2Reduced": 30,
+    "weeklyData": { "week": "2", "spent": 2, "gallons": 10, "mpg": 15 }
+
+}
+
 # ==================== NOTIFICATIONS ====================
 notification_settings = {
     "push_notifications": {"trip_summary": True, "challenges": True, "offers": True, "gems_earned": True, "friend_activity": False, "safety_alerts": True},
