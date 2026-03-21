@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { Search, UserPlus, Users, X, Shield, Trophy, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTheme } from '@/contexts/ThemeContext'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+import { api } from '@/services/api'
 
 interface Friend {
   id: string
@@ -20,7 +19,7 @@ interface FriendsHubProps {
   friendsCount: number
 }
 
-export default function FriendsHub({ isOpen, onClose, userId, friendsCount }: FriendsHubProps) {
+export default function FriendsHub({ isOpen, onClose, userId }: FriendsHubProps) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
   const [tab, setTab] = useState<'friends' | 'search'>('friends')
@@ -38,12 +37,12 @@ export default function FriendsHub({ isOpen, onClose, userId, friendsCount }: Fr
 
   const loadFriends = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/friends`)
-      const data = await res.json()
-      if (data.success && Array.isArray(data.data)) setFriends(data.data)
-    } catch (e) {
-      console.log('Could not load friends')
-    }
+      const res = await api.get<Friend[]>('/api/friends')
+      if (res.success) {
+        const data = (res.data as any)?.data ?? res.data
+        if (Array.isArray(data)) setFriends(data)
+      }
+    } catch { /* ignore */ }
   }
 
   const handleSearch = async () => {
@@ -55,10 +54,10 @@ export default function FriendsHub({ isOpen, onClose, userId, friendsCount }: Fr
     setLoading(true)
     setSearchResult(null)
     try {
-      const res = await fetch(`${API_URL}/api/friends/search?q=${encodeURIComponent(id)}`)
-      const data = await res.json()
-      if (data.success && data.data) {
-        const list = Array.isArray(data.data) ? data.data : [data.data]
+      const res = await api.get<any>(`/api/friends/search?q=${encodeURIComponent(id)}`)
+      const data = (res.data as any)?.data ?? res.data
+      if (res.success && data) {
+        const list = Array.isArray(data) ? data : [data]
         const user = list.length > 0 ? list[0] : null
         setSearchResult(user)
         if (!user) toast.error('User not found')
@@ -73,18 +72,14 @@ export default function FriendsHub({ isOpen, onClose, userId, friendsCount }: Fr
 
   const handleAddFriend = async (friendId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/friends/add`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: friendId }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        toast.success(data.message)
+      const res = await api.post<any>('/api/friends/add', { user_id: friendId })
+      const data = (res.data as any)?.data ?? res.data
+      if (res.success) {
+        toast.success((data as any)?.message ?? 'Friend request sent')
         setSearchResult((prev: any) => prev ? { ...prev, is_friend: true } : null)
         loadFriends()
       } else {
-        toast.error(data.message || 'Could not add friend')
+        toast.error((data as any)?.message || 'Could not add friend')
       }
     } catch (e) {
       toast.error('Could not add friend')
@@ -93,9 +88,8 @@ export default function FriendsHub({ isOpen, onClose, userId, friendsCount }: Fr
 
   const handleRemoveFriend = async (friendId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/friends/${friendId}`, { method: 'DELETE' })
-      const data = await res.json()
-      if (data?.success !== false) {
+      const res = await api.delete<any>(`/api/friends/${friendId}`)
+      if (res.success) {
         toast.success('Friend removed')
         loadFriends()
       } else {

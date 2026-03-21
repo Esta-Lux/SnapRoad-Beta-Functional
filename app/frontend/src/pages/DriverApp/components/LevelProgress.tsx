@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
-import { ChevronLeft, TrendingUp, Award, Zap, Target, Star } from 'lucide-react'
+import { ChevronLeft, TrendingUp, Zap, Target, Star } from 'lucide-react'
 
 interface XPStatus {
   level: number
@@ -61,7 +61,6 @@ export default function LevelProgress({ isOpen, onClose }: LevelProgressProps) {
       if (statusRes.success) setStatus(statusRes.data)
       if (configRes.success) setConfig(configRes.data)
     } catch (e) {
-      console.log('Error loading XP data')
     } finally {
       setLoading(false)
     }

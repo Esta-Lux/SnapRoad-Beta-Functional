@@ -40,7 +40,6 @@ export default function ReferralAnalyticsTab({ theme }: ReferralAnalyticsTabProp
   }
 
   const isDark = theme === 'dark'
-  const isLight = theme === 'light'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
   const textPrimary = isDark ? 'text-white' : 'text-[#0B1220]'
   const textSecondary = isDark ? 'text-slate-400' : 'text-slate-600'

@@ -53,8 +53,17 @@ export class SensorFusion {
       this.kalmanLng.reset(reading.lng)
     }
 
-    const lat = this.kalmanLat.update(reading.lat)
-    const lng = this.kalmanLng.update(reading.lng)
+    const accuracy = reading.accuracy ?? 20
+    // When GPS accuracy is poor, blend raw reading toward last position so Kalman gets a less jumpy input
+    const blendTowardLast = this.lastState && accuracy > 20 ? Math.min(0.6, 20 / accuracy) : 0
+    const latIn = blendTowardLast > 0
+      ? this.lastState!.coordinate.lat * blendTowardLast + reading.lat * (1 - blendTowardLast)
+      : reading.lat
+    const lngIn = blendTowardLast > 0
+      ? this.lastState!.coordinate.lng * blendTowardLast + reading.lng * (1 - blendTowardLast)
+      : reading.lng
+    const lat = this.kalmanLat.update(latIn)
+    const lng = this.kalmanLng.update(lngIn)
 
     // Speed: use GPS speed if available, else derive from position delta
     let speed = reading.speed ?? 0
@@ -64,15 +73,35 @@ export class SensorFusion {
     }
     speed = this.kalmanSpeed.update(speed)
 
-    // Heading: use GPS or device heading, else derive from position delta
-    let heading = reading.heading ?? 0
-    if ((heading == null || isNaN(heading)) && this.lastState && dt > 0 && speed > 0.5) {
-      heading = bearingDeg(this.lastState.coordinate, { lat, lng })
+    // Heading: use GPS/device heading when valid; otherwise derive from movement.
+    // Avoid defaulting to 0 because many mobile browsers return null heading while moving.
+    const hasSensorHeading =
+      typeof reading.heading === 'number' &&
+      Number.isFinite(reading.heading) &&
+      reading.heading >= 0
+    let heading = hasSensorHeading ? reading.heading! : null
+    if (heading == null && this.lastState && dt > 0) {
+      const movedMeters = haversineM(this.lastState.coordinate, { lat, lng })
+      // Derive heading from displacement when the user has meaningfully moved.
+      if (movedMeters > 0.8) heading = bearingDeg(this.lastState.coordinate, { lat, lng })
     }
-    if (heading >= 0) this.kalmanHeading.update(heading)
-    heading = this.kalmanHeading.value
-    if (heading < 0) heading += 360
-    if (heading >= 360) heading -= 360
+    const prevHeading = this.lastState?.heading ?? 0
+    if (typeof heading === 'number' && heading >= 0) {
+      // Keep heading responsive at speed while damping low-speed jitter.
+      const movedMeters = this.lastState ? haversineM(this.lastState.coordinate, { lat, lng }) : 0
+      const speedMps = Math.max(0, speed)
+      const baseAlpha =
+        speedMps > 12 ? 0.82 :
+        speedMps > 7 ? 0.68 :
+        speedMps > 3 ? 0.5 :
+        0.34
+      const alpha = movedMeters > 2 ? Math.min(0.9, baseAlpha + 0.12) : baseAlpha
+      heading = normalizeHeading(prevHeading + normalizedAngleDeg(heading - prevHeading) * alpha)
+      this.kalmanHeading.reset(heading)
+    } else {
+      heading = prevHeading
+    }
+    if (speed < 0.25 && this.lastState) heading = prevHeading
 
     const turnRate = this.lastState && dt > 0
       ? normalizedAngleDeg(heading - this.lastState.heading) / dt
@@ -80,7 +109,6 @@ export class SensorFusion {
     const acceleration = this.lastState && dt > 0
       ? (speed - this.lastState.velocity) / dt
       : 0
-    const accuracy = reading.accuracy ?? 20
     const confidence = Math.max(0, 1 - accuracy / 50)
 
     const state: VehicleState = {
@@ -137,4 +165,10 @@ function normalizedAngleDeg(deg: number): number {
   while (deg > 180) deg -= 360
   while (deg < -180) deg += 360
   return deg
+}
+
+function normalizeHeading(deg: number): number {
+  let h = deg % 360
+  if (h < 0) h += 360
+  return h
 }

@@ -475,9 +475,20 @@ export function startListening(
   onResult: (text: string) => void,
   onEnd: () => void
 ): (() => void) | null {
+  type SimpleRecognition = {
+    continuous: boolean
+    interimResults: boolean
+    lang: string
+    onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript?: string }>> }) => void) | null
+    onend: (() => void) | null
+    onerror: (() => void) | null
+    start: () => void
+    stop: () => void
+  }
+  type SpeechRecognitionCtor = new () => SimpleRecognition
   const SpeechRecognition =
-    (window as Window & { SpeechRecognition?: typeof globalThis.SpeechRecognition; webkitSpeechRecognition?: typeof globalThis.SpeechRecognition }).SpeechRecognition ||
-    (window as Window & { webkitSpeechRecognition?: typeof globalThis.SpeechRecognition }).webkitSpeechRecognition
+    (window as Window & { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor }).SpeechRecognition ||
+    (window as Window & { webkitSpeechRecognition?: SpeechRecognitionCtor }).webkitSpeechRecognition
 
   if (!SpeechRecognition) return null
 
@@ -486,7 +497,7 @@ export function startListening(
   recognition.interimResults = false
   recognition.lang = 'en-US'
 
-  recognition.onresult = (event: SpeechRecognitionEvent) => {
+  recognition.onresult = (event) => {
     const text = event.results[0]?.[0]?.transcript
     if (text) onResult(text)
   }

@@ -24,10 +24,8 @@ interface OrionOfferAlertsProps {
 
 export default function OrionOfferAlerts({ 
   isNavigating, 
-  userLocation, 
   offers, 
   onOfferSelect,
-  isPremium,
   isMuted: isMutedProp,
   onMuteToggle: onMuteToggleProp,
 }: OrionOfferAlertsProps) {
@@ -73,14 +71,14 @@ export default function OrionOfferAlerts({
           distance: (Math.random() * 0.8 + 0.2).toFixed(1) // 0.2 - 1.0 miles
         }
         
-        setCurrentAlert(offerWithDistance as Offer)
+        setCurrentAlert(offerWithDistance as unknown as Offer)
         setShowAlert(true)
         setLastAlertTime(now)
         setShownOffers(prev => new Set([...prev, selectedOffer.id]))
         
         // Speak the alert
         if (!muted) {
-          speakAlert(offerWithDistance as Offer)
+          speakAlert(offerWithDistance as unknown as Offer)
         }
         
         // Auto-dismiss after 8 seconds
@@ -97,13 +95,13 @@ export default function OrionOfferAlerts({
           ...offers[0],
           distance: (Math.random() * 0.5 + 0.3).toFixed(1)
         }
-        setCurrentAlert(firstOffer as Offer)
+        setCurrentAlert(firstOffer as unknown as Offer)
         setShowAlert(true)
         setLastAlertTime(Date.now())
         setShownOffers(prev => new Set([...prev, offers[0].id]))
         
         if (!muted) {
-          speakAlert(firstOffer as Offer)
+          speakAlert(firstOffer as unknown as Offer)
         }
         
         alertTimeoutRef.current = setTimeout(() => {
@@ -133,20 +131,6 @@ export default function OrionOfferAlerts({
       utterance.rate = 0.95
       utterance.pitch = 1.0
       window.speechSynthesis.speak(utterance)
-    }
-  }
-
-  const handleDismiss = () => {
-    setShowAlert(false)
-    if (alertTimeoutRef.current) {
-      clearTimeout(alertTimeoutRef.current)
-    }
-  }
-
-  const handleSelect = () => {
-    if (currentAlert) {
-      onOfferSelect(currentAlert)
-      setShowAlert(false)
     }
   }
 

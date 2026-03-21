@@ -25,5 +25,17 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('mapbox-gl')) return 'mapbox'
+          if (id.includes('recharts') || id.includes('d3-')) return 'charts'
+          if (id.includes('/admin/')) return 'admin'
+          if (id.includes('/partner/')) return 'partner'
+        },
+      },
+    },
   }
 })

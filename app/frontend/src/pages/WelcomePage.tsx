@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { 
   Shield, Gem, Trophy, Zap, ArrowRight, X, Eye, EyeOff, Star
@@ -6,17 +6,7 @@ import {
 import { api } from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
 import snaproadLogo from '../assets/images/f1ce41940925932061ca7e2e293db7cdf37e4b87.png'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
-
-// Reset user state for fresh experience
-const resetUserSession = async () => {
-  try {
-    await fetch(`${API_URL}/api/auth/login?role=driver`, { method: 'POST' })
-  } catch (e) {
-    console.log('Session reset skipped')
-  }
-}
+import { getSupabaseClient } from '@/lib/supabaseClient'
 
 // Auth Modal - Driver Only (Partners/Admin use direct portal links)
 function AuthModal({ isOpen, onClose, mode, onModeChange }: {
@@ -26,30 +16,70 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
   onModeChange: (mode: 'signin' | 'signup') => void
 }) {
   const navigate = useNavigate()
-  const { login, signup } = useAuth()
+  const { setUserFromApi } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
+  const exchangeSupabaseSession = async () => {
+    const sb = getSupabaseClient()
+    if (!sb) throw new Error('Supabase is not configured')
+    const { data } = await sb.auth.getSession()
+    const accessToken = data.session?.access_token
+    if (!accessToken) throw new Error('No Supabase session found')
+    const res = await api.oauthSupabase(accessToken)
+    if (!res.success || !res.data?.token || !res.data?.user) {
+      throw new Error(res.error || 'OAuth exchange failed')
+    }
+    setUserFromApi(res.data.user as any)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
-      const success = mode === 'signup'
-        ? await signup(name, email, password)
-        : await login(email, password)
-      if (success) {
-        onClose()
-        navigate('/driver')
+      const sb = getSupabaseClient()
+      if (!sb) throw new Error('Supabase is not configured')
+      const cleanEmail = email.trim()
+      const cleanPassword = password.trim()
+      const cleanName = name.trim()
+      if (!cleanEmail || !cleanPassword) throw new Error('Please fill in all fields')
+
+      if (mode === 'signup') {
+        const { error } = await sb.auth.signUp({
+          email: cleanEmail,
+          password: cleanPassword,
+          options: { data: { full_name: cleanName || cleanEmail.split('@')[0], name: cleanName || cleanEmail.split('@')[0] } },
+        })
+        if (error) throw new Error(error.message)
       } else {
-        alert(mode === 'signup' ? 'Signup failed' : 'Invalid credentials')
+        const { error } = await sb.auth.signInWithPassword({ email: cleanEmail, password: cleanPassword })
+        if (error) throw new Error(error.message)
       }
+
+      await exchangeSupabaseSession()
+      onClose()
+      navigate('/driver')
     } catch (error) {
       console.error('Auth error:', error)
-      alert('Connection error. Please try again.')
+      alert((error as any)?.message || 'Login failed. Please try again.')
     } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOAuth = async (provider: 'google' | 'apple') => {
+    setLoading(true)
+    try {
+      const sb = getSupabaseClient()
+      if (!sb) throw new Error('Supabase is not configured')
+      const redirectTo = `${window.location.origin}/driver/auth`
+      const { error } = await sb.auth.signInWithOAuth({ provider, options: { redirectTo } })
+      if (error) throw new Error(error.message)
+    } catch (e: any) {
+      alert(e?.message || 'OAuth failed')
       setLoading(false)
     }
   }
@@ -153,6 +183,26 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
               </button>
             </form>
 
+            {/* Social */}
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => handleOAuth('google')}
+                className="bg-slate-800/60 hover:bg-slate-800 border border-white/10 rounded-xl py-3 text-white text-sm font-medium transition-colors"
+              >
+                Continue with Google
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => handleOAuth('apple')}
+                className="bg-slate-800/60 hover:bg-slate-800 border border-white/10 rounded-xl py-3 text-white text-sm font-medium transition-colors"
+              >
+                Continue with Apple
+              </button>
+            </div>
+
             {/* Footer */}
             <p className="text-center text-slate-400 text-sm mt-6">
               {mode === 'signin' ? (
@@ -187,6 +237,25 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
 export default function WelcomePage() {
   const [showAuth, setShowAuth] = useState(false)
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
+  const navigate = useNavigate()
+  const { setUserFromApi } = useAuth()
+
+  // If returning from a Supabase OAuth redirect, exchange session automatically.
+  useEffect(() => {
+    const run = async () => {
+      const sb = getSupabaseClient()
+      if (!sb) return
+      const { data } = await sb.auth.getSession()
+      const accessToken = data.session?.access_token
+      if (!accessToken) return
+      const res = await api.oauthSupabase(accessToken)
+      if (res.success && res.data?.user && res.data?.token) {
+        setUserFromApi(res.data.user as any)
+        navigate('/driver')
+      }
+    }
+    void run()
+  }, [navigate, setUserFromApi])
 
   const handleGetStarted = () => {
     setAuthMode('signup')

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { X, AlertTriangle, Construction, Clock, CheckCircle } from 'lucide-react'
 
 interface RoadSegment {
@@ -113,7 +112,7 @@ export default function RoadStatusOverlay({ selectedRoad, onClose }: RoadStatusO
   }
 
   return (
-    <div className="absolute bottom-24 left-4 right-4 z-20">
+    <div className="fixed bottom-24 left-4 right-4 z-[1100] pointer-events-auto">
       <div className={`rounded-2xl p-4 border ${statusColors[selectedRoad.status]} backdrop-blur-lg`}>
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
@@ -184,7 +183,7 @@ export function RoadStatusMarkers({
   return (
     <>
       {visibleRoads.map(road => {
-        const color = getStatusColor(road.status)
+        getStatusColor(road.status)
         // Position marker at midpoint of road segment
         const midLat = (road.startLat + road.endLat) / 2
         const midLng = (road.startLng + road.endLng) / 2

@@ -2,7 +2,7 @@
 // =============================================
 
 import { useState, useEffect, useMemo } from 'react'
-import { Search, Plus, Gift, TrendingUp, Users, Calendar, Edit2, Trash2, Star } from 'lucide-react'
+import { Search, Plus, Gift, Users, Calendar, Edit2, Trash2, Star } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
 import type { Reward } from '@/types/admin'
 

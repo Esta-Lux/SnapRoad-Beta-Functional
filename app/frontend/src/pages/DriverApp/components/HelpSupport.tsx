@@ -38,11 +38,10 @@ export default function HelpSupport({ isOpen, onClose }: HelpSupportProps) {
       const res = await fetch(`${API_URL}/api/help/faq`)
       const data = await res.json()
       if (data.success) {
-        setFaqs(data.data)
-        setCategories(data.categories)
+        setFaqs(Array.isArray(data.data) ? data.data : [])
+        setCategories(Array.isArray(data.categories) ? data.categories : [])
       }
     } catch (e) {
-      console.log('Could not load FAQs')
     }
   }
 
@@ -129,7 +128,7 @@ export default function HelpSupport({ isOpen, onClose }: HelpSupportProps) {
                   className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium ${!selectedCategory ? 'bg-blue-500 text-white' : (isLight ? 'bg-slate-200 text-slate-600' : 'bg-slate-800 text-slate-400')}`}>
                   All
                 </button>
-                {categories.map(cat => (
+                {(categories ?? []).map(cat => (
                   <button key={cat} onClick={() => setSelectedCategory(cat)}
                     className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium ${selectedCategory === cat ? 'bg-blue-500 text-white' : (isLight ? 'bg-slate-200 text-slate-600' : 'bg-slate-800 text-slate-400')}`}>
                     {cat}

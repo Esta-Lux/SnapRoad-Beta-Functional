@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from datetime import datetime, timedelta
 from models.schemas import (
@@ -12,19 +12,19 @@ from services.mock_data import (
     users_db, current_user_id, road_reports_db, XP_CONFIG,
 )
 from routes.gamification import add_xp_to_user, check_community_badges
+from middleware.auth import get_current_user
+from database import get_supabase
 
 router = APIRouter(prefix="/api", tags=["Social"])
 
 
-def _get_uid():
-    """Current user id for friends/location endpoints (mock)."""
-    return current_user_id
-
-
 # ==================== FRIENDS ====================
 @router.get("/friends")
-def get_friends():
-    user = users_db.get(current_user_id, {})
+def get_friends(current_user: dict = Depends(get_current_user)):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
+    user = users_db.get(uid, {})
     friend_ids = user.get("friends", [])
     friends = []
     for fid in friend_ids:
@@ -43,100 +43,138 @@ def get_friends():
 
 
 @router.get("/friends/search")
-def search_friends(q: str = "", user_id: str = ""):
+async def search_friends(q: str = "", user_id: str = "", current_user: dict = Depends(get_current_user)):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
     query = (q or user_id).strip()
     if not query:
         return {"success": True, "data": []}
-    current_friends = users_db.get(current_user_id, {}).get("friends", [])
+    supabase = get_supabase()
+    # Search profiles by name (column may be full_name or name)
+    try:
+        res = supabase.table("profiles").select("id, full_name, email").neq("id", uid).ilike(
+            "full_name", f"%{query}%"
+        ).limit(10).execute()
+        name_key = "full_name"
+    except Exception:
+        res = supabase.table("profiles").select("id, name, email").neq("id", uid).ilike(
+            "name", f"%{query}%"
+        ).limit(10).execute()
+        name_key = "name"
     results = []
-    for uid, user in users_db.items():
-        if str(uid) == str(current_user_id):
-            continue
-        if query == str(uid) or (len(query) >= 2 and query in user.get("name", "").lower()):
-            results.append({
-                "id": str(uid),
-                "name": user.get("name", "Driver"),
-                "level": user.get("level", 1),
-                "safety_score": user.get("safety_score", 0),
-                "state": user.get("state", ""),
-                "gems": user.get("gems", 0),
-                "is_friend": str(uid) in current_friends,
-            })
-    if len(query) >= 5 and query.isdigit():
-        results = [r for r in results if r["id"] == query][:1] or results[:1]
+    friend_ids_res = supabase.table("friendships").select("user_id_1, user_id_2").or_(
+        f"user_id_1.eq.{uid},user_id_2.eq.{uid}"
+    ).eq("status", "accepted").execute()
+    friend_set = set()
+    for row in (friend_ids_res.data or []):
+        fid = row["user_id_2"] if str(row["user_id_1"]) == str(uid) else row["user_id_1"]
+        friend_set.add(str(fid))
+    for row in (res.data or []):
+        results.append({
+            "id": str(row["id"]),
+            "name": row.get(name_key) or row.get("full_name") or row.get("name") or "Driver",
+            "email": row.get("email"),
+            "is_friend": str(row["id"]) in friend_set,
+        })
     return {"success": True, "data": results[:20]}
 
 
 @router.post("/friends/add")
-def add_friend(request: FriendRequest):
-    if current_user_id not in users_db:
-        return {"success": False, "message": "User not found"}
-    if request.user_id not in users_db:
-        return {"success": False, "message": "Friend not found"}
-    friends = users_db[current_user_id].setdefault("friends", [])
-    if request.user_id in friends:
-        return {"success": False, "message": "Already friends"}
-    friends.append(request.user_id)
-    users_db[request.user_id].setdefault("friends", []).append(current_user_id)
-    return {"success": True, "message": f"Added {users_db[request.user_id].get('name')} as a friend!"}
+async def add_friend(request: FriendRequest, current_user: dict = Depends(get_current_user)):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
+    friend_id = request.user_id
+    if not friend_id or friend_id == uid:
+        raise HTTPException(status_code=400, detail="Invalid friend_id")
+    supabase = get_supabase()
+    # Check not already friends or pending
+    r1 = supabase.table("friendships").select("id").eq("user_id_1", uid).eq("user_id_2", friend_id).execute()
+    r2 = supabase.table("friendships").select("id").eq("user_id_1", friend_id).eq("user_id_2", uid).execute()
+    if (r1.data and len(r1.data) > 0) or (r2.data and len(r2.data) > 0):
+        raise HTTPException(status_code=400, detail="Already friends or request pending")
+    supabase.table("friendships").insert({
+        "user_id_1": uid,
+        "user_id_2": friend_id,
+        "status": "pending",
+    }).execute()
+    return {"success": True, "message": "Friend request sent"}
 
 
 @router.delete("/friends/{friend_id}")
-def remove_friend(friend_id: str):
-    if current_user_id in users_db:
-        friends = users_db[current_user_id].get("friends", [])
-        if friend_id in friends:
-            friends.remove(friend_id)
-    if friend_id in users_db:
-        other_friends = users_db[friend_id].get("friends", [])
-        if current_user_id in other_friends:
-            other_friends.remove(current_user_id)
+async def remove_friend(friend_id: str, current_user: dict = Depends(get_current_user)):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
+    supabase = get_supabase()
+    # Delete row where (user_id_1=uid, user_id_2=friend_id) or (user_id_1=friend_id, user_id_2=uid)
+    r1 = supabase.table("friendships").delete().eq("user_id_1", uid).eq("user_id_2", friend_id).execute()
+    r2 = supabase.table("friendships").delete().eq("user_id_1", friend_id).eq("user_id_2", uid).execute()
     return {"success": True, "message": "Friend removed"}
 
 
 @router.get("/friends/list")
-def get_friends_list():
+async def get_friends_list(current_user: dict = Depends(get_current_user)):
     """List friends with friend_id and status for location sharing."""
-    uid = _get_uid()
-    user = users_db.get(uid, {})
-    friend_ids = user.get("friends", [])
-    out = []
-    for fid in friend_ids:
-        out.append({"friend_id": str(fid), "id": str(fid), "status": "accepted"})
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
+    supabase = get_supabase()
+    res = supabase.table("friendships").select(
+        "user_id_1, user_id_2, status"
+    ).or_(f"user_id_1.eq.{uid},user_id_2.eq.{uid}").eq("status", "accepted").execute()
+    friend_ids = []
+    for row in (res.data or []):
+        fid = row["user_id_2"] if str(row["user_id_1"]) == str(uid) else row["user_id_1"]
+        friend_ids.append(str(fid))
+    out = [{"friend_id": fid, "id": fid, "status": "accepted"} for fid in friend_ids]
     return {"success": True, "data": out}
 
 
 @router.get("/friends/requests")
-def get_friend_requests():
+async def get_friend_requests(current_user: dict = Depends(get_current_user)):
     """Pending friend requests (incoming)."""
-    uid = _get_uid()
-    user = users_db.get(uid, {})
-    requests = user.get("friend_requests", [])
-    return {"success": True, "data": [{"id": r.get("id"), "from_user_id": r.get("from_user_id"), "status": "pending"} for r in requests]}
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
+    supabase = get_supabase()
+    res = supabase.table("friendships").select(
+        "id, user_id_1, status, created_at"
+    ).eq("user_id_2", uid).eq("status", "pending").execute()
+    requests = []
+    for row in (res.data or []):
+        requests.append({
+            "id": row.get("id"),
+            "from_user_id": row.get("user_id_1"),
+            "status": "pending",
+            "created_at": row.get("created_at"),
+        })
+    return {"success": True, "data": requests}
 
 
 @router.post("/friends/accept")
-def accept_friend_request(request: FriendRequest):
-    """Accept a friend request (request.user_id = requester)."""
-    uid = _get_uid()
-    if uid not in users_db:
-        return {"success": False, "message": "User not found"}
-    if request.user_id not in users_db:
-        return {"success": False, "message": "Requester not found"}
-    friends = users_db[uid].setdefault("friends", [])
-    if request.user_id in friends:
-        return {"success": True, "message": "Already friends"}
-    req_list = users_db[uid].get("friend_requests", [])
-    users_db[uid]["friend_requests"] = [r for r in req_list if str(r.get("from_user_id")) != str(request.user_id)]
-    friends.append(request.user_id)
-    users_db[request.user_id].setdefault("friends", []).append(uid)
+async def accept_friend_request(body: dict, current_user: dict = Depends(get_current_user)):
+    """Accept a friend request (body.friendship_id = row id)."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
+    friendship_id = body.get("friendship_id")
+    if not friendship_id:
+        raise HTTPException(status_code=400, detail="friendship_id required")
+    supabase = get_supabase()
+    supabase.table("friendships").update({"status": "accepted"}).eq(
+        "id", friendship_id
+    ).eq("user_id_2", uid).execute()
     return {"success": True, "message": "Friend request accepted"}
 
 
 @router.post("/friends/location/update")
-def update_my_location(body: LocationUpdateBody):
+def update_my_location(body: LocationUpdateBody, current_user: dict = Depends(get_current_user)):
     """Update current user's live location (Supabase: live_locations upsert; mock: no-op)."""
-    uid = _get_uid()
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
     try:
         from database import get_supabase
         from config import SUPABASE_URL, SUPABASE_SECRET_KEY
@@ -159,9 +197,11 @@ def update_my_location(body: LocationUpdateBody):
 
 
 @router.put("/friends/location/sharing")
-def set_location_sharing(body: LocationSharingBody):
+def set_location_sharing(body: LocationSharingBody, current_user: dict = Depends(get_current_user)):
     """Turn location sharing on or off."""
-    uid = _get_uid()
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
     try:
         from database import get_supabase
         from config import SUPABASE_URL, SUPABASE_SECRET_KEY
@@ -177,9 +217,11 @@ def set_location_sharing(body: LocationSharingBody):
 
 
 @router.post("/friends/tag")
-def send_location_tag(body: LocationTagBody):
+def send_location_tag(body: LocationTagBody, current_user: dict = Depends(get_current_user)):
     """Send a location tag to a friend."""
-    uid = _get_uid()
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
     try:
         from database import get_supabase
         from config import SUPABASE_URL, SUPABASE_SECRET_KEY
@@ -195,15 +237,6 @@ def send_location_tag(body: LocationTagBody):
     except Exception:
         pass
     return {"success": True, "message": "Location tag sent"}
-
-
-# ==================== FAMILY ====================
-@router.get("/family/members")
-def get_family_members():
-    return {"success": True, "data": [
-        {"id": "f1", "name": "Family Member 1", "role": "parent", "safety_score": 92, "last_trip": "2 hours ago"},
-        {"id": "f2", "name": "Family Member 2", "role": "child", "safety_score": 88, "last_trip": "Yesterday"},
-    ]}
 
 
 # ==================== ROAD REPORTS ====================

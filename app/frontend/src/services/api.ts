@@ -28,10 +28,108 @@ import type {
   PaginatedResponse,
 } from '@/types/api';
 
-const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || '';
+const API_URL_OVERRIDE_KEY = 'snaproad_api_url_override';
+
+function normalizeBaseUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
+function isLoopbackUrl(url: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/i.test(url.trim());
+}
+
+function isTunnelHost(): boolean {
+  try {
+    return window.location.hostname.endsWith('.tunnelmole.net');
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(hostname.trim())
+}
+
+function resolveInitialBaseUrl(): string {
+  const envUrl =
+    import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_BACKEND_URL ||
+    import.meta.env.REACT_APP_BACKEND_URL ||
+    '';
+
+  // Allow runtime override for tunnel/dev debugging.
+  // - `?api=https://....tunnelmole.net` sets and persists the override.
+  // - localStorage override persists across refreshes.
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get('api');
+    if (fromQuery && /^https?:\/\//i.test(fromQuery)) {
+      const normalized = normalizeBaseUrl(fromQuery);
+      localStorage.setItem(API_URL_OVERRIDE_KEY, normalized);
+      // #region agent log
+      void 0
+      // #endregion
+      return normalized;
+    }
+
+    const fromStorage = localStorage.getItem(API_URL_OVERRIDE_KEY);
+    if (fromStorage && /^https?:\/\//i.test(fromStorage)) {
+      const normalized = normalizeBaseUrl(fromStorage);
+      // #region agent log
+      void 0
+      // #endregion
+      return normalized;
+    }
+  } catch {
+    // ignore (SSR / private mode / blocked storage)
+  }
+
+  const normalizedEnv = normalizeBaseUrl(envUrl);
+  const shouldForceSameOrigin =
+    isLoopbackUrl(normalizedEnv) &&
+    (() => {
+      try {
+        return isTunnelHost() || !isLoopbackHostname(window.location.hostname)
+      } catch {
+        return false
+      }
+    })()
+  if (shouldForceSameOrigin) {
+    // #region agent log
+    void 0
+    // #endregion
+    return '';
+  }
+  // #region agent log
+  void 0
+  // #endregion
+  return normalizedEnv;
+}
+
+let apiBaseUrl = resolveInitialBaseUrl();
+
+export function getApiBaseUrl(): string {
+  return apiBaseUrl;
+}
+
+export function setApiBaseUrlOverride(url: string | null): void {
+  try {
+    if (!url) {
+      localStorage.removeItem(API_URL_OVERRIDE_KEY);
+      apiBaseUrl = resolveInitialBaseUrl();
+      return;
+    }
+    const normalized = normalizeBaseUrl(url);
+    localStorage.setItem(API_URL_OVERRIDE_KEY, normalized);
+    apiBaseUrl = normalized;
+  } catch {
+    // ignore
+  }
+}
 
 class ApiService {
   private token: string | null = null;
+  private defaultTimeoutMs = 12000;
 
   setToken(token: string | null) {
     this.token = token;
@@ -61,10 +159,16 @@ class ApiService {
     };
 
     try {
-      const response = await fetch(`${API_URL}${endpoint}`, {
+      // #region agent log
+      void 0
+      // #endregion
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.defaultTimeoutMs);
+      const response = await fetch(`${apiBaseUrl}${endpoint}`, {
         ...options,
         headers,
-      });
+        signal: options.signal ?? controller.signal,
+      }).finally(() => clearTimeout(timeout));
 
       let data: unknown;
       try {
@@ -74,15 +178,43 @@ class ApiService {
       }
 
       if (!response.ok) {
-        const detail = typeof data === 'object' && data !== null && 'detail' in data
-          ? String((data as { detail?: unknown }).detail)
-          : 'Request failed';
-        return { success: false, error: detail };
+        // #region agent log
+        void 0
+        // #endregion
+        const detailRaw =
+          typeof data === 'object' && data !== null && 'detail' in data ? (data as { detail?: unknown }).detail : null
+
+        // FastAPI validation errors: { detail: [{ loc: [...], msg: "...", type: "..." }, ...] }
+        if (Array.isArray(detailRaw)) {
+          const msgs = detailRaw
+            .map((d: any) => {
+              const loc = Array.isArray(d?.loc) ? d.loc.join('.') : undefined
+              const msg = typeof d?.msg === 'string' ? d.msg : undefined
+              return loc && msg ? `${loc}: ${msg}` : msg || null
+            })
+            .filter(Boolean)
+          return { success: false, error: msgs.length ? msgs.join(' | ') : 'Request failed' }
+        }
+
+        const detail =
+          detailRaw != null
+            ? typeof detailRaw === 'string'
+              ? detailRaw
+              : JSON.stringify(detailRaw)
+            : 'Request failed'
+        return { success: false, error: detail }
       }
 
       return { success: true, data: data as T };
     } catch (error) {
-      return { success: false, error: 'Network error' };
+      // #region agent log
+      void 0
+      // #endregion
+      const msg =
+        (error as any)?.name === 'AbortError'
+          ? 'Request timed out. Check backend server and VITE_API_URL.'
+          : 'Network error';
+      return { success: false, error: msg };
     }
   }
 
@@ -111,6 +243,22 @@ class ApiService {
       this.setToken(authData.token);
     }
     return { success: result.success, data: authData as AuthResponse };
+  }
+
+  async oauthSupabase(accessToken: string): Promise<ApiResponse<AuthResponse>> {
+    const result = await this.request<{ success?: boolean; data?: { user?: unknown; token?: string } }>(
+      '/api/auth/oauth/supabase',
+      {
+        method: 'POST',
+        body: JSON.stringify({ access_token: accessToken }),
+      }
+    )
+    const payload = (result.data as { data?: { user?: unknown; token?: string } })?.data ?? result.data
+    const authData = payload as { user?: unknown; token?: string } | undefined
+    if (result.success && authData?.token) {
+      this.setToken(authData.token)
+    }
+    return { success: result.success, data: authData as AuthResponse, error: result.error }
   }
 
   async logout(): Promise<void> {

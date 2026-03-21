@@ -4,13 +4,10 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Search, X, MapPin, Navigation, Fuel, ParkingCircle, Coffee, ShoppingBag, Utensils, Zap } from 'lucide-react'
-import { useGoogleMaps } from '@/contexts/GoogleMapsContext'
-import { api } from '@/services/api'
+import { api, getApiBaseUrl } from '@/services/api'
 
 /** POI categories for quick-search pills (no MapKit dependency). */
 type POICategory = 'gasStation' | 'parking' | 'restaurant' | 'cafe' | 'evCharger' | 'grocery'
-
-const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -80,23 +77,20 @@ export default function MapSearchBar({ onSelect, onNavigate, userLocation }: Map
   const [activePOI, setActivePOI] = useState<POICategory | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const { ready: mapReady } = useGoogleMaps()
 
   const search = useCallback(async (q: string) => {
     if (q.length < 2) { setResults([]); return }
     setLoading(true)
 
     // 1. Google Places autocomplete via backend
-    if (mapReady) {
-      try {
-        const res = await withTimeout(placesAutocomplete(q, userLocation), 5000)
-        if (res.length > 0) { setResults(res); setLoading(false); return }
-      } catch { /* fall through */ }
-    }
+    try {
+      const res = await withTimeout(placesAutocomplete(q, userLocation), 5000)
+      if (res.length > 0) { setResults(res); setLoading(false); return }
+    } catch { /* fall through */ }
 
     // 2. Backend /api/map/search fallback
     try {
-      const fallback = await fetch(`${API_URL}/api/map/search?q=${encodeURIComponent(q)}`, { credentials: 'include' })
+      const fallback = await fetch(`${getApiBaseUrl()}/api/map/search?q=${encodeURIComponent(q)}`, { credentials: 'include' })
       if (fallback.ok) {
         const data = await fallback.json()
         const list = Array.isArray(data.data) ? data.data : data.results ?? []
@@ -105,7 +99,7 @@ export default function MapSearchBar({ onSelect, onNavigate, userLocation }: Map
     } catch { /* exhausted */ }
 
     setLoading(false)
-  }, [userLocation, mapReady])
+  }, [userLocation])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -152,7 +146,7 @@ export default function MapSearchBar({ onSelect, onNavigate, userLocation }: Map
       const res = await withTimeout(placesAutocomplete(q, userLocation ?? undefined), 5000)
       setResults(res.length > 0 ? res.map((r, i) => ({ ...r, id: `poi-${i}` })) : [])
       if (res.length === 0) {
-        const fallback = await fetch(`${API_URL}/api/map/search?q=${encodeURIComponent(q)}`, { credentials: 'include' })
+        const fallback = await fetch(`${getApiBaseUrl()}/api/map/search?q=${encodeURIComponent(q)}`, { credentials: 'include' })
         if (fallback.ok) {
           const data = await fallback.json()
           setResults(Array.isArray(data.data) ? data.data.map((r: SearchResult, i: number) => ({ ...r, id: `poi-${i}` })) : [])

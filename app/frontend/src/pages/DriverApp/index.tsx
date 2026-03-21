@@ -1,21 +1,21 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../contexts/AuthContext'
+import { useAuth } from '@/contexts/AuthContext'
 import toast from 'react-hot-toast'
 import {
   MapPin, Gift, Trophy, Users, Search, Home, Briefcase, Bell, Menu, Mic,
-  Navigation, ChevronRight, ChevronDown, ChevronUp, Settings, Camera,
+  Navigation, ChevronRight, Settings, Camera,
   Gem, Award, X, Plus, Check, Star, Clock, Car, Fuel,
   Coffee, AlertTriangle, Volume2, VolumeX, Route, LogOut, Play, Pause, Map,
-  Trash2, Timer, RefreshCw, EyeOff, School, ShoppingCart, Dumbbell, 
-  Building, Compass, Layers, GripVertical, Minimize2, Maximize2,
-  Phone, MessageCircle, Battery, ChevronLeft, Shield, Zap,
+  Trash2, Timer, EyeOff, 
+  GripVertical, Minimize2, Maximize2,
+  Phone, MessageCircle, Battery, Shield, Zap,
+  Truck,
   History, BarChart3, HelpCircle, Lock, Edit2, Share2, Swords,
   DollarSign, Droplets, Leaf, Target, Sun, Moon
 } from 'lucide-react'
 import FriendsHub from './components/FriendsHub'
 import Leaderboard from './components/Leaderboard'
-import BadgesGrid from './components/BadgesGrid'
 import TripHistory from './components/TripHistory'
 import GemHistory from './components/GemHistory'
 import NotificationSettings from './components/NotificationSettings'
@@ -24,24 +24,23 @@ import FuelTracker from './components/FuelTracker'
 import CarOnboarding from './components/CarOnboarding'
 import CarStudio from './components/CarStudioNew'
 import PlanSelection from './components/PlanSelection'
-import RoadReports from './components/RoadReports'
 import LevelProgress from './components/LevelProgress'
-import OrionVoice from './components/OrionVoice'
 import QuickPhotoReport from './components/QuickPhotoReport'
-import RoadStatusOverlay, { RoadStatusMarkers } from './components/RoadStatusOverlay'
+import IncidentAlert from './components/IncidentAlert'
+import RoadStatusOverlay from './components/RoadStatusOverlay'
 import OffersModal from './components/OffersModal'
 import ShareTripScore from './components/ShareTripScore'
 import DrivingScore from './components/DrivingScore'
 import ChallengeHistory from './components/ChallengeHistory'
-import RedemptionPopup from './components/RedemptionPopup'
 import WeeklyRecap from './components/WeeklyRecap'
 import OrionOfferAlerts from './components/OrionOfferAlerts'
-import GoogleMapSnapRoad from './components/GoogleMapSnapRoad'
-import { NavigationCamera } from './components/NavigationCamera'
+import type mapboxgl from 'mapbox-gl'
+import MapboxMapSnapRoad from './components/MapboxMapSnapRoad'
+import { DRIVING_MODES } from './components/DrivingModeStyles'
 import LaneGuide, { parseLanes, type Lane } from './components/LaneGuide'
 import MapLayerPicker from './components/MapLayerPicker'
-import { useGoogleMaps } from '@/contexts/GoogleMapsContext'
-import { getGoogleDirections, type DirectionsResult } from '@/lib/googleMaps'
+import { useMapbox } from '@/contexts/MapboxContext'
+import { getMapboxRouteOptions, reverseGeocode, type DirectionsResult } from '@/lib/mapboxDirections'
 import { ProfileCar, CAR_COLORS } from './components/Car3D'
 // New enhanced components
 import TripAnalytics from './components/TripAnalytics'
@@ -51,33 +50,52 @@ import GemOverlay from './components/GemOverlay'
 import SpeedIndicator from './components/SpeedIndicator'
 import PlaceDetail from './components/PlaceDetail'
 import PlaceCard, { type PlaceCardData } from './components/PlaceCard'
-import PlaceDetailCard from './components/PlaceDetailCard'
-import type { OHGOCamera } from '@/lib/ohgo'
-import OHGOCameraPopup from './components/OHGOCameraPopup'
 import { api } from '@/services/api'
 import { useNavigationCore } from '@/contexts/NavigationCoreContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import {
   updateMyLocation,
-  subscribeFriendLocations,
   getFriendLocations,
   sendLocationTag,
   stopSharingLocation,
   type FriendLocation,
 } from '@/lib/friendLocation'
 import { chatWithOrion, orionSpeak, startListening, type OrionContext } from '@/lib/orion'
-import FriendMarkers from './components/FriendMarkers'
 import FriendCard from './components/FriendCard'
+import SubmitConcern from './components/SubmitConcern'
+import PhotoReportCapture from './components/PhotoReportCapture'
+import type { PhotoReport } from './components/PhotoIncidentFeed'
+import OfferRedemptionCard from './components/OfferRedemptionCard'
+import DashboardsTab from './components/DashboardsTab'
+import { useNavigationState } from './hooks/useNavigationState'
+import { useFriendTracking } from './hooks/useFriendTracking'
+import { useOffersAndRewards } from './hooks/useOffersAndRewards'
+import { useMapLayers } from './hooks/useMapLayers'
+import { useTripTracking } from './hooks/useTripTracking'
+const WeeklyInsights = lazy(() => import('./components/WeeklyInsights'))
+const SnapRaceMode = lazy(() => import('./components/SnapRaceMode'))
+const FamilyDashboard = lazy(() => import('./components/FamilyDashboard'))
+const SnapRaceDashboard = lazy(() => import('./components/SnapRaceDashboard'))
+const ConvoyMode = lazy(() => import('./components/ConvoyMode'))
+const PhotoIncidentFeed = lazy(() => import('./components/PhotoIncidentFeed'))
+const SnapRoadScoreCard = lazy(() => import('./components/SnapRoadScoreCard'))
+const BadgesGrid = lazy(() => import('./components/BadgesGrid'))
+const OrionVoice = lazy(() => import('./components/OrionVoice'))
+const OHGOCameraPopup = lazy(() => import('./components/OHGOCameraPopup'))
 
-const OHGO_API_KEY = import.meta.env.VITE_OHGO_API_KEY ?? '3f0f254b-b6fc-4b56-b76a-00a109e9ef22'
+const OHGO_API_KEY = import.meta.env.VITE_OHGO_API_KEY || ''
 
 // Shared api returns { success, data: backendBody }. Backend often returns { data: payload }. Unwrap for payload.
-function payload<T>(res: { success?: boolean; data?: { data?: T } & Record<string, unknown> }): T | undefined {
-  return res.data?.data !== undefined ? (res.data.data as T) : (res.data as unknown as T)
+function payload<T>(res: { success?: boolean; data?: unknown }): T | undefined {
+  const d = res.data as { data?: T } | T | undefined
+  if (d && typeof d === 'object' && 'data' in (d as Record<string, unknown>) && (d as { data?: T }).data !== undefined) {
+    return (d as { data?: T }).data as T
+  }
+  return d as T | undefined
 }
 
 // Types - Changed to 4 tabs: Map, Routes, Rewards, Profile
-type TabType = 'map' | 'routes' | 'rewards' | 'profile'
+type TabType = 'map' | 'dashboards' | 'rewards' | 'profile'
 type RewardsTab = 'offers' | 'challenges' | 'badges' | 'carstudio'
 type ProfileTab = 'overview' | 'score' | 'fuel' | 'settings'
 type LocationCategory = 'favorites' | 'nearby'
@@ -169,13 +187,87 @@ interface SearchResult {
 }
 
 // Category icons
-const categoryIcons: Record<string, { icon: typeof Home; color: string }> = {
-  home: { icon: Home, color: 'emerald' },
-  work: { icon: Briefcase, color: 'blue' },
-  gym: { icon: Dumbbell, color: 'purple' },
-  school: { icon: School, color: 'yellow' },
-  shopping: { icon: ShoppingCart, color: 'pink' },
-  favorite: { icon: Star, color: 'amber' },
+/** Format a turn instruction for voice: "at the light" / "next light" phrasing. */
+function formatTurnInstructionForVoice(
+  instruction: string,
+  distanceMeters?: number,
+  maneuver?: string,
+  controlType?: 'traffic-light' | 'stop-sign' | null
+): string {
+  const dist = typeof distanceMeters === 'number' && distanceMeters > 0 ? distanceMeters : 400
+  const i = (instruction || '').trim()
+  // Extract "onto X" / "toward X" for street name
+  const ontoMatch = i.match(/\b(?:onto|toward|to)\s+(.+?)(?:\s*\.|$)/i)
+  const streetName = ontoMatch ? ontoMatch[1].trim() : ''
+  const dir = (maneuver || '').toLowerCase()
+  const isLeft = dir.includes('left')
+  const isRight = dir.includes('right')
+  const turnPhrase = isLeft
+    ? (dir.includes('slight') ? 'slight left' : dir.includes('sharp') ? 'sharp left' : 'left')
+    : isRight
+      ? (dir.includes('slight') ? 'slight right' : dir.includes('sharp') ? 'sharp right' : 'right')
+      : ''
+
+  const atControl =
+    controlType === 'traffic-light'
+      ? (streetName ? ` at the light onto ${streetName}` : ' at the light')
+      : controlType === 'stop-sign'
+        ? (streetName ? ` at the stop sign onto ${streetName}` : ' at the stop sign')
+        : (streetName ? ` onto ${streetName}` : '')
+
+  const nextControl =
+    controlType === 'traffic-light'
+      ? (streetName ? ` at the next light onto ${streetName}` : ' at the next light')
+      : controlType === 'stop-sign'
+        ? (streetName ? ` at the next stop sign onto ${streetName}` : ' at the next stop sign')
+        : (streetName ? ` onto ${streetName}` : '')
+
+  if (dist > 800) {
+    const miles = (dist / 1609.34).toFixed(1)
+    const mileWord = parseFloat(miles) === 1 ? 'mile' : 'miles'
+    return turnPhrase
+      ? `In ${miles} ${mileWord}, take a ${turnPhrase}${atControl}`
+      : `In ${miles} ${mileWord}, ${i}`
+  }
+  if (dist > 150) {
+    const feet = Math.round(dist * 3.28084)
+    return turnPhrase
+      ? `In ${feet} feet, take a ${turnPhrase}${atControl}`
+      : `In ${feet} feet, ${i}`
+  }
+  return turnPhrase
+    ? `At the next intersection, turn ${turnPhrase}${nextControl}`
+    : i || 'Continue'
+}
+
+function metersBetween(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371000
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180
+  const dLon = ((b.lng - a.lng) * Math.PI) / 180
+  const lat1 = (a.lat * Math.PI) / 180
+  const lat2 = (b.lat * Math.PI) / 180
+  const x =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2)
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x))
+}
+
+function nearestControlType(
+  step: { lat?: number; lng?: number },
+  signals: Array<{ type: string; lat: number; lng: number }>,
+  radiusMeters: number
+): 'traffic-light' | 'stop-sign' | null {
+  const lat = step.lat
+  const lng = step.lng
+  if (typeof lat !== 'number' || typeof lng !== 'number' || lat === 0 || lng === 0) return null
+  let best: { type: string; d: number } | null = null
+  for (const s of signals || []) {
+    if (!s || typeof s.lat !== 'number' || typeof s.lng !== 'number') continue
+    const d = metersBetween({ lat, lng }, { lat: s.lat, lng: s.lng })
+    if (d <= radiusMeters && (!best || d < best.d)) best = { type: String(s.type), d }
+  }
+  if (!best) return null
+  return best.type === 'stop-sign' ? 'stop-sign' : best.type === 'traffic-light' ? 'traffic-light' : null
 }
 
 export default function DriverApp() {
@@ -183,29 +275,17 @@ export default function DriverApp() {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { vehicle, camera, predicted, isLive, recenter, setRoutePolyline, setMode, mode, experience, getDrivingMetrics } = useNavigationCore()
-  const { ready: mapReady, error: mapError, reportError: reportMapError } = useGoogleMaps()
+  const { ready: mapReady, error: mapError, reportError: reportMapError } = useMapbox()
   const isLight = theme === 'light'
   const [mapFailed, setMapFailed] = useState(false)
   const [fallbackBannerDismissed, setFallbackBannerDismissed] = useState(false)
   const useMap = mapReady && !mapError && !mapFailed
-  const tripStartTimeRef = useRef<number | null>(null)
   const isNavigatingRef = useRef(false)
-  const carHeadingRef = useRef(0)
-  const prevLocationRef = useRef<{ lat: number; lng: number } | null>(null)
   const hasZoomedToUser = useRef(false)
-  const zoomToUserRef = useRef<((lat: number, lng: number, isNav: boolean) => void) | null>(null)
-  const traveledDistanceRef = useRef(0)
-  const navCameraRef = useRef<NavigationCamera | null>(null)
-  const distanceToNextStepRef = useRef<number | null>(null)
+  const zoomToUserRef = useRef<((lat: number, lng: number, isNav: boolean, zoomOverride?: number) => void) | null>(null)
   const mapActionsRef = useRef<{ resetHeading: () => void; clearUserInteracting: () => void } | null>(null)
-  const mapInstanceRef = useRef<google.maps.Map | null>(null)
-  const trafficLayerRef = useRef<google.maps.TrafficLayer | null>(null)
-  const incidentMarkersRef = useRef<google.maps.Marker[]>([])
-  const constructionMarkersRef = useRef<google.maps.Marker[]>([])
-  const cameraMarkersRef = useRef<google.maps.Marker[]>([])
-  const [mapReadyForLayers, setMapReadyForLayers] = useState(false)
-  const [ohgoCameras, setOhgoCameras] = useState<OHGOCamera[]>([])
-  const [selectedCamera, setSelectedCamera] = useState<OHGOCamera | null>(null)
+  const mapInstanceRef = useRef<mapboxgl.Map | null>(null)
+  
 
   // Main state - 4 tabs now
   const [activeTab, setActiveTab] = useState<TabType>('map')
@@ -224,11 +304,7 @@ export default function DriverApp() {
   const [showReportModal, setShowReportModal] = useState(false)
   const [draggingWidget, setDraggingWidget] = useState<string | null>(null)
   const [showLayerPicker, setShowLayerPicker] = useState(false)
-  const [activeMapLayer, setActiveMapLayer] = useState<'standard' | 'satellite' | 'hybrid' | 'dark'>('standard')
-  const [showTrafficLayer, setShowTrafficLayer] = useState(false)
-  const [showCameraLayer, setShowCameraLayer] = useState(false)
-  const [showIncidentsLayer, setShowIncidentsLayer] = useState(false)
-  const [showConstructionLayer, setShowConstructionLayer] = useState(false)
+  
 
   // New modal states
   const [showFriendsHub, setShowFriendsHub] = useState(false)
@@ -238,32 +314,48 @@ export default function DriverApp() {
   const [showGemHistory, setShowGemHistory] = useState(false)
   const [showNotificationSettings, setShowNotificationSettings] = useState(false)
   const [showHelpSupport, setShowHelpSupport] = useState(false)
+  const [showSubmitConcern, setShowSubmitConcern] = useState(false)
+  const [showMaintenanceMode, setShowMaintenanceMode] = useState(false)
+  const [announcementBanner, setAnnouncementBanner] = useState('')
   const [showFuelTracker, setShowFuelTracker] = useState(false)
   const [showFuelDashboard, setShowFuelDashboard] = useState(false)
   const [showAppTour, setShowAppTour] = useState(false)
   const [showCarOnboarding, setShowCarOnboarding] = useState(false)
   const [showCarStudio, setShowCarStudio] = useState(false)
   const [showPlanSelection, setShowPlanSelection] = useState(false)
-  const [showRoadReports, setShowRoadReports] = useState(false)
   const [showLevelProgress, setShowLevelProgress] = useState(false)
   const [showOrionVoice, setShowOrionVoice] = useState(false)
   const [showQuickPhotoReport, setShowQuickPhotoReport] = useState(false)
   const [showQuickReportIconsOnly, setShowQuickReportIconsOnly] = useState(false)
-  const [selectedRoadStatus, setSelectedRoadStatus] = useState<{ id: string; name: string; status: 'clear' | 'moderate' | 'heavy' | 'closed'; reason?: string; estimatedDelay?: number; startLat: number; startLng: number; endLat: number; endLng: number } | null>(null)
-  const [showOffersModal, setShowOffersModal] = useState(false)
-  const [showShareTrip, setShowShareTrip] = useState(false)
-  const [lastTripData, setLastTripData] = useState<Record<string, unknown> | null>(null)
-  const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
-  const [showDrivingScore, setShowDrivingScore] = useState(false)
-  const [showChallengeHistory, setShowChallengeHistory] = useState(false)
-  const [showRedemptionPopup, setShowRedemptionPopup] = useState(false)
-  const [selectedOfferForRedemption, setSelectedOfferForRedemption] = useState<Offer | null>(null)
-  const [showWeeklyRecap, setShowWeeklyRecap] = useState(false)
+  const [showPhotoReport, setShowPhotoReport] = useState(false)
+  const [showSnapRace, setShowSnapRace] = useState(false)
+  const [showSnapRaceDashboard, setShowSnapRaceDashboard] = useState(false)
+  const [showFamilyDashboard, setShowFamilyDashboard] = useState(false)
+  const [showConvoy, setShowConvoy] = useState(false)
+  const [familyPipOpen, setFamilyPipOpen] = useState(false)
+  const [familyGeoContext, setFamilyGeoContext] = useState<{ groupId: string; places: Array<{ id?: string; name: string; lat: number; lng: number; radius_meters?: number }> }>({ groupId: '', places: [] })
+  const familyPlaceInsideRef = useRef<Record<string, boolean>>({})
+  
+  const [crashDetected, setCrashDetected] = useState(false)
+  const [crashCancelActive, setCrashCancelActive] = useState(false)
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  const [showPhotoFeed, setShowPhotoFeed] = useState(false)
+  
   
   // New feature states
-  const [showTripAnalytics, setShowTripAnalytics] = useState(false)
-  const [showRouteHistory3D, setShowRouteHistory3D] = useState(false)
-  const [showOffersPanel, setShowOffersPanel] = useState(true)
+  
+  
+  
   const [routeNotifications, setRouteNotifications] = useState<Array<{ id: string; type: string; route_id?: number; route_name?: string; destination?: string; message: string; leave_by?: string; eta_minutes?: number; saved_minutes?: number; saved_dollars?: number }>>([])
   const [dismissedRouteNotifIds, setDismissedRouteNotifIds] = useState<Set<string>>(new Set())
   const [leaveEarlyForRoute, setLeaveEarlyForRoute] = useState<{ routeId: number; leaveBy: string; etaMinutes: number; destination: string } | null>(null)
@@ -274,18 +366,18 @@ export default function DriverApp() {
   const [showBrowser, setShowBrowser] = useState(false)
   
   // Gem overlay state
-  const [activeTripId, setActiveTripId] = useState<string | null>(null)
   
   // Search and navigation states
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [, setSelectedDestination] = useState<SearchResult | null>(null)
   const [isSearching, setIsSearching] = useState(false)
-  const [selectedDestination, setSelectedDestination] = useState<NavigationDestination | null>(null)
   const [selectedPlace, setSelectedPlace] = useState<{
     name: string
     lat: number
     lng: number
     address?: string
+    type?: string
     rating?: number
     totalRatings?: number
     isOpen?: boolean
@@ -299,48 +391,352 @@ export default function DriverApp() {
   } | null>(null)
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null)
   const [mapClickedPlace, setMapClickedPlace] = useState<PlaceCardData | null>(null)
+  /** Pin dropped on map tap (exact lat/lng); card shows resolved label + Directions CTA */
+  const [mapDroppedPin, setMapDroppedPin] = useState<{ lat: number; lng: number; label?: string; address?: string } | null>(null)
   const [nearbyLoading, setNearbyLoading] = useState(false)
   const [searchResultPhotos, setSearchResultPhotos] = useState<Record<string, string>>({})
-  const [navigationData, setNavigationData] = useState<NavigationState | null>(null)
-  const [liveEta, setLiveEta] = useState<{ distanceMiles: number; etaMinutes: number } | null>(null)
-  const [showTurnByTurn, setShowTurnByTurn] = useState(false)
-  const [isOverviewMode, setIsOverviewMode] = useState(false)
-  const [showRoutePreview, setShowRoutePreview] = useState(false)
-  const [showEndConfirm, setShowEndConfirm] = useState(false)
-  const [showTripSummary, setShowTripSummary] = useState(false)
-  const [selectedRouteId, setSelectedRouteId] = useState('fastest')
-  const [availableRoutes, setAvailableRoutes] = useState<DirectionsResult[]>([])
-  const [selectedRouteIndex, setSelectedRouteIndex] = useState(0)
-  /** Polylines from trip/route history for map layer (same source as Trip Analytics & Route History) */
-  const [tripHistoryPolylines, setTripHistoryPolylines] = useState<{ lat: number; lng: number }[][]>([])
-  /** Driver Analytics modal: real trip analytics + nearby gas from API */
-  const [driverAnalyticsData, setDriverAnalyticsData] = useState<{
-    analytics: { total_trips?: number; avg_safety_score: number; money_saved_dollars: number; fuel_saved_gallons: number; co2_saved_lbs: number } | null
-    gasStations: Array<{ name: string; address?: string; regular: number; distance_miles: number }>
-    fuelPricePerGal: number
-  }>({ analytics: null, gasStations: [], fuelPricePerGal: 3.29 })
-  const [currentStepIndex, setCurrentStepIndex] = useState(0)
-  const [currentLanes, setCurrentLanes] = useState<Lane[]>([])
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const unsubscribeFriendsRef = useRef<(() => void) | null>(null)
-  const isSharingLocationRef = useRef(true)
-  const followingFriendIdRef = useRef<string | null>(null)
-  const friendLocationsRef = useRef<FriendLocation[]>([])
-  const userRef = useRef<{ id?: string } | null>(null)
-  const navigationDataRef = useRef<NavigationState | null>(null)
-
-  // User location (mock - Columbus, OH)
-  const [userLocation, setUserLocation] = useState({ lat: 39.9612, lng: -82.9988 })
-
-  // Friend location sharing
-  const [friendLocations, setFriendLocations] = useState<FriendLocation[]>([])
-  const [selectedFriend, setSelectedFriend] = useState<FriendLocation | null>(null)
-  const [followingFriendId, setFollowingFriendId] = useState<string | null>(null)
-  const [isSharingLocation, setIsSharingLocation] = useState(true)
+  const [osmSignals, setOsmSignals] = useState<Array<{ id: string; type: string; lat: number; lng: number }>>([])
+  const [osmSidewalksGeojson, setOsmSidewalksGeojson] = useState<GeoJSON.FeatureCollection<GeoJSON.LineString>>({
+    type: 'FeatureCollection',
+    features: [],
+  })
+  const [, setShowTurnByTurn] = useState(false)
+  const [, setSelectedRouteId] = useState('best')
+  const [isTallVehicle, setIsTallVehicle] = useState(false)
+  const [avoidLowClearances, setAvoidLowClearances] = useState(true)
+  const [vehicleHeightPreset, setVehicleHeightPreset] = useState<'2.7' | '3.0' | '3.5' | '4.0' | '4.1' | 'custom'>('4.0')
+  const [vehicleHeightCustom, setVehicleHeightCustom] = useState<string>('4.0')
+  const [isSavingVehicleHeight, setIsSavingVehicleHeight] = useState(false)
   
+  
+  
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  
+  const cameraLockedRef = useRef(true)
+  const [navCameraMode, setNavCameraMode] = useState<'following' | 'free'>('following')
+  const [navFollowZoom, setNavFollowZoom] = useState(17)
+  
+  // User location (mock - Columbus, OH) — must be declared before refs that mirror it
+  const [userLocation, setUserLocation] = useState({ lat: 39.9612, lng: -82.9988 })
+  // Shared refs so both navigation + friend tracking can read the latest GPS values
+  // without TDZ/circular hook dependencies.
+  const latRef = useRef<number>(userLocation.lat)
+  const lngRef = useRef<number>(userLocation.lng)
+  const checkNearbyFriendAlertsRef = useRef<(() => void) | null>(null)
+  const stableCheckNearbyFriendAlerts = useCallback(() => {
+    checkNearbyFriendAlertsRef.current?.()
+  }, [])
+  const isSharingLocationRef = useRef<boolean>(true)
+  const friendTrackingEnabledRef = useRef(true)
+  const [carHeading, setCarHeading] = useState(0) // Direction for nav marker
+  const compassHeadingRef = useRef<number | null>(null)
+  const lastCompassCommitMsRef = useRef(0)
+  const userGemMultiplierRef = useRef<number>(1)
+  const invalidateRewardsCachesRef = useRef<(() => void) | null>(null)
+  const getUserGemMultiplier = useCallback(() => userGemMultiplierRef.current, [])
+  const invalidateRewardsCachesWrapper = useCallback(() => {
+    invalidateRewardsCachesRef.current?.()
+  }, [])
+  
+  const crashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastActivityRef = useRef(Date.now())
+  const haversineMetersRef = useRef<((lat1: number, lng1: number, lat2: number, lng2: number) => number) | null>(null)
+  const haversineMeters = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371000
+    const dLat = ((lat2 - lat1) * Math.PI) / 180
+    const dLng = ((lng2 - lng1) * Math.PI) / 180
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  }, [])
+  haversineMetersRef.current = haversineMeters
+  // #region agent log
+  // Crash callback must be defined before useNavigationState(...) to avoid TDZ.
+  const triggerCrashDetection = () => {
+    void 0// #endregion
+
+    setCrashDetected(true)
+    setCrashCancelActive(true)
+    if (crashTimeoutRef.current) clearTimeout(crashTimeoutRef.current)
+    crashTimeoutRef.current = setTimeout(async () => {
+      setCrashCancelActive(false)
+      try {
+        await api.post('/api/family/sos', {
+          type: 'crash',
+          lat: userLocation.lat,
+          lng: userLocation.lng,
+          message: `Possible crash detected at ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`,
+        })
+      } catch {}
+      try {
+        await api.post('/api/concerns/submit', {
+          category: 'crash_detection',
+          title: 'Crash detection triggered',
+          description: 'Automatic crash detection alert',
+          severity: 'critical',
+          context: { lat: userLocation.lat, lng: userLocation.lng },
+        })
+      } catch {}
+    }, 10000)
+  }
+
+  const fetchDirectionsRef = useRef<((destination: any) => Promise<void>) | null>(null)
+  const handleSelectDestinationRef = useRef<((location: any) => Promise<void>) | null>(null)
+  const offRouteSinceRef = useRef<number | null>(null)
+  const rerouteInFlightRef = useRef(false)
+  const lastRerouteAtRef = useRef(0)
+  const BROADCAST_MIN_DISTANCE = 50
+  const ALERT_COOLDOWN = 5 * 60 * 1000
+  const NEAR_ROUTE_THRESHOLD = 500
+  const userRef = useRef<{ id?: string } | null>(null)
+  
+
+  
+
+  const {
+    showShareTrip,
+    setShowShareTrip,
+    lastTripData,
+    setLastTripData,
+    showTripAnalytics,
+    setShowTripAnalytics,
+    showRouteHistory3D,
+    setShowRouteHistory3D,
+    activeTripId,
+    setActiveTripId,
+    tripHistoryPolylines,
+    driverAnalyticsData,
+    handleShareTrip,
+    dismissTripSummary,
+  } = useTripTracking({
+    apiClient: api,
+    userLocation,
+    showFuelDashboard,
+    loadOnMount: true,
+  })
+
+  // #region agent log
+  void 0// #endregion
+
+  // #region agent log
+  // Try/catch to capture the next TDZ identifier inside useNavigationState argument evaluation.
+  let _navigationState: ReturnType<typeof useNavigationState> | null = null
+  try {
+    _navigationState = useNavigationState({
+      userLocation,
+      setUserLocation,
+      setCarHeading,
+      compassHeadingRef,
+      mapInstanceRef,
+      isNavigatingRef,
+      cameraLockedRef,
+      latRef,
+      lngRef,
+      zoomToUserRef,
+      hasZoomedToUser,
+      lastActivityRef,
+      userRef,
+      isSharingLocationRef,
+      friendTrackingEnabledRef,
+      checkNearbyFriendAlerts: stableCheckNearbyFriendAlerts,
+      haversineMeters,
+      BROADCAST_MIN_DISTANCE,
+      triggerCrashDetection,
+      crashCancelActive,
+      crashDetected,
+      osmSignals,
+      nearestControlType,
+      formatTurnInstructionForVoice,
+      apiClient: api,
+      toastClient: toast,
+      mode,
+      setActiveTripId,
+      setShowMenu,
+      setShowSearch,
+      setShowTurnByTurn,
+      setSelectedDestination,
+      setRoutePolyline,
+      invalidateRewardsCaches: invalidateRewardsCachesWrapper,
+      activeTripId,
+      getUserGemMultiplier,
+      getDrivingAggression: () => getDrivingMetrics().style.aggression,
+      hasVehicle: Boolean(vehicle),
+      setLastTripData,
+      setSelectedRouteId,
+      clearMapUserInteracting: () => mapActionsRef.current?.clearUserInteracting?.(),
+      recenter,
+    })
+  } catch (e) {
+    throw e
+  }
+  // #endregion
+
+  const {
+    tripStartTimeRef,
+    carHeadingRef,
+    prevLocationRef,
+    traveledDistanceRef,
+    distanceToNextStepRef,
+    lastSpeedRef,
+    watchIdRef,
+    lastBroadcastLocationRef,
+    speedDisplayTimerRef,
+    navigationDataRef,
+    hasAnnouncedArrivalRef,
+    lastSpokenStepIndexRef,
+    etaGuardRef,
+    navigationData,
+    setNavigationData,
+    liveEta,
+    setLiveEta,
+    isOverviewMode,
+    setIsOverviewMode,
+    showRoutePreview,
+    setShowRoutePreview,
+    showEndConfirm,
+    setShowEndConfirm,
+    showTripSummary,
+    setShowTripSummary,
+    availableRoutes,
+    setAvailableRoutes,
+    selectedRouteIndex,
+    setSelectedRouteIndex,
+    currentStepIndex,
+    setCurrentStepIndex,
+    currentLanes,
+    setCurrentLanes,
+    isNavigating,
+    setIsNavigating,
+    traveledDistanceMeters,
+    setTraveledDistanceMeters,
+    needsCompassPermission,
+    setNeedsCompassPermission,
+    isMuted,
+    setIsMuted,
+    isNavOrionListening,
+    setIsNavOrionListening,
+    currentSpeed,
+    setCurrentSpeed,
+    handleStartNavigation,
+    handleRequestEndNavigation,
+    handleConfirmEndNavigation,
+    handleGoFromRoutePreview,
+    handleRouteSelect,
+    onRecenterNavigation,
+  } = _navigationState as ReturnType<typeof useNavigationState>
+
+  useEffect(() => {
+    if (!needsCompassPermission) return
+    try {
+      if (sessionStorage.getItem('sr_compass_permission_denied') === '1') {
+        setNeedsCompassPermission(false)
+      }
+    } catch {
+      // ignore
+    }
+  }, [needsCompassPermission, setNeedsCompassPermission])
+
+  const {
+    unsubscribeFriendsRef,
+    followingFriendIdRef,
+    followIntervalRef,
+    cameraReturnTimerRef,
+    lastCameraOverrideRef,
+    lastAlertedFriendRef,
+    friendCheckTimerRef,
+    friendLocationsRef,
+    focusedFamilyMember,
+    setFocusedFamilyMember,
+    tappedFriend,
+    setTappedFriend,
+    followingMode,
+    setFollowingMode,
+    nearbyFriendAlert,
+    setNearbyFriendAlert,
+    friendLocations,
+    setFriendLocations,
+    friendIdsForRealtime,
+    setFriendIdsForRealtime,
+    selectedFriend,
+    setSelectedFriend,
+    followingFriendId,
+    setFollowingFriendId,
+    isSharingLocation,
+    setIsSharingLocation,
+    returnToNavigation,
+    stopAllFollowModes,
+    startLiveNavigation,
+    startCameraFollow,
+    peekAtFriend,
+    meetInMiddle,
+    friendsOnRoute,
+    onFriendMarkerTap,
+    checkNearbyFriendAlerts,
+  } = useFriendTracking({
+    activeTab,
+    userLocation,
+    // Driven by the navigation refs/state; avoids TDZ caused by destructuring order.
+    isNavigating: isNavigatingRef.current,
+    mapInstanceRef,
+    cameraLockedRef,
+    isNavigatingRef,
+    isSharingLocationRef,
+    latRef,
+    lngRef,
+    carHeadingRef,
+    navigationData,
+    navigationDataRef,
+    haversineMetersRef,
+    fetchDirectionsRef,
+    handleSelectDestinationRef,
+    ALERT_COOLDOWN,
+    NEAR_ROUTE_THRESHOLD,
+  })
+
+  // Bridge friend-tracking callback into navigation without creating a hook-call cycle.
+  checkNearbyFriendAlertsRef.current = checkNearbyFriendAlerts
+
+  // Admin config kill switches (from /api/config)
+  // Declared here to avoid TDZ when passed into hooks below.
+  const [ohgoEnabled, setOhgoEnabled] = useState(true)
+
+  const {
+    mapReadyForLayers,
+    setMapReadyForLayers,
+    ohgoCameras,
+    setOhgoCameras,
+    selectedCamera,
+    setSelectedCamera,
+    activeMapLayer,
+    setActiveMapLayer,
+    showTrafficLayer,
+    setShowTrafficLayer,
+    showCameraLayer,
+    setShowCameraLayer,
+    showIncidentsLayer,
+    setShowIncidentsLayer,
+    showConstructionLayer,
+    setShowConstructionLayer,
+    showFuelPrices,
+    setShowFuelPrices,
+    gasStationsOverlay,
+    setGasStationsOverlay,
+    roadReports,
+    setRoadReports,
+    photoReports,
+    setPhotoReports,
+    activeIncidentAlert,
+    setActiveIncidentAlert,
+    selectedRoadStatus,
+    setSelectedRoadStatus,
+    loadRoadReports,
+    loadPhotoReports,
+  } = useMapLayers(userLocation, OHGO_API_KEY, ohgoEnabled)
+
   // User plan state
-  const [userPlan, setUserPlan] = useState<'basic' | 'premium' | null>(null)
-  const [gemMultiplier, setGemMultiplier] = useState(1)
+  
+  // Admin config kill switches (from /api/config)
+  const [, setFriendTrackingEnabled] = useState(true)
+  const [orionEnabled, setOrionEnabled] = useState(true)
   
   // Car customization state
   const [userCar, setUserCar] = useState({
@@ -349,29 +745,25 @@ export default function DriverApp() {
     color: 'midnight-black',
   })
   const [ownedColors, setOwnedColors] = useState<string[]>([])
-  const [carHeading, setCarHeading] = useState(0) // Direction for nav marker
   
   // Data states
   const [locations, setLocations] = useState<SavedLocation[]>([])
   const [routes, setRoutes] = useState<SavedRoute[]>([])
-  const [offers, setOffers] = useState<Offer[]>([])
-  const [challenges, setChallenges] = useState<Record<string, unknown>[]>([])
-  const [badges, setBadges] = useState<Record<string, unknown>[]>([])
-  const [skins, setSkins] = useState<Record<string, unknown>[]>([])
+  
+  
+  
+  
   const [family, setFamily] = useState<FamilyMember[]>([])
-  const [roadReports, setRoadReports] = useState<RoadReport[]>([])
+  const familyMemberIds = useMemo(
+    () => family.map((m) => String((m as any).user_id ?? (m as any).id ?? '')).filter(Boolean),
+    [family]
+  )
+  
+  
+  
   
   // Fresh user state - starts empty
-  const [userData, setUserData] = useState<Record<string, unknown>>({
-    id: '123456',
-    name: user?.name || 'Driver',
-    gems: 0, level: 1, xp: 0, safety_score: 100, streak: 0,
-    total_miles: 0, total_trips: 0, badges_earned_count: 0, rank: 0,
-    is_premium: false, member_since: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), 
-    friends_count: 0, state: 'OH',
-    plan: null, gem_multiplier: 1, safe_drive_streak: 0,
-    reports_posted: 0, reports_upvotes_received: 0
-  })
+  
   
   // Widget states - positioned below location panel (which ends around y=280)
   const [widgets, setWidgets] = useState<Record<string, WidgetState>>({
@@ -380,18 +772,7 @@ export default function DriverApp() {
   })
   
   // Navigation & settings states
-  const [isNavigating, setIsNavigating] = useState(false)
-  const [traveledDistanceMeters, setTraveledDistanceMeters] = useState(0)
-  const [needsCompassPermission, setNeedsCompassPermission] = useState(
-    typeof (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission === 'function'
-  )
-  const [isMuted, setIsMuted] = useState(false)
-  const [isNavOrionListening, setIsNavOrionListening] = useState(false)
-  const [currentSpeed, setCurrentSpeed] = useState(0)
-  const [offerFilter, setOfferFilter] = useState<'all' | 'gas' | 'cafe'>('all')
-  const [badgeFilter, setBadgeFilter] = useState<'all' | 'earned' | 'locked'>('all')
-  const [equippedSkin, setEquippedSkin] = useState(1)
-  const [favorites, setFavorites] = useState<number[]>([])
+  
   
   // Form states
   const [newLocation, setNewLocation] = useState({ name: '', address: '', category: 'favorite' })
@@ -400,44 +781,85 @@ export default function DriverApp() {
   const [originSuggestions, setOriginSuggestions] = useState<{ name: string; address: string; lat?: number; lng?: number }[]>([])
   const [destinationSuggestions, setDestinationSuggestions] = useState<{ name: string; address: string; lat?: number; lng?: number }[]>([])
   const routeAddrDebounceRef = useRef<Record<'origin' | 'destination', ReturnType<typeof setTimeout> | null>>({ origin: null, destination: null })
+
+  const {
+    showOffersModal,
+    setShowOffersModal,
+    selectedOfferId,
+    setSelectedOfferId,
+    showDrivingScore,
+    setShowDrivingScore,
+    showChallengeHistory,
+    setShowChallengeHistory,
+    showRedemptionPopup,
+    setShowRedemptionPopup,
+    selectedOfferForRedemption,
+    setSelectedOfferForRedemption,
+    showWeeklyRecap,
+    setShowWeeklyRecap,
+    showWeeklyInsights,
+    setShowWeeklyInsights,
+    showScoreCard,
+    setShowScoreCard,
+    showOffersPanel,
+    setShowOffersPanel,
+    userPlan,
+    setUserPlan,
+    setGemMultiplier,
+    maxOfferDistance,
+    setMaxOfferDistance,
+    offers,
+    setOffers,
+    challenges,
+    setChallenges,
+    badges,
+    setBadges,
+    setSkins,
+    userData,
+    setUserData,
+    cachedGet,
+    invalidateCache,
+    loadNearbyOffers,
+    handleRedeemOffer,
+    handleClaimChallenge,
+    invalidateRewardsCaches,
+    loadRewardsProfile,
+  } = useOffersAndRewards({
+    initialName: (user?.name as string) || 'Driver',
+    userId: user?.id,
+    userLocation,
+    setRouteLimit,
+    setFriendTrackingEnabled,
+    friendTrackingEnabledRef,
+    stopSharingLocation,
+    setShowMaintenanceMode,
+    setAnnouncementBanner,
+    setOrionEnabled,
+    setShowCameraLayer,
+    setOhgoEnabled,
+  })
+
+  // Sync values needed by navigation with the data loaded in this hook.
+  userGemMultiplierRef.current = Number((userData as any)?.gem_multiplier ?? 1)
+  invalidateRewardsCachesRef.current = invalidateRewardsCaches
   
   // Swipe state for locations
-  const [swipeOffset, setSwipeOffset] = useState(0)
-  const swipeRef = useRef<HTMLDivElement>(null)
-  const startX = useRef(0)
 
-  const loadRoadReports = async () => {
-    try {
-      const res = await api.get<{ success?: boolean; data?: any[]; total?: number }>(
-        `/api/map/traffic?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=15`
-      )
-      if (!res.success) return
-      const raw = res.data as { data?: any[] }
-      const list = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : []
-      setRoadReports(list)
-    } catch { /* traffic reports unavailable */ }
-  }
-
-  /** Load trip history polylines for map (same API as Trip Analytics & Route History). */
-  const loadTripHistoryForMap = async () => {
-    try {
-      const res = await api.get<{ success?: boolean; data?: { trips?: Array<{ route_coordinates?: { lat: number; lng: number }[] }> } }>(
-        '/api/trips/history/detailed?days=30&limit=50'
-      )
-      if (!res.success || !res.data) return
-      const trips = (res.data as { trips?: Array<{ route_coordinates?: { lat: number; lng: number }[] }> }).trips ?? []
-      const polylines = trips
-        .filter((t: { route_coordinates?: { lat: number; lng: number }[] }) => t.route_coordinates && t.route_coordinates.length >= 2)
-        .map((t: { route_coordinates: { lat: number; lng: number }[] }) => t.route_coordinates)
-      setTripHistoryPolylines(polylines)
-    } catch { /* trip history for map unavailable */ }
-  }
+  useEffect(() => {
+    const record = () => { lastActivityRef.current = Date.now() }
+    window.addEventListener('touchstart', record, { passive: true })
+    window.addEventListener('click', record, { passive: true })
+    return () => {
+      window.removeEventListener('touchstart', record)
+      window.removeEventListener('click', record)
+    }
+  }, [])
 
   // Load data on mount
   useEffect(() => {
     loadData()
     loadRoadReports()
-    loadTripHistoryForMap()
+    loadPhotoReports()
   }, [])
 
   // Refresh address book (locations) when search modal opens so Quick Places is up to date
@@ -471,254 +893,12 @@ export default function DriverApp() {
     return () => { cancelled = true }
   }, [searchResults])
 
-  // Refetch cameras/road reports when user location changes (e.g. after GPS fix)
-  useEffect(() => {
-    if (userLocation.lat !== 0 || userLocation.lng !== 0) loadRoadReports()
-  }, [userLocation.lat, userLocation.lng])
+  
 
-  // Load nearby offers by user location (skip default Columbus placeholder)
-  const loadNearbyOffers = useCallback(async () => {
-    try {
-      const res = await api.get<{ success?: boolean; data?: Offer[] }>(
-        `/api/offers/nearby?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=5`
-      )
-      const data = payload<Offer[]>(res) ?? (res?.data as { data?: Offer[] })?.data
-      if (Array.isArray(data)) setOffers(data)
-    } catch (e) {
-      console.warn('Offers fetch failed:', e)
-    }
-  }, [userLocation.lat, userLocation.lng])
-  useEffect(() => {
-    if (userLocation.lat === 39.9612 && userLocation.lng === -82.9988) return
-    loadNearbyOffers()
-  }, [userLocation.lat, userLocation.lng, loadNearbyOffers])
+  // ---------- Map layer picker: MapboxMapSnapRoad uses mapType/showTraffic props ----------
+  // MapboxMapSnapRoad handles map type, traffic, and layers via props. OHGO cameras fetched below; markers handled by overlay/popup.
 
-  // ---------- Map layer picker: apply to Google Maps instance ----------
-  useEffect(() => {
-    const map = mapInstanceRef.current
-    if (!map || !mapReadyForLayers) return
-    switch (activeMapLayer) {
-      case 'dark':
-        map.setOptions({
-          styles: [
-            { elementType: 'geometry', stylers: [{ color: '#212121' }] },
-            { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-            { elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
-            { elementType: 'labels.text.stroke', stylers: [{ color: '#212121' }] },
-            { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#383838' }] },
-            { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#212121' }] },
-            { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#9ca5b3' }] },
-            { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#746855' }] },
-            { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#1f2835' }] },
-            { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#f3d19c' }] },
-            { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] },
-            { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#515c6d' }] },
-            { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#2c2c2c' }] },
-            { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#263c3f' }] },
-            { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#2f3948' }] },
-            { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#757575' }] },
-            { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#212121' }] },
-          ],
-          mapTypeId: 'roadmap',
-        })
-        break
-      case 'satellite':
-        map.setOptions({ styles: [], mapTypeId: 'satellite' })
-        break
-      case 'hybrid':
-        map.setOptions({ styles: [], mapTypeId: 'hybrid' })
-        break
-      case 'standard':
-      default:
-        map.setOptions({ styles: [], mapTypeId: 'roadmap' })
-        break
-    }
-  }, [activeMapLayer, mapReadyForLayers])
-
-  useEffect(() => {
-    const map = mapInstanceRef.current
-    if (!map) return
-    if (showTrafficLayer) {
-      if (!trafficLayerRef.current) {
-        trafficLayerRef.current = new google.maps.TrafficLayer()
-      }
-      trafficLayerRef.current.setMap(map)
-    } else {
-      if (trafficLayerRef.current) {
-        trafficLayerRef.current.setMap(null)
-      }
-    }
-  }, [showTrafficLayer, mapReadyForLayers])
-
-  useEffect(() => {
-    const map = mapInstanceRef.current
-    if (!map) return
-    incidentMarkersRef.current.forEach((m) => m.setMap(null))
-    incidentMarkersRef.current = []
-    if (!showIncidentsLayer) return
-    fetch(
-      `https://publicapi.ohgo.com/api/v1/incidents?api-key=${OHGO_API_KEY}&radius=${userLocation.lat},${userLocation.lng},25`
-    )
-      .then((r) => r.json())
-      .then((data: { results?: Array<{ latitude?: number; longitude?: number; description?: string; type?: string; location?: string }> }) => {
-        (data.results ?? []).forEach((incident) => {
-          if (incident.latitude == null || incident.longitude == null) return
-          const marker = new google.maps.Marker({
-            position: { lat: incident.latitude, lng: incident.longitude },
-            map,
-            icon: {
-              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                <svg width="28" height="28" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="14" cy="14" r="13" fill="#FF9500" stroke="white" stroke-width="2"/>
-                  <text x="14" y="19" text-anchor="middle" fill="white" font-size="14" font-weight="bold">!</text>
-                </svg>
-              `),
-              scaledSize: new google.maps.Size(28, 28),
-              anchor: new google.maps.Point(14, 14),
-            },
-            title: incident.description ?? 'Incident',
-            zIndex: 100,
-          })
-          marker.addListener('click', () => {
-            new google.maps.InfoWindow({
-              content: `
-                <div style="padding:8px;max-width:200px">
-                  <strong style="font-size:13px">${(incident.type ?? 'Incident').replace(/</g, '&lt;')}</strong>
-                  <p style="font-size:12px;margin:4px 0;color:#666">${(incident.description ?? '').replace(/</g, '&lt;')}</p>
-                  <p style="font-size:11px;color:#999">${(incident.location ?? '').replace(/</g, '&lt;')}</p>
-                </div>
-              `,
-            }).open(map, marker)
-          })
-          incidentMarkersRef.current.push(marker)
-        })
-      })
-      .catch(() => {})
-  }, [showIncidentsLayer, userLocation.lat, userLocation.lng, mapReadyForLayers])
-
-  useEffect(() => {
-    const map = mapInstanceRef.current
-    if (!map) return
-    constructionMarkersRef.current.forEach((m) => m.setMap(null))
-    constructionMarkersRef.current = []
-    if (!showConstructionLayer) return
-    fetch(
-      `https://publicapi.ohgo.com/api/v1/construction?api-key=${OHGO_API_KEY}&radius=${userLocation.lat},${userLocation.lng},25`
-    )
-      .then((r) => r.json())
-      .then((data: { results?: Array<{ latitude?: number; longitude?: number; description?: string; location?: string; status?: string }> }) => {
-        (data.results ?? []).forEach((item) => {
-          if (item.latitude == null || item.longitude == null) return
-          const marker = new google.maps.Marker({
-            position: { lat: item.latitude, lng: item.longitude },
-            map,
-            icon: {
-              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                <svg width="28" height="28" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="14" cy="14" r="13" fill="#FF6B00" stroke="white" stroke-width="2"/>
-                  <text x="14" y="19" text-anchor="middle" fill="white" font-size="12">🚧</text>
-                </svg>
-              `),
-              scaledSize: new google.maps.Size(28, 28),
-              anchor: new google.maps.Point(14, 14),
-            },
-            title: item.description ?? 'Construction',
-            zIndex: 100,
-          })
-          marker.addListener('click', () => {
-            new google.maps.InfoWindow({
-              content: `
-                <div style="padding:8px;max-width:200px">
-                  <strong style="font-size:13px">🚧 Construction</strong>
-                  <p style="font-size:12px;margin:4px 0;color:#666">${(item.description ?? '').replace(/</g, '&lt;')}</p>
-                  <p style="font-size:11px;color:#999">${(item.location ?? '').replace(/</g, '&lt;')}${item.status ? ` • ${item.status}` : ''}</p>
-                </div>
-              `,
-            }).open(map, marker)
-          })
-          constructionMarkersRef.current.push(marker)
-        })
-      })
-      .catch(() => {})
-  }, [showConstructionLayer, userLocation.lat, userLocation.lng, mapReadyForLayers])
-
-  // Fetch OHGO cameras when cameras layer is on (Premium only)
-  useEffect(() => {
-    if (!userData.is_premium || !showCameraLayer || (userLocation.lat === 0 && userLocation.lng === 0)) return
-    fetch(
-      `https://publicapi.ohgo.com/api/v1/cameras?api-key=${OHGO_API_KEY}&radius=${userLocation.lat},${userLocation.lng},25`
-    )
-      .then((r) => r.json())
-      .then((data: { results?: Array<{ id: string | number; latitude: number; longitude: number; mainRoute?: string; location?: string; cameraViews?: Array<{ id: string | number; smallUrl?: string; largeUrl?: string; small_url?: string; large_url?: string; direction?: string }> }> }) => {
-        const list: OHGOCamera[] = (data.results ?? []).map((cam) => ({
-          id: String(cam.id),
-          latitude: cam.latitude,
-          longitude: cam.longitude,
-          mainRoute: cam.mainRoute ?? '',
-          location: cam.location ?? '',
-          cameraViews: (cam.cameraViews ?? []).map((v) => ({
-            id: String(v.id),
-            smallUrl: (v.smallUrl ?? (v as { small_url?: string }).small_url ?? '').trim(),
-            largeUrl: (v.largeUrl ?? (v as { large_url?: string }).large_url ?? '').trim(),
-            direction: v.direction ?? '',
-          })),
-        }))
-        setOhgoCameras(list)
-      })
-      .catch(() => setOhgoCameras([]))
-  }, [userData.is_premium, showCameraLayer, userLocation.lat, userLocation.lng])
-
-  useEffect(() => {
-    const map = mapInstanceRef.current
-    if (!map) return
-    cameraMarkersRef.current.forEach((m) => m.setMap(null))
-    cameraMarkersRef.current = []
-    if (!showCameraLayer || ohgoCameras.length === 0) return
-    ohgoCameras.forEach((cam) => {
-      const marker = new google.maps.Marker({
-        position: { lat: cam.latitude, lng: cam.longitude },
-        map,
-        icon: {
-          url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-            <svg width="28" height="28" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="14" cy="14" r="13" fill="#1C1C1E" stroke="white" stroke-width="2"/>
-              <text x="14" y="19" text-anchor="middle" fill="white" font-size="13">📷</text>
-            </svg>
-          `),
-          scaledSize: new google.maps.Size(28, 28),
-          anchor: new google.maps.Point(14, 14),
-        },
-        title: cam.mainRoute || 'Traffic Camera',
-        zIndex: 90,
-      })
-      marker.addListener('click', () => setSelectedCamera(cam))
-      cameraMarkersRef.current.push(marker)
-    })
-  }, [showCameraLayer, ohgoCameras, mapReadyForLayers])
-
-  // Driver Analytics modal: pull actual trip analytics + fuel prices when opened
-  useEffect(() => {
-    if (!showFuelDashboard) return
-    let cancelled = false
-    const load = async () => {
-      try {
-        const [tripRes, fuelRes] = await Promise.all([
-          api.get<{ success?: boolean; data?: { analytics?: { avg_safety_score: number; money_saved_dollars: number; fuel_saved_gallons: number; co2_saved_lbs: number } } }>('/api/trips/history/detailed?days=30&limit=50'),
-          api.get<{ success?: boolean; data?: { nearby_stations?: Array<{ name: string; address?: string; regular: number; distance_miles: number }>; prices?: { regular?: number } } }>(`/api/fuel/prices?lat=${userLocation.lat}&lng=${userLocation.lng}`),
-        ])
-        if (cancelled) return
-        const analytics = tripRes?.data && (tripRes.data as { analytics?: typeof driverAnalyticsData.analytics }).analytics ? (tripRes.data as { analytics: typeof driverAnalyticsData.analytics }).analytics : null
-        const fuelData = fuelRes?.data as { nearby_stations?: Array<{ name: string; address?: string; regular: number; distance_miles: number }>; prices?: { regular?: number } } | undefined
-        const stations = fuelData?.nearby_stations ?? []
-        const pricePerGal = fuelData?.prices?.regular ?? (stations[0]?.regular) ?? 3.29
-        setDriverAnalyticsData({ analytics: analytics ?? null, gasStations: stations, fuelPricePerGal: pricePerGal })
-      } catch {
-        if (!cancelled) setDriverAnalyticsData(prev => ({ ...prev, analytics: null, gasStations: [], fuelPricePerGal: prev.fuelPricePerGal }))
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [showFuelDashboard, userLocation.lat, userLocation.lng])
+  // OHGO camera markers: MapboxMapSnapRoad does not add them; RoadStatusOverlay / OHGOCameraPopup can show cameras when user taps area.
 
   // Sync userLocation from VehicleState when live (for search/directions)
   useEffect(() => {
@@ -727,122 +907,37 @@ export default function DriverApp() {
     }
   }, [isLive, vehicle?.coordinate?.lat, vehicle?.coordinate?.lng])
 
-  // GPS watcher: high accuracy, real position/heading/speed (runs on mount)
+ 
+
+  const hasPremiumAccess = userPlan === 'premium' || userData.is_premium
+  const hasFamilyAccess = userPlan === 'family'
+  const hasCameraAccess = hasPremiumAccess || hasFamilyAccess
+
+  // Free users: disable premium-only layers/features
   useEffect(() => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-      },
-      (err) => console.warn('Initial position failed:', err.message),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    )
-
-    const onWatch = (pos: GeolocationPosition) => {
-      const lat = pos.coords.latitude
-      const lng = pos.coords.longitude
-      const heading = pos.coords.heading
-      const speed = pos.coords.speed
-
-      const newLoc = { lat, lng }
-      setUserLocation(newLoc)
-
-      // Traveled distance tracking
-      const prev = prevLocationRef.current
-      if (prev && isNavigatingRef.current) {
-        const R = 6371000
-        const dLat = ((lat - prev.lat) * Math.PI) / 180
-        const dLng = ((lng - prev.lng) * Math.PI) / 180
-        const a =
-          Math.sin(dLat / 2) ** 2 +
-          Math.cos((prev.lat * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
-        const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-        if (dist > 0 && dist < 100) {
-          traveledDistanceRef.current += dist
-          setTraveledDistanceMeters(traveledDistanceRef.current)
-        }
-      }
-      prevLocationRef.current = newLoc
-
-      // Heading calculation
-      if (typeof heading === 'number' && heading >= 0 && (speed ?? 0) > 0.5) {
-        setCarHeading(heading)
-        carHeadingRef.current = heading
-      } else if (prev) {
-        const dLng = ((lng - prev.lng) * Math.PI) / 180
-        const lat1 = (prev.lat * Math.PI) / 180
-        const lat2 = (lat * Math.PI) / 180
-        const y = Math.sin(dLng) * Math.cos(lat2)
-        const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
-        const h = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
-        setCarHeading(h)
-        carHeadingRef.current = h
-      }
-
-      // Speed
-      const speedMph = typeof speed === 'number' && speed >= 0 ? Math.round(speed * 2.237) : 0
-      setCurrentSpeed(speedMph)
-
-      // First zoom
-      if (!hasZoomedToUser.current && zoomToUserRef.current) {
-        hasZoomedToUser.current = true
-        zoomToUserRef.current(lat, lng, false)
-      }
-
-      // Follow during navigation
-      if (isNavigatingRef.current && zoomToUserRef.current) {
-        zoomToUserRef.current(lat, lng, true)
-      }
-
-      // Broadcast my location to Supabase for friends (when sharing)
-      const uid = userRef.current?.id
-      if (isSharingLocationRef.current && uid) {
-        const speedMph = typeof speed === 'number' && speed >= 0 ? speed * 2.237 : 0
-        updateMyLocation(
-          uid,
-          lat,
-          lng,
-          carHeadingRef.current ?? 0,
-          speedMph,
-          isNavigatingRef.current,
-          isNavigatingRef.current ? navigationDataRef.current?.destination?.name : undefined
-        ).catch(() => {})
-      }
-
-      // Auto-follow friend on map when following mode is on
-      const fid = followingFriendIdRef.current
-      if (fid && mapInstanceRef.current) {
-        const followed = friendLocationsRef.current.find((f) => f.id === fid)
-        if (followed) {
-          mapInstanceRef.current.panTo({ lat: followed.lat, lng: followed.lng })
-        }
-      }
-    }
-
-    const watchId = navigator.geolocation.watchPosition(
-      onWatch,
-      (err) => console.warn('Watch position failed:', err.message),
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
-    )
-
-    return () => navigator.geolocation.clearWatch(watchId)
-  }, [])
-
-  // Free users: disable camera layer and location sharing
-  useEffect(() => {
-    if (!userData.is_premium) {
-      setShowCameraLayer(false)
-      setIsSharingLocation(false)
-    }
-  }, [userData.is_premium])
+    if (!hasCameraAccess) setShowCameraLayer(false)
+    if (!hasPremiumAccess) setIsSharingLocation(false)
+  }, [hasCameraAccess, hasPremiumAccess])
 
   // Car Studio is premium-only: reset Rewards sub-tab if free user had carstudio selected
   useEffect(() => {
     if (!userData.is_premium && rewardsTab === 'carstudio') setRewardsTab('offers')
   }, [userData.is_premium, rewardsTab])
 
-  const hasAnnouncedArrivalRef = useRef(false)
+  useEffect(() => {
+    const raw = Number((userData as { vehicle_height_meters?: number | null }).vehicle_height_meters)
+    if (Number.isFinite(raw) && raw > 0) {
+      setIsTallVehicle(true)
+      setAvoidLowClearances(true)
+      setVehicleHeightCustom(raw.toFixed(1))
+      const preset = ['2.7', '3.0', '3.5', '4.0', '4.1'].find((v) => Math.abs(Number(v) - raw) < 0.05)
+      setVehicleHeightPreset((preset as '2.7' | '3.0' | '3.5' | '4.0' | '4.1') ?? 'custom')
+    } else {
+      setIsTallVehicle(false)
+      setAvoidLowClearances(false)
+    }
+  }, [(userData as { vehicle_height_meters?: number | null }).vehicle_height_meters])
+
   const buildOrionContext = useCallback((): OrionContext => {
     const remainingDistanceMiles =
       typeof liveEta?.distanceMiles === 'number'
@@ -909,7 +1004,17 @@ export default function DriverApp() {
     friendLocationsRef.current = friendLocations
   }, [user, navigationData, isSharingLocation, followingFriendId, friendLocations])
 
-  // Friend location sync: load friends list, initial positions, subscribe to real-time updates
+  useEffect(() => {
+    if (!familyMemberIds.length) return
+    setFriendLocations((prev) =>
+      prev.map((f) => ({
+        ...f,
+        isFamilyMember: familyMemberIds.includes(f.id),
+      }))
+    )
+  }, [familyMemberIds])
+
+  // Friend location sync: load friend IDs and initial snapshot
   useEffect(() => {
     const uid = (user as { id?: string } | undefined)?.id
     if (!uid) return
@@ -923,45 +1028,61 @@ export default function DriverApp() {
           .map((f) => f.friend_id ?? f.id)
           .filter(Boolean) as string[]
 
-        if (friendIds.length === 0) return
+        setFriendIdsForRealtime(friendIds)
+        if (friendIds.length === 0) {
+          setFriendLocations([])
+          return
+        }
 
         const initial = await getFriendLocations(friendIds)
         setFriendLocations(initial)
-
-        unsubscribeFriendsRef.current = subscribeFriendLocations(friendIds, (updated) => {
-          setFriendLocations((prev) => {
-            const idx = prev.findIndex((f) => f.id === updated.id)
-            if (idx >= 0) {
-              const next = [...prev]
-              next[idx] = updated
-              return next
-            }
-            return [...prev, updated]
-          })
-        })
       } catch (e) {
         console.warn('Friend locations init failed:', e)
       }
     }
 
     initFriends()
-    return () => {
-      unsubscribeFriendsRef.current?.()
-    }
   }, [(user as { id?: string } | undefined)?.id])
 
-  // Device orientation (compass): auto-add when requestPermission not required; on iOS 13+ add only after user grants via banner
+  
+
+  // Device orientation (compass): fallback heading source when GPS heading is unavailable.
   useEffect(() => {
     const reqPerm = (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission
     if (typeof reqPerm === 'function' && needsCompassPermission) return
 
-    let lastCompassUpdate = 0
+    const normalizeCompassHeading = (e: DeviceOrientationEvent): number | null => {
+      const webkitHeading = (e as unknown as { webkitCompassHeading?: number }).webkitCompassHeading
+      // iOS Safari: this already reflects where the top of the phone points.
+      if (typeof webkitHeading === 'number' && Number.isFinite(webkitHeading)) return (webkitHeading + 360) % 360
+      // Android/others: tilt-compensated compass from alpha/beta/gamma.
+      if (
+        typeof e.alpha === 'number' && Number.isFinite(e.alpha) &&
+        typeof e.beta === 'number' && Number.isFinite(e.beta) &&
+        typeof e.gamma === 'number' && Number.isFinite(e.gamma)
+      ) {
+        const alphaRad = e.alpha * (Math.PI / 180)
+        const betaRad = e.beta * (Math.PI / 180)
+        const gammaRad = e.gamma * (Math.PI / 180)
+        const cY = Math.cos(betaRad)
+        const cZ = Math.cos(alphaRad)
+        const sX = Math.sin(gammaRad)
+        const sY = Math.sin(betaRad)
+        const sZ = Math.sin(alphaRad)
+        const vx = -cZ * sY - sZ * sX * cY
+        const vy = -sZ * sY + cZ * sX * cY
+        const heading = Math.atan2(vx, vy) * (180 / Math.PI)
+        return (heading + 360) % 360
+      }
+      return null
+    }
     const handler = (e: DeviceOrientationEvent) => {
       const now = Date.now()
-      if (now - lastCompassUpdate < 500) return
-      lastCompassUpdate = now
-      const h = (e as unknown as { webkitCompassHeading?: number }).webkitCompassHeading
-      if (typeof h === 'number' && !Number.isNaN(h)) {
+      const h = normalizeCompassHeading(e)
+      if (typeof h === 'number' && Number.isFinite(h)) {
+        compassHeadingRef.current = h
+        if (now - lastCompassCommitMsRef.current < 50) return
+        lastCompassCommitMsRef.current = now
         setCarHeading(h)
         carHeadingRef.current = h
       }
@@ -970,9 +1091,42 @@ export default function DriverApp() {
     return () => window.removeEventListener('deviceorientation', handler)
   }, [needsCompassPermission])
 
-  // Poll backend ETA endpoint during navigation
+  // Route-based ETA and distance: when we have a route, derive liveEta from route + traveled (never use backend straight-line).
+  useEffect(() => {
+    if (!isNavigating || !navigationData?.destination) {
+      if (!isNavigating) setLiveEta(null)
+      return
+    }
+    const totalMeters = (navigationData.distance as { meters?: number })?.meters
+    const durationSeconds = (navigationData.duration as { seconds?: number })?.seconds
+    if (typeof totalMeters !== 'number' || totalMeters <= 0 || typeof durationSeconds !== 'number' || durationSeconds <= 0) return
+    const totalMiles = totalMeters / 1609.34
+    const traveledMiles = traveledDistanceMeters / 1609.34
+    const remainingMiles = Math.max(0, totalMiles - traveledMiles)
+    const initialDurationMin = durationSeconds / 60
+    const etaMinutes = totalMiles > 0 ? (remainingMiles / totalMiles) * initialDurationMin : 0
+    setLiveEta({ distanceMiles: remainingMiles, etaMinutes: Math.max(0, Math.round(etaMinutes)) })
+  }, [isNavigating, navigationData?.destination, navigationData?.distance, navigationData?.duration, traveledDistanceMeters])
+
+  // Poll backend ETA endpoint during navigation (only used when we don't have route data; route-based nav uses effect above).
   useEffect(() => {
     if (!isNavigating || !navigationData?.destination) { setLiveEta(null); return }
+    const hasRouteData = typeof (navigationData.distance as { meters?: number })?.meters === 'number'
+    if (hasRouteData) return // ETA/distance come from route-based effect only
+    const guard = etaGuardRef.current
+    // Capture a baseline ETA when navigation starts (used to prevent wild jumps).
+    if (guard.baselineEtaMinutes == null) {
+      const baselineSeconds =
+        navigationData?.duration && typeof (navigationData.duration as { seconds?: number }).seconds === 'number'
+          ? Number((navigationData.duration as { seconds: number }).seconds)
+          : null
+      guard.baselineEtaMinutes = baselineSeconds != null && Number.isFinite(baselineSeconds)
+        ? Math.max(1, Math.round(baselineSeconds / 60))
+        : null
+      guard.startedAtMs = Date.now()
+      guard.lastAcceptedEtaMinutes = null
+      guard.lastAcceptedAtMs = 0
+    }
     let cancelled = false
     const poll = async () => {
       try {
@@ -985,19 +1139,57 @@ export default function DriverApp() {
         )
         if (!cancelled && res.success && (res.data as any)?.data) {
           const d2 = (res.data as any).data
-          // Use real route distance when available so miles and minutes stay consistent
-          const routeMiles = (navigationData.distance as { miles?: number })?.miles
+          // Trust backend ETA and remaining distance when provided (prevents big ETA jumps).
           const remainingMiles =
-            typeof routeMiles === 'number'
-              ? Math.max(0, routeMiles - traveledDistanceMeters / 1609.34)
-              : d2.distance_miles
+            typeof d2.distance_miles === 'number' && Number.isFinite(d2.distance_miles)
+              ? Math.max(0, d2.distance_miles)
+              : (() => {
+                  const routeMiles = (navigationData.distance as { miles?: number })?.miles
+                  return typeof routeMiles === 'number'
+                    ? Math.max(0, routeMiles - traveledDistanceMeters / 1609.34)
+                    : 0
+                })()
 
-          // Recompute ETA from remaining distance and current speed so "Distance" and "Time"
-          // always match. Backend returns the speed it used in d2.speed_mph.
-          const speedForEta = typeof d2.speed_mph === 'number' && d2.speed_mph > 0 ? d2.speed_mph : spd
-          const etaMinutes = Math.round((remainingMiles / speedForEta) * 60)
+          const etaMinutes =
+            typeof d2.eta_minutes === 'number' && Number.isFinite(d2.eta_minutes)
+              ? Math.max(0, Math.round(d2.eta_minutes))
+              : Math.round((remainingMiles / spd) * 60)
 
-          setLiveEta({ distanceMiles: remainingMiles, etaMinutes })
+          // --- Guardrails: prevent spurious ETA inflation / oscillation ---
+          let nextEta = etaMinutes
+          const baseline = guard.baselineEtaMinutes
+          if (typeof baseline === 'number' && Number.isFinite(baseline)) {
+            // Allow some growth, but not extreme jumps unless user is far off-route/rerouted.
+            const maxAllowed = Math.max(Math.round(baseline * 1.6), baseline + 15)
+            const minAllowed = Math.max(1, Math.round(baseline * 0.35))
+            if (nextEta > maxAllowed) {
+              console.warn('[DriverApp] ETA guard: rejecting inflated ETA', { baseline, nextEta, maxAllowed })
+              // Clamp instead of accept a huge spike.
+              nextEta = maxAllowed
+            } else if (nextEta < minAllowed) {
+              nextEta = minAllowed
+            }
+          }
+
+          const last = guard.lastAcceptedEtaMinutes
+          const now = Date.now()
+          const sinceLast = now - (guard.lastAcceptedAtMs || 0)
+          if (typeof last === 'number' && Number.isFinite(last)) {
+            // Within first 2 minutes of starting nav, disallow large increases (common GPS/speed noise).
+            const sinceStart = now - (guard.startedAtMs || now)
+            if (sinceStart < 2 * 60 * 1000 && nextEta > last + 5) {
+              nextEta = last + 2
+            }
+            // Smooth updates to avoid jitter.
+            if (sinceLast < 5 * 60 * 1000) {
+              nextEta = Math.max(0, Math.round(last * 0.7 + nextEta * 0.3))
+            }
+          }
+
+          guard.lastAcceptedEtaMinutes = nextEta
+          guard.lastAcceptedAtMs = now
+
+          setLiveEta({ distanceMiles: remainingMiles, etaMinutes: nextEta })
         }
       } catch { /* silent */ }
     }
@@ -1005,6 +1197,8 @@ export default function DriverApp() {
     const id = setInterval(poll, 60000)
     return () => { cancelled = true; clearInterval(id) }
   }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng, navigationData?.distance, traveledDistanceMeters, vehicle?.coordinate, userLocation])
+
+  // ETA guardrails state (kept outside render churn)
 
   // Poll route notifications (reminders, leave-by, faster route) when user has routes with notifications on
   const hasRouteNotificationsOn = routes.some((r: SavedRoute) => r.notifications && (r as { is_active?: boolean; active?: boolean }).is_active !== false && (r as { active?: boolean }).active !== false)
@@ -1043,10 +1237,10 @@ export default function DriverApp() {
         api.get('/api/locations'),
         api.get('/api/routes'),
         api.get('/api/offers'),
-        api.get('/api/badges'),
+        cachedGet('/api/badges', 10 * 60 * 1000),
         api.get('/api/skins'),
         api.get('/api/family/members'),
-        api.get('/api/user/profile'),
+        cachedGet('/api/user/profile', 2 * 60 * 1000),
         api.get('/api/challenges'),
         api.get('/api/user/car'),
         api.get('/api/user/onboarding-status')
@@ -1074,7 +1268,10 @@ export default function DriverApp() {
         setBadges(Array.isArray(arr) ? arr : [])
       }
       if (skinRes.success && skin != null) setSkins(Array.isArray(skin) ? skin : [])
-      if (famRes.success && fam != null) setFamily(Array.isArray(fam) ? fam : [])
+      if (famRes.success && fam != null) {
+        const famMembers = Array.isArray(fam) ? fam : (typeof fam === 'object' && fam && Array.isArray((fam as { members?: unknown[] }).members) ? (fam as { members: FamilyMember[] }).members : [])
+        setFamily(famMembers)
+      }
       if (userRes.success && user != null && typeof user === 'object') {
         setUserData(user as typeof userData)
         setUserPlan((user as { plan?: string }).plan || 'basic')
@@ -1098,10 +1295,11 @@ export default function DriverApp() {
         }
       }
     } catch (e) {
-      console.log('Using mock data')
       toast.error('Could not load data — showing empty state')
     }
   }
+
+  
 
   // Handle car customization
   const handleCarChange = async (car: { category: string; variant: string; color: string }) => {
@@ -1136,7 +1334,7 @@ export default function DriverApp() {
   }
 
   // Handle plan selection
-  const handlePlanSelect = async (plan: 'basic' | 'premium') => {
+  const handlePlanSelect = async (plan: 'basic' | 'premium' | 'family') => {
     try {
       const res = await api.post('/api/user/plan', { plan })
       if (res.success) {
@@ -1150,7 +1348,7 @@ export default function DriverApp() {
         }))
         setShowPlanSelection(false)
         setShowAppTour(true)
-        toast.success(plan === 'premium' ? '🎉 Welcome to Premium!' : 'Plan selected!')
+        toast.success(plan === 'premium' ? '🎉 Welcome to Premium!' : plan === 'family' ? '👨‍👩‍👧‍👦 Family plan activated!' : 'Plan selected!')
       } else {
         toast.error((res.data as { message?: string })?.message ?? 'Could not update plan')
       }
@@ -1171,165 +1369,116 @@ export default function DriverApp() {
     }
   }
 
-  // Road Reports handlers
-  const handleCreateReport = async (report: { type: string; title: string; description: string; lat: number; lng: number }) => {
-    try {
-      const res = await api.post('/api/reports', report)
-      if (res.success) {
-        toast.success((res.data as { message?: string })?.message ?? 'Report created')
-        loadData()
-      }
-      return res
-    } catch (e) {
-      toast.error('Failed to create report')
-      return { success: false }
-    }
-  }
+  // Legacy RoadReports modal removed in favor of the Waze-style incidents system (/api/incidents/*).
 
-  const handleUpvoteReport = async (reportId: number) => {
-    try {
-      const res = await api.post(`/api/reports/${reportId}/upvote`)
-      if (res.success) {
-        toast.success((res.data as { message?: string })?.message ?? 'Upvoted')
-      } else {
-        toast.error((res.data as { message?: string })?.message ?? 'Failed to upvote')
-      }
-      return res
-    } catch (e) {
-      toast.error('Failed to upvote')
-      return { success: false }
+  const handleQuickReport = async (type: string, coords?: { lat: number; lng: number }) => {
+    let lat = coords?.lat ?? userLocation?.lat
+    let lng = coords?.lng ?? userLocation?.lng
+    if (!lat || !lng) {
+      toast.error('Location not available')
+      return
     }
-  }
 
-  // Orion voice report handler
-  const handleOrionReport = async (report: { type: string; direction: string; lat: number; lng: number }) => {
+    // If navigating, snap the report to the nearest point on the active route so the icon appears "on route".
     try {
-      const res = await api.post('/api/reports', {
-        type: report.type,
-        title: `${report.type.charAt(0).toUpperCase() + report.type.slice(1)} ${report.direction}`,
-        description: `Reported via Orion voice command`,
-        lat: report.lat,
-        lng: report.lng,
+      if (isNavigating && Array.isArray(routePolylineForMap) && routePolylineForMap.length > 1) {
+        const R = 6371000
+        let best = Infinity
+        let bestPt = routePolylineForMap[0]
+        for (let i = 0; i < routePolylineForMap.length; i++) {
+          const p = routePolylineForMap[i]
+          const dLat = ((p.lat - lat) * Math.PI) / 180
+          const dLon = ((p.lng - lng) * Math.PI) / 180
+          const a =
+            Math.sin(dLat / 2) ** 2 +
+            Math.cos((lat * Math.PI) / 180) * Math.cos((p.lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2
+          const d = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+          if (d < best) { best = d; bestPt = p }
+        }
+        lat = bestPt.lat
+        lng = bestPt.lng
+      }
+    } catch { /* ignore */ }
+
+    const gemsReward: Record<string, number> = {
+      hazard: 15,
+      police: 25,
+      accident: 50,
+      construction: 10,
+      weather: 20,
+      pothole: 15,
+      closure: 30,
+      crash: 50,
+      camera: 10,
+    }
+
+    try {
+      const res = await api.post('/api/incidents/report', {
+        type,
+        lat,
+        lng,
+        reported_by: user?.id,
+        description: `${type} reported by driver`,
       })
-      if (res.success) {
-        toast.success(`${report.type} reported ${report.direction}! +500 XP`)
-        loadData()
-      } else {
-        toast.error((res.data as { message?: string })?.message ?? 'Could not submit report')
+      if (!res.success) {
+        const msg = (res as any)?.error || 'Failed to submit report'
+        toast.error(String(msg))
+        throw new Error(String(msg))
       }
-    } catch (e) {
-      toast.error('Could not submit report')
+
+      const created = (res.data as any)?.data ?? (res.data as any)?.data?.data ?? (res.data as any)?.data
+      const createdId = typeof created?.id === 'number' ? created.id : Date.now()
+      const newReport: RoadReport = {
+        id: createdId,
+        type,
+        lat,
+        lng,
+        title: type.charAt(0).toUpperCase() + type.slice(1),
+        severity: type === 'accident' || type === 'crash' || type === 'closure' ? 'high' : 'medium',
+      }
+      setRoadReports((prev) => [...(prev || []), newReport])
+
+      setShowReportModal(false)
+      setShowQuickPhotoReport(false)
+
+      const gems = gemsReward[type] || 15
+      toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} reported — +${gems} gems`, { duration: 3000 })
+      setUserData((prev: any) => ({ ...prev, gems: (prev?.gems || 0) + gems }))
+
+      // Sync from backend so it doesn't "disappear" on the next poll.
+      setTimeout(() => { loadRoadReports() }, 500)
+    } catch (err) {
+      console.error('Report failed:', err)
+      toast.error('Failed to submit report')
     }
   }
 
   const handleQuickPhotoReport = async (report: { type: string; photo_url: string; lat: number; lng: number }) => {
     try {
       const isIconOnly = !report.photo_url || report.photo_url.length === 0
-      const res = await api.post('/api/reports', {
-        type: report.type,
-        title: isIconOnly ? `Report: ${report.type}` : `Photo report: ${report.type}`,
-        description: isIconOnly ? `Reported via quick report` : 'Photo report submitted',
-        lat: report.lat,
-        lng: report.lng,
-        photo_url: report.photo_url || undefined,
-      })
-      if (res.success) {
-        toast.success(isIconOnly ? 'Report posted! +500 XP' : 'Photo report posted! +500 XP')
-        loadData()
-        loadRoadReports()
-        setRoadReports((prev) => [...prev, { id: Date.now(), type: report.type, lat: report.lat, lng: report.lng, title: `Report: ${report.type}` }])
-        return res
+      if (isIconOnly) {
+        await handleQuickReport(report.type, { lat: report.lat, lng: report.lng })
+        return { success: true }
       }
-      toast.error((res.data as { message?: string })?.message ?? 'Could not post report')
-      return { success: false, data: res.data }
+      // Photo-based reporting is not supported in the incidents v1 API; fallback to quick report.
+      await handleQuickReport(report.type, { lat: report.lat, lng: report.lng })
+      return { success: true }
     } catch (e) {
-      toast.error('Could not post photo report')
+      toast.error('Could not post report')
       return { success: false }
     }
   }
 
-  // When set, the next tap on the map will place a lightweight incident report at that location.
-  const [pendingIncidentPlacement, setPendingIncidentPlacement] = useState<{ type: string } | null>(null)
+  
 
-  // Redeem offer handler (shared api: res.data = backend body; backend returns { data: { gems_earned, xp_earned } })
-  const handleRedeemOffer = async (offerId: number) => {
-    try {
-      const res = await api.post<{ success?: boolean; message?: string; data?: { gems_earned?: number; xp_earned?: number } }>(`/api/offers/${offerId}/redeem`)
-      const body = res.data
-      if (res.success && body) {
-        const inner = body.data ?? body
-        toast.success((body as { message?: string }).message ?? 'Offer redeemed!')
-        setUserData((prev: any) => ({ 
-          ...prev, 
-          gems: prev.gems + ((inner as { gems_earned?: number }).gems_earned ?? 0),
-          xp: prev.xp + ((inner as { xp_earned?: number }).xp_earned ?? 0)
-        }))
-        api.post('/api/analytics/track', { event: 'offer_redeemed', properties: { offer_id: offerId } }).catch(() => {})
-        loadData()
-      } else {
-        toast.error((body as { message?: string })?.message ?? 'Could not redeem offer')
-      }
-      return res
-    } catch (e) {
-      toast.error('Could not redeem offer')
-      return { success: false }
-    }
-  }
-
-  // Claim challenge reward (shared api: res.data = backend body; backend returns { message, data: { gems_earned } })
-  const handleClaimChallenge = async (challengeId: number) => {
-    try {
-      const res = await api.post<{ success?: boolean; message?: string; data?: { gems_earned?: number } }>(`/api/challenges/${challengeId}/claim`)
-      const body = res.data
-      if (res.success && body) {
-        const inner = body.data ?? body
-        toast.success((body as { message?: string }).message ?? 'Reward claimed!')
-        setChallenges(challenges.map(c => c.id === challengeId ? { ...c, claimed: true } : c))
-        setUserData((prev: any) => ({ ...prev, gems: prev.gems + ((inner as { gems_earned?: number }).gems_earned ?? 0) }))
-      } else {
-        toast.error((body as { message?: string })?.message ?? 'Could not claim reward')
-      }
-    } catch (e) {
-      toast.error('Could not claim reward')
-    }
-  }
-
-  // Share trip score - opens the share modal with trip data
-  const handleShareTrip = async () => {
-    // Create sample trip data (in real app, this would come from completed trip)
-    const tripData = {
-      distance: 12.5,
-      duration: 25,
-      safety_score: userData.safety_score,
-      gems_earned: 5 * userData.gem_multiplier,
-      xp_earned: 1000,
-      origin: 'Current Location',
-      destination: 'Destination',
-      date: new Date().toLocaleDateString(),
-      is_safe_drive: true
-    }
-    setLastTripData(tripData)
-    setShowShareTrip(true)
+  const handleShareTripClick = async () => {
+    handleShareTrip({
+      safetyScore: userData.safety_score,
+      gemMultiplier: Number((userData as { gem_multiplier?: number }).gem_multiplier ?? 1),
+    })
   }
 
   // Open share modal after trip completion
-  const handleTripComplete = (tripResult: any) => {
-    if (tripResult) {
-      setLastTripData({
-        distance: tripResult.distance || 10,
-        duration: tripResult.duration || 20,
-        safety_score: tripResult.safety_score?.new || userData.safety_score,
-        gems_earned: tripResult.gems?.earned || 5,
-        xp_earned: tripResult.xp?.total_earned || 1000,
-        origin: 'Start',
-        destination: 'End',
-        date: new Date().toLocaleDateString(),
-        is_safe_drive: tripResult.is_safe_drive || false
-      })
-      setShowShareTrip(true)
-    }
-  }
-
   // Handle direct offer redemption (opens compact popup)
   const handleDirectRedemption = (offer: any) => {
     setSelectedOfferForRedemption(offer)
@@ -1337,43 +1486,6 @@ export default function DriverApp() {
   }
 
   // Old share trip function for backwards compatibility
-  const handleShareTripLegacy = async () => {
-    try {
-      const res = await api.post('/api/trips/1/share')
-      if (res.success) {
-        toast.success('Share content generated! Copy to clipboard.')
-        // In a real app, this would open native share sheet
-      }
-    } catch (e) {
-      toast.success('🚗 Just completed a trip with 92 safety score! #SnapRoad')
-    }
-  }
-
-  // Swipe handlers for locations
-  const handleTouchStart = (e: React.TouchEvent) => {
-    startX.current = e.touches[0].clientX
-  }
-  
-  const handleTouchMove = (e: React.TouchEvent) => {
-    const diff = e.touches[0].clientX - startX.current
-    setSwipeOffset(diff)
-  }
-  
-  const handleTouchEnd = () => {
-    if (swipeOffset > 50) {
-      // Swipe right - previous category
-      const cats: LocationCategory[] = ['home', 'work', 'favorites']
-      const idx = cats.indexOf(locationCategory)
-      if (idx > 0) setLocationCategory(cats[idx - 1])
-    } else if (swipeOffset < -50) {
-      // Swipe left - next category
-      const cats: LocationCategory[] = ['home', 'work', 'favorites']
-      const idx = cats.indexOf(locationCategory)
-      if (idx < cats.length - 1) setLocationCategory(cats[idx + 1])
-    }
-    setSwipeOffset(0)
-  }
-
   // Widget drag handlers
   const handleWidgetDragStart = (widgetId: string, e: React.MouseEvent | React.TouchEvent) => {
     setDraggingWidget(widgetId)
@@ -1421,47 +1533,6 @@ export default function DriverApp() {
     } catch (_e) { /* silently ignore */ }
   }
 
-  // Toggle widget visibility
-  const toggleWidgetVisibility = async (widgetId: string) => {
-    setWidgets(prev => ({
-      ...prev,
-      [widgetId]: { ...prev[widgetId], visible: !prev[widgetId].visible }
-    }))
-    try {
-      await api.put(`/api/widgets/${widgetId}/toggle`)
-    } catch (_e) { /* silently ignore */ }
-  }
-
-  // Navigation handlers
-  const handleStartNavigation = async (dest?: string) => {
-    const tripId = `trip_${Date.now()}`
-    setActiveTripId(tripId)
-    tripStartTimeRef.current = Date.now()
-    traveledDistanceRef.current = 0
-    setTraveledDistanceMeters(0)
-    setIsNavigating(true)
-    isNavigatingRef.current = true
-    setShowMenu(false)
-    setShowSearch(false)
-    if (mode === 'adaptive') {
-      toast('Driving mode: Adaptive', { icon: '🟢', duration: 2000 })
-    }
-    toast.loading('Calculating route...', { duration: 1500 })
-    try {
-      const res = await api.post('/api/navigation/start', { destination: dest || 'Unknown', origin: 'current_location' })
-      api.post('/api/analytics/track', { event: 'navigation_started', properties: { destination: dest, mode } }).catch(() => {})
-      if (res.success) {
-      setTimeout(() => {
-          toast.success((res.data as { message?: string })?.message ?? `Navigating to ${dest || 'destination'}`)
-      }, 1500)
-      } else {
-        toast.error((res.data as { message?: string })?.message ?? 'Could not start navigation')
-      }
-    } catch (_e) {
-      toast.error('Could not start navigation')
-    }
-  }
-
   const handleLeaveEarlyForRoute = async (routeId: number) => {
     try {
       const res = await api.post<{ success?: boolean; data?: { leave_by: string; eta_minutes: number; destination: string } }>(
@@ -1477,66 +1548,9 @@ export default function DriverApp() {
     }
   }
 
-  const handleRequestEndNavigation = () => {
-    setShowEndConfirm(true)
-  }
-
-  const handleConfirmEndNavigation = async () => {
-    setShowEndConfirm(false)
-    const tripIdToEnd = activeTripId
-    const tripStart = tripStartTimeRef.current
-    const durationMin = tripStart ? Math.round((Date.now() - tripStart) / 60000) : 5
-    const safetyScore = vehicle ? Math.max(60, Math.round(100 - (getDrivingMetrics().style.aggression * 30))) : 85
-    const distMeters = (navigationData?.distance as { meters?: number })?.meters
-    const distMiles = distMeters ? distMeters / 1609.34 : durationMin * 0.5
-    const gemsEarned = Math.round(5 * (userData.gem_multiplier || 1))
-
-    const originName = navigationData?.origin?.name ?? 'Start'
-    const destName = navigationData?.destination?.name ?? 'End'
-    const polyline = navigationData?.polyline && navigationData.polyline.length >= 2 ? navigationData.polyline : []
-
-    try {
-      await api.post('/api/navigation/stop')
-      await api.post('/api/trips/complete-with-safety', {
-        trip_id: tripIdToEnd,
-        distance: distMiles,
-        duration: durationMin,
-        safety_score: safetyScore,
-        safety_metrics: { hard_brakes: 0, speeding_incidents: 0, phone_usage: 0 },
-        origin: originName,
-        destination: destName,
-        route_coordinates: polyline.map(p => ({ lat: p.lat, lng: p.lng })),
-      })
-      await api.post('/api/analytics/track', { event: 'trip_completed', properties: { trip_id: tripIdToEnd, duration: durationMin, mode } })
-    } catch (_e) {
-      toast.error('Could not stop navigation')
-    }
-
-    setShowTripSummary(true)
-    setLastTripData({
-      distance: distMiles,
-      duration: durationMin,
-      safety_score: safetyScore,
-      gems_earned: gemsEarned,
-      xp_earned: 1000,
-      origin: 'Start',
-      destination: navigationData?.destination?.name ?? 'End',
-      date: new Date().toLocaleDateString(),
-      is_safe_drive: safetyScore >= 80,
-    })
-    setIsNavigating(false)
-    isNavigatingRef.current = false
-    setShowTurnByTurn(false)
-    setNavigationData(null)
-    setSelectedDestination(null)
-    setCurrentStepIndex(0)
-    setRoutePolyline(null)
-  }
-
-  const handleDismissTripSummary = () => {
+  const handleDismissTripSummary = async () => {
     setShowTripSummary(false)
-    setLastTripData(null)
-    loadTripHistoryForMap() // refresh map history layer so new trip appears
+    await dismissTripSummary()
     toast.success('Trip completed!')
   }
 
@@ -1613,7 +1627,31 @@ export default function DriverApp() {
     }
 
     try {
-      const routes = await getGoogleDirections({ lat: oLat, lng: oLng }, { lat: dLat, lng: dLng })
+      const rawHeight = Number((userData as { vehicle_height_meters?: number | null }).vehicle_height_meters)
+      const maxHeightMeters = avoidLowClearances && Number.isFinite(rawHeight) && rawHeight > 0 ? rawHeight : undefined
+      const options = await getMapboxRouteOptions({ lat: oLat, lng: oLng }, { lat: dLat, lng: dLng }, { maxHeightMeters })
+      const routes: Array<{
+        polyline: { lat: number; lng: number }[]
+        steps: Array<{ instructions: string; distance: number; maneuver: string; lanes?: string; lat?: number; lng?: number }>
+        distanceMeters: number
+        expectedTravelTimeSeconds: number
+        routeType?: 'best' | 'eco'
+        notifications?: Array<{ type?: string; message?: string; code?: string }>
+      }> = options.map((res) => ({
+        polyline: res.polyline,
+        steps: res.steps.map((s) => ({
+          instructions: s.instruction,
+          distance: s.distanceMeters,
+          maneuver: s.maneuver,
+          lanes: s.lanes,
+          lat: s.lat,
+          lng: s.lng,
+        })),
+        distanceMeters: res.distance,
+        expectedTravelTimeSeconds: res.duration,
+        routeType: res.routeType,
+        notifications: res.notifications,
+      }))
 
       if (!routes?.length || !routes[0].polyline?.length) {
         console.warn('Directions API returned no route')
@@ -1623,7 +1661,7 @@ export default function DriverApp() {
 
       setAvailableRoutes(routes)
       setSelectedRouteIndex(0)
-      setSelectedRouteId('fastest')
+      setSelectedRouteId('best')
 
       const first = routes[0]
       const distMiles = (first.distanceMeters / 1609.34).toFixed(1)
@@ -1632,23 +1670,27 @@ export default function DriverApp() {
       const nav: NavigationState = {
         origin: { lat: oLat, lng: oLng, name: 'Current Location' },
         destination: { lat: dLat, lng: dLng, name: destination?.name ?? 'Destination' },
-        steps: first.steps.map(s => ({
+        steps: first.steps.map((s) => ({
           instruction: s.instructions,
           distance: s.distance > 1609 ? `${(s.distance / 1609.34).toFixed(1)} mi` : `${Math.round(s.distance)} ft`,
           distanceMeters: s.distance,
           maneuver: s.maneuver,
           lanes: (s as { lanes?: string }).lanes,
+          lat: (s as { lat?: number }).lat,
+          lng: (s as { lng?: number }).lng,
         })),
         polyline: first.polyline,
         duration: { text: etaMin < 60 ? `${etaMin} min` : `${Math.floor(etaMin / 60)}h ${etaMin % 60}m`, seconds: first.expectedTravelTimeSeconds },
         distance: { text: `${distMiles} mi`, meters: first.distanceMeters },
         traffic: 'normal',
+        notifications: first.notifications,
       }
 
       setNavigationData(nav)
       setRoutePolyline(first.polyline)
       setShowRoutePreview(true)
       setCurrentStepIndex(0)
+      setMapDroppedPin(null)
       // Allow map to re-zoom to show full route
       if (zoomToUserRef.current) hasZoomedToUser.current = false
     } catch (e) {
@@ -1656,121 +1698,6 @@ export default function DriverApp() {
       toast.error('Could not get route')
     }
   }
-
-  // Map click: either place a quick incident on the road (when requested), or fetch place details as before.
-  const handleMapClick = useCallback(async (lat: number, lng: number) => {
-    if (pendingIncidentPlacement) {
-      const { type } = pendingIncidentPlacement
-      setPendingIncidentPlacement(null)
-      await handleQuickPhotoReport({
-        type,
-        photo_url: '',
-        lat,
-        lng,
-      })
-      return
-    }
-
-    setIsMuted(true)
-    setMapClickedPlace(null)
-    setSelectedPlace(null)
-    setNearbyLoading(true)
-
-    const map = mapInstanceRef.current
-    const g = window.google
-    if (map && g?.maps?.places) {
-      try {
-        const service = new g.maps.places.PlacesService(map)
-        service.nearbySearch(
-          { location: { lat, lng }, radius: 80 },
-          (results, status) => {
-            if (status === g.maps.places.PlacesServiceStatus.OK && results?.[0]) {
-              const placeId = results[0].place_id
-              service.getDetails(
-                {
-                  placeId,
-                  fields: ['name', 'formatted_address', 'geometry', 'rating', 'user_ratings_total', 'opening_hours', 'formatted_phone_number', 'website', 'photos', 'types', 'price_level'],
-                },
-                (place, status2) => {
-                  setNearbyLoading(false)
-                  if (status2 !== g.maps.places.PlacesServiceStatus.OK || !place) {
-                    fetchNearbyFallback(lat, lng)
-                    return
-                  }
-                  const loc = place.geometry?.location
-                  const matchingOffer = offers?.find(
-                    (o: Offer) =>
-                      (o as { business_name?: string }).business_name?.toLowerCase() === place.name?.toLowerCase() ||
-                      (o as { place_id?: string }).place_id === placeId
-                  )
-                  setSelectedPlace({
-                    name: place.name ?? 'Unknown',
-                    lat: typeof loc?.lat === 'function' ? loc.lat() : lat,
-                    lng: typeof loc?.lng === 'function' ? loc.lng() : lng,
-                    address: place.formatted_address,
-                    rating: place.rating,
-                    totalRatings: place.user_ratings_total ?? undefined,
-                    isOpen: place.opening_hours?.isOpen?.(),
-                    phone: place.formatted_phone_number ?? undefined,
-                    website: place.website ?? undefined,
-                    hours: place.opening_hours?.weekday_text,
-                    photos: place.photos?.slice(0, 3).map((p: { getUrl?: (opts: { maxWidth: number }) => string }) => p.getUrl?.({ maxWidth: 600 }) ?? ''),
-                    types: place.types ?? undefined,
-                    priceLevel: place.price_level ?? undefined,
-                    matchingOffer: matchingOffer ?? undefined,
-                  })
-                }
-              )
-            } else {
-              setNearbyLoading(false)
-              fetchNearbyFallback(lat, lng)
-            }
-          }
-        )
-      } catch {
-        setNearbyLoading(false)
-        fetchNearbyFallback(lat, lng)
-      }
-    } else {
-      fetchNearbyFallback(lat, lng)
-    }
-
-    async function fetchNearbyFallback(lat: number, lng: number) {
-      setNearbyLoading(true)
-      try {
-        const res = await api.get<{ success?: boolean; data?: PlaceCardData[] }>(
-          `/api/places/nearby?lat=${lat}&lng=${lng}&radius=80`
-        )
-        const data = (res.data as { data?: PlaceCardData[] })?.data ?? (res.data as PlaceCardData[] | undefined)
-        const list = Array.isArray(data) ? data : []
-        const first = list[0]
-        if (first) setMapClickedPlace(first)
-        else toast.info('No places found at this spot')
-      } catch {
-        toast.error('Could not load places')
-      } finally {
-        setNearbyLoading(false)
-      }
-    }
-  }, [offers])
-
-  // Navigate to a saved location (address book) — set destination and fetch directions in-app
-  const handleNavigateToSavedLocation = useCallback(async (loc: SavedLocation) => {
-    if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) {
-      toast.error('Location has no coordinates — try editing the address')
-      return
-    }
-    const dest = { name: loc.name, lat: loc.lat!, lng: loc.lng!, address: loc.address }
-    setSelectedDestination(dest)
-    setShowSearch(false)
-    toast.loading('Calculating route...', { duration: 1500 })
-    try {
-      await fetchDirections(dest)
-      setTimeout(() => toast.success('Route ready'), 1500)
-    } catch {
-      toast.error('Could not get directions')
-    }
-  }, [])
 
   // Handle destination selection from search (resolve place_id to lat/lng if needed)
   const handleSelectDestination = async (location: SearchResult) => {
@@ -1795,6 +1722,105 @@ export default function DriverApp() {
     await fetchDirections(resolved)
     setTimeout(() => toast.success('Route ready'), 1500)
   }
+  fetchDirectionsRef.current = fetchDirections
+  handleSelectDestinationRef.current = handleSelectDestination
+
+  const stopFollowingFriend = useCallback(() => {
+    stopAllFollowModes()
+  }, [stopAllFollowModes])
+
+  const cancelCrashAlert = () => {
+    if (crashTimeoutRef.current) clearTimeout(crashTimeoutRef.current)
+    crashTimeoutRef.current = null
+    setCrashDetected(false)
+    setCrashCancelActive(false)
+  }
+
+  
+
+  const startFollowingFriend = async (friend: FriendLocation) => {
+    await startLiveNavigation(friend)
+  }
+
+  
+
+  useEffect(() => {
+    return () => {
+      if (followIntervalRef.current) clearInterval(followIntervalRef.current)
+      if (crashTimeoutRef.current) clearTimeout(crashTimeoutRef.current)
+      if (cameraReturnTimerRef.current) clearTimeout(cameraReturnTimerRef.current)
+    }
+  }, [])
+
+  // Map click: drop pin at exact tap, reverse-geocode for label, show place card with Directions.
+  const handleMapClick = useCallback(async (lat: number, lng: number) => {
+    setIsMuted(true)
+    setMapClickedPlace(null)
+    setSelectedPlace(null)
+    setNearbyLoading(true)
+    // Pin drops exactly where user tapped
+    setMapDroppedPin({ lat, lng })
+
+    try {
+      const geo = await reverseGeocode(lat, lng)
+      if (geo) {
+        setMapDroppedPin((prev) => (prev ? { ...prev, label: geo.name, address: geo.address } : prev))
+        setSelectedPlace({
+          name: geo.name,
+          lat,
+          lng,
+          address: geo.address,
+          type: geo.placeType,
+        })
+      } else {
+        // Fallback: backend nearby POI
+        const res = await api.get<{ success?: boolean; data?: PlaceCardData[] }>(
+          `/api/places/nearby?lat=${lat}&lng=${lng}&radius=80`
+        )
+        const data = (res.data as { data?: PlaceCardData[] })?.data ?? (res.data as PlaceCardData[] | undefined)
+        const list = Array.isArray(data) ? data : []
+        const first = list[0]
+        if (first) {
+          const name = first.name ?? 'Dropped pin'
+          const address = first.address
+          setMapDroppedPin((prev) => (prev ? { ...prev, label: name, address } : prev))
+          setSelectedPlace({
+            name,
+            lat: typeof first.lat === 'number' ? first.lat : lat,
+            lng: typeof first.lng === 'number' ? first.lng : lng,
+            address,
+            rating: first.rating ?? undefined,
+          })
+        } else {
+          setMapDroppedPin((prev) => (prev ? { ...prev, label: 'Dropped pin' } : prev))
+          setSelectedPlace({ name: 'Dropped pin', lat, lng, address: undefined })
+        }
+      }
+    } catch {
+      setMapDroppedPin((prev) => (prev ? { ...prev, label: 'Dropped pin' } : prev))
+      setSelectedPlace({ name: 'Dropped pin', lat, lng, address: undefined })
+    } finally {
+      setNearbyLoading(false)
+    }
+  }, [])
+
+  // Navigate to a saved location (address book) — set destination and fetch directions in-app
+  const handleNavigateToSavedLocation = useCallback(async (loc: SavedLocation) => {
+    if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) {
+      toast.error('Location has no coordinates — try editing the address')
+      return
+    }
+    const dest = { name: loc.name, lat: loc.lat!, lng: loc.lng!, address: loc.address }
+    setSelectedDestination(dest)
+    setShowSearch(false)
+    toast.loading('Calculating route...', { duration: 1500 })
+    try {
+      await fetchDirections(dest)
+      setTimeout(() => toast.success('Route ready'), 1500)
+    } catch {
+      toast.error('Could not get directions')
+    }
+  }, [])
 
   // Orion: resolve place name to coordinates and start navigation (address book first, then search)
   const handleOrionStartNavigation = useCallback(async (destinationName: string) => {
@@ -1920,84 +1946,12 @@ export default function DriverApp() {
     })
   }, [userLocation, handleQuickPhotoReport])
 
-  const handleGoFromRoutePreview = () => {
-    traveledDistanceRef.current = 0
-    setTraveledDistanceMeters(0)
-    setIsNavigating(true)
-    isNavigatingRef.current = true
-    hasZoomedToUser.current = false // reset so zoomToUser fires again when nav starts
-    setShowTurnByTurn(true)
-    setShowRoutePreview(false)
-    toast.success(`Navigating to ${navigationData?.destination?.name ?? 'destination'}`)
-    const dest = navigationData?.destination?.name ?? 'destination'
-    setTimeout(() => {
-      const ctx = buildOrionContext()
-      chatWithOrion(
-        [
-          {
-            role: 'user',
-            content: 'navigation just started, give me a brief encouraging start message',
-          },
-        ],
-        { ...ctx, isNavigating: true, currentRoute: ctx.currentRoute ?? { destination: dest, distanceMiles: 0, remainingMinutes: 0 } }
-      )
-        .then((startMsg) => {
-          if (startMsg && typeof startMsg === 'string') orionSpeak(startMsg, 'high', isMuted)
-          else orionSpeak(`Starting navigation to ${dest}. Drive safe!`, 'high', isMuted)
-        })
-        .catch(() => {
-          orionSpeak(`Starting navigation to ${dest}. Drive safe!`, 'high', isMuted)
-        })
-    }, 500)
-    const lat = vehicle?.coordinate?.lat ?? userLocation.lat
-    const lng = vehicle?.coordinate?.lng ?? userLocation.lng
-    setTimeout(() => {
-      if (zoomToUserRef.current) {
-        zoomToUserRef.current(lat, lng, true)
-      }
-    }, 300)
-  }
-
   const handleCancelRoutePreview = () => {
     setShowRoutePreview(false)
     setNavigationData(null)
     setRoutePolyline(null)
     setAvailableRoutes([])
     setSelectedDestination(null)
-  }
-
-  // Map route option id to index: fastest = min time, eco = min distance (saves fuel)
-  const handleRouteSelect = (id: string) => {
-    setSelectedRouteId(id)
-    if (!availableRoutes.length || !navigationData?.origin || !navigationData?.destination) return
-    let index = 0
-    if (id === 'fastest') {
-      index = availableRoutes.reduce((best, r, i) => (r.expectedTravelTimeSeconds < availableRoutes[best].expectedTravelTimeSeconds ? i : best), 0)
-    } else if (id === 'eco') {
-      index = availableRoutes.reduce((best, r, i) => (r.distanceMeters < availableRoutes[best].distanceMeters ? i : best), 0)
-    }
-    setSelectedRouteIndex(index)
-    const r = availableRoutes[index]
-    if (!r?.polyline?.length) return
-    const distMiles = (r.distanceMeters / 1609.34).toFixed(1)
-    const etaMin = Math.round(r.expectedTravelTimeSeconds / 60)
-    const nav: NavigationState = {
-      origin: navigationData.origin,
-      destination: navigationData.destination,
-      steps: r.steps.map(s => ({
-        instruction: s.instructions,
-        distance: s.distance > 1609 ? `${(s.distance / 1609.34).toFixed(1)} mi` : `${Math.round(s.distance)} ft`,
-        distanceMeters: s.distance,
-        maneuver: s.maneuver,
-        lanes: s.lanes,
-      })),
-      polyline: r.polyline,
-      duration: { text: etaMin < 60 ? `${etaMin} min` : `${Math.floor(etaMin / 60)}h ${etaMin % 60}m`, seconds: r.expectedTravelTimeSeconds },
-      distance: { text: `${distMiles} mi`, meters: r.distanceMeters },
-      traffic: 'normal',
-    }
-    setNavigationData(nav)
-    setRoutePolyline(r.polyline)
   }
 
   const handleVoiceCommand = async () => {
@@ -2027,16 +1981,6 @@ export default function DriverApp() {
       }
     } catch (e) {
       toast.error('Could not add location')
-    }
-  }
-
-  const handleDeleteLocation = async (id: number) => {
-    try {
-      await api.delete(`/api/locations/${id}`)
-      setLocations(locations.filter(l => l.id !== id))
-      toast.success('Location removed')
-    } catch (e) {
-      toast.error('Could not remove location')
     }
   }
 
@@ -2113,36 +2057,11 @@ export default function DriverApp() {
     }
   }
 
-  const handleFavoriteOffer = async (id: number) => {
-    const newFavs = favorites.includes(id) ? favorites.filter(f => f !== id) : [...favorites, id]
-    setFavorites(newFavs)
-    try {
-      const res = await api.post(`/api/offers/${id}/favorite`)
-      if (res.success) {
-      toast.success(favorites.includes(id) ? 'Removed from favorites' : 'Added to favorites!')
-      } else {
-        setFavorites(favorites)
-        toast.error((res.data as { message?: string })?.message ?? 'Could not update favorite')
-      }
-    } catch (e) {
-      setFavorites(favorites)
-      toast.error('Could not update favorite')
-    }
-  }
-
   // Report incident
   const handleReportIncident = async (type: string, gems: number) => {
-    try {
-      const res = await api.post('/api/incidents/report', { incident_type: type, location: 'Current location' })
-      if (res.success) {
-        toast.success((res.data as { message?: string })?.message ?? `Reported ${type}! +${gems} gems`)
-      setShowReportModal(false)
-      } else {
-        toast.error((res.data as { message?: string })?.message ?? 'Could not report incident')
-      }
-    } catch (e) {
-      toast.error('Could not report incident')
-    }
+    await handleQuickReport(type)
+    // Keep the parameter for existing UI call sites; gems are awarded inside handleQuickReport.
+    void gems
   }
 
   // Family handlers
@@ -2173,38 +2092,6 @@ export default function DriverApp() {
   }
 
   // Skin handlers
-  const handleEquipSkin = async (skinId: number, skin: any) => {
-    if (skin.owned) {
-      try {
-        const res = await api.post(`/api/skins/${skinId}/equip`)
-        if (res.success) {
-          setEquippedSkin(skinId)
-        toast.success(`${skin.name} equipped!`)
-        } else {
-          toast.error((res.data as { message?: string })?.message ?? 'Could not equip skin')
-        }
-      } catch (e) {
-        toast.error('Could not equip skin')
-      }
-    } else {
-      if (userData.gems >= skin.price) {
-        try {
-          const res = await api.post(`/api/skins/${skinId}/purchase`)
-          if (res.success) {
-          toast.success(`Purchased ${skin.name} for ${skin.price} gems!`)
-            setEquippedSkin(skinId)
-          } else {
-            toast.error((res.data as { message?: string })?.message ?? 'Could not purchase skin')
-          }
-        } catch (e) {
-          toast.error('Could not purchase skin')
-        }
-      } else {
-        toast.error(`Need ${skin.price - userData.gems} more gems`)
-      }
-    }
-  }
-
   // Voice toggle
   const handleToggleVoice = async () => {
     const newMuted = !isMuted
@@ -2312,6 +2199,10 @@ export default function DriverApp() {
           <p className={`text-[10px] font-medium uppercase tracking-wider px-2 py-1.5 ${menuSection}`}>Social</p>
           {[
             { icon: Users, label: 'Friends Hub', badge: userData.friends_count, action: () => { setShowFriendsHub(true); setShowMenu(false) } },
+            { icon: Users, label: 'Family Mode', action: () => { setShowFamilyDashboard(true); setShowMenu(false) } },
+            { icon: Users, label: 'Convoy Mode', action: () => { setShowConvoy(true); setShowMenu(false) } },
+            { icon: Swords, label: 'SnapRace', action: () => { setShowSnapRace(true); setShowMenu(false) } },
+            { icon: Swords, label: 'SnapRace Dashboard', action: () => { setShowSnapRaceDashboard(true); setShowMenu(false) } },
             { icon: BarChart3, label: 'Leaderboard', action: () => { setShowLeaderboard(true); setShowMenu(false) } },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
@@ -2325,7 +2216,7 @@ export default function DriverApp() {
           <p className={`text-[10px] font-medium uppercase tracking-wider px-2 py-1.5 mt-4 ${menuSection}`}>Navigate</p>
           {[
             { icon: MapPin, label: 'Map', action: () => { setActiveTab('map'); setShowMenu(false) } },
-            { icon: Route, label: 'My Routes', badge: `${routes.length}/20`, action: () => { setActiveTab('routes'); setShowMenu(false) } },
+            { icon: Users, label: 'Dashboards', action: () => { setActiveTab('dashboards'); setShowMenu(false) } },
             { icon: Star, label: 'Favorites', badge: locations.filter(l => !['home','work'].includes(l.category)).length, action: () => { setActiveTab('map'); setLocationCategory('favorites'); setShowMenu(false) } },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
@@ -2397,6 +2288,237 @@ export default function DriverApp() {
     return undefined
   }, [navigationData?.origin, navigationData?.destination, navigationData?.polyline, showRoutePreview, isNavigating, availableRoutes, selectedRouteIndex])
 
+  const distanceToRouteMeters = useMemo(() => {
+    if (!routePolylineForMap?.length || routePolylineForMap.length < 2) return Infinity
+    const pos = vehicle?.coordinate ?? userLocation
+    if (!pos) return Infinity
+    const latScale = 111320
+    const lngScale = 111320 * Math.cos((pos.lat * Math.PI) / 180)
+    const px = pos.lng * lngScale
+    const py = pos.lat * latScale
+    let best = Number.POSITIVE_INFINITY
+    for (let i = 0; i < routePolylineForMap.length - 1; i++) {
+      const a = routePolylineForMap[i]
+      const b = routePolylineForMap[i + 1]
+      const ax = a.lng * lngScale
+      const ay = a.lat * latScale
+      const bx = b.lng * lngScale
+      const by = b.lat * latScale
+      const abx = bx - ax
+      const aby = by - ay
+      const ab2 = abx * abx + aby * aby
+      const t = ab2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / ab2)) : 0
+      const qx = ax + abx * t
+      const qy = ay + aby * t
+      const d = Math.hypot(px - qx, py - qy)
+      if (d < best) best = d
+    }
+    return best
+  }, [routePolylineForMap, vehicle?.coordinate, userLocation])
+
+  useEffect(() => {
+    if (!isNavigating || !navigationData?.destination || !routePolylineForMap?.length) {
+      offRouteSinceRef.current = null
+      rerouteInFlightRef.current = false
+      return
+    }
+    const vehicleSpeedMpsNow =
+      typeof vehicle?.velocity === 'number' && Number.isFinite(vehicle.velocity) ? Math.max(0, vehicle.velocity) : 0
+    const speedNow = vehicleSpeedMpsNow > 0 ? vehicleSpeedMpsNow : Math.max(0, currentSpeed * 0.44704)
+    const offRoute = Number.isFinite(distanceToRouteMeters) && distanceToRouteMeters > 55
+    if (!offRoute || speedNow < 1) {
+      offRouteSinceRef.current = null
+      return
+    }
+    const now = Date.now()
+    if (offRouteSinceRef.current == null) {
+      offRouteSinceRef.current = now
+      return
+    }
+    if (now - offRouteSinceRef.current < 4500) return
+    if (rerouteInFlightRef.current) return
+    if (now - lastRerouteAtRef.current < 15000) return
+    const run = async () => {
+      rerouteInFlightRef.current = true
+      lastRerouteAtRef.current = Date.now()
+      try {
+        toast('Rerouting...', { icon: '🧭' })
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          try {
+            window.speechSynthesis.cancel()
+            const u = new SpeechSynthesisUtterance('Rerouting.')
+            u.rate = 1.03
+            window.speechSynthesis.speak(u)
+          } catch { /* ignore */ }
+        }
+        await fetchDirectionsRef.current?.(navigationData.destination)
+      } finally {
+        rerouteInFlightRef.current = false
+        offRouteSinceRef.current = null
+      }
+    }
+    void run()
+  }, [distanceToRouteMeters, isNavigating, navigationData?.destination, routePolylineForMap?.length, vehicle?.velocity, currentSpeed])
+
+  const snaproadScore = useMemo(() => {
+    const safety = Math.min(300, (Number((userData as any).avg_safety_score) || 0) * 3)
+    const streak = Math.min(200, (Number((userData as any).current_streak) || 0) * 5)
+    const miles = Math.min(200, (Number((userData as any).total_miles) || 0) * 0.1)
+    const gems = Math.min(200, (Number((userData as any).total_gems_earned) || 0) * 0.02)
+    const reports = Math.min(100, (Number((userData as any).hazards_reported) || 0) * 5)
+    return Math.round(safety + streak + miles + gems + reports)
+  }, [userData])
+
+  // Real-world OSM signals are fetched independently and shown even when not navigating.
+
+  // Upcoming incident alerts (Waze-style): one clean card, no toast spam.
+  const announcedReportsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!isNavigating || !userLocation || !roadReports?.length) return
+
+    roadReports.forEach((report) => {
+      const key = `${report.id}-${report.type}`
+      if (announcedReportsRef.current.has(key)) return
+
+      // Distance from user to report (miles)
+      const R = 6371000
+      const dLat = ((report.lat - userLocation.lat) * Math.PI) / 180
+      const dLon = ((report.lng - userLocation.lng) * Math.PI) / 180
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((userLocation.lat * Math.PI) / 180) *
+          Math.cos((report.lat * Math.PI) / 180) *
+          Math.sin(dLon / 2) ** 2
+      const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+      const distMiles = dist / 1609.344
+
+      // Only alert if within 1 mile (ignore very near duplicates)
+      if (distMiles > 0.05 && distMiles <= 1.0) {
+        announcedReportsRef.current.add(key)
+
+        setActiveIncidentAlert({
+          id: report.id,
+          type: report.type,
+          title: report.title || report.type,
+          distance: distMiles,
+          lat: report.lat,
+          lng: report.lng,
+        })
+
+        setTimeout(() => {
+          setActiveIncidentAlert((prev) => (prev?.id === report.id ? null : prev))
+        }, 8000)
+      }
+    })
+  }, [userLocation?.lat, userLocation?.lng, roadReports, isNavigating])
+
+  // OSM map features (signals/stops + sidewalks): fetch on viewport change + route bounds while navigating
+  const osmFetchTimerRef = useRef<number | null>(null)
+  const lastOsmKeyRef = useRef<string>('')
+  useEffect(() => {
+    if (!mapReadyForLayers || !mapInstanceRef.current) return
+    const map = mapInstanceRef.current
+
+    const bboxToString = (b: mapboxgl.LngLatBounds) => {
+      const sw = b.getSouthWest()
+      const ne = b.getNorthEast()
+      return `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`
+    }
+
+    const expandBbox = (minLng: number, minLat: number, maxLng: number, maxLat: number, padDeg: number) => {
+      return `${minLng - padDeg},${minLat - padDeg},${maxLng + padDeg},${maxLat + padDeg}`
+    }
+
+    const fetchOnce = async (bboxStr: string, zoom: number) => {
+      const res = await api.get<{ success?: boolean; limited?: boolean; reason?: string; signals?: unknown; sidewalksGeojson?: unknown }>(
+        `/api/osm/features?bbox=${encodeURIComponent(bboxStr)}&zoom=${encodeURIComponent(String(zoom))}&include=signals,stops,sidewalks`
+      )
+      const data = (res as unknown as { data?: any }).data ?? (res as any)
+      const payload = (data?.data ?? data) as any
+      const limited = Boolean(payload?.limited)
+      const reason = typeof payload?.reason === 'string' ? payload.reason : undefined
+      const signals = Array.isArray(payload?.signals) ? payload.signals : []
+      const sidewalksGeojson = payload?.sidewalksGeojson
+      return { limited, reason, signals, sidewalksGeojson }
+    }
+
+    const scheduleFetch = () => {
+      const z = map.getZoom()
+      const viewport = map.getBounds()
+      const viewportBbox = bboxToString(viewport)
+
+      // Optional: also pull route corridor bbox when navigating (in case route extends beyond viewport)
+      let routeBbox: string | null = null
+      if (isNavigating && routePolylineForMap?.length) {
+        let minLat = Infinity, minLng = Infinity, maxLat = -Infinity, maxLng = -Infinity
+        for (const p of routePolylineForMap) {
+          minLat = Math.min(minLat, p.lat)
+          minLng = Math.min(minLng, p.lng)
+          maxLat = Math.max(maxLat, p.lat)
+          maxLng = Math.max(maxLng, p.lng)
+        }
+        if (Number.isFinite(minLat) && Number.isFinite(minLng) && Number.isFinite(maxLat) && Number.isFinite(maxLng)) {
+          routeBbox = expandBbox(minLng, minLat, maxLng, maxLat, 0.003) // ~300m buffer
+        }
+      }
+
+      const key = JSON.stringify({ viewportBbox, routeBbox, z: Math.round(z * 10) / 10 })
+      if (key === lastOsmKeyRef.current) return
+      lastOsmKeyRef.current = key
+
+      if (osmFetchTimerRef.current) window.clearTimeout(osmFetchTimerRef.current)
+      osmFetchTimerRef.current = window.setTimeout(async () => {
+        try {
+          const zoom = map.getZoom()
+          const a = await fetchOnce(viewportBbox, zoom)
+          let mergedSignals = a.signals as Array<{ id: string; type: string; lat: number; lng: number }>
+          let sidewalks = a.sidewalksGeojson as GeoJSON.FeatureCollection<GeoJSON.LineString> | undefined
+          const limitedViewport = a.limited
+
+          let limitedRoute = false
+          if (routeBbox && routeBbox !== viewportBbox) {
+            const b = await fetchOnce(routeBbox, zoom)
+            limitedRoute = b.limited
+            const moreSignals = b.signals as Array<{ id: string; type: string; lat: number; lng: number }>
+            const byId = new globalThis.Map<string, { id: string; type: string; lat: number; lng: number }>()
+            for (const s of mergedSignals) if (s?.id) byId.set(s.id, s)
+            for (const s of moreSignals) if (s?.id && !byId.has(s.id)) byId.set(s.id, s)
+            mergedSignals = Array.from(byId.values())
+          }
+
+          // Avoid flicker: if the backend refuses a huge bbox (limited) and returns empty, keep the last stable set.
+          const limitedAll = limitedViewport || limitedRoute
+          const nextSignals = Array.isArray(mergedSignals) ? mergedSignals : []
+          if (!(limitedAll && nextSignals.length === 0)) setOsmSignals(nextSignals)
+
+          if (sidewalks && sidewalks.type === 'FeatureCollection') {
+            setOsmSidewalksGeojson(sidewalks as GeoJSON.FeatureCollection<GeoJSON.LineString>)
+          } else {
+            // Same idea: don't wipe sidewalks on "limited" responses (zoomed out / bbox too big).
+            if (!limitedViewport) setOsmSidewalksGeojson({ type: 'FeatureCollection', features: [] })
+          }
+        } catch {
+          // fail closed: keep existing overlays
+        }
+      }, 450)
+    }
+
+    scheduleFetch()
+    map.on('moveend', scheduleFetch)
+    map.on('zoomend', scheduleFetch)
+    return () => {
+      try { map.off('moveend', scheduleFetch) } catch { /* ignore */ }
+      try { map.off('zoomend', scheduleFetch) } catch { /* ignore */ }
+      if (osmFetchTimerRef.current) window.clearTimeout(osmFetchTimerRef.current)
+    }
+  }, [mapReadyForLayers, isNavigating, routePolylineForMap])
+  useEffect(() => {
+    if (!isNavigating) {
+      announcedReportsRef.current.clear()
+      setActiveIncidentAlert(null)
+    }
+  }, [isNavigating])
+
   // Sync route state for map; clear when no navigation. Do not set straight-line fallback.
   useEffect(() => {
     if (!navigationData?.origin || !navigationData?.destination) {
@@ -2413,10 +2535,96 @@ export default function DriverApp() {
     return { top: 180, bottom: 70, left: 0, right: 0 }
   }, [isNavigating])
 
-  // Effective map center/zoom/bearing during navigation: follow user at street level (zoom 18 for clarity)
+  // Effective map center/zoom/bearing during navigation.
+  // Prefer GPS heading while moving; fall back to fresh compass heading at low speed/stationary.
   const navCenter = vehicle?.coordinate ?? userLocation
-  const navZoom = 18
-  const navBearing = vehicle?.heading ?? carHeading ?? 0
+  const navZoom = navFollowZoom
+  const vehicleHeading = typeof vehicle?.heading === 'number' && Number.isFinite(vehicle.heading) ? vehicle.heading : null
+  const vehicleSpeedMps = typeof vehicle?.velocity === 'number' && Number.isFinite(vehicle.velocity) ? Math.max(0, vehicle.velocity) : 0
+  const gpsHeadingReliable = vehicleHeading != null && vehicleSpeedMps > 1
+  const compassHeading = typeof compassHeadingRef.current === 'number' && Number.isFinite(compassHeadingRef.current)
+    ? compassHeadingRef.current
+    : null
+  const compassFresh = compassHeading != null && (Date.now() - lastCompassCommitMsRef.current) < 1500
+  const resolvedNavHeading = gpsHeadingReliable
+    ? vehicleHeading
+    : (compassFresh ? compassHeading : (vehicleHeading ?? carHeading ?? 0))
+  const navBearing = resolvedNavHeading ?? 0
+  const liveSpeedMps = vehicleSpeedMps > 0 ? vehicleSpeedMps : Math.max(0, currentSpeed * 0.44704)
+  const isMoving = liveSpeedMps > 1
+
+  useEffect(() => {
+    if (!isNavigating) {
+      setNavCameraMode('following')
+      setNavFollowZoom(17)
+    }
+  }, [isNavigating])
+
+  useEffect(() => {
+    const onFamilyOpenMap = () => setActiveTab('map')
+    window.addEventListener('snaproad:open-map-from-family', onFamilyOpenMap as EventListener)
+    return () => window.removeEventListener('snaproad:open-map-from-family', onFamilyOpenMap as EventListener)
+  }, [])
+
+  useEffect(() => {
+    cameraLockedRef.current = navCameraMode === 'following'
+  }, [navCameraMode])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadFamilyGeo = async () => {
+      try {
+        const res = await api.get<{ group_id?: string }>('/api/family/members')
+        const gid = (res.data as any)?.group_id
+        if (!gid || cancelled) return
+        const placesRes = await api.get<{ places?: Array<{ id?: string; name: string; lat: number; lng: number; radius_meters?: number }> }>(`/api/family/group/${gid}/places`)
+        if (cancelled) return
+        setFamilyGeoContext({ groupId: String(gid), places: ((placesRes.data as any)?.places ?? []).filter(Boolean) })
+      } catch {
+        if (!cancelled) setFamilyGeoContext({ groupId: '', places: [] })
+      }
+    }
+    void loadFamilyGeo()
+    const id = window.setInterval(loadFamilyGeo, 120000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!familyGeoContext.groupId || !familyGeoContext.places.length) return
+    const current = vehicle?.coordinate ?? userLocation
+    if (!current) return
+    const metersBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+      const R = 6371000
+      const dLat = ((b.lat - a.lat) * Math.PI) / 180
+      const dLng = ((b.lng - a.lng) * Math.PI) / 180
+      const la = (a.lat * Math.PI) / 180
+      const lb = (b.lat * Math.PI) / 180
+      const x = Math.sin(dLat / 2) ** 2 + Math.cos(la) * Math.cos(lb) * Math.sin(dLng / 2) ** 2
+      return 2 * R * Math.asin(Math.sqrt(x))
+    }
+    for (const p of familyGeoContext.places) {
+      if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue
+      const key = p.id ?? p.name
+      const inside = metersBetween(current, { lat: p.lat, lng: p.lng }) <= (p.radius_meters ?? 200)
+      const prev = familyPlaceInsideRef.current[key]
+      if (prev === undefined) {
+        familyPlaceInsideRef.current[key] = inside
+        continue
+      }
+      if (inside === prev) continue
+      familyPlaceInsideRef.current[key] = inside
+      void api.post('/api/family/event', {
+        group_id: familyGeoContext.groupId,
+        type: inside ? 'arrival' : 'departure',
+        place_id: p.id,
+        place_name: p.name,
+        message: `${inside ? 'Arrived at' : 'Left'} ${p.name}`,
+      })
+    }
+  }, [familyGeoContext, vehicle?.coordinate, userLocation])
 
   // Navigation UI — directional turn arrow SVG by maneuver
   const getTurnArrow = (instruction: string = '') => {
@@ -2499,6 +2707,49 @@ export default function DriverApp() {
     if (m === 0) return `${hrs}h`
     return `${hrs}h ${m}m`
   }
+  const metersToFeetInches = (meters: number) => {
+    const totalInches = meters * 39.3701
+    const feet = Math.floor(totalInches / 12)
+    const inches = Math.round(totalInches - feet * 12)
+    return `${feet}'${inches}"`
+  }
+  const vehicleHeightMeters = Number((userData as { vehicle_height_meters?: number | null }).vehicle_height_meters)
+  const hasVehicleHeight = Number.isFinite(vehicleHeightMeters) && vehicleHeightMeters > 0
+  const vehicleHeightDisplay = hasVehicleHeight ? `${vehicleHeightMeters.toFixed(1)}m / ${metersToFeetInches(vehicleHeightMeters)}` : ''
+  const hasMaxHeightNotification = Boolean(
+    (navigationData as { notifications?: Array<{ type?: string; message?: string; code?: string }> } | null)?.notifications?.some(
+      (n) => String(n?.type ?? '').toLowerCase() === 'max_height'
+    )
+  )
+  const saveVehicleHeight = async () => {
+    const nextMeters = (() => {
+      if (!isTallVehicle) return null
+      if (vehicleHeightPreset !== 'custom') return Number(vehicleHeightPreset)
+      const parsed = Number(vehicleHeightCustom)
+      return Number.isFinite(parsed) ? parsed : null
+    })()
+    if (nextMeters != null && (nextMeters < 0 || nextMeters > 5.0)) {
+      toast.error('Vehicle height must be between 0 and 5.0 meters')
+      return
+    }
+    setIsSavingVehicleHeight(true)
+    try {
+      const payload = {
+        vehicle_height_meters: nextMeters,
+      }
+      const res = await api.put('/api/user/profile', payload)
+      if (!res.success) {
+        toast.error((res.data as { message?: string } | undefined)?.message ?? 'Could not save vehicle height')
+        return
+      }
+      setUserData((prev) => ({ ...prev, vehicle_height_meters: payload.vehicle_height_meters }))
+      toast.success('Vehicle height saved — routes will avoid low clearances')
+    } catch {
+      toast.error('Could not save vehicle height')
+    } finally {
+      setIsSavingVehicleHeight(false)
+    }
+  }
   const nearbyNavOffers = useMemo(() => {
     if (!isNavigating || !offers.length) return []
     return offers.filter((offer) => {
@@ -2517,13 +2768,38 @@ export default function DriverApp() {
     }).slice(0, 2)
   }, [offers, userLocation.lat, userLocation.lng, isNavigating])
   const arrivalTime = useMemo(() => {
-    const mins = liveEta?.etaMinutes ?? (navigationData?.duration && typeof (navigationData.duration as { seconds?: number }).seconds === 'number'
-      ? Math.round(((navigationData.duration as { seconds: number }).seconds) / 60)
-      : null)
+    // Keep all "Arrive" displays consistent:
+    // - During route preview: use the currently selected route option (best route/eco)
+    // - During navigation: prefer live ETA, otherwise fall back to navigationData.duration
+    const previewSeconds =
+      showRoutePreview && availableRoutes[selectedRouteIndex]?.expectedTravelTimeSeconds
+        ? Number(availableRoutes[selectedRouteIndex]!.expectedTravelTimeSeconds)
+        : null
+
+    const fallbackSeconds =
+      navigationData?.duration && typeof (navigationData.duration as { seconds?: number }).seconds === 'number'
+        ? Number((navigationData.duration as { seconds: number }).seconds)
+        : null
+
+    const mins =
+      typeof liveEta?.etaMinutes === 'number'
+        ? Math.round(liveEta.etaMinutes)
+        : previewSeconds != null
+          ? Math.round(previewSeconds / 60)
+          : fallbackSeconds != null
+            ? Math.round(fallbackSeconds / 60)
+            : null
+
     if (mins == null || !Number.isFinite(mins)) return '--'
     const arrival = new Date(Date.now() + mins * 60 * 1000)
     return arrival.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-  }, [liveEta?.etaMinutes, navigationData?.duration])
+  }, [
+    liveEta?.etaMinutes,
+    navigationData?.duration,
+    showRoutePreview,
+    availableRoutes,
+    selectedRouteIndex,
+  ])
   const distanceToNextStep = useMemo(() => {
     const d = liveEta?.distanceMiles
     if (typeof d === 'number') return d
@@ -2538,108 +2814,48 @@ export default function DriverApp() {
   }, [liveEta?.distanceMiles, vehicle?.coordinate, userLocation, navigationData?.destination])
 
   // Fraction through current step (0–1) for progress bar, from traveled distance
-  const currentStepProgress = useMemo(() => {
-    if (!navigationData?.steps?.length || !navigationData?.distance?.meters) return 0
-    const totalMeters = Number((navigationData.distance as { meters?: number }).meters) || 0
-    if (totalMeters <= 0) return 0
-    const traveledM =
-      typeof liveEta?.distanceMiles === 'number'
-        ? Math.max(0, totalMeters - liveEta.distanceMiles * 1609.34)
-        : 0
-    const progress = Math.min(1, traveledM / totalMeters)
-    if (progress >= 1 - 1e-6) return 1
-    const stepIndex = progress * navigationData.steps.length
-    const currentStep = Math.min(Math.floor(stepIndex), navigationData.steps.length - 1)
-    const fractionInStep = stepIndex - currentStep
-    return Math.max(0, Math.min(1, fractionInStep))
-  }, [navigationData?.steps?.length, navigationData?.distance, liveEta?.distanceMiles])
-
   // Keep distanceToNextStepRef in sync for camera and lane guide
   const distanceToNextStepMeters = distanceToNextStep * 1609.34
   distanceToNextStepRef.current = distanceToNextStepMeters
 
-  // 3D navigation camera: drive from state when navigating
-  useEffect(() => {
-    const cam = navCameraRef.current
-    if (!cam) return
-    const lat = vehicle?.coordinate?.lat ?? userLocation.lat
-    const lng = vehicle?.coordinate?.lng ?? userLocation.lng
-    const heading = vehicle?.heading ?? carHeading ?? 0
-    cam.animate({
-      isNavigating: !!isNavigating,
-      userHeading: heading,
-      userLat: lat,
-      userLng: lng,
-      speedMph: currentSpeed,
-      distanceToNextTurn: distanceToNextStepRef.current ?? distanceToNextStepMeters,
-    })
-  }, [isNavigating, vehicle?.coordinate?.lat, vehicle?.coordinate?.lng, vehicle?.heading, userLocation.lat, userLocation.lng, carHeading, currentSpeed, distanceToNextStepMeters])
+  // NavigationCamera (Google Maps) removed for Mapbox; MapboxMapSnapRoad follows center/bearing via props.
 
-  // Cleanup navigation camera on unmount
-  useEffect(() => {
-    return () => {
-      navCameraRef.current?.destroy()
-      navCameraRef.current = null
-    }
-  }, [])
 
-  // Update lane guide from current step during navigation
-  useEffect(() => {
-    if (!isNavigating || !navigationData?.steps?.length) {
-      setCurrentLanes([])
-      return
-    }
-    const step = navigationData.steps[currentStepIndex]
-    if (step) {
-      setCurrentLanes(parseLanes(step.maneuver ?? '', step.instruction ?? ''))
-    } else {
-      setCurrentLanes([])
-    }
-  }, [isNavigating, navigationData?.steps, currentStepIndex])
-
-  const speak = useCallback(
-    (text: string, priority: 'high' | 'normal' = 'normal') => {
-      orionSpeak(text, priority, isMuted)
-    },
-    [isMuted]
-  )
-
-  useEffect(() => {
-    if (!isNavigating || !navigationData?.destination) {
-      hasAnnouncedArrivalRef.current = false
-      return
-    }
-    const remaining =
-      typeof liveEta?.distanceMiles === 'number'
-        ? liveEta.distanceMiles
-        : 0
-    if (remaining > 0.05) return
-    if (hasAnnouncedArrivalRef.current) return
-    hasAnnouncedArrivalRef.current = true
-    const dest = navigationData.destination?.name ?? 'your destination'
-    chatWithOrion(
-      [
-        {
-          role: 'user',
-          content: `we just arrived at the destination, brief congrats. Destination: ${dest}`,
-        },
-      ],
-      buildOrionContext()
-    )
-      .then((arriveMsg) => orionSpeak(arriveMsg, 'high', isMuted))
-      .catch(() => {})
-  }, [
-    isNavigating,
-    navigationData?.destination?.name,
-    liveEta?.distanceMiles,
-    buildOrionContext,
-    isMuted,
-  ])
 
   // Clean Map Tab - theme from Settings > Appearance (isLight)
   const mapContainerBg = isLight ? 'bg-slate-200' : 'bg-slate-800'
+  const memoizedFriendLocations = useMemo(
+    () => friendLocations,
+    [friendLocations.map((f) => `${f.id}:${Math.round(f.lat * 1000)}:${Math.round(f.lng * 1000)}:${f.sosActive ? 1 : 0}`).join('|')]
+  )
+  const memoizedOffers = useMemo(
+    () => offers,
+    [offers.map((o) => String(o.id)).join(',')]
+  )
+  const memoizedPhotoReports = useMemo(
+    () => photoReports.map((r) => ({
+      id: r.id,
+      lat: r.lat,
+      lng: r.lng,
+      category: r.category || r.ai_category || 'hazard',
+      photo_url: r.photo_url,
+      upvotes: r.upvotes ?? 0,
+    })),
+    [photoReports.map((r) => String(r.id)).join(',')]
+  )
+  
+  const handlePhotoReportTap = useCallback((id: string) => {
+    const report = photoReports.find((r) => r.id === id)
+    if (report && mapInstanceRef.current) {
+      mapInstanceRef.current.flyTo({ center: [report.lng, report.lat], zoom: 16 })
+    }
+  }, [photoReports])
+  const handleMapMoved = useCallback((lat: number, lng: number) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+    setUserLocation({ lat, lng })
+  }, [])
   const renderMap = () => (
-    <div id="map-container" className={`flex-1 min-h-0 relative overflow-hidden ${mapContainerBg}`}
+    <div id="map-container" className={`flex-1 min-h-0 min-h-[50vh] relative overflow-hidden ${mapContainerBg}`}
       onMouseMove={draggingWidget ? handleWidgetDrag : undefined}
       onMouseUp={handleWidgetDragEnd}
       onTouchMove={draggingWidget ? handleWidgetDrag : undefined}
@@ -2652,20 +2868,26 @@ export default function DriverApp() {
           tabIndex={0}
           onClick={async () => {
             try {
+              const deniedThisSession = (() => {
+                try { return sessionStorage.getItem('sr_compass_permission_denied') === '1' } catch { return false }
+              })()
+              if (deniedThisSession) return
               const reqPerm = (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission
               if (typeof reqPerm !== 'function') return
               const perm = await reqPerm.call(DeviceOrientationEvent)
+              // #region agent log
+              void 0// #endregion
               if (perm === 'granted') {
-                window.addEventListener('deviceorientation', (e: DeviceOrientationEvent) => {
-                  const c = (e as unknown as { webkitCompassHeading?: number }).webkitCompassHeading
-                  if (typeof c === 'number' && c >= 0) {
-                    setCarHeading(c)
-                    carHeadingRef.current = c
-                  }
-                }, true)
+                try { sessionStorage.setItem('sr_compass_permission_denied', '0') } catch {}
+                setNeedsCompassPermission(false)
+              } else {
+                try { sessionStorage.setItem('sr_compass_permission_denied', '1') } catch {}
                 setNeedsCompassPermission(false)
               }
-            } catch { /* user denied or error */ }
+            } catch {
+              try { sessionStorage.setItem('sr_compass_permission_denied', '1') } catch {}
+              setNeedsCompassPermission(false)
+            }
           }}
           onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLDivElement).click()}
           style={{
@@ -2736,15 +2958,54 @@ export default function DriverApp() {
         </div>
       )}
 
-      {/* Map: Google Maps (when ready) or loading/error state */}
+      {hasMaxHeightNotification && (showRoutePreview || isNavigating) && (
+        <div
+          className="absolute left-4 right-4 z-[39] rounded-xl px-4 py-2.5 shadow-lg flex items-center gap-2 text-sm"
+          style={{
+            top: 'calc(env(safe-area-inset-top, 44px) + 8px)',
+            background: 'rgba(180, 83, 9, 0.95)',
+            color: 'rgba(255,255,255,0.97)',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <span>⚠</span>
+          <span>Low clearance ahead — route may include restricted roads</span>
+        </div>
+      )}
+
+      {/* Congestion / wait-time banner when route is active and traffic layer on */}
+      {(showRoutePreview || isNavigating) && showTrafficLayer && navigationData?.destination && (
+        <div
+          className="absolute left-4 right-4 z-[38] rounded-xl px-4 py-2.5 shadow-lg flex items-center gap-2 text-sm"
+          style={{
+            top: leaveEarlyForRoute && !isNavigating
+              ? 'calc(env(safe-area-inset-top, 44px) + 90px)'
+              : 'calc(env(safe-area-inset-top, 44px) + 8px)',
+            background: 'rgba(30, 58, 138, 0.92)',
+            color: 'rgba(255,255,255,0.95)',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <span className="opacity-90">⏱</span>
+          <span>This area may have wait times — drive safely.</span>
+        </div>
+      )}
+
+      {/* Map: Mapbox (when ready) or loading/error state */}
       {useMap && (
         <>
-        <GoogleMapSnapRoad
+        <MapboxMapSnapRoad
           center={isNavigating ? navCenter : (camera?.center ?? vehicle?.coordinate ?? userLocation)}
           zoom={isNavigating ? navZoom : (camera?.zoom ?? 15)}
-          bearing={isNavigating ? navBearing : camera?.bearing}
+          bearing={isNavigating ? navBearing : 0}
           userLocation={vehicle?.coordinate ?? userLocation}
-          vehicleHeading={vehicle?.heading ?? carHeading}
+          vehicleHeading={resolvedNavHeading ?? carHeading ?? 0}
+          isMoving={isMoving}
+          speedMps={liveSpeedMps}
+          cameraLockedRef={cameraLockedRef}
+          navFollowEnabled={isNavigating && navCameraMode === 'following'}
+          navFollowZoom={navFollowZoom}
+          onNavCameraUnlock={() => setNavCameraMode('free')}
           routePolyline={routePolylineForMap}
           fitToRoutePolyline={showRoutePreview && routePolylineForMap?.length ? routePolylineForMap : null}
           tripHistoryPolylines={tripHistoryPolylines}
@@ -2753,49 +3014,367 @@ export default function DriverApp() {
           predictedPosition={predicted ? { coordinate: predicted.coordinate, confidence: predicted.confidence } : null}
           routeGlow={experience?.routeGlow}
           mode={mode}
-          onRecenter={() => { recenter(); toast.success('Centered on your location') }}
+          drivingMode={mode}
+          signals={osmSignals}
+          sidewalksGeojson={osmSidewalksGeojson}
+          onRecenter={() => {
+            setNavCameraMode('following')
+            onRecenterNavigation()
+          }}
           onOrionClick={() => { if (userData.is_premium) setShowOrionVoice(true); else toast('Upgrade to Premium for Orion', { icon: '🔒' }) }}
           isLiveGps={isLive}
           onMapError={(msg) => { setMapFailed(true); reportMapError(msg) }}
-          offers={offers}
+          offers={memoizedOffers}
+          gasStations={gasStationsOverlay}
           onOfferClick={(offer) => { setSelectedOfferForRedemption(offer); setShowRedemptionPopup(true) }}
           roadReports={roadReports}
+          onReportClick={(r) => setSelectedRoadStatus({ id: String(r.id), name: r.title ?? r.type ?? 'Road report', status: r.severity === 'high' ? 'heavy' : r.severity === 'medium' ? 'moderate' : (r.type?.toLowerCase().includes('closure') || r.type?.toLowerCase().includes('closed')) ? 'closed' : 'moderate', reason: r.title, estimatedDelay: 0, startLat: r.lat, startLng: r.lng, endLat: r.lat + 0.0001, endLng: r.lng + 0.0001 })}
+          onCameraClick={(cameraId) => {
+            const cam = (ohgoCameras || []).find((c) => c.id === cameraId) ?? null
+            setSelectedCamera(cam)
+          }}
           isNavigating={isNavigating}
           navigationSteps={isNavigating && navigationData?.steps ? navigationData.steps : undefined}
           currentStepIndex={currentStepIndex}
           mapType={activeMapLayer}
           showTraffic={showTrafficLayer}
+          showCameras={showCameraLayer}
+          showIncidents={showIncidentsLayer}
+          showConstruction={showConstructionLayer}
+          showFuelPrices={showFuelPrices}
+          cameraLocations={ohgoCameras?.map((c) => ({ id: c.id, lat: c.latitude, lng: c.longitude, name: c.location })) ?? []}
+          constructionZones={roadReports?.filter((r) => (r.type ?? '').toLowerCase().includes('construction')).map((r) => ({ id: String(r.id), lat: r.lat, lng: r.lng, title: r.title })) ?? []}
+          photoReports={memoizedPhotoReports}
+          onPhotoReportTap={handlePhotoReportTap}
+          friendLocations={memoizedFriendLocations}
+          friendsOnRoute={friendsOnRoute}
+          onFriendMarkerTap={onFriendMarkerTap}
+          onMapMoved={handleMapMoved}
+          droppedPin={mapDroppedPin}
+          routeStartCoordinate={(showRoutePreview || isNavigating) && routePolylineForMap?.length ? (() => {
+            const start = routePolylineForMap[0]
+            const pos = vehicle?.coordinate ?? userLocation
+            const dLat = (start.lat - pos.lat) * 111000
+            const dLng = (start.lng - pos.lng) * 111000 * Math.cos((pos.lat * Math.PI) / 180)
+            if (Math.hypot(dLat, dLng) < 50) return undefined
+            return { lat: start.lat, lng: start.lng }
+          })() : undefined}
           onOpenLayerPicker={() => setShowLayerPicker(true)}
           contentInsets={mapContentInsets}
           colorScheme={theme}
-          onPlaceSelected={(p) => setSelectedPlace(p)}
+          onPlaceSelected={(p) => {
+            setMapDroppedPin({ lat: p.lat, lng: p.lng, label: p.name, address: p.address })
+            setSelectedPlace({ name: p.name, lat: p.lat, lng: p.lng, address: p.address, type: p.type })
+          }}
           onMapClick={handleMapClick}
           onMapReady={(map, zoomToUser, actions) => {
             zoomToUserRef.current = zoomToUser
             mapActionsRef.current = actions ?? null
-            if (map && typeof (map as google.maps.Map).moveCamera === 'function') {
-              const gMap = map as google.maps.Map
-              mapInstanceRef.current = gMap
+            if (map) {
+              mapInstanceRef.current = map as mapboxgl.Map
               setMapReadyForLayers(true)
-              navCameraRef.current = new NavigationCamera(gMap)
             }
           }}
         />
 
-        {/* Friend markers on map */}
-        <FriendMarkers
-          friends={friendLocations}
-          map={mapInstanceRef.current}
-          onFriendClick={(friend) => setSelectedFriend(friend)}
+        <IncidentAlert
+          incident={activeIncidentAlert}
+          onDismiss={() => setActiveIncidentAlert(null)}
+          onThankReporter={async () => {
+            if (activeIncidentAlert) {
+              try { await api.post(`/api/incidents/${activeIncidentAlert.id}/upvote`) } catch { /* ignore */ }
+            }
+            toast.success('👍 Confirmed — thanks!')
+            setActiveIncidentAlert(null)
+          }}
+          onNotThere={async () => {
+            if (activeIncidentAlert) {
+              try { await api.post(`/api/incidents/${activeIncidentAlert.id}/downvote`) } catch { /* ignore */ }
+            }
+            toast('Marked as not there', { icon: '👎' })
+            setActiveIncidentAlert(null)
+          }}
+          isLight={isLight}
         />
 
-      {/* Right side controls - only show when not navigating (browse mode) */}
+        {isNavigating && nearbyFriendAlert && (
+          <div
+            onClick={() => {
+              peekAtFriend(nearbyFriendAlert.friend)
+              setNearbyFriendAlert(null)
+            }}
+            style={{
+              position: 'fixed',
+              top: 'calc(env(safe-area-inset-top, 44px) + 108px)',
+              left: 16,
+              right: 16,
+              zIndex: 940,
+              background: nearbyFriendAlert.friend.isFamilyMember
+                ? 'rgba(255,149,0,0.92)'
+                : 'rgba(0,122,255,0.92)',
+              backdropFilter: 'blur(12px)',
+              borderRadius: 16,
+              padding: '12px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              cursor: 'pointer',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+              animation: 'slideDown 0.3s ease',
+            }}
+          >
+            <div style={{
+              width: 36, height: 36, borderRadius: 18,
+              background: 'rgba(255,255,255,0.25)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 18, fontWeight: 700, color: 'white', flexShrink: 0,
+            }}>
+              {nearbyFriendAlert.friend.name[0]}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>
+                {nearbyFriendAlert.message}
+              </div>
+              <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 1 }}>
+                Tap to see on map
+              </div>
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); setNearbyFriendAlert(null) }}
+              style={{
+                background: 'rgba(255,255,255,0.2)', border: 'none',
+                borderRadius: 10, width: 28, height: 28,
+                color: 'white', fontSize: 14, cursor: 'pointer', flexShrink: 0,
+              }}
+            >
+              x
+            </button>
+          </div>
+        )}
+
+        {isNavigating && navCameraMode === 'free' && (
+          <button
+            onClick={() => {
+              setNavCameraMode('following')
+              returnToNavigation()
+            }}
+            style={{
+              position: 'fixed',
+              top: 'calc(env(safe-area-inset-top, 44px) + 110px)',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 950,
+              padding: '10px 20px',
+              background: 'rgba(0,0,0,0.75)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: 20,
+              color: 'white',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <span style={{ fontSize: 16 }}>↩</span>
+            Recenter
+          </button>
+        )}
+
+        {isNavigating && (
+          <div
+            style={{
+              position: 'fixed',
+              right: 12,
+              top: 'calc(env(safe-area-inset-top, 44px) + 118px)',
+              zIndex: 950,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}
+          >
+            <button
+              onClick={() => {
+                setNavFollowZoom((z) => {
+                  const next = Math.min(20, Number((z + 0.5).toFixed(1)))
+                  if (mapInstanceRef.current) mapInstanceRef.current.easeTo({ zoom: next, duration: 250 })
+                  return next
+                })
+              }}
+              style={{ width: 44, height: 44, borderRadius: 12, border: 'none', background: 'rgba(0,0,0,0.72)', color: 'white', fontSize: 24, cursor: 'pointer' }}
+              aria-label="Zoom in navigation"
+              title="Zoom in"
+            >
+              +
+            </button>
+            <button
+              onClick={() => {
+                setNavFollowZoom((z) => {
+                  const next = Math.max(14, Number((z - 0.5).toFixed(1)))
+                  if (mapInstanceRef.current) mapInstanceRef.current.easeTo({ zoom: next, duration: 250 })
+                  return next
+                })
+              }}
+              style={{ width: 44, height: 44, borderRadius: 12, border: 'none', background: 'rgba(0,0,0,0.72)', color: 'white', fontSize: 24, cursor: 'pointer' }}
+              aria-label="Zoom out navigation"
+              title="Zoom out"
+            >
+              -
+            </button>
+          </div>
+        )}
+
+        {isNavigating && friendLocations.filter((f) => f.isFamilyMember && f.isSharing).length > 0 && (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 'calc(env(safe-area-inset-bottom, 24px) + 80px)',
+              left: 12,
+              zIndex: 900,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+            }}
+          >
+            {friendLocations
+              .filter((f) => f.isFamilyMember && f.isSharing)
+              .slice(0, 3)
+              .map((member) => (
+                <div
+                  key={member.id}
+                  onClick={() => {
+                    setFocusedFamilyMember(member)
+                    if (isNavigating) peekAtFriend(member)
+                    setFamilyPipOpen(true)
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '6px 12px 6px 6px',
+                    background: member.sosActive ? 'rgba(255,59,48,0.9)' : 'rgba(255,149,0,0.9)',
+                    borderRadius: 20,
+                    backdropFilter: 'blur(10px)',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+                  }}
+                >
+                  <div style={{ width: 28, height: 28, borderRadius: 14, background: 'rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: 'white', flexShrink: 0 }}>
+                    {member.name[0]}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: 'white', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' }}>
+                      {member.sosActive ? '🚨 SOS!' : member.name.split(' ')[0]}
+                    </div>
+                    <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 10, whiteSpace: 'nowrap' }}>
+                      {member.isNavigating ? `→ ${member.destinationName ?? 'Driving'}` : member.sosActive ? 'Needs help!' : `${Math.round(member.speedMph ?? 0)} mph`}
+                    </div>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {isNavigating && friendLocations.filter((f) => f.isFamilyMember && f.isSharing).length > 0 && (
+          <button
+            onClick={() => {
+              const familyMembers = friendLocations.filter((f) => f.isFamilyMember && f.isSharing)
+              const allCoords = [
+                [userLocation.lng, userLocation.lat],
+                ...familyMembers.map((f) => [f.lng, f.lat]),
+              ]
+              const lngs = allCoords.map((c) => c[0])
+              const lats = allCoords.map((c) => c[1])
+              const bounds = new mapboxgl.LngLatBounds(
+                [Math.min(...lngs) - 0.01, Math.min(...lats) - 0.01],
+                [Math.max(...lngs) + 0.01, Math.max(...lats) + 0.01]
+              )
+              setNavCameraMode('free')
+              mapInstanceRef.current?.fitBounds(bounds, { padding: 80, duration: 1200 })
+              setTimeout(() => {
+                returnToNavigation()
+              }, 8000)
+            }}
+            style={{
+              position: 'fixed',
+              bottom: 'calc(env(safe-area-inset-bottom, 24px) + 80px)',
+              right: 12,
+              zIndex: 900,
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              background: 'rgba(255,149,0,0.9)',
+              border: '2px solid white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 20,
+              backdropFilter: 'blur(8px)',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+            }}
+          >
+            👨‍👩‍👧‍👦
+          </button>
+        )}
+
+        {familyPipOpen && focusedFamilyMember && (
+          <>
+            <div onClick={() => setFamilyPipOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.5)' }} />
+            <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1101, background: '#1C1C1E', borderRadius: '20px 20px 0 0', paddingBottom: 'env(safe-area-inset-bottom, 24px)' }}>
+              <div style={{ width: 36, height: 4, background: 'rgba(255,255,255,0.18)', borderRadius: 2, margin: '10px auto 0' }} />
+              <div style={{ padding: '14px 20px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                  <div style={{ width: 48, height: 48, borderRadius: 24, background: focusedFamilyMember.sosActive ? '#FF3B30' : 'linear-gradient(135deg,#FF9500,#FF6B00)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: 'white' }}>
+                    {focusedFamilyMember.name[0]}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: 'white' }}>
+                      {focusedFamilyMember.name}
+                      {focusedFamilyMember.sosActive && <span style={{ fontSize: 13, color: '#FF3B30', marginLeft: 8 }}>🚨 SOS Active</span>}
+                    </div>
+                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+                      {focusedFamilyMember.isNavigating ? `Navigating to ${focusedFamilyMember.destinationName ?? 'destination'}` : `${Math.round(focusedFamilyMember.speedMph ?? 0)} mph · Not navigating`}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => {
+                      startFollowingFriend(focusedFamilyMember)
+                      setFamilyPipOpen(false)
+                    }}
+                    style={{ flex: 1, height: 48, borderRadius: 12, background: '#FF9500', border: 'none', color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                  >
+                    Navigate to them
+                  </button>
+                  <button
+                    onClick={() => {
+                      peekAtFriend(focusedFamilyMember)
+                      setFamilyPipOpen(false)
+                    }}
+                    style={{ flex: 1, height: 48, borderRadius: 12, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                  >
+                    Show on map
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Friend markers: temporarily disabled during Mapbox migration (was Google Maps Markers) */}
+        {/* <FriendMarkers friends={friendLocations} map={mapInstanceRef.current} onFriendClick={(friend) => setSelectedFriend(friend)} /> */}
+
+      {/* Right side controls - above report overlay (z-[1100]) so Orion & layer picker stay tappable */}
       {!isNavigating && activeTab === 'map' && (
         <div style={{
           position: 'fixed',
           right: 16,
           bottom: 'calc(80px + env(safe-area-inset-bottom, 20px))',
-          zIndex: 490,
+          zIndex: 1200,
           display: 'flex',
           flexDirection: 'column',
           gap: 8,
@@ -2870,15 +3449,7 @@ export default function DriverApp() {
             </svg>
           </button>
           <button
-            onClick={() => {
-              hasZoomedToUser.current = false
-              mapActionsRef.current?.clearUserInteracting?.()
-              if (zoomToUserRef.current && userLocation) {
-                zoomToUserRef.current(userLocation.lat, userLocation.lng, false)
-              }
-              recenter()
-              toast.success('Centered on your location')
-            }}
+            onClick={onRecenterNavigation}
             style={{
               width: 44,
               height: 44,
@@ -2917,7 +3488,10 @@ export default function DriverApp() {
           gap: 8,
         }}>
           <button
-            onClick={() => setIsOverviewMode((v) => !v)}
+            onClick={() => {
+              setIsOverviewMode((v) => !v)
+              setNavCameraMode('free')
+            }}
             style={{
               width: 44,
               height: 44,
@@ -3021,74 +3595,140 @@ export default function DriverApp() {
           Loading place…
         </div>
       )}
-      {mapClickedPlace && !nearbyLoading && !isNavigating && (
-        <div
-          className="fixed left-4 right-4 z-[600] animate-in slide-in-from-bottom duration-200 relative"
-          style={{ bottom: 'calc(60px + env(safe-area-inset-bottom, 20px) + 8px)' }}
-        >
-          <PlaceCard
-            place={mapClickedPlace}
-            onDirections={(place) => {
-              if (place.lat != null && place.lng != null) {
-                handleSelectDestination({ name: place.name, lat: place.lat, lng: place.lng, address: place.address })
-              }
-              setMapClickedPlace(null)
-            }}
-            onViewDetails={(place) => {
-              if (place.place_id) {
-                setSelectedPlaceId(place.place_id)
-                setSelectedPlace({ name: place.name, lat: place.lat ?? 0, lng: place.lng ?? 0 })
-              }
-              setMapClickedPlace(null)
-            }}
-            onClose={() => setMapClickedPlace(null)}
-          />
-          <button
-            onClick={() => setMapClickedPlace(null)}
-            className="absolute -top-2 right-0 w-8 h-8 bg-slate-700 text-white rounded-full flex items-center justify-center shadow-lg"
-            aria-label="Close"
+      {/* Premium place card — single design for map-click and place selection */}
+      {(() => {
+        const displayPlace = selectedPlace ?? (mapClickedPlace && typeof mapClickedPlace.lat === 'number' && typeof mapClickedPlace.lng === 'number'
+          ? { name: mapClickedPlace.name, lat: mapClickedPlace.lat, lng: mapClickedPlace.lng, address: mapClickedPlace.address, rating: mapClickedPlace.rating ?? undefined, types: undefined as string[] | undefined, type: undefined as string | undefined }
+          : null)
+        if (!displayPlace || selectedPlaceId || nearbyLoading || isNavigating || activeTab !== 'map') return null
+        const clearPlace = () => { setSelectedPlace(null); setMapClickedPlace(null); setMapDroppedPin(null) }
+        return (
+          <div
+            className="fixed bottom-0 left-0 right-0 z-[1300] animate-slide-up"
+            style={{ paddingBottom: 'calc(70px + env(safe-area-inset-bottom, 20px))' }}
           >
-            <X size={16} />
-          </button>
-        </div>
-      )}
+            <div className={`mx-4 rounded-2xl overflow-hidden shadow-2xl border ${
+              isLight
+                ? 'bg-white/95 backdrop-blur-xl border-slate-200/50'
+                : 'bg-slate-900/95 backdrop-blur-xl border-white/10'
+            }`}>
+              <div className="flex items-center justify-between pt-3 pb-1 px-4 gap-2">
+                <div className="flex-1 min-w-0" />
+                <div className={`w-10 h-1 rounded-full flex-shrink-0 ${isLight ? 'bg-slate-300' : 'bg-white/20'}`} />
+                <button
+                  type="button"
+                  onClick={clearPlace}
+                  aria-label="Close"
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-2 flex-shrink-0 text-sm font-medium transition-colors ${
+                    isLight
+                      ? 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                      : 'bg-white/20 text-white hover:bg-white/30'
+                  }`}
+                >
+                  <X size={18} />
+                  Close
+                </button>
+              </div>
+              <div className="px-4 pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <h3 className={`text-lg font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                      {displayPlace.name}
+                    </h3>
+                    {displayPlace.address && (
+                      <p className={`text-sm mt-0.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                        {displayPlace.address}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
+                      {userLocation?.lat != null && userLocation?.lng != null && (
+                        (() => {
+                          const R = 3959
+                          const dLat = ((displayPlace.lat - userLocation.lat) * Math.PI) / 180
+                          const dLng = ((displayPlace.lng - userLocation.lng) * Math.PI) / 180
+                          const a = Math.sin(dLat / 2) ** 2 + Math.cos((userLocation.lat * Math.PI) / 180) * Math.cos((displayPlace.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+                          const distMi = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+                          const distance = distMi < 0.1 ? `${(distMi * 5280).toFixed(0)} ft` : `${distMi.toFixed(1)} mi`
+                          return (
+                            <span className={`text-xs px-2 py-1 rounded-full ${isLight ? 'bg-blue-50 text-blue-600' : 'bg-blue-500/20 text-blue-400'}`}>
+                              📍 {distance}
+                            </span>
+                          )
+                        })()
+                      )}
+                      {displayPlace.rating != null && (
+                        <span className={`text-xs px-2 py-1 rounded-full ${isLight ? 'bg-amber-50 text-amber-600' : 'bg-amber-500/20 text-amber-400'}`}>
+                          ⭐ {displayPlace.rating}
+                        </span>
+                      )}
+                      {(displayPlace.types?.[0] ?? (displayPlace as { type?: string }).type) && (
+                        <span className={`text-xs px-2 py-1 rounded-full ${isLight ? 'bg-slate-100 text-slate-600' : 'bg-white/10 text-slate-300'}`}>
+                          {displayPlace.types?.[0]?.replace(/_/g, ' ') ?? (displayPlace as { type?: string }).type}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="px-4 pb-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSelectDestination({ name: displayPlace.name, lat: displayPlace.lat, lng: displayPlace.lng, address: displayPlace.address })
+                    clearPlace()
+                  }}
+                  className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-500/25"
+                >
+                  <Navigation size={16} />
+                  Directions
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { toast.success('📌 Saved to favorites') }}
+                  className={`px-4 py-3 rounded-xl font-medium flex items-center justify-center gap-1 transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-white/10 hover:bg-white/20 text-white'}`}
+                >
+                  <Star size={16} />
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof navigator.share === 'function') {
+                      navigator.share({ title: displayPlace.name, text: `Check out ${displayPlace.name}`, url: window.location.href }).catch(() => {})
+                    } else {
+                      toast.success('Link copied!')
+                    }
+                  }}
+                  className={`px-4 py-3 rounded-xl font-medium flex items-center justify-center gap-1 transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-white/10 hover:bg-white/20 text-white'}`}
+                >
+                  <Share2 size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
-      {/* Premium place detail card (replaces basic POI bar) */}
-      {selectedPlace && !selectedPlaceId && !mapClickedPlace && !isNavigating && (
-        <PlaceDetailCard
-          place={selectedPlace}
-          onClose={() => setSelectedPlace(null)}
-          onNavigate={(place) => {
-            handleSelectDestination({ name: place.name, lat: place.lat, lng: place.lng, address: place.address })
-            setSelectedPlace(null)
-          }}
-          snaproadOffer={(selectedPlace as { matchingOffer?: unknown }).matchingOffer}
-          onRedeemOffer={(offer) => {
-            if (offer) {
-              setShowOfferDetail(offer as Offer)
-              setSelectedOfferForRedemption(offer as Offer)
-              setShowRedemptionPopup(true)
-            }
-            setSelectedPlace(null)
-          }}
-        />
-      )}
-
-      {/* Driving mode selector: Calm / Adaptive / Sport -- positioned below top bar */}
-      {/* Driving mode selector - hidden during navigation (clean nav mode) */}
+      {/* Driving mode selector: Calm / Adaptive / Sport — pill style with accent colors */}
       {!isNavigating && (
-        <div className="absolute top-[72px] right-3 z-20 flex rounded-full bg-white/95 backdrop-blur border border-gray-200 overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,0.08)]">
+        <div className="absolute top-[72px] right-3 z-20 flex rounded-full overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,0.08)]">
           {(['calm', 'adaptive', 'sport'] as const).map((m) => {
             const active = mode === m
-            const colors: Record<string, string> = { calm: 'bg-blue-500', adaptive: 'bg-emerald-500', sport: 'bg-red-500' }
+            const config = DRIVING_MODES[m]
             return (
               <button
                 key={m}
-                onClick={() => { setMode(m); api.post('/api/analytics/track', { event: 'mode_switch', properties: { mode: m } }).catch(() => {}) }}
-                className={`relative px-3 py-1.5 text-[10px] font-semibold capitalize transition-all duration-300 ${active ? `${colors[m]} text-white` : 'text-slate-500 hover:text-slate-700'}`}
+                onClick={() => {
+                  setMode(m)
+                  toast.success(`${config.icon} ${config.label} mode`)
+                  api.post('/api/analytics/track', { event: 'mode_switch', properties: { mode: m } }).catch(() => {})
+                }}
+                className={`relative px-3 py-2 text-[11px] font-semibold transition-all duration-300 flex flex-col items-center gap-0.5 min-w-[64px] ${active ? 'text-white' : 'text-slate-600 hover:text-slate-800 bg-white/80 hover:bg-white/95 backdrop-blur border border-gray-200/80'}`}
+                style={active ? { backgroundColor: config.accentColor } : undefined}
+                title={config.description}
               >
-                {active && <span className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ background: m === 'sport' ? '#ef4444' : m === 'calm' ? '#3b82f6' : '#10b981' }} />}
-                {m}
+                <span className="leading-tight">{config.label}</span>
+                {active && <span className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ background: config.accentColor }} />}
               </button>
             )
           })}
@@ -3097,8 +3737,8 @@ export default function DriverApp() {
 
       {/* Speed HUD -- replaced by SpeedIndicator component in bottom-left */}
 
-      {/* Route Preview - pre-navigation bottom sheet (Fastest / Eco only) */}
-      {showRoutePreview && navigationData && (
+      {/* Route Preview - pre-navigation bottom sheet (Best route / Eco) */}
+      {activeTab === 'map' && showRoutePreview && navigationData && (
         <div
           style={{
             position: 'fixed',
@@ -3117,31 +3757,72 @@ export default function DriverApp() {
             {navigationData.destination?.name ?? navigationData.destination?.address ?? 'Destination'}
           </div>
           <div style={{ display: 'flex', gap: 8, paddingLeft: 20, paddingRight: 20, marginBottom: 12 }}>
-            {(availableRoutes.length > 0 ? availableRoutes.slice(0, 2) : []).map((route, i) => (
+            {(availableRoutes.length > 0 ? availableRoutes.slice(0, 2) : []).map((route, i) => {
+              const routeType = (route as { routeType?: string }).routeType
+              const id = routeType === 'eco' ? 'eco' : 'best'
+              const label = routeType === 'eco' ? 'Eco' : 'Best route'
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    handleRouteSelect(id, i)
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '8px 0',
+                    borderRadius: 12,
+                    border: 'none',
+                    background: selectedRouteIndex === i ? '#007AFF' : '#f5f5f7',
+                    color: selectedRouteIndex === i ? 'white' : '#333',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {label}
+                  {routeType === 'eco' && <span style={{ fontSize: 10, display: 'block', opacity: 0.8 }}>saves fuel</span>}
+                  {routeType !== 'eco' && <span style={{ fontSize: 10, display: 'block', opacity: 0.8 }}>live traffic aware</span>}
+                </button>
+              )
+            })}
+          </div>
+          {hasVehicleHeight && (
+            <div style={{ margin: '0 20px 12px', padding: '10px 12px', borderRadius: 12, background: '#f5f8ff', border: '1px solid #dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Truck size={16} color="#1d4ed8" />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1e3a8a' }}>Avoid low clearances</div>
+                  <div style={{ fontSize: 11, color: '#334155' }}>({vehicleHeightDisplay})</div>
+                </div>
+              </div>
               <button
-                key={i}
                 type="button"
                 onClick={() => {
-                  setSelectedRouteIndex(i)
-                  handleRouteSelect(i === 0 ? 'fastest' : 'eco')
+                  const next = !avoidLowClearances
+                  setAvoidLowClearances(next)
+                  if (navigationData?.destination) {
+                    fetchDirections({
+                      name: navigationData.destination.name ?? 'Destination',
+                      lat: navigationData.destination.lat,
+                      lng: navigationData.destination.lng,
+                    }).catch(() => {})
+                  }
                 }}
                 style={{
-                  flex: 1,
-                  padding: '8px 0',
-                  borderRadius: 12,
                   border: 'none',
-                  background: selectedRouteIndex === i ? '#007AFF' : '#f5f5f7',
-                  color: selectedRouteIndex === i ? 'white' : '#333',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
+                  borderRadius: 999,
+                  padding: '4px 10px',
+                  background: avoidLowClearances ? '#2563eb' : '#cbd5e1',
+                  color: 'white',
+                  fontSize: 11,
+                  fontWeight: 700,
                 }}
               >
-                {i === 0 ? 'Fastest' : 'Eco'}
-                {i === 1 && <span style={{ fontSize: 10, display: 'block', opacity: 0.8 }}>saves fuel</span>}
+                {avoidLowClearances ? 'ON' : 'OFF'}
               </button>
-            ))}
-          </div>
+            </div>
+          )}
           {availableRoutes[selectedRouteIndex] && (
             <div style={{ display: 'flex', gap: 0, paddingLeft: 20, paddingRight: 20, marginBottom: 16 }}>
               <div style={{ flex: 1 }}>
@@ -3198,8 +3879,8 @@ export default function DriverApp() {
         </div>
       )}
 
-      {/* Nearby Offers - centered pill; hidden when place card open so it never floats on top */}
-      {activeTab === 'map' && !isNavigating && !showRoutePreview && !showSearch && !selectedPlace && !mapClickedPlace && (
+      {/* Nearby Offers - centered pill; hidden when place card or plan selection is open */}
+      {!showPlanSelection && activeTab === 'map' && !isNavigating && !showRoutePreview && !showSearch && !selectedPlace && !mapClickedPlace && (
         <div style={{
           position: 'fixed',
           bottom: 'calc(68px + env(safe-area-inset-bottom, 20px))',
@@ -3540,7 +4221,7 @@ export default function DriverApp() {
       {isNavigating && (
         <div
           className="bg-white/98 backdrop-blur-sm border-t border-slate-200/80 shadow-[0_-2px_16px_rgba(0,0,0,0.06)] flex flex-col gap-1.5 px-3 pt-2 pb-[env(safe-area-inset-bottom,18px)]"
-          style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1000 }}
+          style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1200 }}
         >
           {/* Voice controls above End — compact strip; Orion voice-only during nav (no full chat) */}
           <div className="flex items-center justify-end gap-1.5">
@@ -3586,7 +4267,10 @@ export default function DriverApp() {
               End
             </button>
             <button
-              onClick={() => setIsOverviewMode(v => !v)}
+              onClick={() => {
+                setIsOverviewMode(v => !v)
+                setNavCameraMode('free')
+              }}
               aria-label={isOverviewMode ? 'Follow position' : 'Overview'}
               className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0 active:bg-slate-200"
             >
@@ -3698,8 +4382,8 @@ export default function DriverApp() {
         </div>
       )}
 
-      {/* Top Bar - theme-aware (Settings > Appearance) */}
-      {!isNavigating && !showSearch && activeTab === 'map' && (
+      {/* Top Bar - theme-aware (Settings > Appearance); hidden when plan selection is open */}
+      {!showPlanSelection && !isNavigating && !showSearch && activeTab === 'map' && (
       <div style={{
         position: 'fixed',
         top: 'env(safe-area-inset-top, 0px)',
@@ -3883,12 +4567,18 @@ export default function DriverApp() {
               <div className="relative w-14 h-14 mx-auto mb-1">
                 <svg className="w-full h-full -rotate-90">
                   <circle cx="28" cy="28" r="24" stroke="#1e293b" strokeWidth="4" fill="none" />
-                  <circle cx="28" cy="28" r="24" 
-                    stroke={userData.safety_score >= 90 ? '#22c55e' : userData.safety_score >= 70 ? '#3b82f6' : '#ef4444'}
-                    strokeWidth="4" fill="none" strokeDasharray={`${(userData.safety_score / 100) * 151} 151`} strokeLinecap="round" />
+                  <circle cx="28" cy="28" r="24"
+                    stroke={
+                      Number((userData as { safety_score?: number }).safety_score ?? 0) >= 90
+                        ? '#22c55e'
+                        : Number((userData as { safety_score?: number }).safety_score ?? 0) >= 70
+                          ? '#3b82f6'
+                          : '#ef4444'
+                    }
+                    strokeWidth="4" fill="none" strokeDasharray={`${(Number((userData as { safety_score?: number }).safety_score ?? 0) / 100) * 151} 151`} strokeLinecap="round" />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-lg font-bold text-white">{userData.safety_score}</span>
+                  <span className="text-lg font-bold text-white">{Number((userData as { safety_score?: number }).safety_score ?? 0)}</span>
                 </div>
               </div>
               <button onClick={() => { setActiveTab('profile'); setProfileTab('score') }} data-testid="score-details-btn"
@@ -3935,31 +4625,15 @@ export default function DriverApp() {
         </div>
       )}
 
-      {/* Road Status Markers -- wired to live road reports */}
-      {roadReports.length > 0 && (
-        <RoadStatusMarkers
-          roads={roadReports.map((r: any) => ({
-            id: String(r.id ?? Math.random()),
-            name: r.title ?? r.road ?? r.name ?? 'Unknown',
-            status: r.severity === 'high' ? 'heavy' : r.severity === 'medium' ? 'moderate' : r.type === 'closure' ? 'closed' : 'clear',
-            reason: r.description ?? r.reason,
-            estimatedDelay: r.delay ?? r.estimatedDelay ?? 0,
-            startLat: r.lat ?? r.startLat ?? 0,
-            startLng: r.lng ?? r.startLng ?? 0,
-            endLat: r.endLat ?? (r.lat ?? 0) + 0.002,
-            endLng: r.endLng ?? (r.lng ?? 0) + 0.002,
-          }))}
-        onSelectRoad={setSelectedRoadStatus} 
-        />
-      )}
+      {/* Road reports render as Mapbox layers (sr-reports) in MapboxMapSnapRoad; no HTML markers. */}
 
-      {/* Road Status Overlay (when road selected) */}
-      <RoadStatusOverlay 
+      {/* Road Status Overlay (when user taps a report on the map) — above map */}
+      <RoadStatusOverlay
         selectedRoad={selectedRoadStatus}
         onClose={() => setSelectedRoadStatus(null)}
       />
 
-      {/* Note: Offer gems and user marker are rendered in GoogleMapSnapRoad component */}
+      {/* Note: Offer gems and user marker are rendered in MapboxMapSnapRoad component */}
 
       <MapLayerPicker
         isOpen={showLayerPicker}
@@ -3973,9 +4647,9 @@ export default function DriverApp() {
         onToggleTraffic={() => setShowTrafficLayer((v) => !v)}
         showCameras={showCameraLayer}
         onToggleCameras={() => {
-          if (!userData.is_premium) {
+          if (!hasCameraAccess) {
             setShowPlanSelection(true)
-            toast('Upgrade to Premium for traffic cameras')
+            toast('Upgrade to Premium or Family for traffic cameras', { icon: '🔒' })
             return
           }
           setShowCameraLayer((v) => !v)
@@ -3984,21 +4658,47 @@ export default function DriverApp() {
         onToggleIncidents={() => setShowIncidentsLayer((v) => !v)}
         showConstruction={showConstructionLayer}
         onToggleConstruction={() => setShowConstructionLayer((v) => !v)}
+        showFuelPrices={showFuelPrices}
+        onToggleFuelPrices={() => setShowFuelPrices((v) => !v)}
       />
 
       {/* OHGO camera popup - live feed when a camera marker is tapped */}
       {selectedCamera && (
-        <OHGOCameraPopup
-          camera={selectedCamera}
-          onClose={() => setSelectedCamera(null)}
-        />
+        <Suspense fallback={null}>
+          <OHGOCameraPopup
+            camera={selectedCamera}
+            onClose={() => setSelectedCamera(null)}
+          />
+        </Suspense>
       )}
 
       {/* Camera report FAB - bottom left above speed indicator (hidden during nav) */}
       {!isNavigating && (
-        <button onClick={() => setShowQuickPhotoReport(true)} data-testid="report-btn"
+        <button onClick={() => setShowPhotoReport(true)} data-testid="report-btn"
           className="absolute left-3 bottom-44 z-20 w-11 h-11 bg-white/95 backdrop-blur rounded-full flex items-center justify-center shadow-[0_1px_4px_rgba(0,0,0,0.08)] border border-gray-200 active:scale-95 transition-transform">
           <Camera className="text-slate-600" size={18} />
+        </button>
+      )}
+
+      {!isNavigating && (
+        <button
+          onClick={() => setShowPhotoFeed(true)}
+          style={{
+            position: 'absolute',
+            left: 12,
+            bottom: 188,
+            zIndex: 20,
+            padding: '8px 14px',
+            borderRadius: 20,
+            background: 'rgba(255,59,48,0.15)',
+            border: '1px solid rgba(255,59,48,0.3)',
+            color: 'white',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          📸 {photoReports.length} Reports
         </button>
       )}
 
@@ -4016,6 +4716,70 @@ export default function DriverApp() {
               return 45
             })() : undefined}
           />
+        </div>
+      )}
+
+      {crashDetected && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(255,59,48,0.95)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 32,
+          }}
+        >
+          <div style={{ fontSize: 72, marginBottom: 16 }}>🚨</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: 'white', textAlign: 'center', marginBottom: 8 }}>
+            Are you okay?
+          </div>
+          <div style={{ fontSize: 16, color: 'rgba(255,255,255,0.8)', textAlign: 'center', marginBottom: 32, lineHeight: 1.5 }}>
+            {crashCancelActive
+              ? 'Crash detected. Your family will be alerted in 10 seconds unless you cancel.'
+              : 'Alert sent to your family with your location.'}
+          </div>
+          {crashCancelActive ? (
+            <button
+              onClick={cancelCrashAlert}
+              style={{
+                width: '100%',
+                maxWidth: 320,
+                height: 64,
+                background: 'white',
+                border: 'none',
+                borderRadius: 20,
+                color: '#FF3B30',
+                fontSize: 20,
+                fontWeight: 800,
+                cursor: 'pointer',
+                marginBottom: 16,
+              }}
+            >
+              I&apos;m okay — Cancel Alert
+            </button>
+          ) : (
+            <button
+              onClick={() => setCrashDetected(false)}
+              style={{
+                width: '100%',
+                maxWidth: 320,
+                height: 56,
+                background: 'rgba(255,255,255,0.2)',
+                border: '2px solid white',
+                borderRadius: 16,
+                color: 'white',
+                fontSize: 16,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Close
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -4191,7 +4955,7 @@ export default function DriverApp() {
                   </div>
                   <div className="w-full bg-slate-100 rounded-full h-2">
                     <div className={`h-2 rounded-full transition-all ${challenge.completed ? 'bg-emerald-500' : 'bg-blue-500'}`}
-                      style={{ width: `${Math.min((challenge.progress / challenge.target) * 100, 100)}%` }} />
+                      style={{ width: `${Math.min((Number((challenge as { progress?: number }).progress ?? 0) / Math.max(Number((challenge as { target?: number }).target ?? 1), 1)) * 100, 100)}%` }} />
                   </div>
                 </div>
 
@@ -4206,7 +4970,7 @@ export default function DriverApp() {
                   </div>
                 ) : (
                   <div className="text-center text-slate-400 text-sm py-2">
-                    {Math.round((challenge.progress / challenge.target) * 100)}% complete
+                    {Math.round((Number((challenge as { progress?: number }).progress ?? 0) / Math.max(Number((challenge as { target?: number }).target ?? 1), 1)) * 100)}% complete
                   </div>
                 )}
               </div>
@@ -4344,7 +5108,7 @@ export default function DriverApp() {
   const routesSubtextCls = isLight ? 'text-slate-500' : 'text-slate-400'
   const routesEmptyIconCls = isLight ? 'text-slate-300' : 'text-slate-500'
 
-  const renderRoutes = () => (
+  const _renderRoutes = () => (
     <div style={{
       position: 'fixed',
       top: 0,
@@ -4470,6 +5234,7 @@ export default function DriverApp() {
       </div>
     </div>
   )
+  void _renderRoutes
 
   // Profile Tab - theme from Settings > Appearance (isLight)
   const profileBg = isLight ? '#f5f5f7' : '#0a0a0f'
@@ -4483,7 +5248,6 @@ export default function DriverApp() {
   const profileCardHover = isLight ? 'hover:bg-slate-50 hover:border-slate-300' : 'hover:bg-slate-800 hover:border-white/20'
   const profileText = isLight ? 'text-slate-900' : 'text-white'
   const profileTextMuted = isLight ? 'text-slate-500' : 'text-slate-400'
-  const profileIconBg = isLight ? 'bg-slate-100' : 'bg-slate-700/50'
 
   const renderProfile = () => (
     <div style={{
@@ -4551,6 +5315,63 @@ export default function DriverApp() {
             </div>
           ))}
         </div>
+
+        <div
+          onClick={() => setShowScoreCard(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            background: 'linear-gradient(135deg,rgba(0,122,255,0.15),rgba(124,58,237,0.15))',
+            borderRadius: 16,
+            padding: '14px 16px',
+            marginTop: 12,
+            border: '1px solid rgba(0,122,255,0.2)',
+            cursor: 'pointer',
+          }}
+        >
+          <div style={{ textAlign: 'center', flex: 1 }}>
+            <div style={{ fontSize: 36, fontWeight: 900, color: '#007AFF' }}>{snaproadScore}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>SnapRoad Score</div>
+          </div>
+          <div style={{ width: 1, height: 48, background: 'rgba(255,255,255,0.1)' }} />
+          <div style={{ flex: 1, paddingLeft: 12 }}>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>
+              Ohio rank: #{(userData as any).ohio_rank ?? '--'}
+            </div>
+            <div style={{ height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${snaproadScore / 10}%`, background: '#007AFF', borderRadius: 2 }} />
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 3 }}>
+              {Math.max(0, 1000 - snaproadScore)} points to perfect score
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setShowWeeklyInsights(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            width: '100%',
+            padding: '14px 16px',
+            background: 'rgba(124,58,237,0.1)',
+            border: '1px solid rgba(124,58,237,0.2)',
+            borderRadius: 14,
+            cursor: 'pointer',
+            marginTop: 12,
+          }}
+        >
+          <span style={{ fontSize: 24 }}>📊</span>
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ color: 'white', fontWeight: 700, fontSize: 15 }}>Weekly Recap</div>
+            <div style={{ color: 'rgba(124,58,237,0.8)', fontSize: 12 }}>
+              AI-powered driving insights by Orion
+            </div>
+          </div>
+          <div style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.3)', fontSize: 18 }}>›</div>
+        </button>
       </div>
 
       {/* Tabs - theme from Appearance */}
@@ -4730,8 +5551,8 @@ export default function DriverApp() {
           {/* Dashboard list - theme-aware */}
           {[
             { icon: Trophy, label: 'Achievements', value: `${(Array.isArray(badges) ? badges : []).filter((b: Record<string, unknown>) => b.earned).length}/160 badges`, action: () => setShowBadgesGrid(true), color: isLight ? 'bg-amber-100 border-amber-200' : 'bg-amber-500/20 border-amber-500/30', iconColor: isLight ? 'text-amber-600' : 'text-amber-400' },
-            { icon: AlertTriangle, label: 'Road Reports', value: 'Report hazards', action: () => setShowRoadReports(true), color: isLight ? 'bg-orange-100 border-orange-200' : 'bg-orange-500/20 border-orange-500/30', iconColor: isLight ? 'text-orange-600' : 'text-orange-400' },
-            { icon: Route, label: 'My Routes', value: `${routes.length} saved`, action: () => setActiveTab('routes'), color: isLight ? 'bg-blue-100 border-blue-200' : 'bg-blue-500/20 border-blue-500/30', iconColor: isLight ? 'text-blue-600' : 'text-blue-400' },
+            { icon: AlertTriangle, label: 'Incidents', value: 'Report & verify', action: () => setShowQuickPhotoReport(true), color: isLight ? 'bg-orange-100 border-orange-200' : 'bg-orange-500/20 border-orange-500/30', iconColor: isLight ? 'text-orange-600' : 'text-orange-400' },
+            { icon: Users, label: 'Dashboards', value: 'Friends · Family', action: () => setActiveTab('dashboards'), color: isLight ? 'bg-emerald-100 border-emerald-200' : 'bg-emerald-500/20 border-emerald-500/30', iconColor: isLight ? 'text-emerald-600' : 'text-emerald-400' },
             { icon: History, label: 'Trip History', value: `${userData.total_trips} trips`, action: () => setShowTripHistory(true), color: isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-500/20 border-slate-500/30', iconColor: isLight ? 'text-slate-600' : 'text-slate-300' },
             { icon: Gem, label: 'Gem History', value: 'View transactions', action: () => setShowGemHistory(true), color: isLight ? 'bg-cyan-100 border-cyan-200' : 'bg-cyan-500/20 border-cyan-500/30', iconColor: isLight ? 'text-cyan-600' : 'text-cyan-400' },
             { icon: Users, label: 'Friends', value: `${userData.friends_count || 0} friends`, action: () => setShowFriendsHub(true), color: isLight ? 'bg-emerald-100 border-emerald-200' : 'bg-emerald-500/20 border-emerald-500/30', iconColor: isLight ? 'text-emerald-600' : 'text-emerald-400' },
@@ -4751,7 +5572,7 @@ export default function DriverApp() {
           
           {/* Share Trip Score - theme-aware CTA */}
           <button 
-            onClick={handleShareTrip} 
+            onClick={handleShareTripClick}
             data-testid="share-trip-score-btn"
             className={`w-full rounded-xl p-4 flex items-center gap-3 shadow-lg border transition-all mt-2 ${isLight ? 'bg-gradient-to-r from-blue-500 to-indigo-500 border-blue-200 hover:from-blue-600 hover:to-indigo-600' : 'bg-gradient-to-r from-blue-600 to-indigo-600 border-blue-500/30 hover:shadow-blue-500/20'}`}
           >
@@ -4887,6 +5708,90 @@ export default function DriverApp() {
             </div>
           </div>
           
+          <div className={`rounded-xl p-4 border ${profileCardBg} ${profileCardBorder}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className={`font-semibold text-sm ${profileText}`}>Vehicle clearance</p>
+                <p className={`text-xs mt-1 ${profileTextMuted}`}>Use height-aware routes for trucks and tall vehicles</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTallVehicle((v) => !v)}
+                className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${isTallVehicle ? 'bg-blue-500 text-white border-blue-500' : `${profileCardBg} ${profileCardBorder} ${profileTextMuted}`}`}
+              >
+                {isTallVehicle ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            <label className="mt-3 flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isTallVehicle}
+                onChange={(e) => setIsTallVehicle(e.target.checked)}
+              />
+              <span className={`text-sm ${profileText}`}>I drive a tall vehicle (box truck, trailer, RV)</span>
+            </label>
+
+            {isTallVehicle && (
+              <div className="mt-3 space-y-2">
+                <select
+                  value={vehicleHeightPreset}
+                  onChange={(e) => setVehicleHeightPreset(e.target.value as '2.7' | '3.0' | '3.5' | '4.0' | '4.1' | 'custom')}
+                  className={`w-full rounded-lg px-3 py-2 text-sm border ${isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-900 border-slate-700 text-slate-100'}`}
+                >
+                  <option value="2.7">Cargo van (2.7m / 8'10")</option>
+                  <option value="3.0">Sprinter / high-roof van (3.0m / 9'10")</option>
+                  <option value="3.5">Box truck 16ft (3.5m / 11'6")</option>
+                  <option value="4.0">Box truck 26ft (4.0m / 13'1")</option>
+                  <option value="4.1">Semi trailer (4.1m / 13'6")</option>
+                  <option value="custom">Custom...</option>
+                </select>
+                {vehicleHeightPreset === 'custom' && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max="5"
+                      step="0.1"
+                      value={vehicleHeightCustom}
+                      onChange={(e) => setVehicleHeightCustom(e.target.value)}
+                      className={`flex-1 rounded-lg px-3 py-2 text-sm border ${isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-900 border-slate-700 text-slate-100'}`}
+                      placeholder="Height in meters"
+                    />
+                    <span className={`text-xs ${profileTextMuted}`}>{Number(vehicleHeightCustom) > 0 ? metersToFeetInches(Number(vehicleHeightCustom)) : '--'}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-3 flex items-center justify-between">
+              <p className={`text-xs ${profileTextMuted}`}>
+                {isTallVehicle
+                  ? `Saved height: ${vehicleHeightPreset === 'custom' ? `${Number(vehicleHeightCustom || 0).toFixed(1)}m / ${metersToFeetInches(Number(vehicleHeightCustom || 0))}` : `${vehicleHeightPreset}m / ${metersToFeetInches(Number(vehicleHeightPreset))}`}`
+                  : 'No vehicle height set'}
+              </p>
+              <button
+                type="button"
+                onClick={saveVehicleHeight}
+                disabled={isSavingVehicleHeight}
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+              >
+                {isSavingVehicleHeight ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowSubmitConcern(true)}
+            className={`w-full rounded-xl p-4 flex items-center gap-3 border transition-colors text-left ${profileCardBg} ${profileCardBorder} ${profileCardHover}`}
+          >
+            <span className="text-xl" aria-hidden>🚨</span>
+            <div className="flex-1">
+              <p className={`text-sm font-medium ${profileText}`}>Report an Issue</p>
+              <p className={`text-xs ${profileTextMuted}`}>Bugs, wrong routes, account issues</p>
+            </div>
+            <ChevronRight className={profileTextMuted} size={16} />
+          </button>
           {[
             { icon: Bell, label: 'Notifications', id: 'notifications', desc: 'Manage alerts', action: () => setShowNotificationSettings(true) },
             { icon: Volume2, label: 'Voice Settings', id: 'voice', desc: isMuted ? 'Muted' : 'Active', action: handleToggleVoice },
@@ -5126,12 +6031,12 @@ export default function DriverApp() {
     setAddrSuggestions([])
     if (s.place_id) {
       try {
-        const res = await fetch(`${API_URL}/api/places/details/${s.place_id}`)
-        if (res.ok) {
-          const json = await res.json()
-          if (json.success && json.data?.lat && json.data?.lng) {
-            setNewLocation((prev: typeof newLocation) => ({ ...prev, lat: json.data.lat, lng: json.data.lng }))
-          }
+        const res = await api.get<{ success?: boolean; data?: { lat?: number; lng?: number } }>(
+          `/api/places/details/${encodeURIComponent(s.place_id)}`
+        )
+        const data = (res.data as { success?: boolean; data?: { lat?: number; lng?: number } } | undefined)
+        if (data?.success && data.data?.lat && data.data?.lng) {
+          setNewLocation((prev: typeof newLocation) => ({ ...prev, lat: data.data!.lat!, lng: data.data!.lng! }))
         }
       } catch { /* noop */ }
     }
@@ -5420,15 +6325,48 @@ export default function DriverApp() {
   )
 
   // ==================== MAIN RENDER ====================
+  const bottomNavHeight = 'calc(60px + env(safe-area-inset-bottom, 20px))'
   return (
-    <div className="min-h-screen bg-slate-900">
-      {/* Content */}
-      {activeTab === 'map' && renderMap()}
-      {activeTab === 'routes' && renderRoutes()}
-      {activeTab === 'rewards' && renderRewards()}
-      {activeTab === 'profile' && renderProfile()}
+    <div className="min-h-screen bg-slate-900 flex flex-col">
+      {showMaintenanceMode && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900 p-6">
+          <div className="text-center max-w-md">
+            <div className="text-6xl mb-4">🔧</div>
+            <h1 className="text-xl font-bold text-white mb-2">Under Maintenance</h1>
+            <p className="text-slate-400">We&apos;ll be back shortly. Please try again in a few minutes.</p>
+          </div>
+        </div>
+      )}
+      {announcementBanner && (
+        <div className="bg-amber-500/90 text-white text-center py-2 px-4 text-sm font-medium" style={{ paddingTop: 'max(8px, env(safe-area-inset-top))' }}>
+          {announcementBanner}
+        </div>
+      )}
+      {/* Content - inset from bottom so it stays above the fixed nav (no overlap) */}
+      <div
+        className="flex-1 flex flex-col min-h-0"
+        style={{
+          paddingBottom: !isNavigating ? bottomNavHeight : 0,
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+        }}
+      >
+        {activeTab === 'map' && renderMap()}
+      {activeTab === 'dashboards' && (
+        <DashboardsTab
+          isLight={isLight}
+          isPremium={userPlan === 'premium' || userData.is_premium}
+          hasFamily={userPlan === 'family' || userPlan === 'premium' || userData.is_premium}
+          onUpgrade={() => setShowPlanSelection(true)}
+          onOpenFriends={() => setShowFriendsHub(true)}
+          onOpenFamily={() => setShowFamilyDashboard(true)}
+          onOpenSnapRace={() => setShowSnapRaceDashboard(true)}
+        />
+      )}
+        {activeTab === 'rewards' && renderRewards()}
+        {activeTab === 'profile' && renderProfile()}
+      </div>
 
-      {/* Bottom Navigation - 4 Tabs (below modal layer so dialogs open on top) */}
+      {/* Bottom Navigation - 4 Tabs (fixed; content above reserves space) */}
       {!isNavigating && (
         <div
           style={{
@@ -5450,7 +6388,7 @@ export default function DriverApp() {
         >
           {[
             { id: 'map', icon: MapPin, label: 'Map' },
-            { id: 'routes', icon: Route, label: 'Routes' },
+            { id: 'dashboards', icon: Users, label: 'Dashboards' },
             { id: 'rewards', icon: Gift, label: 'Rewards' },
             { id: 'profile', icon: Settings, label: 'Profile' },
           ].map(tab => (
@@ -5480,6 +6418,177 @@ export default function DriverApp() {
         userId={userData.id || '123456'}
         friendsCount={userData.friends_count || 0}
       />
+      {tappedFriend && (
+        <>
+          <div
+            onClick={() => setTappedFriend(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1100,
+              background: 'rgba(0,0,0,0.5)',
+              backdropFilter: 'blur(2px)',
+            }}
+          />
+          <div style={{
+            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1101,
+            background: '#1C1C1E', borderRadius: '22px 22px 0 0',
+            paddingBottom: 'env(safe-area-inset-bottom, 24px)',
+          }}>
+            <div style={{
+              width: 36, height: 4, background: 'rgba(255,255,255,0.18)',
+              borderRadius: 2, margin: '12px auto 0',
+            }} />
+            <div style={{ padding: '16px 20px 24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+                <div style={{
+                  width: 52, height: 52, borderRadius: 26, flexShrink: 0,
+                  background: tappedFriend.isFamilyMember
+                    ? 'linear-gradient(135deg,#FF9500,#FF6B00)'
+                    : 'linear-gradient(135deg,#007AFF,#5856D6)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 22, fontWeight: 800, color: 'white',
+                }}>
+                  {tappedFriend.name[0]}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 19, fontWeight: 800, color: 'white' }}>
+                    {tappedFriend.name}
+                    {tappedFriend.isFamilyMember && (
+                      <span style={{
+                        fontSize: 11, color: '#FF9500', background: 'rgba(255,149,0,0.15)',
+                        borderRadius: 6, padding: '2px 8px', marginLeft: 8,
+                      }}>Family</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                    <div style={{
+                      width: 7, height: 7, borderRadius: 4,
+                      background: tappedFriend.isSharing ? '#30D158' : '#8E8E93',
+                      animation: tappedFriend.isSharing ? 'pulse 2s infinite' : 'none',
+                    }} />
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)' }}>
+                      {tappedFriend.isNavigating
+                        ? `Driving to ${tappedFriend.destinationName ?? 'somewhere'} · ${Math.round(tappedFriend.speedMph ?? 0)} mph`
+                        : tappedFriend.speedMph && tappedFriend.speedMph > 5
+                          ? `Moving · ${Math.round(tappedFriend.speedMph)} mph`
+                          : 'Stationary'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {tappedFriend.isNavigating && (
+                <div style={{
+                  background: 'rgba(0,122,255,0.1)',
+                  border: '1px solid rgba(0,122,255,0.2)',
+                  borderRadius: 12, padding: '10px 14px', marginBottom: 16,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span style={{ fontSize: 16 }}>📍</span>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', lineHeight: 1.5 }}>
+                    They're moving. Navigate routes to their live position and updates every 15 seconds.
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={() => startLiveNavigation(tappedFriend).catch(() => {})}
+                style={{
+                  width: '100%', height: 54, marginBottom: 10,
+                  background: tappedFriend.isFamilyMember ? '#FF9500' : '#007AFF',
+                  border: 'none', borderRadius: 16, color: 'white',
+                  fontSize: 16, fontWeight: 700, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                }}
+              >
+                <span style={{ fontSize: 18 }}>🗺️</span>
+                Navigate to {tappedFriend.name.split(' ')[0]}
+              </button>
+
+              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                <button
+                  onClick={() => startCameraFollow(tappedFriend)}
+                  style={{
+                    flex: 1, height: 50, background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, color: 'white',
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex',
+                    flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+                  }}
+                >
+                  <span style={{ fontSize: 18 }}>👁️</span>
+                  Watch their journey
+                </button>
+                <button
+                  onClick={() => meetInMiddle(tappedFriend)}
+                  style={{
+                    flex: 1, height: 50, background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, color: 'white',
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex',
+                    flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+                  }}
+                >
+                  <span style={{ fontSize: 18 }}>🤝</span>
+                  Meet halfway
+                </button>
+              </div>
+              <button
+                onClick={() => setTappedFriend(null)}
+                style={{
+                  width: '100%', height: 44, background: 'none', border: 'none',
+                  color: 'rgba(255,255,255,0.35)', fontSize: 15, cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+      {followingMode !== 'none' && (() => {
+        const friend = friendLocations.find((f) => f.id === followingFriendIdRef.current)
+        if (!friend) return null
+        return (
+          <div style={{
+            position: 'fixed',
+            top: 'calc(env(safe-area-inset-top, 44px) + 8px)',
+            left: 16,
+            right: 16,
+            zIndex: 980,
+            background: followingMode === 'navigating'
+              ? (friend.isFamilyMember ? 'rgba(255,149,0,0.92)' : 'rgba(0,122,255,0.92)')
+              : 'rgba(88,86,214,0.92)',
+            backdropFilter: 'blur(12px)',
+            borderRadius: 16,
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}>
+            <div style={{
+              width: 8, height: 8, borderRadius: 4, background: 'white',
+              animation: 'pulse 1.5s infinite', flexShrink: 0,
+            }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ color: 'white', fontWeight: 700, fontSize: 13 }}>
+                {followingMode === 'navigating'
+                  ? `Navigating to ${friend.name.split(' ')[0]} · updates every 15s`
+                  : `Watching ${friend.name.split(' ')[0]}'s journey`}
+              </div>
+            </div>
+            <button
+              onClick={stopAllFollowModes}
+              style={{
+                background: 'rgba(255,255,255,0.2)', border: 'none',
+                borderRadius: 8, padding: '4px 10px', color: 'white',
+                fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              }}
+            >
+              Stop
+            </button>
+          </div>
+        )
+      })()}
       {selectedFriend && (
         <FriendCard
           friend={selectedFriend}
@@ -5501,28 +6610,39 @@ export default function DriverApp() {
           }}
           onFollow={(friend) => {
             if (followingFriendId === friend.id) {
-              setFollowingFriendId(null)
-              toast.success(`Stopped following ${friend.name}`)
+              stopFollowingFriend()
+              toast.success('Stopped following')
             } else {
-              setFollowingFriendId(friend.id)
-              toast.success(`Now following ${friend.name} 👁`)
-              mapInstanceRef.current?.panTo({ lat: friend.lat, lng: friend.lng })
+              startFollowingFriend(friend).catch(() => {})
             }
             setSelectedFriend(null)
           }}
           isFollowing={followingFriendId === selectedFriend.id}
         />
       )}
+      <style>{`
+        @keyframes slideDown {
+          from { transform: translateY(-10px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes pulse {
+          0% { opacity: 0.55; transform: scale(0.9); }
+          50% { opacity: 1; transform: scale(1); }
+          100% { opacity: 0.55; transform: scale(0.9); }
+        }
+      `}</style>
       <Leaderboard
         isOpen={showLeaderboard} 
         onClose={() => setShowLeaderboard(false)}
         userId={userData.id || '123456'}
         userGems={userData.gems || 0}
       />
-      <BadgesGrid 
-        isOpen={showBadgesGrid} 
-        onClose={() => setShowBadgesGrid(false)}
-      />
+      <Suspense fallback={null}>
+        <BadgesGrid 
+          isOpen={showBadgesGrid} 
+          onClose={() => setShowBadgesGrid(false)}
+        />
+      </Suspense>
       <TripHistory
         isOpen={showTripHistory}
         onClose={() => setShowTripHistory(false)}
@@ -5538,6 +6658,12 @@ export default function DriverApp() {
       <HelpSupport
         isOpen={showHelpSupport}
         onClose={() => setShowHelpSupport(false)}
+      />
+      <SubmitConcern
+        isOpen={showSubmitConcern}
+        onClose={() => setShowSubmitConcern(false)}
+        userId={user?.id ?? ''}
+        userLocation={userLocation}
       />
       <FuelTracker
         isOpen={showFuelTracker}
@@ -5713,30 +6839,26 @@ export default function DriverApp() {
         </div>
       )}
       
-      {/* Road Reports & Community Features */}
-      <RoadReports
-        isOpen={showRoadReports}
-        onClose={() => setShowRoadReports(false)}
-        onCreateReport={handleCreateReport}
-        onUpvote={handleUpvoteReport}
-        currentUserId={userData.id || '123456'}
-      />
       <LevelProgress
         isOpen={showLevelProgress}
         onClose={() => setShowLevelProgress(false)}
       />
       
       {/* Orion Voice - full AI chat; can start nav, go to offers, and add voice reports during nav */}
-      <OrionVoice
-        isOpen={showOrionVoice}
-        onClose={() => setShowOrionVoice(false)}
-        context={buildOrionContext() ?? {}}
-        isMuted={isMuted}
-        onMuteToggle={() => setIsMuted((v) => !v)}
-        onStartNavigation={handleOrionStartNavigation}
-        onNavigateToOffer={handleOrionNavigateToOffer}
-        onVoiceReport={handleOrionVoiceReport}
-      />
+      {orionEnabled && (
+        <Suspense fallback={null}>
+          <OrionVoice
+            isOpen={showOrionVoice}
+            onClose={() => setShowOrionVoice(false)}
+            context={buildOrionContext() ?? {}}
+            isMuted={isMuted}
+            onMuteToggle={() => setIsMuted((v) => !v)}
+            onStartNavigation={handleOrionStartNavigation}
+            onNavigateToOffer={handleOrionNavigateToOffer}
+            onVoiceReport={handleOrionVoiceReport}
+          />
+        </Suspense>
+      )}
       <QuickPhotoReport
         isOpen={showQuickPhotoReport}
         onClose={() => setShowQuickPhotoReport(false)}
@@ -5753,12 +6875,60 @@ export default function DriverApp() {
         isMoving={isNavigating}
         currentSpeed={currentSpeed}
         compact
-        useMapPlacement
-        onRequestPlacement={(type) => {
-          setPendingIncidentPlacement({ type })
-          toast('Tap the road to place this report', { icon: '📍' })
+        useMapPlacement={false}
+      />
+      <PhotoReportCapture
+        isOpen={showPhotoReport}
+        onClose={() => setShowPhotoReport(false)}
+        userLocation={userLocation}
+        onReportSubmitted={() => {
+          toast.success('+25 gems! Report submitted.')
+          loadNearbyOffers()
         }}
       />
+      <Suspense fallback={null}>
+      <SnapRaceMode
+        isOpen={showSnapRace}
+        onClose={() => setShowSnapRace(false)}
+        currentUserId={(user as { id?: string } | undefined)?.id ?? String(userData.id ?? '')}
+        friends={friendLocations}
+        currentRoute={routePolylineForMap}
+        userLocation={userLocation}
+        onStartRaceNavigation={(race) => {
+          fetchDirections({ name: 'Race finish', lat: race.destination.lat, lng: race.destination.lng }).catch(() => {})
+          toast.success('Race navigation started')
+        }}
+      />
+      </Suspense>
+
+      <Suspense fallback={null}>
+      <SnapRaceDashboard
+        isOpen={showSnapRaceDashboard}
+        onClose={() => setShowSnapRaceDashboard(false)}
+        currentUserId={(user as { id?: string } | undefined)?.id ?? String(userData.id ?? '')}
+        onStartNewRace={() => setShowSnapRace(true)}
+      />
+      </Suspense>
+      <Suspense fallback={null}>
+      <FamilyDashboard
+        isOpen={showFamilyDashboard}
+        onClose={() => setShowFamilyDashboard(false)}
+        currentUserId={(user as { id?: string } | undefined)?.id ?? String(userData.id ?? '')}
+      />
+      </Suspense>
+      <Suspense fallback={null}>
+      <ConvoyMode
+        isOpen={showConvoy}
+        onClose={() => setShowConvoy(false)}
+        currentUserId={(user as { id?: string } | undefined)?.id ?? String(userData.id ?? '')}
+        familyMembers={friendLocations.filter((f) => f.isFamilyMember)}
+        groupId={familyMemberIds[0] ? 'family-group' : ''}
+        onConvoyStarted={(dest) => {
+          setShowConvoy(false)
+          handleSelectDestination(dest as any)
+        }}
+      />
+      </Suspense>
       
       {/* Onboarding Modals */}
       {showPlanSelection && (
@@ -5902,18 +7072,20 @@ export default function DriverApp() {
         onClose={() => setShowChallengeHistory(false)}
       />
       
-      {/* Redemption Popup with Geofenced QR */}
-      <RedemptionPopup
-        isOpen={showRedemptionPopup}
-        onClose={() => {
-          setShowRedemptionPopup(false)
-          setSelectedOfferForRedemption(null)
-        }}
-        offer={selectedOfferForRedemption}
-        userPlan={userPlan}
-        userLocation={userLocation}
-        onRedeem={handleRedeemOffer}
-      />
+      {/* Offer redemption bottom sheet (detail → QR → success) */}
+      {showRedemptionPopup && (
+        <OfferRedemptionCard
+          offer={selectedOfferForRedemption}
+          onClose={() => {
+            setShowRedemptionPopup(false)
+            setSelectedOfferForRedemption(null)
+          }}
+          onRedeemed={(gems) => {
+            if (gems > 0) toast.success(`+${gems} gems earned!`)
+            loadNearbyOffers()
+          }}
+        />
+      )}
       
       {/* Weekly Recap (Premium) */}
       <WeeklyRecap
@@ -5921,9 +7093,40 @@ export default function DriverApp() {
         onClose={() => setShowWeeklyRecap(false)}
         isPremium={userPlan === 'premium'}
       />
+
+      <Suspense fallback={null}>
+      <WeeklyInsights
+        isOpen={showWeeklyInsights}
+        onClose={() => setShowWeeklyInsights(false)}
+        userId={user?.id ?? ''}
+      />
+      </Suspense>
+
+      <Suspense fallback={null}>
+      <SnapRoadScoreCard
+        isOpen={showScoreCard}
+        onClose={() => setShowScoreCard(false)}
+        userData={userData}
+      />
+      </Suspense>
+
+      <Suspense fallback={null}>
+      <PhotoIncidentFeed
+        isOpen={showPhotoFeed}
+        onClose={() => setShowPhotoFeed(false)}
+        userLocation={userLocation}
+        onNavigateToReport={(report: PhotoReport) => {
+          handleSelectDestination({
+            name: `${report.category || report.ai_category || 'hazard'} at this location`,
+            lat: report.lat,
+            lng: report.lng,
+          })
+        }}
+      />
+      </Suspense>
       
       {/* Orion Offer Alerts (during navigation only) — only offers within 1 mile */}
-      {isNavigating && (
+      {orionEnabled && isNavigating && (
         <OrionOfferAlerts
           isNavigating={isNavigating}
           userLocation={userLocation}

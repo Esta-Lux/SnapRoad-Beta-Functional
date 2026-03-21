@@ -3,8 +3,9 @@
  * Smoothly updates tilt, zoom, and heading during navigation based on speed and distance to next turn.
  */
 
+// DEPRECATED: Google Maps integration removed.
 export interface NavCameraOptions {
-  map: google.maps.Map
+  map: unknown
   isNavigating: boolean
   userHeading: number
   userLat: number
@@ -14,7 +15,7 @@ export interface NavCameraOptions {
 }
 
 export class NavigationCamera {
-  private map: google.maps.Map
+  private map: unknown
   private animationFrame: number | null = null
   private targetTilt = 0
   private currentTilt = 0
@@ -23,7 +24,7 @@ export class NavigationCamera {
   private targetZoom = 15
   private currentZoom = 15
 
-  constructor(map: google.maps.Map) {
+  constructor(map: unknown) {
     this.map = map
   }
 
@@ -68,7 +69,8 @@ export class NavigationCamera {
     this.currentHeading = this.lerpAngle(this.currentHeading, this.targetHeading, 0.1)
     this.currentZoom = this.lerp(this.currentZoom, this.targetZoom, 0.05)
 
-    this.map.moveCamera({
+    const m = this.map as { moveCamera?: (opts: { center: { lat: number; lng: number }; tilt: number; heading: number; zoom: number }) => void }
+    m.moveCamera?.({
       center: { lat: userLat, lng: userLng },
       tilt: this.currentTilt,
       heading: this.currentHeading,

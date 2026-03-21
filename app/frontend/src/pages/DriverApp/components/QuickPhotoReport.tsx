@@ -53,11 +53,16 @@ export default function QuickPhotoReport({
     }
   }, [isOpen, isMoving, isPassengerMode, currentSpeed])
 
+  useEffect(() => {
+    if (!isOpen) return
+    setIsSubmitting(false)
+    setShowSafetyWarning(false)
+  }, [isOpen])
+
   const handleCameraClick = () => {
     if (!canTakePhoto) {
       setShowSafetyWarning(true)
       // In real app, Orion would say this
-      console.log("Orion: Using your phone while driving isn't safe.")
       return
     }
     cameraInputRef.current?.click()
@@ -93,19 +98,30 @@ export default function QuickPhotoReport({
       setSelectedImage(null)
       onClose()
     } catch (e) {
-      console.log('Error submitting report')
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const handleIconOnlyReport = async () => {
+  const handleIconOnlyReport = async (typeOverride?: string) => {
     if (compact && useMapPlacement && onRequestPlacement) {
-      onRequestPlacement(reportType)
+      onRequestPlacement(typeOverride ?? reportType)
       onClose()
       return
     }
-    await handleSubmit('')
+    const t = typeOverride ?? reportType
+    setReportType(t)
+    // Submit immediately at currentLocation (driver doesn't need a second tap)
+    setIsSubmitting(true)
+    try {
+      await onSubmit({ type: t, photo_url: '', lat: currentLocation.lat, lng: currentLocation.lng })
+      setSelectedImage(null)
+      onClose()
+    } catch (e) {
+      console.warn('Quick report failed:', e)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const enablePassengerMode = () => {
@@ -118,9 +134,9 @@ export default function QuickPhotoReport({
   if (compact) {
     return (
       <>
-        <div className="fixed inset-0 bg-black/50 z-[1001]" onClick={onClose} aria-hidden />
+        <div className="fixed inset-0 bg-black/50 z-[1100]" onClick={onClose} aria-hidden />
         <div
-          className="fixed left-4 right-4 bottom-[calc(80px+env(safe-area-inset-bottom,18px))] z-[1002] rounded-2xl border border-slate-600/50 bg-slate-800/95 backdrop-blur-xl shadow-xl overflow-hidden"
+          className="fixed left-4 right-4 bottom-[calc(80px+env(safe-area-inset-bottom,18px))] z-[1101] rounded-2xl border border-slate-600/50 bg-slate-800/95 backdrop-blur-xl shadow-xl overflow-hidden"
           style={{ maxHeight: '40vh' }}
         >
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-600/50">
@@ -130,12 +146,12 @@ export default function QuickPhotoReport({
             </button>
           </div>
           <div className="p-3">
-            <p className="text-slate-400 text-xs mb-2">Tap type, then submit</p>
+            <p className="text-slate-400 text-xs mb-2">Tap a type to report instantly</p>
             <div className="flex gap-2 flex-wrap">
               {REPORT_ICONS.map(({ type, label, icon: Icon }) => (
                 <button
                   key={type}
-                  onClick={() => setReportType(type)}
+                  onClick={() => { if (!isSubmitting) void handleIconOnlyReport(type) }}
                   className={`flex-1 min-w-[72px] flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl border-2 transition-colors ${
                     reportType === type ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-700/80 border-slate-600 text-slate-300'
                   }`}
@@ -145,14 +161,10 @@ export default function QuickPhotoReport({
                 </button>
               ))}
             </div>
-            <button
-              onClick={handleIconOnlyReport}
-              disabled={isSubmitting}
-              className="w-full mt-3 py-2.5 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 font-medium text-sm flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-              Report {reportType}
-            </button>
+            <div className="flex items-center justify-center gap-2 mt-3 text-slate-400 text-xs">
+              {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {isSubmitting ? 'Sending…' : 'Sent'}
+            </div>
           </div>
         </div>
       </>
@@ -161,9 +173,9 @@ export default function QuickPhotoReport({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-[1000]" onClick={onClose} aria-hidden />
+      <div className="fixed inset-0 bg-black/50 z-[1100]" onClick={onClose} aria-hidden />
       <div
-        className="fixed left-4 right-4 bottom-[calc(80px+env(safe-area-inset-bottom,18px))] z-[1001] rounded-2xl border border-slate-600/50 bg-slate-800/95 backdrop-blur-xl shadow-xl overflow-hidden flex flex-col"
+        className="fixed left-4 right-4 bottom-[calc(80px+env(safe-area-inset-bottom,18px))] z-[1101] rounded-2xl border border-slate-600/50 bg-slate-800/95 backdrop-blur-xl shadow-xl overflow-hidden flex flex-col"
         style={{ maxHeight: '55vh' }}
         onClick={(e) => e.stopPropagation()}
       >

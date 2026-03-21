@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { 
   ChevronUp, ChevronDown, Gift, Gem, MapPin, Navigation, 
   Clock, Star, X, ExternalLink
 } from 'lucide-react'
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || ''
 
 interface Offer {
   id: number

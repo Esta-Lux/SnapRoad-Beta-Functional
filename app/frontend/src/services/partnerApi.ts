@@ -3,7 +3,7 @@
  * Centralized API calls for the Partner Portal
  */
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+import { getApiBaseUrl } from '@/services/api'
 
 class PartnerApiService {
   private partnerId: string = 'default_partner'
@@ -24,8 +24,8 @@ class PartnerApiService {
     return this.token
   }
 
-  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<{ success: boolean; data?: T; message?: string }> {
-    const url = `${API_URL}${endpoint}`
+  private async request<T = unknown>(endpoint: string, options: RequestInit = {}): Promise<{ success: boolean; data?: T; message?: string; token?: string; partner_id?: string }> {
+    const url = `${getApiBaseUrl()}${endpoint}`
     const token = this.getToken()
     const config: RequestInit = {
       headers: {
@@ -46,7 +46,7 @@ class PartnerApiService {
   }
 
   // Auth
-  async login(email: string, password: string): Promise<any> {
+  async login(email: string, password: string): Promise<{ success: boolean; data?: unknown; message?: string; token?: string; partner_id?: string }> {
     const result = await this.request('/api/partner/v2/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
@@ -59,7 +59,7 @@ class PartnerApiService {
     return result
   }
 
-  async register(data: { first_name: string; last_name: string; business_name: string; business_address: string; email: string; password: string; referral_code?: string }): Promise<any> {
+  async register(data: { first_name: string; last_name: string; business_name: string; business_address: string; email: string; password: string; referral_code?: string }): Promise<{ success: boolean; data?: unknown; message?: string; token?: string; partner_id?: string }> {
     const result = await this.request('/api/partner/v2/register', {
       method: 'POST',
       body: JSON.stringify(data),

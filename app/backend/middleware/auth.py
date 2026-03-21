@@ -1,10 +1,14 @@
 from datetime import datetime, timedelta, timezone
+import logging
+import os
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRY_HOURS
+
+logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
@@ -41,14 +45,17 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     if not credentials:
         return None
     token = credentials.credentials
-    if token.startswith("mock_token_"):
-        user_id = token.replace("mock_token_", "")
-        return {"user_id": user_id, "role": "user"}
+    if os.getenv("ENVIRONMENT") != "production":
+        if token and token.startswith("mock_token_"):
+            logger.warning("Mock token used in development mode")
+            user_id = token.replace("mock_token_", "")
+            return {"id": user_id, "user_id": user_id, "role": "user"}
     payload = decode_token(token)
     user_id = payload.get("sub")
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid token")
     return {
+        "id": user_id,
         "user_id": user_id,
         "email": payload.get("email"),
         "role": payload.get("role", "user"),

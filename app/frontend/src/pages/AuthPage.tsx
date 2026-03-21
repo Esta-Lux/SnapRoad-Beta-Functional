@@ -5,10 +5,9 @@ import snaproadLogo from '../assets/images/f1ce41940925932061ca7e2e293db7cdf37e4
 import { useAuthStore } from '../store/authStore'
 import { partnerApi } from '../services/partnerApi'
 import { adminApi } from '../services/adminApi'
+import { api } from '@/services/api'
 
 type AuthTab = 'partner' | 'admin'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 export default function AuthPage() {
   const navigate = useNavigate()
@@ -35,15 +34,10 @@ export default function AuthPage() {
 
     try {
       if (tab === 'admin') {
-        const res = await fetch(`${API_URL}/api/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.detail || 'Login failed')
-        const user = data.data?.user
-        const token = data.data?.token
+        const result = await api.login({ email, password })
+        if (!result.success || !result.data) throw new Error(result.error || 'Login failed')
+        const user = result.data.user
+        const token = result.data.token
         const role = user.role as string
         if (!user || (role !== 'admin' && role !== 'super_admin')) throw new Error('This account does not have admin access')
         adminApi.setToken(token)

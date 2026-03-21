@@ -30,6 +30,7 @@ interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
+  authError: string | null
   login: (email: string, password: string) => Promise<boolean>
   signup: (name: string, email: string, password: string) => Promise<boolean>
   logout: () => void
@@ -64,6 +65,7 @@ function mapApiUserToContext(apiUser: Record<string, unknown>): User {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [authError, setAuthError] = useState<string | null>(null)
 
   const restoreSession = async () => {
     const token = api.getToken()
@@ -100,21 +102,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    const result = await api.login({ email, password })
-    if (!result.success || !result.data) return false
-    const apiUser = (result.data as { user?: Record<string, unknown> }).user
-    if (!apiUser) return false
+    setAuthError(null)
+    const result = await api.login({ email: email.trim(), password: password.trim() })
+    if (!result.success || !result.data) {
+      setAuthError(result.error || 'Invalid email or password')
+      return false
+    }
+    const apiUser = (result.data as unknown as { user?: Record<string, unknown> }).user
+    if (!apiUser) {
+      setAuthError(result.error || 'Login failed')
+      return false
+    }
     const role = (apiUser as { role?: string }).role
-    if (role === 'admin' || role === 'super_admin' || role === 'partner') return false
+    if (role === 'admin' || role === 'super_admin' || role === 'partner') {
+      setAuthError('This account cannot access the driver app')
+      return false
+    }
     setUser(mapApiUserToContext(apiUser))
     return true
   }
 
   const signup = async (name: string, email: string, password: string): Promise<boolean> => {
-    const result = await api.signup({ name, email, password })
-    if (!result.success || !result.data) return false
-    const apiUser = (result.data as { user?: Record<string, unknown> }).user
-    if (!apiUser) return false
+    setAuthError(null)
+    const result = await api.signup({ name: name.trim(), email: email.trim(), password: password.trim() })
+    if (!result.success || !result.data) {
+      setAuthError(result.error || 'Signup failed')
+      return false
+    }
+    const apiUser = (result.data as unknown as { user?: Record<string, unknown> }).user
+    if (!apiUser) {
+      setAuthError(result.error || 'Signup failed')
+      return false
+    }
     setUser(mapApiUserToContext(apiUser))
     return true
   }
@@ -138,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, signup, logout, updateUser, setUserFromApi }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, authError, login, signup, logout, updateUser, setUserFromApi }}>
       {children}
     </AuthContext.Provider>
   )

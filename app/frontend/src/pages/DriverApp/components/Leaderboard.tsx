@@ -39,7 +39,7 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
   const [showStateDropdown, setShowStateDropdown] = useState(false)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('weekly')
   const [loading, setLoading] = useState(false)
-  const [totalUsers, setTotalUsers] = useState(0)
+  const [, setTotalUsers] = useState(0)
   const [challengeTarget, setChallengeTarget] = useState<LeaderboardEntry | null>(null)
   const [showChallengeModal, setShowChallengeModal] = useState(false)
   const [selectedUser, setSelectedUser] = useState<LeaderboardEntry | null>(null)
@@ -68,7 +68,6 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
         if (Array.isArray(payload.states)) setStates(payload.states)
       }
     } catch (e) {
-      console.log('Could not load leaderboard')
       setLeaderboard([])
     } finally {
       setLoading(false)
@@ -113,10 +112,8 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
   if (!isOpen) return null
 
   const modalBg = isLight ? 'bg-white' : 'bg-slate-900'
-  const cardBg = isLight ? 'bg-slate-100' : 'bg-slate-800/50'
   const textPrimary = isLight ? 'text-slate-800' : 'text-white'
   const textMuted = isLight ? 'text-slate-500' : 'text-slate-400'
-  const borderCls = isLight ? 'border-slate-200' : 'border-slate-700/50'
 
   return (
     <div className={`fixed inset-0 z-[1100] flex items-center justify-center p-4 ${isLight ? 'bg-black/50' : 'bg-black/90'}`} onClick={onClose}>
@@ -411,7 +408,7 @@ export default function Leaderboard({ isOpen, onClose, userId, userGems = 0 }: L
           onClose={() => setShowChallengeModal(false)}
           opponent={challengeTarget}
           currentUserGems={userGems}
-          onChallengeSuccess={() => {
+          onChallengeCreated={() => {
             setShowChallengeModal(false)
             loadLeaderboard()
           }}

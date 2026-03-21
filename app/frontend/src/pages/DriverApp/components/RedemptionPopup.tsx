@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Gem, MapPin, Clock, Check, QrCode, AlertCircle, Gift, Star, Navigation } from 'lucide-react'
+import { X, Gem, MapPin, Clock, Check, QrCode, AlertCircle, Navigation } from 'lucide-react'
 
 interface Offer {
   id: number
@@ -33,7 +33,6 @@ export default function RedemptionPopup({
   const [step, setStep] = useState<'details' | 'qr'>('details')
   const [isInRange, setIsInRange] = useState(true)
   const [countdown, setCountdown] = useState(120) // 2 min QR expiry
-  const [qrCode, setQrCode] = useState('')
   const [isRedeeming, setIsRedeeming] = useState(false)
 
   useEffect(() => {
@@ -44,7 +43,6 @@ export default function RedemptionPopup({
     setIsInRange(distance < 1) // Within 1 mile
 
     // Generate QR code data
-    setQrCode(`SNAPROAD-${offer.id}-${Date.now()}`)
   }, [offer, userLocation])
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
-import { X, Lock, Check, Filter, Search, ChevronDown, Award, Gem } from 'lucide-react'
+import { X, Lock, Check, Search, Award, Gem } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || ''
 
@@ -44,7 +44,6 @@ export default function BadgesGrid({ isOpen, onClose }: BadgesGridProps) {
 
   const modalBg = isLight ? 'bg-white' : 'bg-[#0f0f14]'
   const headerBg = isLight ? 'bg-gradient-to-r from-blue-500 to-indigo-500' : 'bg-gradient-to-br from-indigo-600/90 via-purple-600/90 to-slate-900'
-  const cardBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/80 border-white/10'
   const textPrimary = isLight ? 'text-slate-900' : 'text-white'
   const textMuted = isLight ? 'text-slate-500' : 'text-slate-400'
   const pillActive = isLight ? 'bg-blue-500 text-white' : 'bg-indigo-500 text-white'
@@ -124,7 +123,6 @@ export default function BadgesGrid({ isOpen, onClose }: BadgesGridProps) {
       const data = await res.json()
       if (data.success) setCategories(data.data)
     } catch (e) {
-      console.log('Could not load categories')
     }
   }
 

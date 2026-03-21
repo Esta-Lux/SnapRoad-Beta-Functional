@@ -11,6 +11,8 @@ interface MapLayerPickerProps {
   onToggleIncidents: () => void
   showConstruction: boolean
   onToggleConstruction: () => void
+  showFuelPrices: boolean
+  onToggleFuelPrices: () => void
 }
 
 export default function MapLayerPicker({
@@ -26,6 +28,8 @@ export default function MapLayerPicker({
   onToggleIncidents,
   showConstruction,
   onToggleConstruction,
+  showFuelPrices,
+  onToggleFuelPrices,
 }: MapLayerPickerProps) {
   if (!isOpen) return null
 
@@ -123,6 +127,15 @@ export default function MapLayerPicker({
       active: showConstruction,
       onToggle: onToggleConstruction,
       color: '#FF9500',
+    },
+    {
+      id: 'fuel-prices',
+      label: 'Fuel prices',
+      icon: '⛽',
+      description: 'Cheapest gas nearby',
+      active: showFuelPrices,
+      onToggle: onToggleFuelPrices,
+      color: '#30D158',
     },
   ]
 

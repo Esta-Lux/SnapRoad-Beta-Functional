@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Swords, Trophy, X, Gem, Shield, TrendingUp, Award, Crown, Target, Flame, Star, Medal } from 'lucide-react'
+import { Swords, Trophy, X, Gem, Shield, TrendingUp, Award, Crown, Flame, Star, Medal } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 

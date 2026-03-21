@@ -4,9 +4,11 @@ Keeps the API key server-side and exposes autocomplete, details, and photo endpo
 """
 
 import os
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Query, Request, Response
 from typing import Optional
 import httpx
+
+from limiter import limiter
 
 router = APIRouter(prefix="/api/places", tags=["Places"])
 
@@ -15,7 +17,9 @@ _BASE = "https://maps.googleapis.com/maps/api/place"
 
 
 @router.get("/autocomplete")
+@limiter.limit("60/minute")
 async def autocomplete(
+    request: Request,
     q: str = Query(..., min_length=1),
     lat: Optional[float] = None,
     lng: Optional[float] = None,

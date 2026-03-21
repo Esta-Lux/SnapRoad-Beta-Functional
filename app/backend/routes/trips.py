@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from typing import Optional
 from datetime import datetime, timedelta
+import json
 from models.schemas import TripResult, FuelLog, ReportIncident
 from pydantic import BaseModel
 from uuid import uuid4
@@ -8,6 +9,12 @@ from services.mock_data import (
     users_db, current_user_id, trips_db, fuel_logs, fuel_stats, FUEL_PRICES, XP_CONFIG,
 )
 from routes.gamification import add_xp_to_user
+from config import OPENAI_API_KEY
+
+try:
+    from openai import OpenAI
+except Exception:  # pragma: no cover
+    OpenAI = None
 
 router = APIRouter(prefix="/api", tags=["Trips"])
 
@@ -231,6 +238,100 @@ def get_detailed_trip_history(days: int = 30, limit: int = 50, sort_by: str = "d
                 "co2_saved_lbs": round(max(fuel_saved, 0) * 19.6, 1),
             },
         },
+    }
+
+
+@router.get("/trips/weekly-insights")
+def get_weekly_insights():
+    cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    week_trips = [t for t in trips_db if t.get("date", "") >= cutoff_date]
+
+    if not week_trips:
+        return {
+            "summary": "No trips this week yet. Start driving to get your weekly recap!",
+            "fuel_saved": 0,
+            "incidents_avoided": 0,
+            "best_day": "N/A",
+            "safety_trend": "steady",
+            "gems_earned_week": 0,
+            "miles_this_week": 0,
+            "trips_this_week": 0,
+            "ai_tip": "Complete your first trip this week to get personalized Orion tips.",
+        }
+
+    total_miles = sum(float(t.get("distance_miles", 0) or 0) for t in week_trips)
+    total_gems = sum(int(t.get("gems_earned", 0) or 0) for t in week_trips)
+    avg_safety = sum(float(t.get("safety_score", 0) or 0) for t in week_trips) / max(len(week_trips), 1)
+
+    day_scores = {}
+    for trip in week_trips:
+        day_str = trip.get("date")
+        try:
+            dt = datetime.strptime(day_str, "%Y-%m-%d")
+            day_name = dt.strftime("%A")
+        except Exception:
+            day_name = "N/A"
+        day_scores.setdefault(day_name, [])
+        day_scores[day_name].append(float(trip.get("safety_score", 0) or 0))
+    best_day = max(day_scores, key=lambda d: sum(day_scores[d]) / max(len(day_scores[d]), 1)) if day_scores else "N/A"
+
+    # Deterministic fallback used by default and for any AI failure.
+    summary = (
+        f"You completed {len(week_trips)} trips and drove {round(total_miles, 1)} miles this week "
+        f"with an average safety score of {round(avg_safety)}."
+    )
+    tip = (
+        "Your safest drives happen when you keep a steady pace. "
+        "Try smoother braking on busy interchanges to keep improving."
+    )
+
+    if (OPENAI_API_KEY or "").strip() and OpenAI is not None:
+        try:
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            payload = {
+                "trips_this_week": len(week_trips),
+                "miles_this_week": round(total_miles, 1),
+                "avg_safety_score": round(avg_safety, 1),
+                "best_day": best_day,
+            }
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                temperature=0.3,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are Orion, an in-car driving coach. "
+                            "Return strict JSON with keys: summary, ai_tip. "
+                            "summary max 1 sentence. ai_tip max 1 sentence."
+                        ),
+                    },
+                    {"role": "user", "content": json.dumps(payload)},
+                ],
+                response_format={"type": "json_object"},
+            )
+            content = (response.choices[0].message.content or "").strip()
+            parsed = json.loads(content) if content else {}
+            ai_summary = parsed.get("summary")
+            ai_tip = parsed.get("ai_tip")
+            if isinstance(ai_summary, str) and ai_summary.strip():
+                summary = ai_summary.strip()
+            if isinstance(ai_tip, str) and ai_tip.strip():
+                tip = ai_tip.strip()
+        except Exception:
+            # Keep deterministic fallback response shape for reliability.
+            pass
+
+    return {
+        "summary": summary,
+        "fuel_saved": round(total_miles * 0.03, 1),
+        "incidents_avoided": len(week_trips),
+        "best_day": best_day,
+        "safety_trend": "improving" if avg_safety >= 80 else "steady" if avg_safety >= 60 else "declining",
+        "gems_earned_week": total_gems,
+        "miles_this_week": round(total_miles, 1),
+        "trips_this_week": len(week_trips),
+        "ai_tip": tip,
     }
 
 

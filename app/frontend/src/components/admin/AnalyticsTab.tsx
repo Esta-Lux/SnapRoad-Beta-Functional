@@ -2,7 +2,7 @@
 // =============================================
 
 import { useState, useEffect } from 'react'
-import { BarChart3, TrendingUp, Users, Building2, Gift, Activity, Download, Calendar } from 'lucide-react'
+import { Users, Building2, Gift, Activity, Download, Calendar } from 'lucide-react'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer

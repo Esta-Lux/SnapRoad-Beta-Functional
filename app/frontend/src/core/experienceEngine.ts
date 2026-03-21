@@ -16,7 +16,6 @@ export function computeExperience(
 ): ExperienceState {
   const v = vehicle.velocity
   const aggression = style.aggression
-  const smoothness = style.smoothness
 
   let baseZoom = BASE_ZOOM - v * 2
   if (mode === 'calm') baseZoom -= CALM_ZOOM_OFFSET

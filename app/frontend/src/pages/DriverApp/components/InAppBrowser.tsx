@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, ExternalLink, ArrowLeft, RefreshCw } from 'lucide-react'
+import { X, ArrowLeft, RefreshCw } from 'lucide-react'
 
 interface InAppBrowserProps {
   url: string

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { 
-  X, Trophy, Gem, Shield, TrendingUp, Flame, Car, Clock, 
+  X, Trophy, Gem, Shield, TrendingUp, Flame, Car, 
   Zap, Star, ChevronRight, Award, Target, MapPin
 } from 'lucide-react'
 

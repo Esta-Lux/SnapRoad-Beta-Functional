@@ -25,6 +25,8 @@ export interface FriendLocation {
   destinationName?: string
   lastUpdated: string
   isSharing: boolean
+  isFamilyMember?: boolean
+  sosActive?: boolean
 }
 
 // Update current user's location in real time
@@ -93,6 +95,7 @@ export function subscribeFriendLocations(
           destination_name?: string
           last_updated: string
           is_sharing?: boolean
+          sos_active?: boolean
         }
         onUpdate({
           id: row.user_id,
@@ -106,6 +109,7 @@ export function subscribeFriendLocations(
           destinationName: row.destination_name,
           lastUpdated: row.last_updated,
           isSharing: row.is_sharing ?? true,
+          sosActive: row.sos_active ?? false,
         })
       }
     )
@@ -141,6 +145,7 @@ export async function getFriendLocations(
       destination_name?: string
       last_updated: string
       is_sharing?: boolean
+      sos_active?: boolean
     }
     return {
       id: row.id,
@@ -154,6 +159,7 @@ export async function getFriendLocations(
       destinationName: row.destination_name,
       lastUpdated: row.last_updated,
       isSharing: row.is_sharing ?? true,
+      sosActive: row.sos_active ?? false,
     }
   })
 }

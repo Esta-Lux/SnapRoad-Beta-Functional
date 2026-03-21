@@ -1,17 +1,73 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
 from datetime import datetime
 import json
+import os
 import random
 
+from database import get_supabase
+
 router = APIRouter(tags=["Webhooks & WebSocket"])
+
+
+def _get_stripe_webhook_secret():
+    return os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
 
 # ==================== STRIPE WEBHOOKS ====================
 @router.post("/api/webhooks/stripe")
 async def stripe_webhook(request: Request):
-    """Stripe webhook handler - ready for Supabase integration."""
-    payload = await request.body()
-    sig_header = request.headers.get("stripe-signature")
-    return {"success": True}
+    """Stripe webhook handler — persists plan changes to Supabase profiles."""
+    body = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    webhook_secret = _get_stripe_webhook_secret()
+
+    try:
+        import stripe
+        stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("STRIPE_API_KEY")
+        if webhook_secret:
+            event = stripe.Webhook.construct_event(body, sig_header, webhook_secret)
+        else:
+            event = json.loads(body.decode() if isinstance(body, bytes) else body)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+    event_type = event.get("type", "")
+    try:
+        supabase = get_supabase()
+    except Exception:
+        supabase = None
+
+    if event_type == "checkout.session.completed":
+        session = event.get("data", {}).get("object", {})
+        customer_email = session.get("customer_details", {}).get("email") or session.get("customer_email")
+        customer_id = session.get("customer")
+        subscription_id = session.get("subscription")
+        plan = (session.get("metadata") or {}).get("plan", "premium")
+        if customer_email and supabase:
+            try:
+                supabase.table("profiles").update({
+                    "plan": plan,
+                    "stripe_customer_id": customer_id,
+                    "stripe_subscription_id": subscription_id,
+                    "is_premium": True,
+                }).eq("email", customer_email).execute()
+            except Exception:
+                pass
+
+    if event_type == "customer.subscription.deleted":
+        session = event.get("data", {}).get("object", {})
+        customer_id = session.get("customer")
+        if customer_id and supabase:
+            try:
+                supabase.table("profiles").update({
+                    "plan": "basic",
+                    "is_premium": False,
+                    "stripe_subscription_id": None,
+                }).eq("stripe_customer_id", customer_id).execute()
+            except Exception:
+                pass
+
+    return {"success": True, "event_type": event_type}
 
 
 # ==================== PARTNER WEBSOCKET ====================

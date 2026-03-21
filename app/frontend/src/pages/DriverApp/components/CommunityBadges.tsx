@@ -52,7 +52,6 @@ export default function CommunityBadges({ isOpen, onClose }: CommunityBadgesProp
         setEarnedCount(typeof data.earned_count === 'number' ? data.earned_count : list.filter((b: CommunityBadge) => b.earned).length)
       }
     } catch (e) {
-      console.log('Error loading badges')
     } finally {
       setLoading(false)
     }

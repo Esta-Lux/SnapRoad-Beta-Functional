@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from models.schemas import OrionMessageRequest, OrionCompletionRequest, PhotoAnalysisRequest
+
+from limiter import limiter
 import uuid
 import json
 
@@ -36,7 +38,8 @@ async def orion_completions_stream(request: OrionCompletionRequest):
 
 
 @router.post("/orion/chat")
-async def orion_chat(request: OrionMessageRequest):
+@limiter.limit("20/minute")
+async def orion_chat(http_request: Request, request: OrionMessageRequest):
     from services.orion_coach import orion_service
     session_id = request.session_id or f"session_{uuid.uuid4().hex[:8]}"
     result = await orion_service.send_message(

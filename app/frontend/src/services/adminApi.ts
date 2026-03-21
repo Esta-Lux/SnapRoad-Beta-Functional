@@ -20,8 +20,7 @@ import type {
   Boost,
   PlatformSettings,
 } from '@/types/admin'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+import { getApiBaseUrl } from '@/services/api'
 
 class AdminApiService {
   private token: string | null = null
@@ -43,7 +42,7 @@ class AdminApiService {
   }
 
   private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<AdminApiResponse<T>> {
-    const url = `${API_URL}${endpoint}`
+    const url = `${getApiBaseUrl()}${endpoint}`
     const token = this.getToken()
 
     const config: RequestInit = {
@@ -278,7 +277,7 @@ class AdminApiService {
   }
 
   async uploadExcel(file: File): Promise<AdminApiResponse<any>> {
-    const url = `${API_URL}/api/admin/offers/upload-excel`
+    const url = `${getApiBaseUrl()}/api/admin/offers/upload-excel`
     const token = this.getToken()
     const formData = new FormData()
     formData.append('file', file)
@@ -291,7 +290,7 @@ class AdminApiService {
   }
 
   getTemplateUrl(): string {
-    return `${API_URL}/api/admin/offers/upload-template`
+    return `${getApiBaseUrl()}/api/admin/offers/upload-template`
   }
 
   // ==================== FINANCE ====================
@@ -360,6 +359,43 @@ class AdminApiService {
     return this.request('/api/boosts/calculate', {
       method: 'POST',
       body: JSON.stringify(data),
+    })
+  }
+
+  // ==================== CONCERNS (admin intelligence) ====================
+
+  async getConcerns(params?: { limit?: number; severity?: string; status?: string }): Promise<AdminApiResponse<{ concerns: any[]; total: number }>> {
+    const sp = new URLSearchParams()
+    if (params?.limit != null) sp.set('limit', String(params.limit))
+    if (params?.severity) sp.set('severity', params.severity)
+    if (params?.status) sp.set('status', params.status)
+    const qs = sp.toString() ? `?${sp.toString()}` : ''
+    return this.request(`/api/admin/concerns${qs}`)
+  }
+
+  async updateConcernStatus(id: string, status: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/concerns/${id}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    })
+  }
+
+  async getLiveUsers(): Promise<AdminApiResponse<{ users: any[] }>> {
+    return this.request('/api/admin/live-users')
+  }
+
+  async getHealth(): Promise<AdminApiResponse<any>> {
+    return this.request('/api/admin/health')
+  }
+
+  async getConfig(): Promise<AdminApiResponse<Record<string, any>>> {
+    return this.request('/api/admin/config')
+  }
+
+  async updateConfig(config: Record<string, any>): Promise<AdminApiResponse<Record<string, any>>> {
+    return this.request('/api/admin/config', {
+      method: 'POST',
+      body: JSON.stringify(config),
     })
   }
 

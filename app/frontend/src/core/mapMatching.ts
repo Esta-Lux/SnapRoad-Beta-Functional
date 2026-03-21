@@ -5,7 +5,6 @@
 
 import type { Coordinate2D, RouteSegment } from './types'
 
-const DEG2RAD = Math.PI / 180
 const EARTH_RADIUS_M = 6_371_000
 const MAX_SNAP_DISTANCE_M = 30
 const HEADING_PENALTY_THRESHOLD_DEG = 45

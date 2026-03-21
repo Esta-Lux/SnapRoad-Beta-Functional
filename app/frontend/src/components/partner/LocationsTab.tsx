@@ -23,12 +23,12 @@ export interface LocationFormData {
 }
 
 function LocationModal({
-  location, onClose, onSave, maxLocations, currentCount,
+  location, onClose, onSave, maxLocations: _maxLocations, currentCount,
 }: {
   location?: PartnerLocation
   onClose: () => void
   onSave: (data: LocationFormData) => void
-  maxLocations: number
+  maxLocations?: number
   currentCount: number
 }) {
   const [formData, setFormData] = useState<LocationFormData>({

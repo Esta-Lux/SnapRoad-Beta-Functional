@@ -2,7 +2,7 @@
 // =============================================
 
 import { useState, useEffect } from 'react'
-import { Users, Navigation, Fuel, Building2, TrendingUp, AlertTriangle, Clock, UserPlus, CheckCircle } from 'lucide-react'
+import { Users, Navigation, Fuel, Building2, TrendingUp, AlertTriangle, UserPlus, CheckCircle } from 'lucide-react'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts'
@@ -277,7 +277,7 @@ export default function DashboardOverview({ theme }: DashboardOverviewProps) {
             { icon: 'partner', title: `${stats?.active_partners || 0} active partners`, detail: 'Business partners', time: 'Current' },
             { icon: 'trip', title: `${stats?.total_trips || 0} trips tracked`, detail: 'Total driving sessions', time: 'All time' },
             { icon: 'offer', title: `${stats?.total_offers || 0} active offers`, detail: 'Partner offers', time: 'Current' },
-          ]).map((activity: any, i: number) => {
+          ]).map((activity: any) => {
             const iconMap: Record<string, any> = { user: UserPlus, partner: Building2, trip: Navigation, offer: CheckCircle }
             const colorMap: Record<string, string> = { user: 'text-blue-400 bg-blue-500/20', partner: 'text-purple-400 bg-purple-500/20', trip: 'text-emerald-400 bg-emerald-500/20', offer: 'text-green-400 bg-green-500/20' }
             const IconComp = iconMap[activity.icon] || UserPlus

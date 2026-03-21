@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
-  X, Calendar, MapPin, Clock, Shield, Gem, ChevronRight, TrendingUp,
+  X, Calendar, MapPin, Shield, Gem, ChevronRight, TrendingUp,
   Fuel, Leaf, Car, BarChart3, ChevronDown, ChevronUp, Award, Zap, Target
 } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -65,7 +65,6 @@ export default function TripAnalytics({ isOpen, onClose }: TripAnalyticsProps) {
         setAnalytics(data.data.analytics || null)
       }
     } catch (e) {
-      console.log('Could not load trip analytics')
     }
     setLoading(false)
   }

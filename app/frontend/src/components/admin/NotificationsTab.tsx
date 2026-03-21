@@ -37,15 +37,22 @@ function mapApiToNotification(api: { id: string; type: string; title: string; me
 }
 
 export default function NotificationsTab({ theme }: NotificationsTabProps) {
+  interface DraftNotification {
+    title: string
+    message: string
+    type: Notification['type']
+    priority: Notification['priority']
+    recipients: string
+  }
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState('All Types')
   const [statusFilter, setStatusFilter] = useState('All Status')
-  const [priorityFilter, setPriorityFilter] = useState('All Priority')
+  const [priorityFilter] = useState('All Priority')
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
-  const [newNotification, setNewNotification] = useState({
+  const [newNotification, setNewNotification] = useState<DraftNotification>({
     title: '',
     message: '',
     type: 'system' as const,

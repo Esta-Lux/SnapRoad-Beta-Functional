@@ -2,7 +2,7 @@
 // =============================================
 
 import { useState, useEffect } from 'react'
-import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, ToggleLeft, ToggleRight, Cloud, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, Cloud, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
 
 interface SettingsTabProps {
@@ -94,7 +94,6 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
     try {
       const res = await adminApi.updateSettings(settings)
       if (res.success) {
-        console.log('Settings saved successfully!')
       } else {
         console.error('Failed to save settings:', res.error || res.message)
       }
@@ -128,7 +127,6 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   const security = settings.security ?? defaultSecurity
   const notifications = settings.notifications ?? defaultNotifications
   const features = settings.features ?? defaultFeatures
-  const database = settings.database ?? defaultDatabase
 
   return (
     <div className="space-y-6">

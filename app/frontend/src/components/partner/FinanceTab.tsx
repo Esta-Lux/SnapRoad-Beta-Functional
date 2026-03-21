@@ -1,11 +1,8 @@
 import { useState, useEffect } from 'react'
 import {
   Wallet, CreditCard, Download, ArrowUpRight,
-  TrendingDown, Receipt, Zap, BarChart2, Info,
+  TrendingDown, Receipt, Zap, Info,
 } from 'lucide-react'
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts'
 import { partnerApi } from '@/services/partnerApi'
 import { REDEMPTION_FEE_SCHEDULE } from '@/lib/offer-pricing'
 

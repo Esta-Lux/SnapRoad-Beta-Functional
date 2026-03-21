@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { 
   Shield, TrendingUp, TrendingDown, Gauge, AlertTriangle, 
-  CheckCircle, X, Zap, MessageCircle, ChevronRight, 
+  CheckCircle, X, Zap, MessageCircle, 
   Car, Timer, Navigation, Eye, Volume2
 } from 'lucide-react'
 
@@ -38,11 +38,10 @@ export default function DrivingScore({ isOpen, onClose, isPremium, onUpgrade }: 
   const [overallScore, setOverallScore] = useState(0)
   const [metrics, setMetrics] = useState<DrivingMetric[]>([])
   const [orionTips, setOrionTips] = useState<OrionTip[]>([])
-  const [loading, setLoading] = useState(true)
+  const [, setLoading] = useState(true)
   const [speakingTip, setSpeakingTip] = useState<string | null>(null)
 
   const modalBg = isLight ? 'bg-white' : 'bg-slate-900'
-  const cardBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/80 border-slate-700'
   const textPrimary = isLight ? 'text-slate-900' : 'text-white'
   const textMuted = isLight ? 'text-slate-500' : 'text-slate-400'
   const backdrop = isLight ? 'bg-black/50' : 'bg-black/80'

@@ -174,7 +174,63 @@ export function NavigationCoreProvider({
       return
     }
 
+    const LAST_LOC_KEY = 'sr_last_location_v1'
+    const persistLast = (lat: number, lng: number) => {
+      try {
+        localStorage.setItem(LAST_LOC_KEY, JSON.stringify({ lat, lng, t: Date.now() }))
+      } catch {
+        // ignore
+      }
+    }
+    const readLast = (): { lat: number; lng: number } | null => {
+      try {
+        const raw = localStorage.getItem(LAST_LOC_KEY)
+        if (!raw) return null
+        const parsed = JSON.parse(raw) as { lat?: unknown; lng?: unknown }
+        const lat = Number(parsed.lat)
+        const lng = Number(parsed.lng)
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+        return { lat, lng }
+      } catch {
+        return null
+      }
+    }
+
+    // Instant paint: last-known location (improves time-to-first-location).
+    const last = readLast()
+    if (last) {
+      setState((prev) => ({
+        ...prev,
+        vehicle: {
+          coordinate: { lat: last.lat, lng: last.lng },
+          velocity: prev.vehicle?.velocity ?? 0,
+          acceleration: prev.vehicle?.acceleration ?? 0,
+          heading: prev.vehicle?.heading ?? 0,
+          turnRate: prev.vehicle?.turnRate ?? 0,
+          confidence: prev.vehicle?.confidence ?? 0,
+          timestamp: Date.now(),
+        },
+        camera: prev.camera ?? defaultCamera({ lat: last.lat, lng: last.lng }),
+      }))
+    }
+
+    const isMobileWeb =
+      typeof navigator !== 'undefined' &&
+      /iphone|ipad|ipod|android/i.test(navigator.userAgent || '')
+
+    // Request permission early so the browser prompt shows on driver page load.
+    navigator.geolocation.getCurrentPosition(
+      () => {},
+      () => {},
+      {
+        enableHighAccuracy: isMobileWeb,
+        maximumAge: isMobileWeb ? 5_000 : 30_000,
+        timeout: isMobileWeb ? 5_000 : 1_500,
+      }
+    )
+
     const onPos = (pos: GeolocationPosition) => {
+      persistLast(pos.coords.latitude, pos.coords.longitude)
       updateVehicle({
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
@@ -202,12 +258,36 @@ export function NavigationCoreProvider({
       }))
     }
 
-    const watchId = navigator.geolocation.watchPosition(
-      onPos,
-      onError,
-      { enableHighAccuracy: false, maximumAge: 30000, timeout: 10000 }
-    )
-    watchIdRef.current = watchId
+    // Mobile web often locks faster when high-accuracy is requested from the start.
+    const LOW: PositionOptions = {
+      enableHighAccuracy: isMobileWeb,
+      maximumAge: isMobileWeb ? 5_000 : 5 * 60_000,
+      timeout: isMobileWeb ? 8_000 : 12_000,
+    }
+    const HIGH: PositionOptions = { enableHighAccuracy: true, maximumAge: 3_000, timeout: 12_000 }
+
+    if (isMobileWeb) {
+      const highWatchId = navigator.geolocation.watchPosition(onPos, onError, HIGH)
+      watchIdRef.current = highWatchId
+    } else {
+      let upgraded = false
+      const lowWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          onPos(pos)
+          if (!upgraded) {
+            upgraded = true
+            try {
+              navigator.geolocation.clearWatch(lowWatchId)
+            } catch {}
+            const highWatchId = navigator.geolocation.watchPosition(onPos, onError, HIGH)
+            watchIdRef.current = highWatchId
+          }
+        },
+        onError,
+        LOW
+      )
+      watchIdRef.current = lowWatchId
+    }
 
     return () => {
       if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current)

@@ -23,7 +23,8 @@ SUBSCRIPTION_PLANS = {
     },
     "premium": {
         "name": "Premium", 
-        "price": 10.99,
+        # Beta pricing (Founders) — use Stripe price id if configured
+        "price": 4.99,
         "period": "month",
         "features": ["All Basic features", "2x gem multiplier", "Premium offers", "Advanced analytics", "Fuel tracking", "Ad-free", "Priority support"]
     },
@@ -86,10 +87,18 @@ async def create_checkout_session(request: Request, checkout_data: CreateCheckou
     cancel_url = f"{origin}/payment/cancel"
     
     try:
-        # Create Stripe checkout session using standard SDK
-        session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            line_items=[{
+        # Prefer Stripe Catalog price IDs (if configured) so pricing is controlled in Stripe.
+        price_id = None
+        if checkout_data.plan_id == "premium":
+            price_id = (os.environ.get("STRIPE_PREMIUM_BETA_PRICE_ID") or os.environ.get("STRIPE_PREMIUM_PRICE_ID") or "").strip() or None
+        elif checkout_data.plan_id == "family":
+            price_id = (os.environ.get("STRIPE_FAMILY_FOUNDERS_PRICE_ID") or os.environ.get("STRIPE_FAMILY_PRICE_ID") or "").strip() or None
+
+        line_items = None
+        if price_id:
+            line_items = [{"price": price_id, "quantity": 1}]
+        else:
+            line_items = [{
                 "price_data": {
                     "currency": "usd",
                     "product_data": {
@@ -100,7 +109,12 @@ async def create_checkout_session(request: Request, checkout_data: CreateCheckou
                     "recurring": {"interval": "month"} if plan["period"] == "month" else None,
                 },
                 "quantity": 1,
-            }],
+            }]
+
+        # Create Stripe checkout session using standard SDK
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=line_items,
             mode="subscription" if plan["period"] == "month" else "payment",
             success_url=success_url,
             cancel_url=cancel_url,
@@ -182,54 +196,6 @@ async def get_checkout_status(request: Request, session_id: str):
         raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get checkout status: {str(e)}")
-
-
-@router.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
-    """Handle Stripe webhook events"""
-    
-    api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
-    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
-    
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Stripe not configured")
-    import stripe
-    stripe.api_key = api_key
-    try:
-        body = await request.body()
-        signature = request.headers.get("Stripe-Signature", "")
-        
-        # Verify webhook signature if secret is configured
-        if webhook_secret:
-            try:
-                event = stripe.Webhook.construct_event(body, signature, webhook_secret)
-            except stripe.error.SignatureVerificationError:
-                raise HTTPException(status_code=400, detail="Invalid webhook signature")
-        else:
-            # Parse without verification (not recommended for production)
-            import json
-            event = json.loads(body)
-        
-        # Handle the event
-        event_type = event.get("type", event.get("event", {}).get("type", "unknown"))
-        
-        if event_type == "checkout.session.completed":
-            session_data = event.get("data", {}).get("object", {})
-            session_id = session_data.get("id")
-            
-            if session_id and session_id in payment_transactions:
-                tx = payment_transactions[session_id]
-                if tx["payment_status"] != "paid":
-                    tx["payment_status"] = "paid"
-                    tx["updated_at"] = datetime.utcnow().isoformat()
-                    # Update user subscription in database here
-        
-        return {"success": True, "event_type": event_type}
-        
-    except Exception as e:
-        # Log but don't fail - Stripe will retry
-        print(f"Webhook error: {e}")
-        return {"success": False, "error": str(e)}
 
 
 @router.get("/transactions")

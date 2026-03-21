@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
-import { X, Bell, Mail, Volume2, Check, ChevronRight } from 'lucide-react'
+import { X, Bell, Mail, Volume2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || ''

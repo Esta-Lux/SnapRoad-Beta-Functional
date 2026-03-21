@@ -39,7 +39,6 @@ const businessData = {
 export default function BusinessDashboard() {
   const navigate = useNavigate()
   const [showCreateOffer, setShowCreateOffer] = useState(false)
-  const [showEditOffer, setShowEditOffer] = useState<string | null>(null)
   const [offers, setOffers] = useState(initialOffers)
   const [redemptions, setRedemptions] = useState(initialRedemptions)
   const [showRedemptionDetail, setShowRedemptionDetail] = useState<typeof initialRedemptions[0] | null>(null)

@@ -2,7 +2,7 @@
 // =============================================
 
 import { useState, useEffect, useMemo } from 'react'
-import { Search, AlertTriangle, MapPin, Clock, Eye, Shield, TrendingUp } from 'lucide-react'
+import { Search, AlertTriangle, MapPin, Clock } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
 import type { AdminIncident } from '@/types/admin'
 
@@ -82,7 +82,6 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
   const pendingCount = incidents.filter(i => i.status === 'pending').length
   const approvedCount = incidents.filter(i => i.status === 'approved').length
   const rejectedCount = incidents.filter(i => i.status === 'rejected').length
-  const avgConfidence = incidents.length > 0
     ? Math.round(incidents.reduce((acc, i) => acc + (i.confidence || 0), 0) / incidents.length)
     : 0
 

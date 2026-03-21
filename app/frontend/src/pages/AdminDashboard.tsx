@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, AlertTriangle, Eye, Gift, Building2, BarChart3,
   Bell, TrendingUp, DollarSign, Scale, Settings, FileText, LogOut,
-  Moon, Sun, Crown
+  Moon, Sun, Crown, Sliders
 } from 'lucide-react'
 
 import { adminApi } from '@/services/adminApi'
@@ -24,13 +24,12 @@ import LegalTab from '@/components/admin/LegalTab'
 import SettingsTab from '@/components/admin/SettingsTab'
 import NotificationsTab from '@/components/admin/NotificationsTab'
 import AuditLogTab from '@/components/admin/AuditLogTab'
-import { AdminOfferManagement } from '@/components/figma-ui/admin/AdminOfferManagement'
-
-// Hooks
-import { useWebSocket } from '@/hooks/useWebSocket'
+import { AdminOfferManagement } from '@/components/admin/AdminOfferManagement'
+import AppControl from '@/pages/AdminDashboard/components/AppControl'
 
 const NAV_BASE = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, badgeKey: '' },
+  { id: 'appcontrol', label: 'App Control', icon: Sliders, badgeKey: '' },
   { id: 'users', label: 'Users & Families', icon: Users, badgeKey: 'total_users' },
   { id: 'incidents', label: 'Incidents', icon: AlertTriangle, badgeKey: '' },
   { id: 'moderation', label: 'AI Moderation Queue', icon: Eye, badgeKey: '' },
@@ -52,8 +51,7 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [darkMode, setDarkMode] = useState(true)
   const [navBadges, setNavBadges] = useState<Record<string, string>>({})
-  const { status: wsStatus } = useWebSocket()
-  const isConnected = wsStatus === 'live'
+  const isConnected = true
 
   useEffect(() => {
     const loadBadges = async () => {
@@ -84,6 +82,8 @@ export default function AdminDashboard() {
     switch (activeTab) {
       case 'dashboard':
         return <DashboardOverview theme={darkMode ? 'dark' : 'light'} />
+      case 'appcontrol':
+        return <AppControl />
       case 'users':
         return <UsersTab theme={darkMode ? 'dark' : 'light'} />
       case 'incidents':

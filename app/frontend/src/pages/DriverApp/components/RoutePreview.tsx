@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import {
-  X, Clock, Navigation, ChevronRight, ChevronLeft,
+  X, Navigation, ChevronRight, ChevronLeft,
   ChevronDown, ChevronUp, RefreshCw, Zap, MapPin, Gauge,
 } from 'lucide-react'
 

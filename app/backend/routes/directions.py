@@ -5,9 +5,11 @@ Returns route polyline, steps, distance and duration in the shape expected by th
 
 import os
 import re
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from typing import List, Any
 import httpx
+
+from limiter import limiter
 
 
 def _decode_polyline(encoded: str) -> List[dict]:
@@ -78,7 +80,9 @@ _DIRECTIONS_KEY = lambda: os.environ.get("GOOGLE_PLACES_API_KEY", "") or os.envi
 
 
 @router.get("/directions")
+@limiter.limit("30/minute")
 async def get_directions(
+    request: Request,
     origin_lat: float = Query(..., description="Origin latitude"),
     origin_lng: float = Query(..., description="Origin longitude"),
     dest_lat: float = Query(..., description="Destination latitude"),

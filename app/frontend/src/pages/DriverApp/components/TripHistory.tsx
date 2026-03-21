@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
-import { X, Calendar, MapPin, Clock, Shield, Gem, Filter, ChevronRight, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { X, Calendar, MapPin, Shield, Gem, ChevronRight } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || ''
 
@@ -54,7 +54,6 @@ export default function TripHistory({ isOpen, onClose }: TripHistoryProps) {
         setStats(data.stats ?? (d && !Array.isArray(d) ? { total_trips: d.total_trips, total_miles: d.total_miles, avg_safety_score: d.avg_safety_score ?? 0, total_gems_earned: d.total_gems_earned ?? 0 } : null))
       }
     } catch (e) {
-      console.log('Could not load trips')
     }
     setLoading(false)
   }

@@ -29,8 +29,6 @@ export class DrivingBehaviorEngine {
 
     const accels = h.map((s) => s.acceleration)
     const turnRates = h.map((s) => s.turnRate)
-    const speeds = h.map((s) => s.velocity)
-
     const variance = (arr: number[]) => {
       const n = arr.length
       const mean = arr.reduce((a, b) => a + b, 0) / n
@@ -39,8 +37,6 @@ export class DrivingBehaviorEngine {
     const accelVariance = variance(accels)
     const turnRateVariance = variance(turnRates)
     const brakeIntensity = accels.filter((a) => a < -0.5).reduce((s, a) => s + Math.abs(a), 0) / Math.max(1, accels.length)
-    const speedFluctuation = variance(speeds)
-
     const normAccel = normalize(accelVariance, 0, 4)
     const normTurn = normalize(turnRateVariance, 0, 100)
     const normBrake = normalize(brakeIntensity, 0, 2)

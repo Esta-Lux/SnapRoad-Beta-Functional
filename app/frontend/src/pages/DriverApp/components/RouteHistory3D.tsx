@@ -51,7 +51,6 @@ export default function RouteHistory3D({ isOpen, onClose }: RouteHistory3DProps)
         })
       }
     } catch (e) {
-      console.log('Could not load route history')
     }
     setLoading(false)
   }

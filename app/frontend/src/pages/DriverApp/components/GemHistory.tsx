@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
-import { X, Gem, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Filter } from 'lucide-react'
+import { X, Gem, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || ''
 
@@ -61,7 +61,6 @@ export default function GemHistory({ isOpen, onClose }: GemHistoryProps) {
         setMonthStats(data.this_month ?? (raw.this_month ?? null))
       }
     } catch (e) {
-      console.log('Could not load history')
     }
     setLoading(false)
   }

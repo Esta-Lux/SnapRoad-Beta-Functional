@@ -10,6 +10,7 @@ from services.mock_data import (
 from models.schemas import ImageGenerateRequest, LocationVisit
 from services.supabase_service import _sb
 from services.offer_utils import calculate_free_discount, calculate_redemption_fee
+from services.cache import cache_get, cache_set
 import uuid
 
 router = APIRouter(prefix="/api", tags=["Offers"])
@@ -203,6 +204,12 @@ def redeem_offer(offer_id: int):
 
 @router.get("/offers/nearby")
 def get_nearby_offers(lat: float = 39.9612, lng: float = -82.9988, radius: float = 10.0):
+    cache_lat = round(lat, 2)
+    cache_lng = round(lng, 2)
+    key = f"offers_nearby:{cache_lat}:{cache_lng}:{radius}"
+    cached = cache_get(key)
+    if cached:
+        return cached
     nearby = []
     for offer in offers_db:
         dlat = abs(offer["lat"] - lat)
@@ -211,7 +218,9 @@ def get_nearby_offers(lat: float = 39.9612, lng: float = -82.9988, radius: float
         if dist_km <= radius:
             nearby.append({**offer, "distance_km": round(dist_km, 2)})
     nearby.sort(key=lambda x: x["distance_km"])
-    return {"success": True, "data": nearby}
+    result = {"success": True, "data": nearby}
+    cache_set(key, result, ttl=300)
+    return result
 
 
 @router.get("/offers/on-route")

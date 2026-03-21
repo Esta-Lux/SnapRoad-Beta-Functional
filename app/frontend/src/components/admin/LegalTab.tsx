@@ -36,15 +36,12 @@ export default function LegalTab({ theme }: LegalTabProps) {
   }
 
   const handleDownloadDocument = async (docId: string) => {
-    console.log(`Downloading document ${docId}`)
   }
 
   const handleViewDocument = async (docId: string) => {
-    console.log(`Viewing document ${docId}`)
   }
 
   const handleViewHistory = async (docId: string) => {
-    console.log(`Viewing history for document ${docId}`)
   }
 
   const filteredDocuments = documents.filter(doc => {

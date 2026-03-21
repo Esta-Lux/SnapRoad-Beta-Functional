@@ -4,8 +4,7 @@
  */
 
 import { MapPin, Navigation, ChevronRight, Star } from 'lucide-react'
-
-const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
+import { getApiBaseUrl } from '@/services/api'
 
 export interface PlaceCardData {
   place_id?: string
@@ -31,12 +30,11 @@ export default function PlaceCard({
   place,
   onDirections,
   onViewDetails,
-  onClose,
   compact = false,
   onClick,
 }: PlaceCardProps) {
   const photoUrl = place.photo_reference
-    ? `${API_URL}/api/places/photo?ref=${encodeURIComponent(place.photo_reference)}&maxwidth=320`
+    ? `${getApiBaseUrl()}/api/places/photo?ref=${encodeURIComponent(place.photo_reference)}&maxwidth=320`
     : null
 
   return (

@@ -9,8 +9,9 @@ import {
   Navigation, Share2, Bookmark, ChevronRight, ChevronDown, ChevronUp,
   Loader2,
 } from 'lucide-react'
+import { getApiBaseUrl } from '@/services/api'
 
-const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || ''
+const API_URL = getApiBaseUrl()
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */

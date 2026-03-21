@@ -127,6 +127,31 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
     return None, "Invalid email or password"
 
 
+def sb_get_auth_user_from_access_token(access_token: str) -> Optional[dict]:
+    """
+    Validate a Supabase access token and return the auth user dict.
+    Uses the Supabase client auth API.
+    """
+    try:
+        sb = _sb()
+        resp = sb.auth.get_user(access_token)
+        user = getattr(resp, "user", None)
+        if not user:
+            return None
+        # Convert to plain dict with common fields
+        meta = getattr(user, "user_metadata", None) or {}
+        app_meta = getattr(user, "app_metadata", None) or {}
+        return {
+            "id": str(getattr(user, "id", "")),
+            "email": getattr(user, "email", None),
+            "user_metadata": meta,
+            "app_metadata": app_meta,
+        }
+    except Exception as e:
+        logger.warning(f"sb_get_auth_user_from_access_token error: {e}")
+        return None
+
+
 # ─────────────────────────────────────────────
 # PROFILES (users table — linked to Supabase Auth)
 # ─────────────────────────────────────────────
@@ -915,6 +940,165 @@ def sb_get_platform_stats() -> dict:
     except Exception as e:
         logger.warning(f"sb_get_platform_stats: {e}")
         return {}
+
+
+# ─────────────────────────────────────────────
+# CONCERNS TABLE (user feedback / support)
+# ─────────────────────────────────────────────
+
+def sb_create_concern(payload: dict) -> Optional[dict]:
+    try:
+        data = {
+            "user_id": payload.get("user_id"),
+            "category": payload.get("category", ""),
+            "title": payload.get("title") or "",
+            "description": payload.get("description", ""),
+            "severity": payload.get("severity", "medium"),
+            "status": payload.get("status", "open"),
+            "context": payload.get("context"),
+        }
+        result = _sb().table("concerns").insert(data).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_create_concern: {e}")
+        return None
+
+
+def sb_get_concerns(
+    limit: int = 50,
+    severity: Optional[str] = None,
+    status: Optional[str] = None,
+) -> list:
+    try:
+        q = _sb().table("concerns").select("*").order("created_at", desc=True).limit(limit)
+        if severity:
+            q = q.eq("severity", severity)
+        if status:
+            q = q.eq("status", status)
+        result = q.execute()
+        rows = result.data or []
+        if not rows:
+            return []
+        user_ids = list({str(r["user_id"]) for r in rows if r.get("user_id")})
+        profile_map = {}
+        if user_ids:
+            try:
+                profiles = _sb().table("profiles").select("id,name").in_("id", user_ids).execute()
+                profile_map = {str(p["id"]): p.get("name") or "Unknown" for p in (profiles.data or [])}
+            except Exception:
+                pass
+        out = []
+        for r in rows:
+            rec = dict(r)
+            rec["user_name"] = profile_map.get(str(rec.get("user_id") or ""), "Anonymous")
+            out.append(rec)
+        return out
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_get_concerns: {e}")
+        return []
+
+
+def sb_update_concern_status(concern_id: str, status: str) -> bool:
+    try:
+        from datetime import datetime, timezone
+        _sb().table("concerns").update({
+            "status": status,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", concern_id).execute()
+        return True
+    except Exception as e:
+        logger.warning(f"sb_update_concern_status: {e}")
+        return False
+
+
+def sb_get_concerns_count_by_status(status: str = "open") -> int:
+    try:
+        result = _sb().table("concerns").select("id", count="exact").eq("status", status).execute()
+        return result.count or 0
+    except Exception as e:
+        if not _table_missing(e):
+            logger.warning(f"sb_get_concerns_count_by_status: {e}")
+        return 0
+
+
+# ─────────────────────────────────────────────
+# APP_CONFIG TABLE (remote control flags)
+# ─────────────────────────────────────────────
+
+def sb_get_app_config() -> dict:
+    try:
+        result = _sb().table("app_config").select("key,value").execute()
+        out = {}
+        for row in (result.data or []):
+            k = row.get("key")
+            v = row.get("value")
+            if k is None:
+                continue
+            if v is None:
+                out[k] = None
+            elif isinstance(v, bool):
+                out[k] = v
+            elif isinstance(v, (int, float)):
+                out[k] = v
+            elif isinstance(v, str):
+                out[k] = v
+            else:
+                out[k] = v
+        return out
+    except Exception as e:
+        if not _table_missing(e):
+            logger.warning(f"sb_get_app_config: {e}")
+        return {}
+
+
+def sb_update_app_config(key: str, value, updated_by: Optional[str] = None) -> bool:
+    try:
+        from datetime import datetime, timezone
+        row = {"key": key, "value": value, "updated_at": datetime.now(timezone.utc).isoformat()}
+        if updated_by:
+            row["updated_by"] = updated_by
+        _sb().table("app_config").upsert(row, on_conflict="key").execute()
+        return True
+    except Exception as e:
+        logger.warning(f"sb_update_app_config: {e}")
+        return False
+
+
+# ─────────────────────────────────────────────
+# LIVE USERS (from live_locations + profiles)
+# ─────────────────────────────────────────────
+
+def sb_get_live_users() -> list:
+    try:
+        # Select from live_locations; join profiles for name/email (profiles.id = user_id)
+        ll = _sb().table("live_locations").select("*").execute()
+        rows = ll.data or []
+        if not rows:
+            return []
+        profile_ids = [r["user_id"] for r in rows]
+        profiles = _sb().table("profiles").select("id,name,email").in_("id", profile_ids).execute()
+        profile_map = {p["id"]: p for p in (profiles.data or [])}
+        out = []
+        for r in rows:
+            uid = r.get("user_id")
+            p = profile_map.get(uid) or {}
+            out.append({
+                "id": uid,
+                "name": p.get("name") or "Driver",
+                "email": p.get("email") or "",
+                "lat": r.get("lat"),
+                "lng": r.get("lng"),
+                "speed_mph": r.get("speed_mph"),
+                "is_navigating": r.get("is_navigating") or False,
+                "last_updated": r.get("last_updated"),
+            })
+        return out
+    except Exception as e:
+        if not _table_missing(e):
+            logger.warning(f"sb_get_live_users: {e}")
+        return []
 
 
 # ─────────────────────────────────────────────

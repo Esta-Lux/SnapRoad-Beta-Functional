@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from models.schemas import PlanUpdate, CarCustomization
 from services.mock_data import (
     users_db, current_user_id, pricing_config,
@@ -13,6 +13,8 @@ router = APIRouter(prefix="/api", tags=["Users"])
 @router.get("/user/profile")
 def get_user_profile():
     user = users_db.get(current_user_id, {})
+    # Nullable profile field: null => no clearance restrictions configured.
+    user.setdefault("vehicle_height_meters", None)
     return {"success": True, "data": user}
 
 
@@ -297,5 +299,21 @@ def update_notification_settings_put(category: str = "", setting: str = "", enab
 @router.put("/user/profile")
 def update_profile(body: dict):
     user = users_db.get(current_user_id, {})
-    user.update({k: v for k, v in body.items() if k not in ("id", "email")})
+    updates = {k: v for k, v in body.items() if k not in ("id", "email")}
+    if "vehicle_height_meters" in updates:
+        raw = updates.get("vehicle_height_meters")
+        if raw is None:
+            updates["vehicle_height_meters"] = None
+        else:
+            try:
+                height = float(raw)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="vehicle_height_meters must be a number or null")
+            if height < 0 or height > 5.0:
+                raise HTTPException(status_code=400, detail="vehicle_height_meters must be between 0 and 5.0")
+            updates["vehicle_height_meters"] = height
+    # Graceful write behavior: if persistence layer/schema lacks this field,
+    # keeping it in-memory remains non-fatal for this endpoint.
+    user.update(updates)
+    user.setdefault("vehicle_height_meters", None)
     return {"success": True, "data": user}

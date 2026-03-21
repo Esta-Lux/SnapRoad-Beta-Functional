@@ -48,15 +48,12 @@ export default function FinanceTab({ theme }: FinanceTabProps) {
   const greenBg = 'bg-green-500/20'
 
   const handleViewStatements = () => {
-    console.log('View Statements clicked')
   }
 
   const handleGenerateInvoice = () => {
-    console.log('Generate Invoice clicked')
   }
 
   const handleAgingReport = () => {
-    console.log('Aging Report clicked')
   }
 
   if (loading) {

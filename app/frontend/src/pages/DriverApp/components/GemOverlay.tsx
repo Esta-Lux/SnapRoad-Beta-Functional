@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Gem, X, Sparkles } from 'lucide-react'
+import { Gem, Sparkles } from 'lucide-react'
 
 interface RouteGem {
   id: string

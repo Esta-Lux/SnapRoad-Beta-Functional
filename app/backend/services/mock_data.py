@@ -14,6 +14,9 @@ pricing_config = {
 
 # ==================== USER HELPERS ====================
 next_user_id = 123457
+DEFAULT_DRIVER_ID = "00000000-0000-0000-0000-000000000001"
+DEFAULT_PARTNER_ID = "00000000-0000-0000-0000-000000000002"
+DEFAULT_ADMIN_ID = "00000000-0000-0000-0000-000000000003"
 
 def create_new_user(user_id: str, name: str = "New Driver", email: str = "") -> dict:
     return {
@@ -46,7 +49,7 @@ def calculate_xp_to_next_level(level: int) -> int:
     return 2500 + (level - 1) * 500
 
 # ==================== USERS DB ====================
-users_db = {"123456": create_new_user("123456", "Driver", "driver@snaproad.com")}
+users_db = {DEFAULT_DRIVER_ID: create_new_user(DEFAULT_DRIVER_ID, "Driver", "driver@snaproad.com")}
 
 STATES = ["OH","OH","OH","OH","CA","TX","FL","NY","PA","IL","GA","NC","MI","NJ","VA","WA","AZ","MA","TN","IN"]
 FIRST_NAMES = ["James","Emma","Liam","Olivia","Noah","Ava","Oliver","Isabella","Elijah","Sophia","Lucas","Mia","Mason","Charlotte","Ethan","Amelia","Aiden","Harper","Jacob","Evelyn"]
@@ -80,9 +83,9 @@ current_user_id = "123456"
 
 # ==================== CREDENTIALS ====================
 user_credentials = {
-    "driver@snaproad.com": {"password": "password123", "user_id": "123456"},
-    "partner@snaproad.com": {"password": "password123", "user_id": "200001"},
-    "admin@snaproad.com": {"password": "password123", "user_id": "300001"},
+    "driver@snaproad.com": {"password": "password123", "user_id": DEFAULT_DRIVER_ID},
+    "partner@snaproad.com": {"password": "password123", "user_id": DEFAULT_PARTNER_ID},
+    "admin@snaproad.com": {"password": "password123", "user_id": DEFAULT_ADMIN_ID},
 }
 
 # ==================== ROAD REPORTS ====================

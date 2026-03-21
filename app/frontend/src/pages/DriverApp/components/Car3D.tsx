@@ -172,7 +172,6 @@ interface Car3DProps {
 
 export default function Car3D({ 
   category, 
-  variant,
   color, 
   size = 'md', 
   rotation = 0,
@@ -732,7 +731,7 @@ interface NavMarkerProps {
   isMoving?: boolean
 }
 
-export function NavMarker({ category, color, heading = 0, size = 40, isMoving = false }: NavMarkerProps) {
+export function NavMarker({ color, heading = 0, size = 40, isMoving = false }: NavMarkerProps) {
   const colorData = CAR_COLORS[color] || CAR_COLORS['midnight-black']
   
   return (
@@ -816,7 +815,7 @@ interface ProfileCarProps {
   size?: number
 }
 
-export function ProfileCar({ category, color, size = 56 }: ProfileCarProps) {
+export function ProfileCar({ color, size = 56 }: ProfileCarProps) {
   const colorData = CAR_COLORS[color] || CAR_COLORS['midnight-black']
   
   return (

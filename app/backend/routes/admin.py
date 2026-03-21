@@ -15,6 +15,7 @@ from models.schemas import (
     BoostCalculate, BoostCreate, AnalyticsEvent,
 )
 from services.offer_utils import calculate_auto_gems, calculate_free_discount
+from services.cache import cache_delete
 from services.supabase_service import (
     sb_list_profiles, sb_get_profile, sb_update_profile,
     sb_suspend_profile, sb_activate_profile, sb_delete_profile,
@@ -38,6 +39,9 @@ from services.supabase_service import (
     sb_get_finance_summary,
     sb_get_platform_stats, sb_get_trips_stats,
     test_connection,
+    sb_get_concerns, sb_update_concern_status, sb_get_concerns_count_by_status,
+    sb_get_app_config, sb_update_app_config,
+    sb_get_live_users,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,13 +59,144 @@ BOOST_PRICING_ADMIN = {
 @router.get("/admin/stats")
 def get_admin_stats():
     stats = sb_get_platform_stats()
-    if stats:
-        return {"success": True, "source": "supabase", "data": stats}
-    return {"success": True, "source": "empty", "data": {
-        "total_users": 0, "premium_users": 0, "total_partners": 0,
-        "active_partners": 0, "total_offers": 0, "total_redemptions": 0,
-        "total_trips": 0, "total_gems": 0,
-    }}
+    trip_stats = sb_get_trips_stats()
+    redemption_stats = sb_get_redemption_stats()
+    finance = sb_get_finance_summary()
+    open_concerns = sb_get_concerns_count_by_status("open")
+    if not stats:
+        stats = {}
+    data = {
+        **stats,
+        "active_today": stats.get("active_today", len(sb_get_live_users())),
+        "trips_today": stats.get("trips_today", trip_stats.get("total_trips", 0)),
+        "total_miles": stats.get("total_miles", 0),
+        "open_concerns": open_concerns,
+        "offers_redeemed": stats.get("total_redemptions", redemption_stats.get("total", 0)),
+        "revenue": finance.get("total_mrr", 0),
+        "user_growth": stats.get("user_growth", "+0%"),
+    }
+    return {"success": True, "source": "supabase", "data": data}
+
+
+# ==================== CONCERNS (admin) ====================
+
+@router.get("/admin/concerns")
+def get_admin_concerns(limit: int = 50, severity: Optional[str] = None, status: Optional[str] = None):
+    concerns = sb_get_concerns(limit=limit, severity=severity, status=status)
+    return {"success": True, "data": {"concerns": concerns, "total": len(concerns)}}
+
+
+@router.post("/admin/concerns/{concern_id}/status")
+def update_concern_status(concern_id: str, body: dict = Body(..., embed=True)):
+    status = body.get("status")
+    if status not in ("open", "in_progress", "resolved", "closed"):
+        return {"success": False, "message": "Invalid status"}
+    ok = sb_update_concern_status(concern_id, status)
+    if ok:
+        return {"success": True, "message": "Updated"}
+    return {"success": False, "message": "Update failed"}
+
+
+# ==================== LIVE USERS ====================
+
+@router.get("/admin/live-users")
+def get_live_users():
+    users = sb_get_live_users()
+    return {"success": True, "data": {"users": users}}
+
+
+# ==================== HEALTH ====================
+
+@router.get("/admin/health")
+async def get_admin_health():
+    import time
+    import httpx
+    from database import get_supabase
+    import os
+
+    results = {}
+    results["api"] = "healthy"
+
+    # Supabase DB
+    try:
+        start = time.time()
+        supabase = get_supabase()
+        supabase.table("app_config").select("key").limit(1).execute()
+        results["database"] = "healthy"
+        results["db_latency"] = round((time.time() - start) * 1000)
+    except Exception as e:
+        results["database"] = "down"
+        results["db_error"] = str(e)
+
+    # Google Maps
+    GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY")
+    try:
+        start = time.time()
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(
+                "https://maps.googleapis.com/maps/api/geocode/json",
+                params={"address": "Columbus OH", "key": GOOGLE_MAPS_API_KEY or ""},
+            )
+        results["google_maps"] = "healthy" if r.status_code == 200 else "degraded"
+        results["maps_latency"] = round((time.time() - start) * 1000)
+    except Exception:
+        results["google_maps"] = "down"
+
+    # OHGO
+    OHGO_API_KEY = os.environ.get("VITE_OHGO_API_KEY") or os.environ.get("OHGO_API_KEY")
+    try:
+        start = time.time()
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(
+                "https://publicapi.ohgo.com/api/v1/cameras",
+                params={"api-key": OHGO_API_KEY or "", "page-size": "1"},
+            )
+        results["ohgo"] = "healthy" if r.status_code == 200 else "degraded"
+        results["ohgo_latency"] = round((time.time() - start) * 1000)
+    except Exception:
+        results["ohgo"] = "down"
+
+    # OpenAI
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    try:
+        start = time.time()
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY or ''}"},
+            )
+        results["openai"] = "healthy" if r.status_code == 200 else "degraded"
+        results["openai_latency"] = round((time.time() - start) * 1000)
+    except Exception:
+        results["openai"] = "down"
+
+    # Supabase Realtime
+    SUPABASE_URL = os.environ.get("SUPABASE_URL")
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(f"{SUPABASE_URL or ''}/rest/v1/")
+        results["realtime"] = "healthy" if r.status_code < 500 else "degraded"
+    except Exception:
+        results["realtime"] = "down"
+
+    return {"success": True, "data": results}
+
+
+# ==================== APP CONFIG (admin) ====================
+
+@router.get("/admin/config")
+def get_admin_config():
+    config = sb_get_app_config()
+    return {"success": True, "data": config}
+
+
+@router.post("/admin/config")
+def update_admin_config(config: dict, user: dict = Depends(require_admin)):
+    updated_by = user.get("user_id") if user else None
+    for key, value in config.items():
+        sb_update_app_config(key, value, updated_by=updated_by)
+    cache_delete("app_config_public")
+    return {"success": True, "data": sb_get_app_config()}
 
 
 # ==================== ANALYTICS ====================

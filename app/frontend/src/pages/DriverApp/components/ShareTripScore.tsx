@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
-import { X, Share2, Download, Twitter, Instagram, Copy, Check, Gem, Shield, Route, Clock, Zap } from 'lucide-react'
+import { X, Download, Twitter, Instagram, Copy, Check, Gem, Shield, Route, Clock, Zap } from 'lucide-react'
 
 interface TripSummary {
   distance: number

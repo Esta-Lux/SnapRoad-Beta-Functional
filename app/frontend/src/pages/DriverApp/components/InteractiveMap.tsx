@@ -71,7 +71,6 @@ const COLOR_MAP: Record<string, string> = {
 // 3D Car SVG Component with perspective and shadows
 const Car3DMarker = ({ category, color, size = 40 }: { category: string; color: string; size?: number }) => {
   const carColor = COLOR_MAP[color] || color || '#3b82f6'
-  const shadowColor = `${carColor}66`
   const highlightColor = '#ffffff'
   
   const renderCar = () => {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
-import { X, Fuel, Plus, TrendingUp, TrendingDown, DollarSign, Droplet, Calendar, BarChart3, MapPin } from 'lucide-react'
+import { X, Fuel, Plus, DollarSign, Droplet, BarChart3, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || ''
@@ -58,7 +58,6 @@ export default function FuelTracker({ isOpen, onClose, isPremium }: FuelTrackerP
         setStats(data.stats)
       }
     } catch (e) {
-      console.log('Could not load fuel history')
     }
   }
 
@@ -71,7 +70,6 @@ export default function FuelTracker({ isOpen, onClose, isPremium }: FuelTrackerP
         setTrendStats(data)
       }
     } catch (e) {
-      console.log('Could not load trends')
     }
   }
 

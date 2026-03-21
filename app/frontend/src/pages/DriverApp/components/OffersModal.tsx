@@ -85,7 +85,6 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
         }
       }
     } catch (e) {
-      console.log('Error loading offers')
     } finally {
       setLoading(false)
     }
@@ -105,7 +104,6 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
         setSelectedOffer(null)
       }
     } catch (e) {
-      console.log('Error redeeming')
     } finally {
       setRedeeming(false)
     }
