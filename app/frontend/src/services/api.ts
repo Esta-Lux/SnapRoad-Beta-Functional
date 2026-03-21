@@ -230,7 +230,7 @@ class ApiService {
   }
 
   async logFuel(entry: Omit<FuelLog, 'id' | 'userId'>): Promise<ApiResponse<FuelLog>> {
-    return this.request<FuelLog>('/api/fuel/log', {
+    return this.request<FuelLog>('/api/fuel/logs', {
       method: 'POST',
       body: JSON.stringify(entry),
     });

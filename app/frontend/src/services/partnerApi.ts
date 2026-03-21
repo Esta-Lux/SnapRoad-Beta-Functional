@@ -72,6 +72,22 @@ class PartnerApiService {
     return result
   }
 
+  async validateScan(token: string, qr_data: string): Promise<any> {
+    const result = await this.request('/partner/v2/scan/validate', {
+      method: 'POST',
+      body: JSON.stringify({ token, qr_data })
+    })
+
+    if (result.success) {
+      // Do something on successful validation
+    }
+    else {
+      // Report to user unsuccessful validation
+    }
+
+    return result;
+  }
+
   logout() {
     this.setToken(null)
     this.partnerId = 'default_partner'

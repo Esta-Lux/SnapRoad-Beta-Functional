@@ -236,7 +236,6 @@ def create_offer(offer_data: dict):
         return {"success": True, "message": "Offer created successfully", "data": result}
     return {"success": False, "message": "Failed to create offer"}
 
-
 @router.post("/admin/offers/create")
 def admin_create_offer(offer: AdminOfferCreate):
     auto_gems = offer.base_gems if offer.base_gems is not None else calculate_auto_gems(offer.discount_percent, offer.is_free_item)

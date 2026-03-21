@@ -137,8 +137,6 @@ class AdminApiService {
     })
   }
 
-  // TODO: this
-
   async markNotificationRead(id: string): Promise<AdminApiResponse<void>> {
     return this.request(`/api/admin/notifications/${id}/read`, { method: 'PATCH' })
   }
