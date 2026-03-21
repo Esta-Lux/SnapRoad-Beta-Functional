@@ -5,7 +5,7 @@ from models.schemas import TripResult, FuelLog, ReportIncident
 from pydantic import BaseModel
 from uuid import uuid4
 from services.mock_data import (
-    users_db, current_user_id, trips_db, fuel_history, fuel_stats, FUEL_PRICES, XP_CONFIG,
+    users_db, current_user_id, trips_db, fuel_logs, fuel_stats, FUEL_PRICES, XP_CONFIG,
 )
 from routes.gamification import add_xp_to_user
 
@@ -245,24 +245,46 @@ def share_trip(trip_id: int):
 
 # ==================== FUEL ====================
 @router.get("/fuel/history")
-def get_fuel_history():
-    return {"success": True, "data": fuel_history}
+def get_fuel_logs():
+    return {"success": True, "data": fuel_logs}
 
 
-@router.post("/fuel/log")
+@router.post("/fuel/logs")
 def log_fuel(entry: FuelLog):
     new_id = str(uuid4())
     new_entry = {"id": new_id, "date": entry.date, "station": entry.station, "price_per_gallon": entry.price_per_gallon, "gallons": entry.gallons, "total": entry.total}
-    fuel_history.insert(0, new_entry)
+    fuel_logs.insert(0, new_entry)
     return {"success": True, "message": "Fuel log entry added", "data": new_entry}
+
+@router.get("/fuel/logs")
+def get_fuel_logs(page: int = 1, limit: int = 20):
+    
+    start = (page - 1) * limit
+    end = start + limit
+
+    total = len(trips_db)
+    trips = trips_db[start:end]
+
+    return {
+        "success": True,
+        "data": {
+            "items": fuel_logs,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total,
+                "total_pages": (total + limit - 1) // limit
+            }
+        }
+    }
 
 
 @router.get("/fuel/trends")
 def get_fuel_trends():
-    total_gallons = sum(f["gallons"] for f in fuel_history)
-    total_spent = sum(f["total"] for f in fuel_history)
+    total_gallons = sum(f["gallons"] for f in fuel_logs)
+    total_spent = sum(f["total"] for f in fuel_logs)
     avg_price = total_spent / total_gallons if total_gallons > 0 else 0
-    return {"success": True, "data": {"total_gallons": round(total_gallons, 1), "total_spent": round(total_spent, 2), "avg_price_per_gallon": round(avg_price, 2), "entries": len(fuel_history), "monthly_avg_gallons": round(total_gallons / 3, 1)}}
+    return {"success": True, "data": {"total_gallons": round(total_gallons, 1), "total_spent": round(total_spent, 2), "avg_price_per_gallon": round(avg_price, 2), "entries": len(fuel_logs), "monthly_avg_gallons": round(total_gallons / 3, 1)}}
 
 
 @router.get("/fuel/prices")
@@ -286,7 +308,6 @@ def get_fuel_stats():
         "success": True,
         "data": fuel_stats
     }
-
 
 @router.get("/fuel/analytics")
 def get_fuel_analytics(months: int = 3):

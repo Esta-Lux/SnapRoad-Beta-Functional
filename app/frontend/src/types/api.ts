@@ -226,7 +226,7 @@ export interface Incident {
 }
 
 // ==================== FUEL TYPES ====================
-export interface FuelEntry {
+export interface FuelLog {
   id: string;
   userId: string;
   vehicleId: string;

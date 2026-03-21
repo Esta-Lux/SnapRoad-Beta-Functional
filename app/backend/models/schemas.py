@@ -157,11 +157,16 @@ class TripResult(BaseModel):
     safety_score: Optional[float] = None  # from client if available
 
 class FuelLog(BaseModel):
+    id: str
+    userId: str
+    vehicleId: str
     date: str
-    station: Optional[str] = "Unknown"
-    price_per_gallon: float
     gallons: float
-    total: float
+    price_per_gallon: float
+    total_cost: float
+    odometer: float
+    mpg: Optional[float]
+    station: Optional[str] = "Unknown"
 
 
 # ==================== PARTNER ====================

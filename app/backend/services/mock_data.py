@@ -130,7 +130,7 @@ challenges_data = [
 challenges_db = []
 
 # ==================== FUEL ====================
-fuel_history = [
+fuel_logs = [
     {"id": 1, "date": "2025-02-01", "station": "Shell", "price_per_gallon": 3.29, "gallons": 12.5, "total": 41.13, "odometer": 45230},
     {"id": 2, "date": "2025-01-28", "station": "Chevron", "price_per_gallon": 3.35, "gallons": 11.8, "total": 39.53, "odometer": 44920},
     {"id": 3, "date": "2025-01-24", "station": "Shell", "price_per_gallon": 3.31, "gallons": 13.2, "total": 43.69, "odometer": 44580},

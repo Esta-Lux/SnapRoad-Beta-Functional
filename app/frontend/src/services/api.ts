@@ -21,7 +21,7 @@ import type {
   PartnerAnalytics,
   AdminStats,
   Incident,
-  FuelEntry,
+  FuelLog,
   FuelStats,
   Notification,
   ApiResponse,
@@ -225,12 +225,12 @@ class ApiService {
     return this.request<FuelStats>('/api/fuel/stats');
   }
 
-  async getFuelEntries(page = 1, limit = 20): Promise<ApiResponse<PaginatedResponse<FuelEntry>>> {
-    return this.request<PaginatedResponse<FuelEntry>>(`/api/fuel/entries?page=${page}&limit=${limit}`);
+  async getFuelLogs(page = 1, limit = 20): Promise<ApiResponse<PaginatedResponse<FuelLog>>> {
+    return this.request<PaginatedResponse<FuelLog>>(`/api/fuel/entries?page=${page}&limit=${limit}`);
   }
 
-  async addFuelEntry(entry: Omit<FuelEntry, 'id' | 'userId'>): Promise<ApiResponse<FuelEntry>> {
-    return this.request<FuelEntry>('/api/fuel/entries', {
+  async logFuel(entry: Omit<FuelLog, 'id' | 'userId'>): Promise<ApiResponse<FuelLog>> {
+    return this.request<FuelLog>('/api/fuel/log', {
       method: 'POST',
       body: JSON.stringify(entry),
     });
