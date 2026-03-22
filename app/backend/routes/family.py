@@ -3,7 +3,7 @@ import random
 import string
 import uuid
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Optional
 
 from middleware.auth import get_current_user
 from database import get_supabase
@@ -243,7 +243,7 @@ async def get_members(user: dict = Depends(get_current_user)):
 
 
 @router.post("/sos")
-async def sos_alert(body: dict | None = None, user: dict = Depends(get_current_user)):
+async def sos_alert(body: Optional[dict] = None, user: dict = Depends(get_current_user)):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
     uid = user["id"]

@@ -28,10 +28,10 @@ async def autocomplete(
     if not key:
         return {"success": False, "error": "Google Places API key not configured", "data": []}
 
+    # Google Autocomplete allows at most one `types` value; pipe-separated values are invalid and can return no results.
     params: dict = {
         "input": q,
         "key": key,
-        "types": "establishment|geocode",
         "language": "en",
     }
     if lat is not None and lng is not None:

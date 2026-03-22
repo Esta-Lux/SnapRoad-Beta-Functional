@@ -38,6 +38,8 @@ interface OffersModalProps {
   onRedeem: (offerId: number) => Promise<any>
   selectedOfferId?: number | null
   onOpenUrl?: (url: string, title: string) => void
+  /** Same flow as DrivingScore / other premium gates: open plan selection in parent */
+  onUpgradeToPlans?: () => void
 }
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
@@ -50,7 +52,15 @@ const BUSINESS_ICONS: Record<string, any> = {
   default: Gift,
 }
 
-export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selectedOfferId, onOpenUrl }: OffersModalProps) {
+export default function OffersModal({
+  isOpen,
+  onClose,
+  userPlan,
+  onRedeem,
+  selectedOfferId,
+  onOpenUrl,
+  onUpgradeToPlans,
+}: OffersModalProps) {
   const [offers, setOffers] = useState<Offer[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null)
@@ -138,10 +148,18 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
           </p>
         </div>
         {!isPremium && (
-          <div className="bg-amber-400 text-amber-900 text-xs font-bold px-2.5 py-1.5 rounded-full flex items-center gap-1 shadow-sm">
+          <button
+            type="button"
+            onClick={() => {
+              onClose()
+              onUpgradeToPlans?.()
+            }}
+            className="bg-amber-400 text-amber-900 text-xs font-bold px-2.5 py-1.5 rounded-full flex items-center gap-1 shadow-sm active:scale-[0.98]"
+            data-testid="offers-header-upgrade"
+          >
             <Zap size={12} />
             Upgrade for {discountInfo.premium_discount}%
-          </div>
+          </button>
         )}
       </div>
 
@@ -248,7 +266,25 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
                         {isPremium ? (offer.premium_discount_percent || offer.discount_percent) : (offer.free_discount_percent || offer.discount_percent)}% OFF
                       </span>
                       {!isPremium && (offer.premium_discount_percent || 0) > (offer.free_discount_percent || 0) && (
-                        <span className="text-amber-600 text-xs flex items-center gap-0.5 bg-amber-100 px-1.5 py-0.5 rounded-full">
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onClose()
+                            onUpgradeToPlans?.()
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              onClose()
+                              onUpgradeToPlans?.()
+                            }
+                          }}
+                          className="text-amber-600 text-xs flex items-center gap-0.5 bg-amber-100 px-1.5 py-0.5 rounded-full cursor-pointer hover:bg-amber-200"
+                          data-testid="offers-row-premium-lock"
+                        >
                           <Lock size={10} />
                           {offer.premium_discount_percent}%
                         </span>
@@ -343,13 +379,22 @@ export default function OffersModal({ isOpen, onClose, userPlan, onRedeem, selec
               </div>
 
               {!isPremium && (selectedOffer.premium_discount_percent || 0) > (selectedOffer.free_discount_percent || 0) && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedOffer(null)
+                    onClose()
+                    onUpgradeToPlans?.()
+                  }}
+                  className="w-full bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center gap-2 text-left hover:bg-amber-100 transition-colors"
+                  data-testid="offers-detail-upgrade"
+                >
                   <Lock className="text-amber-600 shrink-0" size={14} />
                   <p className="text-amber-800 text-xs flex-1">
                     Upgrade to Premium for <span className="font-bold">{selectedOffer.premium_discount_percent}% off</span>
                   </p>
                   <Zap className="text-amber-600 shrink-0" size={14} />
-                </div>
+                </button>
               )}
 
               {selectedOffer.address && (

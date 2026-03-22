@@ -1,5 +1,7 @@
 import logging
 import uuid
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException
 from models.schemas import SignupRequest, LoginRequest
 from services.mock_data import users_db, user_credentials, create_new_user
@@ -73,7 +75,7 @@ def signup(request: SignupRequest):
 
 @router.post("/login")
 def login(request: LoginRequest):
-    sb_error: str | None = None
+    sb_error: Optional[str] = None
 
     # 1. Try Supabase auth
     try:

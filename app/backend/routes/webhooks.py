@@ -1,20 +1,134 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, Depends
-from fastapi.responses import Response
-from datetime import datetime
+from fastapi.responses import Response, JSONResponse
+from datetime import datetime, timedelta
 import json
+import logging
 import random
 from middleware.auth import decode_token, require_admin
 from services.telemetry_service import telemetry_service
 
 router = APIRouter(tags=["Webhooks & WebSocket"])
+logger = logging.getLogger(__name__)
 
 # ==================== STRIPE WEBHOOKS ====================
+
+
+def _handle_checkout_session_completed(session: dict) -> None:
+    """Apply Supabase updates from Stripe Checkout metadata (partner portal + driver app)."""
+    from services.supabase_service import (
+        sb_get_partner,
+        sb_update_partner,
+        sb_update_profile,
+        sb_create_boost,
+        sb_update_offer,
+    )
+    from services.mock_data import BOOST_PRICING
+
+    meta = session.get("metadata") or {}
+    mode = session.get("mode") or ""
+    payment_status = session.get("payment_status") or ""
+
+    if payment_status not in ("paid", "no_payment_required"):
+        logger.info("checkout.session.completed skipped: payment_status=%s", payment_status)
+        return
+
+    partner_id = (meta.get("partner_id") or "").strip()
+
+    # Partner subscription (metadata from /partner/v2/subscribe)
+    if partner_id and meta.get("plan") and mode == "subscription":
+        plan = meta.get("plan")
+        sb_update_partner(partner_id, {"plan": plan, "subscription_status": "active"})
+        logger.info("Partner %s subscribed to plan %s", partner_id, plan)
+
+    # Partner one-time credits (metadata from /partner/v2/credits/purchase)
+    if partner_id and meta.get("credits_amount") is not None and mode == "payment":
+        try:
+            amt = float(meta.get("credits_amount", 0))
+        except (TypeError, ValueError):
+            amt = 0.0
+        if amt > 0:
+            p = sb_get_partner(partner_id)
+            if p:
+                cur = float(p.get("credits") or 0)
+                sb_update_partner(partner_id, {"credits": cur + amt})
+                logger.info("Partner %s credited $%.2f", partner_id, amt)
+
+    # Partner boost purchase (metadata from /partner/v2/boosts/purchase)
+    if partner_id and meta.get("boost_type") and mode == "payment":
+        offer_id = str(meta.get("offer_id") or "").strip()
+        boost_type = meta.get("boost_type")
+        if offer_id and boost_type in BOOST_PRICING:
+            cfg = BOOST_PRICING[boost_type]
+            ends_at = datetime.utcnow() + timedelta(hours=cfg["duration_hours"])
+            new_boost = sb_create_boost({
+                "offer_id": offer_id,
+                "partner_id": partner_id,
+                "budget": cfg["price"],
+                "duration_days": max(1, cfg["duration_hours"] // 24),
+                "target_radius_miles": 10,
+                "status": "active",
+                "ends_at": ends_at.isoformat(),
+            })
+            if new_boost:
+                sb_update_offer(offer_id, {
+                    "boost_multiplier": cfg["multiplier"],
+                    "boost_expiry": ends_at.isoformat(),
+                })
+                logger.info("Partner %s boost %s for offer %s", partner_id, boost_type, offer_id)
+
+    # Driver / mobile subscription (metadata from /api/payments/checkout/session)
+    user_id = (meta.get("user_id") or "").strip()
+    plan_id = (meta.get("plan_id") or "").strip()
+    if user_id and user_id != "anonymous" and plan_id in ("premium", "family") and mode == "subscription":
+        sb_update_profile(user_id, {"plan": plan_id, "is_premium": True})
+        logger.info("Profile %s upgraded to %s", user_id, plan_id)
+
+
 @router.post("/api/webhooks/stripe")
 async def stripe_webhook(request: Request):
-    """Stripe webhook handler - ready for Supabase integration."""
+    """
+    Stripe webhook. Set STRIPE_WEBHOOK_SECRET in .env and point Stripe to:
+    POST https://<your-api-host>/api/webhooks/stripe
+    Subscribe to at least: checkout.session.completed
+    """
+    from config import STRIPE_WEBHOOK_SECRET, STRIPE_SECRET_KEY
+
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
-    return {"success": True}
+
+    if not STRIPE_WEBHOOK_SECRET:
+        logger.error("STRIPE_WEBHOOK_SECRET missing — cannot verify Stripe webhooks")
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Webhook secret not configured"},
+        )
+
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY or ""
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError as e:
+        logger.warning("Stripe webhook invalid payload: %s", e)
+        return Response(status_code=400, content="Invalid payload")
+    except stripe.error.SignatureVerificationError as e:
+        logger.warning("Stripe webhook signature verification failed: %s", e)
+        return Response(status_code=400, content="Invalid signature")
+
+    etype = event.get("type")
+    obj = event.get("data", {}).get("object") or {}
+
+    try:
+        if etype == "checkout.session.completed":
+            _handle_checkout_session_completed(obj)
+        else:
+            logger.debug("Stripe webhook unhandled type: %s", etype)
+    except Exception as e:
+        logger.exception("Stripe webhook handler error for %s: %s", etype, e)
+        return JSONResponse(status_code=500, content={"error": "handler_failed"})
+
+    return {"received": True}
 
 
 # ==================== PARTNER WEBSOCKET ====================

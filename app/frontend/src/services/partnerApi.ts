@@ -234,17 +234,35 @@ class PartnerApiService {
     return this.request('/api/partner/v2/referrals/leaderboard')
   }
 
+  /** Stripe return URLs must match the running app origin (see PARTNER_PORTAL_ORIGIN / vite port). */
+  private portalOriginQuery(): string {
+    try {
+      return `&portal_origin=${encodeURIComponent(window.location.origin)}`
+    } catch {
+      return ''
+    }
+  }
+
   // Stripe payments
   async subscribeToplan(plan: string): Promise<any> {
-    return this.request(`/api/partner/v2/subscribe?partner_id=${this.partnerId}&plan=${plan}`, { method: 'POST' })
+    return this.request(
+      `/api/partner/v2/subscribe?partner_id=${this.partnerId}&plan=${plan}${this.portalOriginQuery()}`,
+      { method: 'POST' }
+    )
   }
 
   async purchaseBoost(offerId: string, boostType: string): Promise<any> {
-    return this.request(`/api/partner/v2/boosts/purchase?partner_id=${this.partnerId}&offer_id=${offerId}&boost_type=${boostType}`, { method: 'POST' })
+    return this.request(
+      `/api/partner/v2/boosts/purchase?partner_id=${this.partnerId}&offer_id=${encodeURIComponent(offerId)}&boost_type=${boostType}${this.portalOriginQuery()}`,
+      { method: 'POST' }
+    )
   }
 
   async purchaseCredits(amount: number): Promise<any> {
-    return this.request(`/api/partner/v2/credits/purchase?partner_id=${this.partnerId}&amount=${amount}`, { method: 'POST' })
+    return this.request(
+      `/api/partner/v2/credits/purchase?partner_id=${this.partnerId}&amount=${amount}${this.portalOriginQuery()}`,
+      { method: 'POST' }
+    )
   }
 
   // Analytics (v2 partner-specific)

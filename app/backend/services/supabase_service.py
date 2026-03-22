@@ -812,6 +812,34 @@ def sb_get_legal_documents() -> list:
         return []
 
 
+def sb_create_legal_document(data: dict) -> Optional[dict]:
+    """Insert a row into legal_documents. Expects name + type at minimum."""
+    allowed = (
+        "name",
+        "type",
+        "status",
+        "version",
+        "description",
+        "content",
+        "is_required",
+    )
+    row = {k: v for k, v in data.items() if k in allowed}
+    if not row.get("name") or not row.get("type"):
+        return None
+    if "status" not in row:
+        row["status"] = "draft"
+    if "version" not in row:
+        row["version"] = "1.0"
+    if "is_required" not in row:
+        row["is_required"] = False
+    try:
+        result = _sb().table("legal_documents").insert(row).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        logger.warning(f"sb_create_legal_document: {e}")
+        return None
+
+
 def sb_update_legal_document(doc_id: str, updates: dict) -> bool:
     try:
         _sb().table("legal_documents").update(updates).eq("id", doc_id).execute()

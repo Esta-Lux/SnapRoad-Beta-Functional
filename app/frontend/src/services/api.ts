@@ -149,25 +149,28 @@ class ApiService {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: (RequestInit & { timeoutMs?: number }) = {}
   ): Promise<ApiResponse<T>> {
+    const { timeoutMs, ...fetchInit } = options;
     const token = this.getToken();
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
+      ...fetchInit.headers,
     };
+
+    const ms = timeoutMs ?? this.defaultTimeoutMs;
 
     try {
       // #region agent log
       void 0
       // #endregion
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), this.defaultTimeoutMs);
+      const timeout = setTimeout(() => controller.abort(), ms);
       const response = await fetch(`${apiBaseUrl}${endpoint}`, {
-        ...options,
+        ...fetchInit,
         headers,
-        signal: options.signal ?? controller.signal,
+        signal: fetchInit.signal ?? controller.signal,
       }).finally(() => clearTimeout(timeout));
 
       let data: unknown;
@@ -210,9 +213,12 @@ class ApiService {
       // #region agent log
       void 0
       // #endregion
+      const baseHint =
+        apiBaseUrl ||
+        '(empty base → same-origin /api, proxied by Vite to http://127.0.0.1:8001)'
       const msg =
         (error as any)?.name === 'AbortError'
-          ? 'Request timed out. Check backend server and VITE_API_URL.'
+          ? `Request timed out after ${ms}ms. Start the FastAPI backend (uvicorn on port 8001). API base: ${baseHint}. Set VITE_API_URL / VITE_BACKEND_URL in frontend .env if needed; clear localStorage key "snaproad_api_url_override" if you used a bad ?api= URL.`
           : 'Network error';
       return { success: false, error: msg };
     }
@@ -251,6 +257,8 @@ class ApiService {
       {
         method: 'POST',
         body: JSON.stringify({ access_token: accessToken }),
+        // Supabase token validation + profile upsert can exceed default 12s on slow networks
+        timeoutMs: 30000,
       }
     )
     const payload = (result.data as { data?: { user?: unknown; token?: string } })?.data ?? result.data

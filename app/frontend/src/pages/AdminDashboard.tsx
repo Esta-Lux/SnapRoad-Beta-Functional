@@ -86,7 +86,12 @@ export default function AdminDashboard() {
   const renderActiveTab = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardOverview theme={darkMode ? 'dark' : 'light'} />
+        return (
+          <DashboardOverview
+            theme={darkMode ? 'dark' : 'light'}
+            onNavigate={(tabId) => setActiveTab(tabId)}
+          />
+        )
       case 'appcontrol':
         return <AppControl />
       case 'users':
@@ -118,7 +123,12 @@ export default function AdminDashboard() {
       case 'monitor':
         return <SystemMonitorTab theme={darkMode ? 'dark' : 'light'} />
       default:
-        return <DashboardOverview theme={darkMode ? 'dark' : 'light'} />
+        return (
+          <DashboardOverview
+            theme={darkMode ? 'dark' : 'light'}
+            onNavigate={(tabId) => setActiveTab(tabId)}
+          />
+        )
     }
   }
 

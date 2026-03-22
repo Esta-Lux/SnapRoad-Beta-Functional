@@ -11,9 +11,11 @@ import type { AdminAnalytics, AdminStats } from '@/types/admin'
 
 interface DashboardOverviewProps {
   theme: 'dark' | 'light'
+  /** Switch admin sidebar tab (e.g. incidents, legal, audit) */
+  onNavigate?: (tabId: string) => void
 }
 
-export default function DashboardOverview({ theme }: DashboardOverviewProps) {
+export default function DashboardOverview({ theme, onNavigate }: DashboardOverviewProps) {
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null)
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -229,7 +231,16 @@ export default function DashboardOverview({ theme }: DashboardOverviewProps) {
               </span>
             </div>
             <div className="text-2xl font-bold text-blue-500 mb-3">{queues?.incident_review || 0}</div>
-            <button className="w-full py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors">
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  sessionStorage.setItem('snaproad_admin_incidents_status', 'pending')
+                } catch { /* ignore */ }
+                onNavigate?.('incidents')
+              }}
+              className="w-full py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors"
+            >
               Review Now
             </button>
           </div>
@@ -242,7 +253,11 @@ export default function DashboardOverview({ theme }: DashboardOverviewProps) {
               </span>
             </div>
             <div className="text-2xl font-bold text-blue-500 mb-3">{queues?.consent_pending || 0}</div>
-            <button className="w-full py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors">
+            <button
+              type="button"
+              onClick={() => onNavigate?.('legal')}
+              className="w-full py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors"
+            >
               Review Now
             </button>
           </div>
@@ -255,7 +270,16 @@ export default function DashboardOverview({ theme }: DashboardOverviewProps) {
               </span>
             </div>
             <div className="text-2xl font-bold text-blue-500 mb-3">{queues?.fraud_flags || 0}</div>
-            <button className="w-full py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors">
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  sessionStorage.setItem('snaproad_audit_log_limit', '200')
+                } catch { /* ignore */ }
+                onNavigate?.('audit')
+              }}
+              className="w-full py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors"
+            >
               Review Now
             </button>
           </div>
@@ -269,7 +293,18 @@ export default function DashboardOverview({ theme }: DashboardOverviewProps) {
             <h3 className={`text-lg font-semibold ${textPrimary}`}>Recent Activity</h3>
             <p className={`text-xs ${textSecondary}`}>Latest platform events</p>
           </div>
-          <button className="text-sm text-blue-500 hover:text-blue-400 font-medium">View All</button>
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                sessionStorage.setItem('snaproad_audit_log_limit', '200')
+              } catch { /* ignore */ }
+              onNavigate?.('audit')
+            }}
+            className="text-sm text-blue-500 hover:text-blue-400 font-medium"
+          >
+            View All
+          </button>
         </div>
         <div className="space-y-3">
           {(analytics?.recent_activity || [

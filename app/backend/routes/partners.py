@@ -1,5 +1,7 @@
 import logging
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+import os
+import re
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query
 from typing import Optional
 from datetime import datetime, timedelta
 from models.schemas import (
@@ -22,8 +24,33 @@ from services.supabase_service import (
 )
 from services.mock_data import PARTNER_PLANS, BOOST_PRICING
 from middleware.auth import create_access_token, require_partner
+from config import PARTNER_PORTAL_ORIGIN
 
 logger = logging.getLogger(__name__)
+
+# Allow browser to pass ?portal_origin= so dev works on any local port; production uses PARTNER_PORTAL_ORIGIN.
+_DEV_PORTAL_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?/?$")
+
+
+def _resolve_partner_portal_base(portal_origin: Optional[str]) -> str:
+    configured = PARTNER_PORTAL_ORIGIN.rstrip("/")
+    if not portal_origin:
+        return configured
+    o = portal_origin.strip().rstrip("/")
+    if o == configured:
+        return o
+    if _DEV_PORTAL_ORIGIN.match(o):
+        return o.rstrip("/")
+    extra = [
+        x.strip().rstrip("/")
+        for x in (os.environ.get("PARTNER_PORTAL_ALLOWED_ORIGINS") or "").split(",")
+        if x.strip()
+    ]
+    if o in extra:
+        return o
+    return configured
+
+
 router = APIRouter(prefix="/api", tags=["Partners"])
 
 
@@ -771,9 +798,17 @@ async def get_referral_leaderboard():
 
 # ==================== STRIPE PAYMENT ENDPOINTS ====================
 @router.post("/partner/v2/subscribe")
-async def stripe_subscribe(partner_id: str = "default_partner", plan: str = "starter"):
+async def stripe_subscribe(
+    partner_id: str = "default_partner",
+    plan: str = "starter",
+    portal_origin: Optional[str] = Query(None, description="Partner app origin for Stripe return URLs"),
+):
     """Create a Stripe Checkout session for plan subscription."""
-    from config import STRIPE_SECRET_KEY
+    from config import (
+        STRIPE_SECRET_KEY,
+        STRIPE_PARTNER_STARTER_PRICE_ID,
+        STRIPE_PARTNER_GROWTH_PRICE_ID,
+    )
     if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
         return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
     try:
@@ -785,10 +820,16 @@ async def stripe_subscribe(partner_id: str = "default_partner", plan: str = "sta
         price = plan_info.get("price_founders") or plan_info.get("price_public")
         if not price:
             return {"success": False, "message": "Enterprise plans require contacting sales"}
-        session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            mode="subscription",
-            line_items=[{
+        base = _resolve_partner_portal_base(portal_origin)
+        catalog_price = ""
+        if plan == "starter":
+            catalog_price = (STRIPE_PARTNER_STARTER_PRICE_ID or "").strip()
+        elif plan == "growth":
+            catalog_price = (STRIPE_PARTNER_GROWTH_PRICE_ID or "").strip()
+        if catalog_price:
+            line_items = [{"price": catalog_price, "quantity": 1}]
+        else:
+            line_items = [{
                 "price_data": {
                     "currency": "usd",
                     "unit_amount": int(price * 100),
@@ -796,10 +837,14 @@ async def stripe_subscribe(partner_id: str = "default_partner", plan: str = "sta
                     "product_data": {"name": f"SnapRoad {plan_info['name']} Plan"},
                 },
                 "quantity": 1,
-            }],
+            }]
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="subscription",
+            line_items=line_items,
             metadata={"partner_id": partner_id, "plan": plan},
-            success_url="http://localhost:5173/portal/partner?payment=success",
-            cancel_url="http://localhost:5173/portal/partner?payment=cancelled",
+            success_url=f"{base}/portal/partner?payment=success",
+            cancel_url=f"{base}/portal/partner?payment=cancelled",
         )
         return {"success": True, "checkout_url": session.url, "session_id": session.id}
     except ImportError:
@@ -810,7 +855,12 @@ async def stripe_subscribe(partner_id: str = "default_partner", plan: str = "sta
 
 
 @router.post("/partner/v2/boosts/purchase")
-async def stripe_boost_purchase(partner_id: str = "default_partner", offer_id: str = "", boost_type: str = "basic"):
+async def stripe_boost_purchase(
+    partner_id: str = "default_partner",
+    offer_id: str = "",
+    boost_type: str = "basic",
+    portal_origin: Optional[str] = Query(None),
+):
     """Create a Stripe payment intent for a boost purchase."""
     from config import STRIPE_SECRET_KEY
     if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
@@ -821,6 +871,7 @@ async def stripe_boost_purchase(partner_id: str = "default_partner", offer_id: s
         boost_info = BOOST_PRICING.get(boost_type)
         if not boost_info:
             raise HTTPException(status_code=400, detail="Invalid boost type")
+        base = _resolve_partner_portal_base(portal_origin)
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="payment",
@@ -833,8 +884,8 @@ async def stripe_boost_purchase(partner_id: str = "default_partner", offer_id: s
                 "quantity": 1,
             }],
             metadata={"partner_id": partner_id, "offer_id": offer_id, "boost_type": boost_type},
-            success_url="http://localhost:5173/portal/partner?boost=success",
-            cancel_url="http://localhost:5173/portal/partner?boost=cancelled",
+            success_url=f"{base}/portal/partner?boost=success",
+            cancel_url=f"{base}/portal/partner?boost=cancelled",
         )
         return {"success": True, "checkout_url": session.url, "session_id": session.id}
     except ImportError:
@@ -845,7 +896,11 @@ async def stripe_boost_purchase(partner_id: str = "default_partner", offer_id: s
 
 
 @router.post("/partner/v2/credits/purchase")
-async def stripe_credits_purchase(partner_id: str = "default_partner", amount: float = 50.0):
+async def stripe_credits_purchase(
+    partner_id: str = "default_partner",
+    amount: float = 50.0,
+    portal_origin: Optional[str] = Query(None),
+):
     """Create a Stripe Checkout session to buy credits."""
     from config import STRIPE_SECRET_KEY
     if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
@@ -853,6 +908,7 @@ async def stripe_credits_purchase(partner_id: str = "default_partner", amount: f
     try:
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
+        base = _resolve_partner_portal_base(portal_origin)
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="payment",
@@ -865,8 +921,8 @@ async def stripe_credits_purchase(partner_id: str = "default_partner", amount: f
                 "quantity": 1,
             }],
             metadata={"partner_id": partner_id, "credits_amount": str(amount)},
-            success_url="http://localhost:5173/portal/partner?credits=success",
-            cancel_url="http://localhost:5173/portal/partner?credits=cancelled",
+            success_url=f"{base}/portal/partner?credits=success",
+            cancel_url=f"{base}/portal/partner?credits=cancelled",
         )
         return {"success": True, "checkout_url": session.url, "session_id": session.id}
     except ImportError:
