@@ -300,12 +300,26 @@ export interface FigmaUsersTabProps {
 export type WebSocketStatus = 'live' | 'connecting' | 'offline'
 
 export interface WSMessage {
-  type: 'pong' | 'backlog' | 'new_incident' | 'moderation_update' | 'admin_count'
+  type: 'pong' | 'backlog' | 'new_incident' | 'moderation_update' | 'admin_count' | 'telemetry_snapshot' | 'telemetry_event' | 'monitor_connected'
   admin_count?: number
   incidents?: AdminIncident[]
   incident?: AdminIncident
   incident_id?: number
   outcome?: 'approved' | 'rejected'
   count?: number
+  events?: TelemetryEvent[]
+  event?: TelemetryEvent
+}
+
+export interface TelemetryEvent {
+  id: string
+  timestamp: string
+  method: string
+  path: string
+  status_code: number
+  duration_ms: number
+  severity: 'info' | 'warn' | 'error'
+  error?: string | null
+  error_stack?: string | null
 }
 

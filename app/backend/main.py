@@ -1,9 +1,10 @@
 """
 SnapRoad API - Main Application Assembly
-All routes are organized into modular files under /routes.
+All routes are organized in modular files under /routes.
 Mock data is used as fallback; Supabase is the target database.
 """
 import os
+import traceback
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -17,7 +18,7 @@ sentry_sdk.init(
     traces_sample_rate=0.2,
     environment=os.getenv("ENVIRONMENT", "development"),
 )
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -46,12 +47,51 @@ from routes.payments import router as payments_router
 from routes.family import router as family_router
 from routes.photo_reports import router as photo_reports_router
 from config import JWT_SECRET, SUPABASE_URL, SUPABASE_SECRET_KEY, OPENAI_API_KEY
+from services.telemetry_service import telemetry_service
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="SnapRoad API")
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    @app.middleware("http")
+    async def telemetry_middleware(request: Request, call_next):
+        start = telemetry_service.start_timer()
+        method = request.method
+        path = request.url.path
+        status_code = 500
+        error = None
+        error_stack = None
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        except Exception as exc:
+            error = str(exc)
+            error_stack = traceback.format_exc(limit=8)
+            raise
+        finally:
+            duration_ms = telemetry_service.elapsed_ms(start)
+            severity = (
+                "error"
+                if status_code >= 500 or error
+                else "warn"
+                if status_code >= 400
+                else "info"
+            )
+            event = {
+                "id": f"evt_{telemetry_service.now_iso()}_{method}_{path}",
+                "timestamp": telemetry_service.now_iso(),
+                "method": method,
+                "path": path,
+                "status_code": status_code,
+                "duration_ms": duration_ms,
+                "severity": severity,
+                "error": error,
+                "error_stack": error_stack,
+            }
+            telemetry_service.publish_fire_and_forget(event)
 
     @app.get("/")
     def root():
@@ -61,12 +101,18 @@ def create_app() -> FastAPI:
     def env_check():
         """Verify .env is loaded and key vars are set (no secrets returned)."""
         key_path = os.environ.get("MAPKIT_PRIVATE_KEY_PATH", "")
-        key_path_abs = key_path if (key_path and os.path.isabs(key_path)) else str(Path(__file__).resolve().parent / (key_path or ""))
+        key_path_abs = (
+            key_path
+            if (key_path and os.path.isabs(key_path))
+            else str(Path(__file__).resolve().parent / (key_path or ""))
+        )
         return {
             "env_file_path": str(Path(__file__).resolve().parent / ".env"),
             "env_file_exists": (Path(__file__).resolve().parent / ".env").is_file(),
             "jwt_configured": bool(JWT_SECRET),
-            "supabase_configured": bool((SUPABASE_URL or "").strip() and (SUPABASE_SECRET_KEY or "").strip()),
+            "supabase_configured": bool(
+                (SUPABASE_URL or "").strip() and (SUPABASE_SECRET_KEY or "").strip()
+            ),
             "mapkit_configured": bool(
                 (os.environ.get("MAPKIT_KEY_ID") or "").strip()
                 and (os.environ.get("MAPKIT_TEAM_ID") or "").strip()
@@ -74,7 +120,11 @@ def create_app() -> FastAPI:
                 and os.path.isfile(key_path_abs)
             ),
             "google_maps_configured": bool(
-                (os.environ.get("GOOGLE_PLACES_API_KEY") or os.environ.get("GOOGLE_MAPS_API_KEY") or "").strip()
+                (
+                    os.environ.get("GOOGLE_PLACES_API_KEY")
+                    or os.environ.get("GOOGLE_MAPS_API_KEY")
+                    or ""
+                ).strip()
             ),
             "openai_configured": bool((OPENAI_API_KEY or "").strip()),
         }
@@ -98,7 +148,11 @@ def create_app() -> FastAPI:
         ]
 
     # Keep regex support for dev tunnels; gate it off by default in production.
-    _origin_regex = None if _env == "production" else os.environ.get("CORS_ORIGIN_REGEX", r"^https?://.*\.tunnelmole\.net$")
+    _origin_regex = (
+        None
+        if _env == "production"
+        else os.environ.get("CORS_ORIGIN_REGEX", r"^https?://.*\.tunnelmole\.net$")
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
@@ -132,6 +186,7 @@ def create_app() -> FastAPI:
     app.include_router(photo_reports_router)
 
     return app
+
 
 # Create app instance for uvicorn
 app = create_app()

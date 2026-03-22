@@ -38,6 +38,15 @@ def _plan_info(plan_key: str) -> dict:
     return PARTNER_PLANS.get(plan_key, PARTNER_PLANS["starter"])
 
 
+def _require_owned_partner_id(user: dict, partner_id: Optional[str] = None) -> str:
+    token_partner_id = str(user.get("partner_id") or "").strip()
+    if not token_partner_id:
+        raise HTTPException(status_code=403, detail="No partner_id in token")
+    if partner_id and str(partner_id) != token_partner_id:
+        raise HTTPException(status_code=403, detail="Partner access denied")
+    return token_partner_id
+
+
 # ==================== PARTNER PLANS ====================
 @router.get("/partner/plans")
 def get_partner_plans():
@@ -46,28 +55,14 @@ def get_partner_plans():
 
 # ==================== PARTNER PROFILE ====================
 @router.get("/partner/profile")
-def get_partner_profile(partner_id: str = "default_partner"):
-    partner = sb_get_partner(partner_id)
+def get_partner_profile(partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    partner = sb_get_partner(owned_partner_id)
     if not partner:
-        return {
-            "success": True,
-            "data": {
-                "id": partner_id,
-                "business_name": "New Business",
-                "email": "",
-                "plan": "starter",
-                "plan_info": _plan_info("starter"),
-                "is_founders": True,
-                "locations": [],
-                "location_count": 0,
-                "max_locations": 5,
-                "can_add_location": True,
-                "created_at": datetime.now().isoformat(),
-            },
-        }
+        raise HTTPException(status_code=404, detail="Partner not found")
     plan_key = partner.get("plan", "starter")
     plan = _plan_info(plan_key)
-    locations = sb_get_partner_locations(partner_id)
+    locations = sb_get_partner_locations(owned_partner_id)
     max_locs = PLAN_LOCATION_LIMITS.get(plan_key, 5)
     return {
         "success": True,
@@ -92,7 +87,9 @@ def update_partner_profile(
     business_name: Optional[str] = None,
     email: Optional[str] = None,
     partner_id: str = "default_partner",
+    user: dict = Depends(require_partner),
 ):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
     updates = {}
     if business_name:
         updates["business_name"] = business_name
@@ -100,15 +97,16 @@ def update_partner_profile(
         updates["email"] = email
     if not updates:
         return {"success": False, "message": "No fields to update"}
-    sb_update_partner(partner_id, updates)
+    sb_update_partner(owned_partner_id, updates)
     return {"success": True, "message": "Profile updated"}
 
 
 @router.post("/partner/plan")
-def update_partner_plan(plan_update: PartnerPlanUpdate, partner_id: str = "default_partner"):
+def update_partner_plan(plan_update: PartnerPlanUpdate, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
     if plan_update.plan not in PARTNER_PLANS:
         return {"success": False, "message": "Invalid plan"}
-    sb_update_partner(partner_id, {"plan": plan_update.plan})
+    sb_update_partner(owned_partner_id, {"plan": plan_update.plan})
     plan = _plan_info(plan_update.plan)
     return {
         "success": True,
@@ -123,11 +121,12 @@ def update_partner_plan(plan_update: PartnerPlanUpdate, partner_id: str = "defau
 
 # ==================== LOCATIONS ====================
 @router.get("/partner/locations")
-def get_partner_locations(partner_id: str = "default_partner"):
-    partner = sb_get_partner(partner_id)
+def get_partner_locations(partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    partner = sb_get_partner(owned_partner_id)
     plan_key = partner.get("plan", "starter") if partner else "starter"
     max_locs = PLAN_LOCATION_LIMITS.get(plan_key, 5)
-    locations = sb_get_partner_locations(partner_id)
+    locations = sb_get_partner_locations(owned_partner_id)
     return {
         "success": True,
         "data": locations,
@@ -138,20 +137,21 @@ def get_partner_locations(partner_id: str = "default_partner"):
 
 
 @router.post("/partner/locations")
-def add_partner_location(location: PartnerLocation, partner_id: str = "default_partner"):
-    partner = sb_get_partner(partner_id)
+def add_partner_location(location: PartnerLocation, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    partner = sb_get_partner(owned_partner_id)
     plan_key = partner.get("plan", "starter") if partner else "starter"
     max_locs = PLAN_LOCATION_LIMITS.get(plan_key, 5)
-    existing = sb_get_partner_locations(partner_id)
+    existing = sb_get_partner_locations(owned_partner_id)
     if len(existing) >= max_locs:
         return {"success": False, "message": f"Location limit reached ({max_locs}). Upgrade your plan."}
 
     if location.is_primary or len(existing) == 0:
-        sb_set_primary_location(partner_id, "")  # clear all first
+        sb_set_primary_location(owned_partner_id, "")  # clear all first
         location.is_primary = True
 
     new_loc = sb_create_partner_location({
-        "partner_id": partner_id,
+        "partner_id": owned_partner_id,
         "name": location.name,
         "address": location.address,
         "lat": location.lat,
@@ -164,7 +164,8 @@ def add_partner_location(location: PartnerLocation, partner_id: str = "default_p
 
 
 @router.put("/partner/locations/{location_id}")
-def update_partner_location(location_id: str, location: PartnerLocation, partner_id: str = "default_partner"):
+def update_partner_location(location_id: str, location: PartnerLocation, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
     updates = {
         "name": location.name,
         "address": location.address,
@@ -172,34 +173,37 @@ def update_partner_location(location_id: str, location: PartnerLocation, partner
         "lng": location.lng,
     }
     if location.is_primary:
-        sb_set_primary_location(partner_id, location_id)
+        sb_set_primary_location(owned_partner_id, location_id)
     sb_update_partner_location(location_id, updates)
     return {"success": True, "message": "Location updated"}
 
 
 @router.delete("/partner/locations/{location_id}")
-def delete_partner_location(location_id: str, partner_id: str = "default_partner"):
+def delete_partner_location(location_id: str, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
     sb_delete_partner_location(location_id)
-    remaining = sb_get_partner_locations(partner_id)
+    remaining = sb_get_partner_locations(owned_partner_id)
     if remaining and not any(l.get("is_primary") for l in remaining):
         sb_update_partner_location(remaining[0]["id"], {"is_primary": True})
     return {"success": True, "message": "Location deleted"}
 
 
 @router.post("/partner/locations/{location_id}/set-primary")
-def set_primary_location(location_id: str, partner_id: str = "default_partner"):
-    sb_set_primary_location(partner_id, location_id)
+def set_primary_location(location_id: str, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    sb_set_primary_location(owned_partner_id, location_id)
     return {"success": True, "message": "Primary location updated"}
 
 
 # ==================== PARTNER OFFERS ====================
 @router.post("/partner/offers")
-def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_partner"):
-    partner = sb_get_partner(partner_id)
+def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    partner = sb_get_partner(owned_partner_id)
     if not partner:
         return {"success": False, "message": "Partner not found"}
 
-    locations = sb_get_partner_locations(partner_id)
+    locations = sb_get_partner_locations(owned_partner_id)
     location = next((l for l in locations if l["id"] == offer.location_id), None)
     if not location:
         return {"success": False, "message": "Location not found"}
@@ -208,7 +212,7 @@ def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_p
     free_discount = calculate_free_discount(offer.discount_percent)
 
     new_offer = sb_create_offer({
-        "partner_id": partner_id,
+        "partner_id": owned_partner_id,
         "location_id": location["id"],
         "title": offer.title,
         "description": offer.description,
@@ -221,7 +225,7 @@ def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_p
         "lng": location["lng"],
         "status": "active",
         "image_url": offer.image_url,
-        "created_by": partner_id,
+        "created_by": owned_partner_id,
         "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
     })
     if not new_offer:
@@ -230,18 +234,20 @@ def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_p
 
 
 @router.get("/partner/offers")
-def get_partner_offers(partner_id: str = "default_partner"):
-    offers = sb_get_offers_by_partner(partner_id)
+def get_partner_offers(partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    offers = sb_get_offers_by_partner(owned_partner_id)
     return {"success": True, "data": offers, "count": len(offers)}
 
 
 @router.put("/partner/offers/{offer_id}")
-def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, partner_id: str = "default_partner"):
-    partner = sb_get_partner(partner_id)
+def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    partner = sb_get_partner(owned_partner_id)
     if not partner:
         return {"success": False, "message": "Partner not found"}
     
-    locations = sb_get_partner_locations(partner_id)
+    locations = sb_get_partner_locations(owned_partner_id)
     location = next((l for l in locations if l["id"] == str(offer.location_id)), None)
     if not location:
         return {"success": False, "message": "Location not found"}
@@ -266,10 +272,11 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, partner_id: s
 
 
 @router.delete("/partner/offers/{offer_id}")
-def delete_partner_offer(offer_id: str, partner_id: str = "default_partner"):
+def delete_partner_offer(offer_id: str, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
     from services.supabase_service import _sb
     try:
-        _sb().table("offers").delete().eq("id", offer_id).eq("partner_id", partner_id).execute()
+        _sb().table("offers").delete().eq("id", offer_id).eq("partner_id", owned_partner_id).execute()
         return {"success": True, "message": "Offer deleted successfully"}
     except Exception as e:
         logger.error(f"Error deleting offer: {e}")
@@ -283,14 +290,15 @@ def get_boost_pricing():
 
 
 @router.post("/partner/boosts/create")
-def create_offer_boost(boost_req: BoostRequest, partner_id: str = "default_partner"):
+def create_offer_boost(boost_req: BoostRequest, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
     if boost_req.boost_type not in BOOST_PRICING:
         return {"success": False, "message": "Invalid boost type"}
     config = BOOST_PRICING[boost_req.boost_type]
     ends_at = datetime.now() + timedelta(hours=config["duration_hours"])
     new_boost = sb_create_boost({
         "offer_id": str(boost_req.offer_id),
-        "partner_id": partner_id,
+        "partner_id": owned_partner_id,
         "budget": config["price"],
         "duration_days": config["duration_hours"] // 24,
         "target_radius_miles": 10,
@@ -311,8 +319,9 @@ def create_offer_boost(boost_req: BoostRequest, partner_id: str = "default_partn
 
 
 @router.get("/partner/boosts/active")
-def get_active_boosts(partner_id: str = "default_partner"):
-    boosts = sb_get_boosts(partner_id)
+def get_active_boosts(partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    boosts = sb_get_boosts(owned_partner_id)
     now = datetime.now()
     active = []
     for b in boosts:
@@ -335,15 +344,17 @@ def get_active_boosts(partner_id: str = "default_partner"):
 
 
 @router.delete("/partner/boosts/{boost_id}")
-def cancel_boost(boost_id: str, partner_id: str = "default_partner"):
+def cancel_boost(boost_id: str, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    _require_owned_partner_id(user, partner_id)
     sb_cancel_boost(boost_id)
     return {"success": True, "message": "Boost cancelled"}
 
 
 # ==================== CREDITS ====================
 @router.get("/partner/credits")
-def get_partner_credits(partner_id: str = "default_partner"):
-    partner = sb_get_partner(partner_id)
+def get_partner_credits(partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    partner = sb_get_partner(owned_partner_id)
     credits_val = 0
     if partner:
         credits_val = partner.get("credits", 0) or 0
@@ -351,15 +362,16 @@ def get_partner_credits(partner_id: str = "default_partner"):
 
 
 @router.post("/partner/credits/add")
-def add_partner_credits(credits_req: BoostCreditsRequest, partner_id: str = "default_partner"):
-    partner = sb_get_partner(partner_id)
+def add_partner_credits(credits_req: BoostCreditsRequest, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    partner = sb_get_partner(owned_partner_id)
     if not partner:
         return {"success": False, "message": "Partner not found"}
     current = partner.get("credits", 0) or 0
     # The partners table in the real schema doesn't have a credits column yet;
     # this will silently fail until the column is added. That's acceptable for now.
     new_balance = current + credits_req.amount
-    sb_update_partner(partner_id, {"credits": new_balance})
+    sb_update_partner(owned_partner_id, {"credits": new_balance})
     return {
         "success": True,
         "message": f"Added ${credits_req.amount} in credits",
@@ -415,7 +427,8 @@ async def partner_register_v2(request: PartnerRegisterRequest):
 
 
 @router.get("/partner/v2/profile/{partner_id}")
-async def get_partner_profile_v2(partner_id: str):
+async def get_partner_profile_v2(partner_id: str, user: dict = Depends(require_partner)):
+    _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
     if not partner:
         raise HTTPException(status_code=404, detail="Partner not found")
@@ -435,14 +448,16 @@ async def get_partner_profile_v2(partner_id: str):
 
 
 @router.get("/partner/v2/team/{partner_id}")
-async def get_team_members(partner_id: str):
+async def get_team_members(partner_id: str, user: dict = Depends(require_partner)):
+    _require_owned_partner_id(user, partner_id)
     from services.partner_service import partner_service
     team = partner_service.get_team_members(partner_id)
     return {"success": True, "data": team, "count": len(team)}
 
 
 @router.post("/partner/v2/team/{partner_id}/invite")
-async def invite_team_member(partner_id: str, request: TeamInviteRequest):
+async def invite_team_member(partner_id: str, request: TeamInviteRequest, user: dict = Depends(require_partner)):
+    _require_owned_partner_id(user, partner_id)
     from services.partner_service import partner_service
     result = partner_service.invite_team_member(
         partner_id=partner_id, email=request.email or "", role=request.role, method=request.method
@@ -469,7 +484,8 @@ async def revoke_team_access(member_id: str):
 
 
 @router.get("/partner/v2/referrals/{partner_id}")
-async def get_referrals(partner_id: str):
+async def get_referrals(partner_id: str, user: dict = Depends(require_partner)):
+    _require_owned_partner_id(user, partner_id)
     referrals = sb_get_partner_referrals(partner_id)
     total = len(referrals)
     credits_earned = sum(float(r.get("credits_awarded", 0)) for r in referrals)
@@ -486,7 +502,8 @@ async def get_referrals(partner_id: str):
 
 
 @router.post("/partner/v2/referrals/{partner_id}")
-async def send_referral(partner_id: str, request: ReferralRequest):
+async def send_referral(partner_id: str, request: ReferralRequest, user: dict = Depends(require_partner)):
+    _require_owned_partner_id(user, partner_id)
     ref = sb_create_partner_referral({
         "referrer_partner_id": partner_id,
         "credits_awarded": 0,
@@ -497,7 +514,8 @@ async def send_referral(partner_id: str, request: ReferralRequest):
 
 
 @router.post("/partner/v2/credits/{partner_id}/use")
-async def use_credits(partner_id: str, request: CreditUseRequest):
+async def use_credits(partner_id: str, request: CreditUseRequest, user: dict = Depends(require_partner)):
+    _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
     if not partner:
         raise HTTPException(status_code=400, detail="Partner not found")
@@ -528,8 +546,9 @@ async def redeem_offer(request: QRRedemptionRequest, background_tasks: Backgroun
 
 # ==================== TEAM LINKS ====================
 @router.post("/partner/v2/team-link/generate")
-async def generate_team_link(partner_id: str, label: str = "Team Link"):
+async def generate_team_link(partner_id: str, label: str = "Team Link", user: dict = Depends(require_partner)):
     """Generate a shareable QR scan link for partner team members."""
+    _require_owned_partner_id(user, partner_id)
     import secrets
     from services.supabase_service import _sb
 
@@ -563,7 +582,8 @@ async def generate_team_link(partner_id: str, label: str = "Team Link"):
 
 
 @router.get("/partner/v2/team-links/{partner_id}")
-async def list_team_links(partner_id: str):
+async def list_team_links(partner_id: str, user: dict = Depends(require_partner)):
+    _require_owned_partner_id(user, partner_id)
     from services.supabase_service import _sb
     try:
         result = _sb().table("partner_team_links").select("*").eq("partner_id", partner_id).eq("is_active", True).execute()
@@ -635,13 +655,15 @@ async def validate_scan(token: str, qr_data: str):
 
 
 @router.get("/partner/v2/redemptions/{partner_id}")
-async def get_recent_redemptions(partner_id: str, limit: int = 10):
+async def get_recent_redemptions(partner_id: str, limit: int = 10, user: dict = Depends(require_partner)):
+    _require_owned_partner_id(user, partner_id)
     redemptions = sb_get_redemptions_by_partner(partner_id, limit)
     return {"success": True, "data": redemptions, "count": len(redemptions)}
 
 
 @router.get("/partner/v2/fees/{partner_id}")
-async def get_partner_fees(partner_id: str):
+async def get_partner_fees(partner_id: str, user: dict = Depends(require_partner)):
+    _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
     if not partner:
         raise HTTPException(status_code=404, detail="Partner not found")
@@ -661,7 +683,8 @@ async def get_partner_fees(partner_id: str):
 
 
 @router.get("/partner/v2/analytics/{partner_id}")
-async def get_partner_analytics(partner_id: str):
+async def get_partner_analytics(partner_id: str, user: dict = Depends(require_partner)):
+    _require_owned_partner_id(user, partner_id)
     offers = sb_get_offers_by_partner(partner_id)
     total_redemptions = sum(o.get("redemption_count", 0) or 0 for o in offers)
     total_views = sum(o.get("views", 0) or 0 for o in offers)
@@ -682,8 +705,9 @@ async def get_partner_analytics(partner_id: str):
 
 
 @router.get("/partner/v2/credits/history/{partner_id}")
-async def get_credit_history(partner_id: str):
+async def get_credit_history(partner_id: str, user: dict = Depends(require_partner)):
     """Credit transaction history from boosts, referrals, and bonuses."""
+    _require_owned_partner_id(user, partner_id)
     boosts = sb_get_boosts(partner_id)
     referrals = sb_get_partner_referrals(partner_id)
     history = []

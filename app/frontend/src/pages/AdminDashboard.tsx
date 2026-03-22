@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, AlertTriangle, Eye, Gift, Building2, BarChart3,
   Bell, TrendingUp, DollarSign, Scale, Settings, FileText, LogOut,
-  Moon, Sun, Crown, Sliders
+  Moon, Sun, Crown, Activity, Sliders
 } from 'lucide-react'
 
 import { adminApi } from '@/services/adminApi'
@@ -24,6 +24,7 @@ import LegalTab from '@/components/admin/LegalTab'
 import SettingsTab from '@/components/admin/SettingsTab'
 import NotificationsTab from '@/components/admin/NotificationsTab'
 import AuditLogTab from '@/components/admin/AuditLogTab'
+import SystemMonitorTab from '@/components/admin/SystemMonitorTab'
 import { AdminOfferManagement } from '@/components/admin/AdminOfferManagement'
 import AppControl from '@/pages/AdminDashboard/components/AppControl'
 
@@ -43,6 +44,7 @@ const NAV_BASE = [
   { id: 'legal', label: 'Legal & Compliance', icon: Scale, badgeKey: '' },
   { id: 'settings', label: 'Settings', icon: Settings, badgeKey: '' },
   { id: 'audit', label: 'Audit Log', icon: FileText, badgeKey: '' },
+  { id: 'monitor', label: 'System Monitor', icon: Activity, badgeKey: '' },
 ]
 
 export default function AdminDashboard() {
@@ -51,20 +53,23 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [darkMode, setDarkMode] = useState(true)
   const [navBadges, setNavBadges] = useState<Record<string, string>>({})
-  const isConnected = true
+  const [isConnected, setIsConnected] = useState(false)
 
   useEffect(() => {
     const loadBadges = async () => {
       try {
         const res = await adminApi.getStats()
         if (res.success && res.data) {
+          setIsConnected(true)
           const s = res.data
           setNavBadges({
             total_users: (s.total_users || 0).toLocaleString(),
             total_partners: (s.total_partners || 0).toLocaleString(),
           })
         }
-      } catch { /* silent */ }
+      } catch {
+        setIsConnected(false)
+      }
     }
     loadBadges()
   }, [])
@@ -110,14 +115,16 @@ export default function AdminDashboard() {
         return <SettingsTab theme={darkMode ? 'dark' : 'light'} />
       case 'audit':
         return <AuditLogTab theme={darkMode ? 'dark' : 'light'} />
+      case 'monitor':
+        return <SystemMonitorTab theme={darkMode ? 'dark' : 'light'} />
       default:
         return <DashboardOverview theme={darkMode ? 'dark' : 'light'} />
     }
   }
 
   return (
-    <div className={`min-h-screen transition-colors duration-200 ${darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
-      <div className="flex">
+    <div className={`h-screen overflow-hidden transition-colors duration-200 ${darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
+      <div className="flex h-full">
         {/* Sidebar */}
         <aside className={`w-64 transition-colors duration-200 flex flex-col h-screen sticky top-0 ${
           darkMode 
@@ -216,9 +223,9 @@ export default function AdminDashboard() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1">
+        <main className="flex-1 h-full overflow-y-auto">
           {/* Header */}
-          <header className={`transition-colors duration-200 border-b px-8 py-4 ${
+          <header className={`sticky top-0 z-40 transition-colors duration-200 border-b px-8 py-4 ${
             darkMode 
               ? 'bg-[#1A1A1E] border-white/10' 
               : 'bg-white border-gray-200'
