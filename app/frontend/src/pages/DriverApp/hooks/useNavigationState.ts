@@ -120,6 +120,9 @@ export function useNavigationState(params: {
   const lastBroadcastLocationRef = useRef<{ lat: number; lng: number } | null>(null)
   const speedDisplayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const navigationDataRef = useRef<NavigationState | null>(null)
+  const crashCancelActiveRef = useRef(crashCancelActive)
+  const crashDetectedRef = useRef(crashDetected)
+  const triggerCrashDetectionRef = useRef(triggerCrashDetection)
   const hasAnnouncedArrivalRef = useRef(false)
   const lastSpokenStepIndexRef = useRef<number>(-1)
   const lastSpokenPhraseRef = useRef('')
@@ -182,6 +185,18 @@ export function useNavigationState(params: {
     latRef.current = userLocation.lat
     lngRef.current = userLocation.lng
   }, [userLocation.lat, userLocation.lng])
+
+  useEffect(() => {
+    crashCancelActiveRef.current = crashCancelActive
+  }, [crashCancelActive])
+
+  useEffect(() => {
+    crashDetectedRef.current = crashDetected
+  }, [crashDetected])
+
+  useEffect(() => {
+    triggerCrashDetectionRef.current = triggerCrashDetection
+  }, [triggerCrashDetection])
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) return
@@ -317,7 +332,7 @@ export function useNavigationState(params: {
       const speedChange = Math.abs(speedMph - lastSpeedRef.current)
       const CRASH_THRESHOLD = 35
       if (isNavigatingRef.current && speedChange > CRASH_THRESHOLD && lastSpeedRef.current > 20) {
-        if (!crashCancelActive && !crashDetected) triggerCrashDetection()
+        if (!crashCancelActiveRef.current && !crashDetectedRef.current) triggerCrashDetectionRef.current()
       }
       lastSpeedRef.current = speedMph
 

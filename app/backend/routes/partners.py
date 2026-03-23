@@ -643,8 +643,9 @@ async def validate_scan(token: str, qr_data: str):
             raise HTTPException(status_code=403, detail="Invalid or expired team link")
     except HTTPException:
         raise
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("validate_scan token validation error: %s", e)
+        raise HTTPException(status_code=500, detail="Unable to validate team link")
 
     # Parse QR data
     try:
