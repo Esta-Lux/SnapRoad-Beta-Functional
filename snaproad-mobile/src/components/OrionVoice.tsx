@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSizes, FontWeights, BorderRadius, Spacing } from '../utils/theme';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://feature-stitch.preview.emergentagent.com';
+import { API_URL } from '../config';
 
 interface OrionVoiceProps {
   visible: boolean;

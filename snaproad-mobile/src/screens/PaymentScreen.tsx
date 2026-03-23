@@ -19,7 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, FontSizes, FontWeights, BorderRadius, Spacing } from '../utils/theme';
 import { useUserStore } from '../store';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://feature-stitch.preview.emergentagent.com';
+import { API_URL } from '../config';
 
 interface Plan {
   name: string;

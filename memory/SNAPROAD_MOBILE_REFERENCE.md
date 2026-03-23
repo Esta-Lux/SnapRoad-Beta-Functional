@@ -140,7 +140,7 @@
 ## API BASE URL
 
 ```
-EXPO_PUBLIC_API_URL=https://feature-stitch.preview.emergentagent.com
+EXPO_PUBLIC_API_URL=https://admin-portal-sr.preview.emergentagent.com
 ```
 
 All API calls append `/api` prefix:

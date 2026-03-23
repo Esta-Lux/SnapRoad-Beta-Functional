@@ -1,32 +1,31 @@
+const path = require('path');
 const { getDefaultConfig } = require('@expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
-// Ensure expo packages that use import.meta are transformed by Babel
-// Without this, import.meta in node_modules causes "Cannot use 'import.meta' outside a module"
-config.transformer = config.transformer || {};
-config.transformer.transformIgnorePatterns = [
-  'node_modules/(?!(' + [
-    'react-native',
-    '@react-native',
-    '@react-native-community',
-    'expo',
-    'expo-font',
-    'expo-asset',
-    'expo-constants',
-    'expo-file-system',
-    'expo-linear-gradient',
-    'expo-location',
-    'expo-modules-core',
-    'expo-status-bar',
-    '@expo',
-    'react-navigation',
-    '@react-navigation',
-    'react-native-web',
-    'react-native-safe-area-context',
-    'react-native-screens',
-    '@react-native-async-storage',
-  ].join('|') + ')/)',
-];
+// Exclude @react-native/debugger-frontend (uses import.meta) so it never gets into the web bundle.
+// 1) Resolve it to an empty module for web so require() gets {} instead of the real package.
+const defaultResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName && (moduleName.includes('debugger-frontend') || moduleName === '@react-native/debugger-frontend')) {
+    if (platform === 'web') {
+      return {
+        type: 'sourceFile',
+        filePath: path.join(__dirname, 'empty-module.js'),
+      };
+    }
+  }
+  return defaultResolveRequest
+    ? defaultResolveRequest(context, moduleName, platform)
+    : context.resolveRequest(context, moduleName, platform);
+};
+
+// 2) Blocklist so any file under debugger-frontend is never bundled (safety net).
+config.resolver.blockList = [
+  /node_modules[\\/]@react-native[\\/]debugger-frontend[\\/]/,
+  /node_modules[\\/]@react-native[\\/]community-cli-plugin[\\/]node_modules[\\/]@react-native[\\/]debugger-frontend[\\/]/,
+].concat(config.resolver.blockList || []);
+
+config.resolver.emptyModulePath = path.join(__dirname, 'empty-module.js');
 
 module.exports = config;

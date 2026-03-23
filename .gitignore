@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+.venv/
+venv/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -12,9 +14,15 @@ __pycache__/
 .env.production
 !.env.example
 
+# Private keys (MapKit .p8, local key dirs)
+keys/
+.mapkit/
+*.p8
+
 # Build outputs
 dist/
 build/
+.vite/
 *.egg-info/
 
 # IDE
@@ -39,6 +47,14 @@ htmlcov/
 # Misc
 *.bak
 *.tmp
+-e 
+# Environment files
+*.env
+*.env.*
+-e 
+# Environment files
+*.env
+*.env.*
 -e 
 # Environment files
 *.env
