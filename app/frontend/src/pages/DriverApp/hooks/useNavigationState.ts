@@ -1,13 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import type { Map as MapboxMap } from 'mapbox-gl'
 import type { DirectionsResult } from '@/lib/mapboxDirections'
 import type { Lane } from '../components/LaneGuide'
 import { parseLanes } from '../components/LaneGuide'
 import { updateMyLocation } from '@/lib/friendLocation'
 import { orionSpeak } from '@/lib/orion'
 
+/** Matches DriverApp `SearchResult` / selected destination state (kept local to avoid circular imports). */
+type SelectedDestinationState = {
+  id?: number | string
+  name: string
+  lat: number
+  lng: number
+  address?: string
+  type?: string
+  distance_km?: number
+  place_id?: string
+}
+
 type NavigationState = {
   origin?: { lat: number; lng: number; name?: string }
-  destination?: { lat: number; lng: number; name?: string }
+  destination?: { lat: number; lng: number; name?: string; address?: string }
   steps?: { instruction: string; distance: string; distanceMeters?: number; duration?: string; maneuver?: string; lanes?: string; lat?: number; lng?: number }[]
   polyline?: { lat: number; lng: number }[]
   [key: string]: unknown
@@ -18,7 +31,7 @@ export function useNavigationState(params: {
   setUserLocation: (loc: { lat: number; lng: number }) => void
   setCarHeading: (h: number) => void
   compassHeadingRef: { current: number | null }
-  mapInstanceRef: { current: any }
+  mapInstanceRef: { current: MapboxMap | null }
   isNavigatingRef: { current: boolean }
   cameraLockedRef: { current: boolean }
   latRef: { current: number }
@@ -38,19 +51,18 @@ export function useNavigationState(params: {
   osmSignals: Array<{ id: string; type: string; lat: number; lng: number }>
   nearestControlType: (step: { lat?: number; lng?: number }, signals: Array<{ type: string; lat: number; lng: number }>, radiusMeters: number) => 'traffic-light' | 'stop-sign' | null
   formatTurnInstructionForVoice: (instruction: string, distanceMeters?: number, maneuver?: string, controlType?: 'traffic-light' | 'stop-sign' | null) => string
-  apiClient: { post: (url: string, body?: unknown) => Promise<{ success?: boolean; data?: unknown }> }
+  apiClient: { post: (url: string, body?: object) => Promise<{ success?: boolean; data?: unknown }> }
   toastClient: {
     loading: (message: string, opts?: { duration?: number }) => void
     success: (message: string) => void
     error: (message: string) => void
-    [key: string]: unknown
   }
   mode: string
   setActiveTripId: (tripId: string) => void
   setShowMenu: (show: boolean) => void
   setShowSearch: (show: boolean) => void
   setShowTurnByTurn: (show: boolean) => void
-  setSelectedDestination: (dest: { lat: number; lng: number; name?: string } | null) => void
+  setSelectedDestination: Dispatch<SetStateAction<SelectedDestinationState | null>>
   setRoutePolyline: (polyline: { lat: number; lng: number }[] | null) => void
   invalidateRewardsCaches: () => void
   activeTripId: string | null
@@ -187,31 +199,43 @@ export function useNavigationState(params: {
     if (typeof navigator === 'undefined' || !navigator.geolocation) return
 
     const LAST_LOC_KEY = 'sr_last_location_v1'
-    const effectStart = Date.now()
-    let usedLastKnown = false
     let firstWatchFixLogged = false
     let firstWatchErrorLogged = false
+    let permissionDeniedToastShown = false
+    let hasReceivedAnyFix = false
+    let hasPromotedHighAccuracy = false
+    let disposed = false
+    let bootTimer: ReturnType<typeof setTimeout> | null = null
+    let preciseTimer: ReturnType<typeof setTimeout> | null = null
+    let forceRecoverTimer: ReturnType<typeof setTimeout> | null = null
+    const persistLastKnownLocation = (lat: number, lng: number) => {
+      try {
+        localStorage.setItem(LAST_LOC_KEY, JSON.stringify({ lat, lng, t: Date.now() }))
+      } catch {}
+    }
 
     try {
       const raw = localStorage.getItem(LAST_LOC_KEY)
       if (raw) {
-        const parsed = JSON.parse(raw) as { lat?: unknown; lng?: unknown }
+        const parsed = JSON.parse(raw) as { lat?: unknown; lng?: unknown; t?: unknown }
         const lat = Number(parsed.lat)
         const lng = Number(parsed.lng)
-        if (Number.isFinite(lat) && Number.isFinite(lng)) setUserLocation({ lat, lng })
-        if (Number.isFinite(lat) && Number.isFinite(lng)) usedLastKnown = true
+        const ts = Number(parsed.t)
+        const isFreshEnough = !Number.isFinite(ts) || Date.now() - ts < 24 * 60 * 60 * 1000
+        if (Number.isFinite(lat) && Number.isFinite(lng) && isFreshEnough) setUserLocation({ lat, lng })
       }
     } catch {}
 
-    const isMobileWeb =
-      typeof navigator !== 'undefined' &&
-      /iphone|ipad|ipod|android/i.test(navigator.userAgent || '')
-    // Prioritize a fresh-ish fix on mobile; infinite cache can return stale coordinates.
-    const GEO_FAST: PositionOptions = {
-      // Fast first fix: allow coarse/cached location immediately.
+    // Prioritize a quick first marker, then progressively improve precision.
+    const GEO_BOOT: PositionOptions = {
       enableHighAccuracy: false,
+      maximumAge: 10 * 60_000,
+      timeout: 3_000,
+    }
+    const GEO_BALANCED: PositionOptions = {
+      enableHighAccuracy: true,
       maximumAge: 30_000,
-      timeout: 5_000,
+      timeout: 6_000,
     }
     const getGpsOptions = (): PositionOptions => ({
       // After the first fix, keep watcher precise.
@@ -221,26 +245,13 @@ export function useNavigationState(params: {
     })
     const isTimeout = (err: GeolocationPositionError) => err.code === err.TIMEOUT
 
-    // #region agent log
-    void 0// #endregion
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        // #region agent log
-        if (pos?.coords) {
-          void 0}
-        // #endregion
-        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-      },
-      (err) => {
-        // #region agent log
-        if (!firstWatchErrorLogged) {
-          firstWatchErrorLogged = true
-          void 0}
-        // #endregion
-      },
-      GEO_FAST
-    )
+    const applyFix = (pos: GeolocationPosition) => {
+      hasReceivedAnyFix = true
+      const lat = pos.coords.latitude
+      const lng = pos.coords.longitude
+      setUserLocation({ lat, lng })
+      persistLastKnownLocation(lat, lng)
+    }
 
     const onWatch = (pos: GeolocationPosition) => {
       lastFixAtRef.current = Date.now()
@@ -266,7 +277,12 @@ export function useNavigationState(params: {
       }
 
       const newLoc = { lat, lng }
-      setUserLocation(newLoc)
+      applyFix(pos)
+
+      if (!hasPromotedHighAccuracy) {
+        hasPromotedHighAccuracy = true
+        startWatch(true, getGpsOptions())
+      }
 
       const prev = prevLocationRef.current
       if (prev && isNavigatingRef.current) {
@@ -356,6 +372,7 @@ export function useNavigationState(params: {
     }
 
     const onGpsError = (err: GeolocationPositionError) => {
+      if (disposed) return
       lastGpsErrorCodeRef.current = err.code
       if (!firstWatchErrorLogged) {
         firstWatchErrorLogged = true
@@ -363,7 +380,10 @@ export function useNavigationState(params: {
         void 0// #endregion
       }
       if (err.code === err.PERMISSION_DENIED) {
-        toastClient.error('Location permission denied. Enable location access in your browser settings.')
+        if (!permissionDeniedToastShown) {
+          permissionDeniedToastShown = true
+          toastClient.error('Location permission denied. Enable location access in your browser settings.')
+        }
         return
       }
       if (isTimeout(err) && Date.now() - lastWatchRestartAtRef.current < 5000) return
@@ -372,9 +392,14 @@ export function useNavigationState(params: {
         watchIdRef.current = null
       }
       lastWatchRestartAtRef.current = Date.now()
-      watchIdRef.current = navigator.geolocation.watchPosition(onWatch, onGpsError, getGpsOptions())
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        onWatch,
+        onGpsError,
+        hasReceivedAnyFix ? getGpsOptions() : GEO_BALANCED
+      )
     }
     const startWatch = (force = false, options?: PositionOptions) => {
+      if (disposed) return
       if (watchIdRef.current != null && !force) return
       if (watchIdRef.current != null && force) {
         try { navigator.geolocation.clearWatch(watchIdRef.current) } catch {}
@@ -383,7 +408,39 @@ export function useNavigationState(params: {
       watchIdRef.current = navigator.geolocation.watchPosition(onWatch, onGpsError, options ?? getGpsOptions())
       lastWatchRestartAtRef.current = Date.now()
     }
-    startWatch(true)
+    const requestSingleFix = (options: PositionOptions) => {
+      navigator.geolocation.getCurrentPosition(
+        onWatch,
+        onGpsError,
+        options
+      )
+    }
+
+    // Startup ladder: immediate coarse fix, then balanced, then strict high-accuracy.
+    startWatch(true, GEO_BOOT)
+    requestSingleFix(GEO_BOOT)
+    bootTimer = setTimeout(() => {
+      if (!hasReceivedAnyFix) requestSingleFix(GEO_BALANCED)
+    }, 1200)
+    preciseTimer = setTimeout(() => {
+      if (!hasReceivedAnyFix) requestSingleFix(getGpsOptions())
+    }, 3500)
+    forceRecoverTimer = setTimeout(() => {
+      if (!hasReceivedAnyFix) startWatch(true, getGpsOptions())
+    }, 6000)
+
+    const recoverLocationStream = () => {
+      if (disposed || permissionDeniedToastShown) return
+      startWatch(true, hasReceivedAnyFix ? getGpsOptions() : GEO_BOOT)
+      requestSingleFix(hasReceivedAnyFix ? GEO_BALANCED : GEO_BOOT)
+    }
+
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') recoverLocationStream()
+    }
+    window.addEventListener('focus', onVisibilityOrFocus)
+    document.addEventListener('visibilitychange', onVisibilityOrFocus)
+
     const idleCheckInterval = setInterval(() => {
       const idleSecs = (Date.now() - lastActivityRef.current) / 1000
       const staleMs = lastFixAtRef.current > 0 ? Date.now() - lastFixAtRef.current : Number.POSITIVE_INFINITY
@@ -392,21 +449,27 @@ export function useNavigationState(params: {
           navigator.geolocation.clearWatch(watchIdRef.current)
           watchIdRef.current = null
         }
-      } else if (watchIdRef.current == null && idleSecs < 10) {
-        startWatch(true)
+      } else if (watchIdRef.current == null) {
+        startWatch(true, hasReceivedAnyFix ? getGpsOptions() : GEO_BOOT)
       } else if (idleSecs < 120 && staleMs > 15000) {
         // Recover from stuck GPS stream by re-establishing the watcher and requesting a quick coarse fix.
-        startWatch(true, { enableHighAccuracy: false, maximumAge: 2000, timeout: 8000 })
+        startWatch(true, hasReceivedAnyFix ? GEO_BALANCED : GEO_BOOT)
         navigator.geolocation.getCurrentPosition(
           onWatch,
           onGpsError,
-          { enableHighAccuracy: false, maximumAge: 2000, timeout: 8000 }
+          hasReceivedAnyFix ? GEO_BALANCED : GEO_BOOT
         )
       }
     }, 8000)
 
     return () => {
+      disposed = true
       clearInterval(idleCheckInterval)
+      if (bootTimer) clearTimeout(bootTimer)
+      if (preciseTimer) clearTimeout(preciseTimer)
+      if (forceRecoverTimer) clearTimeout(forceRecoverTimer)
+      window.removeEventListener('focus', onVisibilityOrFocus)
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus)
       if (speedDisplayTimerRef.current) clearTimeout(speedDisplayTimerRef.current)
       if (watchIdRef.current != null) {
         navigator.geolocation.clearWatch(watchIdRef.current)
@@ -538,23 +601,27 @@ export function useNavigationState(params: {
     const destName = navigationData?.destination?.name ?? 'End'
     const polyline = navigationData?.polyline && navigationData.polyline.length >= 2 ? navigationData.polyline : []
 
-    setShowTripSummary(true)
-    setLastTripData({
+    const baseTripSummary = {
       distance: distMiles,
       duration: durationMin,
       safety_score: safetyScore,
       gems_earned: gemsEarned,
       xp_earned: 1000,
-      origin: 'Start',
-      destination: navigationData?.destination?.name ?? 'End',
+      origin: originName,
+      destination: destName,
       date: new Date().toLocaleDateString(),
       is_safe_drive: safetyScore >= 80,
-    })
+      safe_drive_streak: 0,
+      trip_id: tripIdToEnd ?? '',
+      server_synced: false,
+    }
+    setShowTripSummary(true)
+    setLastTripData(baseTripSummary)
     invalidateRewardsCaches()
     void (async () => {
       try {
         await apiClient.post('/api/navigation/stop')
-        await apiClient.post('/api/trips/complete-with-safety', {
+        const completionRes = await apiClient.post('/api/trips/complete-with-safety', {
           trip_id: tripIdToEnd,
           distance: distMiles,
           duration: durationMin,
@@ -563,6 +630,30 @@ export function useNavigationState(params: {
           origin: originName,
           destination: destName,
           route_coordinates: polyline.map(p => ({ lat: p.lat, lng: p.lng })),
+        })
+        const completionRaw = completionRes.data as Record<string, unknown> | undefined
+        const completionPayload =
+          completionRaw && typeof completionRaw === 'object' && 'data' in completionRaw
+            ? (completionRaw.data as Record<string, unknown>)
+            : completionRaw
+        const safetyNode = (completionPayload as { safety_score?: { new?: unknown } } | undefined)?.safety_score
+        const gemsNode = (completionPayload as { gems?: { earned?: unknown } } | undefined)?.gems
+        const xpNode = (completionPayload as { xp?: { total_earned?: unknown } } | undefined)?.xp
+        const serverSafety = Number(safetyNode?.new)
+        const serverGems = Number(gemsNode?.earned)
+        const serverXp = Number(xpNode?.total_earned)
+        const serverStreak = Number((completionPayload as { safe_drive_streak?: unknown } | undefined)?.safe_drive_streak)
+        const serverTripId = (completionPayload as { trip_id?: unknown } | undefined)?.trip_id
+        const serverSafeDrive = (completionPayload as { is_safe_drive?: unknown } | undefined)?.is_safe_drive
+        setLastTripData({
+          ...baseTripSummary,
+          safety_score: Number.isFinite(serverSafety) ? serverSafety : baseTripSummary.safety_score,
+          gems_earned: Number.isFinite(serverGems) ? serverGems : baseTripSummary.gems_earned,
+          xp_earned: Number.isFinite(serverXp) ? serverXp : baseTripSummary.xp_earned,
+          safe_drive_streak: Number.isFinite(serverStreak) ? serverStreak : baseTripSummary.safe_drive_streak,
+          trip_id: typeof serverTripId === 'string' ? serverTripId : baseTripSummary.trip_id,
+          is_safe_drive: typeof serverSafeDrive === 'boolean' ? serverSafeDrive : baseTripSummary.is_safe_drive,
+          server_synced: completionRes.success ?? false,
         })
         await apiClient.post('/api/analytics/track', { event: 'trip_completed', properties: { trip_id: tripIdToEnd, duration: durationMin, mode } })
       } catch {
@@ -616,18 +707,17 @@ export function useNavigationState(params: {
     if (typeof clickedIndex === 'number' && clickedIndex >= 0 && clickedIndex < availableRoutes.length) {
       index = clickedIndex
     } else {
-      const withType = availableRoutes as Array<{ expectedTravelTimeSeconds: number; distanceMeters: number; routeType?: string }>
       if (id === 'best') {
-        index = withType.reduce((best, r, i) => (r.expectedTravelTimeSeconds < withType[best].expectedTravelTimeSeconds ? i : best), 0)
+        index = availableRoutes.reduce((best, r, i) => (r.duration < availableRoutes[best].duration ? i : best), 0)
       } else if (id === 'eco') {
-        index = withType.reduce((best, r, i) => (r.distanceMeters < withType[best].distanceMeters ? i : best), 0)
+        index = availableRoutes.reduce((best, r, i) => (r.distance < availableRoutes[best].distance ? i : best), 0)
       }
     }
     setSelectedRouteIndex(index)
     const r = availableRoutes[index]
     if (!r?.polyline?.length) return
-    const distMiles = (r.distanceMeters / 1609.34).toFixed(1)
-    const etaMin = Math.round(r.expectedTravelTimeSeconds / 60)
+    const distMiles = (r.distance / 1609.34).toFixed(1)
+    const etaMin = Math.round(r.duration / 60)
     const nav: NavigationState = {
       origin: navigationData.origin,
       destination: navigationData.destination,
@@ -641,8 +731,8 @@ export function useNavigationState(params: {
         lng: s.lng,
       })),
       polyline: r.polyline,
-      duration: { text: etaMin < 60 ? `${etaMin} min` : `${Math.floor(etaMin / 60)}h ${etaMin % 60}m`, seconds: r.expectedTravelTimeSeconds },
-      distance: { text: `${distMiles} mi`, meters: r.distanceMeters },
+      duration: { text: etaMin < 60 ? `${etaMin} min` : `${Math.floor(etaMin / 60)}h ${etaMin % 60}m`, seconds: r.duration },
+      distance: { text: `${distMiles} mi`, meters: r.distance },
       traffic: 'normal',
       notifications: (r as { notifications?: unknown[] }).notifications ?? [],
     }

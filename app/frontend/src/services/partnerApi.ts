@@ -2,6 +2,7 @@
  * SnapRoad Partner API Service
  * Centralized API calls for the Partner Portal
  */
+/* eslint-disable @typescript-eslint/no-explicit-any -- transitional: partner v2 responses vary; narrow types as contracts stabilize */
 
 import { getApiBaseUrl } from '@/services/api'
 

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from uuid import uuid4
 from services.mock_data import (
     users_db, current_user_id, trips_db, fuel_logs, fuel_stats, FUEL_PRICES, XP_CONFIG,
+    create_new_user,
 )
 from routes.gamification import add_xp_to_user
 from config import OPENAI_API_KEY
@@ -123,19 +124,22 @@ def end_trip(trip_id: str, endLocation: str):
 
 @router.post("/trips/complete") # TODO: Unsure how to reconcile this with end trip, have replaced
 def complete_trip(distance: float = 5.0, duration: int = 15):
-    user = users_db.get(current_user_id, {})
+    if current_user_id not in users_db:
+        users_db[current_user_id] = create_new_user(current_user_id, "Driver")
+    user = users_db[current_user_id]
     gems_earned = int(distance * 2)
     xp_earned = int(distance * 100)
-    if current_user_id in users_db:
-        users_db[current_user_id]["total_trips"] = user.get("total_trips", 0) + 1
-        users_db[current_user_id]["total_miles"] = user.get("total_miles", 0) + distance
-        users_db[current_user_id]["gems"] = user.get("gems", 0) + gems_earned
-    return {"success": True, "data": {"gems_earned": gems_earned, "xp_earned": xp_earned, "total_miles": users_db.get(current_user_id, {}).get("total_miles", 0)}}
+    user["total_trips"] = user.get("total_trips", 0) + 1
+    user["total_miles"] = user.get("total_miles", 0) + distance
+    user["gems"] = user.get("gems", 0) + gems_earned
+    return {"success": True, "data": {"gems_earned": gems_earned, "xp_earned": xp_earned, "total_miles": user.get("total_miles", 0)}}
 
 
 @router.post("/trips/complete-with-safety")
 def complete_trip_with_safety(trip: TripResult):
-    user = users_db.get(current_user_id, {})
+    if current_user_id not in users_db:
+        users_db[current_user_id] = create_new_user(current_user_id, "Driver")
+    user = users_db[current_user_id]
     metrics = trip.safety_metrics or {}
     is_safe_drive = metrics.get("hard_brakes", 0) == 0 and metrics.get("speeding_incidents", 0) == 0 and metrics.get("phone_usage", 0) == 0
     old_safety_score = user.get("safety_score", 85)
@@ -144,10 +148,9 @@ def complete_trip_with_safety(trip: TripResult):
     if trip.safety_score is not None:
         new_safety_score = round(float(trip.safety_score), 1)
 
-    if current_user_id in users_db:
-        users_db[current_user_id]["safety_score"] = new_safety_score
-        users_db[current_user_id]["total_trips"] = user.get("total_trips", 0) + 1
-        users_db[current_user_id]["total_miles"] = user.get("total_miles", 0) + trip.distance
+    user["safety_score"] = new_safety_score
+    user["total_trips"] = user.get("total_trips", 0) + 1
+    user["total_miles"] = user.get("total_miles", 0) + trip.distance
 
     total_xp = 0
     xp_changes = []
@@ -156,12 +159,12 @@ def complete_trip_with_safety(trip: TripResult):
         xp_changes.append({"type": "safe_drive", "xp": XP_CONFIG["safe_drive"]})
         old_streak = user.get("safe_drive_streak", 0)
         new_streak = old_streak + 1
-        users_db[current_user_id]["safe_drive_streak"] = new_streak
+        user["safe_drive_streak"] = new_streak
         if new_streak % 3 == 0:
             total_xp += XP_CONFIG["consistent_driving"]
             xp_changes.append({"type": "consistent_bonus", "xp": XP_CONFIG["consistent_driving"]})
     else:
-        users_db[current_user_id]["safe_drive_streak"] = 0
+        user["safe_drive_streak"] = 0
         if new_safety_score < old_safety_score:
             total_xp += XP_CONFIG["safety_score_penalty"]
             xp_changes.append({"type": "safety_penalty", "xp": XP_CONFIG["safety_score_penalty"]})
@@ -169,8 +172,7 @@ def complete_trip_with_safety(trip: TripResult):
     xp_result = add_xp_to_user(current_user_id, total_xp) if total_xp != 0 else {}
     gem_multiplier = user.get("gem_multiplier", 1)
     gems_earned = 5 * gem_multiplier
-    if current_user_id in users_db:
-        users_db[current_user_id]["gems"] = user.get("gems", 0) + gems_earned
+    user["gems"] = user.get("gems", 0) + gems_earned
 
     # Record trip for real-time history and analytics (single source of truth for map, route history, trip analytics)
     now = datetime.now()
@@ -207,7 +209,7 @@ def complete_trip_with_safety(trip: TripResult):
             "safety_score": {"old": old_safety_score, "new": new_safety_score, "change": new_safety_score - old_safety_score},
             "xp": {"changes": xp_changes, "total_earned": total_xp, "result": xp_result},
             "gems": {"earned": gems_earned, "multiplier": gem_multiplier},
-            "safe_drive_streak": users_db[current_user_id].get("safe_drive_streak", 0),
+            "safe_drive_streak": user.get("safe_drive_streak", 0),
             "trip_id": new_id,
         },
     }

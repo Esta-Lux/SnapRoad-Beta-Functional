@@ -81,6 +81,8 @@ class Route(BaseModel):
     departure_time: str
     days_active: List[str]
     notifications: bool = True
+    estimated_time: Optional[int] = None
+    distance: Optional[float] = None
 
 class Widget(BaseModel):
     widget_id: str

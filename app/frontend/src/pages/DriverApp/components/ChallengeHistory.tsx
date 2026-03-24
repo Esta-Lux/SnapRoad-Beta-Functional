@@ -91,33 +91,10 @@ export default function ChallengeHistory({ isOpen, onClose }: ChallengeHistoryPr
           setBadges(data.data.badges)
         }
       }
-    } catch (e) {
-      // Use mock data
-      const mockChallenges: Challenge[] = [
-        { id: '1', opponent_name: 'Alex Johnson', stake: 100, duration_hours: 24, status: 'won', your_score: 95, opponent_score: 88, created_at: '2025-02-07T10:00:00', ends_at: '2025-02-08T10:00:00' },
-        { id: '2', opponent_name: 'Sarah Wilson', stake: 50, duration_hours: 72, status: 'won', your_score: 92, opponent_score: 89, created_at: '2025-02-05T08:00:00', ends_at: '2025-02-08T08:00:00' },
-        { id: '3', opponent_name: 'Mike Brown', stake: 100, duration_hours: 24, status: 'lost', your_score: 78, opponent_score: 91, created_at: '2025-02-04T14:00:00', ends_at: '2025-02-05T14:00:00' },
-        { id: '4', opponent_name: 'Emma Davis', stake: 250, duration_hours: 168, status: 'won', your_score: 97, opponent_score: 85, created_at: '2025-01-28T09:00:00', ends_at: '2025-02-04T09:00:00' },
-      ]
-      setChallenges(mockChallenges)
-      setStats({
-        total_challenges: 4,
-        wins: 3,
-        losses: 1,
-        draws: 0,
-        win_rate: 75,
-        total_gems_won: 450,
-        total_gems_lost: 100,
-        current_streak: 2,
-        best_streak: 3,
-      })
-      // Update some badges as unlocked for demo
-      setBadges(prev => prev.map(b => {
-        if (b.id === 'first_win') return { ...b, unlocked: true }
-        if (b.id === 'total_wins_10') return { ...b, progress: 3, unlocked: false }
-        if (b.id === 'gems_earned_1k') return { ...b, progress: 450, unlocked: false }
-        return b
-      }))
+    } catch {
+      setChallenges([])
+      setStats(null)
+      setBadges(CHALLENGE_BADGES)
     } finally {
       setLoading(false)
     }

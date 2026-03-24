@@ -1,0 +1,215 @@
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar: string;
+  isPremium: boolean;
+  isFamilyPlan: boolean;
+  gems: number;
+  level: number;
+  safetyScore: number;
+  streak: number;
+  totalMiles: number;
+  totalTrips: number;
+  badges: number;
+  rank: number;
+  plan?: string;
+  gem_multiplier?: number;
+  vehicle_height_meters?: number;
+}
+
+export interface ApiUser {
+  id?: string;
+  email?: string;
+  name?: string;
+  full_name?: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface SignupRequest {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  user?: Record<string, unknown>;
+  token?: string;
+}
+
+export interface Trip {
+  id: string;
+  date: string;
+  time?: string;
+  origin: string;
+  destination: string;
+  distance_miles: number;
+  duration_minutes: number;
+  safety_score: number;
+  gems_earned: number;
+  xp_earned: number;
+  fuel_used_gallons?: number;
+  avg_speed_mph?: number;
+  route_coordinates?: { lat: number; lng: number }[];
+}
+
+export interface FamilyMember {
+  id: string;
+  name: string;
+  email?: string;
+  role: string;
+  avatar?: string;
+  is_sharing?: boolean;
+  lat?: number;
+  lng?: number;
+  speed_mph?: number;
+  last_updated?: string;
+  sos_active?: boolean;
+}
+
+export interface FamilyGroup {
+  id: string;
+  name: string;
+  invite_code: string;
+  created_by: string;
+  members: FamilyMember[];
+}
+
+export interface FamilyEvent {
+  id: string;
+  group_id: string;
+  member_id: string;
+  member_name?: string;
+  type: string;
+  place_name?: string;
+  message: string;
+  created_at: string;
+}
+
+export interface Friend {
+  id: string;
+  friend_id: string;
+  name: string;
+  email?: string;
+  avatar?: string;
+  status: string;
+  lat?: number;
+  lng?: number;
+  speed_mph?: number;
+  is_sharing?: boolean;
+  last_updated?: string;
+}
+
+export interface Offer {
+  id: number;
+  business_name: string;
+  description?: string;
+  discount_percent: number;
+  gems_reward: number;
+  lat?: number;
+  lng?: number;
+  business_type?: string;
+  redeemed?: boolean;
+  distance_km?: number;
+}
+
+export interface Challenge {
+  id: string;
+  title: string;
+  description: string;
+  progress: number;
+  goal: number;
+  gems: number;
+  completed: boolean;
+  type?: string;
+}
+
+export interface Badge {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  earned: boolean;
+  progress: number;
+}
+
+export interface WeeklyInsights {
+  total_trips: number;
+  total_miles: number;
+  total_duration_minutes: number;
+  gems_earned_week: number;
+  safety_score_avg: number;
+  safety_score_change: number;
+  ai_tip?: string;
+}
+
+export interface SavedRoute {
+  id: number;
+  name: string;
+  origin: string;
+  destination: string;
+  departure_time: string;
+  days_active: string[];
+  estimated_time: number;
+  distance: number;
+  is_active: boolean;
+  notifications: boolean;
+}
+
+export interface SavedLocation {
+  id: number;
+  name: string;
+  address: string;
+  category: string;
+  lat?: number;
+  lng?: number;
+}
+
+export interface FriendLocation {
+  id: string;
+  name: string;
+  avatar?: string;
+  lat: number;
+  lng: number;
+  heading: number;
+  speedMph: number;
+  isNavigating: boolean;
+  destinationName?: string;
+  lastUpdated: string;
+  isSharing: boolean;
+  isFamilyMember?: boolean;
+  sosActive?: boolean;
+}
+
+export interface Coordinate {
+  lat: number;
+  lng: number;
+}
+
+export interface Incident {
+  id: number;
+  type: string;
+  lat: number;
+  lng: number;
+  title: string;
+  severity: string;
+  description?: string;
+  upvotes: number;
+  created_at: string;
+  expires_at: string;
+  distance_miles?: number;
+}
+
+export type DrivingMode = 'calm' | 'adaptive' | 'sport';
+export type PlanTier = 'basic' | 'premium' | 'family';

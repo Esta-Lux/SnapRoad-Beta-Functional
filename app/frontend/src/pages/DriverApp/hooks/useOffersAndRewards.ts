@@ -69,7 +69,7 @@ export function useOffersAndRewards(params: {
   const [badges, setBadges] = useState<Record<string, unknown>[]>([])
   const [, setSkins] = useState<Record<string, unknown>[]>([])
   const [userData, setUserData] = useState<Record<string, unknown>>({
-    id: '123456',
+    id: '',
     name: initialName || 'Driver',
     gems: 0, level: 1, xp: 0, safety_score: 100, streak: 0,
     total_miles: 0, total_trips: 0, badges_earned_count: 0, rank: 0,
@@ -169,6 +169,17 @@ export function useOffersAndRewards(params: {
   useEffect(() => {
     void loadRewardsProfile()
   }, [loadRewardsProfile])
+
+  useEffect(() => {
+    // Keep profile/reward surfaces near real-time during active sessions.
+    const id = setInterval(() => {
+      void loadRewardsProfile()
+      if (!(userLocation.lat === 39.9612 && userLocation.lng === -82.9988)) {
+        void loadNearbyOffers()
+      }
+    }, 20000)
+    return () => clearInterval(id)
+  }, [loadRewardsProfile, loadNearbyOffers, userLocation.lat, userLocation.lng])
 
   const handleRedeemOffer = useCallback(async (offerId: number) => {
     try {

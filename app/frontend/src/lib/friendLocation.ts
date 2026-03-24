@@ -1,6 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 let supabase: SupabaseClient | null = null
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+let warnedInvalidUserId = false
+let warnedInvalidCoords = false
 
 function getSupabase(): SupabaseClient | null {
   if (supabase) return supabase
@@ -41,19 +44,35 @@ export async function updateMyLocation(
 ) {
   const sb = getSupabase()
   if (!sb) return
+  if (!UUID_RE.test(String(userId))) {
+    if (!warnedInvalidUserId) {
+      warnedInvalidUserId = true
+      console.warn('[friendLocation] Skipping live location sync: user_id is not a UUID.')
+    }
+    return
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    if (!warnedInvalidCoords) {
+      warnedInvalidCoords = true
+      console.warn('[friendLocation] Skipping live location sync: invalid coordinates.')
+    }
+    return
+  }
+  const normalizedHeading = Number.isFinite(heading) ? heading : 0
+  const normalizedSpeedMph = Number.isFinite(speedMph) ? Math.max(0, speedMph) : 0
   await sb
     .from('live_locations')
     .upsert({
       user_id: userId,
       lat,
       lng,
-      heading,
-      speed_mph: speedMph,
+      heading: normalizedHeading,
+      speed_mph: normalizedSpeedMph,
       is_navigating: isNavigating,
       destination_name: destinationName ?? null,
       last_updated: new Date().toISOString(),
       is_sharing: true,
-    })
+    }, { onConflict: 'user_id' })
 }
 
 // Subscribe to all friends' locations in real time

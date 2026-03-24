@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense, type ComponentProps } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import toast from 'react-hot-toast'
@@ -34,10 +34,11 @@ import DrivingScore from './components/DrivingScore'
 import ChallengeHistory from './components/ChallengeHistory'
 import WeeklyRecap from './components/WeeklyRecap'
 import OrionOfferAlerts from './components/OrionOfferAlerts'
-import type mapboxgl from 'mapbox-gl'
+import mapboxgl from 'mapbox-gl'
+import type { Map as MapboxMap, LngLatBounds } from 'mapbox-gl'
 import MapboxMapSnapRoad from './components/MapboxMapSnapRoad'
 import { DRIVING_MODES } from './components/DrivingModeStyles'
-import LaneGuide, { parseLanes, type Lane } from './components/LaneGuide'
+import LaneGuide from './components/LaneGuide'
 import MapLayerPicker from './components/MapLayerPicker'
 import { useMapbox } from '@/contexts/MapboxContext'
 import { getMapboxRouteOptions, reverseGeocode, type DirectionsResult } from '@/lib/mapboxDirections'
@@ -54,7 +55,6 @@ import { api } from '@/services/api'
 import { useNavigationCore } from '@/contexts/NavigationCoreContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import {
-  updateMyLocation,
   getFriendLocations,
   sendLocationTag,
   stopSharingLocation,
@@ -94,6 +94,33 @@ function payload<T>(res: { success?: boolean; data?: unknown }): T | undefined {
   return d as T | undefined
 }
 
+/** Narrow convoy / external callbacks that pass an unknown destination object. */
+function searchResultLike(dest: unknown): SearchResult | null {
+  if (!dest || typeof dest !== 'object') return null
+  const o = dest as Record<string, unknown>
+  const lat = Number(o.lat)
+  const lng = Number(o.lng)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  const id = o.id
+  return {
+    id: typeof id === 'string' || typeof id === 'number' ? String(id) : 'convoy-dest',
+    name: typeof o.name === 'string' ? o.name : 'Destination',
+    lat,
+    lng,
+    address: typeof o.address === 'string' ? o.address : undefined,
+  }
+}
+
+function isLeaveEarlyPayload(v: unknown): v is { leave_by: string; eta_minutes: number; destination: string } {
+  if (!v || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  return (
+    typeof o.leave_by === 'string' &&
+    typeof o.eta_minutes === 'number' &&
+    typeof o.destination === 'string'
+  )
+}
+
 // Types - Changed to 4 tabs: Map, Routes, Rewards, Profile
 type TabType = 'map' | 'dashboards' | 'rewards' | 'profile'
 type RewardsTab = 'offers' | 'challenges' | 'badges' | 'carstudio'
@@ -128,17 +155,29 @@ interface WidgetState {
   position: { x: number; y: number }
 }
 
-interface Offer {
+/** Nearby / map offer row — matches useOffersAndRewards payload; avoids clashing with other components' `Offer` types. */
+interface DriverAppOffer {
   id: number
   business_name: string
   discount_percent: number
   gems_reward: number
   lat?: number
   lng?: number
+  latitude?: number
+  longitude?: number
   business_type?: string
   redeemed?: boolean
   name?: string
-  [key: string]: unknown
+  title?: string
+  discount_text?: string
+  distance_km?: number
+  gems?: number
+  /** Optional display fields (offer detail modal / marketing cards) */
+  type?: string
+  discount?: string
+  distance?: string
+  rating?: string
+  expires?: string
 }
 
 interface FamilyMember {
@@ -164,6 +203,7 @@ interface NavigationDestination {
   lat: number
   lng: number
   name?: string
+  address?: string
 }
 
 interface NavigationState {
@@ -272,7 +312,7 @@ function nearestControlType(
 
 export default function DriverApp() {
   const navigate = useNavigate()
-  const { user, logout } = useAuth()
+  const { user, logout, isLoading: isAuthLoading } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { vehicle, camera, predicted, isLive, recenter, setRoutePolyline, setMode, mode, experience, getDrivingMetrics } = useNavigationCore()
   const { ready: mapReady, error: mapError, reportError: reportMapError } = useMapbox()
@@ -284,7 +324,7 @@ export default function DriverApp() {
   const hasZoomedToUser = useRef(false)
   const zoomToUserRef = useRef<((lat: number, lng: number, isNav: boolean, zoomOverride?: number) => void) | null>(null)
   const mapActionsRef = useRef<{ resetHeading: () => void; clearUserInteracting: () => void } | null>(null)
-  const mapInstanceRef = useRef<mapboxgl.Map | null>(null)
+  const mapInstanceRef = useRef<MapboxMap | null>(null)
   
 
   // Main state - 4 tabs now
@@ -299,7 +339,7 @@ export default function DriverApp() {
   const [showSearch, setShowSearch] = useState(false)
   const [showAddLocation, setShowAddLocation] = useState(false)
   const [showAddRoute, setShowAddRoute] = useState(false)
-  const [showOfferDetail, setShowOfferDetail] = useState<Offer | null>(null)
+  const [showOfferDetail, setShowOfferDetail] = useState<DriverAppOffer | null>(null)
   const [showFamilyMember, setShowFamilyMember] = useState<FamilyMember | null>(null)
   const [showReportModal, setShowReportModal] = useState(false)
   const [draggingWidget, setDraggingWidget] = useState<string | null>(null)
@@ -356,7 +396,7 @@ export default function DriverApp() {
   
   
   
-  const [routeNotifications, setRouteNotifications] = useState<Array<{ id: string; type: string; route_id?: number; route_name?: string; destination?: string; message: string; leave_by?: string; eta_minutes?: number; saved_minutes?: number; saved_dollars?: number }>>([])
+  const [routeNotifications, setRouteNotifications] = useState<Array<{ id: string; type: string; route_id?: number; route_name?: string; destination?: string; message: string; leave_by?: string; desired_arrival?: string; eta_minutes?: number; saved_minutes?: number; saved_dollars?: number; delivery?: 'push_and_in_app' | 'in_app_only' }>>([])
   const [dismissedRouteNotifIds, setDismissedRouteNotifIds] = useState<Set<string>>(new Set())
   const [leaveEarlyForRoute, setLeaveEarlyForRoute] = useState<{ routeId: number; leaveBy: string; etaMinutes: number; destination: string } | null>(null)
   
@@ -395,11 +435,13 @@ export default function DriverApp() {
   const [mapDroppedPin, setMapDroppedPin] = useState<{ lat: number; lng: number; label?: string; address?: string } | null>(null)
   const [nearbyLoading, setNearbyLoading] = useState(false)
   const [searchResultPhotos, setSearchResultPhotos] = useState<Record<string, string>>({})
+  const searchPhotoInflightRef = useRef<Record<string, boolean>>({})
   const [osmSignals, setOsmSignals] = useState<Array<{ id: string; type: string; lat: number; lng: number }>>([])
   const [osmSidewalksGeojson, setOsmSidewalksGeojson] = useState<GeoJSON.FeatureCollection<GeoJSON.LineString>>({
     type: 'FeatureCollection',
     features: [],
   })
+  const [osmBuildings, setOsmBuildings] = useState<Array<{ id: string; lat: number; lng: number; area_m2: number }>>([])
   const [, setShowTurnByTurn] = useState(false)
   const [, setSelectedRouteId] = useState('best')
   const [isTallVehicle, setIsTallVehicle] = useState(false)
@@ -479,8 +521,8 @@ export default function DriverApp() {
     }, 10000)
   }
 
-  const fetchDirectionsRef = useRef<((destination: any) => Promise<void>) | null>(null)
-  const handleSelectDestinationRef = useRef<((location: any) => Promise<void>) | null>(null)
+  const fetchDirectionsRef = useRef<((destination: NavigationDestination) => Promise<void>) | null>(null)
+  const handleSelectDestinationRef = useRef<((location: SearchResult) => Promise<void>) | null>(null)
   const offRouteSinceRef = useRef<number | null>(null)
   const rerouteInFlightRef = useRef(false)
   const lastRerouteAtRef = useRef(0)
@@ -571,18 +613,9 @@ export default function DriverApp() {
   // #endregion
 
   const {
-    tripStartTimeRef,
     carHeadingRef,
-    prevLocationRef,
-    traveledDistanceRef,
     distanceToNextStepRef,
-    lastSpeedRef,
-    watchIdRef,
-    lastBroadcastLocationRef,
-    speedDisplayTimerRef,
     navigationDataRef,
-    hasAnnouncedArrivalRef,
-    lastSpokenStepIndexRef,
     etaGuardRef,
     navigationData,
     setNavigationData,
@@ -603,11 +636,10 @@ export default function DriverApp() {
     currentStepIndex,
     setCurrentStepIndex,
     currentLanes,
-    setCurrentLanes,
     isNavigating,
-    setIsNavigating,
     traveledDistanceMeters,
     setTraveledDistanceMeters,
+    traveledDistanceRef,
     needsCompassPermission,
     setNeedsCompassPermission,
     isMuted,
@@ -636,30 +668,23 @@ export default function DriverApp() {
   }, [needsCompassPermission, setNeedsCompassPermission])
 
   const {
-    unsubscribeFriendsRef,
     followingFriendIdRef,
     followIntervalRef,
     cameraReturnTimerRef,
-    lastCameraOverrideRef,
-    lastAlertedFriendRef,
-    friendCheckTimerRef,
     friendLocationsRef,
     focusedFamilyMember,
     setFocusedFamilyMember,
     tappedFriend,
     setTappedFriend,
     followingMode,
-    setFollowingMode,
     nearbyFriendAlert,
     setNearbyFriendAlert,
     friendLocations,
     setFriendLocations,
-    friendIdsForRealtime,
     setFriendIdsForRealtime,
     selectedFriend,
     setSelectedFriend,
     followingFriendId,
-    setFollowingFriendId,
     isSharingLocation,
     setIsSharingLocation,
     returnToNavigation,
@@ -703,7 +728,6 @@ export default function DriverApp() {
     mapReadyForLayers,
     setMapReadyForLayers,
     ohgoCameras,
-    setOhgoCameras,
     selectedCamera,
     setSelectedCamera,
     activeMapLayer,
@@ -719,11 +743,9 @@ export default function DriverApp() {
     showFuelPrices,
     setShowFuelPrices,
     gasStationsOverlay,
-    setGasStationsOverlay,
     roadReports,
     setRoadReports,
     photoReports,
-    setPhotoReports,
     activeIncidentAlert,
     setActiveIncidentAlert,
     selectedRoadStatus,
@@ -806,8 +828,6 @@ export default function DriverApp() {
     userPlan,
     setUserPlan,
     setGemMultiplier,
-    maxOfferDistance,
-    setMaxOfferDistance,
     offers,
     setOffers,
     challenges,
@@ -818,12 +838,10 @@ export default function DriverApp() {
     userData,
     setUserData,
     cachedGet,
-    invalidateCache,
     loadNearbyOffers,
     handleRedeemOffer,
     handleClaimChallenge,
     invalidateRewardsCaches,
-    loadRewardsProfile,
   } = useOffersAndRewards({
     initialName: (user?.name as string) || 'Driver',
     userId: user?.id,
@@ -840,7 +858,7 @@ export default function DriverApp() {
   })
 
   // Sync values needed by navigation with the data loaded in this hook.
-  userGemMultiplierRef.current = Number((userData as any)?.gem_multiplier ?? 1)
+  userGemMultiplierRef.current = Number((userData as Record<string, unknown>)['gem_multiplier'] ?? 1)
   invalidateRewardsCachesRef.current = invalidateRewardsCaches
   
   // Swipe state for locations
@@ -857,10 +875,11 @@ export default function DriverApp() {
 
   // Load data on mount
   useEffect(() => {
+    if (isAuthLoading || !api.getToken()) return
     loadData()
     loadRoadReports()
     loadPhotoReports()
-  }, [])
+  }, [isAuthLoading, (user as { id?: string } | null)?.id])
 
   // Refresh address book (locations) when search modal opens so Quick Places is up to date
   useEffect(() => {
@@ -880,7 +899,8 @@ export default function DriverApp() {
     if (withPlaceId.length === 0) return
     let cancelled = false
     withPlaceId.forEach((result) => {
-      if (searchResultPhotos[result.place_id]) return
+      if (searchResultPhotos[result.place_id] || searchPhotoInflightRef.current[result.place_id]) return
+      searchPhotoInflightRef.current[result.place_id] = true
       api.get<{ success?: boolean; data?: { photos?: { reference: string }[] } }>(`/api/places/details/${encodeURIComponent(result.place_id)}`)
         .then((res) => {
           if (cancelled) return
@@ -889,9 +909,12 @@ export default function DriverApp() {
           if (ref) setSearchResultPhotos((prev) => ({ ...prev, [result.place_id]: ref }))
         })
         .catch(() => {})
+        .finally(() => {
+          delete searchPhotoInflightRef.current[result.place_id]
+        })
     })
     return () => { cancelled = true }
-  }, [searchResults])
+  }, [searchResults, searchResultPhotos])
 
   
 
@@ -911,6 +934,7 @@ export default function DriverApp() {
 
   const hasPremiumAccess = userPlan === 'premium' || userData.is_premium
   const hasFamilyAccess = userPlan === 'family'
+  const hasRouteAlertsAccess = hasPremiumAccess || hasFamilyAccess
   const hasCameraAccess = hasPremiumAccess || hasFamilyAccess
 
   // Free users: disable premium-only layers/features
@@ -1017,7 +1041,13 @@ export default function DriverApp() {
   // Friend location sync: load friend IDs and initial snapshot
   useEffect(() => {
     const uid = (user as { id?: string } | undefined)?.id
-    if (!uid) return
+    if (!uid || isAuthLoading) return
+    const canUseFriendsMap = userPlan === 'premium' || userPlan === 'family' || userData.is_premium
+    if (!canUseFriendsMap || !api.getToken()) {
+      setFriendIdsForRealtime([])
+      setFriendLocations([])
+      return
+    }
 
     const initFriends = async () => {
       try {
@@ -1042,7 +1072,7 @@ export default function DriverApp() {
     }
 
     initFriends()
-  }, [(user as { id?: string } | undefined)?.id])
+  }, [(user as { id?: string } | undefined)?.id, isAuthLoading, userPlan, userData.is_premium])
 
   
 
@@ -1207,7 +1237,7 @@ export default function DriverApp() {
     const fetchNotifications = async () => {
       try {
         const res = await api.get<{ success?: boolean; data?: typeof routeNotifications }>(
-          `/api/routes/notifications?lat=${userLocation.lat}&lng=${userLocation.lng}&window_minutes=60`
+          `/api/routes/notifications?lat=${userLocation.lat}&lng=${userLocation.lng}&window_minutes=120`
         )
         if (res.success && Array.isArray((res.data as any)?.data)) setRouteNotifications((res.data as any).data)
       } catch { /* silent */ }
@@ -1233,13 +1263,12 @@ export default function DriverApp() {
   // Load all data from API
   const loadData = async () => {
     try {
-      const [locRes, routeRes, offerRes, badgeRes, skinRes, famRes, userRes, challengeRes, carRes, onboardingRes] = await Promise.all([
+      const [locRes, routeRes, offerRes, badgeRes, skinRes, userRes, challengeRes, carRes, onboardingRes] = await Promise.all([
         api.get('/api/locations'),
         api.get('/api/routes'),
         api.get('/api/offers'),
         cachedGet('/api/badges', 10 * 60 * 1000),
         api.get('/api/skins'),
-        api.get('/api/family/members'),
         cachedGet('/api/user/profile', 2 * 60 * 1000),
         api.get('/api/challenges'),
         api.get('/api/user/car'),
@@ -1250,7 +1279,6 @@ export default function DriverApp() {
       const offer = payload(offerRes) ?? offerRes.data
       const badge = payload(badgeRes) ?? badgeRes.data
       const skin = payload(skinRes) ?? skinRes.data
-      const fam = payload(famRes) ?? famRes.data
       const user = payload(userRes) ?? userRes.data
       const challenge = payload(challengeRes) ?? challengeRes.data
       const car = payload(carRes) ?? carRes.data
@@ -1268,10 +1296,6 @@ export default function DriverApp() {
         setBadges(Array.isArray(arr) ? arr : [])
       }
       if (skinRes.success && skin != null) setSkins(Array.isArray(skin) ? skin : [])
-      if (famRes.success && fam != null) {
-        const famMembers = Array.isArray(fam) ? fam : (typeof fam === 'object' && fam && Array.isArray((fam as { members?: unknown[] }).members) ? (fam as { members: FamilyMember[] }).members : [])
-        setFamily(famMembers)
-      }
       if (userRes.success && user != null && typeof user === 'object') {
         setUserData(user as typeof userData)
         setUserPlan((user as { plan?: string }).plan || 'basic')
@@ -1293,6 +1317,20 @@ export default function DriverApp() {
         if (!o.onboarding_complete) {
           // Plan selection available in Profile > Upgrade; no car selection on login
         }
+      }
+
+      const canLoadFamilyMembers =
+        api.getToken() &&
+        ((user as { plan?: string | null })?.plan === 'family' || (user as { is_family_plan?: boolean | null })?.is_family_plan === true)
+      if (!canLoadFamilyMembers) {
+        setFamily([])
+        return
+      }
+      const famRes = await api.get('/api/family/members')
+      const fam = payload(famRes) ?? famRes.data
+      if (famRes.success && fam != null) {
+        const famMembers = Array.isArray(fam) ? fam : (typeof fam === 'object' && fam && Array.isArray((fam as { members?: unknown[] }).members) ? (fam as { members: FamilyMember[] }).members : [])
+        setFamily(famMembers)
       }
     } catch (e) {
       toast.error('Could not load data — showing empty state')
@@ -1480,8 +1518,8 @@ export default function DriverApp() {
 
   // Open share modal after trip completion
   // Handle direct offer redemption (opens compact popup)
-  const handleDirectRedemption = (offer: any) => {
-    setSelectedOfferForRedemption(offer)
+  const handleDirectRedemption = (offer: DriverAppOffer) => {
+    setSelectedOfferForRedemption(offer as never)
     setShowRedemptionPopup(true)
   }
 
@@ -1535,13 +1573,35 @@ export default function DriverApp() {
 
   const handleLeaveEarlyForRoute = async (routeId: number) => {
     try {
+      const route = routes.find((r) => r.id === routeId)
+      const desiredArrival = (() => {
+        if (!route?.departure_time) return undefined
+        const [h, m] = route.departure_time.split(':').map((v) => Number(v))
+        if (!Number.isFinite(h) || !Number.isFinite(m)) return undefined
+        const baseline = Math.max(5, Number(route.estimated_time || 18))
+        const total = (((h * 60 + m + baseline) % (24 * 60)) + (24 * 60)) % (24 * 60)
+        const hh = Math.floor(total / 60)
+        const mm = total % 60
+        return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+      })()
       const res = await api.post<{ success?: boolean; data?: { leave_by: string; eta_minutes: number; destination: string } }>(
         `/api/routes/${routeId}/notify-leave-early`,
-        { origin_lat: userLocation.lat, origin_lng: userLocation.lng }
+        { origin_lat: userLocation.lat, origin_lng: userLocation.lng, desired_arrival: desiredArrival }
       )
-      if (res.success && (res.data as any)?.data) {
-        const d = (res.data as any).data
-        setLeaveEarlyForRoute({ routeId, leaveBy: d.leave_by, etaMinutes: d.eta_minutes, destination: d.destination })
+      if (res.success && res.data !== undefined) {
+        const outer = res.data as unknown
+        const inner =
+          outer && typeof outer === 'object' && 'data' in (outer as Record<string, unknown>)
+            ? (outer as { data: unknown }).data
+            : outer
+        if (isLeaveEarlyPayload(inner)) {
+          setLeaveEarlyForRoute({
+            routeId,
+            leaveBy: inner.leave_by,
+            etaMinutes: inner.eta_minutes,
+            destination: inner.destination,
+          })
+        }
       }
     } catch {
       toast.error('Could not get leave-by time')
@@ -1613,7 +1673,7 @@ export default function DriverApp() {
     }
   }
 
-  const fetchDirections = async (destination: any) => {
+  const fetchDirections = async (destination: NavigationDestination) => {
     const origin = vehicle?.coordinate ?? userLocation
     const oLat = Number(origin?.lat)
     const oLng = Number(origin?.lng)
@@ -1629,69 +1689,51 @@ export default function DriverApp() {
     try {
       const rawHeight = Number((userData as { vehicle_height_meters?: number | null }).vehicle_height_meters)
       const maxHeightMeters = avoidLowClearances && Number.isFinite(rawHeight) && rawHeight > 0 ? rawHeight : undefined
-      const options = await getMapboxRouteOptions({ lat: oLat, lng: oLng }, { lat: dLat, lng: dLng }, { maxHeightMeters })
-      const routes: Array<{
-        polyline: { lat: number; lng: number }[]
-        steps: Array<{ instructions: string; distance: number; maneuver: string; lanes?: string; lat?: number; lng?: number }>
-        distanceMeters: number
-        expectedTravelTimeSeconds: number
-        routeType?: 'best' | 'eco'
-        notifications?: Array<{ type?: string; message?: string; code?: string }>
-      }> = options.map((res) => ({
-        polyline: res.polyline,
-        steps: res.steps.map((s) => ({
-          instructions: s.instruction,
-          distance: s.distanceMeters,
-          maneuver: s.maneuver,
-          lanes: s.lanes,
-          lat: s.lat,
-          lng: s.lng,
-        })),
-        distanceMeters: res.distance,
-        expectedTravelTimeSeconds: res.duration,
-        routeType: res.routeType,
-        notifications: res.notifications,
-      }))
+      const options: DirectionsResult[] = await getMapboxRouteOptions({ lat: oLat, lng: oLng }, { lat: dLat, lng: dLng }, { maxHeightMeters })
 
-      if (!routes?.length || !routes[0].polyline?.length) {
+      if (!options?.length || !options[0].polyline?.length) {
         console.warn('Directions API returned no route')
         toast.error('Could not get directions. Try another destination.')
         return
       }
 
-      setAvailableRoutes(routes)
+      setAvailableRoutes(options)
       setSelectedRouteIndex(0)
       setSelectedRouteId('best')
 
-      const first = routes[0]
-      const distMiles = (first.distanceMeters / 1609.34).toFixed(1)
-      const etaMin = Math.round(first.expectedTravelTimeSeconds / 60)
+      const first = options[0]
+      const distMiles = (first.distance / 1609.34).toFixed(1)
+      const etaMin = Math.round(first.duration / 60)
 
       const nav: NavigationState = {
         origin: { lat: oLat, lng: oLng, name: 'Current Location' },
         destination: { lat: dLat, lng: dLng, name: destination?.name ?? 'Destination' },
         steps: first.steps.map((s) => ({
-          instruction: s.instructions,
-          distance: s.distance > 1609 ? `${(s.distance / 1609.34).toFixed(1)} mi` : `${Math.round(s.distance)} ft`,
-          distanceMeters: s.distance,
+          instruction: s.instruction,
+          distance: s.distanceMeters > 1609 ? `${(s.distanceMeters / 1609.34).toFixed(1)} mi` : `${Math.round(s.distanceMeters)} ft`,
+          distanceMeters: s.distanceMeters,
           maneuver: s.maneuver,
-          lanes: (s as { lanes?: string }).lanes,
-          lat: (s as { lat?: number }).lat,
-          lng: (s as { lng?: number }).lng,
+          lanes: s.lanes,
+          lat: s.lat,
+          lng: s.lng,
         })),
         polyline: first.polyline,
-        duration: { text: etaMin < 60 ? `${etaMin} min` : `${Math.floor(etaMin / 60)}h ${etaMin % 60}m`, seconds: first.expectedTravelTimeSeconds },
-        distance: { text: `${distMiles} mi`, meters: first.distanceMeters },
+        duration: { text: etaMin < 60 ? `${etaMin} min` : `${Math.floor(etaMin / 60)}h ${etaMin % 60}m`, seconds: first.duration },
+        distance: { text: `${distMiles} mi`, meters: first.distance },
         traffic: 'normal',
         notifications: first.notifications,
       }
 
       setNavigationData(nav)
       setRoutePolyline(first.polyline)
-      setShowRoutePreview(true)
       setCurrentStepIndex(0)
+      if (isNavigatingRef.current) {
+        traveledDistanceRef.current = 0
+        setTraveledDistanceMeters(0)
+      } else {
+        setShowRoutePreview(true)
+      }
       setMapDroppedPin(null)
-      // Allow map to re-zoom to show full route
       if (zoomToUserRef.current) hasZoomedToUser.current = false
     } catch (e) {
       console.error('Directions error:', e)
@@ -2065,7 +2107,7 @@ export default function DriverApp() {
   }
 
   // Family handlers
-  const handleCallMember = async (member: any) => {
+  const handleCallMember = async (member: FamilyMember) => {
     try {
       const res = await api.post(`/api/family/${member.id}/call`)
       if (res.success) {
@@ -2078,7 +2120,7 @@ export default function DriverApp() {
     }
   }
 
-  const handleMessageMember = async (member: any) => {
+  const handleMessageMember = async (member: FamilyMember) => {
     try {
       const res = await api.post(`/api/family/${member.id}/message`)
       if (res.success) {
@@ -2325,7 +2367,8 @@ export default function DriverApp() {
     const vehicleSpeedMpsNow =
       typeof vehicle?.velocity === 'number' && Number.isFinite(vehicle.velocity) ? Math.max(0, vehicle.velocity) : 0
     const speedNow = vehicleSpeedMpsNow > 0 ? vehicleSpeedMpsNow : Math.max(0, currentSpeed * 0.44704)
-    const offRoute = Number.isFinite(distanceToRouteMeters) && distanceToRouteMeters > 55
+    const offRouteThresholdMeters = speedNow > 13 ? 85 : speedNow > 7 ? 70 : 58
+    const offRoute = Number.isFinite(distanceToRouteMeters) && distanceToRouteMeters > offRouteThresholdMeters
     if (!offRoute || speedNow < 1) {
       offRouteSinceRef.current = null
       return
@@ -2335,9 +2378,11 @@ export default function DriverApp() {
       offRouteSinceRef.current = now
       return
     }
-    if (now - offRouteSinceRef.current < 4500) return
+    const rerouteDebounceMs = speedNow > 10 ? 1800 : 2200
+    if (now - offRouteSinceRef.current < rerouteDebounceMs) return
     if (rerouteInFlightRef.current) return
-    if (now - lastRerouteAtRef.current < 15000) return
+    const rerouteCooldownMs = speedNow > 10 ? 7000 : 9000
+    if (now - lastRerouteAtRef.current < rerouteCooldownMs) return
     const run = async () => {
       rerouteInFlightRef.current = true
       lastRerouteAtRef.current = Date.now()
@@ -2351,7 +2396,13 @@ export default function DriverApp() {
             window.speechSynthesis.speak(u)
           } catch { /* ignore */ }
         }
-        await fetchDirectionsRef.current?.(navigationData.destination)
+        const reroutePromise = fetchDirectionsRef.current?.(navigationData.destination)
+        if (reroutePromise) {
+          await Promise.race([
+            reroutePromise,
+            new Promise<void>((resolve) => setTimeout(resolve, 8000)),
+          ])
+        }
       } finally {
         rerouteInFlightRef.current = false
         offRouteSinceRef.current = null
@@ -2419,19 +2470,20 @@ export default function DriverApp() {
     if (!mapReadyForLayers || !mapInstanceRef.current) return
     const map = mapInstanceRef.current
 
-    const bboxToString = (b: mapboxgl.LngLatBounds) => {
+    const r3 = (n: number) => Math.round(n * 1000) / 1000
+    const bboxToString = (b: LngLatBounds) => {
       const sw = b.getSouthWest()
       const ne = b.getNorthEast()
-      return `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`
+      return `${r3(sw.lng)},${r3(sw.lat)},${r3(ne.lng)},${r3(ne.lat)}`
     }
 
     const expandBbox = (minLng: number, minLat: number, maxLng: number, maxLat: number, padDeg: number) => {
-      return `${minLng - padDeg},${minLat - padDeg},${maxLng + padDeg},${maxLat + padDeg}`
+      return `${r3(minLng - padDeg)},${r3(minLat - padDeg)},${r3(maxLng + padDeg)},${r3(maxLat + padDeg)}`
     }
 
     const fetchOnce = async (bboxStr: string, zoom: number) => {
-      const res = await api.get<{ success?: boolean; limited?: boolean; reason?: string; signals?: unknown; sidewalksGeojson?: unknown }>(
-        `/api/osm/features?bbox=${encodeURIComponent(bboxStr)}&zoom=${encodeURIComponent(String(zoom))}&include=signals,stops,sidewalks`
+      const res = await api.get<{ success?: boolean; limited?: boolean; reason?: string; signals?: unknown; sidewalksGeojson?: unknown; buildings?: unknown }>(
+        `/api/osm/features?bbox=${encodeURIComponent(bboxStr)}&zoom=${encodeURIComponent(String(zoom))}&include=signals,stops,sidewalks,buildings`
       )
       const data = (res as unknown as { data?: any }).data ?? (res as any)
       const payload = (data?.data ?? data) as any
@@ -2439,15 +2491,17 @@ export default function DriverApp() {
       const reason = typeof payload?.reason === 'string' ? payload.reason : undefined
       const signals = Array.isArray(payload?.signals) ? payload.signals : []
       const sidewalksGeojson = payload?.sidewalksGeojson
-      return { limited, reason, signals, sidewalksGeojson }
+      const buildings = Array.isArray(payload?.buildings) ? payload.buildings : []
+      return { limited, reason, signals, sidewalksGeojson, buildings }
     }
 
+    let osmRetryDelayMs = 2500
     const scheduleFetch = () => {
       const z = map.getZoom()
       const viewport = map.getBounds()
+      if (!viewport) return
       const viewportBbox = bboxToString(viewport)
 
-      // Optional: also pull route corridor bbox when navigating (in case route extends beyond viewport)
       let routeBbox: string | null = null
       if (isNavigating && routePolylineForMap?.length) {
         let minLat = Infinity, minLng = Infinity, maxLat = -Infinity, maxLng = -Infinity
@@ -2458,7 +2512,7 @@ export default function DriverApp() {
           maxLng = Math.max(maxLng, p.lng)
         }
         if (Number.isFinite(minLat) && Number.isFinite(minLng) && Number.isFinite(maxLat) && Number.isFinite(maxLng)) {
-          routeBbox = expandBbox(minLng, minLat, maxLng, maxLat, 0.003) // ~300m buffer
+          routeBbox = expandBbox(minLng, minLat, maxLng, maxLat, 0.003)
         }
       }
 
@@ -2470,37 +2524,55 @@ export default function DriverApp() {
       osmFetchTimerRef.current = window.setTimeout(async () => {
         try {
           const zoom = map.getZoom()
-          const a = await fetchOnce(viewportBbox, zoom)
+          const [a, b] = await Promise.all([
+            fetchOnce(viewportBbox, zoom),
+            routeBbox && routeBbox !== viewportBbox ? fetchOnce(routeBbox, zoom) : Promise.resolve(null),
+          ])
           let mergedSignals = a.signals as Array<{ id: string; type: string; lat: number; lng: number }>
-          let sidewalks = a.sidewalksGeojson as GeoJSON.FeatureCollection<GeoJSON.LineString> | undefined
+          const sidewalks = a.sidewalksGeojson as GeoJSON.FeatureCollection<GeoJSON.LineString> | undefined
+          let mergedBuildings = a.buildings as Array<{ id: string; lat: number; lng: number; area_m2: number }>
           const limitedViewport = a.limited
+          const limitedRoute = Boolean(b?.limited)
 
-          let limitedRoute = false
-          if (routeBbox && routeBbox !== viewportBbox) {
-            const b = await fetchOnce(routeBbox, zoom)
-            limitedRoute = b.limited
+          if (b) {
             const moreSignals = b.signals as Array<{ id: string; type: string; lat: number; lng: number }>
+            const moreBuildings = b.buildings as Array<{ id: string; lat: number; lng: number; area_m2: number }>
             const byId = new globalThis.Map<string, { id: string; type: string; lat: number; lng: number }>()
             for (const s of mergedSignals) if (s?.id) byId.set(s.id, s)
             for (const s of moreSignals) if (s?.id && !byId.has(s.id)) byId.set(s.id, s)
             mergedSignals = Array.from(byId.values())
+            const buildingsById = new globalThis.Map<string, { id: string; lat: number; lng: number; area_m2: number }>()
+            for (const bld of mergedBuildings) if (bld?.id) buildingsById.set(bld.id, bld)
+            for (const bld of moreBuildings) if (bld?.id && !buildingsById.has(bld.id)) buildingsById.set(bld.id, bld)
+            mergedBuildings = Array.from(buildingsById.values())
           }
 
           // Avoid flicker: if the backend refuses a huge bbox (limited) and returns empty, keep the last stable set.
           const limitedAll = limitedViewport || limitedRoute
           const nextSignals = Array.isArray(mergedSignals) ? mergedSignals : []
+          const nextBuildings = Array.isArray(mergedBuildings) ? mergedBuildings : []
           if (!(limitedAll && nextSignals.length === 0)) setOsmSignals(nextSignals)
+          if (!(limitedAll && nextBuildings.length === 0)) setOsmBuildings(nextBuildings)
 
           if (sidewalks && sidewalks.type === 'FeatureCollection') {
             setOsmSidewalksGeojson(sidewalks as GeoJSON.FeatureCollection<GeoJSON.LineString>)
           } else {
-            // Same idea: don't wipe sidewalks on "limited" responses (zoomed out / bbox too big).
             if (!limitedViewport) setOsmSidewalksGeojson({ type: 'FeatureCollection', features: [] })
           }
+
+          const reason = a.reason ?? (b as any)?.reason
+          if (reason === 'rate_limited' || reason === 'overpass_error') {
+            const retryHint = (a as any).retry_after_seconds ?? (b as any)?.retry_after_seconds
+            osmRetryDelayMs = Math.min((retryHint ?? 30) * 1000, 60_000)
+            lastOsmKeyRef.current = ''
+          } else {
+            osmRetryDelayMs = 2500
+          }
         } catch {
-          // fail closed: keep existing overlays
+          osmRetryDelayMs = Math.min(osmRetryDelayMs * 2, 30_000)
+          lastOsmKeyRef.current = ''
         }
-      }, 450)
+      }, osmRetryDelayMs)
     }
 
     scheduleFetch()
@@ -2572,14 +2644,41 @@ export default function DriverApp() {
 
   useEffect(() => {
     let cancelled = false
+    let familyAuthBlocked = false
     const loadFamilyGeo = async () => {
       try {
+        if (familyAuthBlocked) return
+        if (!hasFamilyAccess) {
+          if (!cancelled) setFamilyGeoContext({ groupId: '', places: [] })
+          familyAuthBlocked = true
+          return
+        }
+        // Family endpoints require auth; skip polling when no token to avoid 401 spam.
+        if (!api.getToken()) {
+          if (!cancelled) setFamilyGeoContext({ groupId: '', places: [] })
+          familyAuthBlocked = true
+          return
+        }
         const res = await api.get<{ group_id?: string }>('/api/family/members')
-        const gid = (res.data as any)?.group_id
+        if (!res.success || !res.data) {
+          if (!cancelled) setFamilyGeoContext({ groupId: '', places: [] })
+          familyAuthBlocked = true
+          return
+        }
+        const raw = res.data as unknown
+        const gid =
+          raw && typeof raw === 'object' && 'group_id' in (raw as Record<string, unknown>)
+            ? (raw as { group_id?: string }).group_id
+            : undefined
         if (!gid || cancelled) return
         const placesRes = await api.get<{ places?: Array<{ id?: string; name: string; lat: number; lng: number; radius_meters?: number }> }>(`/api/family/group/${gid}/places`)
         if (cancelled) return
-        setFamilyGeoContext({ groupId: String(gid), places: ((placesRes.data as any)?.places ?? []).filter(Boolean) })
+        const placesRaw = placesRes.data as unknown
+        const places =
+          placesRaw && typeof placesRaw === 'object' && 'places' in (placesRaw as Record<string, unknown>)
+            ? (placesRaw as { places?: Array<{ id?: string; name: string; lat: number; lng: number; radius_meters?: number }> }).places ?? []
+            : []
+        setFamilyGeoContext({ groupId: String(gid), places: places.filter(Boolean) })
       } catch {
         if (!cancelled) setFamilyGeoContext({ groupId: '', places: [] })
       }
@@ -2590,7 +2689,7 @@ export default function DriverApp() {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [])
+  }, [hasFamilyAccess])
 
   useEffect(() => {
     if (!familyGeoContext.groupId || !familyGeoContext.places.length) return
@@ -2753,8 +2852,8 @@ export default function DriverApp() {
   const nearbyNavOffers = useMemo(() => {
     if (!isNavigating || !offers.length) return []
     return offers.filter((offer) => {
-      const lat = (offer as { lat?: number; latitude?: number }).lat ?? (offer as { latitude?: number }).latitude
-      const lng = (offer as { lng?: number; longitude?: number }).lng ?? (offer as { longitude?: number }).longitude
+      const lat = offer.lat ?? offer.latitude
+      const lng = offer.lng ?? offer.longitude
       if (lat == null || lng == null) return false
       const R = 3959
       const dLat = (lat - userLocation.lat) * Math.PI / 180
@@ -2772,8 +2871,8 @@ export default function DriverApp() {
     // - During route preview: use the currently selected route option (best route/eco)
     // - During navigation: prefer live ETA, otherwise fall back to navigationData.duration
     const previewSeconds =
-      showRoutePreview && availableRoutes[selectedRouteIndex]?.expectedTravelTimeSeconds
-        ? Number(availableRoutes[selectedRouteIndex]!.expectedTravelTimeSeconds)
+      showRoutePreview && availableRoutes[selectedRouteIndex]?.duration != null
+        ? Number(availableRoutes[selectedRouteIndex]!.duration)
         : null
 
     const fallbackSeconds =
@@ -2921,7 +3020,10 @@ export default function DriverApp() {
       {/* Route notifications panel: reminders, leave-by, faster route */}
       {useMap && !isNavigating && routeNotifications.length > 0 && (
         <div className="absolute top-4 left-4 right-4 z-[40] space-y-2" style={{ top: 'calc(env(safe-area-inset-top, 44px) + 8px)' }}>
-          {routeNotifications.filter((n) => !dismissedRouteNotifIds.has(n.id)).slice(0, 3).map((n) => (
+          {routeNotifications
+            .filter((n) => !dismissedRouteNotifIds.has(n.id) && n.delivery !== 'in_app_only')
+            .slice(0, 3)
+            .map((n) => (
             <div key={n.id} className="bg-white/95 dark:bg-slate-800/95 backdrop-blur rounded-xl p-3 shadow-lg border border-slate-200/50 flex items-start justify-between gap-2">
               <p className="text-sm text-slate-800 dark:text-slate-200 flex-1">{n.message}</p>
               <div className="flex items-center gap-1 shrink-0">
@@ -3017,6 +3119,7 @@ export default function DriverApp() {
           drivingMode={mode}
           signals={osmSignals}
           sidewalksGeojson={osmSidewalksGeojson}
+          offerBuildings={osmBuildings}
           onRecenter={() => {
             setNavCameraMode('following')
             onRecenterNavigation()
@@ -3026,7 +3129,10 @@ export default function DriverApp() {
           onMapError={(msg) => { setMapFailed(true); reportMapError(msg) }}
           offers={memoizedOffers}
           gasStations={gasStationsOverlay}
-          onOfferClick={(offer) => { setSelectedOfferForRedemption(offer); setShowRedemptionPopup(true) }}
+          onOfferClick={(offer) => {
+            setSelectedOfferForRedemption(offer as never)
+            setShowRedemptionPopup(true)
+          }}
           roadReports={roadReports}
           onReportClick={(r) => setSelectedRoadStatus({ id: String(r.id), name: r.title ?? r.type ?? 'Road report', status: r.severity === 'high' ? 'heavy' : r.severity === 'medium' ? 'moderate' : (r.type?.toLowerCase().includes('closure') || r.type?.toLowerCase().includes('closed')) ? 'closed' : 'moderate', reason: r.title, estimatedDelay: 0, startLat: r.lat, startLng: r.lng, endLat: r.lat + 0.0001, endLng: r.lng + 0.0001 })}
           onCameraClick={(cameraId) => {
@@ -3071,7 +3177,7 @@ export default function DriverApp() {
             zoomToUserRef.current = zoomToUser
             mapActionsRef.current = actions ?? null
             if (map) {
-              mapInstanceRef.current = map as mapboxgl.Map
+              mapInstanceRef.current = map as MapboxMap
               setMapReadyForLayers(true)
             }
           }}
@@ -3827,10 +3933,10 @@ export default function DriverApp() {
             <div style={{ display: 'flex', gap: 0, paddingLeft: 20, paddingRight: 20, marginBottom: 16 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 24, fontWeight: 800, color: '#1a1a1a' }}>
-                  {formatDuration(Math.round((availableRoutes[selectedRouteIndex].expectedTravelTimeSeconds ?? 0) / 60))}
+                  {formatDuration(Math.round((availableRoutes[selectedRouteIndex].duration ?? 0) / 60))}
                 </div>
                 <div style={{ fontSize: 12, color: '#999' }}>
-                  {`${((availableRoutes[selectedRouteIndex].distanceMeters ?? 0) / 1609.34).toFixed(1)} mi`} • Arrive {arrivalTime}
+                  {`${((availableRoutes[selectedRouteIndex].distance ?? 0) / 1609.34).toFixed(1)} mi`} • Arrive {arrivalTime}
                 </div>
               </div>
             </div>
@@ -3988,11 +4094,11 @@ export default function DriverApp() {
                   No offers in your area yet
                 </div>
               ) : (
-                (offers ?? []).slice(0, 2).map((offer: Offer, i: number) => (
+                (offers ?? []).slice(0, 2).map((offer: DriverAppOffer, i: number) => (
                   <div
                     key={offer.id ?? i}
                     onClick={() => {
-                      setSelectedOfferForRedemption(offer)
+                      setSelectedOfferForRedemption(offer as never)
                       setShowRedemptionPopup(true)
                     }}
                     style={{
@@ -4027,8 +4133,8 @@ export default function DriverApp() {
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                       }}>
-                        {(offer as { title?: string; discount_text?: string }).title
-                          ?? (offer as { discount_text?: string }).discount_text
+                        {offer.title
+                          ?? offer.discount_text
                           ?? 'Special offer'}
                       </div>
                       <div style={{
@@ -4039,14 +4145,14 @@ export default function DriverApp() {
                         alignItems: 'center',
                         gap: 6,
                       }}>
-                        <span>+{(offer as { gems_reward?: number }).gems_reward
+                        <span>+{offer.gems_reward
                           ?? offer.gems
                           ?? 25} gems</span>
-                        {(offer as { distance_km?: number }).distance_km != null && (
+                        {offer.distance_km != null && (
                           <>
                             <span style={{ color: '#ddd' }}>•</span>
                             <span style={{ color: '#999' }}>
-                              {(offer as { distance_km: number }).distance_km} km
+                              {offer.distance_km} km
                             </span>
                           </>
                         )}
@@ -4354,6 +4460,11 @@ export default function DriverApp() {
           <div className="absolute inset-0 bg-black/40 pointer-events-auto" onClick={handleDismissTripSummary} />
           <div className="relative w-full max-w-md bg-white rounded-t-2xl shadow-[0_2px_8px_rgba(0,0,0,0.12)] p-4 pb-safe pointer-events-auto animate-slide-up transition-all duration-300 ease-in-out">
             <h3 className="text-slate-800 font-bold text-lg mb-4">Trip Summary</h3>
+            <p className="text-slate-500 text-xs mb-3">
+              {String((lastTripData.origin ?? 'Start') as string)}
+              {' -> '}
+              {String((lastTripData.destination ?? 'End') as string)}
+            </p>
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div className="bg-slate-50 rounded-xl p-3">
                 <p className="text-slate-500 text-[13px]">Distance</p>
@@ -4371,6 +4482,19 @@ export default function DriverApp() {
                 <p className="text-slate-500 text-[13px]">Gems Earned</p>
                 <p className="text-amber-600 font-bold text-lg">{lastTripData.gems_earned ?? '--'}</p>
               </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-slate-500 text-[13px]">XP Earned</p>
+                <p className="text-indigo-600 font-bold text-lg">{lastTripData.xp_earned ?? '--'}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-slate-500 text-[13px]">Safe Drive Streak</p>
+                <p className="text-slate-800 font-bold text-lg">{lastTripData.safe_drive_streak ?? 0}</p>
+              </div>
+            </div>
+            <div className="mb-3">
+              <span className={`text-[11px] font-semibold px-2 py-1 rounded-full ${(lastTripData.server_synced as boolean) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                {(lastTripData.server_synced as boolean) ? 'Server synced' : 'Syncing...'}
+              </span>
             </div>
             <button
               onClick={handleDismissTripSummary}
@@ -5212,14 +5336,14 @@ export default function DriverApp() {
                     {route.notifications ? <Bell size={12} className="text-blue-500" /> : <EyeOff size={12} />}
                     {route.notifications ? 'Alerts on' : 'Alerts off'}
                   </button>
-                  {!userData.is_premium && (
-                    <p className={`text-[10px] mt-0.5 ${routesSubtextCls}`}>Real-time alerts (leave early, faster route) require Premium</p>
+                  {!hasRouteAlertsAccess && (
+                    <p className={`text-[10px] mt-0.5 ${routesSubtextCls}`}>Push alerts are for Premium/Family. You still get in-app route recommendations here.</p>
                   )}
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => handleLeaveEarlyForRoute(route.id)} data-testid={`leave-early-route-${route.id}`}
-                    className={`text-xs px-3 py-1.5 rounded-lg font-medium flex items-center gap-1 ${userData.is_premium ? (isLight ? 'text-slate-600 bg-slate-100 hover:bg-slate-200' : 'text-slate-300 bg-slate-700 hover:bg-slate-600') : 'text-slate-400 bg-slate-50 cursor-not-allowed'}`}
-                    title={!userData.is_premium ? 'Upgrade to Premium for leave-early alerts' : undefined}>
+                    className={`text-xs px-3 py-1.5 rounded-lg font-medium flex items-center gap-1 ${hasRouteAlertsAccess ? (isLight ? 'text-slate-600 bg-slate-100 hover:bg-slate-200' : 'text-slate-300 bg-slate-700 hover:bg-slate-600') : (isLight ? 'text-slate-700 bg-blue-50 hover:bg-blue-100' : 'text-blue-200 bg-blue-900/40 hover:bg-blue-900/55')}`}
+                    title={!hasRouteAlertsAccess ? 'In-app leave-early suggestion (push is Premium/Family)' : undefined}>
                     <Clock size={12} /> Leave early
                   </button>
                   <button onClick={() => handleStartNavigation(route.destination)} data-testid={`start-route-${route.id}`}
@@ -5228,6 +5352,65 @@ export default function DriverApp() {
                   </button>
                 </div>
               </div>
+
+              {/* In-app route recommendations card (always visible in app; push only for Premium/Family). */}
+              {route.notifications && (
+                <div className={`mt-3 rounded-xl border p-3 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/60 border-slate-700'}`}>
+                  <p className={`text-xs font-semibold ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>Route Recommendations</p>
+                  <div className="space-y-2 mt-2">
+                    {routeNotifications
+                      .filter((n) => n.route_id === route.id && !dismissedRouteNotifIds.has(n.id) && (n.type === 'leave_early' || n.type === 'faster_route'))
+                      .slice(0, 2)
+                      .map((n) => (
+                        <div key={n.id} className={`rounded-lg p-2.5 ${isLight ? 'bg-white border border-slate-200' : 'bg-slate-800 border border-slate-700'}`}>
+                          <p className={`text-xs ${isLight ? 'text-slate-700' : 'text-slate-200'}`}>{n.message}</p>
+                          <div className="flex gap-2 mt-2">
+                            {n.type === 'leave_early' && (
+                              <button
+                                onClick={() => {
+                                  if (n.leave_by && n.eta_minutes != null) {
+                                    setLeaveEarlyForRoute({
+                                      routeId: route.id,
+                                      leaveBy: n.leave_by,
+                                      etaMinutes: n.eta_minutes,
+                                      destination: n.destination ?? route.destination,
+                                    })
+                                  } else {
+                                    void handleLeaveEarlyForRoute(route.id)
+                                  }
+                                  setDismissedRouteNotifIds((s) => new Set([...s, n.id]))
+                                }}
+                                className="px-2.5 py-1 text-[11px] rounded-md bg-blue-500 text-white font-medium"
+                              >
+                                Leave early
+                              </button>
+                            )}
+                            {n.type === 'faster_route' && (
+                              <button
+                                onClick={() => {
+                                  handleStartNavigation(n.destination ?? route.destination)
+                                  setDismissedRouteNotifIds((s) => new Set([...s, n.id]))
+                                }}
+                                className="px-2.5 py-1 text-[11px] rounded-md bg-emerald-500 text-white font-medium"
+                              >
+                                Better route
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setDismissedRouteNotifIds((s) => new Set([...s, n.id]))}
+                              className={`px-2.5 py-1 text-[11px] rounded-md font-medium ${isLight ? 'bg-slate-100 text-slate-600' : 'bg-slate-700 text-slate-200'}`}
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    {routeNotifications.filter((n) => n.route_id === route.id && !dismissedRouteNotifIds.has(n.id) && (n.type === 'leave_early' || n.type === 'faster_route')).length === 0 && (
+                      <p className={`text-[11px] ${routesSubtextCls}`}>No current traffic recommendations for this route.</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ))
         )}
@@ -6925,7 +7108,8 @@ export default function DriverApp() {
         groupId={familyMemberIds[0] ? 'family-group' : ''}
         onConvoyStarted={(dest) => {
           setShowConvoy(false)
-          handleSelectDestination(dest as any)
+          const sr = searchResultLike(dest)
+          if (sr) void handleSelectDestination(sr)
         }}
       />
       </Suspense>
@@ -7130,8 +7314,8 @@ export default function DriverApp() {
         <OrionOfferAlerts
           isNavigating={isNavigating}
           userLocation={userLocation}
-          offers={nearbyNavOffers}
-          onOfferSelect={handleDirectRedemption}
+          offers={nearbyNavOffers as unknown as ComponentProps<typeof OrionOfferAlerts>['offers']}
+          onOfferSelect={(o) => handleDirectRedemption(o as unknown as DriverAppOffer)}
           isPremium={userPlan === 'premium'}
         />
       )}

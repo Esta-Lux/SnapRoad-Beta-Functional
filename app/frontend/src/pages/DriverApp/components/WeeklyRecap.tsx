@@ -56,28 +56,8 @@ export default function WeeklyRecap({ isOpen, onClose, isPremium }: WeeklyRecapP
       if (data.success) {
         setStats(data.data)
       }
-    } catch (e) {
-      // Use mock data
-      setStats({
-        total_trips: 12,
-        total_miles: 187.5,
-        total_time_minutes: 420,
-        gems_earned: 2450,
-        xp_earned: 15600,
-        safety_score_avg: 94,
-        safety_score_change: 3,
-        challenges_won: 2,
-        challenges_lost: 1,
-        offers_redeemed: 4,
-        reports_posted: 7,
-        streak_days: 5,
-        rank_change: 8,
-        highlights: [
-          "Best safety score: 98 on Wednesday",
-          "Longest trip: 45 miles on Saturday",
-          "Helped 23 drivers with your reports",
-        ]
-      })
+    } catch {
+      setStats(null)
     } finally {
       setLoading(false)
     }

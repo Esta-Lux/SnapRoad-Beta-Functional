@@ -2,6 +2,7 @@
  * SnapRoad Admin API Service
  * Centralized API calls for the Admin Portal
  */
+/* eslint-disable @typescript-eslint/no-explicit-any -- transitional: replace `any` with typed generics per endpoint incrementally */
 
 import type {
   AdminStats,

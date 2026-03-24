@@ -15,6 +15,14 @@ export interface AdminStats {
   total_mrr?: number
 }
 
+/** Optional feed when the API includes it; `/api/admin/analytics` may omit (only summary + queues). */
+export interface AdminRecentActivityItem {
+  icon?: string
+  title?: string
+  detail?: string
+  time?: string
+}
+
 export interface AdminAnalytics {
   summary: {
     total_users: number
@@ -32,6 +40,8 @@ export interface AdminAnalytics {
     consent_pending: number
     fraud_flags: number
   }
+  /** Omitted when API does not return a feed; UI falls back to stats-based placeholders. */
+  recent_activity?: AdminRecentActivityItem[]
 }
 
 export interface ChartDataPoint {

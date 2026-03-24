@@ -156,6 +156,32 @@ async def upvote_incident(incident_id: int):
     raise HTTPException(status_code=404, detail="Incident not found")
 
 
+class ConfirmBody(BaseModel):
+    incident_id: int
+    confirmed: bool
+
+
+@router.post("/confirm")
+async def confirm_incident(body: ConfirmBody):
+    """Confirm or deny an incident report. Confirmed extends expiry; denied downvotes."""
+    for inc in incidents_db:
+        if int(inc.get("id", -1)) == body.incident_id:
+            if body.confirmed:
+                inc["upvotes"] = int(inc.get("upvotes", 0)) + 1
+                try:
+                    inc["expires_at"] = (datetime.fromisoformat(inc["expires_at"]) + timedelta(minutes=30)).isoformat()
+                except Exception:
+                    inc["expires_at"] = (datetime.utcnow() + timedelta(minutes=30)).isoformat()
+                return {"success": True, "confirmed": True, "upvotes": inc["upvotes"]}
+            else:
+                inc["upvotes"] = int(inc.get("upvotes", 0)) - 1
+                if inc["upvotes"] <= -3:
+                    incidents_db.remove(inc)
+                    return {"success": True, "confirmed": False, "removed": True}
+                return {"success": True, "confirmed": False, "upvotes": inc["upvotes"]}
+    raise HTTPException(status_code=404, detail="Incident not found")
+
+
 @router.post("/{incident_id}/downvote")
 async def downvote_incident(incident_id: int):
     """Downvote indicates it's not there; after enough downvotes, remove early."""

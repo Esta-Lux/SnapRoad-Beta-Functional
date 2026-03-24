@@ -34,12 +34,25 @@ export default function RedemptionPopup({
   const [isInRange, setIsInRange] = useState(true)
   const [countdown, setCountdown] = useState(120) // 2 min QR expiry
   const [isRedeeming, setIsRedeeming] = useState(false)
+  const haversineMiles = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 3959
+    const dLat = (lat2 - lat1) * Math.PI / 180
+    const dLon = (lng2 - lng1) * Math.PI / 180
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  }
 
   useEffect(() => {
     if (!offer) return
 
-    // Calculate distance (mock - always in range for demo)
-    const distance = offer.distance || 0.3
+    const distance =
+      typeof offer.distance === 'number'
+        ? offer.distance
+        : (typeof offer.lat === 'number' && typeof offer.lng === 'number'
+          ? haversineMiles(userLocation.lat, userLocation.lng, offer.lat, offer.lng)
+          : Number.POSITIVE_INFINITY)
     setIsInRange(distance < 1) // Within 1 mile
 
     // Generate QR code data

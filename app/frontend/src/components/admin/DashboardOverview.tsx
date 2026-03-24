@@ -7,7 +7,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts'
 import { adminApi } from '@/services/adminApi'
-import type { AdminAnalytics, AdminStats } from '@/types/admin'
+import type { AdminAnalytics, AdminRecentActivityItem, AdminStats } from '@/types/admin'
 
 interface DashboardOverviewProps {
   theme: 'dark' | 'light'
@@ -272,16 +272,18 @@ export default function DashboardOverview({ theme }: DashboardOverviewProps) {
           <button className="text-sm text-blue-500 hover:text-blue-400 font-medium">View All</button>
         </div>
         <div className="space-y-3">
+          {/* `||` (not `??`): empty API array [] is truthy and keeps an empty list; only nullish/falsy uses fallbacks. */}
           {(analytics?.recent_activity || [
             { icon: 'user', title: `${stats?.total_users || 0} users registered`, detail: 'Total platform users', time: 'Overall' },
             { icon: 'partner', title: `${stats?.active_partners || 0} active partners`, detail: 'Business partners', time: 'Current' },
             { icon: 'trip', title: `${stats?.total_trips || 0} trips tracked`, detail: 'Total driving sessions', time: 'All time' },
             { icon: 'offer', title: `${stats?.total_offers || 0} active offers`, detail: 'Partner offers', time: 'Current' },
-          ]).map((activity: any) => {
+          ]).map((activity: AdminRecentActivityItem) => {
             const iconMap: Record<string, any> = { user: UserPlus, partner: Building2, trip: Navigation, offer: CheckCircle }
             const colorMap: Record<string, string> = { user: 'text-blue-400 bg-blue-500/20', partner: 'text-purple-400 bg-purple-500/20', trip: 'text-emerald-400 bg-emerald-500/20', offer: 'text-green-400 bg-green-500/20' }
-            const IconComp = iconMap[activity.icon] || UserPlus
-            const colorClass = colorMap[activity.icon] || 'text-blue-400 bg-blue-500/20'
+            const iconKey = activity.icon ?? 'user'
+            const IconComp = iconMap[iconKey] || UserPlus
+            const colorClass = colorMap[iconKey] || 'text-blue-400 bg-blue-500/20'
             return { ...activity, icon: IconComp, color: colorClass }
           }).map((activity: any, i: number) => (
             <div key={i} className={`flex items-center gap-3 p-3 rounded-lg ${isDark ? 'bg-slate-700/30' : 'bg-[#F8FAFC]'}`}>

@@ -76,7 +76,7 @@ export interface MapboxMapSnapRoadProps {
   onPlaceSelected?: (place: { name: string; lat: number; lng: number; address?: string; type?: string }) => void
   onMapClick?: (lat: number, lng: number) => void
   fitToRoutePolyline?: { lat: number; lng: number }[] | null
-  navigationSteps?: Array<{ instruction?: string; distanceMeters?: number; maneuver?: string }>
+  navigationSteps?: Array<{ instruction?: string; distanceMeters?: number; maneuver?: string; lat?: number; lng?: number }>
   currentStepIndex?: number
   mapType?: 'standard' | 'satellite' | 'hybrid' | 'dark'
   showTraffic?: boolean
@@ -98,6 +98,7 @@ export interface MapboxMapSnapRoadProps {
   drivingMode?: 'calm' | 'adaptive' | 'sport'
   cameraLocations?: Array<{ id: string; lat: number; lng: number; name?: string }>
   constructionZones?: Array<{ id: string; lat: number; lng: number; title?: string }>
+  offerBuildings?: Array<{ id: string; lat: number; lng: number; area_m2: number }>
   /** Pin dropped at tap; shown as pin marker */
   droppedPin?: { lat: number; lng: number; label?: string } | null
   /** Route start point; shown as a pin when navigating */
@@ -435,7 +436,6 @@ function registerSvgIcons(map: mapboxgl.Map) {
   const PIXEL_RATIO = 2
 
   // #region agent log
-  const registerStartTs = Date.now()
   const trafficIconIds = [
     'sr-icon-traffic-light-v4-light',
     'sr-icon-traffic-light-v4-dark',
@@ -443,6 +443,12 @@ function registerSvgIcons(map: mapboxgl.Map) {
     'sr-icon-stop-v4-dark',
     'sr-icon-speed-camera-v4-light',
     'sr-icon-speed-camera-v4-dark',
+    'sr-icon-camera-v4-light',
+    'sr-icon-camera-v4-dark',
+    // User marker icons are needed immediately on first paint.
+    'sr-icon-user-location-light',
+    'sr-icon-user-location-dark',
+    'sr-icon-nav-cone',
   ]
   const trafficIconIdSet = new Set(trafficIconIds)
   const trafficIconAddLogged = new Set<string>()
@@ -603,6 +609,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
     friendLocations, friendsOnRoute, onFriendMarkerTap,
     onMapMoved,
     signals, drivingMode, cameraLocations, constructionZones,
+    offerBuildings,
     colorScheme, onPlaceSelected, onMapClick,
     onMapReady, fitToRoutePolyline,
     contentInsets,
@@ -632,13 +639,31 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
   const lastRouteSplitAtRef = useRef<{ lat: number; lng: number; splitIndex: number } | null>(null)
   const fetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastFetchCenterRef = useRef<{ lat: number; lng: number }>({ lat: 0, lng: 0 })
+  const interactionHandlersBoundRef = useRef(false)
+  const mapMoveEndBoundRef = useRef(false)
+  const callbacksRef = useRef({
+    onOfferClick,
+    onReportClick,
+    onPhotoReportTap,
+    onFriendMarkerTap,
+    onCameraClick,
+    onMapMoved,
+  })
+  callbacksRef.current = {
+    onOfferClick,
+    onReportClick,
+    onPhotoReportTap,
+    onFriendMarkerTap,
+    onCameraClick,
+    onMapMoved,
+  }
   const latestPropsRef = useRef({
     routePolyline, traveledDistanceMeters, isNavigating, isMoving, speedMps, userLocation, vehicleHeading,
     destinationCoordinate, offers, roadReports, navigationSteps, currentStepIndex,
     tripHistoryPolylines, signals, showTraffic, showCameras, showIncidents, showConstruction, showFuelPrices,
     photoReports,
     friendLocations,
-    cameraLocations, constructionZones, colorScheme, gasStations,
+    cameraLocations, constructionZones, colorScheme, gasStations, offerBuildings,
     droppedPin,
     routeStartCoordinate,
     sidewalksGeojson,
@@ -649,7 +674,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
     tripHistoryPolylines, signals, showTraffic, showCameras, showIncidents, showConstruction, showFuelPrices,
     photoReports,
     friendLocations,
-    cameraLocations, constructionZones, colorScheme, gasStations,
+    cameraLocations, constructionZones, colorScheme, gasStations, offerBuildings,
     droppedPin,
     routeStartCoordinate,
     sidewalksGeojson,
@@ -940,7 +965,26 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
         map.addLayer({ id: 'sr-trip-history', type: 'line', source: 'sr-trip-history', slot: 'middle', paint: { 'line-color': '#8888aa', 'line-width': 2, 'line-opacity': 0.3, 'line-dasharray': [2, 4] }, layout: { 'line-cap': 'round', 'line-join': 'round' } })
         map.addLayer({ id: 'sr-offers-cluster', type: 'circle', source: 'sr-offers', slot: 'top', filter: ['has', 'point_count'], paint: { 'circle-color': '#c89048', 'circle-radius': ['step', ['get', 'point_count'], 16, 5, 20, 10, 26], 'circle-opacity': 0.85, 'circle-stroke-width': 2, 'circle-stroke-color': '#ffffff' } })
         map.addLayer({ id: 'sr-offers-cluster-count', type: 'symbol', source: 'sr-offers', slot: 'top', filter: ['has', 'point_count'], layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'], 'text-size': 12 }, paint: { 'text-color': '#ffffff' } })
-        map.addLayer({ id: 'sr-offers', type: 'circle', source: 'sr-offers', slot: 'top', filter: ['!', ['has', 'point_count']], paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 5, 18, 12], 'circle-color': ['match', ['get', 'category'], 'gas', C.offerGas, C.offer], 'circle-stroke-width': 2.5, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.95 } })
+        map.addLayer({
+          id: 'sr-offers',
+          type: 'circle',
+          source: 'sr-offers',
+          slot: 'top',
+          filter: ['!', ['has', 'point_count']],
+          minzoom: 8,
+          paint: {
+            'circle-radius': [
+              'interpolate', ['linear'], ['zoom'],
+              12, ['interpolate', ['linear'], ['coalesce', ['get', 'buildingAreaM2'], 0], 0, 5, 800, 6.5, 4000, 8.5, 12000, 11],
+              18, ['interpolate', ['linear'], ['coalesce', ['get', 'buildingAreaM2'], 0], 0, 12, 800, 14, 4000, 18, 12000, 23],
+            ],
+            'circle-color': ['match', ['get', 'category'], 'gas', C.offerGas, C.offer],
+            'circle-stroke-width': 2.5,
+            'circle-stroke-color': '#ffffff',
+            'circle-opacity': 0.95,
+            'circle-blur': 0.08,
+          },
+        })
         map.addLayer({
           id: 'sr-offer-zones',
           type: 'circle',
@@ -948,13 +992,18 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           slot: 'middle',
           filter: ['!', ['has', 'point_count']],
           paint: {
-            'circle-radius': { stops: [[10, 20], [14, 60], [16, 120]], base: 2 },
+            'circle-radius': [
+              'interpolate', ['linear'], ['zoom'],
+              10, ['interpolate', ['linear'], ['coalesce', ['get', 'buildingAreaM2'], 0], 0, 16, 800, 22, 4000, 34, 12000, 48],
+              16, ['interpolate', ['linear'], ['coalesce', ['get', 'buildingAreaM2'], 0], 0, 60, 800, 78, 4000, 108, 12000, 148],
+            ],
             'circle-color': '#c89048',
             'circle-opacity': 0.08,
             'circle-stroke-width': 1,
             'circle-stroke-color': '#c89048',
             'circle-stroke-opacity': 0.2,
           },
+          minzoom: 9,
           layout: { visibility: 'visible' },
         })
         map.addLayer({
@@ -963,6 +1012,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           source: 'sr-offers',
           slot: 'top',
           filter: ['!', ['has', 'point_count']],
+          minzoom: 12,
           layout: {
             'text-field': ['concat', ['get', 'business'], '\n', ['get', 'label']],
             'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
@@ -1004,6 +1054,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           type: 'circle',
           source: 'sr-reports',
           slot: 'top',
+          minzoom: 10,
           paint: {
             'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 12, 18, 24],
             'circle-color': [
@@ -1263,6 +1314,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           type: 'circle',
           source: 'sr-reports',
           slot: 'top',
+          minzoom: 10,
           paint: {
             'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 4, 14, 8, 18, 14],
             'circle-color': [
@@ -1289,8 +1341,9 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           type: 'symbol',
           source: 'sr-reports',
           slot: 'top',
+          minzoom: 10,
           layout: {
-            'icon-image': ['get', 'iconId'],
+            'icon-image': ['coalesce', ['image', ['get', 'iconId']], ['image', 'marker-15']],
             'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.55, 14, 0.75, 18, 1.0],
             'icon-anchor': 'center',
             'icon-allow-overlap': true,
@@ -1304,6 +1357,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
             type: 'circle',
             source: 'sr-cameras',
             slot: 'top',
+            minzoom: 11,
             paint: {
               'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 5, 14, 8, 18, 14],
               'circle-color': '#4A90D9',
@@ -1318,8 +1372,9 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
             type: 'symbol',
             source: 'sr-cameras',
             slot: 'top',
+            minzoom: 11,
             layout: {
-              'icon-image': ['get', 'iconId'],
+              'icon-image': ['coalesce', ['image', ['get', 'iconId']], ['image', 'marker-15']],
               'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.55, 14, 0.75, 18, 1.0],
               'icon-anchor': 'center',
               'icon-allow-overlap': true,
@@ -1334,6 +1389,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
             type: 'circle',
             source: 'sr-construction',
             slot: 'top',
+            minzoom: 10,
             paint: {
               'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 5, 18, 11],
               'circle-color': '#F59E0B',
@@ -1348,8 +1404,9 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
             type: 'symbol',
             source: 'sr-construction',
             slot: 'top',
+            minzoom: 10,
             layout: {
-              'icon-image': ['get', 'iconId'],
+              'icon-image': ['coalesce', ['image', ['get', 'iconId']], ['image', 'marker-15']],
               'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.55, 14, 0.75, 18, 1.0],
               'icon-anchor': 'center',
               'icon-allow-overlap': true,
@@ -1407,15 +1464,16 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           })
         }
         if (!map.getLayer('sr-signals')) {
-          map.addLayer({ id: 'sr-signals-glow', type: 'circle', source: 'sr-signals', slot: 'top', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 10, 18, 22], 'circle-color': ['match', ['get', 'signalType'], 'traffic-light', '#22C55E', 'stop-sign', '#EF4444', 'speed-camera', '#8B5CF6', '#22C55E'], 'circle-blur': 0.6, 'circle-opacity': 0.25 } })
-          map.addLayer({ id: 'sr-signals', type: 'circle', source: 'sr-signals', slot: 'top', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 6, 16, 10, 18, 14], 'circle-color': ['match', ['get', 'signalType'], 'traffic-light', '#22C55E', 'stop-sign', '#EF4444', 'speed-camera', '#8B5CF6', '#22C55E'], 'circle-stroke-width': 3, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.95 } })
+          map.addLayer({ id: 'sr-signals-glow', type: 'circle', source: 'sr-signals', slot: 'top', minzoom: 11, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 10, 18, 22], 'circle-color': ['match', ['get', 'signalType'], 'traffic-light', '#22C55E', 'stop-sign', '#EF4444', 'speed-camera', '#8B5CF6', '#22C55E'], 'circle-blur': 0.6, 'circle-opacity': 0.25 } })
+          map.addLayer({ id: 'sr-signals', type: 'circle', source: 'sr-signals', slot: 'top', minzoom: 11, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 6, 16, 10, 18, 14], 'circle-color': ['match', ['get', 'signalType'], 'traffic-light', '#22C55E', 'stop-sign', '#EF4444', 'speed-camera', '#8B5CF6', '#22C55E'], 'circle-stroke-width': 3, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.95 } })
           map.addLayer({
             id: 'sr-signals-icon',
             type: 'symbol',
             source: 'sr-signals',
             slot: 'top',
+            minzoom: 11,
             layout: {
-              'icon-image': ['get', 'iconId'],
+              'icon-image': ['coalesce', ['image', ['get', 'iconId']], ['image', 'marker-15']],
               // Slightly larger stop-sign markers for "premium" legibility.
               'icon-size': [
                 'interpolate',
@@ -1484,7 +1542,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
             source: 'sr-user',
             slot: 'top',
             layout: {
-              'icon-image': ['get', 'iconId'],
+              'icon-image': ['coalesce', ['image', ['get', 'iconId']], ['image', 'marker-15']],
               'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.9, 14, 1.05, 18, 1.35],
               'icon-rotate': ['get', 'heading'],
               'icon-rotation-alignment': 'map',
@@ -1495,7 +1553,23 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           })
         }
 
-        // Ensure incident markers render above the user dot (reporting at current location would otherwise be hidden).
+        // Paint the user arrow immediately so it appears before the remaining layers finish setup.
+        try {
+          const earlyProps = latestPropsRef.current
+          const earlyScheme = schemeFromUi(earlyProps.colorScheme)
+          const earlyFeature = buildUserFeature(
+            earlyProps.userLocation.lat,
+            earlyProps.userLocation.lng,
+            earlyProps.vehicleHeading,
+            earlyProps.isNavigating as boolean | undefined,
+            earlyProps.isMoving as boolean | undefined,
+            earlyProps.speedMps as number | undefined,
+            earlyScheme
+          )
+          const earlyUserSrc = map.getSource('sr-user') as mapboxgl.GeoJSONSource | undefined
+          earlyUserSrc?.setData({ type: 'FeatureCollection', features: [earlyFeature] })
+        } catch { /* ignore early-paint error */ }
+
         try {
           if (map.getLayer('sr-reports')) map.moveLayer('sr-reports')
           if (map.getLayer('sr-reports-glow')) map.moveLayer('sr-reports-glow')
@@ -1529,6 +1603,19 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           droppedPinSrc?.setData(r.droppedPin ? { type: 'FeatureCollection', features: [{ type: 'Feature', properties: { label: r.droppedPin.label ?? 'Dropped pin' }, geometry: { type: 'Point', coordinates: [r.droppedPin.lng, r.droppedPin.lat] } }] } : emptyFC)
           const routeStartSrc = m.getSource('sr-route-start') as mapboxgl.GeoJSONSource | undefined
           routeStartSrc?.setData(r.routeStartCoordinate ? { type: 'FeatureCollection', features: [{ type: 'Feature', properties: { label: 'Start' }, geometry: { type: 'Point', coordinates: [r.routeStartCoordinate.lng, r.routeStartCoordinate.lat] } }] } : emptyFC)
+          const buildings = (r.offerBuildings || []) as Array<{ id: string; lat: number; lng: number; area_m2: number }>
+          const nearestBuildingArea = (lat: number, lng: number): number => {
+            let bestDist = Number.POSITIVE_INFINITY
+            let bestArea = 0
+            for (const b of buildings) {
+              const d = haversineMeters(lat, lng, b.lat, b.lng)
+              if (d < bestDist) {
+                bestDist = d
+                bestArea = Number.isFinite(b.area_m2) ? b.area_m2 : 0
+              }
+            }
+            return bestDist <= 120 ? bestArea : 0
+          }
           const offerFeatures: GeoJSON.Feature[] = (r.offers || [])
             .filter((o) => o.lat && o.lng && !o.redeemed)
             .map((o) => ({
@@ -1540,6 +1627,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
                 gems: (o as any).gems_reward ?? (o as any).base_gems ?? 0,
                 logo_url: (o as any).logo_url ?? (o as any).image_url ?? null,
                 category: (o as any).business_name?.toLowerCase().includes('gas') ? 'gas' : 'food',
+                buildingAreaM2: nearestBuildingArea(o.lat!, o.lng!),
               },
               geometry: { type: 'Point' as const, coordinates: [o.lng!, o.lat!] },
             }))
@@ -1593,7 +1681,17 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           }))
           const friendSrc = m.getSource('sr-friends') as mapboxgl.GeoJSONSource | undefined
           friendSrc?.setData({ type: 'FeatureCollection', features: friendFeatures })
-          const stepFeatures: GeoJSON.Feature[] = (r.navigationSteps || []).filter((_, i) => i >= (r.currentStepIndex ?? 0)).map((step, i) => ({ type: 'Feature' as const, properties: { instruction: step.instruction, index: i }, geometry: { type: 'Point' as const, coordinates: [0, 0] } })).filter((f) => f.geometry.coordinates[0] !== 0)
+          const stepFeatures: GeoJSON.Feature[] = (r.navigationSteps || [])
+            .filter((_, i) => i >= (r.currentStepIndex ?? 0))
+            .filter((step) => Number.isFinite((step as { lat?: number }).lat) && Number.isFinite((step as { lng?: number }).lng))
+            .map((step, i) => ({
+              type: 'Feature' as const,
+              properties: { instruction: step.instruction, index: i },
+              geometry: {
+                type: 'Point' as const,
+                coordinates: [(step as { lng: number }).lng, (step as { lat: number }).lat],
+              },
+            }))
           const stepSrc = m.getSource('sr-steps') as mapboxgl.GeoJSONSource | undefined
           stepSrc?.setData({ type: 'FeatureCollection', features: stepFeatures })
           const tripFeatures: GeoJSON.Feature[] = (r.tripHistoryPolylines || []).map((poly) => ({ type: 'Feature' as const, properties: {}, geometry: { type: 'LineString' as const, coordinates: poly.map(toCoord) } }))
@@ -1647,19 +1745,24 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
           return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
         }
-        map.on('moveend', () => {
-          if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current)
-          fetchDebounceRef.current = setTimeout(() => {
-            const centerNow = map.getCenter()
-            const last = lastFetchCenterRef.current
-            const dist = haversineMeters(last.lat, last.lng, centerNow.lat, centerNow.lng)
-            if (dist > 1600 || last.lat === 0) {
-              lastFetchCenterRef.current = { lat: centerNow.lat, lng: centerNow.lng }
-              onMapMoved?.(centerNow.lat, centerNow.lng)
-            }
-          }, 600)
-        })
-        map.on('click', 'sr-offers-cluster', (e: any) => {
+        if (!mapMoveEndBoundRef.current) {
+          mapMoveEndBoundRef.current = true
+          map.on('moveend', () => {
+            if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current)
+            fetchDebounceRef.current = setTimeout(() => {
+              const centerNow = map.getCenter()
+              const last = lastFetchCenterRef.current
+              const dist = haversineMeters(last.lat, last.lng, centerNow.lat, centerNow.lng)
+              if (dist > 1600 || last.lat === 0) {
+                lastFetchCenterRef.current = { lat: centerNow.lat, lng: centerNow.lng }
+                callbacksRef.current.onMapMoved?.(centerNow.lat, centerNow.lng)
+              }
+            }, 600)
+          })
+        }
+        if (!interactionHandlersBoundRef.current) {
+          interactionHandlersBoundRef.current = true
+          map.on('click', 'sr-offers-cluster', (e: any) => {
           const features = map.queryRenderedFeatures(e.point, { layers: ['sr-offers-cluster'] })
           const clusterId = features[0]?.properties?.cluster_id
           if (!clusterId) return
@@ -1680,8 +1783,8 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
         map.on('click', 'sr-offers', (e) => {
           if (!e.features?.[0]?.properties) return
           const p = e.features[0].properties
-          const offer = (offers || []).find((o) => o.id === Number(p.id))
-          if (offer) onOfferClick?.(offer)
+          const offer = (latestPropsRef.current.offers || []).find((o) => o.id === Number(p.id))
+          if (offer) callbacksRef.current.onOfferClick?.(offer)
         })
         map.on('mouseenter', 'sr-offers', () => { map.getCanvas().style.cursor = 'pointer' })
         map.on('mouseleave', 'sr-offers', () => { map.getCanvas().style.cursor = 'default' })
@@ -1699,23 +1802,23 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
             const f = e.features?.[0]
             const idRaw = f?.properties?.id
             if (idRaw == null) return
-            onCameraClick?.(String(idRaw))
+            callbacksRef.current.onCameraClick?.(String(idRaw))
           })
         })
         map.on('click', 'sr-reports', (e) => {
-          if (!e.features?.[0]?.properties || !onReportClick) return
+          if (!e.features?.[0]?.properties || !callbacksRef.current.onReportClick) return
           const f = e.features[0]
           const id = Number(f.properties?.id)
-          const report = (roadReports || []).find((r) => r.id === id)
-          if (report) onReportClick(report)
+          const report = (latestPropsRef.current.roadReports || []).find((r) => r.id === id)
+          if (report) callbacksRef.current.onReportClick(report)
         })
         map.on('click', 'sr-photo-reports-circle', (e: any) => {
           const id = e.features?.[0]?.properties?.id
-          if (id && onPhotoReportTap) onPhotoReportTap(String(id))
+          if (id && callbacksRef.current.onPhotoReportTap) callbacksRef.current.onPhotoReportTap(String(id))
         })
         map.on('click', 'sr-friends-circle', (e: any) => {
           const id = e.features?.[0]?.properties?.id
-          if (id && onFriendMarkerTap) onFriendMarkerTap(String(id))
+          if (id && callbacksRef.current.onFriendMarkerTap) callbacksRef.current.onFriendMarkerTap(String(id))
         })
         map.on('mouseenter', 'sr-friends-circle', () => {
           map.getCanvas().style.cursor = 'pointer'
@@ -1723,6 +1826,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
         map.on('mouseleave', 'sr-friends-circle', () => {
           map.getCanvas().style.cursor = ''
         })
+        }
 
           const zoomToUser = (lat: number, lng: number, isNav: boolean, zoomOverride?: number) => {
             map.easeTo({
@@ -1754,6 +1858,14 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           onMapReady?.(map, zoomToUser, actions)
         }
       }
+      map.on('styleimagemissing', (_e: { id: string }) => {
+        try {
+          // Re-register known icons for this style when a sprite entry is missing.
+          registerSvgIcons(map)
+        } catch {
+          // ignore missing-icon fallback errors
+        }
+      })
       map.on('style.load', () => {
         if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) {
           map.once('idle', setupLayers)
@@ -1947,7 +2059,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
           type: 'symbol',
           source: 'sr-cameras',
           slot: 'top',
-          layout: { 'icon-image': ['coalesce', ['get', 'iconId'], ''], 'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.75, 16, 1.15], 'icon-allow-overlap': true, 'icon-ignore-placement': true },
+          layout: { 'icon-image': ['coalesce', ['image', ['get', 'iconId']], ['image', 'marker-15']], 'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.75, 16, 1.15], 'icon-allow-overlap': true, 'icon-ignore-placement': true },
         } as any)
       }
     } else {
@@ -2000,7 +2112,7 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
       map.setPaintProperty('sr-reports-glow', 'circle-color', colorExpr)
     }
     if (map.getLayer('sr-reports-icon')) {
-      map.setLayoutProperty('sr-reports-icon', 'icon-image', ['get', 'iconId'])
+      map.setLayoutProperty('sr-reports-icon', 'icon-image', ['coalesce', ['image', ['get', 'iconId']], ['image', 'marker-15']])
       map.setLayoutProperty('sr-reports-icon', 'icon-size', ['interpolate', ['linear'], ['zoom'], 10, 0.55, 14, 0.75, 18, 1.0])
       map.setLayoutProperty('sr-reports-icon', 'icon-allow-overlap', true)
       map.setLayoutProperty('sr-reports-icon', 'icon-ignore-placement', true)
@@ -2043,20 +2155,12 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
       try { reportPopupRef.current?.remove() } catch { /* ignore */ }
       reportPopupRef.current = null
     }
-    const onClick = (e: any) => {
-      const f = e.features?.[0]
-      if (!f?.properties) return
-      showPopup(e.lngLat, f.properties as any)
-    }
-
     map.on('mousemove', 'sr-reports', onMove)
     map.on('mouseleave', 'sr-reports', onLeave)
-    map.on('click', 'sr-reports', onClick)
 
     return () => {
       try { map.off('mousemove', 'sr-reports', onMove) } catch { /* ignore */ }
       try { map.off('mouseleave', 'sr-reports', onLeave) } catch { /* ignore */ }
-      try { map.off('click', 'sr-reports', onClick) } catch { /* ignore */ }
       onLeave()
     }
   }, [roadReports])
@@ -2291,7 +2395,14 @@ function MapboxMapSnapRoad(props: MapboxMapSnapRoadProps) {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !sourcesReady.current) return
-    const features: GeoJSON.Feature[] = (navigationSteps || []).filter((_, i) => i >= (currentStepIndex ?? 0)).map((step, i) => ({ type: 'Feature' as const, properties: { instruction: step.instruction, index: i }, geometry: { type: 'Point' as const, coordinates: [0, 0] } })).filter((f) => f.geometry.coordinates[0] !== 0)
+    const features: GeoJSON.Feature[] = (navigationSteps || [])
+      .filter((_, i) => i >= (currentStepIndex ?? 0))
+      .filter((step) => Number.isFinite(step.lat) && Number.isFinite(step.lng))
+      .map((step, i) => ({
+        type: 'Feature' as const,
+        properties: { instruction: step.instruction, index: i },
+        geometry: { type: 'Point' as const, coordinates: [step.lng as number, step.lat as number] },
+      }))
     const src = map.getSource('sr-steps') as mapboxgl.GeoJSONSource | undefined
     src?.setData({ type: 'FeatureCollection', features })
   }, [navigationSteps, currentStepIndex])
@@ -2466,13 +2577,33 @@ export default memo(MapboxMapSnapRoad, (prev, next) => {
     prev.isNavigating === next.isNavigating &&
     prev.isMoving === next.isMoving &&
     prev.showCameras === next.showCameras &&
+    prev.showTraffic === next.showTraffic &&
+    prev.showIncidents === next.showIncidents &&
+    prev.showConstruction === next.showConstruction &&
     prev.showFuelPrices === next.showFuelPrices &&
     prev.mapType === next.mapType &&
+    prev.colorScheme === next.colorScheme &&
     prev.navFollowEnabled === next.navFollowEnabled &&
     Math.abs((prev.navFollowZoom ?? 17) - (next.navFollowZoom ?? 17)) < 0.01 &&
     prev.offers === next.offers &&
+    prev.roadReports === next.roadReports &&
     prev.friendLocations === next.friendLocations &&
+    prev.friendsOnRoute === next.friendsOnRoute &&
     prev.photoReports === next.photoReports &&
+    prev.cameraLocations === next.cameraLocations &&
+    prev.constructionZones === next.constructionZones &&
+    prev.offerBuildings === next.offerBuildings &&
+    prev.signals === next.signals &&
+    prev.sidewalksGeojson === next.sidewalksGeojson &&
+    prev.gasStations === next.gasStations &&
+    prev.navigationSteps === next.navigationSteps &&
+    prev.currentStepIndex === next.currentStepIndex &&
+    prev.destinationCoordinate?.lat === next.destinationCoordinate?.lat &&
+    prev.destinationCoordinate?.lng === next.destinationCoordinate?.lng &&
+    prev.droppedPin?.lat === next.droppedPin?.lat &&
+    prev.droppedPin?.lng === next.droppedPin?.lng &&
+    prev.routeStartCoordinate?.lat === next.routeStartCoordinate?.lat &&
+    prev.routeStartCoordinate?.lng === next.routeStartCoordinate?.lng &&
     // Keep map responsive for low-speed motion and turn-by-turn heading changes.
     Math.abs(prevLat - nextLat) < 0.000001 &&
     Math.abs(prevLng - nextLng) < 0.000001 &&

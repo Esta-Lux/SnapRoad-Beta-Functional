@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query, Body
 from pydantic import BaseModel
-from typing import Optional, List, Any, Dict
+from typing import Optional, List, Any, Dict, Tuple
 from datetime import datetime, timedelta
 import random, math
 import httpx
@@ -49,7 +49,21 @@ def get_routes():
 @router.post("/routes")
 def add_route(route: Route):
     new_id = max([r.get("id", 0) for r in saved_routes], default=0) + 1
-    r = {"id": new_id, "name": route.name, "origin": route.origin, "destination": route.destination, "departure_time": route.departure_time, "days_active": route.days_active, "notifications": route.notifications, "active": True, "created_at": datetime.now().isoformat()}
+    estimated_time = int(route.estimated_time or 18)
+    distance = round(float(route.distance or max(1, estimated_time * 0.33)), 1)
+    r = {
+        "id": new_id,
+        "name": route.name,
+        "origin": route.origin,
+        "destination": route.destination,
+        "departure_time": route.departure_time,
+        "days_active": route.days_active,
+        "notifications": route.notifications,
+        "estimated_time": estimated_time,
+        "distance": distance,
+        "active": True,
+        "created_at": datetime.now().isoformat(),
+    }
     saved_routes.append(r)
     return {"success": True, "message": "Route saved", "data": r}
 
@@ -107,16 +121,64 @@ def _minutes_to_time(minutes: int) -> str:
     return f"{h:02d}:{m:02d}"
 
 
+def _is_premium_or_family(user: Dict[str, Any]) -> bool:
+    plan = str(user.get("plan") or "").lower()
+    return bool(user.get("is_premium")) or plan in {"premium", "family"} or bool(user.get("is_family_plan"))
+
+
+def _traffic_profile_for_departure(dep_minutes: int, now_minutes: int) -> Tuple[float, int]:
+    """
+    Return (traffic_multiplier, alt_minutes_saved) tuned for peak windows.
+    Multiplier > 1 means slower current route than baseline.
+    """
+    dep_hour = (dep_minutes // 60) % 24
+    is_am_peak = 7 <= dep_hour <= 9
+    is_pm_peak = 15 <= dep_hour <= 19
+    minutes_until_departure = max(0, dep_minutes - now_minutes)
+    pre_departure_pressure = 1.18 if minutes_until_departure <= 45 else 1.10 if minutes_until_departure <= 120 else 1.0
+    if is_am_peak or is_pm_peak:
+        mult = 1.28 * pre_departure_pressure
+        saved = 7 if minutes_until_departure <= 60 else 5
+    else:
+        mult = 1.10 * pre_departure_pressure
+        saved = 4 if minutes_until_departure <= 60 else 3
+    return mult, saved
+
+
+def _compute_route_options(route: Dict[str, Any], dep_minutes: int, now_minutes: int) -> Dict[str, Any]:
+    baseline = int(route.get("estimated_time") or 18)
+    baseline = max(5, baseline)
+    mult, saved_hint = _traffic_profile_for_departure(dep_minutes, now_minutes)
+    eta_minutes = int(round(baseline * mult))
+    eta_minutes = max(baseline, min(120, eta_minutes))
+    alt_saved = max(2, min(15, saved_hint + max(0, (eta_minutes - baseline) // 4)))
+    alt_eta = max(baseline, eta_minutes - alt_saved)
+    desired_arrival = dep_minutes + baseline
+    leave_by_minutes = max(now_minutes, desired_arrival - eta_minutes)
+    return {
+        "baseline_minutes": baseline,
+        "eta_minutes": eta_minutes,
+        "alt_eta_minutes": alt_eta,
+        "saved_minutes": max(0, eta_minutes - alt_eta),
+        "desired_arrival": _minutes_to_time(desired_arrival),
+        "leave_by": _minutes_to_time(leave_by_minutes),
+    }
+
+
 @router.get("/routes/notifications")
 def get_route_notifications(
     lat: Optional[float] = Query(None, description="Current latitude for ETA/leave-by"),
     lng: Optional[float] = Query(None, description="Current longitude for ETA/leave-by"),
-    window_minutes: int = Query(60, description="Notify when departure is within this many minutes"),
+    window_minutes: int = Query(120, description="Notify when departure is within this many minutes"),
 ):
-    """Return pending route notifications for premium users only. Free users get no real-time alerts (leave early, faster route)."""
+    """
+    Return route notifications with two options:
+    1) Leave early to still arrive on scheduled time.
+    2) Faster route to avoid traffic stress.
+    Premium/family users are push-eligible; free users receive in-app only notifications.
+    """
     user = users_db.get(str(current_user_id), {})
-    if not user.get("is_premium"):
-        return {"success": True, "data": [], "total": 0}
+    push_eligible = _is_premium_or_family(user)
     now = datetime.now()
     today_weekday = now.strftime("%a")  # Mon, Tue, ...
     current_minutes = now.hour * 60 + now.minute
@@ -141,6 +203,8 @@ def get_route_notifications(
         route_id = route.get("id")
         route_name = route.get("name") or "Route"
         destination = route.get("destination") or "destination"
+        options = _compute_route_options(route, dep, current_minutes)
+        delivery = "push_and_in_app" if push_eligible else "in_app_only"
 
         # Route reminder
         notifications.append({
@@ -150,55 +214,41 @@ def get_route_notifications(
             "route_name": route_name,
             "destination": destination,
             "departure_time": route.get("departure_time"),
-            "message": f"Leave soon for {route_name} — {destination}",
+            "desired_arrival": options["desired_arrival"],
+            "eta_minutes": options["eta_minutes"],
+            "delivery": delivery,
+            "message": f"{route_name}: depart around {route.get('departure_time')} to arrive by {options['desired_arrival']}",
         })
 
-        # Leave-by: if we have user position, compute ETA and leave_by time (mock dest for now)
-        if lat is not None and lng is not None:
-            # Mock destination: offset from origin so ETA is plausible (e.g. ~5–15 min)
-            dest_lat = lat + 0.03 + random.uniform(-0.01, 0.01)
-            dest_lng = lng + 0.02 + random.uniform(-0.01, 0.01)
-            dlat = abs(dest_lat - lat)
-            dlng = abs(dest_lng - lng)
-            distance_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
-            distance_miles = distance_km * 0.621371
-            speed = 30
-            eta_minutes = max(5, min(45, round((distance_miles / speed) * 60)))
-            leave_by_minutes = dep - eta_minutes
-            if leave_by_minutes < current_minutes:
-                leave_by_minutes = current_minutes
-            leave_by_str = _minutes_to_time(leave_by_minutes)
-            notifications.append({
-                "id": f"leave_early-{route_id}-{now.timestamp()}",
-                "type": "leave_early",
-                "route_id": route_id,
-                "route_name": route_name,
-                "destination": destination,
-                "departure_time": route.get("departure_time"),
-                "leave_by": leave_by_str,
-                "eta_minutes": eta_minutes,
-                "message": f"Leave by {leave_by_str} to reach {destination} by {route.get('departure_time')}",
-            })
+        notifications.append({
+            "id": f"leave_early-{route_id}-{now.timestamp()}",
+            "type": "leave_early",
+            "route_id": route_id,
+            "route_name": route_name,
+            "destination": destination,
+            "departure_time": route.get("departure_time"),
+            "desired_arrival": options["desired_arrival"],
+            "leave_by": options["leave_by"],
+            "eta_minutes": options["eta_minutes"],
+            "delivery": delivery,
+            "message": f"Leave by {options['leave_by']} to reach {destination} by {options['desired_arrival']}",
+        })
+        notifications.append({
+            "id": f"faster_route-{route_id}-{now.timestamp()}",
+            "type": "faster_route",
+            "route_id": route_id,
+            "route_name": route_name,
+            "destination": destination,
+            "departure_time": route.get("departure_time"),
+            "desired_arrival": options["desired_arrival"],
+            "eta_minutes": options["alt_eta_minutes"],
+            "saved_minutes": options["saved_minutes"],
+            "saved_dollars": round(min(6.0, options["saved_minutes"] * 0.18), 2),
+            "delivery": delivery,
+            "message": f"Try a faster route: save ~{options['saved_minutes']} min and still arrive by {options['desired_arrival']}",
+        })
 
-    # Optional: one mock "faster route" suggestion
-    if saved_routes and random.random() < 0.3:
-        eligible = [x for x in saved_routes if x.get("notifications") and x.get("active", True)]
-        if eligible:
-            r = random.choice(eligible)
-            saved_min = random.randint(5, 15)
-            saved_d = round(random.uniform(1, 3), 2)
-            notifications.append({
-                "id": f"faster_route-{r.get('id')}-{now.timestamp()}",
-                "type": "faster_route",
-                "route_id": r.get("id"),
-                "route_name": r.get("name") or "Route",
-                "destination": r.get("destination") or "destination",
-                "saved_minutes": saved_min,
-                "saved_dollars": saved_d,
-                "message": f"A faster route could save ~{saved_min} min and ~${saved_d:.2f} on {r.get('name', 'this route')}",
-            })
-
-    return {"success": True, "data": notifications, "total": len(notifications)}
+    return {"success": True, "data": notifications, "total": len(notifications), "push_eligible": push_eligible}
 
 
 class LeaveEarlyBody(BaseModel):
@@ -217,24 +267,35 @@ def notify_leave_early(route_id: int, body: Optional[LeaveEarlyBody] = Body(None
         return {"success": False, "message": "Route not found"}
     if body is None:
         body = LeaveEarlyBody()
-    desired = body.desired_arrival or route.get("departure_time") or "08:00"
+    if body.desired_arrival:
+        desired = body.desired_arrival
+    else:
+        dep_min = _parse_time(route.get("departure_time") or "08:00") or 8 * 60
+        baseline = max(5, int(route.get("estimated_time") or 18))
+        desired = _minutes_to_time(dep_min + baseline)
     desired_min = _parse_time(desired)
     if desired_min is None:
         desired_min = 8 * 60
 
-    origin_lat = body.origin_lat if body.origin_lat is not None else 39.9612
-    origin_lng = body.origin_lng if body.origin_lng is not None else -82.9988
-    dest_lat = body.dest_lat if body.dest_lat is not None else origin_lat + 0.03
-    dest_lng = body.dest_lng if body.dest_lng is not None else origin_lng + 0.02
-
-    dlat = abs(dest_lat - origin_lat)
-    dlng = abs(dest_lng - origin_lng)
-    distance_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
-    distance_miles = distance_km * 0.621371
-    eta_minutes = max(5, round((distance_miles / 30) * 60))
-    leave_by_minutes = desired_min - eta_minutes
     now = datetime.now()
     current_minutes = now.hour * 60 + now.minute
+    dep_minutes = _parse_time(route.get("departure_time") or "08:00") or desired_min
+
+    if all(v is not None for v in (body.origin_lat, body.origin_lng, body.dest_lat, body.dest_lng)):
+        origin_lat = float(body.origin_lat)
+        origin_lng = float(body.origin_lng)
+        dest_lat = float(body.dest_lat)
+        dest_lng = float(body.dest_lng)
+        dlat = abs(dest_lat - origin_lat)
+        dlng = abs(dest_lng - origin_lng)
+        distance_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+        distance_miles = distance_km * 0.621371
+        eta_minutes = max(5, round((distance_miles / 30) * 60))
+    else:
+        options = _compute_route_options(route, dep_minutes, current_minutes)
+        eta_minutes = int(options["eta_minutes"])
+
+    leave_by_minutes = desired_min - eta_minutes
     if leave_by_minutes < current_minutes:
         leave_by_minutes = current_minutes
     leave_by_str = _minutes_to_time(leave_by_minutes)

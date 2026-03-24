@@ -5,6 +5,27 @@ import { useState, useEffect } from 'react'
 import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, Cloud, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
 
+/**
+ * Same auth source as {@link adminApi} (`snaproad_admin_token` via getToken()).
+ * Returns null when not logged in so callers skip requests and avoid 401s.
+ */
+function getAdminBearerHeaders(): Record<string, string> | null {
+  const token = adminApi.getToken()
+  if (!token) return null
+  return {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  }
+}
+
+/**
+ * Backend base for admin-only raw fetch calls (Supabase status/migrate).
+ * Prefer VITE_BACKEND_URL; fall back to VITE_API_URL so dev/proxy setups keep working.
+ */
+const API_URL = String(
+  import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || ''
+).replace(/\/$/, '')
+
 interface SettingsTabProps {
   theme: 'dark' | 'light'
 }
@@ -21,6 +42,7 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   const [settings, setSettings] = useState<SettingsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase status shape varies by backend version
   const [supabaseStatus, setSupabaseStatus] = useState<any>(null)
   const [sbLoading, setSbLoading] = useState(false)
   const [migrating, setMigrating] = useState(false)
@@ -33,19 +55,28 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   const checkSupabaseStatus = async () => {
     setSbLoading(true)
     try {
-      const res = await fetch(`${API_URL}/api/admin/supabase/status`)
+      const headers = getAdminBearerHeaders()
+      if (!headers) return
+      const res = await fetch(`${API_URL}/api/admin/supabase/status`, { headers })
       if (res.ok) {
         const data = await res.json()
         setSupabaseStatus(data.data ?? data)
       }
     } catch { /* unavailable */ }
-    setSbLoading(false)
+    finally {
+      setSbLoading(false)
+    }
   }
 
   const runMigration = async () => {
     setMigrating(true)
     try {
-      const res = await fetch(`${API_URL}/api/admin/supabase/migrate`, { method: 'POST' })
+      const headers = getAdminBearerHeaders()
+      if (!headers) return
+      const res = await fetch(`${API_URL}/api/admin/supabase/migrate`, {
+        method: 'POST',
+        headers,
+      })
       if (res.ok) {
         const data = await res.json()
         if (data.success) {
@@ -53,7 +84,9 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
         }
       }
     } catch { /* unavailable */ }
-    setMigrating(false)
+    finally {
+      setMigrating(false)
+    }
   }
 
   const loadSettings = async () => {

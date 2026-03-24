@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { OHGOCamera } from '@/lib/ohgo'
 import { fetchNearbyGasPrices, type GasStation } from '@/lib/fuelPrices'
 import { api } from '@/services/api'
@@ -33,6 +33,10 @@ export function useMapLayers(
   OHGO_API_KEY: string,
   ohgoEnabled: boolean
 ) {
+  // Keep network refreshes stable while user position jitters.
+  const queryLat = useMemo(() => Math.round(userLocation.lat * 1000) / 1000, [userLocation.lat])
+  const queryLng = useMemo(() => Math.round(userLocation.lng * 1000) / 1000, [userLocation.lng])
+
   const [mapReadyForLayers, setMapReadyForLayers] = useState(false)
   const [ohgoCameras, setOhgoCameras] = useState<OHGOCamera[]>([])
   const [selectedCamera, setSelectedCamera] = useState<OHGOCamera | null>(null)
@@ -56,13 +60,12 @@ export function useMapLayers(
   const [selectedRoadStatus, setSelectedRoadStatus] = useState<{ id: string; name: string; status: 'clear' | 'moderate' | 'heavy' | 'closed'; reason?: string; estimatedDelay?: number; startLat: number; startLng: number; endLat: number; endLng: number } | null>(null)
 
   const loadRoadReports = useCallback(async () => {
-    const startedAt = Date.now()
     try {
       // #region agent log
       void 0// #endregion
 
       const res = await api.get<{ success?: boolean; data?: any[] }>(
-        `/api/incidents/nearby?lat=${userLocation.lat}&lng=${userLocation.lng}&radius_miles=10`
+        `/api/incidents/nearby?lat=${queryLat}&lng=${queryLng}&radius_miles=10`
       )
       const raw = res.data as { data?: any[] } | any[]
       const list = Array.isArray((raw as { data?: any[] })?.data) ? (raw as { data: any[] }).data : Array.isArray(raw) ? raw : []
@@ -86,7 +89,7 @@ export function useMapLayers(
       }
 
       const legacy = await api.get<{ success?: boolean; data?: any[]; total?: number }>(
-        `/api/map/traffic?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=15`
+        `/api/map/traffic?lat=${queryLat}&lng=${queryLng}&radius=15`
       )
       const raw2 = legacy.data as { data?: any[] } | any[]
       const list2 = Array.isArray((raw2 as { data?: any[] })?.data) ? (raw2 as { data: any[] }).data : Array.isArray(raw2) ? raw2 : []
@@ -96,13 +99,12 @@ export function useMapLayers(
         setRoadReports(list2)
       }
     } catch { /* incidents unavailable */ }
-  }, [userLocation.lat, userLocation.lng])
+  }, [queryLat, queryLng])
 
   const loadPhotoReports = useCallback(async () => {
-    const startedAt = Date.now()
     try {
       const res = await api.get<{ photos?: PhotoReportMapItem[] }>(
-        `/api/photo-reports/nearby?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=10`
+        `/api/photo-reports/nearby?lat=${queryLat}&lng=${queryLng}&radius=10`
       )
       const photos = (res.data as { photos?: PhotoReportMapItem[] } | undefined)?.photos
       // #region agent log
@@ -113,23 +115,25 @@ export function useMapLayers(
       void 0// #endregion
       setPhotoReports([])
     }
-  }, [userLocation.lat, userLocation.lng])
+  }, [queryLat, queryLng])
 
   useEffect(() => {
-    if (!userLocation?.lat || !userLocation?.lng) return
-    loadRoadReports()
-    loadPhotoReports()
+    if (!queryLat || !queryLng) return
+    const refresh = () => {
+      void loadRoadReports()
+      void loadPhotoReports()
+    }
+    refresh()
     const interval = setInterval(() => {
-      loadRoadReports()
-      loadPhotoReports()
+      refresh()
     }, 30000)
     return () => clearInterval(interval)
-  }, [userLocation.lat, userLocation.lng, loadRoadReports, loadPhotoReports])
+  }, [queryLat, queryLng, loadRoadReports, loadPhotoReports])
 
   useEffect(() => {
-    if (!userLocation?.lat || !userLocation?.lng) return
+    if (!queryLat || !queryLng) return
     let cancelled = false
-    fetchNearbyGasPrices(userLocation.lat, userLocation.lng)
+    fetchNearbyGasPrices(queryLat, queryLng)
       .then((list) => {
         if (!cancelled) setGasStationsOverlay(list)
       })
@@ -137,12 +141,12 @@ export function useMapLayers(
     return () => {
       cancelled = true
     }
-  }, [userLocation.lat, userLocation.lng])
+  }, [queryLat, queryLng])
 
   useEffect(() => {
-    if (!OHGO_API_KEY || !ohgoEnabled || !showCameraLayer || (userLocation.lat === 0 && userLocation.lng === 0)) return
+    if (!OHGO_API_KEY || !ohgoEnabled || !showCameraLayer || (queryLat === 0 && queryLng === 0)) return
     fetch(
-      `https://publicapi.ohgo.com/api/v1/cameras?api-key=${OHGO_API_KEY}&radius=${userLocation.lat},${userLocation.lng},25`
+      `https://publicapi.ohgo.com/api/v1/cameras?api-key=${OHGO_API_KEY}&radius=${queryLat},${queryLng},25`
     )
       .then((r) => r.json())
       .then((data: { results?: Array<{ id: string | number; latitude: number; longitude: number; mainRoute?: string; location?: string; cameraViews?: Array<{ id: string | number; smallUrl?: string; largeUrl?: string; small_url?: string; large_url?: string; direction?: string }> }> }) => {
@@ -163,7 +167,7 @@ export function useMapLayers(
         setOhgoCameras(list)
       })
       .catch(() => setOhgoCameras([]))
-  }, [OHGO_API_KEY, ohgoEnabled, showCameraLayer, userLocation.lat, userLocation.lng])
+  }, [OHGO_API_KEY, ohgoEnabled, showCameraLayer, queryLat, queryLng])
 
   return {
     mapReadyForLayers,

@@ -14,9 +14,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["OSM"])
 
 OVERPASS_URL = (os.environ.get("OVERPASS_URL") or "https://overpass-api.de/api/interpreter").strip()
+OVERPASS_FALLBACK_URL = (os.environ.get("OVERPASS_FALLBACK_URL") or "").strip()
 
-# Cache Overpass responses briefly to reduce load and latency.
 _cache: TTLCache = TTLCache(maxsize=256, ttl=int(os.environ.get("OVERPASS_CACHE_TTL_SECONDS") or "90"))
+
+_backoff_until: float = 0.0
+_backoff_seconds: float = 0.0
 
 
 def _round_bbox(b: Tuple[float, float, float, float], digits: int = 3) -> Tuple[float, float, float, float]:
@@ -59,6 +62,7 @@ def _overpass_query(
     include_signals: bool,
     include_stops: bool,
     include_sidewalks: bool,
+    include_buildings: bool,
 ) -> str:
     """
     Overpass bbox is: (south,west,north,east) => (minLat,minLng,maxLat,maxLng)
@@ -77,6 +81,8 @@ def _overpass_query(
         # Coverage varies by area; include common tagging patterns.
         parts.append(f'way["highway"="footway"]["footway"="sidewalk"]({south},{west},{north},{east});')
         parts.append(f'way["sidewalk"]({south},{west},{north},{east});')
+    if include_buildings:
+        parts.append(f'way["building"]({south},{west},{north},{east});')
 
     inner = "\n".join(parts) if parts else ""
     return f"""
@@ -100,9 +106,25 @@ def _centroid_from_geometry(geom: List[Dict[str, Any]]) -> Optional[Tuple[float,
     return (sum(lats) / len(lats), sum(lons) / len(lons))
 
 
-def _to_signals_and_sidewalks(elements: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def _ring_area_m2(coords: List[List[float]]) -> float:
+    if len(coords) < 3:
+        return 0.0
+    lat0 = sum(p[1] for p in coords) / len(coords)
+    m_per_deg_lat = 111_320.0
+    m_per_deg_lng = max(1.0, 111_320.0 * math.cos(math.radians(lat0)))
+    pts = [(p[0] * m_per_deg_lng, p[1] * m_per_deg_lat) for p in coords]
+    area2 = 0.0
+    for i in range(len(pts)):
+        x1, y1 = pts[i]
+        x2, y2 = pts[(i + 1) % len(pts)]
+        area2 += (x1 * y2) - (x2 * y1)
+    return abs(area2) * 0.5
+
+
+def _to_signals_and_sidewalks_and_buildings(elements: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]]:
     signals: List[Dict[str, Any]] = []
     sidewalk_features: List[Dict[str, Any]] = []
+    buildings: List[Dict[str, Any]] = []
 
     for el in elements or []:
         if not isinstance(el, dict):
@@ -141,6 +163,28 @@ def _to_signals_and_sidewalks(elements: List[Dict[str, Any]]) -> Tuple[List[Dict
             geom = el.get("geometry")
             if not isinstance(geom, list) or len(geom) < 2:
                 continue
+            # Building footprints: return centroid + approximate area for map marker sizing.
+            if tags.get("building"):
+                coords: List[List[float]] = []
+                for p in geom:
+                    if not isinstance(p, dict):
+                        continue
+                    lat = p.get("lat")
+                    lon = p.get("lon")
+                    if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+                        coords.append([float(lon), float(lat)])
+                if len(coords) >= 3:
+                    c = _centroid_from_geometry(geom)
+                    if c:
+                        buildings.append(
+                            {
+                                "id": f"osm-way-{el_id}",
+                                "lat": float(c[0]),
+                                "lng": float(c[1]),
+                                "area_m2": float(_ring_area_m2(coords)),
+                            }
+                        )
+                continue
             is_sidewalk = False
             if tags.get("highway") == "footway" and tags.get("footway") == "sidewalk":
                 is_sidewalk = True
@@ -170,33 +214,37 @@ def _to_signals_and_sidewalks(elements: List[Dict[str, Any]]) -> Tuple[List[Dict
             )
 
     sidewalks_geojson = {"type": "FeatureCollection", "features": sidewalk_features}
-    return signals, sidewalks_geojson
+    return signals, sidewalks_geojson, buildings
 
 
 @router.get("/osm/features")
 def get_osm_features(
     bbox: str = Query(..., description="Viewport bbox: minLng,minLat,maxLng,maxLat"),
     zoom: float = Query(0, description="Map zoom level (used to gate expensive layers like sidewalks)"),
-    include: str = Query("signals,stops,sidewalks", description="Comma list: signals,stops,sidewalks"),
+    include: str = Query("signals,stops,sidewalks,buildings", description="Comma list: signals,stops,sidewalks,buildings"),
 ):
     b = _parse_bbox(bbox)
     if not b:
-        return {"success": False, "error": "Invalid bbox", "signals": [], "sidewalksGeojson": {"type": "FeatureCollection", "features": []}}
+        return {"success": False, "error": "Invalid bbox", "signals": [], "sidewalksGeojson": {"type": "FeatureCollection", "features": []}, "buildings": []}
 
     include_set = set([x.strip().lower() for x in include.split(",") if x.strip()])
     include_signals = "signals" in include_set
     include_stops = "stops" in include_set
     include_sidewalks = "sidewalks" in include_set
+    include_buildings = "buildings" in include_set
 
     # Sidewalk queries can be heavy; only allow when zoomed in enough.
     if float(zoom or 0) < 15:
         include_sidewalks = False
+    if float(zoom or 0) < 11:
+        include_buildings = False
 
     # Prevent excessively large queries (Overpass can throttle/timeout).
     # If bbox is huge, return only signals/stops (or nothing) until user zooms in.
     area_deg2 = _bbox_area_degrees(b)
     if area_deg2 > 0.08:  # roughly > ~0.28 x 0.28 degrees
         include_sidewalks = False
+        include_buildings = False
     if area_deg2 > 0.25:
         # Too large: refuse to query.
         return {
@@ -205,6 +253,7 @@ def get_osm_features(
             "reason": "bbox_too_large",
             "signals": [],
             "sidewalksGeojson": {"type": "FeatureCollection", "features": []},
+            "buildings": [],
         }
 
     cache_key = json.dumps(
@@ -219,36 +268,65 @@ def get_osm_features(
     if cached is not None:
         return cached
 
-    q = _overpass_query(b, include_signals, include_stops, include_sidewalks)
+    q = _overpass_query(b, include_signals, include_stops, include_sidewalks, include_buildings)
 
-    started = time.time()
-    try:
-        resp = requests.post(
-            OVERPASS_URL,
-            data={"data": q},
-            timeout=25,
-            headers={"User-Agent": "SnapRoad/1.0 (OSM Overpass proxy)"},
-        )
-        resp.raise_for_status()
-        payload = resp.json()
-        elements = payload.get("elements") if isinstance(payload, dict) else []
-        signals, sidewalks_geojson = _to_signals_and_sidewalks(elements if isinstance(elements, list) else [])
-        out = {"success": True, "limited": False, "signals": signals, "sidewalksGeojson": sidewalks_geojson}
-        _cache[cache_key] = out
-        return out
-    except Exception as e:
-        logger.warning("Overpass query failed: %s", str(e))
+    global _backoff_until, _backoff_seconds
+
+    if time.time() < _backoff_until:
         out = {
             "success": True,
             "limited": True,
-            "reason": "overpass_error",
+            "reason": "rate_limited",
+            "retry_after_seconds": int(_backoff_until - time.time()) + 1,
             "signals": [],
             "sidewalksGeojson": {"type": "FeatureCollection", "features": []},
+            "buildings": [],
         }
-        _cache[cache_key] = out
         return out
-    finally:
-        elapsed_ms = int((time.time() - started) * 1000)
-        if elapsed_ms > 1500:
-            logger.info("Overpass /osm/features took %sms (bbox=%s)", elapsed_ms, bbox)
+
+    urls_to_try = [OVERPASS_URL]
+    if OVERPASS_FALLBACK_URL:
+        urls_to_try.append(OVERPASS_FALLBACK_URL)
+
+    started = time.time()
+    last_error: Optional[Exception] = None
+    for url in urls_to_try:
+        try:
+            resp = requests.post(
+                url,
+                data={"data": q},
+                timeout=25,
+                headers={"User-Agent": "SnapRoad/1.0 (OSM Overpass proxy)"},
+            )
+            if resp.status_code == 429:
+                _backoff_seconds = min(max(_backoff_seconds * 2, 15), 60)
+                _backoff_until = time.time() + _backoff_seconds
+                logger.warning("Overpass 429 from %s — backing off %ss", url, _backoff_seconds)
+                last_error = Exception(f"429 from {url}")
+                continue
+            resp.raise_for_status()
+            _backoff_seconds = 0.0
+            payload = resp.json()
+            elements = payload.get("elements") if isinstance(payload, dict) else []
+            signals, sidewalks_geojson, buildings = _to_signals_and_sidewalks_and_buildings(elements if isinstance(elements, list) else [])
+            out = {"success": True, "limited": False, "signals": signals, "sidewalksGeojson": sidewalks_geojson, "buildings": buildings}
+            _cache[cache_key] = out
+            return out
+        except Exception as e:
+            logger.warning("Overpass query failed (%s): %s", url, str(e))
+            last_error = e
+
+    out = {
+        "success": True,
+        "limited": True,
+        "reason": "overpass_error",
+        "signals": [],
+        "sidewalksGeojson": {"type": "FeatureCollection", "features": []},
+        "buildings": [],
+    }
+    _cache[cache_key] = out
+    elapsed_ms = int((time.time() - started) * 1000)
+    if elapsed_ms > 1500:
+        logger.info("Overpass /osm/features took %sms (bbox=%s)", elapsed_ms, bbox)
+    return out
 
