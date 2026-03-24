@@ -2,7 +2,7 @@
 // =============================================
 
 import { useState, useEffect } from 'react'
-import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, Cloud, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, ToggleLeft, ToggleRight, Cloud, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
 
 /**
@@ -31,6 +31,7 @@ interface SettingsTabProps {
 }
 
 type SettingsData = Record<string, Record<string, any>>
+const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 const defaultGeneral = { platform_name: '', maintenance_mode: false, debug_mode: false }
 const defaultSecurity = { jwt_expiry_hours: 24, password_min_length: 8, require_2fa: false }
@@ -55,9 +56,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   const checkSupabaseStatus = async () => {
     setSbLoading(true)
     try {
-      const headers = getAdminBearerHeaders()
-      if (!headers) return
-      const res = await fetch(`${API_URL}/api/admin/supabase/status`, { headers })
+      const token = localStorage.getItem('snaproad_admin_token')
+      const res = await fetch(`${API_URL}/api/admin/supabase/status`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      })
       if (res.ok) {
         const data = await res.json()
         setSupabaseStatus(data.data ?? data)
@@ -71,11 +73,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   const runMigration = async () => {
     setMigrating(true)
     try {
-      const headers = getAdminBearerHeaders()
-      if (!headers) return
-      const res = await fetch(`${API_URL}/api/admin/supabase/migrate`, {
-        method: 'POST',
-        headers,
+      const token = localStorage.getItem('snaproad_admin_token')
+      const res = await fetch(`${API_URL}/api/admin/migrate`, {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       })
       if (res.ok) {
         const data = await res.json()
@@ -127,6 +128,7 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
     try {
       const res = await adminApi.updateSettings(settings)
       if (res.success) {
+        console.log('Settings saved successfully!')
       } else {
         console.error('Failed to save settings:', res.error || res.message)
       }
@@ -160,6 +162,7 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   const security = settings.security ?? defaultSecurity
   const notifications = settings.notifications ?? defaultNotifications
   const features = settings.features ?? defaultFeatures
+  const database = settings.database ?? defaultDatabase
 
   return (
     <div className="space-y-6">

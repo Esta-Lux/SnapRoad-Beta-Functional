@@ -19,6 +19,8 @@ class ConnectionManager:
         self.staff_connections: Dict[str, WebSocket] = {}
         # Admin connections for moderation: {admin_id: websocket}
         self.admin_connections: Dict[str, WebSocket] = {}
+        # Admin connections for live system monitor: {admin_id: websocket}
+        self.admin_monitor_connections: Dict[str, WebSocket] = {}
     
     async def connect_partner(self, websocket: WebSocket, partner_id: str, connection_id: str):
         """Connect a partner staff member"""
@@ -193,6 +195,36 @@ class ConnectionManager:
 
     def get_admin_count(self) -> int:
         return len(self.admin_connections)
+
+    async def connect_admin_monitor(self, websocket: WebSocket, admin_id: str):
+        """Connect an admin for live telemetry monitor."""
+        await websocket.accept()
+        self.admin_monitor_connections[admin_id] = websocket
+        await websocket.send_json({
+            "type": "monitor_connected",
+            "status": "connected",
+            "admin_id": admin_id,
+            "timestamp": datetime.now().isoformat(),
+        })
+
+    async def disconnect_admin_monitor(self, admin_id: str):
+        self.admin_monitor_connections.pop(admin_id, None)
+
+    async def broadcast_telemetry(self, event: dict):
+        """Broadcast telemetry event to connected admin monitor clients."""
+        message = {
+            "type": "telemetry_event",
+            "event": event,
+            "timestamp": datetime.now().isoformat(),
+        }
+        disconnected = []
+        for admin_id, ws in self.admin_monitor_connections.items():
+            try:
+                await ws.send_json(message)
+            except Exception:
+                disconnected.append(admin_id)
+        for aid in disconnected:
+            await self.disconnect_admin_monitor(aid)
 
 # Create singleton instance
 ws_manager = ConnectionManager()

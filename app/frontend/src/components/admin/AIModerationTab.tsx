@@ -42,7 +42,7 @@ function mapIncident(inc: AdminIncident): Incident {
 }
 
 const WS_BASE = (() => {
-  const apiUrl = (import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_BACKEND_URL || '')
+  const apiUrl = (import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || import.meta.env.VITE_API_URL || '')
   const httpBase = apiUrl || 'http://localhost:8001'
   return httpBase.replace(/^https/, 'wss').replace(/^http:\/\//, 'ws://')
 })()
@@ -81,7 +81,8 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
 
     const connect = () => {
       try {
-        ws = new WebSocket(`${WS_BASE}/api/ws/admin/moderation`)
+        const token = localStorage.getItem('snaproad_admin_token')
+        ws = new WebSocket(`${WS_BASE}/api/ws/admin/moderation${token ? `?token=${encodeURIComponent(token)}` : ''}`)
         wsRef.current = ws
 
         ws.onopen = () => {
@@ -167,7 +168,26 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
 
   const simulateIncident = async () => {
     const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
-    await fetch(`${API_BASE}/api/admin/moderation/simulate`, { method: 'POST' })
+    const token = localStorage.getItem('snaproad_admin_token')
+    const res = await fetch(`${API_BASE}/api/admin/moderation/simulate`, {
+      method: 'POST',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+    if (!res.ok) return
+    const data = await res.json()
+    if (data?.success && data?.incident) {
+      const inc = data.incident
+      const mapped = mapIncident({
+        id: String(inc.id),
+        type: inc.type,
+        confidence: inc.confidence ?? 85,
+        status: inc.status || 'new',
+        is_blurred: inc.blurred,
+        location: inc.location ?? '',
+        created_at: inc.reportedAt ?? inc.timestamp,
+      } as AdminIncident)
+      setIncidents(prev => [mapped, ...prev])
+    }
   }
 
   const filteredIncidents = useMemo(() => {

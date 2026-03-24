@@ -36,7 +36,18 @@ export default function AuditLogTab({ theme }: AuditLogTabProps) {
     setLoading(true)
     setError(null)
     try {
-      const res = await adminApi.getAuditLog()
+      let limit = 50
+      try {
+        const stored = sessionStorage.getItem('snaproad_audit_log_limit')
+        if (stored) {
+          const n = parseInt(stored, 10)
+          if (!Number.isNaN(n) && n > 0) limit = Math.min(n, 500)
+          sessionStorage.removeItem('snaproad_audit_log_limit')
+        }
+      } catch {
+        /* ignore */
+      }
+      const res = await adminApi.getAuditLog(limit)
       if (res.success && res.data) {
         setLogs(res.data)
       } else {

@@ -13,6 +13,23 @@ interface FinanceTabProps {
 const formatCurrency = (n: number) =>
   `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+function escapeCsvCell(cell: string | number): string {
+  const s = String(cell)
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+
+function downloadCsv(filename: string, rows: (string | number)[][]): void {
+  const csv = rows.map((r) => r.map(escapeCsvCell).join(',')).join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function FinanceTab({ theme }: FinanceTabProps) {
   const [finance, setFinance] = useState<FinanceData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -48,12 +65,55 @@ export default function FinanceTab({ theme }: FinanceTabProps) {
   const greenBg = 'bg-green-500/20'
 
   const handleViewStatements = () => {
+    if (!finance?.summary) return
+    const s = finance.summary
+    const stamp = new Date().toISOString().slice(0, 10)
+    downloadCsv(`snaproad-finance-statement-${stamp}.csv`, [
+      ['SnapRoad finance summary (client export)', '', '', ''],
+      ['Generated', new Date().toISOString(), '', ''],
+      ['', '', '', ''],
+      ['Line item', 'Amount (USD)', '', ''],
+      ['User plans MRR', s.mrr_user_plans, '', ''],
+      ['Partners MRR', s.mrr_partners, '', ''],
+      ['Redemption fees (collected / owed per backend)', s.redemption_fees, '', ''],
+      ['Total MRR (reported)', s.total_mrr, '', ''],
+      ['', '', '', ''],
+      ['Note', 'Server-side PDF/statements can replace this when accounting needs official artifacts.', '', ''],
+    ])
   }
 
   const handleGenerateInvoice = () => {
+    if (!finance?.summary) return
+    const s = finance.summary
+    const stamp = new Date().toISOString().slice(0, 10)
+    downloadCsv(`snaproad-platform-invoice-summary-${stamp}.csv`, [
+      ['Invoice-style summary (informational export)', '', ''],
+      ['Date', stamp, ''],
+      ['', '', ''],
+      ['Description', 'Amount (USD)', ''],
+      ['Recurring — user subscriptions (MRR)', s.mrr_user_plans, ''],
+      ['Recurring — partner subscriptions (MRR)', s.mrr_partners, ''],
+      ['Redemption / platform fees', s.redemption_fees, ''],
+      ['', '', ''],
+      ['Total (matches admin Total MRR field)', s.total_mrr, ''],
+    ])
   }
 
   const handleAgingReport = () => {
+    if (!finance?.summary) return
+    const s = finance.summary
+    const stamp = new Date().toISOString().slice(0, 10)
+    // No per-invoice aging in API yet — export current buckets as "current" only.
+    downloadCsv(`snaproad-aging-placeholder-${stamp}.csv`, [
+      ['Aging-style export (Phase A — no receivables detail in API)', '', '', ''],
+      ['Category', 'Amount (USD)', 'Age bucket', 'Notes'],
+      ['User plans MRR', s.mrr_user_plans, 'Current', 'From GET /admin/finance summary'],
+      ['Partners MRR', s.mrr_partners, 'Current', ''],
+      ['Redemption fees', s.redemption_fees, 'Current', ''],
+      ['Total MRR', s.total_mrr, 'Current', ''],
+      ['', '', '', ''],
+      ['', '', '', 'Add GET /admin/finance/aging-report when partner fee lines exist.'],
+    ])
   }
 
   if (loading) {

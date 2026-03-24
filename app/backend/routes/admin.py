@@ -5,7 +5,7 @@ All endpoints use the Supabase DAO layer (supabase_service.py).
 from fastapi import APIRouter, Body, Depends, UploadFile, File
 from fastapi.responses import StreamingResponse
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 import io
 from middleware.auth import require_admin
@@ -34,7 +34,7 @@ from services.supabase_service import (
     sb_get_rewards, sb_create_reward, sb_update_reward, sb_delete_reward,
     sb_get_audit_logs, sb_create_audit_log,
     sb_get_settings, sb_update_setting,
-    sb_get_legal_documents, sb_update_legal_document,
+    sb_get_legal_documents, sb_create_legal_document, sb_update_legal_document,
     sb_get_referral_analytics,
     sb_get_finance_summary,
     sb_get_platform_stats, sb_get_trips_stats,
@@ -282,9 +282,34 @@ def get_legal_documents():
     return {"success": True, "data": data}
 
 
+_LEGAL_DOC_KEYS = frozenset(
+    {"name", "type", "status", "version", "description", "content", "is_required"}
+)
+
+
+@router.post("/admin/legal-documents")
+def create_legal_document(doc_data: dict):
+    body = {k: v for k, v in doc_data.items() if k in _LEGAL_DOC_KEYS}
+    created = sb_create_legal_document(body)
+    if created:
+        sb_create_audit_log(
+            "LEGAL_DOC_CREATED",
+            "admin",
+            str(created.get("id", "")),
+            "Created legal document",
+        )
+        return {"success": True, "data": created, "message": "Document created"}
+    return {
+        "success": False,
+        "message": "Failed to create document (name and type are required)",
+    }
+
+
 @router.put("/admin/legal-documents/{doc_id}")
 def update_legal_document(doc_id: str, doc_data: dict):
-    success = sb_update_legal_document(doc_id, doc_data)
+    body = {k: v for k, v in doc_data.items() if k in _LEGAL_DOC_KEYS}
+    body["last_updated"] = datetime.now(timezone.utc).isoformat()
+    success = sb_update_legal_document(doc_id, body)
     if success:
         sb_create_audit_log("LEGAL_DOC_UPDATED", "admin", doc_id, f"Updated legal document")
         return {"success": True, "message": "Document updated"}

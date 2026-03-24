@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   MapPin, Plus, Edit2, Trash2, Crown, Store, X,
-  Globe, ChevronRight, Check,
+  Globe, ChevronRight, Check, Search,
 } from 'lucide-react'
 import type { PartnerProfile, PartnerLocation } from '@/types/partner'
+import { getApiBaseUrl } from '@/services/api'
 
 interface Props {
   partnerProfile: PartnerProfile
@@ -20,6 +21,13 @@ export interface LocationFormData {
   lat: number
   lng: number
   is_primary: boolean
+}
+
+interface PlaceSuggestion {
+  place_id: string
+  name: string
+  address: string
+  description: string
 }
 
 function LocationModal({
@@ -39,6 +47,84 @@ function LocationModal({
     is_primary: location?.is_primary || currentCount === 0,
   })
   const [useManualCoords, setUseManualCoords] = useState(false)
+  const [addressQuery, setAddressQuery] = useState(location?.address || '')
+  const [addressSuggestions, setAddressSuggestions] = useState<PlaceSuggestion[]>([])
+  const [addressDropdownOpen, setAddressDropdownOpen] = useState(false)
+  const [addressLoading, setAddressLoading] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const fetchSuggestions = useCallback(async (q: string) => {
+    if (q.length < 2) {
+      setAddressSuggestions([])
+      return
+    }
+    setAddressLoading(true)
+    try {
+      const base = getApiBaseUrl()
+      const res = await fetch(`${base}/api/places/autocomplete?q=${encodeURIComponent(q)}&lat=${formData.lat}&lng=${formData.lng}`)
+      const data = await res.json()
+      if (data.success && Array.isArray(data.data)) {
+        setAddressSuggestions(
+          data.data.map((p: { place_id?: string; name?: string; address?: string; description?: string }) => ({
+            place_id: p.place_id || '',
+            name: p.name || '',
+            address: p.address || '',
+            description: p.description || '',
+          }))
+        )
+        setAddressDropdownOpen(true)
+      } else {
+        setAddressSuggestions([])
+      }
+    } catch {
+      setAddressSuggestions([])
+    } finally {
+      setAddressLoading(false)
+    }
+  }, [formData.lat, formData.lng])
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (addressQuery.length >= 2) {
+      debounceRef.current = setTimeout(() => fetchSuggestions(addressQuery), 300)
+    } else {
+      setAddressSuggestions([])
+      setAddressDropdownOpen(false)
+    }
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [addressQuery, fetchSuggestions])
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setAddressDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [])
+
+  const resolvePlaceCoords = async (placeId: string): Promise<{ address: string; lat: number; lng: number } | null> => {
+    try {
+      const base = getApiBaseUrl()
+      const res = await fetch(`${base}/api/places/details/${placeId}`)
+      if (!res.ok) return null
+      const json = await res.json()
+      if (json.success && json.data?.lat != null && json.data?.lng != null) {
+        return {
+          address: json.data.address || json.data.name || '',
+          lat: json.data.lat,
+          lng: json.data.lng,
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    return null
+  }
 
   const sampleAddresses = [
     { label: 'Downtown Columbus', address: '100 N High St, Columbus, OH 43215', lat: 39.9612, lng: -82.9988 },
@@ -75,7 +161,10 @@ function LocationModal({
                 <div className="grid grid-cols-2 gap-2">
                   {sampleAddresses.map((addr, i) => (
                     <button key={i} type="button"
-                      onClick={() => setFormData(prev => ({ ...prev, address: addr.address, lat: addr.lat, lng: addr.lng }))}
+                      onClick={() => {
+                        setFormData(prev => ({ ...prev, address: addr.address, lat: addr.lat, lng: addr.lng }))
+                        setAddressQuery(addr.address)
+                      }}
                       className={`text-left px-3 py-2 rounded-lg border text-sm transition-all ${
                         formData.address === addr.address
                           ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
@@ -87,12 +176,61 @@ function LocationModal({
                 </div>
               </div>
 
-              <div>
-                <label className="text-slate-400 text-sm mb-1 block">Full Address <span className="text-red-400">*</span></label>
-                <input type="text" placeholder="123 Main St, City, State ZIP"
-                  value={formData.address} onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-                  className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500"
-                  data-testid="location-address-input" />
+              <div className="relative" ref={dropdownRef}>
+                <label className="text-slate-400 text-sm mb-1 block">Full address <span className="text-red-400">*</span></label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                  <input
+                    type="text"
+                    placeholder="Start typing to search…"
+                    value={addressQuery}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setAddressQuery(v)
+                      setFormData(prev => ({ ...prev, address: v }))
+                    }}
+                    onFocus={() => addressSuggestions.length > 0 && setAddressDropdownOpen(true)}
+                    className="w-full bg-slate-700/50 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white placeholder-slate-500"
+                    data-testid="location-address-input"
+                  />
+                  {addressLoading && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">Searching…</span>
+                  )}
+                </div>
+                {addressDropdownOpen && addressSuggestions.length > 0 && (
+                  <ul className="absolute z-[60] mt-1 max-h-52 w-full overflow-auto rounded-xl border border-white/10 bg-slate-900 shadow-xl">
+                    {addressSuggestions.map((s) => (
+                      <li key={s.place_id}>
+                        <button
+                          type="button"
+                          className="w-full px-3 py-2 text-left text-sm text-white hover:bg-slate-800 border-b border-white/5 last:border-0"
+                          onClick={async () => {
+                            setAddressDropdownOpen(false)
+                            if (s.place_id) {
+                              const resolved = await resolvePlaceCoords(s.place_id)
+                              if (resolved) {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  address: resolved.address,
+                                  lat: resolved.lat,
+                                  lng: resolved.lng,
+                                }))
+                                setAddressQuery(resolved.address)
+                                return
+                              }
+                            }
+                            const line = s.description || [s.name, s.address].filter(Boolean).join(', ')
+                            setFormData(prev => ({ ...prev, address: line }))
+                            setAddressQuery(line)
+                          }}
+                        >
+                          <span className="font-medium text-white">{s.name || s.description}</span>
+                          {s.address ? <span className="block text-xs text-slate-400">{s.address}</span> : null}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               <div>

@@ -12,7 +12,17 @@ interface IncidentsTabProps {
 
 export default function IncidentsTab({ theme }: IncidentsTabProps) {
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('All Status')
+  const [statusFilter, setStatusFilter] = useState(() => {
+    try {
+      if (sessionStorage.getItem('snaproad_admin_incidents_status') === 'pending') {
+        sessionStorage.removeItem('snaproad_admin_incidents_status')
+        return 'pending'
+      }
+    } catch {
+      /* ignore */
+    }
+    return 'All Status'
+  })
   const [severityFilter, setSeverityFilter] = useState('All Severity')
   const [incidents, setIncidents] = useState<AdminIncident[]>([])
   const [loading, setLoading] = useState(false)
@@ -82,8 +92,6 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
   const pendingCount = incidents.filter(i => i.status === 'pending').length
   const approvedCount = incidents.filter(i => i.status === 'approved').length
   const rejectedCount = incidents.filter(i => i.status === 'rejected').length
-    ? Math.round(incidents.reduce((acc, i) => acc + (i.confidence || 0), 0) / incidents.length)
-    : 0
 
   if (loading) {
     return (

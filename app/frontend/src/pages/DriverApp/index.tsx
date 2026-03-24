@@ -7214,6 +7214,11 @@ export default function DriverApp() {
           setBrowserTitle(title)
           setShowBrowser(true)
         }}
+        onUpgradeToPlans={() => {
+          setShowOffersModal(false)
+          setSelectedOfferId(null)
+          setShowPlanSelection(true)
+        }}
       />
 
       {/* In-App Browser for third-party offer links */}

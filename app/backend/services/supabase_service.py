@@ -7,6 +7,7 @@ rewards, audit_log, platform_settings, legal_documents, trips, referrals.
 """
 import logging
 from typing import Optional
+from fastapi import HTTPException
 from database import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -53,26 +54,41 @@ def sb_get_user_by_email(email: str) -> Optional[dict]:
 def sb_create_user(email: str, password: str, name: str, role: str = "driver") -> dict:
     import hashlib
     sb = _sb()
-    auth_resp = sb.auth.admin.create_user({
-        "email": email,
-        "password": password,
-        "email_confirm": True,
-    })
-    uid = auth_resp.user.id
+    auth_user_id = None
+    try:
+        auth_resp = sb.auth.admin.create_user({
+            "email": email,
+            "password": password,
+            "email_confirm": True,
+        })
+        auth_user_id = str(auth_resp.user.id)
 
-    profile = {
-        "id": uid,
-        "email": email,
-        "name": name,
-        "password_hash": hashlib.sha256(password.encode()).hexdigest(),
-        "role": role,
-        "status": "active",
-        "xp": 0,
-        "level": 1,
-        "gems": 0,
-    }
-    sb.table("profiles").upsert(profile).execute()
-    return {**profile, "id": str(uid)}
+        profile = {
+            "id": auth_user_id,
+            "email": email,
+            "name": name,
+            "password_hash": hashlib.sha256(password.encode()).hexdigest(),
+            "role": role,
+            "status": "active",
+            "xp": 0,
+            "level": 1,
+            "gems": 0,
+        }
+        sb.table("profiles").upsert(profile).execute()
+        return profile
+    except Exception as e:
+        err = str(e).lower()
+        if auth_user_id:
+            try:
+                sb.auth.admin.delete_user(auth_user_id)
+            except Exception as rollback_err:
+                logger.error("sb_create_user rollback failed for %s: %s", auth_user_id, rollback_err)
+
+        if ("already" in err and "exist" in err) or ("duplicate" in err):
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        logger.error("sb_create_user failed for %s: %s", email, e)
+        raise HTTPException(status_code=500, detail="Failed to create user account")
 
 
 def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[str]]:
@@ -810,6 +826,34 @@ def sb_get_legal_documents() -> list:
         if not _table_missing(e):
             logger.error(f"sb_get_legal_documents: {e}")
         return []
+
+
+def sb_create_legal_document(data: dict) -> Optional[dict]:
+    """Insert a row into legal_documents. Expects name + type at minimum."""
+    allowed = (
+        "name",
+        "type",
+        "status",
+        "version",
+        "description",
+        "content",
+        "is_required",
+    )
+    row = {k: v for k, v in data.items() if k in allowed}
+    if not row.get("name") or not row.get("type"):
+        return None
+    if "status" not in row:
+        row["status"] = "draft"
+    if "version" not in row:
+        row["version"] = "1.0"
+    if "is_required" not in row:
+        row["is_required"] = False
+    try:
+        result = _sb().table("legal_documents").insert(row).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        logger.warning(f"sb_create_legal_document: {e}")
+        return None
 
 
 def sb_update_legal_document(doc_id: str, updates: dict) -> bool:

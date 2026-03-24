@@ -3,7 +3,7 @@ import random
 import string
 import uuid
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Optional
 
 from middleware.auth import get_current_user
 from database import get_supabase
@@ -167,7 +167,8 @@ async def get_members(user: dict = Depends(get_current_user)):
             .limit(1)
             .execute()
         )
-        if not membership.data:
+        membership_data = membership.data or []
+        if not membership_data:
             # Repair flow: if user created a group but membership row is missing, recreate admin membership.
             created_group = (
                 supabase.table("family_groups")
@@ -183,16 +184,16 @@ async def get_members(user: dict = Depends(get_current_user)):
                     {"group_id": gid, "user_id": user["id"], "role": "admin"},
                     on_conflict="group_id,user_id",
                 ).execute()
-                membership = {"data": [{"group_id": gid}]}
+                membership_data = [{"group_id": gid}]
             else:
-                membership = {"data": []}
-        if not membership.data:
+                membership_data = []
+        if not membership_data:
             # If Supabase is configured but user has no rows yet, fall back to mock in dev.
             mock_payload = _mock_get_members_payload(user["id"])
             if mock_payload.get("group_id"):
                 return mock_payload
             return {"members": []}
-        group_id = membership.data[0]["group_id"]
+        group_id = membership_data[0]["group_id"]
         group = (
             supabase.table("family_groups")
             .select("id, name, invite_code")
@@ -243,7 +244,7 @@ async def get_members(user: dict = Depends(get_current_user)):
 
 
 @router.post("/sos")
-async def sos_alert(body: dict | None = None, user: dict = Depends(get_current_user)):
+async def sos_alert(body: Optional[dict] = None, user: dict = Depends(get_current_user)):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
     uid = user["id"]
@@ -380,24 +381,6 @@ async def update_member_settings(body: dict, user: dict = Depends(get_current_us
         update["role"] = body["role"]
     if not update:
         return {"success": True}
-
-
-@router.put("/group/name")
-async def rename_group(body: dict, user: dict = Depends(get_current_user)):
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    group_id = str(body.get("group_id") or "").strip()
-    name = str(body.get("name") or "").strip()
-    if not group_id or not name:
-        raise HTTPException(status_code=400, detail="group_id and name are required")
-    supabase = get_supabase()
-    me = _require_member_group(supabase, user["id"])
-    if str(me.get("group_id")) != group_id:
-        raise HTTPException(status_code=403, detail="Not in this family group")
-    if me.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-    updated = supabase.table("family_groups").update({"name": name}).eq("id", group_id).execute()
-    return {"success": True, "group": (updated.data or [{}])[0]}
     try:
         supabase = get_supabase()
 
@@ -450,6 +433,24 @@ async def rename_group(body: dict, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=404, detail="Member not found")
         tgt.update(update)
         return {"success": True}
+
+
+@router.put("/group/name")
+async def rename_group(body: dict, user: dict = Depends(get_current_user)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    group_id = str(body.get("group_id") or "").strip()
+    name = str(body.get("name") or "").strip()
+    if not group_id or not name:
+        raise HTTPException(status_code=400, detail="group_id and name are required")
+    supabase = get_supabase()
+    me = _require_member_group(supabase, user["id"])
+    if str(me.get("group_id")) != group_id:
+        raise HTTPException(status_code=403, detail="Not in this family group")
+    if me.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    updated = supabase.table("family_groups").update({"name": name}).eq("id", group_id).execute()
+    return {"success": True, "group": (updated.data or [{}])[0]}
 
 
 @router.get("/trips")

@@ -287,11 +287,32 @@ class AdminApiService {
       headers: { ...(token && { Authorization: `Bearer ${token}` }) },
       body: formData,
     })
-    return res.json()
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      return {
+        success: false,
+        message: (data as { message?: string })?.message || `Upload failed (${res.status})`,
+        ...(typeof data === 'object' && data !== null ? data : {}),
+      }
+    }
+    return data
   }
 
   getTemplateUrl(): string {
     return `${getApiBaseUrl()}/api/admin/offers/upload-template`
+  }
+
+  /** Authenticated .xlsx download (plain URL alone returns 401 for admin routes). */
+  async downloadOfferUploadTemplate(): Promise<Blob> {
+    const url = `${getApiBaseUrl()}/api/admin/offers/upload-template`
+    const token = this.getToken()
+    const res = await fetch(url, {
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+    })
+    if (!res.ok) {
+      throw new Error(`Template download failed (${res.status})`)
+    }
+    return res.blob()
   }
 
   // ==================== FINANCE ====================
@@ -310,6 +331,13 @@ class AdminApiService {
 
   async getLegalDocuments(): Promise<AdminApiResponse<LegalDocument[]>> {
     return this.request('/api/admin/legal-documents')
+  }
+
+  async createLegalDocument(data: Partial<LegalDocument>): Promise<AdminApiResponse<LegalDocument>> {
+    return this.request('/api/admin/legal-documents', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
   }
 
   async updateLegalDocument(id: string, data: Partial<LegalDocument>): Promise<AdminApiResponse<LegalDocument>> {

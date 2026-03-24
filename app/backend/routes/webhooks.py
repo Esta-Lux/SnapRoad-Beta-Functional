@@ -1,73 +1,134 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
-from datetime import datetime
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, Depends
+from fastapi.responses import Response, JSONResponse
+from datetime import datetime, timedelta
 import json
-import os
+import logging
 import random
-
-from database import get_supabase
+from middleware.auth import decode_token, require_admin
+from services.telemetry_service import telemetry_service
 
 router = APIRouter(tags=["Webhooks & WebSocket"])
-
-
-def _get_stripe_webhook_secret():
-    return os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-
+logger = logging.getLogger(__name__)
 
 # ==================== STRIPE WEBHOOKS ====================
+
+
+def _handle_checkout_session_completed(session: dict) -> None:
+    """Apply Supabase updates from Stripe Checkout metadata (partner portal + driver app)."""
+    from services.supabase_service import (
+        sb_get_partner,
+        sb_update_partner,
+        sb_update_profile,
+        sb_create_boost,
+        sb_update_offer,
+    )
+    from services.mock_data import BOOST_PRICING
+
+    meta = session.get("metadata") or {}
+    mode = session.get("mode") or ""
+    payment_status = session.get("payment_status") or ""
+
+    if payment_status not in ("paid", "no_payment_required"):
+        logger.info("checkout.session.completed skipped: payment_status=%s", payment_status)
+        return
+
+    partner_id = (meta.get("partner_id") or "").strip()
+
+    # Partner subscription (metadata from /partner/v2/subscribe)
+    if partner_id and meta.get("plan") and mode == "subscription":
+        plan = meta.get("plan")
+        sb_update_partner(partner_id, {"plan": plan, "subscription_status": "active"})
+        logger.info("Partner %s subscribed to plan %s", partner_id, plan)
+
+    # Partner one-time credits (metadata from /partner/v2/credits/purchase)
+    if partner_id and meta.get("credits_amount") is not None and mode == "payment":
+        try:
+            amt = float(meta.get("credits_amount", 0))
+        except (TypeError, ValueError):
+            amt = 0.0
+        if amt > 0:
+            p = sb_get_partner(partner_id)
+            if p:
+                cur = float(p.get("credits") or 0)
+                sb_update_partner(partner_id, {"credits": cur + amt})
+                logger.info("Partner %s credited $%.2f", partner_id, amt)
+
+    # Partner boost purchase (metadata from /partner/v2/boosts/purchase)
+    if partner_id and meta.get("boost_type") and mode == "payment":
+        offer_id = str(meta.get("offer_id") or "").strip()
+        boost_type = meta.get("boost_type")
+        if offer_id and boost_type in BOOST_PRICING:
+            cfg = BOOST_PRICING[boost_type]
+            ends_at = datetime.utcnow() + timedelta(hours=cfg["duration_hours"])
+            new_boost = sb_create_boost({
+                "offer_id": offer_id,
+                "partner_id": partner_id,
+                "budget": cfg["price"],
+                "duration_days": max(1, cfg["duration_hours"] // 24),
+                "target_radius_miles": 10,
+                "status": "active",
+                "ends_at": ends_at.isoformat(),
+            })
+            if new_boost:
+                sb_update_offer(offer_id, {
+                    "boost_multiplier": cfg["multiplier"],
+                    "boost_expiry": ends_at.isoformat(),
+                })
+                logger.info("Partner %s boost %s for offer %s", partner_id, boost_type, offer_id)
+
+    # Driver / mobile subscription (metadata from /api/payments/checkout/session)
+    user_id = (meta.get("user_id") or "").strip()
+    plan_id = (meta.get("plan_id") or "").strip()
+    if user_id and user_id != "anonymous" and plan_id in ("premium", "family") and mode == "subscription":
+        sb_update_profile(user_id, {"plan": plan_id, "is_premium": True})
+        logger.info("Profile %s upgraded to %s", user_id, plan_id)
+
+
 @router.post("/api/webhooks/stripe")
 async def stripe_webhook(request: Request):
-    """Stripe webhook handler — persists plan changes to Supabase profiles."""
-    body = await request.body()
-    sig_header = request.headers.get("stripe-signature", "")
-    webhook_secret = _get_stripe_webhook_secret()
+    """
+    Stripe webhook. Set STRIPE_WEBHOOK_SECRET in .env and point Stripe to:
+    POST https://<your-api-host>/api/webhooks/stripe
+    Subscribe to at least: checkout.session.completed
+    """
+    from config import STRIPE_WEBHOOK_SECRET, STRIPE_SECRET_KEY
+
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+
+    if not STRIPE_WEBHOOK_SECRET:
+        logger.error("STRIPE_WEBHOOK_SECRET missing — cannot verify Stripe webhooks")
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Webhook secret not configured"},
+        )
 
     try:
         import stripe
-        stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("STRIPE_API_KEY")
-        if webhook_secret:
-            event = stripe.Webhook.construct_event(body, sig_header, webhook_secret)
-        else:
-            event = json.loads(body.decode() if isinstance(body, bytes) else body)
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+        stripe.api_key = STRIPE_SECRET_KEY or ""
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError as e:
+        logger.warning("Stripe webhook invalid payload: %s", e)
+        return Response(status_code=400, content="Invalid payload")
+    except stripe.error.SignatureVerificationError as e:
+        logger.warning("Stripe webhook signature verification failed: %s", e)
+        return Response(status_code=400, content="Invalid signature")
 
-    event_type = event.get("type", "")
+    etype = event.get("type")
+    obj = event.get("data", {}).get("object") or {}
+
     try:
-        supabase = get_supabase()
-    except Exception:
-        supabase = None
+        if etype == "checkout.session.completed":
+            _handle_checkout_session_completed(obj)
+        else:
+            logger.debug("Stripe webhook unhandled type: %s", etype)
+    except Exception as e:
+        logger.exception("Stripe webhook handler error for %s: %s", etype, e)
+        return JSONResponse(status_code=500, content={"error": "handler_failed"})
 
-    if event_type == "checkout.session.completed":
-        session = event.get("data", {}).get("object", {})
-        customer_email = session.get("customer_details", {}).get("email") or session.get("customer_email")
-        customer_id = session.get("customer")
-        subscription_id = session.get("subscription")
-        plan = (session.get("metadata") or {}).get("plan", "premium")
-        if customer_email and supabase:
-            try:
-                supabase.table("profiles").update({
-                    "plan": plan,
-                    "stripe_customer_id": customer_id,
-                    "stripe_subscription_id": subscription_id,
-                    "is_premium": True,
-                }).eq("email", customer_email).execute()
-            except Exception:
-                pass
-
-    if event_type == "customer.subscription.deleted":
-        session = event.get("data", {}).get("object", {})
-        customer_id = session.get("customer")
-        if customer_id and supabase:
-            try:
-                supabase.table("profiles").update({
-                    "plan": "basic",
-                    "is_premium": False,
-                    "stripe_subscription_id": None,
-                }).eq("stripe_customer_id", customer_id).execute()
-            except Exception:
-                pass
-
-    return {"success": True, "event_type": event_type}
+    return {"received": True}
 
 
 # ==================== PARTNER WEBSOCKET ====================
@@ -175,6 +236,18 @@ async def admin_moderation_ws(websocket: WebSocket):
     """WebSocket endpoint for real-time admin incident moderation."""
     from services.websocket_manager import ws_manager
     import uuid
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008, reason="Missing token")
+        return
+    try:
+        payload = decode_token(token)
+        if payload.get("role") not in ("admin", "super_admin"):
+            await websocket.close(code=1008, reason="Admin access required")
+            return
+    except Exception:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
     admin_id = f"admin_{uuid.uuid4().hex[:8]}"
     try:
         await ws_manager.connect_admin(websocket, admin_id)
@@ -208,7 +281,7 @@ async def admin_moderation_ws(websocket: WebSocket):
 
 
 @router.post("/api/admin/moderation/simulate")
-async def simulate_incident():
+async def simulate_incident(_admin: dict = Depends(require_admin)):
     """Simulate a new incident arriving from the field (for demo/testing)."""
     from services.websocket_manager import ws_manager
     incident = _make_incident()
@@ -232,3 +305,87 @@ def moderation_status():
             "live": True,
         }
     }
+
+
+@router.websocket("/api/ws/admin/monitor")
+async def admin_monitor_ws(websocket: WebSocket):
+    """Admin-only websocket stream for live request/error telemetry."""
+    from services.websocket_manager import ws_manager
+    import uuid
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008, reason="Missing token")
+        return
+    try:
+        payload = decode_token(token)
+        if payload.get("role") not in ("admin", "super_admin"):
+            await websocket.close(code=1008, reason="Admin access required")
+            return
+    except Exception:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    admin_id = f"monitor_{uuid.uuid4().hex[:8]}"
+    try:
+        await ws_manager.connect_admin_monitor(websocket, admin_id)
+        # Send warm snapshot on connect
+        await websocket.send_json({
+            "type": "telemetry_snapshot",
+            "events": telemetry_service.snapshot(limit=100),
+            "timestamp": datetime.now().isoformat(),
+        })
+        while True:
+            data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                if msg.get("type") == "ping":
+                    await websocket.send_json({
+                        "type": "pong",
+                        "timestamp": datetime.now().isoformat(),
+                    })
+            except json.JSONDecodeError:
+                pass
+    except WebSocketDisconnect:
+        await ws_manager.disconnect_admin_monitor(admin_id)
+    except Exception:
+        await ws_manager.disconnect_admin_monitor(admin_id)
+
+
+@router.get("/api/admin/monitor/events")
+def get_monitor_events(limit: int = 100, _admin: dict = Depends(require_admin)):
+    """Pull latest telemetry events (fallback for UI reloads)."""
+    return {"success": True, "data": telemetry_service.snapshot(limit=limit)}
+
+
+@router.get("/api/admin/monitor/events/export")
+def export_monitor_events(
+    limit: int = 500,
+    format: str = "json",
+    _admin: dict = Depends(require_admin),
+):
+    """Export telemetry events as json or csv for debugging handoff."""
+    events = telemetry_service.snapshot(limit=limit)
+    if format.lower() == "csv":
+        headers = [
+            "timestamp", "severity", "method", "path",
+            "status_code", "duration_ms", "error",
+        ]
+        lines = [",".join(headers)]
+        for e in events:
+            row = [
+                str(e.get("timestamp", "")),
+                str(e.get("severity", "")),
+                str(e.get("method", "")),
+                str(e.get("path", "")).replace(",", " "),
+                str(e.get("status_code", "")),
+                str(e.get("duration_ms", "")),
+                str(e.get("error", "")).replace(",", " ").replace("\n", " "),
+            ]
+            lines.append(",".join(row))
+        csv_data = "\n".join(lines)
+        return Response(
+            content=csv_data,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=monitor-events.csv"},
+        )
+    return {"success": True, "data": events, "total": len(events)}

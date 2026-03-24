@@ -1,7 +1,8 @@
 // Offer Management tab — admin offers (replaces figma-ui AdminOfferManagement)
 
-import { useState, useEffect } from 'react'
-import { Gift, Search, Trash2 } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Gift, Search, Trash2, Upload, FileSpreadsheet } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { adminApi } from '@/services/adminApi'
 
 interface AdminOfferManagementProps {
@@ -14,6 +15,9 @@ export function AdminOfferManagement({ theme, onNavigate }: AdminOfferManagement
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkUploading, setBulkUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     loadOffers()
@@ -29,6 +33,43 @@ export function AdminOfferManagement({ theme, onNavigate }: AdminOfferManagement
       setOffers([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const blob = await adminApi.downloadOfferUploadTemplate()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'snaproad-offers-upload-template.xlsx'
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Template downloaded')
+    } catch (e) {
+      console.error(e)
+      toast.error(e instanceof Error ? e.message : 'Could not download template')
+    }
+  }
+
+  const handleBulkFile = async (file: File | null) => {
+    if (!file) return
+    setBulkUploading(true)
+    try {
+      const res = await adminApi.uploadExcel(file)
+      if (res.success) {
+        toast.success(res.message || 'Upload processed')
+        setBulkOpen(false)
+        if (fileInputRef.current) fileInputRef.current.value = ''
+        await loadOffers()
+      } else {
+        toast.error(res.message || res.error || 'Upload failed')
+      }
+    } catch (e) {
+      console.error(e)
+      toast.error(e instanceof Error ? e.message : 'Upload failed')
+    } finally {
+      setBulkUploading(false)
     }
   }
 
@@ -78,6 +119,16 @@ export function AdminOfferManagement({ theme, onNavigate }: AdminOfferManagement
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
         </select>
+        <button
+          type="button"
+          onClick={() => setBulkOpen(true)}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium ${
+            isDark ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-200' : 'bg-purple-100 hover:bg-purple-200 text-purple-900'
+          }`}
+        >
+          <FileSpreadsheet size={18} />
+          Bulk upload (Excel)
+        </button>
         {onNavigate && (
           <button
             onClick={() => onNavigate('rewards')}
@@ -90,6 +141,70 @@ export function AdminOfferManagement({ theme, onNavigate }: AdminOfferManagement
           </button>
         )}
       </div>
+
+      {bulkOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => !bulkUploading && setBulkOpen(false)}
+        >
+          <div
+            className={`max-w-lg w-full rounded-2xl border p-6 shadow-xl ${
+              isDark ? 'bg-slate-900 border-white/10 text-gray-100' : 'bg-white border-gray-200 text-gray-900'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold mb-1">Bulk upload offers</h2>
+            <p className={`text-sm mb-4 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+              Use an <code className="text-xs">.xlsx</code> file with columns matching the admin template (e.g.{' '}
+              <code className="text-xs">business_name</code>, <code className="text-xs">title</code>,{' '}
+              <code className="text-xs">description</code>, <code className="text-xs">business_type</code>,{' '}
+              <code className="text-xs">discount_percent</code>, <code className="text-xs">is_free_item</code>,{' '}
+              <code className="text-xs">address</code>, <code className="text-xs">offer_url</code>,{' '}
+              <code className="text-xs">lat</code>, <code className="text-xs">lng</code>,{' '}
+              <code className="text-xs">expires_days</code>, <code className="text-xs">source</code>,{' '}
+              <code className="text-xs">original_price</code>, <code className="text-xs">affiliate_tracking_url</code>,{' '}
+              <code className="text-xs">external_id</code>).
+            </p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                className={`text-sm font-medium underline ${isDark ? 'text-purple-300' : 'text-purple-700'}`}
+              >
+                Download template (.xlsx)
+              </button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={(e) => handleBulkFile(e.target.files?.[0] ?? null)}
+            />
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                disabled={bulkUploading}
+                onClick={() => fileInputRef.current?.click()}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium ${
+                  isDark ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                } text-white disabled:opacity-50`}
+              >
+                <Upload size={18} />
+                {bulkUploading ? 'Uploading…' : 'Choose Excel file'}
+              </button>
+              <button
+                type="button"
+                disabled={bulkUploading}
+                onClick={() => setBulkOpen(false)}
+                className={`px-4 py-2.5 rounded-xl text-sm ${isDark ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'}`}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Loading offers...</p>
