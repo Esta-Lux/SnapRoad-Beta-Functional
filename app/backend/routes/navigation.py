@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Body
+from fastapi import APIRouter, Query, Body, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict, Tuple
 from datetime import datetime, timedelta
@@ -7,9 +7,10 @@ import httpx
 from models.schemas import NavigationRequest, Location, Route, Widget
 from services.mock_data import (
     saved_locations, saved_routes, widget_settings, MAP_LOCATIONS,
-    road_reports_db, current_user_id, users_db,
+    road_reports_db, users_db,
 )
 from config import CAMERAS_API_KEY, CAMERAS_API_URL, CAMERAS_API_KEY_AS_HEADER
+from middleware.auth import get_current_user
 
 
 class VoiceCommandBody(BaseModel):
@@ -20,35 +21,52 @@ class VoiceCommandBody(BaseModel):
 router = APIRouter(prefix="/api", tags=["Navigation"])
 
 
+def _resolve_user_scoped_data(auth_user: dict) -> tuple[str, list, list]:
+    user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid auth context")
+    user = users_db.setdefault(user_id, {"id": user_id})
+    if "saved_locations" not in user:
+        user["saved_locations"] = list(saved_locations)
+    if "saved_routes" not in user:
+        user["saved_routes"] = list(saved_routes)
+    return user_id, user["saved_locations"], user["saved_routes"]
+
+
 # ==================== SAVED LOCATIONS ====================
 @router.get("/locations")
-def get_locations():
-    return {"success": True, "data": saved_locations}
+def get_locations(auth_user: dict = Depends(get_current_user)):
+    _, user_locations, _ = _resolve_user_scoped_data(auth_user)
+    return {"success": True, "data": user_locations}
 
 
 @router.post("/locations")
-def add_location(location: Location):
-    new_id = max([l.get("id", 0) for l in saved_locations], default=0) + 1
+def add_location(location: Location, auth_user: dict = Depends(get_current_user)):
+    _, user_locations, _ = _resolve_user_scoped_data(auth_user)
+    new_id = max([l.get("id", 0) for l in user_locations], default=0) + 1
     loc = {"id": new_id, "name": location.name, "address": location.address, "category": location.category, "lat": location.lat, "lng": location.lng, "created_at": datetime.now().isoformat()}
-    saved_locations.append(loc)
+    user_locations.append(loc)
     return {"success": True, "message": "Location saved", "data": loc}
 
 
 @router.delete("/locations/{location_id}")
-def delete_location(location_id: int):
-    saved_locations[:] = [l for l in saved_locations if l.get("id") != location_id]
+def delete_location(location_id: int, auth_user: dict = Depends(get_current_user)):
+    _, user_locations, _ = _resolve_user_scoped_data(auth_user)
+    user_locations[:] = [l for l in user_locations if l.get("id") != location_id]
     return {"success": True, "message": "Location deleted"}
 
 
 # ==================== ROUTES ====================
 @router.get("/routes")
-def get_routes():
-    return {"success": True, "data": saved_routes}
+def get_routes(auth_user: dict = Depends(get_current_user)):
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    return {"success": True, "data": user_routes}
 
 
 @router.post("/routes")
-def add_route(route: Route):
-    new_id = max([r.get("id", 0) for r in saved_routes], default=0) + 1
+def add_route(route: Route, auth_user: dict = Depends(get_current_user)):
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    new_id = max([r.get("id", 0) for r in user_routes], default=0) + 1
     estimated_time = int(route.estimated_time or 18)
     distance = round(float(route.distance or max(1, estimated_time * 0.33)), 1)
     r = {
@@ -64,23 +82,25 @@ def add_route(route: Route):
         "active": True,
         "created_at": datetime.now().isoformat(),
     }
-    saved_routes.append(r)
+    user_routes.append(r)
     return {"success": True, "message": "Route saved", "data": r}
 
 
 @router.delete("/routes/{route_id}")
-def delete_route(route_id: int):
-    before = len(saved_routes)
-    saved_routes[:] = [r for r in saved_routes if r.get("id") != route_id]
-    if len(saved_routes) == before:
+def delete_route(route_id: int, auth_user: dict = Depends(get_current_user)):
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    before = len(user_routes)
+    user_routes[:] = [r for r in user_routes if r.get("id") != route_id]
+    if len(user_routes) == before:
         return {"success": False, "message": "Route not found"}
     return {"success": True, "message": "Route deleted"}
 
 
 @router.post("/routes/{route_id}/toggle")
 @router.put("/routes/{route_id}/toggle")
-def toggle_route(route_id: int):
-    route = next((r for r in saved_routes if r.get("id") == route_id), None)
+def toggle_route(route_id: int, auth_user: dict = Depends(get_current_user)):
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    route = next((r for r in user_routes if r.get("id") == route_id), None)
     if not route:
         return {"success": False, "message": "Route not found"}
     route["active"] = not route.get("active", True)
@@ -89,8 +109,9 @@ def toggle_route(route_id: int):
 
 @router.post("/routes/{route_id}/notifications")
 @router.put("/routes/{route_id}/notifications")
-def toggle_notifications(route_id: int):
-    route = next((r for r in saved_routes if r.get("id") == route_id), None)
+def toggle_notifications(route_id: int, auth_user: dict = Depends(get_current_user)):
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    route = next((r for r in user_routes if r.get("id") == route_id), None)
     if not route:
         return {"success": False, "message": "Route not found"}
     route["notifications"] = not route.get("notifications", True)
@@ -167,6 +188,7 @@ def _compute_route_options(route: Dict[str, Any], dep_minutes: int, now_minutes:
 
 @router.get("/routes/notifications")
 def get_route_notifications(
+    auth_user: dict = Depends(get_current_user),
     lat: Optional[float] = Query(None, description="Current latitude for ETA/leave-by"),
     lng: Optional[float] = Query(None, description="Current longitude for ETA/leave-by"),
     window_minutes: int = Query(120, description="Notify when departure is within this many minutes"),
@@ -177,14 +199,15 @@ def get_route_notifications(
     2) Faster route to avoid traffic stress.
     Premium/family users are push-eligible; free users receive in-app only notifications.
     """
-    user = users_db.get(str(current_user_id), {})
+    user_id, _, user_routes = _resolve_user_scoped_data(auth_user)
+    user = users_db.get(user_id, {})
     push_eligible = _is_premium_or_family(user)
     now = datetime.now()
     today_weekday = now.strftime("%a")  # Mon, Tue, ...
     current_minutes = now.hour * 60 + now.minute
     notifications: List[Dict[str, Any]] = []
 
-    for route in saved_routes:
+    for route in user_routes:
         if not route.get("notifications") or not route.get("active", True):
             continue
         days = route.get("days_active") or []
@@ -260,9 +283,10 @@ class LeaveEarlyBody(BaseModel):
 
 
 @router.post("/routes/{route_id}/notify-leave-early")
-def notify_leave_early(route_id: int, body: Optional[LeaveEarlyBody] = Body(None)):
+def notify_leave_early(route_id: int, body: Optional[LeaveEarlyBody] = Body(None), auth_user: dict = Depends(get_current_user)):
     """Compute leave-by time for a route so user can arrive by desired time. Returns leave_by and eta_minutes."""
-    route = next((r for r in saved_routes if r.get("id") == route_id), None)
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    route = next((r for r in user_routes if r.get("id") == route_id), None)
     if not route:
         return {"success": False, "message": "Route not found"}
     if body is None:

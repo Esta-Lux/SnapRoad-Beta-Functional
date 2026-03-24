@@ -45,9 +45,17 @@ function resolveApiUrl(): string {
 const apiBaseUrl: string = resolveApiUrl();
 console.log('[API] Final API base URL:', apiBaseUrl);
 
+/** Tunnels and HTTPS edge URLs are slower; LAN HTTP is usually fast. */
+function resolveRequestTimeoutMs(baseUrl: string): number {
+  const u = baseUrl.toLowerCase();
+  if (u.includes('loca.lt') || u.includes('ngrok') || u.includes('trycloudflare') || u.includes('tunnel')) {
+    return 45000;
+  }
+  return 15000;
+}
+
 class ApiService {
   private cachedToken: string | null = null;
-  private defaultTimeoutMs = 15000;
 
   getBaseUrl(): string {
     return apiBaseUrl;
@@ -90,11 +98,12 @@ class ApiService {
       ...(options.headers as Record<string, string>),
     };
 
+    const timeoutMs = resolveRequestTimeoutMs(apiBaseUrl);
     console.log(`[API] ${options.method ?? 'GET'} ${url}`);
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), this.defaultTimeoutMs);
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
       const response = await fetch(url, {
         ...options,
         headers,
@@ -107,6 +116,11 @@ class ApiService {
       } catch {
         console.error('[API] Failed to parse JSON from', url);
         return { success: false, error: 'Invalid response from server' };
+      }
+
+      if (response.status === 401) {
+        // Expired/invalid sessions should not keep stale tokens around.
+        await this.setToken(null);
       }
 
       if (!response.ok) {
@@ -134,16 +148,21 @@ class ApiService {
               ? detailRaw
               : JSON.stringify(detailRaw)
             : 'Request failed';
-        console.error('[API] Error:', response.status, detail);
-        return { success: false, error: detail };
+        const normalized = response.status === 401 ? 'Session expired. Please sign in again.' : detail;
+        console.error('[API] Error:', response.status, normalized);
+        return { success: false, error: normalized };
       }
 
       console.log(`[API] OK ${response.status} ${endpoint}`);
       return { success: true, data: data as T };
     } catch (error) {
       const isAbort = (error as { name?: string })?.name === 'AbortError';
+      const timeoutMs = resolveRequestTimeoutMs(apiBaseUrl);
+      const isTunnel = /loca\.lt|ngrok|trycloudflare/i.test(apiBaseUrl);
       const msg = isAbort
-        ? `Request timed out (${this.defaultTimeoutMs}ms). Backend at ${apiBaseUrl} unreachable.`
+        ? isTunnel
+          ? `Request timed out (${timeoutMs}ms). Tunnel may be down or slow — run localtunnel on your PC, or remove EXPO_PUBLIC_API_URL and use same Wi‑Fi so the app talks to your PC on port 8001.`
+          : `Request timed out (${timeoutMs}ms). Backend at ${apiBaseUrl} unreachable — is uvicorn running on port 8001 and is Windows Firewall allowing LAN access?`
         : `Network error: Cannot reach ${apiBaseUrl}. Is the backend running?`;
       console.error('[API] Catch:', msg, error);
       return { success: false, error: msg };

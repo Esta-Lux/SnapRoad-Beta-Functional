@@ -493,8 +493,12 @@ async def invite_team_member(partner_id: str, request: TeamInviteRequest, user: 
 
 
 @router.put("/partner/v2/team/{member_id}/role")
-async def update_member_role(member_id: str, role: str):
+async def update_member_role(member_id: str, role: str, user: dict = Depends(require_partner)):
     from services.partner_service import partner_service
+    member = partner_service.get_team_member(member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+    _require_owned_partner_id(user, member.get("partner_id"))
     success = partner_service.update_team_member_role(member_id, role)
     if not success:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -502,8 +506,12 @@ async def update_member_role(member_id: str, role: str):
 
 
 @router.delete("/partner/v2/team/{member_id}")
-async def revoke_team_access(member_id: str):
+async def revoke_team_access(member_id: str, user: dict = Depends(require_partner)):
     from services.partner_service import partner_service
+    member = partner_service.get_team_member(member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+    _require_owned_partner_id(user, member.get("partner_id"))
     success = partner_service.revoke_team_access(member_id)
     if not success:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -621,12 +629,20 @@ async def list_team_links(partner_id: str, user: dict = Depends(require_partner)
 
 
 @router.delete("/partner/v2/team-link/{link_id}")
-async def revoke_team_link(link_id: str):
+async def revoke_team_link(link_id: str, user: dict = Depends(require_partner)):
     from services.supabase_service import _sb
     try:
+        row = _sb().table("partner_team_links").select("id,partner_id").eq("id", link_id).maybe_single().execute()
+        link = row.data if row else None
+        if not link:
+            raise HTTPException(status_code=404, detail="Team link not found")
+        _require_owned_partner_id(user, link.get("partner_id"))
         _sb().table("partner_team_links").update({"is_active": False}).eq("id", link_id).execute()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning(f"Revoke team link error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to revoke team link")
     return {"success": True, "message": "Team link revoked"}
 
 

@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta, timezone
 import logging
-import os
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -45,11 +44,6 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     if not credentials:
         return None
     token = credentials.credentials
-    if os.getenv("ENVIRONMENT") != "production":
-        if token and token.startswith("mock_token_"):
-            logger.warning("Mock token used in development mode")
-            user_id = token.replace("mock_token_", "")
-            return {"id": user_id, "user_id": user_id, "role": "user"}
     payload = decode_token(token)
     user_id = payload.get("sub")
     if user_id is None:

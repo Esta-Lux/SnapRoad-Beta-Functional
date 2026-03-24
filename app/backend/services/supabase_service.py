@@ -87,8 +87,12 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
         if ("already" in err and "exist" in err) or ("duplicate" in err):
             raise HTTPException(status_code=400, detail="Email already registered")
 
-        logger.error("sb_create_user failed for %s: %s", email, e)
-        raise HTTPException(status_code=500, detail="Failed to create user account")
+        logger.error("sb_create_user failed for %s: %s", email, e, exc_info=True)
+        from config import ENVIRONMENT
+        detail = "Failed to create user account"
+        if ENVIRONMENT != "production":
+            detail += f" — {type(e).__name__}: {e}"
+        raise HTTPException(status_code=500, detail=detail)
 
 
 def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[str]]:

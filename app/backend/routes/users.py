@@ -1,26 +1,45 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Query
 from models.schemas import PlanUpdate, CarCustomization
 from services.mock_data import (
-    users_db, current_user_id, pricing_config,
+    users_db, pricing_config,
     calculate_xp_for_level, calculate_xp_to_next_level,
     CAR_MODELS, CAR_SKINS, PREMIUM_COLORS,
     notification_settings, faq_data,
 )
+from middleware.auth import get_current_user
 
 router = APIRouter(prefix="/api", tags=["Users"])
 
 
+def _get_user_store(user: dict | None) -> dict:
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    user_id = str(user.get("user_id") or user.get("id") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid auth context")
+    if user_id not in users_db:
+        users_db[user_id] = {
+            "id": user_id,
+            "name": user.get("email", "Driver").split("@")[0].title() if user.get("email") else "Driver",
+            "email": user.get("email", ""),
+            "plan": "basic",
+            "is_premium": False,
+            "gem_multiplier": 1,
+            "vehicle_height_meters": None,
+        }
+    users_db[user_id].setdefault("vehicle_height_meters", None)
+    return users_db[user_id]
+
+
 @router.get("/user/profile")
-def get_user_profile():
-    user = users_db.get(current_user_id, {})
-    # Nullable profile field: null => no clearance restrictions configured.
-    user.setdefault("vehicle_height_meters", None)
+def get_user_profile(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     return {"success": True, "data": user}
 
 
 @router.get("/user/stats")
-def get_user_stats():
-    user = users_db.get(current_user_id, {})
+def get_user_stats(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     return {
         "success": True,
         "data": {
@@ -35,10 +54,8 @@ def get_user_stats():
 
 
 @router.post("/user/plan")
-def update_user_plan(plan: PlanUpdate):
-    if current_user_id not in users_db:
-        return {"success": False, "message": "User not found"}
-    user = users_db[current_user_id]
+def update_user_plan(plan: PlanUpdate, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     if plan.plan == "premium":
         user["is_premium"] = True
         user["plan"] = "premium"
@@ -53,18 +70,18 @@ def update_user_plan(plan: PlanUpdate):
 
 
 @router.post("/user/car")
-def update_user_car(car: CarCustomization):
-    if current_user_id in users_db:
-        users_db[current_user_id]["car_category"] = car.category
-        users_db[current_user_id]["car_variant"] = car.variant
-        users_db[current_user_id]["car_color"] = car.color
-        users_db[current_user_id]["car_selected"] = True
+def update_user_car(car: CarCustomization, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    user["car_category"] = car.category
+    user["car_variant"] = car.variant
+    user["car_color"] = car.color
+    user["car_selected"] = True
     return {"success": True, "message": "Car customization saved"}
 
 
 @router.get("/user/car")
-def get_user_car():
-    user = users_db.get(current_user_id, {})
+def get_user_car(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     return {
         "success": True,
         "data": {
@@ -77,8 +94,8 @@ def get_user_car():
 
 
 @router.get("/user/car/colors")
-def get_car_colors():
-    user = users_db.get(current_user_id, {})
+def get_car_colors(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     is_premium = user.get("is_premium", False)
     gems = user.get("gems", 0)
     colors = {
@@ -95,20 +112,21 @@ def get_car_colors():
 
 
 @router.post("/user/car/color/{color_key}/purchase")
-def purchase_car_color(color_key: str):
-    user = users_db.get(current_user_id, {})
+def purchase_car_color(color_key: str, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
     cost = PREMIUM_COLORS.get(color_key, 0)
     if cost > 0:
         if user.get("gems", 0) < cost:
             return {"success": False, "message": "Not enough gems"}
-        users_db[current_user_id]["gems"] = user["gems"] - cost
-    users_db[current_user_id]["car_color"] = color_key
+        users_db[user_id]["gems"] = user["gems"] - cost
+    users_db[user_id]["car_color"] = color_key
     return {"success": True, "message": f"Color {color_key} applied!"}
 
 
 @router.get("/user/onboarding-status")
-def get_onboarding_status():
-    user = users_db.get(current_user_id, {})
+def get_onboarding_status(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     return {
         "success": True,
         "data": {
@@ -121,17 +139,18 @@ def get_onboarding_status():
 
 
 @router.get("/session/reset")
-def reset_session():
-    if current_user_id in users_db:
-        users_db[current_user_id]["onboarding_complete"] = False
-        users_db[current_user_id]["plan_selected"] = False
-        users_db[current_user_id]["car_selected"] = False
+def reset_session(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
+    users_db[user_id]["onboarding_complete"] = False
+    users_db[user_id]["plan_selected"] = False
+    users_db[user_id]["car_selected"] = False
     return {"success": True, "message": "Session reset"}
 
 
 @router.get("/cars")
-def get_cars():
-    user = users_db.get(current_user_id, {})
+def get_cars(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     owned = user.get("owned_cars", [1])
     equipped = user.get("equipped_car", 1)
     return {
@@ -144,27 +163,29 @@ def get_cars():
 
 
 @router.post("/cars/{car_id}/purchase")
-def purchase_car(car_id: int):
+def purchase_car(car_id: int, auth_user: dict = Depends(get_current_user)):
     car = next((c for c in CAR_MODELS if c["id"] == car_id), None)
     if not car:
         return {"success": False, "message": "Car not found"}
-    user = users_db.get(current_user_id, {})
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
     if user.get("gems", 0) < car["price"]:
         return {"success": False, "message": "Not enough gems"}
-    users_db[current_user_id]["gems"] -= car["price"]
-    users_db[current_user_id].setdefault("owned_cars", [1]).append(car_id)
+    users_db[user_id]["gems"] -= car["price"]
+    users_db[user_id].setdefault("owned_cars", [1]).append(car_id)
     return {"success": True, "message": f"Purchased {car['name']}!"}
 
 
 @router.post("/cars/{car_id}/equip")
-def equip_car(car_id: int):
-    users_db.setdefault(current_user_id, {})["equipped_car"] = car_id
+def equip_car(car_id: int, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    users_db[str(user.get("id"))]["equipped_car"] = car_id
     return {"success": True, "message": "Car equipped!"}
 
 
 @router.get("/skins")
-def get_skins():
-    user = users_db.get(current_user_id, {})
+def get_skins(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     owned = user.get("owned_skins", [1])
     equipped = user.get("equipped_skin", 1)
     return {
@@ -177,21 +198,23 @@ def get_skins():
 
 
 @router.post("/skins/{skin_id}/purchase")
-def purchase_skin(skin_id: int):
+def purchase_skin(skin_id: int, auth_user: dict = Depends(get_current_user)):
     skin = next((s for s in CAR_SKINS if s["id"] == skin_id), None)
     if not skin:
         return {"success": False, "message": "Skin not found"}
-    user = users_db.get(current_user_id, {})
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
     if user.get("gems", 0) < skin["price"]:
         return {"success": False, "message": "Not enough gems"}
-    users_db[current_user_id]["gems"] -= skin["price"]
-    users_db[current_user_id].setdefault("owned_skins", [1]).append(skin_id)
+    users_db[user_id]["gems"] -= skin["price"]
+    users_db[user_id].setdefault("owned_skins", [1]).append(skin_id)
     return {"success": True, "message": f"Purchased {skin['name']}!"}
 
 
 @router.post("/skins/{skin_id}/equip")
-def equip_skin(skin_id: int):
-    users_db.setdefault(current_user_id, {})["equipped_skin"] = skin_id
+def equip_skin(skin_id: int, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    users_db[str(user.get("id"))]["equipped_skin"] = skin_id
     return {"success": True, "message": "Skin equipped!"}
 
 
@@ -201,14 +224,24 @@ def get_pricing():
 
 
 @router.get("/settings/notifications")
-def get_notification_settings():
-    return {"success": True, "data": notification_settings}
+def get_notification_settings(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    settings = user.get("notification_settings")
+    if not isinstance(settings, dict):
+        settings = {**notification_settings}
+        user["notification_settings"] = settings
+    return {"success": True, "data": settings}
 
 
 @router.post("/settings/notifications")
-def update_notification_settings(settings: dict):
-    notification_settings.update(settings)
-    return {"success": True, "message": "Settings updated"}
+def update_notification_settings(settings: dict, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    current = user.get("notification_settings")
+    if not isinstance(current, dict):
+        current = {**notification_settings}
+    current.update(settings)
+    user["notification_settings"] = current
+    return {"success": True, "message": "Settings updated", "data": current}
 
 
 @router.get("/help/faq")
@@ -236,12 +269,12 @@ _notifications = [
 
 
 @router.get("/notifications")
-def get_notifications():
+def get_notifications(_auth_user: dict = Depends(get_current_user)):
     return {"success": True, "data": _notifications}
 
 
 @router.put("/notifications/{notification_id}/read")
-def mark_notification_read(notification_id: int):
+def mark_notification_read(notification_id: int, _auth_user: dict = Depends(get_current_user)):
     for n in _notifications:
         if n["id"] == notification_id:
             n["read"] = True
@@ -250,7 +283,7 @@ def mark_notification_read(notification_id: int):
 
 
 @router.put("/notifications/read-all")
-def mark_all_read():
+def mark_all_read(_auth_user: dict = Depends(get_current_user)):
     for n in _notifications:
         n["read"] = True
     return {"success": True, "message": "All notifications marked as read"}
@@ -258,15 +291,15 @@ def mark_all_read():
 
 # ==================== VEHICLES ====================
 @router.get("/user/vehicles")
-def get_vehicles():
-    user = users_db.get(current_user_id, {})
+def get_vehicles(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     car = user.get("car", {})
     return {"success": True, "data": [car] if car else []}
 
 
 @router.post("/user/vehicles")
-def add_vehicle(vehicle: dict):
-    user = users_db.get(current_user_id, {})
+def add_vehicle(vehicle: dict, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     user["car"] = vehicle
     return {"success": True, "data": vehicle}
 
@@ -288,17 +321,27 @@ def get_family_group():
 
 # ==================== SETTINGS (PUT support) ====================
 @router.put("/settings/notifications")
-def update_notification_settings_put(category: str = "", setting: str = "", enabled: bool = True):
+def update_notification_settings_put(
+    auth_user: dict = Depends(get_current_user),
+    category: str = Query(default=""),
+    setting: str = Query(default=""),
+    enabled: bool = Query(default=True),
+):
+    user = _get_user_store(auth_user)
+    settings = user.get("notification_settings")
+    if not isinstance(settings, dict):
+        settings = {**notification_settings}
     if category and setting:
-        if category not in notification_settings:
-            notification_settings[category] = {}
-        notification_settings[category][setting] = enabled
-    return {"success": True, "message": "Settings updated", "data": notification_settings}
+        if category not in settings:
+            settings[category] = {}
+        settings[category][setting] = enabled
+    user["notification_settings"] = settings
+    return {"success": True, "message": "Settings updated", "data": settings}
 
 
 @router.put("/user/profile")
-def update_profile(body: dict):
-    user = users_db.get(current_user_id, {})
+def update_profile(body: dict, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     updates = {k: v for k, v in body.items() if k not in ("id", "email")}
     if "vehicle_height_meters" in updates:
         raw = updates.get("vehicle_height_meters")

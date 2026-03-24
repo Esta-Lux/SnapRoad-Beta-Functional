@@ -41,7 +41,7 @@ Use that URL.
 2. **Hard refresh** – `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows).
 3. **Run from project root** – `npm run dev` must be run from the folder that contains this `GETTING_STARTED.md` (so both backend and frontend start).
 4. **Two terminals (alternative):**
-   - Terminal 1: `cd app/backend && python run_server.py`
+   - Terminal 1: `cd app/backend && python run_server.py` (API on **port 8001** — if something else grabs 8001 on Windows, see `app/backend/README.md`)
    - Terminal 2: `cd app/frontend && npm run dev`
    - Then open the URL that the frontend terminal prints (e.g. http://localhost:3000 or http://127.0.0.1:3001).
 

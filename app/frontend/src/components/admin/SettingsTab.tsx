@@ -31,7 +31,6 @@ interface SettingsTabProps {
 }
 
 type SettingsData = Record<string, Record<string, any>>
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
 
 const defaultGeneral = { platform_name: '', maintenance_mode: false, debug_mode: false }
 const defaultSecurity = { jwt_expiry_hours: 24, password_min_length: 8, require_2fa: false }

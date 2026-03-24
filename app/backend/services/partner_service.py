@@ -152,6 +152,10 @@ class PartnerService:
             tm for tm in partner_db["team_members"].values()
             if tm["partner_id"] == partner_id
         ]
+
+    def get_team_member(self, member_id: str) -> Optional[dict]:
+        """Get a single team member by ID."""
+        return partner_db["team_members"].get(member_id)
     
     def invite_team_member(self, partner_id: str, email: str, role: str, method: str = "email") -> dict:
         """Invite a new team member"""

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useMemo, type ReactNode } from 'react';
 import { useColorScheme, StatusBar } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 
 type Theme = 'light' | 'dark';
 
@@ -95,12 +96,28 @@ const ThemeContext = createContext<ThemeContextType>({
   toggleTheme: () => {},
 });
 
+const THEME_KEY = 'snaproad_theme';
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const systemScheme = useColorScheme();
   const [theme, setTheme] = useState<Theme>(systemScheme === 'light' ? 'light' : 'dark');
   const isLight = theme === 'light';
   const colors = useMemo(() => (isLight ? LIGHT : DARK), [isLight]);
-  const toggleTheme = () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  React.useEffect(() => {
+    (async () => {
+      const saved = await SecureStore.getItemAsync(THEME_KEY);
+      if (saved === 'light' || saved === 'dark') {
+        setTheme(saved);
+      }
+    })();
+  }, []);
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      SecureStore.setItemAsync(THEME_KEY, next).catch(() => {});
+      return next;
+    });
+  };
 
   return (
     <ThemeContext.Provider value={{ theme, isLight, colors, toggleTheme }}>

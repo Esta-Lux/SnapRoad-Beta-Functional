@@ -8,10 +8,25 @@ SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY")
 SUPABASE_PUBLISHABLE_KEY = os.environ.get("SUPABASE_PUBLISHABLE_KEY")
 SUPABASE_DB_PASSWORD = os.environ.get("SUPABASE_DB_PASSWORD")  # Optional: DB password for direct connection
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "snaproad-jwt-secret-change-in-prod")
+JWT_SECRET_DEFAULT = "snaproad-jwt-secret-change-in-prod"
+JWT_SECRET = os.environ.get("JWT_SECRET", JWT_SECRET_DEFAULT)
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
+
+
+def validate_runtime_config() -> None:
+    """Fail fast on insecure production authentication configuration."""
+    if ENVIRONMENT != "production":
+        return
+    secret = (JWT_SECRET or "").strip()
+    if (
+        not secret
+        or secret == JWT_SECRET_DEFAULT
+        or len(secret) < 32
+        or "change-in-prod" in secret
+    ):
+        raise RuntimeError("Invalid JWT_SECRET for production; set a strong secret (>=32 chars)")
 
 # OpenAI API Key for AI features (Orion Coach, Photo Analysis)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")

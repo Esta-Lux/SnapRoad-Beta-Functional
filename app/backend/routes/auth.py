@@ -1,10 +1,8 @@
 import logging
-import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from models.schemas import SignupRequest, LoginRequest
-from services.mock_data import users_db, user_credentials, create_new_user
 from middleware.auth import create_access_token
 from database import get_supabase
 from services.supabase_service import (
@@ -41,7 +39,7 @@ def _clean(user: dict) -> dict:
 
 @router.post("/signup")
 def signup(request: SignupRequest):
-    # 1. Try Supabase first (skip if not configured)
+    # Supabase only (no mock fallback)
     try:
         existing = sb_get_user_by_email(request.email)
         if existing:
@@ -53,31 +51,15 @@ def signup(request: SignupRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning(f"Supabase signup failed, using mock: {e}")
-
-    # 2. Mock fallback
-    try:
-        if request.email in user_credentials:
-            raise HTTPException(status_code=400, detail="Email already registered")
-        import services.mock_data as mock_data
-        # Use a UUID so mock tokens can still hit Supabase-backed routes (which expect UUID user ids).
-        new_id = str(uuid.uuid4())
-        user_credentials[request.email] = {"password": request.password, "user_id": new_id}
-        users_db[new_id] = create_new_user(new_id, request.name, request.email)
-        token = create_access_token({"sub": new_id, "email": request.email, "role": "user"})
-        return {"success": True, "data": {"user": _clean(users_db[new_id]), "token": token}}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Signup mock path failed: %s", e)
-        raise HTTPException(status_code=500, detail="Signup failed. Please try again.")
+        logger.exception("Supabase signup failed: %s", e)
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
 
 
 @router.post("/login")
 def login(request: LoginRequest):
     sb_error: Optional[str] = None
 
-    # 1. Try Supabase auth
+    # Supabase only (no mock fallback)
     try:
         sb_user, sb_error = sb_login_user(request.email, request.password)
         if sb_user:
@@ -94,18 +76,10 @@ def login(request: LoginRequest):
         logger.warning(f"Supabase login error: {e}")
         sb_error = str(e)
 
-    # 2. Mock fallback
-    cred = user_credentials.get(request.email)
-    if not cred or cred["password"] != request.password:
-        detail = "Invalid email or password"
-        if sb_error:
-            logger.info(f"Both Supabase and mock failed for {request.email}. Supabase reason: {sb_error}")
-        raise HTTPException(status_code=401, detail=detail)
-
-    uid = cred["user_id"]
-    user = users_db.get(uid, {})
-    token = create_access_token({"sub": uid, "email": request.email, "role": "user"})
-    return {"success": True, "data": {"user": _clean(user), "token": token}}
+    detail = "Invalid email or password"
+    if sb_error and "invalid email or password" not in sb_error.lower():
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
+    raise HTTPException(status_code=401, detail=detail)
 
 
 @router.post("/oauth/supabase")
@@ -175,17 +149,5 @@ def oauth_supabase(payload: dict):
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("oauth_supabase profile sync failed, falling back to mock: %s", e)
-
-    # 3. Mock fallback (still returns a valid SnapRoad JWT)
-    new_id = uid or str(uuid.uuid4())
-    if email not in user_credentials:
-        user_credentials[email] = {"password": "__oauth__", "user_id": new_id}
-    if new_id not in users_db:
-        users_db[new_id] = create_new_user(new_id, name, email)
-    try:
-        token = create_access_token({"sub": new_id, "email": email, "role": "user"})
-        return {"success": True, "data": {"user": _clean(users_db[new_id]), "token": token}}
-    except Exception as e:
-        logger.exception("oauth_supabase mock fallback failed: %s", e)
-        raise HTTPException(status_code=500, detail="OAuth login failed. Please try again.")
+        logger.exception("oauth_supabase profile sync failed: %s", e)
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")

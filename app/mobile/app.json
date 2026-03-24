@@ -22,6 +22,7 @@
     },
     "android": {
       "package": "com.snaproad.app",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#0a0a0f",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -58,7 +59,6 @@
       "expo-secure-store"
     ],
     "extra": {
-      "apiUrl": "https://ten-radios-roll.loca.lt",
       "mapboxPublicToken": "pk.eyJ1Ijoic25hcHJvYWQiLCJhIjoiY21rdDkxbXR0MTRiODNsb2Q4dDdoaHFraSJ9.gE8IUpGUVsu50hH30SYAtg",
       "supabaseUrl": "https://cuseezsdaqlbwlxnjsyr.supabase.co",
       "supabaseAnonKey": "sb_publishable_nzMWmL8pGRDgHciQLVcbHw_8qa65YZl",

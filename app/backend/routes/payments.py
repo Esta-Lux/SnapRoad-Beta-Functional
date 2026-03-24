@@ -3,11 +3,12 @@
 # Uses standard Stripe SDK - no platform-specific dependencies
 
 import os
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Dict
 from datetime import datetime
 from dotenv import load_dotenv
+from middleware.auth import get_current_user, require_admin
 
 load_dotenv()
 
@@ -42,7 +43,7 @@ payment_transactions: Dict[str, dict] = {}
 
 class CreateCheckoutRequest(BaseModel):
     plan_id: str  # "premium" or "family"
-    origin_url: str  # Frontend origin for success/cancel URLs
+    origin_url: Optional[str] = None  # Optional hint; server allowlist decides final origin
     user_id: Optional[str] = None
     user_email: Optional[str] = None
 
@@ -50,6 +51,18 @@ class CreateCheckoutRequest(BaseModel):
 class CheckoutResponse(BaseModel):
     url: str
     session_id: str
+
+
+def _resolve_allowed_origin(request_origin: Optional[str]) -> str:
+    configured = (os.environ.get("CHECKOUT_ALLOWED_ORIGINS") or "").strip()
+    allowed = [o.strip().rstrip("/") for o in configured.split(",") if o.strip()]
+    if not allowed:
+        fallback = (os.environ.get("FRONTEND_URL") or "http://localhost:5173").strip().rstrip("/")
+        allowed = [fallback]
+    requested = (request_origin or "").strip().rstrip("/")
+    if requested and requested in allowed:
+        return requested
+    return allowed[0]
 
 
 @router.get("/plans")
@@ -62,8 +75,14 @@ async def get_subscription_plans():
 
 
 @router.post("/checkout/session", response_model=CheckoutResponse)
-async def create_checkout_session(request: Request, checkout_data: CreateCheckoutRequest):
+async def create_checkout_session(
+    request: Request,
+    checkout_data: CreateCheckoutRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """Create a Stripe checkout session for subscription upgrade"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
     
     # Validate plan exists and is not free
     if checkout_data.plan_id not in SUBSCRIPTION_PLANS:
@@ -81,8 +100,8 @@ async def create_checkout_session(request: Request, checkout_data: CreateCheckou
     import stripe
     stripe.api_key = api_key
     
-    # Build success and cancel URLs from frontend origin
-    origin = checkout_data.origin_url.rstrip("/")
+    # Build success and cancel URLs from server allowlisted origin only
+    origin = _resolve_allowed_origin(checkout_data.origin_url)
     success_url = f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin}/payment/cancel"
     
@@ -122,7 +141,7 @@ async def create_checkout_session(request: Request, checkout_data: CreateCheckou
             metadata={
                 "plan_id": checkout_data.plan_id,
                 "plan_name": plan["name"],
-                "user_id": checkout_data.user_id or "anonymous",
+                "user_id": str(current_user.get("user_id") or current_user.get("id") or checkout_data.user_id or "anonymous"),
                 "source": "snaproad_mobile"
             }
         )
@@ -134,8 +153,8 @@ async def create_checkout_session(request: Request, checkout_data: CreateCheckou
             "plan_name": plan["name"],
             "amount": plan["price"],
             "currency": "usd",
-            "user_id": checkout_data.user_id,
-            "user_email": checkout_data.user_email,
+            "user_id": str(current_user.get("user_id") or current_user.get("id") or checkout_data.user_id or ""),
+            "user_email": checkout_data.user_email or current_user.get("email"),
             "payment_status": "pending",
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
@@ -199,7 +218,7 @@ async def get_checkout_status(request: Request, session_id: str):
 
 
 @router.get("/transactions")
-async def get_payment_transactions():
+async def get_payment_transactions(_admin: dict = Depends(require_admin)):
     """Get all payment transactions (admin use)"""
     return {
         "success": True,
@@ -208,7 +227,7 @@ async def get_payment_transactions():
 
 
 @router.get("/transaction/{session_id}")
-async def get_payment_transaction(session_id: str):
+async def get_payment_transaction(session_id: str, _admin: dict = Depends(require_admin)):
     """Get a specific payment transaction"""
     if session_id not in payment_transactions:
         raise HTTPException(status_code=404, detail="Transaction not found")

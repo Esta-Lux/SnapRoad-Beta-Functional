@@ -46,11 +46,12 @@ from routes.webhooks import router as webhooks_router
 from routes.payments import router as payments_router
 from routes.family import router as family_router
 from routes.photo_reports import router as photo_reports_router
-from config import JWT_SECRET, SUPABASE_URL, SUPABASE_SECRET_KEY, OPENAI_API_KEY
+from config import JWT_SECRET, SUPABASE_URL, SUPABASE_SECRET_KEY, OPENAI_API_KEY, validate_runtime_config
 from services.telemetry_service import telemetry_service
 
 
 def create_app() -> FastAPI:
+    validate_runtime_config()
     app = FastAPI(title="SnapRoad API")
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
