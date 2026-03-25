@@ -19,6 +19,14 @@ import type { ThemeColors } from '../../contexts/ThemeContext';
 
 type NotificationItem = { label: string; val: boolean; set: (v: boolean) => void };
 type HeightPreset = { label: string; value: string };
+export type ProfileOverviewActionItem = {
+  key: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  badgeText?: string;
+  onPress?: () => void;
+};
 
 export function SectionHeader({ title, isLight }: { title: string; isLight: boolean }) {
   return <Text style={[sStyles.sectionTitle, { color: isLight ? '#111' : '#fff' }]}>{title}</Text>;
@@ -36,7 +44,7 @@ export function ProfileHeader({
   planName: string;
 }) {
   return (
-    <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerCard}>
+    <LinearGradient colors={['#1D4ED8', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerCard}>
       <TouchableOpacity style={styles.avatarCircle}>
         <Text style={styles.avatarText}>{initials}</Text>
       </TouchableOpacity>
@@ -47,6 +55,64 @@ export function ProfileHeader({
         <Text style={styles.planBadgeText}>{planName}</Text>
       </View>
     </LinearGradient>
+  );
+}
+
+export function ProfileOverviewSection({
+  actions,
+  cardBg,
+  text,
+  sub,
+}: {
+  actions: ProfileOverviewActionItem[];
+  cardBg: string;
+  text: string;
+  sub: string;
+}) {
+  return (
+    <>
+      <View style={[styles.progressCard, { backgroundColor: cardBg }]}>
+        <LinearGradient colors={['#2563EB', '#3B82F6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.progressGradient}>
+          <View style={styles.progressLevelIcon}>
+            <Text style={styles.progressLevelText}>LVL</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.progressTitle}>Level</Text>
+            <Text style={styles.progressSub}>0 XP total</Text>
+          </View>
+          <Text style={styles.progressAction}>View Progress</Text>
+        </LinearGradient>
+      </View>
+
+      <View style={{ marginTop: -2 }}>
+        {actions.map((item) => (
+          <TouchableOpacity key={item.key} style={[styles.actionRow, { backgroundColor: cardBg }]} onPress={item.onPress}>
+            <View style={styles.actionIconWrap}>
+              <Ionicons name={item.icon} size={16} color="#60A5FA" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.actionTitleRow}>
+                <Text style={[styles.actionTitle, { color: text }]}>{item.label}</Text>
+                {!!item.badgeText && <Text style={styles.actionBadge}>{item.badgeText}</Text>}
+              </View>
+              <Text style={[styles.actionSub, { color: sub }]}>{item.value}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={14} color={sub} />
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <TouchableOpacity activeOpacity={0.9} style={{ marginHorizontal: 16, marginTop: 8, marginBottom: 2 }}>
+        <LinearGradient colors={['#3B82F6', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.shareScoreCta}>
+          <Ionicons name="share-social-outline" size={16} color="#fff" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.shareScoreTitle}>Share Trip Score</Text>
+            <Text style={styles.shareScoreSub}>Show off your safe driving!</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.9)" />
+        </LinearGradient>
+      </TouchableOpacity>
+    </>
   );
 }
 
@@ -193,7 +259,7 @@ export function RoutesCard({
       ) : (
         routes.map((r) => (
           <View key={r.id} style={styles.listRow}>
-            <Ionicons name="git-branch-outline" size={16} color="#8B5CF6" />
+            <Ionicons name="git-branch-outline" size={16} color="#3B82F6" />
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={[styles.listTitle, { color: text }]}>{r.name}</Text>
               <Text style={{ color: sub, fontSize: 11 }}>{r.origin}{' -> '}{r.destination}</Text>
@@ -438,4 +504,20 @@ const styles = StyleSheet.create({
   planCardActive: { borderColor: '#3B82F6', borderWidth: 2 },
   planCardName: { fontSize: 16, fontWeight: '700' },
   planCardPrice: { fontSize: 16, fontWeight: '800' },
+  progressCard: { marginHorizontal: 16, marginBottom: 8, borderRadius: 12, overflow: 'hidden' },
+  progressGradient: { paddingHorizontal: 12, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  progressLevelIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
+  progressLevelText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  progressTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  progressSub: { color: 'rgba(255,255,255,0.86)', fontSize: 11, marginTop: 1 },
+  progressAction: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  actionRow: { marginHorizontal: 16, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  actionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  actionIconWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(59,130,246,0.15)', alignItems: 'center', justifyContent: 'center' },
+  actionTitle: { fontSize: 14, fontWeight: '700' },
+  actionBadge: { color: '#F59E0B', fontSize: 9, fontWeight: '800', backgroundColor: 'rgba(245,158,11,0.14)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  actionSub: { fontSize: 11, marginTop: 1 },
+  shareScoreCta: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  shareScoreTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  shareScoreSub: { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1 },
 });

@@ -129,8 +129,10 @@ export interface Challenge {
   description: string;
   progress: number;
   goal: number;
+  target?: number;
   gems: number;
   completed: boolean;
+  claimed?: boolean;
   type?: string;
 }
 

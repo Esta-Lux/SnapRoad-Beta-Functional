@@ -9,6 +9,8 @@ interface AuthContextType {
   authError: string | null;
   login: (email: string, password: string) => Promise<boolean>;
   signup: (name: string, email: string, password: string) => Promise<boolean>;
+  forgotPassword: (email: string) => Promise<{ ok: boolean; message: string }>;
+  resendVerification: (email: string) => Promise<{ ok: boolean; message: string }>;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
   setUserFromApi: (apiUser: ApiUser | null) => void;
@@ -118,6 +120,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
+  const forgotPassword = async (email: string): Promise<{ ok: boolean; message: string }> => {
+    const result = await api.forgotPassword(email.trim());
+    if (!result.success) {
+      return { ok: false, message: result.error || 'Could not send reset email' };
+    }
+    const payload = (result.data as { data?: { message?: string }; message?: string })?.data ?? result.data;
+    const message = payload?.message || 'If an account exists, a reset email has been sent.';
+    return { ok: true, message };
+  };
+
+  const resendVerification = async (email: string): Promise<{ ok: boolean; message: string }> => {
+    const result = await api.resendVerification(email.trim());
+    if (!result.success) {
+      return { ok: false, message: result.error || 'Could not send verification email' };
+    }
+    const payload = (result.data as { data?: { message?: string }; message?: string })?.data ?? result.data;
+    const message = payload?.message || 'If an account exists, a verification email has been sent.';
+    return { ok: true, message };
+  };
+
   const logout = async () => {
     await api.logout();
     setUser(null);
@@ -138,7 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated: !!user, isLoading, authError, login, signup, logout, updateUser, setUserFromApi }}
+      value={{ user, isAuthenticated: !!user, isLoading, authError, login, signup, forgotPassword, resendVerification, logout, updateUser, setUserFromApi }}
     >
       {children}
     </AuthContext.Provider>

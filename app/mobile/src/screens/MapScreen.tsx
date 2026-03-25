@@ -1,8 +1,9 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
-  Platform, Keyboard, SafeAreaView, Alert, Switch,
+  Platform, Keyboard, Alert, Switch,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapboxGL, { isMapAvailable } from '../utils/mapbox';
 import Constants from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -59,6 +60,7 @@ function timeAgo(iso: string): string {
 }
 
 export default function MapScreen() {
+  const insets = useSafeAreaInsets();
   const { location, heading, speed, isLocating, permissionDenied } = useLocation();
   const { isLight, colors } = useTheme();
   const { user } = useAuth();
@@ -307,7 +309,8 @@ export default function MapScreen() {
           <Ionicons name="map-outline" size={48} color="#3B82F6" />
           <Text style={styles.mapPlaceholderTitle}>Map requires Dev Build</Text>
           <Text style={styles.mapPlaceholderSub}>
-            Mapbox needs native code. Run {'"'}npx expo run:ios{'"'} for the full map.{'\n'}
+            Mapbox needs native code. Use a dev build:
+            {'\n'}iOS: {'"'}npx expo run:ios{'"'}  Android: {'"'}npx expo run:android{'"'}{'\n'}
             Search, navigation, and other features work below.
           </Text>
           <Text style={styles.mapPlaceholderCoords}>
@@ -318,7 +321,7 @@ export default function MapScreen() {
 
       {/* Top bar: hamburger + search + mic + chips + quick places */}
       {!nav.isNavigating && !nav.showRoutePreview && (
-        <SafeAreaView style={[styles.searchContainer, { top: Platform.OS === 'ios' ? 8 : 12 }]}>
+        <SafeAreaView style={[styles.searchContainer, { top: insets.top + 8 }]} edges={['top']}>
           {/* Row 1: Hamburger + Search pill */}
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
             <TouchableOpacity style={[styles.hamburger, { backgroundColor: isLight ? '#fff' : '#1e293b', borderColor: isLight ? 'transparent' : 'rgba(255,255,255,0.1)' }]}
@@ -393,7 +396,7 @@ export default function MapScreen() {
 
       {/* Turn card -- gradient blue matching web */}
       {nav.isNavigating && currentStep && (
-        <SafeAreaView style={styles.turnCardContainer}>
+        <SafeAreaView style={[styles.turnCardContainer, { top: insets.top }]} edges={['top']}>
           <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.turnCard}>
             <View style={styles.turnIconBox}>{getTurnIcon(currentStep.maneuver)}</View>
             <View style={styles.turnTextBox}>
@@ -407,7 +410,7 @@ export default function MapScreen() {
 
       {/* Report card (during nav or ambient) */}
       {activeReportCard && (
-        <View style={[styles.reportCard, { borderLeftWidth: 4, borderLeftColor: INCIDENT_COLORS[activeReportCard.type] ?? '#F59E0B' }]}>
+        <View style={[styles.reportCard, { top: insets.top + 44, borderLeftWidth: 4, borderLeftColor: INCIDENT_COLORS[activeReportCard.type] ?? '#F59E0B' }]}>
           <Ionicons name="warning-outline" size={18} color={INCIDENT_COLORS[activeReportCard.type] ?? '#F59E0B'} />
           <View style={{ flex: 1, marginLeft: 10 }}>
             <Text style={styles.reportCardTitle}>
@@ -437,7 +440,7 @@ export default function MapScreen() {
 
       {/* Ambient mode indicator */}
       {isAmbient && (
-        <View style={styles.ambientBadge}>
+        <View style={[styles.ambientBadge, { top: insets.top + 8 }]}>
           <Ionicons name="eye-outline" size={14} color="#3B82F6" />
           <Text style={styles.ambientText}>Watching the road ahead</Text>
         </View>
@@ -554,14 +557,14 @@ export default function MapScreen() {
 
       {/* Recenter -- pill matching web */}
       {nav.isNavigating && !cameraLocked && (
-        <TouchableOpacity style={styles.recenterPill} onPress={handleRecenter}>
+        <TouchableOpacity style={[styles.recenterPill, { top: insets.top + 88 }]} onPress={handleRecenter}>
           <Text style={styles.recenterText}>Recenter</Text>
         </TouchableOpacity>
       )}
 
       {/* Orion voice button */}
       {!nav.isNavigating && !nav.showRoutePreview && (
-        <TouchableOpacity style={styles.orionBtn} onPress={() => setShowOrion(true)} activeOpacity={0.8}>
+        <TouchableOpacity style={[styles.orionBtn, { top: insets.top + 118 }]} onPress={() => setShowOrion(true)} activeOpacity={0.8}>
           <LinearGradient colors={user?.isPremium ? ['#7C3AED', '#5B21B6'] : ['#94a3b8', '#64748b']} style={styles.orionBtnGrad}>
             <Ionicons name="mic-outline" size={22} color="#fff" />
           </LinearGradient>
@@ -603,7 +606,7 @@ export default function MapScreen() {
       {/* Map style button */}
       {!nav.isNavigating && !nav.showRoutePreview && (
         <TouchableOpacity
-          style={[styles.mapStyleBtn, { backgroundColor: colors.card }]}
+          style={[styles.mapStyleBtn, { top: insets.top + 66, backgroundColor: colors.card }]}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowMapStylePicker(true); }}>
           <Ionicons name="layers-outline" size={20} color={colors.text} />
         </TouchableOpacity>
@@ -631,7 +634,7 @@ export default function MapScreen() {
       )}
 
       {isLocating && (
-        <View style={styles.locatingBanner}><Text style={styles.locatingText}>Finding your location...</Text></View>
+        <View style={[styles.locatingBanner, { top: insets.top + 84 }]}><Text style={styles.locatingText}>Finding your location...</Text></View>
       )}
 
       {/* Orion chat */}

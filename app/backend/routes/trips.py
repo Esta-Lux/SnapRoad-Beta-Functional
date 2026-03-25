@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from typing import Optional
 from datetime import datetime, timedelta
 import json
-from models.schemas import TripResult, FuelLog, ReportIncident
+from models.schemas import TripResult, FuelLog
 from pydantic import BaseModel
 from uuid import uuid4
 from services.mock_data import (
@@ -424,10 +424,12 @@ def get_fuel_analytics(months: int = 3):
     return {"success": True, "data": {"monthly_breakdown": monthly_data, "current_fuel_price": FUEL_PRICES["regular"], "vehicle_efficiency": {"your_avg_mpg": 31.2, "national_avg_mpg": 25.4, "efficiency_rating": "Excellent"}}}
 
 
-# ==================== INCIDENTS ====================
-@router.post("/incidents/report")
-def report_incident(incident: ReportIncident):
-    return {"success": True, "message": f"Incident '{incident.incident_type}' reported. Thank you for keeping roads safe!"}
+# ==================== INCIDENTS (legacy shim) ====================
+# Keep a non-conflicting legacy endpoint to avoid shadowing the dedicated incidents router.
+@router.post("/incidents/report-legacy")
+def report_incident_legacy(incident: dict):
+    incident_type = str(incident.get("incident_type") or incident.get("type") or "unknown")
+    return {"success": True, "message": f"Incident '{incident_type}' reported. Thank you for keeping roads safe!"}
 
 
 # ==================== 3D ROUTE HISTORY ====================

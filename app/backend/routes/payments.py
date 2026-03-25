@@ -3,6 +3,7 @@
 # Uses standard Stripe SDK - no platform-specific dependencies
 
 import os
+import anyio
 from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Dict
@@ -99,6 +100,25 @@ async def create_checkout_session(
         raise HTTPException(status_code=500, detail="Stripe not configured. Set STRIPE_SECRET_KEY in environment.")
     import stripe
     stripe.api_key = api_key
+
+    # Prevent long/hanging Stripe network calls from blocking requests past the mobile client's timeout.
+    # Note: stripe-python performs blocking HTTP requests under the hood.
+    stripe_http_timeout_sec = float(os.environ.get("STRIPE_HTTP_TIMEOUT_SEC", "8"))
+    stripe_max_retries = int(os.environ.get("STRIPE_MAX_NETWORK_RETRIES", "0"))
+    try:
+        stripe.max_network_retries = stripe_max_retries
+    except Exception:
+        # Not all stripe-python versions expose this.
+        pass
+    for mod_path in ("stripe.http_client", "stripe._http_client"):
+        try:
+            http_client_mod = __import__(mod_path, fromlist=["RequestsClient"])
+            RequestsClient = getattr(http_client_mod, "RequestsClient", None)
+            if RequestsClient:
+                stripe.default_http_client = RequestsClient(timeout=stripe_http_timeout_sec)
+                break
+        except Exception:
+            continue
     
     # Build success and cancel URLs from server allowlisted origin only
     origin = _resolve_allowed_origin(checkout_data.origin_url)
@@ -130,21 +150,27 @@ async def create_checkout_session(
                 "quantity": 1,
             }]
 
-        # Create Stripe checkout session using standard SDK
-        session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            line_items=line_items,
-            mode="subscription" if plan["period"] == "month" else "payment",
-            success_url=success_url,
-            cancel_url=cancel_url,
-            customer_email=checkout_data.user_email if checkout_data.user_email else None,
-            metadata={
-                "plan_id": checkout_data.plan_id,
-                "plan_name": plan["name"],
-                "user_id": str(current_user.get("user_id") or current_user.get("id") or checkout_data.user_id or "anonymous"),
-                "source": "snaproad_mobile"
-            }
-        )
+        # Create Stripe checkout session using standard SDK.
+        # Run in a worker thread to avoid blocking the FastAPI event loop.
+        def _create_session_sync() -> object:
+            return stripe.checkout.Session.create(
+                payment_method_types=["card"],
+                line_items=line_items,
+                mode="subscription" if plan["period"] == "month" else "payment",
+                success_url=success_url,
+                cancel_url=cancel_url,
+                customer_email=checkout_data.user_email if checkout_data.user_email else None,
+                metadata={
+                    "plan_id": checkout_data.plan_id,
+                    "plan_name": plan["name"],
+                    "user_id": str(
+                        current_user.get("user_id") or current_user.get("id") or checkout_data.user_id or "anonymous"
+                    ),
+                    "source": "snaproad_mobile",
+                },
+            )
+
+        session = await anyio.to_thread.run_sync(_create_session_sync)
         
         # Store transaction record BEFORE redirect
         payment_transactions[session.id] = {

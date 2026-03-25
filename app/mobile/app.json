@@ -2,6 +2,7 @@
   "expo": {
     "name": "SnapRoad",
     "slug": "snaproad",
+    "scheme": "snaproad",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -60,6 +61,7 @@
     ],
     "extra": {
       "mapboxPublicToken": "pk.eyJ1Ijoic25hcHJvYWQiLCJhIjoiY21rdDkxbXR0MTRiODNsb2Q4dDdoaHFraSJ9.gE8IUpGUVsu50hH30SYAtg",
+      "apiUrl": "http://localhost:8001",
       "supabaseUrl": "https://cuseezsdaqlbwlxnjsyr.supabase.co",
       "supabaseAnonKey": "sb_publishable_nzMWmL8pGRDgHciQLVcbHw_8qa65YZl",
       "stripePublishableKey": "pk_test_replace_with_real_test_publishable_key",

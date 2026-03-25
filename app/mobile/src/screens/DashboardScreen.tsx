@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, FlatList, Alert,
-  TextInput, Modal, SafeAreaView, RefreshControl,
+  TextInput, Modal, RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -99,7 +100,7 @@ export default function DashboardScreen() {
   const onlineCount = friends.filter((f) => f.status === 'accepted' && f.is_sharing).length;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
       {/* Section toggle */}
       <View style={[styles.toggleRow, { backgroundColor: colors.surfaceSecondary }]}>
         {(['friends', 'family'] as Section[]).map((s) => (

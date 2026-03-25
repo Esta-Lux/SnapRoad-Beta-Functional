@@ -36,7 +36,6 @@ export default function OrionChat({ visible, onClose, isPremium }: Props) {
   const [isListening, setIsListening] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const listRef = useRef<FlatList>(null);
-
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
     const userMsg: Message = { id: String(Date.now()), role: 'user', content: text.trim() };
@@ -45,10 +44,13 @@ export default function OrionChat({ visible, onClose, isPremium }: Props) {
     setIsTyping(true);
 
     try {
-      const res = await api.post<any>('/api/ai/chat', {
+      const res = await api.post<{ content?: string }>('/api/orion/completions', {
         messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
       });
-      const reply = (res.data as any)?.data?.reply ?? (res.data as any)?.reply ?? "I couldn't process that right now.";
+      if (!res.success) {
+        throw new Error(res.error || 'Orion request failed');
+      }
+      const reply = res.data?.content ?? "I couldn't process that right now.";
       const assistantMsg: Message = { id: String(Date.now() + 1), role: 'assistant', content: reply };
       setMessages((prev) => [...prev, assistantMsg]);
       Speech.speak(reply, { rate: 1.05, language: 'en-US' });

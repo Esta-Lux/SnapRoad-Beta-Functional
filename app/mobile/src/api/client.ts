@@ -13,15 +13,8 @@ function resolveApiUrl(): string {
     return envUrl;
   }
 
-  // 2. app.json extra (if not default localhost)
-  const extra = Constants.expoConfig?.extra ?? {};
-  const extraUrl = extra.apiUrl as string | undefined;
-  if (extraUrl && extraUrl.length > 5 && !extraUrl.includes('localhost')) {
-    console.log('[API] Using app.json extra.apiUrl:', extraUrl);
-    return extraUrl;
-  }
-
-  // 3. Auto-detect from Expo's debugger host (the IP Metro is running on)
+  // 2. Auto-detect from Expo's debugger host (the IP Metro is running on)
+  // This keeps working when Wi-Fi DHCP changes your laptop LAN IP.
   const hostUri = Constants.expoConfig?.hostUri ?? '';
   const expoGoHost = (Constants as any).expoGoConfig?.debuggerHost ?? '';
   const hostStr = hostUri || expoGoHost;
@@ -30,6 +23,14 @@ function resolveApiUrl(): string {
     const url = `http://${lanIp}:8001`;
     console.log('[API] Auto-detected from Metro host:', url);
     return url;
+  }
+
+  // 3. app.json extra fallback (for non-Expo production-style builds)
+  const extra = Constants.expoConfig?.extra ?? {};
+  const extraUrl = extra.apiUrl as string | undefined;
+  if (extraUrl && extraUrl.length > 5) {
+    console.log('[API] Using app.json extra.apiUrl fallback:', extraUrl);
+    return extraUrl;
   }
 
   // 4. Android emulator special IP
@@ -56,6 +57,16 @@ function resolveRequestTimeoutMs(baseUrl: string): number {
 
 class ApiService {
   private cachedToken: string | null = null;
+
+  private shouldAttachAuth(endpoint: string): boolean {
+    // Auth entry points must remain public, even if we still have a stale token cached.
+    if (endpoint.startsWith('/api/auth/login')) return false;
+    if (endpoint.startsWith('/api/auth/signup')) return false;
+    if (endpoint.startsWith('/api/auth/forgot-password')) return false;
+    if (endpoint.startsWith('/api/auth/resend-verification')) return false;
+    if (endpoint.startsWith('/api/auth/oauth/supabase')) return false;
+    return true;
+  }
 
   getBaseUrl(): string {
     return apiBaseUrl;
@@ -91,10 +102,11 @@ class ApiService {
   ): Promise<ApiResponse<T>> {
     const token = await this.getToken();
     const url = `${apiBaseUrl}${endpoint}`;
+    const attachAuth = this.shouldAttachAuth(endpoint);
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       'Bypass-Tunnel-Reminder': 'true',
-      ...(token && { Authorization: `Bearer ${token}` }),
+      ...(attachAuth && token && { Authorization: `Bearer ${token}` }),
       ...(options.headers as Record<string, string>),
     };
 
@@ -201,6 +213,20 @@ class ApiService {
 
   async logout(): Promise<void> {
     await this.setToken(null);
+  }
+
+  async forgotPassword(email: string): Promise<ApiResponse<{ message: string }>> {
+    return this.request('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email: email.trim() }),
+    });
+  }
+
+  async resendVerification(email: string): Promise<ApiResponse<{ message: string }>> {
+    return this.request('/api/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email: email.trim() }),
+    });
   }
 
   async getProfile(): Promise<ApiResponse<Record<string, unknown>>> {

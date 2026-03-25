@@ -1,11 +1,13 @@
 import 'react-native-gesture-handler';
 import React from 'react';
-import { StatusBar, ActivityIndicator, View } from 'react-native';
+import { StatusBar, ActivityIndicator, View, Text, Image } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
@@ -16,12 +18,15 @@ import DashboardScreen from './src/screens/DashboardScreen';
 import RewardsScreen from './src/screens/RewardsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import AuthScreen from './src/screens/AuthScreen';
+import WelcomeScreen from './src/screens/WelcomeScreen';
+import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
 
 const Tab = createBottomTabNavigator();
 const MapStack = createStackNavigator();
 const DashboardStack = createStackNavigator();
 const RewardsStack = createStackNavigator();
 const ProfileStack = createStackNavigator();
+const PublicStack = createStackNavigator();
 
 function MapStackScreen() {
   return (
@@ -112,18 +117,53 @@ function MainTabs() {
 function RootNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
   const { colors } = useTheme();
+  const [showSplash, setShowSplash] = React.useState(true);
 
-  if (isLoading) {
+  React.useEffect(() => {
+    const t = setTimeout(() => setShowSplash(false), 900);
+    return () => clearTimeout(t);
+  }, []);
+
+  const linking = React.useMemo(() => ({
+    prefixes: ['snaproad://'],
+    config: {
+      screens: {
+        Welcome: 'welcome',
+        Auth: 'auth',
+        ResetPassword: 'reset-password',
+      },
+    },
+  }), []);
+
+  if (isLoading || showSplash) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-        <ActivityIndicator size="large" color="#3B82F6" />
-      </View>
+      <LinearGradient
+        colors={[colors.gradientStart, colors.gradientEnd]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
+      >
+        <Image source={require('./assets/brand-logo.png')} style={{ width: 110, height: 110, marginBottom: 8 }} resizeMode="contain" />
+        <Text style={{ color: '#fff', fontSize: 44, fontWeight: '900', letterSpacing: 0.2 }}>SnapRoad</Text>
+        <Text style={{ color: 'rgba(255,255,255,0.84)', fontSize: 14, marginTop: 6 }}>Drive smarter every mile</Text>
+        <View style={{ marginTop: 26 }}>
+          <ActivityIndicator size="large" color="#ffffff" />
+        </View>
+      </LinearGradient>
     );
   }
 
   return (
-    <NavigationContainer>
-      {isAuthenticated ? <MainTabs /> : <AuthScreen />}
+    <NavigationContainer linking={linking}>
+      {isAuthenticated ? (
+        <MainTabs />
+      ) : (
+        <PublicStack.Navigator screenOptions={{ headerShown: false }}>
+          <PublicStack.Screen name="Welcome" component={WelcomeScreen} />
+          <PublicStack.Screen name="Auth" component={AuthScreen} />
+          <PublicStack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+        </PublicStack.Navigator>
+      )}
     </NavigationContainer>
   );
 }
@@ -131,13 +171,15 @@ function RootNavigator() {
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <AuthProvider>
-          <NavigatingProvider>
-            <RootNavigator />
-          </NavigatingProvider>
-        </AuthProvider>
-      </ThemeProvider>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <NavigatingProvider>
+              <RootNavigator />
+            </NavigatingProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

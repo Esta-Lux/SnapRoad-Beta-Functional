@@ -2,7 +2,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from models.schemas import SignupRequest, LoginRequest
+from models.schemas import SignupRequest, LoginRequest, ForgotPasswordRequest, ResendVerificationRequest
 from middleware.auth import create_access_token
 from database import get_supabase
 from services.supabase_service import (
@@ -151,3 +151,58 @@ def oauth_supabase(payload: dict):
     except Exception as e:
         logger.exception("oauth_supabase profile sync failed: %s", e)
         raise HTTPException(status_code=503, detail="Authentication service unavailable")
+
+
+@router.post("/forgot-password")
+def forgot_password(request: ForgotPasswordRequest):
+    email = (request.email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    # Keep response generic to avoid account enumeration.
+    generic_ok = {
+        "success": True,
+        "data": {"message": "If an account exists, a reset email has been sent."},
+    }
+
+    try:
+        sb = get_supabase()
+        options = {"redirect_to": "snaproad://reset-password"}
+        # supabase-py auth API differs by version, so support both.
+        if hasattr(sb.auth, "reset_password_email"):
+            sb.auth.reset_password_email(email, options)
+        elif hasattr(sb.auth, "reset_password_for_email"):
+            sb.auth.reset_password_for_email(email, options)
+        else:
+            logger.warning("Supabase client missing password reset method")
+        return generic_ok
+    except Exception as e:
+        logger.warning("forgot_password failed for %s: %s", email, e)
+        # Return generic success to avoid leaking account existence/system state.
+        return generic_ok
+
+
+@router.post("/resend-verification")
+def resend_verification(request: ResendVerificationRequest):
+    email = (request.email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    generic_ok = {
+        "success": True,
+        "data": {"message": "If an account exists, a verification email has been sent."},
+    }
+
+    try:
+        sb = get_supabase()
+        # Support multiple supabase-py versions.
+        if hasattr(sb.auth, "resend"):
+            sb.auth.resend({"type": "signup", "email": email, "options": {"email_redirect_to": "snaproad://auth"}})
+        elif hasattr(sb.auth, "resend_signup_confirmation"):
+            sb.auth.resend_signup_confirmation(email)
+        else:
+            logger.warning("Supabase client missing resend verification method")
+        return generic_ok
+    except Exception as e:
+        logger.warning("resend_verification failed for %s: %s", email, e)
+        return generic_ok

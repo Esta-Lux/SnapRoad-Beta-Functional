@@ -12,6 +12,12 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResendVerificationRequest(BaseModel):
+    email: str
+
 
 # ==================== USER ====================
 class PlanUpdate(BaseModel):
