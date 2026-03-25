@@ -20,7 +20,14 @@ import { formatDistance, haversineMeters } from '../utils/distance';
 import { formatDuration } from '../utils/format';
 import { speak } from '../utils/voice';
 import { api } from '../api/client';
-import type { DrivingMode, Incident } from '../types';
+import OrionChat from '../components/orion/OrionChat';
+import { useNavigatingState } from '../contexts/NavigatingContext';
+import type { DrivingMode, Incident, SavedLocation, Offer } from '../types';
+
+const INCIDENT_COLORS: Record<string, string> = {
+  police: '#4A90D9', accident: '#D04040', hazard: '#E07830',
+  construction: '#F59E0B', closure: '#D04040', pothole: '#F97316',
+};
 
 const MAPBOX_TOKEN =
   process.env.EXPO_PUBLIC_MAPBOX_TOKEN ||
@@ -90,10 +97,33 @@ export default function MapScreen() {
   const [mapStyleIndex, setMapStyleIndex] = useState(0);
   const [showMapStylePicker, setShowMapStylePicker] = useState(false);
 
+  // Saved places for quick access
+  const [savedPlaces, setSavedPlaces] = useState<SavedLocation[]>([]);
+  const [activeChip, setActiveChip] = useState<'favorites' | 'nearby'>('favorites');
+  const [showOrion, setShowOrion] = useState(false);
+  const [nearbyOffers, setNearbyOffers] = useState<Offer[]>([]);
+  const [showMenu, setShowMenu] = useState(false);
+
   // Truck clearance
   const [avoidLowClearances, setAvoidLowClearances] = useState(false);
   const vehicleHeight = user?.vehicle_height_meters;
   const hasTallVehicle = typeof vehicleHeight === 'number' && vehicleHeight > 0;
+
+  // Sync navigation state to tab bar context
+  const { setIsNavigating: setNavContext } = useNavigatingState();
+  useEffect(() => { setNavContext(nav.isNavigating); }, [nav.isNavigating, setNavContext]);
+
+  // Fetch saved places + offers on mount
+  useEffect(() => {
+    api.get<any>('/api/locations').then((r) => {
+      const d = (r.data as any)?.data ?? r.data;
+      if (Array.isArray(d)) setSavedPlaces(d);
+    }).catch(() => {});
+    api.get<any>(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}`).then((r) => {
+      const d = (r.data as any)?.data ?? r.data;
+      if (Array.isArray(d)) setNearbyOffers(d.slice(0, 3));
+    }).catch(() => {});
+  }, []);
 
   // Feed GPS to navigation hook
   useEffect(() => {
@@ -286,22 +316,68 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* Search bar */}
-      {!nav.isNavigating && (
+      {/* Top bar: hamburger + search + mic + chips + quick places */}
+      {!nav.isNavigating && !nav.showRoutePreview && (
         <SafeAreaView style={[styles.searchContainer, { top: Platform.OS === 'ios' ? 8 : 12 }]}>
-          <View style={[styles.searchBar, { backgroundColor: isLight ? '#fff' : '#1e1e2e' }]}>
-            <TextInput style={[styles.searchInput, { color: isLight ? '#333' : '#fff' }]}
-              placeholder="Where to?" placeholderTextColor={isLight ? '#999' : '#666'}
-              value={searchQuery} onChangeText={handleSearchChange}
-              onFocus={() => setIsSearchFocused(true)} returnKeyType="search" />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={handleClearSearch} style={styles.clearBtn}>
-                <Ionicons name="close" size={18} color={isLight ? '#999' : '#666'} />
-              </TouchableOpacity>
-            )}
+          {/* Row 1: Hamburger + Search pill */}
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TouchableOpacity style={[styles.hamburger, { backgroundColor: isLight ? '#fff' : '#1e293b', borderColor: isLight ? 'transparent' : 'rgba(255,255,255,0.1)' }]}
+              onPress={() => setShowMenu(!showMenu)}>
+              <Ionicons name="menu" size={18} color={isLight ? '#1e293b' : '#fff'} />
+            </TouchableOpacity>
+            <View style={[styles.searchBar, { backgroundColor: isLight ? '#fff' : '#1e293b', flex: 1 }]}>
+              <Ionicons name="search-outline" size={15} color={isLight ? '#64748b' : '#94a3b8'} />
+              <TextInput style={[styles.searchInput, { color: isLight ? '#1e293b' : '#fff' }]}
+                placeholder="Where to?" placeholderTextColor={isLight ? '#64748b' : '#94a3b8'}
+                value={searchQuery} onChangeText={handleSearchChange}
+                onFocus={() => setIsSearchFocused(true)} returnKeyType="search" />
+              {searchQuery.length > 0 ? (
+                <TouchableOpacity onPress={handleClearSearch} style={styles.clearBtn}>
+                  <Ionicons name="close" size={18} color={isLight ? '#999' : '#666'} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity onPress={() => setShowOrion(true)} style={{ padding: 4 }}>
+                  <Ionicons name="mic-outline" size={15} color={isLight ? '#64748b' : '#94a3b8'} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
+
+          {/* Row 2: Favorites / Nearby chips */}
+          {!isSearchFocused && (
+            <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
+              {(['favorites', 'nearby'] as const).map((chip) => (
+                <TouchableOpacity key={chip}
+                  style={[styles.chip, { backgroundColor: activeChip === chip ? '#007AFF' : isLight ? '#fff' : 'rgba(30,41,59,0.95)', borderColor: activeChip !== chip ? (isLight ? 'transparent' : 'rgba(255,255,255,0.1)') : 'transparent' }]}
+                  onPress={() => setActiveChip(chip)}>
+                  <Text style={{ color: activeChip === chip ? '#fff' : isLight ? '#333' : '#e2e8f0', fontSize: 13, fontWeight: '600' }}>
+                    {chip === 'favorites' ? 'Favorites' : 'Nearby'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Row 3: Home / Work quick destinations */}
+          {!isSearchFocused && savedPlaces.length > 0 && (
+            <FlatList horizontal showsHorizontalScrollIndicator={false}
+              style={{ marginTop: 8 }} data={savedPlaces.filter((p) => ['home', 'work', 'favorite'].includes(p.category)).slice(0, 5)}
+              keyExtractor={(p) => String(p.id)}
+              renderItem={({ item: place }) => (
+                <TouchableOpacity style={styles.quickPlace}
+                  onPress={() => { if (place.lat && place.lng) handleSelectResult({ name: place.name, address: place.address, lat: place.lat, lng: place.lng }); }}>
+                  <Ionicons name={place.category === 'home' ? 'home-outline' : place.category === 'work' ? 'briefcase-outline' : 'star-outline'} size={14} color="#666" />
+                  <View>
+                    <Text style={styles.quickPlaceTitle}>{place.name}</Text>
+                    <Text style={styles.quickPlaceSub} numberOfLines={1}>{place.address}</Text>
+                  </View>
+                </TouchableOpacity>
+              )} />
+          )}
+
+          {/* Search results dropdown */}
           {isSearchFocused && searchResults.length > 0 && (
-            <View style={[styles.searchResults, { backgroundColor: isLight ? '#fff' : '#1e1e2e' }]}>
+            <View style={[styles.searchResults, { backgroundColor: isLight ? '#fff' : '#1e293b' }]}>
               <FlatList data={searchResults} keyExtractor={(item, i) => `${item.name}-${i}`}
                 keyboardShouldPersistTaps="handled"
                 renderItem={({ item }) => (
@@ -331,8 +407,8 @@ export default function MapScreen() {
 
       {/* Report card (during nav or ambient) */}
       {activeReportCard && (
-        <View style={styles.reportCard}>
-          <Ionicons name="warning-outline" size={18} color="#F59E0B" />
+        <View style={[styles.reportCard, { borderLeftWidth: 4, borderLeftColor: INCIDENT_COLORS[activeReportCard.type] ?? '#F59E0B' }]}>
+          <Ionicons name="warning-outline" size={18} color={INCIDENT_COLORS[activeReportCard.type] ?? '#F59E0B'} />
           <View style={{ flex: 1, marginLeft: 10 }}>
             <Text style={styles.reportCardTitle}>
               {activeReportCard.title} {((haversineMeters(location.lat, location.lng, activeReportCard.lat, activeReportCard.lng) / 1609.34)).toFixed(1)} mi ahead
@@ -367,15 +443,25 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* ETA bar */}
+      {/* ETA strip -- 3-column matching web */}
       {nav.isNavigating && nav.liveEta && (
         <View style={styles.etaBar}>
-          <View style={styles.etaInfo}>
-            <Text style={styles.etaTime}>{formatDuration(nav.liveEta.etaMinutes)}</Text>
-            <Text style={styles.etaDistance}>{formatDistance(nav.liveEta.distanceMiles)}</Text>
+          <View style={styles.etaCol}>
+            <Text style={styles.etaLabel}>ETA</Text>
+            <Text style={styles.etaVal}>{formatDuration(nav.liveEta.etaMinutes)}</Text>
+          </View>
+          <View style={styles.etaDivider} />
+          <View style={styles.etaCol}>
+            <Text style={styles.etaLabel}>DISTANCE</Text>
+            <Text style={styles.etaVal}>{formatDistance(nav.liveEta.distanceMiles)}</Text>
+          </View>
+          <View style={styles.etaDivider} />
+          <View style={styles.etaCol}>
+            <Text style={styles.etaLabel}>ARRIVE</Text>
+            <Text style={styles.etaVal}>{new Date(Date.now() + nav.liveEta.etaMinutes * 60000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</Text>
           </View>
           <TouchableOpacity style={styles.endTripBtn} onPress={nav.stopNavigation}>
-            <Text style={styles.endTripText}>End Trip</Text>
+            <Text style={styles.endTripText}>End</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -429,7 +515,8 @@ export default function MapScreen() {
               <View style={styles.tripStat}><Text style={styles.tripStatLabel}>Distance</Text><Text style={styles.tripStatValue}>{nav.tripSummary.distance.toFixed(1)} mi</Text></View>
               <View style={styles.tripStat}><Text style={styles.tripStatLabel}>Time</Text><Text style={styles.tripStatValue}>{formatDuration(nav.tripSummary.duration)}</Text></View>
               <View style={styles.tripStat}><Text style={styles.tripStatLabel}>Safety</Text><Text style={[styles.tripStatValue, { color: '#22C55E' }]}>{nav.tripSummary.safety_score}</Text></View>
-              <View style={styles.tripStat}><Text style={styles.tripStatLabel}>Gems</Text><Text style={[styles.tripStatValue, { color: '#F59E0B' }]}>+{nav.tripSummary.gems_earned}</Text></View>
+              <View style={styles.tripStat}><Text style={styles.tripStatLabel}>Gems</Text><Text style={[styles.tripStatValue, { color: '#d97706' }]}>+{nav.tripSummary.gems_earned}</Text></View>
+              <View style={styles.tripStat}><Text style={styles.tripStatLabel}>XP</Text><Text style={[styles.tripStatValue, { color: '#4f46e5' }]}>+{nav.tripSummary.xp_earned}</Text></View>
             </View>
             <TouchableOpacity style={styles.tripDoneBtn} onPress={nav.dismissTripSummary}>
               <Text style={styles.tripDoneText}>Done</Text>
@@ -442,7 +529,7 @@ export default function MapScreen() {
       {!nav.showRoutePreview && !nav.tripSummary && (
         <TouchableOpacity style={[styles.reportBtn, { bottom: nav.isNavigating ? 140 : 80, right: 16 }]}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowReportPicker(true); }}>
-          <Ionicons name="camera-outline" size={22} color="#fff" />
+          <Ionicons name="camera-outline" size={20} color="#475569" />
         </TouchableOpacity>
       )}
 
@@ -465,11 +552,29 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* Recenter */}
+      {/* Recenter -- pill matching web */}
       {nav.isNavigating && !cameraLocked && (
-        <TouchableOpacity style={styles.recenterBtn} onPress={handleRecenter}>
-          <Ionicons name="locate-outline" size={22} color="#3B82F6" />
+        <TouchableOpacity style={styles.recenterPill} onPress={handleRecenter}>
+          <Text style={styles.recenterText}>Recenter</Text>
         </TouchableOpacity>
+      )}
+
+      {/* Orion voice button */}
+      {!nav.isNavigating && !nav.showRoutePreview && (
+        <TouchableOpacity style={styles.orionBtn} onPress={() => setShowOrion(true)} activeOpacity={0.8}>
+          <LinearGradient colors={user?.isPremium ? ['#7C3AED', '#5B21B6'] : ['#94a3b8', '#64748b']} style={styles.orionBtnGrad}>
+            <Ionicons name="mic-outline" size={22} color="#fff" />
+          </LinearGradient>
+        </TouchableOpacity>
+      )}
+
+      {/* Nearby offers pill */}
+      {!nav.isNavigating && !nav.showRoutePreview && nearbyOffers.length > 0 && (
+        <View style={styles.offersPill}>
+          <Ionicons name="gift" size={14} color="#34C759" />
+          <Text style={styles.offersPillText}>{nearbyOffers.length} offers nearby</Text>
+          <View style={styles.offersBadge}><Text style={styles.offersBadgeText}>{nearbyOffers.length}</Text></View>
+        </View>
       )}
 
       {/* Mode selector */}
@@ -487,11 +592,13 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* Speed badge */}
-      <View style={[styles.speedBadge, { backgroundColor: isLight ? '#fff' : '#1e1e2e', bottom: nav.isNavigating ? 140 : 80 }]}>
-        <Text style={[styles.speedValue, { color: isLight ? '#111' : '#fff' }]}>{Math.round(speed)}</Text>
-        <Text style={[styles.speedUnit, { color: isLight ? '#888' : '#666' }]}>mph</Text>
-      </View>
+      {/* Speed badge -- mode-colored border matching web */}
+      {!nav.isNavigating && speed > 1 && (
+        <View style={[styles.speedBadge, { borderColor: drivingMode === 'calm' ? '#60a5fa' : drivingMode === 'sport' ? '#ef4444' : '#d1d5db', bottom: 80 }]}>
+          <Text style={[styles.speedValue, { color: drivingMode === 'sport' ? '#ef4444' : drivingMode === 'calm' ? '#3b82f6' : '#0f172a' }]}>{Math.round(speed)}</Text>
+          <Text style={styles.speedUnit}>mph</Text>
+        </View>
+      )}
 
       {/* Map style button */}
       {!nav.isNavigating && !nav.showRoutePreview && (
@@ -526,6 +633,9 @@ export default function MapScreen() {
       {isLocating && (
         <View style={styles.locatingBanner}><Text style={styles.locatingText}>Finding your location...</Text></View>
       )}
+
+      {/* Orion chat */}
+      <OrionChat visible={showOrion} onClose={() => setShowOrion(false)} isPremium={user?.isPremium ?? false} />
     </View>
   );
 }
@@ -549,12 +659,18 @@ const styles = StyleSheet.create({
   turnDistance: { color: '#fff', fontSize: 22, fontWeight: '800', marginLeft: 8 },
   turnInstruction: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: -0.5 },
   thenText: { color: 'rgba(255,255,255,0.72)', fontSize: 13, marginTop: 4 },
-  etaBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', paddingHorizontal: 20, paddingVertical: 12, paddingBottom: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.08, shadowRadius: 12 },
-  etaInfo: {},
-  etaTime: { color: '#1a1a1a', fontSize: 16, fontWeight: '700' },
-  etaDistance: { color: '#999', fontSize: 10, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
-  endTripBtn: { backgroundColor: '#FF3B30', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 12 },
-  endTripText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  hamburger: { width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 3 },
+  chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  quickPlace: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8, minWidth: 110, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  quickPlaceTitle: { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
+  quickPlaceSub: { fontSize: 11, color: '#666', maxWidth: 100 },
+  etaBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(255,255,255,0.98)', paddingHorizontal: 20, paddingVertical: 8, paddingBottom: 34, flexDirection: 'row', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.06, shadowRadius: 12 },
+  etaCol: { flex: 1, alignItems: 'center' },
+  etaLabel: { fontSize: 10, fontWeight: '500', color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 },
+  etaVal: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginTop: 2 },
+  etaDivider: { width: 1, height: 28, backgroundColor: '#f0f0f0' },
+  endTripBtn: { backgroundColor: '#FF3B30', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginLeft: 12 },
+  endTripText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   routePreview: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 34, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.15, shadowRadius: 16 },
   previewHandle: { width: 36, height: 4, backgroundColor: '#E0E0E0', borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
   previewTitle: { fontSize: 18, fontWeight: '700', color: '#1a1a1a', marginBottom: 12 },
@@ -576,17 +692,24 @@ const styles = StyleSheet.create({
   tripStatValue: { fontSize: 18, fontWeight: '800', color: '#1a1a1a', marginTop: 2 },
   tripDoneBtn: { backgroundColor: '#3B82F6', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   tripDoneText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  recenterBtn: { position: 'absolute', right: 16, bottom: 140, width: 48, height: 48, borderRadius: 24, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 4 },
+  recenterPill: { position: 'absolute', top: 140, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, zIndex: 30 },
+  recenterText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  orionBtn: { position: 'absolute', right: 16, top: 170, zIndex: 10 },
+  orionBtnGrad: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 16, elevation: 6 },
+  offersPill: { position: 'absolute', bottom: 90, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 4, zIndex: 10 },
+  offersPillText: { fontSize: 13, fontWeight: '600', color: '#1a1a1a' },
+  offersBadge: { backgroundColor: '#007AFF', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
+  offersBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   modeContainer: { position: 'absolute', bottom: 24, alignSelf: 'center', flexDirection: 'row', gap: 8, zIndex: 10 },
   modePill: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 3 },
   modeText: { fontSize: 13 },
-  speedBadge: { position: 'absolute', left: 16, width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 3 },
-  speedValue: { fontSize: 18, fontWeight: '800' },
-  speedUnit: { fontSize: 9, marginTop: -2 },
+  speedBadge: { position: 'absolute', left: 12, width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.95)', borderWidth: 2, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 3 },
+  speedValue: { fontSize: 16, fontWeight: '700' },
+  speedUnit: { fontSize: 8, color: '#94a3b8', marginTop: -1 },
   destPin: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#DC2626', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
   locatingBanner: { position: 'absolute', top: 120, alignSelf: 'center', backgroundColor: 'rgba(59,130,246,0.9)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   locatingText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  reportBtn: { position: 'absolute', width: 48, height: 48, borderRadius: 24, backgroundColor: '#F59E0B', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
+  reportBtn: { position: 'absolute', width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.95)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
   reportCard: { position: 'absolute', top: 100, left: 16, right: 16, backgroundColor: '#1e1e2e', borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'center', zIndex: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 },
   reportCardTitle: { color: '#fff', fontSize: 14, fontWeight: '700' },
   reportCardSub: { color: '#888', fontSize: 11, marginTop: 2 },
@@ -604,7 +727,7 @@ const styles = StyleSheet.create({
   reportPickerItem: { alignItems: 'center', width: 70 },
   reportPickerIcon: { width: 52, height: 52, borderRadius: 16, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
   reportPickerLabel: { color: '#ccc', fontSize: 11, fontWeight: '600' },
-  mapStyleBtn: { position: 'absolute', right: 16, top: 120, width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3, zIndex: 10 },
+  mapStyleBtn: { position: 'absolute', right: 16, top: 120, width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3, zIndex: 10 },
   mapPlaceholder: { justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f0f17', gap: 8 },
   mapPlaceholderTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 8 },
   mapPlaceholderSub: { color: '#888', fontSize: 13, textAlign: 'center', paddingHorizontal: 40, lineHeight: 18 },

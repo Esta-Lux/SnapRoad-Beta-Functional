@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
+import { NavigatingProvider, useNavigatingState } from './src/contexts/NavigatingContext';
 
 import MapScreen from './src/screens/MapScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
@@ -55,21 +56,25 @@ function ProfileStackScreen() {
 }
 
 function MainTabs() {
-  const { colors } = useTheme();
+  const { colors, isLight } = useTheme();
+  const { isNavigating } = useNavigatingState();
 
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textTertiary,
-        tabBarStyle: {
-          backgroundColor: colors.tabBar,
-          borderTopColor: colors.border,
-          paddingBottom: 4,
-          height: 56,
-        },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
+        tabBarActiveTintColor: '#3b82f6',
+        tabBarInactiveTintColor: '#94a3b8',
+        tabBarStyle: isNavigating
+          ? { display: 'none' }
+          : {
+              backgroundColor: isLight ? 'rgba(255,255,255,0.98)' : 'rgba(30,41,59,0.98)',
+              borderTopColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)',
+              paddingBottom: 4,
+              height: 60,
+            },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
+        tabBarIconStyle: { marginTop: 2 },
       }}
     >
       <Tab.Screen
@@ -128,8 +133,9 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
         <AuthProvider>
-          <StatusBar barStyle="light-content" />
-          <RootNavigator />
+          <NavigatingProvider>
+            <RootNavigator />
+          </NavigatingProvider>
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
