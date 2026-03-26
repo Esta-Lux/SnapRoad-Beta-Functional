@@ -72,7 +72,8 @@ export default function RewardsScreen() {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const [cRes, bRes, oRes, tRes, iRes, gRes, lRes] = await Promise.all([
+      const [profileRes, cRes, bRes, oRes, tRes, iRes, gRes, lRes] = await Promise.all([
+        api.getProfile(),
         api.get<any>('/api/challenges'),
         api.get<any>('/api/badges'),
         api.get<any>(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}&radius=5`),
@@ -82,6 +83,13 @@ export default function RewardsScreen() {
         api.get<any>('/api/leaderboard?time_filter=weekly&limit=10'),
       ]);
       const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
+      const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
+      updateUser({
+        gems: Number(profilePayload.gems ?? user?.gems ?? 0),
+        level: Number(profilePayload.level ?? user?.level ?? 1),
+        totalMiles: Number(profilePayload.total_miles ?? user?.totalMiles ?? 0),
+        totalTrips: Number(profilePayload.total_trips ?? user?.totalTrips ?? 0),
+      });
       const rawChallenges = Array.isArray(unwrap(cRes)) ? unwrap(cRes) : [];
       setChallenges(rawChallenges.map((c: any) => ({
         ...c,
@@ -120,10 +128,11 @@ export default function RewardsScreen() {
         is_premium: Boolean(r.is_premium),
       })));
       setMyRank(Number(lData?.my_rank ?? 0));
+      updateUser({ rank: Number(lData?.my_rank ?? user?.rank ?? 0) });
     } catch {
       setErrorMsg('Could not refresh rewards data. Pull to retry.');
     } finally { setLoading(false); }
-  }, [location.lat, location.lng]);
+  }, [location.lat, location.lng, updateUser, user?.gems, user?.level, user?.rank, user?.totalMiles, user?.totalTrips]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 

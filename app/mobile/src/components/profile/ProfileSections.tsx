@@ -1,32 +1,35 @@
 import React from 'react';
-import {
-  Alert,
-  Modal,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Alert, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Skeleton from '../common/Skeleton';
 import { DRIVING_MODES } from '../../constants/modes';
-import { PLANS } from '../../constants/plans';
 import type { DrivingMode, PlanTier, SavedLocation, SavedRoute, User } from '../../types';
 import type { ThemeColors } from '../../contexts/ThemeContext';
+import type { ProfileOverviewActionItem } from './types';
+export type {
+  ProfileBadgeItem,
+  ProfileGemTxItem,
+  ProfileLeaderboardEntry,
+  ProfileOverviewActionItem,
+  ProfileTripHistoryItem,
+  ProfileWeeklyRecap,
+} from './types';
+export {
+  AddPlaceModal,
+  BadgesModal,
+  GemHistoryModal,
+  IncidentReportModal,
+  DrivingScoreModal,
+  LeaderboardModal,
+  LevelProgressModal,
+  PlanModal,
+  TripHistoryModal,
+  WeeklyRecapModal,
+} from './ProfileModals';
 
 type NotificationItem = { label: string; val: boolean; set: (v: boolean) => void };
 type HeightPreset = { label: string; value: string };
-export type ProfileOverviewActionItem = {
-  key: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
-  badgeText?: string;
-  onPress?: () => void;
-};
 
 export function SectionHeader({ title, isLight }: { title: string; isLight: boolean }) {
   return <Text style={[sStyles.sectionTitle, { color: isLight ? '#111' : '#fff' }]}>{title}</Text>;
@@ -63,15 +66,19 @@ export function ProfileOverviewSection({
   cardBg,
   text,
   sub,
+  onPressLevelProgress,
+  onPressShareScore,
 }: {
   actions: ProfileOverviewActionItem[];
   cardBg: string;
   text: string;
   sub: string;
+  onPressLevelProgress?: () => void;
+  onPressShareScore?: () => void;
 }) {
   return (
     <>
-      <View style={[styles.progressCard, { backgroundColor: cardBg }]}>
+      <TouchableOpacity activeOpacity={0.9} onPress={onPressLevelProgress} style={[styles.progressCard, { backgroundColor: cardBg }]}>
         <LinearGradient colors={['#2563EB', '#3B82F6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.progressGradient}>
           <View style={styles.progressLevelIcon}>
             <Text style={styles.progressLevelText}>LVL</Text>
@@ -82,7 +89,7 @@ export function ProfileOverviewSection({
           </View>
           <Text style={styles.progressAction}>View Progress</Text>
         </LinearGradient>
-      </View>
+      </TouchableOpacity>
 
       <View style={{ marginTop: -2 }}>
         {actions.map((item) => (
@@ -102,7 +109,7 @@ export function ProfileOverviewSection({
         ))}
       </View>
 
-      <TouchableOpacity activeOpacity={0.9} style={{ marginHorizontal: 16, marginTop: 8, marginBottom: 2 }}>
+      <TouchableOpacity activeOpacity={0.9} onPress={onPressShareScore} style={{ marginHorizontal: 16, marginTop: 8, marginBottom: 2 }}>
         <LinearGradient colors={['#3B82F6', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.shareScoreCta}>
           <Ionicons name="share-social-outline" size={16} color="#fff" />
           <View style={{ flex: 1 }}>
@@ -146,6 +153,40 @@ export function PlanCard({
           <Text style={styles.upgradeBtnText}>Upgrade</Text>
         </TouchableOpacity>
       )}
+    </View>
+  );
+}
+
+export function PremiumUpsellCard({
+  cardBg,
+  onUpgrade,
+}: {
+  cardBg: string;
+  onUpgrade: () => void;
+}) {
+  return (
+    <View style={[styles.card, { backgroundColor: cardBg, padding: 0, overflow: 'hidden' }]}>
+      <LinearGradient colors={['#2563EB', '#4F46E5']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.upsellTop}>
+        <Ionicons name="flash-outline" size={34} color="#fff" />
+        <Text style={styles.upsellTitle}>Premium Feature</Text>
+        <Text style={styles.upsellSub}>Unlock deeper score insights and Orion-powered driving tips</Text>
+      </LinearGradient>
+      <View style={styles.upsellBody}>
+        {[
+          'Detailed driving score breakdown',
+          'Personalized improvement tips',
+          'Voice coaching from Orion',
+          'Track progress over time',
+        ].map((feature) => (
+          <View key={feature} style={styles.upsellRow}>
+            <Ionicons name="checkmark-circle-outline" size={20} color="#34D399" />
+            <Text style={styles.upsellRowText}>{feature}</Text>
+          </View>
+        ))}
+        <TouchableOpacity style={styles.upsellBtn} onPress={onUpgrade}>
+          <Text style={styles.upsellBtnText}>Upgrade to Premium</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -382,84 +423,6 @@ export function SignOutButton({ onSignOut }: { onSignOut: () => void }) {
   );
 }
 
-export function PlanModal(props: {
-  visible: boolean;
-  onClose: () => void;
-  cardBg: string;
-  text: string;
-  sub: string;
-  currentPlan: PlanTier;
-  onSelectPlan: (tier: PlanTier) => void;
-}) {
-  const { visible, onClose, cardBg, text, sub, currentPlan, onSelectPlan } = props;
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[styles.modalSheet, { backgroundColor: cardBg }]} onStartShouldSetResponder={() => true}>
-          <View style={styles.modalHandle} />
-          <Text style={[styles.modalTitle, { color: text }]}>Choose Your Plan</Text>
-          {(Object.entries(PLANS) as [PlanTier, any][]).map(([tier, plan]) => (
-            <TouchableOpacity key={tier} style={[styles.planCard, currentPlan === tier && styles.planCardActive]} onPress={() => onSelectPlan(tier)}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={[styles.planCardName, { color: text }]}>{plan.name}</Text>
-                <Text style={[styles.planCardPrice, { color: '#3B82F6' }]}>{plan.price}</Text>
-              </View>
-              {plan.features.slice(0, 3).map((f: string, i: number) => (
-                <Text key={i} style={{ color: sub, fontSize: 11, marginTop: 2 }}>- {f}</Text>
-              ))}
-            </TouchableOpacity>
-          ))}
-        </View>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
-
-export function AddPlaceModal(props: {
-  visible: boolean;
-  onClose: () => void;
-  cardBg: string;
-  isLight: boolean;
-  text: string;
-  sub: string;
-  newPlaceName: string;
-  setNewPlaceName: (v: string) => void;
-  newPlaceAddress: string;
-  setNewPlaceAddress: (v: string) => void;
-  onSave: () => void;
-}) {
-  const {
-    visible, onClose, cardBg, isLight, text, sub,
-    newPlaceName, setNewPlaceName, newPlaceAddress, setNewPlaceAddress, onSave,
-  } = props;
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[styles.modalSheet, { backgroundColor: cardBg }]} onStartShouldSetResponder={() => true}>
-          <View style={styles.modalHandle} />
-          <Text style={[styles.modalTitle, { color: text }]}>Add Place</Text>
-          <TextInput
-            style={[styles.modalInput, { color: text, backgroundColor: isLight ? '#f5f5f7' : '#2a2a3e' }]}
-            placeholder="Name"
-            placeholderTextColor={sub}
-            value={newPlaceName}
-            onChangeText={setNewPlaceName}
-          />
-          <TextInput
-            style={[styles.modalInput, { color: text, backgroundColor: isLight ? '#f5f5f7' : '#2a2a3e' }]}
-            placeholder="Address"
-            placeholderTextColor={sub}
-            value={newPlaceAddress}
-            onChangeText={setNewPlaceAddress}
-          />
-          <TouchableOpacity style={styles.saveBtn} onPress={onSave}>
-            <Text style={styles.saveBtnText}>Save Place</Text>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
 
 const sStyles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: '800', paddingHorizontal: 16, marginTop: 20, marginBottom: 8 },
@@ -495,15 +458,6 @@ const styles = StyleSheet.create({
   planName: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
   upgradeBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
   upgradeBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40, maxHeight: '85%' },
-  modalHandle: { width: 36, height: 4, backgroundColor: '#444', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 16 },
-  modalInput: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 12 },
-  planCard: { borderRadius: 12, borderWidth: 1, borderColor: 'rgba(128,128,128,0.2)', padding: 16, marginBottom: 10 },
-  planCardActive: { borderColor: '#3B82F6', borderWidth: 2 },
-  planCardName: { fontSize: 16, fontWeight: '700' },
-  planCardPrice: { fontSize: 16, fontWeight: '800' },
   progressCard: { marginHorizontal: 16, marginBottom: 8, borderRadius: 12, overflow: 'hidden' },
   progressGradient: { paddingHorizontal: 12, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
   progressLevelIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
@@ -520,4 +474,12 @@ const styles = StyleSheet.create({
   shareScoreCta: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   shareScoreTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
   shareScoreSub: { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1 },
+  upsellTop: { paddingHorizontal: 20, paddingVertical: 22, alignItems: 'center' },
+  upsellTitle: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 6 },
+  upsellSub: { color: 'rgba(255,255,255,0.92)', fontSize: 13, marginTop: 8, textAlign: 'center' },
+  upsellBody: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16, backgroundColor: '#0F172A' },
+  upsellRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
+  upsellRowText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
+  upsellBtn: { marginTop: 16, backgroundColor: '#2563EB', borderRadius: 12, alignItems: 'center', paddingVertical: 14 },
+  upsellBtnText: { color: '#fff', fontSize: 18, fontWeight: '800' },
 });
