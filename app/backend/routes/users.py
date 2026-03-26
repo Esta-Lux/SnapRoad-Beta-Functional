@@ -7,6 +7,7 @@ from services.mock_data import (
     notification_settings, faq_data,
 )
 from middleware.auth import get_current_user
+from services.supabase_service import sb_update_profile
 
 router = APIRouter(prefix="/api", tags=["Users"])
 
@@ -29,6 +30,15 @@ def _get_user_store(user: dict | None) -> dict:
         }
     users_db[user_id].setdefault("vehicle_height_meters", None)
     return users_db[user_id]
+
+
+def _persist_user(user_id: str, updates: dict) -> None:
+    users_db.setdefault(user_id, {"id": user_id})
+    users_db[user_id].update(updates)
+    try:
+        sb_update_profile(user_id, updates)
+    except Exception:
+        pass
 
 
 @router.get("/user/profile")
@@ -119,8 +129,8 @@ def purchase_car_color(color_key: str, auth_user: dict = Depends(get_current_use
     if cost > 0:
         if user.get("gems", 0) < cost:
             return {"success": False, "message": "Not enough gems"}
-        users_db[user_id]["gems"] = user["gems"] - cost
-    users_db[user_id]["car_color"] = color_key
+        _persist_user(user_id, {"gems": user["gems"] - cost})
+    _persist_user(user_id, {"car_color": color_key})
     return {"success": True, "message": f"Color {color_key} applied!"}
 
 
@@ -171,8 +181,10 @@ def purchase_car(car_id: int, auth_user: dict = Depends(get_current_user)):
     user_id = str(user.get("id"))
     if user.get("gems", 0) < car["price"]:
         return {"success": False, "message": "Not enough gems"}
-    users_db[user_id]["gems"] -= car["price"]
-    users_db[user_id].setdefault("owned_cars", [1]).append(car_id)
+    new_owned = list(users_db[user_id].get("owned_cars", [1]))
+    if car_id not in new_owned:
+        new_owned.append(car_id)
+    _persist_user(user_id, {"gems": users_db[user_id]["gems"] - car["price"], "owned_cars": new_owned})
     return {"success": True, "message": f"Purchased {car['name']}!"}
 
 
@@ -206,8 +218,10 @@ def purchase_skin(skin_id: int, auth_user: dict = Depends(get_current_user)):
     user_id = str(user.get("id"))
     if user.get("gems", 0) < skin["price"]:
         return {"success": False, "message": "Not enough gems"}
-    users_db[user_id]["gems"] -= skin["price"]
-    users_db[user_id].setdefault("owned_skins", [1]).append(skin_id)
+    new_owned = list(users_db[user_id].get("owned_skins", [1]))
+    if skin_id not in new_owned:
+        new_owned.append(skin_id)
+    _persist_user(user_id, {"gems": users_db[user_id]["gems"] - skin["price"], "owned_skins": new_owned})
     return {"success": True, "message": f"Purchased {skin['name']}!"}
 
 
@@ -269,8 +283,11 @@ _notifications = [
 
 
 @router.get("/notifications")
-def get_notifications(_auth_user: dict = Depends(get_current_user)):
-    return {"success": True, "data": _notifications}
+def get_notifications(
+    limit: int = Query(default=100, ge=1, le=100),
+    _auth_user: dict = Depends(get_current_user),
+):
+    return {"success": True, "data": _notifications[:limit], "count": len(_notifications[:limit])}
 
 
 @router.put("/notifications/{notification_id}/read")

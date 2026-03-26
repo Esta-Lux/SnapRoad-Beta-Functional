@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends, Request
 from typing import Optional
 from datetime import datetime, timedelta
 import random
@@ -11,18 +11,31 @@ from models.schemas import ImageGenerateRequest, LocationVisit
 from services.supabase_service import _sb
 from services.offer_utils import calculate_free_discount, calculate_redemption_fee
 from services.cache import cache_get, cache_set
+from middleware.auth import get_current_user
+from limiter import limiter
+from config import ENVIRONMENT
 import uuid
 
 router = APIRouter(prefix="/api", tags=["Offers"])
 
 
+def _active_offers_source(limit: int = 500) -> list[dict]:
+    try:
+        rows = _sb().table("offers").select("*").eq("status", "active").limit(limit).execute()
+        return rows.data or []
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        return offers_db
+
+
 @router.get("/offers")
-def get_offers():
+def get_offers(limit: int = Query(default=100, ge=1, le=100)):
     """Get all active offers from database (both admin and partner offers)"""
     try:
         sb = _sb()
         # Fetch all active offers from the database
-        result = sb.table("offers").select("*").eq("status", "active").execute()
+        result = sb.table("offers").select("*").eq("status", "active").limit(limit).execute()
         
         if result.data:
             offers = []
@@ -66,13 +79,16 @@ def get_offers():
                     "free_discount": OFFER_CONFIG["free_discount_percent"],
                     "premium_discount": OFFER_CONFIG["premium_discount_percent"]
                 },
-                "total_savings": sum(o.get("discount_percent", 0) for o in offers)
+                "total_savings": sum(o.get("discount_percent", 0) for o in offers),
+                "count": len(offers),
             }
         else:
             # Fallback to mock data if no database offers
+            if ENVIRONMENT == "production":
+                raise RuntimeError("offers table unavailable")
             return {
                 "success": True,
-                "data": offers_db,
+                "data": offers_db[:limit],
                 "discount_info": {
                     "free_discount": OFFER_CONFIG["free_discount_percent"],
                     "premium_discount": OFFER_CONFIG["premium_discount_percent"]
@@ -80,9 +96,11 @@ def get_offers():
             }
     except Exception as e:
         # Fallback to mock data on error
+        if ENVIRONMENT == "production":
+            return {"success": False, "message": "Offer service unavailable"}
         return {
             "success": True,
-            "data": offers_db,
+            "data": offers_db[:limit],
             "discount_info": {
                 "free_discount": OFFER_CONFIG["free_discount_percent"],
                 "premium_discount": OFFER_CONFIG["premium_discount_percent"]
@@ -92,6 +110,28 @@ def get_offers():
 
 @router.post("/offers")
 def create_offer(offer: OfferCreate):
+    if ENVIRONMENT == "production":
+        sb = _sb()
+        payload = {
+            "business_name": offer.business_name,
+            "business_type": offer.business_type,
+            "description": offer.description,
+            "base_gems": offer.base_gems,
+            "address": offer.address,
+            "lat": offer.lat,
+            "lng": offer.lng,
+            "offer_url": offer.offer_url,
+            "is_admin_offer": offer.is_admin_offer,
+            "created_at": datetime.now().isoformat(),
+            "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
+            "created_by": "admin" if offer.is_admin_offer else "business",
+            "redemption_count": 0,
+            "status": "active",
+        }
+        created = sb.table("offers").insert(payload).execute()
+        if not created.data:
+            raise RuntimeError("Failed to create offer")
+        return {"success": True, "data": created.data[0]}
     new_id = max([o["id"] for o in offers_db], default=0) + 1
     new_offer = {
         "id": new_id,
@@ -114,7 +154,8 @@ def create_offer(offer: OfferCreate):
 
 
 @router.post("/offers/{offer_id}/redeem")
-def redeem_offer(offer_id: int):
+@limiter.limit("30/minute")
+def redeem_offer(request: Request, offer_id: int, auth_user: dict = Depends(get_current_user)):
     import logging
     logger = logging.getLogger(__name__)
 
@@ -124,17 +165,43 @@ def redeem_offer(offer_id: int):
         db_offer = sb.table("offers").select("*").eq("id", offer_id).maybe_single().execute()
         if db_offer and db_offer.data:
             odata = db_offer.data
-            user = users_db.get(current_user_id, {})
+            user_id = str(auth_user.get("id") or current_user_id)
+            user = users_db.get(user_id, {})
             is_premium = user.get("is_premium", False)
+            if odata.get("expires_at"):
+                try:
+                    if datetime.fromisoformat(str(odata["expires_at"]).replace("Z", "+00:00")) < datetime.now():
+                        return {"success": False, "message": "Offer has expired"}
+                except Exception:
+                    pass
+
+            # Idempotency guard: same user cannot redeem same offer twice.
+            existing_redemption = (
+                sb.table("redemptions")
+                .select("id")
+                .eq("offer_id", offer_id)
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+            if existing_redemption.data:
+                return {"success": False, "message": "Offer already redeemed"}
 
             premium_disc = odata.get("premium_discount_percent") or odata.get("discount_percent", 0)
             free_disc = odata.get("free_discount_percent") or calculate_free_discount(premium_disc)
             discount = premium_disc if is_premium else free_disc
             gem_reward = odata.get("base_gems", 25)
 
-            # Update in-memory user gems
-            if current_user_id in users_db:
-                users_db[current_user_id]["gems"] = user.get("gems", 0) + gem_reward
+            # Update profile gems in DB first; keep in-memory cache in sync as fallback.
+            try:
+                p = sb.table("profiles").select("gems").eq("id", user_id).limit(1).execute()
+                if p.data:
+                    cur_gems = int(p.data[0].get("gems") or 0)
+                    sb.table("profiles").update({"gems": cur_gems + gem_reward}).eq("id", user_id).execute()
+            except Exception:
+                pass
+            if user_id in users_db:
+                users_db[user_id]["gems"] = user.get("gems", 0) + gem_reward
 
             # Increment offer redemption_count
             new_count = (odata.get("redemption_count") or 0) + 1
@@ -161,10 +228,12 @@ def redeem_offer(offer_id: int):
             try:
                 sb.table("redemptions").insert({
                     "offer_id": offer_id,
+                    "user_id": user_id,
                     "partner_id": partner_id,
                     "gems_earned": gem_reward,
                     "discount_applied": discount,
                     "fee_amount": fee_amount,
+                    "status": "verified",
                 }).execute()
             except Exception as e:
                 logger.warning(f"Redemption insert error: {e}")
@@ -174,36 +243,44 @@ def redeem_offer(offer_id: int):
                 "data": {
                     "discount_percent": discount,
                     "gems_earned": gem_reward,
-                    "new_gem_total": users_db.get(current_user_id, {}).get("gems", 0),
+                    "new_gem_total": users_db.get(user_id, {}).get("gems", 0),
                     "is_free_item": odata.get("is_free_item", False),
                 },
             }
     except Exception as e:
         logger.warning(f"Supabase redeem fallback: {e}")
+        if ENVIRONMENT == "production":
+            return {"success": False, "message": "Offer redemption unavailable"}
 
     # Fallback to mock
     offer = next((o for o in offers_db if o["id"] == offer_id), None)
     if not offer:
         return {"success": False, "message": "Offer not found"}
-    user = users_db.get(current_user_id, {})
+    user_id = str(auth_user.get("id") or current_user_id)
+    user = users_db.get(user_id, {})
     is_premium = user.get("is_premium", False)
     discount = OFFER_CONFIG["premium_discount_percent"] if is_premium else OFFER_CONFIG["free_discount_percent"]
     gem_reward = offer["base_gems"] * (2 if is_premium else 1)
-    if current_user_id in users_db:
-        users_db[current_user_id]["gems"] = user.get("gems", 0) + gem_reward
+    if user_id in users_db:
+        users_db[user_id]["gems"] = user.get("gems", 0) + gem_reward
     offer["redemption_count"] = offer.get("redemption_count", 0) + 1
     return {
         "success": True,
         "data": {
             "discount_percent": discount,
             "gems_earned": gem_reward,
-            "new_gem_total": users_db.get(current_user_id, {}).get("gems", 0),
+            "new_gem_total": users_db.get(user_id, {}).get("gems", 0),
         },
     }
 
 
 @router.get("/offers/nearby")
-def get_nearby_offers(lat: float = 39.9612, lng: float = -82.9988, radius: float = 10.0):
+def get_nearby_offers(
+    lat: float = 39.9612,
+    lng: float = -82.9988,
+    radius: float = Query(default=10.0, ge=0.1, le=200),
+    limit: int = Query(default=100, ge=1, le=100),
+):
     cache_lat = round(lat, 2)
     cache_lng = round(lng, 2)
     key = f"offers_nearby:{cache_lat}:{cache_lng}:{radius}"
@@ -211,14 +288,15 @@ def get_nearby_offers(lat: float = 39.9612, lng: float = -82.9988, radius: float
     if cached:
         return cached
     nearby = []
-    for offer in offers_db:
+    source = _active_offers_source(limit=500)
+    for offer in source:
         dlat = abs(offer["lat"] - lat)
         dlng = abs(offer["lng"] - lng)
         dist_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
         if dist_km <= radius:
             nearby.append({**offer, "distance_km": round(dist_km, 2)})
     nearby.sort(key=lambda x: x["distance_km"])
-    result = {"success": True, "data": nearby}
+    result = {"success": True, "data": nearby[:limit], "count": len(nearby[:limit])}
     cache_set(key, result, ttl=300)
     return result
 
@@ -228,7 +306,8 @@ def get_offers_on_route(origin_lat: float = 39.9612, origin_lng: float = -82.998
     route_offers = []
     mid_lat = (origin_lat + dest_lat) / 2
     mid_lng = (origin_lng + dest_lng) / 2
-    for offer in offers_db:
+    source = _active_offers_source(limit=500)
+    for offer in source:
         dlat = abs(offer["lat"] - mid_lat)
         dlng = abs(offer["lng"] - mid_lng)
         dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
@@ -238,7 +317,11 @@ def get_offers_on_route(origin_lat: float = 39.9612, origin_lng: float = -82.998
 
 
 @router.get("/offers/personalized")
-def get_personalized_offers(lat: float = 39.9612, lng: float = -82.9988, limit: int = 2):
+def get_personalized_offers(
+    lat: float = 39.9612,
+    lng: float = -82.9988,
+    limit: int = Query(default=20, ge=1, le=100),
+):
     user = users_db.get(current_user_id, {})
     history = driver_location_history.get(current_user_id, [])
     visited_types = {}
@@ -246,7 +329,8 @@ def get_personalized_offers(lat: float = 39.9612, lng: float = -82.9988, limit: 
         if visit.get("business_type"):
             visited_types[visit["business_type"]] = visited_types.get(visit["business_type"], 0) + 1
     scored = []
-    for offer in offers_db:
+    source = _active_offers_source(limit=500)
+    for offer in source:
         if datetime.fromisoformat(offer["expires_at"]) < datetime.now():
             continue
         dlat = abs(offer["lat"] - lat)
@@ -263,7 +347,8 @@ def get_personalized_offers(lat: float = 39.9612, lng: float = -82.9988, limit: 
 
 @router.post("/offers/{offer_id}/accept-voice")
 def accept_offer_via_voice(offer_id: int, add_as_stop: bool = True):
-    offer = next((o for o in offers_db if o["id"] == offer_id), None)
+    source = _active_offers_source(limit=500)
+    offer = next((o for o in source if str(o.get("id")) == str(offer_id)), None)
     if not offer:
         return {"success": False, "message": "Offer not found"}
     return {
@@ -275,6 +360,8 @@ def accept_offer_via_voice(offer_id: int, add_as_stop: bool = True):
 
 @router.post("/offers/{offer_id}/favorite")
 def favorite_offer(offer_id: int):
+    if ENVIRONMENT == "production":
+        return {"success": False, "message": "Favorites unavailable in production path"}
     offer = next((o for o in offers_db if o["id"] == offer_id), None)
     if not offer:
         return {"success": False, "message": "Offer not found"}
@@ -284,6 +371,8 @@ def favorite_offer(offer_id: int):
 
 @router.post("/driver/location-visit")
 def record_location_visit(visit: LocationVisit):
+    if ENVIRONMENT == "production":
+        return {"success": False, "message": "Location-visit history unavailable in production path"}
     if current_user_id not in driver_location_history:
         driver_location_history[current_user_id] = []
     driver_location_history[current_user_id].append({"lat": visit.lat, "lng": visit.lng, "business_name": visit.business_name, "business_type": visit.business_type, "timestamp": visit.timestamp or datetime.now().isoformat()})

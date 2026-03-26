@@ -8,7 +8,7 @@ SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY")
 SUPABASE_PUBLISHABLE_KEY = os.environ.get("SUPABASE_PUBLISHABLE_KEY")
 SUPABASE_DB_PASSWORD = os.environ.get("SUPABASE_DB_PASSWORD")  # Optional: DB password for direct connection
 
-JWT_SECRET_DEFAULT = "snaproad-jwt-secret-change-in-prod"
+JWT_SECRET_DEFAULT = ""
 JWT_SECRET = os.environ.get("JWT_SECRET", JWT_SECRET_DEFAULT)
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 JWT_ALGORITHM = "HS256"

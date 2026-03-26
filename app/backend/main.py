@@ -20,6 +20,9 @@ sentry_sdk.init(
 )
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -48,11 +51,41 @@ from routes.family import router as family_router
 from routes.photo_reports import router as photo_reports_router
 from config import JWT_SECRET, SUPABASE_URL, SUPABASE_SECRET_KEY, OPENAI_API_KEY, validate_runtime_config
 from services.telemetry_service import telemetry_service
+from database import get_supabase
 
 
 def create_app() -> FastAPI:
     validate_runtime_config()
+    _env = os.getenv("ENVIRONMENT", "development")
     app = FastAPI(title="SnapRoad API")
+    class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            response = await call_next(request)
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+            return response
+
+    app.add_middleware(SecurityHeadersMiddleware)
+    if _env == "production":
+        app.add_middleware(HTTPSRedirectMiddleware)
+
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        # Never leak stack traces to clients.
+        telemetry_service.publish_fire_and_forget(
+            {
+                "id": f"err_{telemetry_service.now_iso()}_{request.method}_{request.url.path}",
+                "timestamp": telemetry_service.now_iso(),
+                "severity": "error",
+                "path": request.url.path,
+                "method": request.method,
+                "error": str(exc),
+            }
+        )
+        return JSONResponse(status_code=500, content={"detail": "An internal error occurred"})
+
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -98,9 +131,35 @@ def create_app() -> FastAPI:
     def root():
         return {"message": "SnapRoad API", "docs": "/docs", "redoc": "/redoc"}
 
+    @app.get("/health")
+    def health():
+        checks = {"database": "ok", "cache": "unknown"}
+        try:
+            sb = get_supabase()
+            sb.table("profiles").select("id").limit(1).execute()
+        except Exception:
+            checks["database"] = "error"
+
+        try:
+            import redis
+            redis_url = (os.environ.get("REDIS_URL") or "").strip()
+            if redis_url:
+                client = redis.from_url(redis_url)
+                client.ping()
+                checks["cache"] = "ok"
+            else:
+                checks["cache"] = "disabled"
+        except Exception:
+            checks["cache"] = "degraded"
+
+        status = "ok" if checks["database"] == "ok" else "degraded"
+        return {"status": status, "checks": checks}
+
     @app.get("/api/env-check")
     def env_check():
         """Verify .env is loaded and key vars are set (no secrets returned)."""
+        if _env == "production":
+            return {"detail": "Not available in production"}
         key_path = os.environ.get("MAPKIT_PRIVATE_KEY_PATH", "")
         key_path_abs = (
             key_path
@@ -131,7 +190,6 @@ def create_app() -> FastAPI:
         }
 
     # Parse CORS origins from env (comma-separated)
-    _env = os.getenv("ENVIRONMENT", "development")
     _cors_origins_raw = os.getenv("CORS_ORIGINS", "")
 
     if _cors_origins_raw:
@@ -159,8 +217,8 @@ def create_app() -> FastAPI:
         allow_origins=cors_origins,
         allow_origin_regex=_origin_regex,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     # Register all route modules

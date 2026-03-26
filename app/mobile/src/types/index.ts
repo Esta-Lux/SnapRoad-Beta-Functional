@@ -200,7 +200,7 @@ export interface Coordinate {
 }
 
 export interface Incident {
-  id: number;
+  id: string | number;
   type: string;
   lat: number;
   lng: number;

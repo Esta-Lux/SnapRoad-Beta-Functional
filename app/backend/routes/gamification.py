@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import datetime, timedelta
 import random
 from models.schemas import XPEvent, ChallengeCreate, GemGenerateRequest, GemCollectRequest
@@ -7,19 +7,48 @@ from services.mock_data import (
     challenges_data, challenges_db, route_gems_db, collected_gems_db,
     XP_CONFIG, calculate_xp_for_level, calculate_xp_to_next_level,
 )
+from middleware.auth import get_current_user
+from database import get_supabase
+from services.supabase_service import (
+    sb_get_profile,
+    sb_update_profile,
+    sb_create_challenge,
+    sb_get_challenges,
+)
+from config import ENVIRONMENT
 import uuid
 
 router = APIRouter(prefix="/api", tags=["Gamification"])
+processed_xp_events: set[str] = set()
+
+
+def _user_state(user_id: str) -> dict:
+    profile = sb_get_profile(user_id) or {}
+    local = users_db.get(user_id, {})
+    merged = {**local, **profile}
+    if user_id not in users_db:
+        users_db[user_id] = {"id": user_id}
+    users_db[user_id].update(merged)
+    return users_db[user_id]
+
+
+def _persist_user_fields(user_id: str, updates: dict) -> None:
+    users_db.setdefault(user_id, {"id": user_id})
+    users_db[user_id].update(updates)
+    try:
+        ok = sb_update_profile(user_id, updates)
+        if ENVIRONMENT == "production" and not ok:
+            raise HTTPException(status_code=503, detail="Gamification persistence unavailable")
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Gamification persistence unavailable")
 
 
 def add_xp_to_user(user_id: str, xp_amount: int) -> dict:
-    if user_id not in users_db:
-        return {}
-    user = users_db[user_id]
+    user = _user_state(user_id)
     old_level = user.get("level", 1)
     old_xp = user.get("xp", 0)
     new_xp = max(0, old_xp + xp_amount)
-    users_db[user_id]["xp"] = new_xp
 
     new_level = 1
     xp_threshold = 0
@@ -31,20 +60,21 @@ def add_xp_to_user(user_id: str, xp_amount: int) -> dict:
         else:
             break
     new_level = min(new_level, XP_CONFIG["max_level"])
-    users_db[user_id]["level"] = new_level
+    updates = {"xp": new_xp, "level": new_level}
 
     if new_level < XP_CONFIG["max_level"]:
         xp_to_next = XP_CONFIG["base_xp_to_level"] + (new_level - 1) * XP_CONFIG["xp_increment"]
         xp_at_current_level = calculate_xp_for_level(new_level)
         xp_progress = new_xp - xp_at_current_level
-        users_db[user_id]["xp_to_next_level"] = xp_to_next
-        users_db[user_id]["xp_progress"] = xp_progress
+        updates["xp_to_next_level"] = xp_to_next
+        updates["xp_progress"] = xp_progress
     else:
-        users_db[user_id]["xp_to_next_level"] = 0
-        users_db[user_id]["xp_progress"] = 0
+        updates["xp_to_next_level"] = 0
+        updates["xp_progress"] = 0
+    _persist_user_fields(user_id, updates)
 
     level_change = new_level - old_level
-    return {"old_level": old_level, "new_level": new_level, "level_change": level_change, "leveled_up": level_change > 0, "leveled_down": level_change < 0, "xp_gained": xp_amount, "total_xp": new_xp, "xp_to_next_level": users_db[user_id].get("xp_to_next_level", 0)}
+    return {"old_level": old_level, "new_level": new_level, "level_change": level_change, "leveled_up": level_change > 0, "leveled_down": level_change < 0, "xp_gained": xp_amount, "total_xp": new_xp, "xp_to_next_level": updates.get("xp_to_next_level", 0)}
 
 
 def check_community_badges(user_id: str) -> list:
@@ -66,13 +96,19 @@ def check_community_badges(user_id: str) -> list:
 
 # ==================== XP ====================
 @router.post("/xp/add")
-def add_xp(event: XPEvent):
+def add_xp(event: XPEvent, user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    if event.event_id:
+        key = f"{user_id}:{event.event_id}"
+        if key in processed_xp_events:
+            return {"success": True, "message": "XP already processed for this event", "data": {"duplicate": True}}
+        processed_xp_events.add(key)
     event_type = event.event_type.lower()
     xp_map = {"photo_report": XP_CONFIG["photo_report"], "offer_redemption": XP_CONFIG["offer_redemption"], "safe_drive": XP_CONFIG["safe_drive"], "consistent_bonus": XP_CONFIG["consistent_driving"], "safety_penalty": XP_CONFIG["safety_score_penalty"]}
     xp_amount = event.amount if event.amount is not None else xp_map.get(event_type, 0)
     if xp_amount == 0:
         return {"success": False, "message": f"Unknown event type: {event_type}"}
-    result = add_xp_to_user(current_user_id, xp_amount)
+    result = add_xp_to_user(user_id, xp_amount)
     message = f"+{xp_amount} XP" if xp_amount > 0 else f"{xp_amount} XP"
     if result.get("leveled_up"):
         message += f" Level up! Now level {result['new_level']}"
@@ -129,7 +165,11 @@ def get_community_badges():
 # Top 10 by state; weekly default. Ranked by safety_score (primary), then gems (secondary).
 # Each entry includes challenges_participated and badges_count (show on click).
 @router.get("/leaderboard")
-def get_leaderboard(state: str = "all", limit: int = 10, time_filter: str = "weekly"):
+def get_leaderboard(
+    state: str = "all",
+    limit: int = Query(default=10, ge=1, le=100),
+    time_filter: str = "weekly",
+):
     all_users = list(users_db.values())
     if state and state.lower() != "all":
         all_users = [u for u in all_users if (u.get("state") or "").upper() == state.upper()]
@@ -188,51 +228,89 @@ def get_leaderboard(state: str = "all", limit: int = 10, time_filter: str = "wee
 
 # ==================== CHALLENGES ====================
 @router.get("/challenges")
-def get_challenges():
-    return {"success": True, "data": challenges_data}
+def get_challenges(limit: int = Query(default=50, ge=1, le=100)):
+    return {"success": True, "data": challenges_data[:limit], "count": len(challenges_data[:limit])}
 
 
 @router.post("/challenges")
-def create_challenge(challenge: ChallengeCreate):
-    user = users_db.get(current_user_id, {})
-    opponent = users_db.get(challenge.opponent_id, {})
+def create_challenge(challenge: ChallengeCreate, auth_user: dict = Depends(get_current_user)):
+    user_id = str(auth_user.get("id") or current_user_id)
+    user = _user_state(user_id)
+    opponent = _user_state(str(challenge.opponent_id))
     if not opponent:
         raise HTTPException(status_code=404, detail="Opponent not found")
     if user.get("gems", 0) < challenge.stake:
         raise HTTPException(status_code=400, detail="Not enough gems")
-    users_db[current_user_id]["gems"] = user.get("gems", 0) - challenge.stake
-    new_challenge = {"id": str(len(challenges_db) + 1), "challenger_id": current_user_id, "opponent_id": challenge.opponent_id, "challenger_name": user.get("name", "Unknown"), "opponent_name": opponent.get("name", "Unknown"), "stake": challenge.stake, "duration_hours": challenge.duration_hours, "status": "pending", "your_score": user.get("safety_score", 85), "opponent_score": opponent.get("safety_score", 85), "created_at": datetime.now().isoformat(), "ends_at": (datetime.now() + timedelta(hours=challenge.duration_hours)).isoformat()}
+    _persist_user_fields(user_id, {"gems": user.get("gems", 0) - challenge.stake})
+    new_challenge = {"id": str(len(challenges_db) + 1), "challenger_id": user_id, "opponent_id": challenge.opponent_id, "challenger_name": user.get("name", "Unknown"), "opponent_name": opponent.get("name", "Unknown"), "stake": challenge.stake, "duration_hours": challenge.duration_hours, "status": "pending", "your_score": user.get("safety_score", 85), "opponent_score": opponent.get("safety_score", 85), "created_at": datetime.now().isoformat(), "ends_at": (datetime.now() + timedelta(hours=challenge.duration_hours)).isoformat()}
+    created = sb_create_challenge(new_challenge)
+    if created:
+        return {"success": True, "message": f"Challenge sent to {opponent.get('name')}!", "data": created}
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Challenge service unavailable")
     challenges_db.append(new_challenge)
     return {"success": True, "message": f"Challenge sent to {opponent.get('name')}!", "data": new_challenge}
 
 
 @router.post("/challenges/{challenge_id}/accept")
-def accept_challenge(challenge_id: str):
+def accept_challenge(challenge_id: str, auth_user: dict = Depends(get_current_user)):
+    user_id = str(auth_user.get("id") or current_user_id)
+    try:
+        db_challenges = sb_get_challenges(limit=200)
+        c = next((x for x in db_challenges if str(x.get("id")) == str(challenge_id) and str(x.get("opponent_id")) == user_id), None)
+        if c:
+            user = _user_state(user_id)
+            stake = int(c.get("stake") or 0)
+            if user.get("gems", 0) < stake:
+                raise HTTPException(status_code=400, detail="Not enough gems")
+            _persist_user_fields(user_id, {"gems": user.get("gems", 0) - stake})
+            try:
+                get_supabase().table("challenges").update({"status": "active"}).eq("id", c.get("id")).execute()
+            except Exception:
+                pass
+            c["status"] = "active"
+            return {"success": True, "message": "Challenge accepted!", "data": c}
+    except HTTPException:
+        raise
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Challenge service unavailable")
     for c in challenges_db:
-        if c["id"] == challenge_id and c["opponent_id"] == current_user_id:
-            user = users_db.get(current_user_id, {})
+        if c["id"] == challenge_id and c["opponent_id"] == user_id:
+            user = _user_state(user_id)
             if user.get("gems", 0) < c["stake"]:
                 raise HTTPException(status_code=400, detail="Not enough gems")
-            users_db[current_user_id]["gems"] = user.get("gems", 0) - c["stake"]
+            _persist_user_fields(user_id, {"gems": user.get("gems", 0) - c["stake"]})
             c["status"] = "active"
             return {"success": True, "message": "Challenge accepted!", "data": c}
     raise HTTPException(status_code=404, detail="Challenge not found")
 
 
 @router.post("/challenges/{challenge_id}/claim")
-def claim_challenge(challenge_id: int):
+def claim_challenge(challenge_id: int, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Challenge claim unavailable in production path")
+    user_id = str(auth_user.get("id") or current_user_id)
     for ch in challenges_data:
         if ch["id"] == challenge_id and ch.get("completed") and not ch.get("claimed"):
             ch["claimed"] = True
-            if current_user_id in users_db:
-                users_db[current_user_id]["gems"] = users_db[current_user_id].get("gems", 0) + ch["gems"]
-            return {"success": True, "message": f"Claimed {ch['gems']} gems!", "data": {"gems_earned": ch["gems"], "new_total": users_db.get(current_user_id, {}).get("gems", 0)}}
+            user = _user_state(user_id)
+            new_total = user.get("gems", 0) + ch["gems"]
+            _persist_user_fields(user_id, {"gems": new_total})
+            return {"success": True, "message": f"Claimed {ch['gems']} gems!", "data": {"gems_earned": ch["gems"], "new_total": new_total}}
     return {"success": False, "message": "Challenge not found or not completed"}
 
 
 @router.get("/challenges/history")
-def get_challenge_history():
-    user_challenges = [c for c in challenges_db if c["challenger_id"] == current_user_id or c["opponent_id"] == current_user_id]
+def get_challenge_history(
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+):
+    user_id = str(user.get("id") or current_user_id)
+    db_challenges = sb_get_challenges(limit=200)
+    source = db_challenges if db_challenges else challenges_db
+    user_challenges = [c for c in source if str(c.get("challenger_id")) == user_id or str(c.get("opponent_id")) == user_id]
+    user_challenges = user_challenges[:limit]
     wins = sum(1 for c in user_challenges if c.get("status") == "won")
     losses = sum(1 for c in user_challenges if c.get("status") == "lost")
     total = wins + losses
@@ -248,6 +326,8 @@ def get_challenge_history():
 # ==================== GEMS ====================
 @router.post("/gems/generate-route")
 def generate_route_gems(req: GemGenerateRequest):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Gem generation unavailable in production path")
     gems = []
     for i, point in enumerate(req.route_points):
         gem_id = f"gem_{req.trip_id}_{i}_{uuid.uuid4().hex[:4]}"
@@ -261,33 +341,39 @@ def generate_route_gems(req: GemGenerateRequest):
 
 
 @router.post("/gems/collect")
-def collect_gem(req: GemCollectRequest):
+def collect_gem(req: GemCollectRequest, user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Gem collection unavailable in production path")
+    user_id = str(user.get("id") or current_user_id)
     gems = route_gems_db.get(req.trip_id, [])
     gem = next((g for g in gems if g["id"] == req.gem_id and not g["collected"]), None)
     if not gem:
         return {"success": False, "message": "Gem not found or already collected"}
     gem["collected"] = True
-    user = users_db.get(current_user_id, {})
-    multiplier = user.get("gem_multiplier", 1)
+    user_profile = _user_state(user_id)
+    multiplier = user_profile.get("gem_multiplier", 1)
     earned = gem["value"] * multiplier
-    if current_user_id in users_db:
-        users_db[current_user_id]["gems"] = user.get("gems", 0) + earned
+    new_total = user_profile.get("gems", 0) + earned
+    _persist_user_fields(user_id, {"gems": new_total})
     if req.trip_id not in collected_gems_db:
         collected_gems_db[req.trip_id] = []
     collected_gems_db[req.trip_id].append({"gem_id": req.gem_id, "value": earned})
-    return {"success": True, "data": {"gem_id": req.gem_id, "value": earned, "multiplier": multiplier, "new_total": users_db.get(current_user_id, {}).get("gems", 0)}}
+    return {"success": True, "data": {"gem_id": req.gem_id, "value": earned, "multiplier": multiplier, "new_total": new_total}}
 
 
 @router.get("/gems/trip-summary/{trip_id}")
 def get_trip_gem_summary(trip_id: str):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Gem trip summary unavailable in production path")
     collected = collected_gems_db.get(trip_id, [])
     total = route_gems_db.get(trip_id, [])
     return {"success": True, "data": {"trip_id": trip_id, "total_gems_on_route": len(total), "gems_collected": len(collected), "total_value": sum(g["value"] for g in collected), "collection_rate": round(len(collected) / max(len(total), 1) * 100, 1)}}
 
 
 @router.get("/gems/history")
-def get_gem_history():
-    user = users_db.get(current_user_id, {})
+def get_gem_history(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    user = users_db.get(user_id, {})
     return {"success": True, "data": {"current_balance": user.get("gems", 0), "total_earned": user.get("gems", 0) + 500, "total_spent": 500, "recent_transactions": [{"type": "earned", "amount": 50, "source": "Trip completion", "date": datetime.now().isoformat()}, {"type": "earned", "amount": 100, "source": "Challenge won", "date": (datetime.now() - timedelta(hours=2)).isoformat()}, {"type": "spent", "amount": 500, "source": "Car skin purchase", "date": (datetime.now() - timedelta(days=1)).isoformat()}]}}
 
 

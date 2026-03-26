@@ -1,5 +1,5 @@
-// Orion: use frontend key from .env if set, otherwise call backend (OPENAI_API_KEY in backend .env)
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || ''
+// Security: Orion runs through backend only; never expose provider keys in frontend bundles.
+const OPENAI_API_KEY = ''
 const API_BASE =
   (import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 

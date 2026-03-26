@@ -82,11 +82,12 @@ export default function MapScreen() {
 
   // Report state
   const [showReportPicker, setShowReportPicker] = useState(false);
+  const [showCommunitySheet, setShowCommunitySheet] = useState(false);
   const [nearbyIncidents, setNearbyIncidents] = useState<Incident[]>([]);
   const [activeReportCard, setActiveReportCard] = useState<Incident | null>(null);
   const [confirmIncident, setConfirmIncident] = useState<Incident | null>(null);
   const reportPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const announcedIncidentsRef = useRef<Set<number>>(new Set());
+  const announcedIncidentsRef = useRef<Set<string>>(new Set());
   const confirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Map style
@@ -202,14 +203,14 @@ export default function MapScreen() {
   useEffect(() => {
     if (!nav.isNavigating || !nearbyIncidents.length) { setActiveReportCard(null); return; }
     const ahead = nearbyIncidents.filter((inc) => {
-      if (announcedIncidentsRef.current.has(inc.id)) return false;
+      if (announcedIncidentsRef.current.has(`announce:${String(inc.id)}`)) return false;
       const dist = haversineMeters(location.lat, location.lng, inc.lat, inc.lng) / 1609.34;
       return dist > 0.1 && dist < 1.0;
     });
     if (ahead.length > 0) {
       const nearest = ahead[0];
       setActiveReportCard(nearest);
-      announcedIncidentsRef.current.add(nearest.id);
+      announcedIncidentsRef.current.add(`announce:${String(nearest.id)}`);
       if (nearest.type === 'accident' || nearest.type === 'police') {
         const dist = (haversineMeters(location.lat, location.lng, nearest.lat, nearest.lng) / 1609.34).toFixed(1);
         speak(`${nearest.title} reported ${dist} miles ahead.`, 'high', drivingMode);
@@ -223,8 +224,8 @@ export default function MapScreen() {
     if (!nav.isNavigating) return;
     for (const inc of nearbyIncidents) {
       const dist = haversineMeters(location.lat, location.lng, inc.lat, inc.lng);
-      if (dist < 200 && !announcedIncidentsRef.current.has(-inc.id)) {
-        announcedIncidentsRef.current.add(-inc.id);
+      if (dist < 200 && !announcedIncidentsRef.current.has(`confirm:${String(inc.id)}`)) {
+        announcedIncidentsRef.current.add(`confirm:${String(inc.id)}`);
         setConfirmIncident(inc);
         confirmTimeoutRef.current = setTimeout(() => setConfirmIncident(null), 10000);
         break;
@@ -239,16 +240,35 @@ export default function MapScreen() {
     await api.post('/api/incidents/confirm', { incident_id: confirmIncident.id, confirmed });
   }, [confirmIncident]);
 
+  const handleUpvoteIncident = useCallback(async (incident: Incident) => {
+    try {
+      const res = await api.post<{ upvotes?: number }>(`/api/incidents/${incident.id}/upvote`);
+      if (!res.success) throw new Error(res.error || 'Could not upvote report');
+      const nextVotes = typeof res.data?.upvotes === 'number' ? res.data.upvotes : (incident.upvotes || 0) + 1;
+      setNearbyIncidents((prev) =>
+        prev.map((item) => (String(item.id) === String(incident.id) ? { ...item, upvotes: nextVotes } : item)),
+      );
+      setActiveReportCard((prev) =>
+        prev && String(prev.id) === String(incident.id) ? { ...prev, upvotes: nextVotes } : prev,
+      );
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (e: any) {
+      Alert.alert('Upvote failed', e?.message || 'Please try again.');
+    }
+  }, []);
+
   // --- Ambient mode (not navigating, moving) ---
   const isAmbient = !nav.isNavigating && speed > 6.7; // > 3 m/s in mph
   useEffect(() => {
     if (!isAmbient || !nearbyIncidents.length) return;
     const highPriority = nearbyIncidents.filter(
-      (inc) => (inc.type === 'accident' || inc.type === 'police') && !announcedIncidentsRef.current.has(inc.id),
+      (inc) =>
+        (inc.type === 'accident' || inc.type === 'police') &&
+        !announcedIncidentsRef.current.has(`ambient:${String(inc.id)}`),
     );
     if (highPriority.length > 0) {
       const nearest = highPriority[0];
-      announcedIncidentsRef.current.add(nearest.id);
+      announcedIncidentsRef.current.add(`ambient:${String(nearest.id)}`);
       setActiveReportCard(nearest);
       speak(`Caution: ${nearest.title} reported ahead.`, 'normal', drivingMode);
       setTimeout(() => setActiveReportCard(null), 8000);
@@ -420,6 +440,10 @@ export default function MapScreen() {
               Reported {timeAgo(activeReportCard.created_at)} · {activeReportCard.upvotes} confirmed
             </Text>
           </View>
+          <TouchableOpacity style={styles.reportVoteBtn} onPress={() => handleUpvoteIncident(activeReportCard)}>
+            <Ionicons name="thumbs-up-outline" size={14} color="#fff" />
+            <Text style={styles.reportVoteText}>Upvote</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -536,6 +560,17 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
+      {/* Community reports button */}
+      {!nav.showRoutePreview && !nav.tripSummary && !nav.isNavigating && (
+        <TouchableOpacity
+          style={[styles.communityBtn, { bottom: 80, left: 16 }]}
+          onPress={() => setShowCommunitySheet(true)}
+        >
+          <Ionicons name="people-outline" size={18} color="#1e293b" />
+          <Text style={styles.communityBtnText}>Community</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Report type picker */}
       {showReportPicker && (
         <View style={styles.reportPickerOverlay}>
@@ -551,6 +586,44 @@ export default function MapScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+          </View>
+        </View>
+      )}
+
+      {/* Community incidents sheet */}
+      {showCommunitySheet && (
+        <View style={styles.reportPickerOverlay}>
+          <TouchableOpacity style={styles.reportPickerBg} onPress={() => setShowCommunitySheet(false)} activeOpacity={1} />
+          <View style={styles.communitySheet}>
+            <View style={styles.communityHeader}>
+              <Text style={styles.communityTitle}>Community Reports</Text>
+              <TouchableOpacity onPress={() => setShowCommunitySheet(false)}>
+                <Ionicons name="close" size={18} color="#cbd5e1" />
+              </TouchableOpacity>
+            </View>
+            {nearbyIncidents.length === 0 ? (
+              <Text style={styles.communityEmpty}>No nearby reports yet.</Text>
+            ) : (
+              <FlatList
+                data={nearbyIncidents.slice(0, 30)}
+                keyExtractor={(item) => String(item.id)}
+                contentContainerStyle={{ paddingBottom: 12 }}
+                renderItem={({ item }) => (
+                  <View style={styles.communityItem}>
+                    <View style={{ flex: 1, marginRight: 10 }}>
+                      <Text style={styles.communityItemTitle}>{item.title}</Text>
+                      <Text style={styles.communityItemSub}>
+                        {typeof item.distance_miles === 'number' ? `${item.distance_miles.toFixed(1)} mi` : 'Nearby'} · {timeAgo(item.created_at)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity style={styles.communityVoteBtn} onPress={() => handleUpvoteIncident(item)}>
+                      <Ionicons name="thumbs-up-outline" size={14} color="#fff" />
+                      <Text style={styles.communityVoteText}>{item.upvotes}</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              />
+            )}
           </View>
         </View>
       )}
@@ -713,9 +786,13 @@ const styles = StyleSheet.create({
   locatingBanner: { position: 'absolute', top: 120, alignSelf: 'center', backgroundColor: 'rgba(59,130,246,0.9)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   locatingText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   reportBtn: { position: 'absolute', width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.95)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
+  communityBtn: { position: 'absolute', minHeight: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.95)', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: '#e5e7eb', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
+  communityBtnText: { color: '#1e293b', fontSize: 12, fontWeight: '700' },
   reportCard: { position: 'absolute', top: 100, left: 16, right: 16, backgroundColor: '#1e1e2e', borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'center', zIndex: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 },
   reportCardTitle: { color: '#fff', fontSize: 14, fontWeight: '700' },
   reportCardSub: { color: '#888', fontSize: 11, marginTop: 2 },
+  reportVoteBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#2563EB', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginLeft: 10 },
+  reportVoteText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   confirmCard: { position: 'absolute', bottom: 100, left: 16, right: 16, backgroundColor: '#1e1e2e', borderRadius: 14, padding: 16, zIndex: 15, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 },
   confirmTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
   confirmBtn: { borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
@@ -725,6 +802,15 @@ const styles = StyleSheet.create({
   reportPickerOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 50, justifyContent: 'flex-end' },
   reportPickerBg: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
   reportPickerSheet: { backgroundColor: '#1e1e2e', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
+  communitySheet: { backgroundColor: '#0f172a', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, maxHeight: '55%' },
+  communityHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  communityTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  communityEmpty: { color: '#94a3b8', fontSize: 13, paddingVertical: 18, textAlign: 'center' },
+  communityItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e293b', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8 },
+  communityItemTitle: { color: '#f8fafc', fontSize: 14, fontWeight: '700' },
+  communityItemSub: { color: '#94a3b8', fontSize: 11, marginTop: 2 },
+  communityVoteBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#2563EB', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  communityVoteText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   reportPickerTitle: { color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center', marginBottom: 16 },
   reportPickerGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 16 },
   reportPickerItem: { alignItems: 'center', width: 70 },

@@ -6,6 +6,7 @@ from passlib.context import CryptContext
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRY_HOURS
+from services.supabase_service import sb_get_auth_user_from_access_token, sb_get_profile
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +42,28 @@ def decode_token(token: str) -> dict:
 
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    if not credentials:
-        return None
+    if not credentials or not credentials.credentials:
+        raise HTTPException(status_code=401, detail="Authentication required")
     token = credentials.credentials
+
+    # Primary verification path: validate Supabase JWT server-side.
+    supabase_user = sb_get_auth_user_from_access_token(token)
+    if supabase_user and supabase_user.get("id"):
+        user_id = str(supabase_user.get("id"))
+        profile = sb_get_profile(user_id) or {}
+        return {
+            "id": user_id,
+            "user_id": user_id,
+            "email": supabase_user.get("email") or profile.get("email"),
+            "role": profile.get("role", "user"),
+            "partner_id": profile.get("partner_id"),
+        }
+
+    # Backward-compatible fallback for legacy SnapRoad JWTs.
     payload = decode_token(token)
     user_id = payload.get("sub")
     if user_id is None:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     return {
         "id": user_id,
         "user_id": user_id,

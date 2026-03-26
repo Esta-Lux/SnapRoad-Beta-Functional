@@ -9,8 +9,9 @@ from services.mock_data import (
     saved_locations, saved_routes, widget_settings, MAP_LOCATIONS,
     road_reports_db, users_db,
 )
-from config import CAMERAS_API_KEY, CAMERAS_API_URL, CAMERAS_API_KEY_AS_HEADER
+from config import CAMERAS_API_KEY, CAMERAS_API_URL, CAMERAS_API_KEY_AS_HEADER, ENVIRONMENT
 from middleware.auth import get_current_user
+from database import get_supabase
 
 
 class VoiceCommandBody(BaseModel):
@@ -35,13 +36,18 @@ def _resolve_user_scoped_data(auth_user: dict) -> tuple[str, list, list]:
 
 # ==================== SAVED LOCATIONS ====================
 @router.get("/locations")
-def get_locations(auth_user: dict = Depends(get_current_user)):
+def get_locations(
+    limit: int = Query(default=100, ge=1, le=100),
+    auth_user: dict = Depends(get_current_user),
+):
     _, user_locations, _ = _resolve_user_scoped_data(auth_user)
-    return {"success": True, "data": user_locations}
+    return {"success": True, "data": user_locations[:limit], "count": len(user_locations[:limit])}
 
 
 @router.post("/locations")
 def add_location(location: Location, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved locations unavailable in production")
     _, user_locations, _ = _resolve_user_scoped_data(auth_user)
     new_id = max([l.get("id", 0) for l in user_locations], default=0) + 1
     loc = {"id": new_id, "name": location.name, "address": location.address, "category": location.category, "lat": location.lat, "lng": location.lng, "created_at": datetime.now().isoformat()}
@@ -51,6 +57,8 @@ def add_location(location: Location, auth_user: dict = Depends(get_current_user)
 
 @router.delete("/locations/{location_id}")
 def delete_location(location_id: int, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved locations unavailable in production")
     _, user_locations, _ = _resolve_user_scoped_data(auth_user)
     user_locations[:] = [l for l in user_locations if l.get("id") != location_id]
     return {"success": True, "message": "Location deleted"}
@@ -58,13 +66,18 @@ def delete_location(location_id: int, auth_user: dict = Depends(get_current_user
 
 # ==================== ROUTES ====================
 @router.get("/routes")
-def get_routes(auth_user: dict = Depends(get_current_user)):
+def get_routes(
+    limit: int = Query(default=100, ge=1, le=100),
+    auth_user: dict = Depends(get_current_user),
+):
     _, _, user_routes = _resolve_user_scoped_data(auth_user)
-    return {"success": True, "data": user_routes}
+    return {"success": True, "data": user_routes[:limit], "count": len(user_routes[:limit])}
 
 
 @router.post("/routes")
 def add_route(route: Route, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved routes unavailable in production")
     _, _, user_routes = _resolve_user_scoped_data(auth_user)
     new_id = max([r.get("id", 0) for r in user_routes], default=0) + 1
     estimated_time = int(route.estimated_time or 18)
@@ -88,6 +101,8 @@ def add_route(route: Route, auth_user: dict = Depends(get_current_user)):
 
 @router.delete("/routes/{route_id}")
 def delete_route(route_id: int, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved routes unavailable in production")
     _, _, user_routes = _resolve_user_scoped_data(auth_user)
     before = len(user_routes)
     user_routes[:] = [r for r in user_routes if r.get("id") != route_id]
@@ -99,6 +114,8 @@ def delete_route(route_id: int, auth_user: dict = Depends(get_current_user)):
 @router.post("/routes/{route_id}/toggle")
 @router.put("/routes/{route_id}/toggle")
 def toggle_route(route_id: int, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved routes unavailable in production")
     _, _, user_routes = _resolve_user_scoped_data(auth_user)
     route = next((r for r in user_routes if r.get("id") == route_id), None)
     if not route:
@@ -110,6 +127,8 @@ def toggle_route(route_id: int, auth_user: dict = Depends(get_current_user)):
 @router.post("/routes/{route_id}/notifications")
 @router.put("/routes/{route_id}/notifications")
 def toggle_notifications(route_id: int, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved routes unavailable in production")
     _, _, user_routes = _resolve_user_scoped_data(auth_user)
     route = next((r for r in user_routes if r.get("id") == route_id), None)
     if not route:
@@ -192,6 +211,7 @@ def get_route_notifications(
     lat: Optional[float] = Query(None, description="Current latitude for ETA/leave-by"),
     lng: Optional[float] = Query(None, description="Current longitude for ETA/leave-by"),
     window_minutes: int = Query(120, description="Notify when departure is within this many minutes"),
+    limit: int = Query(default=100, ge=1, le=100),
 ):
     """
     Return route notifications with two options:
@@ -271,6 +291,7 @@ def get_route_notifications(
             "message": f"Try a faster route: save ~{options['saved_minutes']} min and still arrive by {options['desired_arrival']}",
         })
 
+    notifications = notifications[:limit]
     return {"success": True, "data": notifications, "total": len(notifications), "push_eligible": push_eligible}
 
 
@@ -354,7 +375,12 @@ def voice_command(body: VoiceCommandBody):
 
 # ==================== MAP SEARCH ====================
 @router.get("/map/search")
-def search_map_locations(q: str = Query(..., min_length=1), lat: Optional[float] = None, lng: Optional[float] = None, limit: int = 8):
+def search_map_locations(
+    q: str = Query(..., min_length=1),
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    limit: int = Query(default=8, ge=1, le=100),
+):
     query = q.lower().strip()
     results = []
     for loc in MAP_LOCATIONS:
@@ -377,6 +403,8 @@ def search_map_locations(q: str = Query(..., min_length=1), lat: Optional[float]
 
 @router.get("/map/directions")
 def get_mock_directions(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float, dest_name: Optional[str] = "Destination"):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Mock directions unavailable in production")
     dlat = abs(dest_lat - origin_lat)
     dlng = abs(dest_lng - origin_lng)
     distance_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
@@ -398,12 +426,16 @@ def get_mock_directions(origin_lat: float, origin_lng: float, dest_lat: float, d
 # ==================== WIDGETS ====================
 @router.get("/widgets")
 def get_widgets():
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
     return {"success": True, "data": widget_settings}
 
 
 @router.post("/widgets/{widget_id}/toggle")
 @router.put("/widgets/{widget_id}/toggle")
 def toggle_widget(widget_id: str):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
     if widget_id in widget_settings:
         widget_settings[widget_id]["visible"] = not widget_settings[widget_id]["visible"]
     return {"success": True, "data": widget_settings}
@@ -412,6 +444,8 @@ def toggle_widget(widget_id: str):
 @router.post("/widgets/{widget_id}/collapse")
 @router.put("/widgets/{widget_id}/collapse")
 def collapse_widget(widget_id: str):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
     if widget_id in widget_settings:
         widget_settings[widget_id]["collapsed"] = not widget_settings[widget_id]["collapsed"]
     return {"success": True, "data": widget_settings}
@@ -419,6 +453,8 @@ def collapse_widget(widget_id: str):
 
 @router.put("/widgets/{widget_id}/position")
 def update_widget_position(widget_id: str, body: dict):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
     if widget_id in widget_settings:
         widget_settings[widget_id]["position"] = body.get("position", 0)
     return {"success": True, "data": widget_settings}
@@ -487,9 +523,22 @@ def _fetch_cameras_from_api(lat: float, lng: float, radius_km: float) -> List[di
 
 # ==================== MAP TRAFFIC ====================
 @router.get("/map/traffic")
-def get_map_traffic(lat: Optional[float] = None, lng: Optional[float] = None, radius: float = 15):
+def get_map_traffic(
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    radius: float = Query(default=15, ge=0.1, le=200),
+    limit: int = Query(default=100, ge=1, le=100),
+):
     """Return road reports and traffic cameras for map overlay. Uses CAMERAS_API_KEY when CAMERAS_API_URL is set."""
-    reports = list(road_reports_db)
+    reports = []
+    try:
+        sb = get_supabase()
+        rr = sb.table("road_reports").select("id,type,lat,lng,description,upvotes,created_at,expires_at").eq("status", "active").limit(300).execute()
+        reports = rr.data or []
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Traffic overlay unavailable")
+        reports = list(road_reports_db)
     # Fetch cameras from external API when key and URL are configured
     if lat is not None and lng is not None and CAMERAS_API_KEY and (CAMERAS_API_URL or "").strip():
         external = _fetch_cameras_from_api(lat, lng, radius)
@@ -527,6 +576,7 @@ def get_map_traffic(lat: Optional[float] = None, lng: Optional[float] = None, ra
             "created_at": r.get("created_at"),
             "expires_at": r.get("expires_at"),
         })
+    overlays = overlays[:limit]
     return {"success": True, "data": overlays, "total": len(overlays)}
 
 

@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import type { ApiResponse, AuthResponse, LoginRequest, SignupRequest } from '../types';
+import { supabase } from '../lib/supabase';
 
 const TOKEN_KEY = 'snaproad_token';
 
@@ -9,7 +10,6 @@ function resolveApiUrl(): string {
   // 1. Explicit env var (highest priority)
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (envUrl && envUrl.length > 5) {
-    console.log('[API] Using EXPO_PUBLIC_API_URL:', envUrl);
     return envUrl;
   }
 
@@ -20,43 +20,38 @@ function resolveApiUrl(): string {
   const hostStr = hostUri || expoGoHost;
   const lanIp = hostStr.split(':')[0];
   if (lanIp && lanIp.length > 3 && lanIp !== 'localhost' && lanIp !== '127.0.0.1') {
-    const url = `http://${lanIp}:8001`;
-    console.log('[API] Auto-detected from Metro host:', url);
-    return url;
+    return `http://${lanIp}:8001`;
   }
 
   // 3. app.json extra fallback (for non-Expo production-style builds)
   const extra = Constants.expoConfig?.extra ?? {};
   const extraUrl = extra.apiUrl as string | undefined;
   if (extraUrl && extraUrl.length > 5) {
-    console.log('[API] Using app.json extra.apiUrl fallback:', extraUrl);
     return extraUrl;
   }
 
   // 4. Android emulator special IP
   if (Platform.OS === 'android') {
-    console.log('[API] Using Android emulator IP');
     return 'http://10.0.2.2:8001';
   }
 
-  console.log('[API] Falling back to localhost:8001');
   return 'http://localhost:8001';
 }
 
 const apiBaseUrl: string = resolveApiUrl();
-console.log('[API] Final API base URL:', apiBaseUrl);
 
 /** Tunnels and HTTPS edge URLs are slower; LAN HTTP is usually fast. */
 function resolveRequestTimeoutMs(baseUrl: string): number {
   const u = baseUrl.toLowerCase();
   if (u.includes('loca.lt') || u.includes('ngrok') || u.includes('trycloudflare') || u.includes('tunnel')) {
-    return 45000;
+    return 60000;
   }
-  return 15000;
+  return 30000;
 }
 
 class ApiService {
   private cachedToken: string | null = null;
+  private refreshInFlight: Promise<string | null> | null = null;
 
   private shouldAttachAuth(endpoint: string): boolean {
     // Auth entry points must remain public, even if we still have a stale token cached.
@@ -96,9 +91,39 @@ class ApiService {
     return this.cachedToken;
   }
 
+  private async refreshTokenFromSupabase(): Promise<string | null> {
+    if (this.refreshInFlight) return this.refreshInFlight;
+    this.refreshInFlight = (async () => {
+      try {
+        const refreshed = await supabase.auth.refreshSession();
+        const accessToken = refreshed.data.session?.access_token;
+        if (!accessToken) return null;
+        const exchange = await fetch(`${apiBaseUrl}/api/auth/oauth/supabase`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: accessToken }),
+        });
+        if (!exchange.ok) return null;
+        const payload = await exchange.json();
+        const appToken = payload?.data?.token ?? payload?.token;
+        if (typeof appToken === 'string' && appToken.length > 10) {
+          await this.setToken(appToken);
+          return appToken;
+        }
+        return null;
+      } catch {
+        return null;
+      } finally {
+        this.refreshInFlight = null;
+      }
+    })();
+    return this.refreshInFlight;
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
+    retryCount = 0,
   ): Promise<ApiResponse<T>> {
     const token = await this.getToken();
     const url = `${apiBaseUrl}${endpoint}`;
@@ -111,8 +136,6 @@ class ApiService {
     };
 
     const timeoutMs = resolveRequestTimeoutMs(apiBaseUrl);
-    console.log(`[API] ${options.method ?? 'GET'} ${url}`);
-
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -126,12 +149,24 @@ class ApiService {
       try {
         data = await response.json();
       } catch {
-        console.error('[API] Failed to parse JSON from', url);
         return { success: false, error: 'Invalid response from server' };
       }
 
-      if (response.status === 401) {
-        // Expired/invalid sessions should not keep stale tokens around.
+      if (response.status === 401 && attachAuth) {
+        const refreshedToken = await this.refreshTokenFromSupabase();
+        if (refreshedToken) {
+          const retryResponse = await fetch(url, {
+            ...options,
+            headers: {
+              ...headers,
+              Authorization: `Bearer ${refreshedToken}`,
+            },
+          });
+          const retryData = await retryResponse.json().catch(() => null);
+          if (retryResponse.ok) {
+            return { success: true, data: retryData as T };
+          }
+        }
         await this.setToken(null);
       }
 
@@ -150,7 +185,6 @@ class ApiService {
             })
             .filter(Boolean);
           const err = msgs.length ? msgs.join(' | ') : 'Request failed';
-          console.error('[API] Error:', response.status, err);
           return { success: false, error: err };
         }
 
@@ -161,22 +195,20 @@ class ApiService {
               : JSON.stringify(detailRaw)
             : 'Request failed';
         const normalized = response.status === 401 ? 'Session expired. Please sign in again.' : detail;
-        console.error('[API] Error:', response.status, normalized);
         return { success: false, error: normalized };
       }
 
-      console.log(`[API] OK ${response.status} ${endpoint}`);
       return { success: true, data: data as T };
     } catch (error) {
       const isAbort = (error as { name?: string })?.name === 'AbortError';
       const timeoutMs = resolveRequestTimeoutMs(apiBaseUrl);
-      const isTunnel = /loca\.lt|ngrok|trycloudflare/i.test(apiBaseUrl);
+      const method = (options.method ?? 'GET').toUpperCase();
+      if (isAbort && method === 'GET' && retryCount < 1) {
+        return this.request<T>(endpoint, options, retryCount + 1);
+      }
       const msg = isAbort
-        ? isTunnel
-          ? `Request timed out (${timeoutMs}ms). Tunnel may be down or slow — run localtunnel on your PC, or remove EXPO_PUBLIC_API_URL and use same Wi‑Fi so the app talks to your PC on port 8001.`
-          : `Request timed out (${timeoutMs}ms). Backend at ${apiBaseUrl} unreachable — is uvicorn running on port 8001 and is Windows Firewall allowing LAN access?`
-        : `Network error: Cannot reach ${apiBaseUrl}. Is the backend running?`;
-      console.error('[API] Catch:', msg, error);
+        ? `Request timed out (${timeoutMs}ms). Please try again.`
+        : 'Network error. Please check your connection and try again.';
       return { success: false, error: msg };
     }
   }
@@ -191,7 +223,6 @@ class ApiService {
     const authData = payload as { user?: unknown; token?: string } | undefined;
     if (authData?.token) {
       await this.setToken(authData.token);
-      console.log('[API] Token stored after login');
     }
     return { success: true, data: authData as AuthResponse };
   }
@@ -206,7 +237,6 @@ class ApiService {
     const authData = payload as { user?: unknown; token?: string } | undefined;
     if (authData?.token) {
       await this.setToken(authData.token);
-      console.log('[API] Token stored after signup');
     }
     return { success: true, data: authData as AuthResponse };
   }

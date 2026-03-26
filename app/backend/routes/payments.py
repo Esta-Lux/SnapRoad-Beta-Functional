@@ -4,12 +4,15 @@
 
 import os
 import anyio
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from pydantic import BaseModel
 from typing import Optional, Dict
 from datetime import datetime
 from dotenv import load_dotenv
 from middleware.auth import get_current_user, require_admin
+from limiter import limiter
+from database import get_supabase
+from config import ENVIRONMENT
 
 load_dotenv()
 
@@ -38,8 +41,44 @@ SUBSCRIPTION_PLANS = {
     }
 }
 
-# In-memory payment transactions (would be MongoDB/Supabase in production)
+# In-memory fallback only when DB table is unavailable
 payment_transactions: Dict[str, dict] = {}
+
+
+def _persist_tx(tx: dict) -> None:
+    """Persist transaction to Supabase when available; fallback to memory."""
+    payment_transactions[tx["session_id"]] = tx
+    try:
+        sb = get_supabase()
+        sb.table("payment_transactions").upsert(tx, on_conflict="session_id").execute()
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise RuntimeError("payment_transactions table unavailable")
+        return
+
+
+def _get_tx(session_id: str) -> Optional[dict]:
+    try:
+        sb = get_supabase()
+        result = sb.table("payment_transactions").select("*").eq("session_id", session_id).limit(1).execute()
+        if result.data:
+            return result.data[0]
+    except Exception:
+        if ENVIRONMENT == "production":
+            return None
+    return payment_transactions.get(session_id)
+
+
+def _list_txs(limit: int = 100) -> list[dict]:
+    try:
+        sb = get_supabase()
+        result = sb.table("payment_transactions").select("*").order("created_at", desc=True).limit(limit).execute()
+        if result.data:
+            return result.data
+    except Exception:
+        if ENVIRONMENT == "production":
+            return []
+    return list(payment_transactions.values())[:limit]
 
 
 class CreateCheckoutRequest(BaseModel):
@@ -76,6 +115,7 @@ async def get_subscription_plans():
 
 
 @router.post("/checkout/session", response_model=CheckoutResponse)
+@limiter.limit("10/minute")
 async def create_checkout_session(
     request: Request,
     checkout_data: CreateCheckoutRequest,
@@ -173,7 +213,7 @@ async def create_checkout_session(
         session = await anyio.to_thread.run_sync(_create_session_sync)
         
         # Store transaction record BEFORE redirect
-        payment_transactions[session.id] = {
+        tx = {
             "session_id": session.id,
             "plan_id": checkout_data.plan_id,
             "plan_name": plan["name"],
@@ -185,26 +225,37 @@ async def create_checkout_session(
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
         }
+        try:
+            _persist_tx(tx)
+        except RuntimeError:
+            raise HTTPException(status_code=503, detail="Payment transaction storage unavailable")
         
         return CheckoutResponse(url=session.url, session_id=session.id)
         
-    except stripe.error.StripeError as e:
-        raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create checkout session: {str(e)}")
+    except stripe.error.StripeError:
+        raise HTTPException(status_code=502, detail="Payment provider error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to create checkout session")
 
 
 @router.get("/checkout/status/{session_id}")
-async def get_checkout_status(request: Request, session_id: str):
+@limiter.limit("30/minute")
+async def get_checkout_status(
+    request: Request,
+    session_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     """Get the status of a checkout session"""
-    
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="Stripe not configured")
     import stripe
     stripe.api_key = api_key
     try:
-        session = stripe.checkout.Session.retrieve(session_id)
+        session = await anyio.to_thread.run_sync(lambda: stripe.checkout.Session.retrieve(session_id))
         
         # Map Stripe status to our format
         payment_status = "pending"
@@ -216,14 +267,15 @@ async def get_checkout_status(request: Request, session_id: str):
             payment_status = "paid"
         
         # Update transaction record if exists
-        if session_id in payment_transactions:
-            tx = payment_transactions[session_id]
-            
-            # Only update if not already marked as paid (prevent double processing)
-            if tx["payment_status"] != "paid" and payment_status == "paid":
-                tx["payment_status"] = "paid"
-                tx["updated_at"] = datetime.utcnow().isoformat()
-                # Here you would also update user's subscription in database
+        tx = _get_tx(session_id)
+        if tx and tx.get("payment_status") != "paid" and payment_status == "paid":
+            tx["payment_status"] = "paid"
+            tx["updated_at"] = datetime.utcnow().isoformat()
+            try:
+                _persist_tx(tx)
+            except RuntimeError:
+                raise HTTPException(status_code=503, detail="Payment transaction storage unavailable")
+            # Here you would also update user's subscription in database
         
         return {
             "success": True,
@@ -237,28 +289,32 @@ async def get_checkout_status(request: Request, session_id: str):
             }
         }
         
-    except stripe.error.StripeError as e:
-        raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get checkout status: {str(e)}")
+    except stripe.error.StripeError:
+        raise HTTPException(status_code=502, detail="Payment provider error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to get checkout status")
 
 
 @router.get("/transactions")
-async def get_payment_transactions(_admin: dict = Depends(require_admin)):
+async def get_payment_transactions(
+    limit: int = Query(default=100, ge=1, le=100),
+    _admin: dict = Depends(require_admin),
+):
     """Get all payment transactions (admin use)"""
     return {
         "success": True,
-        "data": list(payment_transactions.values())
+        "data": _list_txs(limit)
     }
 
 
 @router.get("/transaction/{session_id}")
 async def get_payment_transaction(session_id: str, _admin: dict = Depends(require_admin)):
     """Get a specific payment transaction"""
-    if session_id not in payment_transactions:
+    tx = _get_tx(session_id)
+    if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
     
     return {
         "success": True,
-        "data": payment_transactions[session_id]
+        "data": tx
     }

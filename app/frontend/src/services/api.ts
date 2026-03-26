@@ -27,6 +27,7 @@ import type {
   ApiResponse,
   PaginatedResponse,
 } from '@/types/api';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 
 const API_URL_OVERRIDE_KEY = 'snaproad_api_url_override';
 
@@ -130,6 +131,7 @@ export function setApiBaseUrlOverride(url: string | null): void {
 class ApiService {
   private token: string | null = null;
   private defaultTimeoutMs = 12000;
+  private refreshInFlight: Promise<string | null> | null = null;
 
   setToken(token: string | null) {
     this.token = token;
@@ -145,6 +147,37 @@ class ApiService {
       this.token = localStorage.getItem('snaproad_token');
     }
     return this.token;
+  }
+
+  private async refreshTokenFromSupabase(): Promise<string | null> {
+    if (this.refreshInFlight) return this.refreshInFlight;
+    this.refreshInFlight = (async () => {
+      try {
+        const sb = getSupabaseClient();
+        if (!sb) return null;
+        const refreshed = await sb.auth.refreshSession();
+        const accessToken = refreshed.data.session?.access_token;
+        if (!accessToken) return null;
+        const exchange = await fetch(`${apiBaseUrl}/api/auth/oauth/supabase`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: accessToken }),
+        });
+        if (!exchange.ok) return null;
+        const payload = await exchange.json();
+        const appToken = payload?.data?.token ?? payload?.token;
+        if (typeof appToken === 'string' && appToken.length > 10) {
+          this.setToken(appToken);
+          return appToken;
+        }
+        return null;
+      } catch {
+        return null;
+      } finally {
+        this.refreshInFlight = null;
+      }
+    })();
+    return this.refreshInFlight;
   }
 
   private async request<T>(
@@ -181,6 +214,23 @@ class ApiService {
       }
 
       if (!response.ok) {
+        if (response.status === 401 && token && !endpoint.startsWith('/api/auth/')) {
+          const refreshedToken = await this.refreshTokenFromSupabase();
+          if (refreshedToken) {
+            const retryResponse = await fetch(`${apiBaseUrl}${endpoint}`, {
+              ...fetchInit,
+              headers: {
+                ...headers,
+                Authorization: `Bearer ${refreshedToken}`,
+              },
+            });
+            const retryPayload = await retryResponse.json().catch(() => null);
+            if (retryResponse.ok) {
+              return { success: true, data: retryPayload as T };
+            }
+          }
+          this.setToken(null);
+        }
         // #region agent log
         void 0
         // #endregion
@@ -410,13 +460,31 @@ class ApiService {
   }
 
   // ==================== INCIDENTS ====================
-  async getIncidents(bounds?: { north: number; south: number; east: number; west: number }): Promise<ApiResponse<Incident[]>> {
-    const query = bounds ? `?north=${bounds.north}&south=${bounds.south}&east=${bounds.east}&west=${bounds.west}` : '';
-    return this.request<Incident[]>(`/api/incidents${query}`);
+  async getIncidents(params?: {
+    lat?: number;
+    lng?: number;
+    radiusMiles?: number;
+    limit?: number;
+    bounds?: { north: number; south: number; east: number; west: number };
+  }): Promise<ApiResponse<Incident[]>> {
+    let lat = params?.lat;
+    let lng = params?.lng;
+    if ((lat == null || lng == null) && params?.bounds) {
+      lat = (params.bounds.north + params.bounds.south) / 2;
+      lng = (params.bounds.east + params.bounds.west) / 2;
+    }
+    if (lat == null || lng == null) {
+      return { success: false, error: 'lat/lng required for /api/incidents/nearby' };
+    }
+    const radius = Math.max(0.1, Math.min(200, params?.radiusMiles ?? 10));
+    const limit = Math.max(1, Math.min(100, params?.limit ?? 100));
+    return this.request<Incident[]>(
+      `/api/incidents/nearby?lat=${lat}&lng=${lng}&radius_miles=${radius}&limit=${limit}`,
+    );
   }
 
-  async reportIncident(incident: Omit<Incident, 'id' | 'reportedBy' | 'upvotes' | 'reportedAt' | 'status'>): Promise<ApiResponse<Incident>> {
-    return this.request<Incident>('/api/incidents', {
+  async reportIncident(incident: { type: string; lat: number; lng: number; description?: string }): Promise<ApiResponse<Incident>> {
+    return this.request<Incident>('/api/incidents/report', {
       method: 'POST',
       body: JSON.stringify(incident),
     });

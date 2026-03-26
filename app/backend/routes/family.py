@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from middleware.auth import get_current_user
 from database import get_supabase
+from config import ENVIRONMENT
 
 router = APIRouter(prefix="/api/family", tags=["family"])
 
@@ -20,14 +21,14 @@ def _mk_invite_code() -> str:
     return "".join(random.choice(alphabet) for _ in range(8))
 
 
-def _mock_get_members_payload(user_id: str) -> dict:
+def _mock_get_members_payload(user_id: str, limit: int = 100) -> dict:
     for gid, members in _mock_members_by_group.items():
         if any(str(m.get("user_id")) == str(user_id) for m in members):
             group = _mock_groups_by_id.get(gid, {})
             return {
                 "group_id": gid,
                 "invite_code": group.get("invite_code"),
-                "members": members,
+                "members": members[:limit],
             }
     return {"members": []}
 
@@ -82,6 +83,8 @@ async def create_family_group(body: dict, user: dict = Depends(get_current_user)
     except HTTPException:
         raise
     except Exception:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Family service unavailable")
         gid = str(uuid.uuid4())
         invite = _mk_invite_code()
         group = {"id": gid, "name": name, "created_by": uid, "invite_code": invite}
@@ -129,6 +132,8 @@ async def join_family(body: dict, user: dict = Depends(get_current_user)):
     except HTTPException:
         raise
     except Exception:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Family service unavailable")
         gid = _mock_group_id_by_invite.get(code)
         if not gid:
             raise HTTPException(status_code=404, detail="Invalid invite code")
@@ -155,7 +160,10 @@ async def join_family(body: dict, user: dict = Depends(get_current_user)):
 
 
 @router.get("/members")
-async def get_members(user: dict = Depends(get_current_user)):
+async def get_members(
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
     try:
@@ -189,7 +197,9 @@ async def get_members(user: dict = Depends(get_current_user)):
                 membership_data = []
         if not membership_data:
             # If Supabase is configured but user has no rows yet, fall back to mock in dev.
-            mock_payload = _mock_get_members_payload(user["id"])
+            if ENVIRONMENT == "production":
+                raise HTTPException(status_code=503, detail="Family membership unavailable")
+            mock_payload = _mock_get_members_payload(user["id"], limit=limit)
             if mock_payload.get("group_id"):
                 return mock_payload
             return {"members": []}
@@ -237,10 +247,12 @@ async def get_members(user: dict = Depends(get_current_user)):
             "group_id": group_id,
             "group_name": (group.data or {}).get("name"),
             "invite_code": (group.data or {}).get("invite_code"),
-            "members": members_data,
+            "members": members_data[:limit],
         }
     except Exception:
-        return _mock_get_members_payload(user["id"])
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Family membership unavailable")
+        return _mock_get_members_payload(user["id"], limit=limit)
 
 
 @router.post("/sos")
@@ -296,7 +308,8 @@ async def sos_alert(body: Optional[dict] = None, user: dict = Depends(get_curren
         except Exception:
             pass
     except Exception:
-        pass
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Family SOS service unavailable")
     return {"success": True, "message": "SOS sent to family", "type": event_type, "sent_to": len(recipients)}
 
 
@@ -328,7 +341,8 @@ async def request_privacy_window(body: dict, user: dict = Depends(get_current_us
         supabase = get_supabase()
         supabase.table("live_locations").update({"privacy_window_until": expires_at}).eq("user_id", uid).execute()
     except Exception:
-        pass
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Family privacy service unavailable")
     return {"success": True, "expires_at": expires_at}
 
 
@@ -360,7 +374,8 @@ async def send_checkin(body: dict, user: dict = Depends(get_current_user)):
                 }
             ).execute()
     except Exception:
-        pass
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Family check-in service unavailable")
     return {"success": True, "message": message, "sent_to": len(recipient_ids)}
 
 
@@ -420,6 +435,8 @@ async def update_member_settings(body: dict, user: dict = Depends(get_current_us
     except HTTPException:
         raise
     except Exception:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Family settings service unavailable")
         payload = _mock_get_members_payload(uid)
         gid = payload.get("group_id")
         if not gid:
@@ -480,7 +497,11 @@ async def get_family_trips(user: dict = Depends(get_current_user)):
 
 
 @router.get("/group/{group_id}/members")
-async def get_group_members(group_id: str, user: dict = Depends(get_current_user)):
+async def get_group_members(
+    group_id: str,
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
     supabase = get_supabase()
@@ -562,7 +583,7 @@ async def get_group_members(group_id: str, user: dict = Depends(get_current_user
         enriched["live"] = live_by_uid.get(uid)
         out_members.append(enriched)
 
-    return {"group": group_res.data or {}, "members": out_members, "viewer_role": me.get("role")}
+    return {"group": group_res.data or {}, "members": out_members[:limit], "viewer_role": me.get("role")}
 
 
 @router.get("/group/{group_id}/events")
@@ -771,7 +792,11 @@ async def put_group_places(group_id: str, body: dict, user: dict = Depends(get_c
 
 
 @router.get("/group/{group_id}/places")
-async def get_group_places(group_id: str, user: dict = Depends(get_current_user)):
+async def get_group_places(
+    group_id: str,
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
     supabase = get_supabase()
@@ -786,7 +811,7 @@ async def get_group_places(group_id: str, user: dict = Depends(get_current_user)
         .order("created_at", desc=False)
         .execute()
     )
-    return {"places": places.data or []}
+    return {"places": (places.data or [])[:limit]}
 
 
 @router.delete("/group/{group_id}/member/{member_id}")
@@ -836,7 +861,12 @@ async def put_member_notifications(member_id: str, body: dict, user: dict = Depe
 
 
 @router.get("/leaderboard")
-async def get_family_leaderboard(group_id: str, period: str = "weekly", user: dict = Depends(get_current_user)):
+async def get_family_leaderboard(
+    group_id: str,
+    period: str = "weekly",
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+):
     try:
         supabase = get_supabase()
         members_res = supabase.table("family_members").select("user_id, profiles(full_name, avatar_url)").eq("group_id", group_id).execute()
@@ -867,7 +897,9 @@ async def get_family_leaderboard(group_id: str, period: str = "weekly", user: di
         entries.sort(key=lambda x: x["gems_this_week"], reverse=True)
         for i, e in enumerate(entries):
             e["rank"] = i + 1
-        return {"entries": entries, "shared_gems": shared_gems}
+        return {"entries": entries[:limit], "shared_gems": shared_gems}
     except Exception:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Family leaderboard unavailable")
         return {"entries": [], "shared_gems": 0}
 

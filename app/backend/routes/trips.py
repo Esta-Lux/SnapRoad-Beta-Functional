@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
 from datetime import datetime, timedelta
 import json
@@ -10,7 +10,7 @@ from services.mock_data import (
     create_new_user,
 )
 from routes.gamification import add_xp_to_user
-from config import OPENAI_API_KEY
+from config import OPENAI_API_KEY, ENVIRONMENT
 
 try:
     from openai import OpenAI
@@ -20,11 +20,19 @@ except Exception:  # pragma: no cover
 router = APIRouter(prefix="/api", tags=["Trips"])
 
 
+def _legacy_trips_guard() -> None:
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy trips endpoints unavailable in production")
+
+
 # ==================== TRIP HISTORY ====================
 
 @router.get("/trips")
-def get_trips(page: int = 1, limit: int = 20):
-    
+def get_trips(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    _legacy_trips_guard()
     start = (page - 1) * limit
     end = start + limit
 
@@ -46,6 +54,7 @@ def get_trips(page: int = 1, limit: int = 20):
 
 @router.get("/trips/${id}")
 def get_trip_by_id(trip_id: int):
+    _legacy_trips_guard()
     trip = next((t for t in trips_db if t[trip_id] == trip_id), None) # Consider switching to a dictionary system for Trips_db because this is O(n)
 
     if not trip:
@@ -61,6 +70,7 @@ def get_trip_by_id(trip_id: int):
 
 @router.post("/trips/start") # TODO: Determine how we're going to format trips ultimately
 def start_trip(startLocation: str): # Consider Implementing BaseModel later, instead of raw strings/dicts
+    _legacy_trips_guard()
     new_id = str(uuid4())
     now = datetime.now()
 
@@ -83,12 +93,13 @@ def start_trip(startLocation: str): # Consider Implementing BaseModel later, ins
 
 
 @router.get("/trips/history")
-def get_trip_history():
+def get_trip_history(limit: int = Query(default=10, ge=1, le=100)):
+    _legacy_trips_guard()
     user = users_db.get(current_user_id, {})
     return {
         "success": True,
         "data": {
-            "recent_trips": trips_db[:10],
+            "recent_trips": trips_db[:limit],
             "total_trips": user.get("total_trips", 0),
             "total_miles": user.get("total_miles", 0),
         },
@@ -96,6 +107,7 @@ def get_trip_history():
 
 @router.post("/trips/${tripId}/end")
 def end_trip(trip_id: str, endLocation: str):
+    _legacy_trips_guard()
     user = users_db.get(current_user_id, {})
     user = users_db.get(current_user_id, {})
 
@@ -124,6 +136,7 @@ def end_trip(trip_id: str, endLocation: str):
 
 @router.post("/trips/complete") # TODO: Unsure how to reconcile this with end trip, have replaced
 def complete_trip(distance: float = 5.0, duration: int = 15):
+    _legacy_trips_guard()
     if current_user_id not in users_db:
         users_db[current_user_id] = create_new_user(current_user_id, "Driver")
     user = users_db[current_user_id]
@@ -137,6 +150,7 @@ def complete_trip(distance: float = 5.0, duration: int = 15):
 
 @router.post("/trips/complete-with-safety")
 def complete_trip_with_safety(trip: TripResult):
+    _legacy_trips_guard()
     if current_user_id not in users_db:
         users_db[current_user_id] = create_new_user(current_user_id, "Driver")
     user = users_db[current_user_id]
@@ -216,7 +230,12 @@ def complete_trip_with_safety(trip: TripResult):
 
 
 @router.get("/trips/history/detailed")
-def get_detailed_trip_history(days: int = 30, limit: int = 50, sort_by: str = "date"):
+def get_detailed_trip_history(
+    days: int = Query(default=30, ge=1, le=365),
+    limit: int = Query(default=50, ge=1, le=100),
+    sort_by: str = "date",
+):
+    _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     filtered = [t for t in trips_db if t["date"] >= cutoff_date][:limit]
     total_distance = sum(t["distance_miles"] for t in filtered)
@@ -245,6 +264,7 @@ def get_detailed_trip_history(days: int = 30, limit: int = 50, sort_by: str = "d
 
 @router.get("/trips/weekly-insights")
 def get_weekly_insights():
+    _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
     week_trips = [t for t in trips_db if t.get("date", "") >= cutoff_date]
 
@@ -339,6 +359,7 @@ def get_weekly_insights():
 
 @router.post("/trips/{trip_id}/share")
 def share_trip(trip_id: int): 
+    _legacy_trips_guard()
     trip = next((t for t in trips_db if t["id"] == trip_id), None)
     if not trip:
         return {"success": False, "message": "Trip not found"}
@@ -348,30 +369,52 @@ def share_trip(trip_id: int):
 
 # ==================== FUEL ====================
 @router.get("/fuel/history")
-def get_fuel_logs():
-    return {"success": True, "data": fuel_logs}
+def get_fuel_history(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    _legacy_trips_guard()
+    start = (page - 1) * limit
+    end = start + limit
+    total = len(fuel_logs)
+    return {
+        "success": True,
+        "data": {
+            "items": fuel_logs[start:end],
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total,
+                "total_pages": (total + limit - 1) // limit,
+            },
+        },
+    }
 
 
 @router.post("/fuel/logs")
 def log_fuel(entry: FuelLog):
+    _legacy_trips_guard()
     new_id = str(uuid4())
     new_entry = {"id": new_id, "date": entry.date, "station": entry.station, "price_per_gallon": entry.price_per_gallon, "gallons": entry.gallons, "total": entry.total}
     fuel_logs.insert(0, new_entry)
     return {"success": True, "message": "Fuel log entry added", "data": new_entry}
 
 @router.get("/fuel/logs")
-def get_fuel_logs(page: int = 1, limit: int = 20):
-    
+def get_fuel_logs(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    _legacy_trips_guard()
     start = (page - 1) * limit
     end = start + limit
 
-    total = len(trips_db)
-    trips = trips_db[start:end]
+    total = len(fuel_logs)
+    items = fuel_logs[start:end]
 
     return {
         "success": True,
         "data": {
-            "items": fuel_logs,
+            "items": items,
             "pagination": {
                 "page": page,
                 "limit": limit,
@@ -384,6 +427,7 @@ def get_fuel_logs(page: int = 1, limit: int = 20):
 
 @router.get("/fuel/trends")
 def get_fuel_trends():
+    _legacy_trips_guard()
     total_gallons = sum(f["gallons"] for f in fuel_logs)
     total_spent = sum(f["total"] for f in fuel_logs)
     avg_price = total_spent / total_gallons if total_gallons > 0 else 0
@@ -392,6 +436,7 @@ def get_fuel_trends():
 
 @router.get("/fuel/prices")
 def get_fuel_prices(lat: float = 39.9612, lng: float = -82.9988):
+    _legacy_trips_guard()
     return {
         "success": True,
         "data": {
@@ -407,13 +452,15 @@ def get_fuel_prices(lat: float = 39.9612, lng: float = -82.9988):
 
 @router.get("/api/fuel/stats")
 def get_fuel_stats():
+    _legacy_trips_guard()
     return {
         "success": True,
         "data": fuel_stats
     }
 
 @router.get("/fuel/analytics")
-def get_fuel_analytics(months: int = 3):
+def get_fuel_analytics(months: int = Query(default=3, ge=1, le=24)):
+    _legacy_trips_guard()
     monthly_data = []
     for i in range(months):
         month_date = datetime.now() - timedelta(days=30 * i)
@@ -428,13 +475,18 @@ def get_fuel_analytics(months: int = 3):
 # Keep a non-conflicting legacy endpoint to avoid shadowing the dedicated incidents router.
 @router.post("/incidents/report-legacy")
 def report_incident_legacy(incident: dict):
+    _legacy_trips_guard()
     incident_type = str(incident.get("incident_type") or incident.get("type") or "unknown")
     return {"success": True, "message": f"Incident '{incident_type}' reported. Thank you for keeping roads safe!"}
 
 
 # ==================== 3D ROUTE HISTORY ====================
 @router.get("/routes/history-3d")
-def get_route_history_3d(days: int = 90, limit: int = 100):
+def get_route_history_3d(
+    days: int = Query(default=90, ge=1, le=365),
+    limit: int = Query(default=100, ge=1, le=100),
+):
+    _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     filtered = [t for t in trips_db if t["date"] >= cutoff_date][:limit]
     route_groups = {}

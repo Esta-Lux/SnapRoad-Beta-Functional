@@ -1,4 +1,4 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, Depends, Query
 from fastapi.responses import Response, JSONResponse
 from datetime import datetime, timedelta
 import json
@@ -352,14 +352,17 @@ async def admin_monitor_ws(websocket: WebSocket):
 
 
 @router.get("/api/admin/monitor/events")
-def get_monitor_events(limit: int = 100, _admin: dict = Depends(require_admin)):
+def get_monitor_events(
+    limit: int = Query(default=100, ge=1, le=100),
+    _admin: dict = Depends(require_admin),
+):
     """Pull latest telemetry events (fallback for UI reloads)."""
     return {"success": True, "data": telemetry_service.snapshot(limit=limit)}
 
 
 @router.get("/api/admin/monitor/events/export")
 def export_monitor_events(
-    limit: int = 500,
+    limit: int = Query(default=500, ge=1, le=1000),
     format: str = "json",
     _admin: dict = Depends(require_admin),
 ):

@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from models.schemas import SignupRequest, LoginRequest, ForgotPasswordRequest, ResendVerificationRequest
 from middleware.auth import create_access_token
 from database import get_supabase
@@ -11,6 +11,7 @@ from services.supabase_service import (
     sb_login_user,
     sb_get_auth_user_from_access_token,
 )
+from limiter import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -38,7 +39,8 @@ def _clean(user: dict) -> dict:
 
 
 @router.post("/signup")
-def signup(request: SignupRequest):
+@limiter.limit("5/minute")
+def signup(http_request: Request, request: SignupRequest):
     # Supabase only (no mock fallback)
     try:
         existing = sb_get_user_by_email(request.email)
@@ -56,7 +58,8 @@ def signup(request: SignupRequest):
 
 
 @router.post("/login")
-def login(request: LoginRequest):
+@limiter.limit("10/minute")
+def login(http_request: Request, request: LoginRequest):
     sb_error: Optional[str] = None
 
     # Supabase only (no mock fallback)
@@ -154,7 +157,8 @@ def oauth_supabase(payload: dict):
 
 
 @router.post("/forgot-password")
-def forgot_password(request: ForgotPasswordRequest):
+@limiter.limit("5/minute")
+def forgot_password(http_request: Request, request: ForgotPasswordRequest):
     email = (request.email or "").strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
@@ -183,7 +187,8 @@ def forgot_password(request: ForgotPasswordRequest):
 
 
 @router.post("/resend-verification")
-def resend_verification(request: ResendVerificationRequest):
+@limiter.limit("5/minute")
+def resend_verification(http_request: Request, request: ResendVerificationRequest):
     email = (request.email or "").strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")

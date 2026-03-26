@@ -139,6 +139,7 @@ class ReportIncident(BaseModel):
 class XPEvent(BaseModel):
     event_type: str
     amount: Optional[int] = None
+    event_id: Optional[str] = None
 
 class ChallengeCreate(BaseModel):
     opponent_id: str

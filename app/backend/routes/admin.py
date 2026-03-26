@@ -2,7 +2,7 @@
 SnapRoad Admin API Routes
 All endpoints use the Supabase DAO layer (supabase_service.py).
 """
-from fastapi import APIRouter, Body, Depends, UploadFile, File
+from fastapi import APIRouter, Body, Depends, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from typing import Optional
 from datetime import datetime, timedelta, timezone
@@ -81,7 +81,11 @@ def get_admin_stats():
 # ==================== CONCERNS (admin) ====================
 
 @router.get("/admin/concerns")
-def get_admin_concerns(limit: int = 50, severity: Optional[str] = None, status: Optional[str] = None):
+def get_admin_concerns(
+    limit: int = Query(default=50, ge=1, le=100),
+    severity: Optional[str] = None,
+    status: Optional[str] = None,
+):
     concerns = sb_get_concerns(limit=limit, severity=severity, status=status)
     return {"success": True, "data": {"concerns": concerns, "total": len(concerns)}}
 
@@ -253,8 +257,8 @@ def get_finance_data():
 # ==================== NOTIFICATIONS ====================
 
 @router.get("/admin/notifications")
-def get_notifications():
-    data = sb_get_admin_notifications(limit=50)
+def get_notifications(limit: int = Query(default=50, ge=1, le=100)):
+    data = sb_get_admin_notifications(limit=limit)
     return {"success": True, "data": data}
 
 
@@ -335,7 +339,7 @@ def update_settings(settings_data: dict):
 # ==================== AUDIT LOG ====================
 
 @router.get("/admin/audit-log")
-def get_audit_log(limit: int = 50):
+def get_audit_log(limit: int = Query(default=50, ge=1, le=100)):
     data = sb_get_audit_logs(limit=limit)
     return {"success": True, "data": data}
 
@@ -343,8 +347,11 @@ def get_audit_log(limit: int = 50):
 # ==================== INCIDENTS ====================
 
 @router.get("/admin/incidents")
-def get_incidents(status: Optional[str] = None):
-    data = sb_get_incidents(status=status)
+def get_incidents(
+    status: Optional[str] = None,
+    limit: int = Query(default=100, ge=1, le=100),
+):
+    data = sb_get_incidents(status=status, limit=limit)
     return {"success": True, "data": data}
 
 
@@ -371,17 +378,20 @@ async def moderate_incident(incident_id: str, outcome: str = Body(..., embed=Tru
 
 
 @router.get("/admin/incidents/moderated")
-def get_moderated_incidents():
-    approved = sb_get_incidents(status="approved")
-    rejected = sb_get_incidents(status="rejected")
+def get_moderated_incidents(limit: int = Query(default=100, ge=1, le=100)):
+    approved = sb_get_incidents(status="approved", limit=limit)
+    rejected = sb_get_incidents(status="rejected", limit=limit)
     return {"success": True, "data": approved + rejected, "total": len(approved) + len(rejected)}
 
 
 # ==================== OFFERS CRUD ====================
 
 @router.get("/admin/offers")
-def get_offers(status: str = "all"):
-    data = sb_get_offers(status=status)
+def get_offers(
+    status: str = "all",
+    limit: int = Query(default=100, ge=1, le=100),
+):
+    data = sb_get_offers(status=status, limit=limit)
     return {"success": True, "data": data}
 
 
@@ -704,7 +714,7 @@ def import_offers(import_data: OfferImport):
 async def import_groupon_deals(
     area: str = "Columbus, OH",
     category: Optional[str] = None,
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100),
 ):
     """Fetch deals from Groupon via CJ Affiliate API and return a preview list."""
     from services.groupon_service import fetch_groupon_deals, import_deals_to_offers
@@ -787,8 +797,8 @@ async def enrich_offer_with_yelp(offer_id: str):
 # ==================== PARTNERS CRUD ====================
 
 @router.get("/admin/partners")
-def get_partners():
-    data = sb_get_partners()
+def get_partners(limit: int = Query(default=100, ge=1, le=100)):
+    data = sb_get_partners(limit=limit)
     return {"success": True, "data": data}
 
 
@@ -841,8 +851,8 @@ def suspend_partner(partner_id: str):
 # ==================== CAMPAIGNS CRUD ====================
 
 @router.get("/admin/campaigns")
-def get_campaigns():
-    data = sb_get_campaigns()
+def get_campaigns(limit: int = Query(default=100, ge=1, le=100)):
+    data = sb_get_campaigns(limit=limit)
     return {"success": True, "data": data}
 
 
@@ -882,8 +892,8 @@ def activate_campaign(campaign_id: str):
 # ==================== REWARDS CRUD ====================
 
 @router.get("/admin/rewards")
-def get_rewards():
-    data = sb_get_rewards()
+def get_rewards(limit: int = Query(default=100, ge=1, le=100)):
+    data = sb_get_rewards(limit=limit)
     return {"success": True, "data": data}
 
 
@@ -927,7 +937,7 @@ def claim_reward(reward_id: str, user_data: dict):
 # ==================== USERS CRUD ====================
 
 @router.get("/admin/users")
-def get_users(limit: int = 100):
+def get_users(limit: int = Query(default=100, ge=1, le=100)):
     data = sb_list_profiles(limit=limit)
     return {"success": True, "source": "supabase", "data": data, "total": len(data)}
 
@@ -1027,8 +1037,11 @@ def create_boost(boost: BoostCreate):
 
 
 @router.get("/boosts")
-def get_boosts(partner_id: Optional[str] = None):
-    data = sb_get_boosts(partner_id=partner_id)
+def get_boosts(
+    partner_id: Optional[str] = None,
+    limit: int = Query(default=100, ge=1, le=100),
+):
+    data = sb_get_boosts(partner_id=partner_id)[:limit]
     return {"success": True, "data": data}
 
 
@@ -1082,6 +1095,6 @@ def get_supabase_status():
 
 
 @router.get("/admin/events")
-def get_admin_events():
-    challenges = sb_get_challenges()
+def get_admin_events(limit: int = Query(default=100, ge=1, le=100)):
+    challenges = sb_get_challenges()[:limit]
     return {"success": True, "data": challenges}
