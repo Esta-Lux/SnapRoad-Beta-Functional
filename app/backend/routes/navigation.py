@@ -26,10 +26,19 @@ def _resolve_user_scoped_data(auth_user: dict) -> tuple[str, list, list]:
     user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid auth context")
-    user = users_db.setdefault(user_id, {"id": user_id})
+    user = users_db.get(user_id)
+    if not user:
+        if ENVIRONMENT == "production":
+            # Avoid mutating in-memory state in production read paths.
+            return user_id, list(saved_locations), list(saved_routes)
+        user = users_db.setdefault(user_id, {"id": user_id})
     if "saved_locations" not in user:
+        if ENVIRONMENT == "production":
+            return user_id, list(saved_locations), list(user.get("saved_routes", saved_routes))
         user["saved_locations"] = list(saved_locations)
     if "saved_routes" not in user:
+        if ENVIRONMENT == "production":
+            return user_id, list(user.get("saved_locations", saved_locations)), list(saved_routes)
         user["saved_routes"] = list(saved_routes)
     return user_id, user["saved_locations"], user["saved_routes"]
 
@@ -606,3 +615,20 @@ def get_navigation_eta(
             "speed_mph": speed,
         },
     }
+
+
+if ENVIRONMENT == "production":
+    _LEGACY_PROD_DISABLED = {
+        "/api/locations",
+        "/api/locations/{location_id}",
+        "/api/routes",
+        "/api/routes/{route_id}",
+        "/api/routes/{route_id}/toggle",
+        "/api/routes/{route_id}/notifications",
+        "/api/map/directions",
+        "/api/widgets",
+        "/api/widgets/{widget_id}/toggle",
+        "/api/widgets/{widget_id}/collapse",
+        "/api/widgets/{widget_id}/position",
+    }
+    router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]

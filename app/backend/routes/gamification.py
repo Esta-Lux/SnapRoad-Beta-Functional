@@ -26,6 +26,9 @@ def _user_state(user_id: str) -> dict:
     profile = sb_get_profile(user_id) or {}
     local = users_db.get(user_id, {})
     merged = {**local, **profile}
+    if ENVIRONMENT == "production":
+        merged.setdefault("id", user_id)
+        return merged
     if user_id not in users_db:
         users_db[user_id] = {"id": user_id}
     users_db[user_id].update(merged)
@@ -33,8 +36,9 @@ def _user_state(user_id: str) -> dict:
 
 
 def _persist_user_fields(user_id: str, updates: dict) -> None:
-    users_db.setdefault(user_id, {"id": user_id})
-    users_db[user_id].update(updates)
+    if ENVIRONMENT != "production":
+        users_db.setdefault(user_id, {"id": user_id})
+        users_db[user_id].update(updates)
     try:
         ok = sb_update_profile(user_id, updates)
         if ENVIRONMENT == "production" and not ok:
@@ -116,8 +120,9 @@ def add_xp(event: XPEvent, user: dict = Depends(get_current_user)):
 
 
 @router.get("/xp/status")
-def get_xp_status():
-    user = users_db.get(current_user_id, {})
+def get_xp_status(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    user = _user_state(user_id)
     level = user.get("level", 1)
     xp = user.get("xp", 0)
     xp_at_current = calculate_xp_for_level(level)
@@ -134,8 +139,9 @@ def get_xp_config():
 
 # ==================== BADGES ====================
 @router.get("/badges")
-def get_badges():
-    user = users_db.get(current_user_id, {})
+def get_badges(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    user = _user_state(user_id)
     earned = set(user.get("badges_earned", []))
     badges = [{**b, "earned": b["id"] in earned} for b in ALL_BADGES]
     return {"success": True, "data": {"badges": badges, "earned_count": len(earned), "total_count": len(ALL_BADGES)}}
@@ -154,8 +160,9 @@ def get_badge_categories():
 
 
 @router.get("/badges/community")
-def get_community_badges():
-    user = users_db.get(current_user_id, {})
+def get_community_badges(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    user = _user_state(user_id)
     earned_ids = set(user.get("community_badges", []))
     badges = [{**b, "earned": b["id"] in earned_ids} for b in COMMUNITY_BADGES]
     return {"success": True, "data": badges, "earned_count": len(earned_ids), "total_count": len(COMMUNITY_BADGES)}
@@ -169,6 +176,7 @@ def get_leaderboard(
     state: str = "all",
     limit: int = Query(default=10, ge=1, le=100),
     time_filter: str = "weekly",
+    user: dict = Depends(get_current_user),
 ):
     all_users = list(users_db.values())
     if state and state.lower() != "all":
@@ -202,8 +210,9 @@ def get_leaderboard(
             "badges_count": len(u.get("badges_earned", [])),
             "challenges_participated": challenges_count(uid),
         })
-    current_user = users_db.get(current_user_id, {})
-    my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == str(current_user_id)), len(leaderboard) + 1)
+    user_id = str(user.get("id") or current_user_id)
+    current_user = _user_state(user_id)
+    my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == user_id), len(leaderboard) + 1)
     # Current user summary for "Your Rank" card
     my_data = {
         "name": current_user.get("name", "Driver"),
@@ -373,14 +382,15 @@ def get_trip_gem_summary(trip_id: str):
 @router.get("/gems/history")
 def get_gem_history(user: dict = Depends(get_current_user)):
     user_id = str(user.get("id") or current_user_id)
-    user = users_db.get(user_id, {})
+    user = _user_state(user_id)
     return {"success": True, "data": {"current_balance": user.get("gems", 0), "total_earned": user.get("gems", 0) + 500, "total_spent": 500, "recent_transactions": [{"type": "earned", "amount": 50, "source": "Trip completion", "date": datetime.now().isoformat()}, {"type": "earned", "amount": 100, "source": "Challenge won", "date": (datetime.now() - timedelta(hours=2)).isoformat()}, {"type": "spent", "amount": 500, "source": "Car skin purchase", "date": (datetime.now() - timedelta(days=1)).isoformat()}]}}
 
 
 # ==================== DRIVING SCORE ====================
 @router.get("/driving-score")
-def get_driving_score():
-    user = users_db.get(current_user_id, {})
+def get_driving_score(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    user = _user_state(user_id)
     base_score = user.get("safety_score", 85)
     metrics = [
         {"id": "speed", "name": "Speed Compliance", "score": min(100, base_score + random.randint(-5, 10)), "trend": random.choice(["up", "stable"]), "description": "Staying within speed limits"},
@@ -399,8 +409,9 @@ def get_driving_score():
 
 # ==================== WEEKLY RECAP ====================
 @router.get("/weekly-recap")
-def get_weekly_recap():
-    user = users_db.get(current_user_id, {})
+def get_weekly_recap(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    user = _user_state(user_id)
     base_trips = random.randint(8, 15)
     base_miles = base_trips * random.uniform(10, 25)
     stats = {
@@ -413,3 +424,13 @@ def get_weekly_recap():
         "highlights": [f"Best safety score: {min(100, user.get('safety_score', 85) + random.randint(2, 8))} on Wednesday", f"Longest trip: {random.randint(25, 60)} miles on Saturday"],
     }
     return {"success": True, "data": stats}
+
+
+if ENVIRONMENT == "production":
+    _LEGACY_PROD_DISABLED = {
+        "/api/challenges/{challenge_id}/claim",
+        "/api/gems/generate-route",
+        "/api/gems/collect",
+        "/api/gems/trip-summary/{trip_id}",
+    }
+    router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]

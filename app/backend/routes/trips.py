@@ -510,3 +510,28 @@ def get_route_history_3d(
     routes_3d.sort(key=lambda x: x["total_trips"], reverse=True)
     total_distance = sum(r["total_distance_miles"] for r in routes_3d)
     return {"success": True, "data": {"routes": routes_3d, "center": {"lat": 39.9612, "lng": -82.9988}, "total_unique_routes": len(routes_3d), "total_trips": sum(r["total_trips"] for r in routes_3d), "total_distance": total_distance}}
+
+
+if ENVIRONMENT == "production":
+    # Remove legacy/dev-only endpoints from the production API surface.
+    _LEGACY_PROD_DISABLED = {
+        "/api/trips",
+        "/api/trips/${id}",
+        "/api/trips/start",
+        "/api/trips/history",
+        "/api/trips/${tripId}/end",
+        "/api/trips/complete",
+        "/api/trips/complete-with-safety",
+        "/api/trips/history/detailed",
+        "/api/trips/weekly-insights",
+        "/api/trips/{trip_id}/share",
+        "/api/fuel/history",
+        "/api/fuel/logs",
+        "/api/fuel/trends",
+        "/api/fuel/prices",
+        "/api/api/fuel/stats",
+        "/api/fuel/analytics",
+        "/api/incidents/report-legacy",
+        "/api/routes/history-3d",
+    }
+    router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]

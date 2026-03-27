@@ -378,3 +378,15 @@ def upvote_incident(incident_id: int):
     report["upvotes"] = report.get("upvotes", 0) + 1
     report.setdefault("upvoters", []).append(current_user_id)
     return {"success": True, "data": {"id": incident_id, "upvotes": report["upvotes"]}}
+
+
+if ENVIRONMENT == "production":
+    _LEGACY_PROD_DISABLED = {
+        "/api/reports",
+        "/api/reports/{report_id}/upvote",
+        "/api/reports/{report_id}",
+        "/api/reports/my",
+        "/api/incidents",
+        "/api/incidents/{incident_id}/upvote",
+    }
+    router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]

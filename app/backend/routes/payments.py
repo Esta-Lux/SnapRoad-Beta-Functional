@@ -47,7 +47,8 @@ payment_transactions: Dict[str, dict] = {}
 
 def _persist_tx(tx: dict) -> None:
     """Persist transaction to Supabase when available; fallback to memory."""
-    payment_transactions[tx["session_id"]] = tx
+    if ENVIRONMENT != "production":
+        payment_transactions[tx["session_id"]] = tx
     try:
         sb = get_supabase()
         sb.table("payment_transactions").upsert(tx, on_conflict="session_id").execute()
@@ -255,7 +256,18 @@ async def get_checkout_status(
     import stripe
     stripe.api_key = api_key
     try:
+        user_id = str(current_user.get("user_id") or current_user.get("id") or "")
         session = await anyio.to_thread.run_sync(lambda: stripe.checkout.Session.retrieve(session_id))
+        tx = _get_tx(session_id)
+        # Ownership check: only the owner/admin can inspect this checkout session.
+        # Prefer DB tx owner, fallback to Stripe metadata owner.
+        owner_id = ""
+        if tx:
+            owner_id = str(tx.get("user_id") or "")
+        if not owner_id:
+            owner_id = str((dict(session.metadata) if session.metadata else {}).get("user_id") or "")
+        if owner_id and owner_id != user_id and str(current_user.get("role") or "") != "admin":
+            raise HTTPException(status_code=403, detail="Checkout session access denied")
         
         # Map Stripe status to our format
         payment_status = "pending"
@@ -267,7 +279,6 @@ async def get_checkout_status(
             payment_status = "paid"
         
         # Update transaction record if exists
-        tx = _get_tx(session_id)
         if tx and tx.get("payment_status") != "paid" and payment_status == "paid":
             tx["payment_status"] = "paid"
             tx["updated_at"] = datetime.utcnow().isoformat()

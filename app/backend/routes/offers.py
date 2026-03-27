@@ -385,3 +385,11 @@ async def generate_offer_image(request: ImageGenerateRequest):
     image_id = str(uuid.uuid4())[:8]
     generated_images_db[image_id] = {"id": image_id, "data": None, "placeholder": True, "prompt": request.prompt, "created_at": datetime.now().isoformat()}
     return {"success": True, "data": {"image_id": image_id, "placeholder": True, "message": "Image generation endpoint ready."}}
+
+
+if ENVIRONMENT == "production":
+    _LEGACY_PROD_DISABLED = {
+        "/api/offers/{offer_id}/favorite",
+        "/api/driver/location-visit",
+    }
+    router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]

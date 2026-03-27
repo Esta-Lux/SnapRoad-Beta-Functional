@@ -444,7 +444,6 @@ def partner_login_v2(request: PartnerLoginRequest):
 
 @router.post("/partner/v2/register")
 def partner_register_v2(request: PartnerRegisterRequest):
-    import hashlib
     existing = sb_get_user_by_email(request.email)
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -454,7 +453,6 @@ def partner_register_v2(request: PartnerRegisterRequest):
         "id": str(user["id"]),
         "business_name": request.business_name,
         "email": request.email,
-        "password_hash": hashlib.sha256(request.password.encode()).hexdigest(),
         "plan": "starter",
         "is_founders": True,
         "status": "active",
@@ -852,6 +850,7 @@ def stripe_subscribe(
     partner_id: str = "default_partner",
     plan: str = "starter",
     portal_origin: Optional[str] = Query(None, description="Partner app origin for Stripe return URLs"),
+    user: dict = Depends(require_partner),
 ):
     """Create a Stripe Checkout session for plan subscription."""
     from config import (
@@ -888,11 +887,12 @@ def stripe_subscribe(
                 },
                 "quantity": 1,
             }]
+        owned_partner_id = _require_owned_partner_id(user, partner_id)
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="subscription",
             line_items=line_items,
-            metadata={"partner_id": partner_id, "plan": plan},
+            metadata={"partner_id": owned_partner_id, "plan": plan},
             success_url=f"{base}/portal/partner?payment=success",
             cancel_url=f"{base}/portal/partner?payment=cancelled",
         )
@@ -910,6 +910,7 @@ def stripe_boost_purchase(
     offer_id: str = "",
     boost_type: str = "basic",
     portal_origin: Optional[str] = Query(None),
+    user: dict = Depends(require_partner),
 ):
     """Create a Stripe payment intent for a boost purchase."""
     from config import STRIPE_SECRET_KEY
@@ -922,6 +923,7 @@ def stripe_boost_purchase(
         if not boost_info:
             raise HTTPException(status_code=400, detail="Invalid boost type")
         base = _resolve_partner_portal_base(portal_origin)
+        owned_partner_id = _require_owned_partner_id(user, partner_id)
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="payment",
@@ -933,7 +935,7 @@ def stripe_boost_purchase(
                 },
                 "quantity": 1,
             }],
-            metadata={"partner_id": partner_id, "offer_id": offer_id, "boost_type": boost_type},
+            metadata={"partner_id": owned_partner_id, "offer_id": offer_id, "boost_type": boost_type},
             success_url=f"{base}/portal/partner?boost=success",
             cancel_url=f"{base}/portal/partner?boost=cancelled",
         )
@@ -950,6 +952,7 @@ def stripe_credits_purchase(
     partner_id: str = "default_partner",
     amount: float = 50.0,
     portal_origin: Optional[str] = Query(None),
+    user: dict = Depends(require_partner),
 ):
     """Create a Stripe Checkout session to buy credits."""
     from config import STRIPE_SECRET_KEY
@@ -959,6 +962,7 @@ def stripe_credits_purchase(
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
         base = _resolve_partner_portal_base(portal_origin)
+        owned_partner_id = _require_owned_partner_id(user, partner_id)
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="payment",
@@ -970,7 +974,7 @@ def stripe_credits_purchase(
                 },
                 "quantity": 1,
             }],
-            metadata={"partner_id": partner_id, "credits_amount": str(amount)},
+            metadata={"partner_id": owned_partner_id, "credits_amount": str(amount)},
             success_url=f"{base}/portal/partner?credits=success",
             cancel_url=f"{base}/portal/partner?credits=cancelled",
         )

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 import math
-from middleware.auth import get_current_user
+from middleware.auth import get_current_user, require_admin
 from limiter import limiter
 from database import get_supabase
 from config import ENVIRONMENT
@@ -226,8 +226,14 @@ def get_nearby_incidents(
 
 
 @router.post("/dev/seed")
-def dev_seed_incidents(lat: float = Query(39.9612), lng: float = Query(-82.9988)):
+def dev_seed_incidents(
+    lat: float = Query(39.9612),
+    lng: float = Query(-82.9988),
+    _admin: dict = Depends(require_admin),
+):
     """Dev helper: seed a few incidents near a coordinate so the map always shows something."""
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=404, detail="Not found")
     global incident_counter
     now = datetime.utcnow()
     seeds = [
@@ -319,8 +325,18 @@ def confirm_incident(request: Request, body: ConfirmBody, _user: dict = Depends(
         res = sb.table("road_reports").select("id,upvotes").eq("id", body.incident_id).limit(1).execute()
         row = res.data[0] if res.data else None
         if row:
+            voter = str((_user or {}).get("id") or "")
+            vote_value = 1 if body.confirmed else -1
+            try:
+                sb.table("road_report_votes").insert(
+                    {"report_id": row.get("id"), "user_id": voter, "vote": vote_value}
+                ).execute()
+            except Exception as e:
+                if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+                    raise HTTPException(status_code=409, detail="Already voted")
+                raise
             current = int(row.get("upvotes") or 0)
-            new_votes = current + 1 if body.confirmed else current - 1
+            new_votes = current + vote_value
             updates = {"upvotes": new_votes}
             if not body.confirmed and new_votes <= -3:
                 updates["status"] = "inactive"
@@ -364,6 +380,15 @@ def downvote_incident(request: Request, incident_id: str, _user: dict = Depends(
         res = sb.table("road_reports").select("id,upvotes").eq("id", incident_id).limit(1).execute()
         row = res.data[0] if res.data else None
         if row:
+            voter = str((_user or {}).get("id") or "")
+            try:
+                sb.table("road_report_votes").insert(
+                    {"report_id": row.get("id"), "user_id": voter, "vote": -1}
+                ).execute()
+            except Exception as e:
+                if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+                    raise HTTPException(status_code=409, detail="Already voted")
+                raise
             new_votes = int(row.get("upvotes") or 0) - 1
             updates = {"upvotes": new_votes}
             if new_votes <= -3:
@@ -383,4 +408,11 @@ def downvote_incident(request: Request, incident_id: str, _user: dict = Depends(
                 return {"success": True, "removed": True}
             return {"success": True, "upvotes": inc["upvotes"]}
     raise HTTPException(status_code=404, detail="Incident not found")
+
+
+if ENVIRONMENT == "production":
+    _LEGACY_PROD_DISABLED = {
+        "/api/incidents/dev/seed",
+    }
+    router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]
 
