@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, Depends, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from typing import Optional
 from datetime import datetime, timedelta, timezone
+import json
 import logging
 import io
 from middleware.auth import require_admin
@@ -256,10 +257,23 @@ def get_admin_config():
 
 
 @router.post("/admin/config")
-def update_admin_config(config: dict, user: dict = Depends(require_admin)):
+def update_admin_config(body: dict, user: dict = Depends(require_admin)):
+    """Apply key/value pairs to app_config. Reserved keys: _reason, reason (ops runbook text for audit)."""
     updated_by = user.get("user_id") if user else None
-    for key, value in config.items():
+    payload = dict(body) if isinstance(body, dict) else {}
+    reason = payload.pop("_reason", None) or payload.pop("reason", None)
+    payload.pop("_previous_snapshot", None)  # optional client echo; not persisted
+
+    patch = {k: v for k, v in payload.items() if isinstance(k, str) and not k.startswith("_")}
+    if not patch:
+        return {"success": False, "message": "No config keys to update", "data": sb_get_app_config()}
+
+    before = sb_get_app_config()
+    changes = {}
+    for key, value in patch.items():
+        changes[key] = {"from": before.get(key), "to": value}
         sb_update_app_config(key, value, updated_by=updated_by)
+
     cache_delete("app_config_public")
     try:
         from services.runtime_config import invalidate_runtime_config_cache
@@ -267,8 +281,15 @@ def update_admin_config(config: dict, user: dict = Depends(require_admin)):
         invalidate_runtime_config_cache()
     except Exception:
         pass
-    keys_sorted = sorted(str(k) for k in config.keys())
-    detail = f"app_config keys: {', '.join(keys_sorted)}" if keys_sorted else "app_config (empty patch)"
+
+    keys_sorted = sorted(patch.keys())
+    audit_obj = {
+        "keys": keys_sorted,
+        "changes": changes,
+        "reason": (str(reason).strip() or None),
+        "updated_by": str(updated_by or ""),
+    }
+    detail = json.dumps(audit_obj, default=str)[:12000]
     sb_create_audit_log(
         "APP_CONFIG_UPDATED",
         "admin",

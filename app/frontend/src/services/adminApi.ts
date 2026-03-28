@@ -431,10 +431,16 @@ class AdminApiService {
     return this.request('/api/admin/config/detailed')
   }
 
-  async updateConfig(config: Record<string, any>): Promise<AdminApiResponse<Record<string, any>>> {
+  async updateConfig(
+    config: Record<string, unknown>,
+    opts?: { reason?: string },
+  ): Promise<AdminApiResponse<Record<string, unknown>>> {
+    const body: Record<string, unknown> = { ...config }
+    const r = opts?.reason?.trim()
+    if (r) body._reason = r
     return this.request('/api/admin/config', {
       method: 'POST',
-      body: JSON.stringify(config),
+      body: JSON.stringify(body),
     })
   }
 

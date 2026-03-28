@@ -330,7 +330,14 @@ export default function AppControl({ theme = 'dark', onNavigate }: AppControlPro
             />
           )}
           {activeTab === 'controls' && (
-            <ControlsTab config={appConfig} meta={appConfigMeta} onUpdate={loadAll} isDark={isDark} />
+            <ControlsTab
+              config={appConfig}
+              meta={appConfigMeta}
+              onUpdate={loadAll}
+              isDark={isDark}
+              onGotoOpsTab={(id) => setActiveTab(id as AppControlTab)}
+              onGotoPortal={onNavigate}
+            />
           )}
           {activeTab === 'architecture' && <ArchitectureTab isDark={isDark} />}
         </div>
@@ -734,7 +741,9 @@ function ConcernsTab({
     setEmergencyBusy(true)
     setActionError(null)
     try {
-      const res = await adminApi.updateConfig(emergencyModal.patch)
+      const res = await adminApi.updateConfig(emergencyModal.patch, {
+        reason: `Concerns tab shortcut: ${emergencyModal.title}`,
+      })
       if (!res.success) {
         setActionError(res.message || res.error || 'Config update failed')
         return
@@ -1370,6 +1379,50 @@ function readToggle(cfg: Record<string, unknown>, key: string): boolean {
   return coerceBool(cfg[key], d)
 }
 
+/** Flags contradictory or wasteful combinations so ops can fix mental model before users feel drift. */
+function computeConfigCoherenceWarnings(cfg: Record<string, unknown>): string[] {
+  const w: string[] = []
+  const redeem = readToggle(cfg, 'offer_redemptions_enabled')
+  const gemsR = readToggle(cfg, 'gems_rewards_enabled')
+  const payD = readToggle(cfg, 'premium_purchases_enabled')
+  const payP = readToggle(cfg, 'partner_payments_enabled')
+  if (redeem && !gemsR) {
+    w.push('Driver redemptions are ON but gem rewards on redeem are OFF — users may redeem without gem credit.')
+  }
+  if (redeem && !payD && !payP) {
+    w.push('Redemptions ON while both payment rails are OFF — fine for promos; confusing if you still sell paid offers.')
+  }
+  const incSub = readToggle(cfg, 'incident_submissions_enabled')
+  const incVote = readToggle(cfg, 'incident_voting_enabled')
+  if (!incSub && incVote) {
+    w.push('Incident submissions OFF but voting ON — queue can go stale with nothing new to vote on.')
+  }
+  const maint = readToggle(cfg, 'maintenance_mode')
+  if (maint && payD && payP && redeem) {
+    w.push('Maintenance ON while commerce is largely open — confirm client messaging matches this split.')
+  }
+  const ai = readToggle(cfg, 'ai_photo_moderation_enabled')
+  if (!incSub && ai) {
+    w.push('Incidents OFF but AI photo moderation ON — extra cost with no new incident photos.')
+  }
+  return w
+}
+
+function formatValueForPreview(key: string, v: unknown): string {
+  const mini: Record<string, unknown> = { [key]: v }
+  const looksToggle =
+    key.endsWith('_enabled') ||
+    key === 'maintenance_mode' ||
+    key === 'force_update_required' ||
+    key === 'orion_enabled' ||
+    key === 'friend_tracking_enabled' ||
+    key === 'ohgo_cameras_enabled'
+  if (looksToggle) return readToggle(mini, key) ? 'ON' : 'OFF'
+  if (v === undefined || v === null) return '—'
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+
 function needsToggleConfirm(key: string, next: boolean): boolean {
   if (key === 'maintenance_mode' && next === true) return true
   if (key === 'force_update_required' && next === true) return true
@@ -1400,7 +1453,26 @@ const TOGGLE_IMPACT: Record<string, string> = {
   ohgo_cameras_enabled: 'Hides OHGO camera layer for clients reading public config.',
 }
 
-const OPS_PRESETS: { id: string; label: string; description: string; patch: Record<string, unknown> }[] = [
+const OPS_PRESETS: { id: string; label: string; description: string; patch: Record<string, unknown>; panic?: boolean }[] = [
+  {
+    id: 'panic_stabilize',
+    label: 'Stabilize (panic)',
+    description:
+      'Aggressive lockdown for abuse or firefight: stop incidents, commerce, live location writes, pushes, and API telemetry. Restore gradually with Normal or targeted presets.',
+    panic: true,
+    patch: {
+      incident_submissions_enabled: false,
+      incident_voting_enabled: false,
+      offer_redemptions_enabled: false,
+      partner_qr_redemption_enabled: false,
+      gems_rewards_enabled: false,
+      premium_purchases_enabled: false,
+      partner_payments_enabled: false,
+      live_location_publishing_enabled: false,
+      push_notifications_enabled: false,
+      telemetry_collection_enabled: false,
+    },
+  },
   {
     id: 'normal',
     label: 'Normal operations',
@@ -1512,17 +1584,24 @@ function ControlsTab({
   meta,
   onUpdate,
   isDark,
+  onGotoOpsTab,
+  onGotoPortal,
 }: {
   config: Record<string, unknown> | null
   meta: Record<string, { updated_at?: string | null; updated_by?: string | null }>
   onUpdate: () => void
   isDark: boolean
+  onGotoOpsTab?: (tab: string) => void
+  onGotoPortal?: (tabId: string) => void
 }) {
   const cfg = config ?? {}
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [draftNum, setDraftNum] = useState<Record<string, string>>({})
   const [draftText, setDraftText] = useState<Record<string, string>>({})
+  const lastApplyMs = useRef(0)
+
+  const coherenceWarnings = useMemo(() => computeConfigCoherenceWarnings(cfg), [cfg])
 
   useEffect(() => {
     const n: Record<string, string> = {}
@@ -1540,19 +1619,28 @@ function ControlsTab({
     detail: string
     patch: Record<string, unknown>
     confirmWord: boolean
+    previewLines?: string[]
   } | null>(null)
   const [reason, setReason] = useState('')
   const [understand, setUnderstand] = useState(false)
 
-  const persist = async (patch: Record<string, unknown>) => {
+  const COOLDOWN_MS = 2800
+
+  const persist = async (patch: Record<string, unknown>, auditReason?: string) => {
+    const now = Date.now()
+    if (now - lastApplyMs.current < COOLDOWN_MS) {
+      setErr(`Wait ${Math.ceil((COOLDOWN_MS - (now - lastApplyMs.current)) / 1000)}s between config writes (anti-misfire).`)
+      return
+    }
     setBusy(true)
     setErr(null)
     try {
-      const res = await adminApi.updateConfig(patch)
+      const res = await adminApi.updateConfig(patch, { reason: auditReason })
       if (!res.success) {
-        setErr(res.message || res.error || 'Update failed')
+        setErr((res as { message?: string }).message || (res as { error?: string }).error || 'Update failed')
         return
       }
+      lastApplyMs.current = Date.now()
       onUpdate()
     } catch {
       setErr('Network error')
@@ -1564,14 +1652,18 @@ function ControlsTab({
   const openConfirm = (title: string, detail: string, patch: Record<string, unknown>) => {
     setReason('')
     setUnderstand(false)
-    setModal({ title, detail, patch, confirmWord: true })
+    const previewLines = Object.entries(patch).map(
+      ([k, to]) => `${k}: ${formatValueForPreview(k, cfg[k])} → ${formatValueForPreview(k, to)}`,
+    )
+    setModal({ title, detail, patch, confirmWord: true, previewLines })
   }
 
   const applyModal = async () => {
     if (!modal) return
     if (modal.confirmWord && !understand) return
     const patch = { ...modal.patch }
-    await persist(patch)
+    const auditReason = reason.trim() || undefined
+    await persist(patch, auditReason)
     setModal(null)
   }
 
@@ -1615,6 +1707,16 @@ function ControlsTab({
             <div>
               <div className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{row.label}</div>
               <div className={`text-xs mt-0.5 ${isDark ? 'text-slate-500' : 'text-gray-600'}`}>{row.description}</div>
+              {TOGGLE_IMPACT[row.key] && (
+                <div
+                  className={`text-[10px] mt-1.5 leading-snug border-l-2 pl-2 ${
+                    isDark ? 'border-amber-500/40 text-slate-400' : 'border-amber-300 text-gray-600'
+                  }`}
+                >
+                  <span className="font-semibold opacity-90">Impact: </span>
+                  {TOGGLE_IMPACT[row.key]}
+                </div>
+              )}
               {metaLine && (
                 <div className={`text-[10px] mt-1 font-mono ${isDark ? 'text-slate-500' : 'text-gray-500'}`}>{metaLine}</div>
               )}
@@ -1675,6 +1777,12 @@ function ControlsTab({
                     openConfirm(
                       'Gems multiplier = 0',
                       'Sets the global multiplier to zero (strong economic impact). Confirm to proceed.',
+                      { [row.key]: clamped },
+                    )
+                  } else if (row.key === 'gems_multiplier' && clamped > 5) {
+                    openConfirm(
+                      'High gems multiplier',
+                      `${clamped}× is aggressive for production. Confirm this is intentional.`,
                       { [row.key]: clamped },
                     )
                   } else {
@@ -1742,11 +1850,67 @@ function ControlsTab({
     )
   }
 
+  const jumpBtn =
+    `text-xs font-semibold underline-offset-2 hover:underline ${isDark ? 'text-sky-400 hover:text-sky-300' : 'text-blue-700 hover:text-blue-900'}`
+
   return (
     <div className="space-y-8 relative">
       {err && (
         <div className={`text-sm rounded-lg px-3 py-2 border ${isDark ? 'bg-red-500/10 border-red-500/30 text-red-200' : 'bg-red-50 border-red-200 text-red-800'}`}>
           {err}
+        </div>
+      )}
+
+      <div className={`rounded-xl border p-4 ${isDark ? 'border-sky-500/20 bg-sky-500/[0.06]' : 'border-sky-200 bg-sky-50/70'}`}>
+        <h4 className={`text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>Incident response playbook</h4>
+        <p className={`text-xs mb-3 ${isDark ? 'text-slate-400' : 'text-gray-600'}`}>
+          Linear flow — each step links somewhere useful. You still choose what to toggle; this reduces tab-hopping under stress.
+        </p>
+        <ol className={`text-xs space-y-1.5 list-decimal list-inside ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
+          <li>
+            Detect:{' '}
+            <button type="button" className={jumpBtn} onClick={() => onGotoOpsTab?.('concerns')}>
+              Concerns
+            </button>
+            ,{' '}
+            <button type="button" className={jumpBtn} onClick={() => onGotoOpsTab?.('live_ops')}>
+              Live ops
+            </button>
+            , or health alerts.
+          </li>
+          <li>
+            Diagnose:{' '}
+            <button type="button" className={jumpBtn} onClick={() => onGotoOpsTab?.('health')}>
+              Health
+            </button>
+            {' · '}
+            <button type="button" className={jumpBtn} onClick={() => onGotoOpsTab?.('map')}>
+              Live map
+            </button>{' '}
+            (clusters of reports vs drivers).
+          </li>
+          <li>Act: presets or toggles below — confirm impact text and runbook reason (stored in audit JSON).</li>
+          <li>
+            Verify: refresh health / map;{' '}
+            <button type="button" className={jumpBtn} onClick={() => onGotoPortal?.('audit')}>
+              full audit log
+            </button>
+            {' '}for <code className="text-[10px]">APP_CONFIG_UPDATED</code>.
+          </li>
+        </ol>
+      </div>
+
+      {coherenceWarnings.length > 0 && (
+        <div className={`rounded-xl border p-4 ${isDark ? 'border-amber-500/25 bg-amber-500/[0.07]' : 'border-amber-200 bg-amber-50/90'}`}>
+          <div className={`text-sm font-bold mb-2 ${isDark ? 'text-amber-200' : 'text-amber-900'}`}>Config coherence</div>
+          <p className={`text-xs mb-2 ${isDark ? 'text-slate-400' : 'text-gray-600'}`}>
+            These combinations are allowed but easy to misread — adjust toggles if the description matches a mistake.
+          </p>
+          <ul className={`text-xs space-y-1 list-disc list-inside ${isDark ? 'text-amber-100/90' : 'text-amber-950'}`}>
+            {coherenceWarnings.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -1766,7 +1930,13 @@ function ControlsTab({
               disabled={busy}
               onClick={() => applyPreset(p)}
               className={`text-xs font-semibold px-3 py-2 rounded-lg border disabled:opacity-50 ${
-                isDark ? 'bg-white/10 border-white/15 text-white hover:bg-white/15' : 'bg-white border-violet-200 text-gray-900'
+                p.panic
+                  ? isDark
+                    ? 'bg-red-500/15 border-red-500/35 text-red-100 hover:bg-red-500/25'
+                    : 'bg-red-50 border-red-200 text-red-900 hover:bg-red-100'
+                  : isDark
+                    ? 'bg-white/10 border-white/15 text-white hover:bg-white/15'
+                    : 'bg-white border-violet-200 text-gray-900'
               }`}
             >
               {p.label}
@@ -1806,8 +1976,23 @@ function ControlsTab({
               </button>
             </div>
             <p className={`text-sm mt-2 whitespace-pre-wrap ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>{modal.detail}</p>
+            {modal.previewLines && modal.previewLines.length > 0 && (
+              <div className={`mt-3 rounded-lg border p-3 ${isDark ? 'border-white/10 bg-black/20' : 'border-gray-200 bg-gray-50'}`}>
+                <div className={`text-[10px] font-bold uppercase tracking-wide mb-1.5 ${isDark ? 'text-slate-500' : 'text-gray-500'}`}>
+                  Value transition (before → after)
+                </div>
+                <ul className={`text-xs font-mono space-y-0.5 ${isDark ? 'text-slate-300' : 'text-gray-800'}`}>
+                  {modal.previewLines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <p className={`text-[10px] mt-2 ${isDark ? 'text-slate-500' : 'text-gray-500'}`}>
+              Audit entries store keys, previous/new values, and optional reason as JSON — use the Audit tab to trace multi-admin changes.
+            </p>
             <label className={`block text-xs font-semibold mt-4 ${isDark ? 'text-slate-400' : 'text-gray-600'}`}>
-              Reason (optional, for your runbook)
+              Reason (optional, appended to audit JSON)
             </label>
             <textarea
               value={reason}
@@ -2155,6 +2340,15 @@ function AdminLiveMapTab({
 
   return (
     <div className="space-y-3">
+      <div
+        className={`rounded-xl border p-3 text-xs leading-relaxed ${isDark ? 'border-cyan-500/20 bg-cyan-500/[0.06] text-slate-300' : 'border-cyan-200 bg-cyan-50/80 text-gray-700'}`}
+      >
+        <span className={`font-bold ${isDark ? 'text-cyan-200' : 'text-cyan-900'}`}>Ops lens — </span>
+        Use this map to answer: where are drivers active right now? where are road reports clustering (possible abuse or real
+        hazards)? where are partner storefronts dense? Dense orange without matching driver density may warrant{' '}
+        <strong>incident controls</strong> on the Runtime tab; cross-check <strong>Concerns</strong> and{' '}
+        <strong>Health</strong> before changing money rails.
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-gray-600'}`}>
           <span className="font-medium text-inherit">Drivers</span> — green online, blue navigating.{' '}
