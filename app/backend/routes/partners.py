@@ -444,6 +444,12 @@ def partner_login_v2(request: PartnerLoginRequest):
 
 @router.post("/partner/v2/register")
 def partner_register_v2(request: PartnerRegisterRequest):
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "partner_signups_enabled",
+        "New partner registrations are temporarily disabled.",
+    )
     existing = sb_get_user_by_email(request.email)
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -556,6 +562,12 @@ def get_referrals(
 
 @router.post("/partner/v2/referrals/{partner_id}")
 def send_referral(partner_id: str, request: ReferralRequest, user: dict = Depends(require_partner)):
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "partner_referrals_enabled",
+        "Partner referrals are temporarily disabled.",
+    )
     _require_owned_partner_id(user, partner_id)
     ref = sb_create_partner_referral({
         "referrer_partner_id": partner_id,
@@ -586,6 +598,12 @@ def use_credits(partner_id: str, request: CreditUseRequest, user: dict = Depends
 
 @router.post("/partner/v2/redeem")
 def redeem_offer(request: QRRedemptionRequest, background_tasks: BackgroundTasks):
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "partner_qr_redemption_enabled",
+        "Partner QR redemption is temporarily disabled.",
+    )
     from services.partner_service import partner_service
     from services.websocket_manager import ws_manager
     result = partner_service.validate_redemption(request.qr_data, request.staff_id)
@@ -853,6 +871,12 @@ def stripe_subscribe(
     user: dict = Depends(require_partner),
 ):
     """Create a Stripe Checkout session for plan subscription."""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "partner_payments_enabled",
+        "Partner billing and payments are temporarily disabled.",
+    )
     from config import (
         STRIPE_SECRET_KEY,
         STRIPE_PARTNER_STARTER_PRICE_ID,
@@ -913,6 +937,12 @@ def stripe_boost_purchase(
     user: dict = Depends(require_partner),
 ):
     """Create a Stripe payment intent for a boost purchase."""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "partner_payments_enabled",
+        "Partner payments are temporarily disabled.",
+    )
     from config import STRIPE_SECRET_KEY
     if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
         return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
@@ -955,6 +985,12 @@ def stripe_credits_purchase(
     user: dict = Depends(require_partner),
 ):
     """Create a Stripe Checkout session to buy credits."""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "partner_payments_enabled",
+        "Partner billing is temporarily disabled.",
+    )
     from config import STRIPE_SECRET_KEY
     if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
         return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}

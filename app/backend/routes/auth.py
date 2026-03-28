@@ -1,7 +1,8 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
+from starlette.requests import Request
 from models.schemas import SignupRequest, LoginRequest, ForgotPasswordRequest, ResendVerificationRequest
 from middleware.auth import create_access_token
 from database import get_supabase
@@ -40,15 +41,21 @@ def _clean(user: dict) -> dict:
 
 @router.post("/signup")
 @limiter.limit("5/minute")
-def signup(http_request: Request, request: SignupRequest):
+def signup(request: Request, body: SignupRequest):
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "driver_signups_enabled",
+        "New driver signups are temporarily disabled.",
+    )
     # Supabase only (no mock fallback)
     try:
-        existing = sb_get_user_by_email(request.email)
+        existing = sb_get_user_by_email(body.email)
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
-        user = sb_create_user(request.email, request.password, request.name, "driver")
+        user = sb_create_user(body.email, body.password, body.name, "driver")
         token = _build_token(user)
-        logger.info(f"Supabase signup: {request.email}")
+        logger.info(f"Supabase signup: {body.email}")
         return {"success": True, "data": {"user": _clean(user), "token": token}}
     except HTTPException:
         raise
@@ -59,22 +66,22 @@ def signup(http_request: Request, request: SignupRequest):
 
 @router.post("/login")
 @limiter.limit("10/minute")
-def login(http_request: Request, request: LoginRequest):
+def login(request: Request, body: LoginRequest):
     sb_error: Optional[str] = None
 
     # Supabase only (no mock fallback)
     try:
-        sb_user, sb_error = sb_login_user(request.email, request.password)
+        sb_user, sb_error = sb_login_user(body.email, body.password)
         if sb_user:
             # Double-check the role by fetching profile again to avoid RLS issues
-            profile = sb_get_user_by_email(request.email)
+            profile = sb_get_user_by_email(body.email)
             if profile:
                 sb_user = profile
-                logger.info(f"Supabase login: {request.email}, role={profile.get('role')}")
+                logger.info(f"Supabase login: {body.email}, role={profile.get('role')}")
             token = _build_token(sb_user)
             return {"success": True, "data": {"user": _clean(sb_user), "token": token}}
         if sb_error:
-            logger.warning(f"Supabase login failed for {request.email}: {sb_error}")
+            logger.warning(f"Supabase login failed for {body.email}: {sb_error}")
     except Exception as e:
         logger.warning(f"Supabase login error: {e}")
         sb_error = str(e)
@@ -158,8 +165,8 @@ def oauth_supabase(payload: dict):
 
 @router.post("/forgot-password")
 @limiter.limit("5/minute")
-def forgot_password(http_request: Request, request: ForgotPasswordRequest):
-    email = (request.email or "").strip().lower()
+def forgot_password(request: Request, body: ForgotPasswordRequest):
+    email = (body.email or "").strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
 
@@ -188,8 +195,8 @@ def forgot_password(http_request: Request, request: ForgotPasswordRequest):
 
 @router.post("/resend-verification")
 @limiter.limit("5/minute")
-def resend_verification(http_request: Request, request: ResendVerificationRequest):
-    email = (request.email or "").strip().lower()
+def resend_verification(request: Request, body: ResendVerificationRequest):
+    email = (body.email or "").strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
 

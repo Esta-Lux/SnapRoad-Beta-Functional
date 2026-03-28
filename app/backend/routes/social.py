@@ -182,6 +182,12 @@ def accept_friend_request(body: dict, current_user: dict = Depends(get_current_u
 @router.post("/friends/location/update")
 def update_my_location(body: LocationUpdateBody, current_user: dict = Depends(get_current_user)):
     """Update current user's live location (Supabase: live_locations upsert; mock: no-op)."""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "live_location_publishing_enabled",
+        "Live location publishing is temporarily paused.",
+    )
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
     uid = current_user["id"]

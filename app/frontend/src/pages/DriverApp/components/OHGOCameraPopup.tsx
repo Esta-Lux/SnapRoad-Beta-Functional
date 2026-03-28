@@ -13,7 +13,7 @@ export default function OHGOCameraPopup({ camera, onClose }: Props) {
   const [imgError, setImgError] = useState(false)
   const [thumbErrors, setThumbErrors] = useState<Set<number>>(new Set())
   const [fullscreen, setFullscreen] = useState(false)
-  const intervalRef = useRef<ReturnType<typeof setInterval>>()
+  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   const view = camera.cameraViews?.[viewIndex]
   const hasValidView = view && (view.largeUrl || view.smallUrl)

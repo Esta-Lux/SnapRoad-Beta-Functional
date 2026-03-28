@@ -13,6 +13,11 @@ export interface AdminStats {
   incidents_today?: number
   revenue?: number
   total_mrr?: number
+  /** Incident reports awaiting moderation (sidebar badge). */
+  pending_incidents?: number
+  open_concerns?: number
+  active_today?: number
+  trips_today?: number
 }
 
 /** Optional feed when the API includes it; `/api/admin/analytics` may omit (only summary + queues). */

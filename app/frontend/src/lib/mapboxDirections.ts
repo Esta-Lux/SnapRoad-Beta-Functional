@@ -91,7 +91,25 @@ function mapboxManeuverToSimple(modifier?: string, type?: string): string {
   return type || 'straight'
 }
 
-function parseRoute(route: { geometry: { coordinates: [number, number][] }; legs: { steps: Array<{ maneuver?: { instruction?: string; modifier?: string; type?: string; location?: [number, number] }; distance: number; duration: number; intersections?: Array<{ lanes?: unknown }> }> }; distance: number; duration: number; notifications?: Array<{ type?: string; message?: string; code?: string }> }, routeType?: DirectionsResult['routeType']): DirectionsResult {
+/** One leg from Mapbox Directions API (GeoJSON with steps). */
+type MapboxRouteLeg = {
+  steps: Array<{
+    maneuver?: { instruction?: string; modifier?: string; type?: string; location?: [number, number] }
+    distance: number
+    duration: number
+    intersections?: Array<{ lanes?: unknown }>
+  }>
+}
+
+type MapboxRouteBody = {
+  geometry: { coordinates: [number, number][] }
+  legs: MapboxRouteLeg[]
+  distance: number
+  duration: number
+  notifications?: Array<{ type?: string; message?: string; code?: string }>
+}
+
+function parseRoute(route: MapboxRouteBody, routeType?: DirectionsResult['routeType']): DirectionsResult {
   const polyline: { lat: number; lng: number }[] = route.geometry.coordinates.map(
     (coord: [number, number]) => ({ lat: coord[1], lng: coord[0] })
   )
@@ -208,8 +226,8 @@ export async function getMapboxRouteOptions(
       ).then((r) => (r.ok ? r.json() : { routes: [] })),
     ])
 
-    const drivingRoutes = (drivingRes.routes ?? []) as Array<{ geometry: { coordinates: [number, number][] }; legs: { steps: unknown[] }[]; distance: number; duration: number }>
-    const trafficRoutes = (trafficRes.routes ?? []) as Array<{ geometry: { coordinates: [number, number][] }; legs: { steps: unknown[] }[]; distance: number; duration: number }>
+    const drivingRoutes = (drivingRes.routes ?? []) as MapboxRouteBody[]
+    const trafficRoutes = (trafficRes.routes ?? []) as MapboxRouteBody[]
 
     if (trafficRoutes.length > 0) {
       results.push(parseRoute(trafficRoutes[0], 'best'))
@@ -259,24 +277,7 @@ export async function getMapboxAlternatives(
   const data = await response.json()
   if (!data.routes?.length) throw new Error('No routes found')
 
-  return data.routes.map((route: { geometry: { coordinates: [number, number][] }; legs: { steps: unknown[] }[]; distance: number; duration: number }) => ({
-    polyline: route.geometry.coordinates.map((c: [number, number]) => ({ lat: c[1], lng: c[0] })),
-    steps: route.legs.flatMap((leg: { steps: Array<{ maneuver?: { instruction?: string; modifier?: string; type?: string; location?: [number, number] }; distance: number; duration: number; intersections?: Array<{ lanes?: unknown }> }> }) =>
-      leg.steps.map((step) => ({
-        instruction: step.maneuver?.instruction || '',
-        distance: formatDistance(step.distance),
-        distanceMeters: step.distance,
-        duration: formatDuration(step.duration),
-        maneuver: mapboxManeuverToSimple(step.maneuver?.modifier, step.maneuver?.type),
-        lat: step.maneuver?.location?.[1] ?? 0,
-        lng: step.maneuver?.location?.[0] ?? 0,
-      }))
-    ),
-    distance: route.distance,
-    duration: route.duration,
-    distanceText: formatDistance(route.distance),
-    durationText: formatDuration(route.duration),
-  }))
+  return (data.routes as MapboxRouteBody[]).map((route) => parseRoute(route))
 }
 
 /**

@@ -29,8 +29,8 @@ export function useTripTracking(params: {
       if (!res.success || !res.data) return
       const trips = (res.data as { trips?: Array<{ route_coordinates?: { lat: number; lng: number }[] }> }).trips ?? []
       const polylines = trips
-        .filter((t: { route_coordinates?: { lat: number; lng: number }[] }) => t.route_coordinates && t.route_coordinates.length >= 2)
-        .map((t: { route_coordinates: { lat: number; lng: number }[] }) => t.route_coordinates)
+        .filter((t) => Array.isArray(t.route_coordinates) && t.route_coordinates.length >= 2)
+        .map((t) => t.route_coordinates as { lat: number; lng: number }[])
       setTripHistoryPolylines(polylines)
     } catch {}
   }, [apiClient])

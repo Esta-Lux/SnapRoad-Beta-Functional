@@ -157,6 +157,16 @@ def create_offer(offer: OfferCreate):
 @limiter.limit("30/minute")
 def redeem_offer(request: Request, offer_id: int, auth_user: dict = Depends(get_current_user)):
     import logging
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "offer_redemptions_enabled",
+        "Offer redemptions are temporarily disabled.",
+    )
+    require_enabled(
+        "gems_rewards_enabled",
+        "Gem rewards are temporarily paused.",
+    )
     logger = logging.getLogger(__name__)
 
     # Try Supabase first for real offers

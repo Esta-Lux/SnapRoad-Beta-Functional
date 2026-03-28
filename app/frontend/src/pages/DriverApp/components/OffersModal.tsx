@@ -34,7 +34,7 @@ interface Offer {
 interface OffersModalProps {
   isOpen: boolean
   onClose: () => void
-  userPlan: 'basic' | 'premium' | null
+  userPlan: 'basic' | 'premium' | 'family' | null
   onRedeem: (offerId: number) => Promise<any>
   selectedOfferId?: number | null
   onOpenUrl?: (url: string, title: string) => void

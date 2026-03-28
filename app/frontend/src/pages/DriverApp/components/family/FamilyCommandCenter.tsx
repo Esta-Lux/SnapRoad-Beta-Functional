@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type mapboxgl from 'mapbox-gl'
 import api from '@/services/api'
-import { Settings, Battery, Car, Home, Building2, MapPin, ShieldAlert } from 'lucide-react'
+import { Settings, Battery, Car, Home, Building2, MapPin } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { updateMyLocation } from '@/lib/friendLocation'
 

@@ -125,7 +125,13 @@ def create_app() -> FastAPI:
                 "error": error,
                 "error_stack": error_stack,
             }
-            telemetry_service.publish_fire_and_forget(event)
+            try:
+                from services.runtime_config import cfg_enabled, get_runtime_config
+
+                if cfg_enabled(get_runtime_config(), "telemetry_collection_enabled", True):
+                    telemetry_service.publish_fire_and_forget(event)
+            except Exception:
+                telemetry_service.publish_fire_and_forget(event)
 
     @app.get("/")
     def root():

@@ -79,6 +79,12 @@ def _to_road_report_payload(report: IncidentReportCompat, user_id: str, now: dat
 @limiter.limit("30/minute")
 def report_incident(request: Request, report: IncidentReportCompat, user: dict = Depends(get_current_user)):
     """Create an incident report. Returns the created incident and gems_earned."""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "incident_submissions_enabled",
+        "Incident reporting is temporarily disabled.",
+    )
     r_type = (report.type or report.incident_type or "").strip()
     if not r_type:
         raise HTTPException(status_code=422, detail="type is required")
@@ -265,6 +271,12 @@ def dev_seed_incidents(
 @limiter.limit("60/minute")
 def upvote_incident(request: Request, incident_id: str, user: dict = Depends(get_current_user)):
     """Upvote confirms an incident is still there; extends expiry by 30 minutes."""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "incident_voting_enabled",
+        "Incident voting is temporarily disabled.",
+    )
     # DB-first path
     try:
         sb = get_supabase()
@@ -319,6 +331,12 @@ class ConfirmBody(BaseModel):
 @limiter.limit("40/minute")
 def confirm_incident(request: Request, body: ConfirmBody, _user: dict = Depends(get_current_user)):
     """Confirm or deny an incident report. Confirmed extends expiry; denied downvotes."""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "incident_voting_enabled",
+        "Incident voting is temporarily disabled.",
+    )
     # DB-first path
     try:
         sb = get_supabase()
@@ -374,6 +392,12 @@ def confirm_incident(request: Request, body: ConfirmBody, _user: dict = Depends(
 @limiter.limit("60/minute")
 def downvote_incident(request: Request, incident_id: str, _user: dict = Depends(get_current_user)):
     """Downvote indicates it's not there; after enough downvotes, remove early."""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "incident_voting_enabled",
+        "Incident voting is temporarily disabled.",
+    )
     # DB-first path
     try:
         sb = get_supabase()

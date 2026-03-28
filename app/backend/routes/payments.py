@@ -123,6 +123,12 @@ async def create_checkout_session(
     current_user: dict = Depends(get_current_user),
 ):
     """Create a Stripe checkout session for subscription upgrade"""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "premium_purchases_enabled",
+        "Premium purchases are temporarily disabled.",
+    )
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
     

@@ -16,12 +16,14 @@ from models.schemas import (
 )
 from services.offer_utils import calculate_auto_gems, calculate_free_discount
 from services.cache import cache_delete
+from services.telemetry_service import telemetry_service
 from services.supabase_service import (
     sb_list_profiles, sb_get_profile, sb_update_profile,
     sb_suspend_profile, sb_activate_profile, sb_delete_profile,
     sb_get_partners, sb_get_partner, sb_create_partner,
     sb_update_partner, sb_delete_partner,
     sb_get_partner_locations,
+    sb_get_partner_locations_for_admin_map,
     sb_get_offers, sb_create_offer, sb_update_offer, sb_delete_offer,
     sb_get_boosts, sb_create_boost, sb_cancel_boost,
     sb_get_redemptions, sb_get_redemption_stats,
@@ -41,6 +43,8 @@ from services.supabase_service import (
     test_connection,
     sb_get_concerns, sb_update_concern_status, sb_get_concerns_count_by_status,
     sb_get_app_config, sb_update_app_config,
+    sb_get_app_config_with_meta,
+    sb_get_road_reports_for_admin_map,
     sb_get_live_users,
 )
 
@@ -63,6 +67,7 @@ def get_admin_stats():
     redemption_stats = sb_get_redemption_stats()
     finance = sb_get_finance_summary()
     open_concerns = sb_get_concerns_count_by_status("open")
+    pending_incidents = len(sb_get_incidents(status="pending", limit=500))
     if not stats:
         stats = {}
     data = {
@@ -71,6 +76,7 @@ def get_admin_stats():
         "trips_today": stats.get("trips_today", trip_stats.get("total_trips", 0)),
         "total_miles": stats.get("total_miles", 0),
         "open_concerns": open_concerns,
+        "pending_incidents": pending_incidents,
         "offers_redeemed": stats.get("total_redemptions", redemption_stats.get("total", 0)),
         "revenue": finance.get("total_mrr", 0),
         "user_growth": stats.get("user_growth", "+0%"),
@@ -82,7 +88,7 @@ def get_admin_stats():
 
 @router.get("/admin/concerns")
 def get_admin_concerns(
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=50, ge=1, le=200),
     severity: Optional[str] = None,
     status: Optional[str] = None,
 ):
@@ -107,6 +113,61 @@ def update_concern_status(concern_id: str, body: dict = Body(..., embed=True)):
 def get_live_users():
     users = sb_get_live_users()
     return {"success": True, "data": {"users": users}}
+
+
+# ==================== TELEMETRY (aggregate app / API usage) ====================
+
+_SKIP_USAGE_PREFIXES = (
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/api/admin/monitor",
+    "/api/ws/",
+    "/favicon.ico",
+)
+
+
+@router.get("/admin/telemetry/app-usage")
+def get_admin_app_usage_telemetry(limit: int = Query(default=500, ge=50, le=500)):
+    """
+    Summarize recent HTTP telemetry into API area counts (driver/partner flows proxy).
+
+    Privacy: no per-user identity in telemetry events today—this is aggregate traffic only.
+    """
+    from collections import Counter
+
+    events = telemetry_service.snapshot(limit=limit)
+    prefix_counts: Counter[str] = Counter()
+    path_counts: Counter[str] = Counter()
+    analyzed = 0
+
+    for e in events:
+        path = (e.get("path") or "").split("?")[0]
+        if not path.startswith("/api/"):
+            continue
+        if any(path.startswith(p) for p in _SKIP_USAGE_PREFIXES):
+            continue
+        analyzed += 1
+        path_counts[path] += 1
+        parts = [p for p in path.split("/") if p]
+        if len(parts) >= 2:
+            prefix = f"/{parts[0]}/{parts[1]}"
+        else:
+            prefix = path or "/"
+        prefix_counts[prefix] += 1
+
+    top_prefixes = [{"prefix": k, "count": v} for k, v in prefix_counts.most_common(24)]
+    top_paths = [{"path": k, "count": v} for k, v in path_counts.most_common(30)]
+
+    return {
+        "success": True,
+        "data": {
+            "events_in_buffer": len(events),
+            "api_events_counted": analyzed,
+            "top_prefixes": top_prefixes,
+            "top_paths": top_paths,
+        },
+    }
 
 
 # ==================== HEALTH ====================
@@ -200,7 +261,40 @@ def update_admin_config(config: dict, user: dict = Depends(require_admin)):
     for key, value in config.items():
         sb_update_app_config(key, value, updated_by=updated_by)
     cache_delete("app_config_public")
+    try:
+        from services.runtime_config import invalidate_runtime_config_cache
+
+        invalidate_runtime_config_cache()
+    except Exception:
+        pass
+    keys_sorted = sorted(str(k) for k in config.keys())
+    detail = f"app_config keys: {', '.join(keys_sorted)}" if keys_sorted else "app_config (empty patch)"
+    sb_create_audit_log(
+        "APP_CONFIG_UPDATED",
+        "admin",
+        str(updated_by or ""),
+        detail,
+    )
     return {"success": True, "data": sb_get_app_config()}
+
+
+@router.get("/admin/config/detailed")
+def get_admin_config_detailed():
+    """Config values plus per-key updated_at / updated_by for ops audit trail in UI."""
+    cfg, meta = sb_get_app_config_with_meta()
+    return {"success": True, "data": {"config": cfg, "meta": meta}}
+
+
+@router.get("/admin/map/road-reports")
+def get_admin_map_road_reports(limit: int = Query(default=400, ge=1, le=800)):
+    reports = sb_get_road_reports_for_admin_map(limit=limit)
+    return {"success": True, "data": {"reports": reports}}
+
+
+@router.get("/admin/map/partner-locations")
+def get_admin_map_partner_locations(limit: int = Query(default=500, ge=1, le=1000)):
+    locations = sb_get_partner_locations_for_admin_map(limit=limit)
+    return {"success": True, "data": {"locations": locations}}
 
 
 # ==================== ANALYTICS ====================

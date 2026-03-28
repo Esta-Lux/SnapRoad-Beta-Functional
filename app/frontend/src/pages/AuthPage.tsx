@@ -38,10 +38,11 @@ export default function AuthPage() {
         if (!result.success || !result.data) throw new Error(result.error || 'Login failed')
         const user = result.data.user
         const token = result.data.token
-        const role = user.role as string
+        const role = String(user.role ?? '')
         if (!user || (role !== 'admin' && role !== 'super_admin')) throw new Error('This account does not have admin access')
         adminApi.setToken(token)
-        setAuth({ id: user.id, email: user.email, fullName: user.full_name || user.email, role: role === 'super_admin' ? 'super_admin' : 'admin' }, token)
+        const displayName = user.full_name || user.name || user.email
+        setAuth({ id: user.id, email: user.email, fullName: displayName, role: role === 'super_admin' ? 'super_admin' : 'admin' }, token)
         navigate('/portal/admin-sr2025secure')
       } else {
         const result = await partnerApi.login(email, password)

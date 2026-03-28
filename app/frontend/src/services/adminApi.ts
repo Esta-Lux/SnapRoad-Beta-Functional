@@ -421,6 +421,16 @@ class AdminApiService {
     return this.request('/api/admin/config')
   }
 
+  /** Config values plus per-key updated_at / updated_by for audit display in Operations UI. */
+  async getConfigDetailed(): Promise<
+    AdminApiResponse<{
+      config: Record<string, any>
+      meta: Record<string, { updated_at?: string | null; updated_by?: string | null }>
+    }>
+  > {
+    return this.request('/api/admin/config/detailed')
+  }
+
   async updateConfig(config: Record<string, any>): Promise<AdminApiResponse<Record<string, any>>> {
     return this.request('/api/admin/config', {
       method: 'POST',
@@ -428,10 +438,32 @@ class AdminApiService {
     })
   }
 
+  /** Active road reports for admin live map overlay. */
+  async getAdminRoadReports(limit: number = 400): Promise<AdminApiResponse<{ reports: any[] }>> {
+    return this.request(`/api/admin/map/road-reports?limit=${limit}`)
+  }
+
+  /** Partner store locations for admin live map (hotspots). */
+  async getAdminPartnerMapLocations(limit: number = 500): Promise<AdminApiResponse<{ locations: any[] }>> {
+    return this.request(`/api/admin/map/partner-locations?limit=${limit}`)
+  }
+
   // ==================== SUPABASE STATUS ====================
 
   async getSupabaseStatus(): Promise<AdminApiResponse<any>> {
     return this.request('/api/admin/supabase/status')
+  }
+
+  /** Aggregate API traffic by route prefix (recent in-memory buffer on API). */
+  async getAppUsageTelemetry(limit: number = 500): Promise<
+    AdminApiResponse<{
+      events_in_buffer: number
+      api_events_counted: number
+      top_prefixes: { prefix: string; count: number }[]
+      top_paths: { path: string; count: number }[]
+    }>
+  > {
+    return this.request(`/api/admin/telemetry/app-usage?limit=${limit}`)
   }
 }
 

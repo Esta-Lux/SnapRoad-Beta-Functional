@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { Phone, ChevronRight } from 'lucide-react'
 import api from '@/services/api'
@@ -74,6 +73,7 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
   const [showReportCard, setShowReportCard] = useState(false)
   const [reportCardMember, setReportCardMember] = useState<FamilyMember | null>(null)
   const [showFamilyLeaderboard, setShowFamilyLeaderboard] = useState(false)
+  const [showCheckIn, setShowCheckIn] = useState(false)
   const [locationConsent, setLocationConsent] = useState(true)
   const [shareLocation, setShareLocation] = useState(true)
   const [needsOnboardingFinish, setNeedsOnboardingFinish] = useState(false)
@@ -1201,6 +1201,30 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
         currentUserId={currentUserId}
         groupId={groupId ?? ''}
       />
+
+      {showCheckIn && (
+        <div
+          role="presentation"
+          className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setShowCheckIn(false)}
+        >
+          <div
+            role="dialog"
+            className="bg-white rounded-2xl p-4 max-w-sm shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-slate-800 font-semibold mb-2">Check-in</p>
+            <p className="text-slate-600 text-sm mb-4">Family check-in will appear here.</p>
+            <button
+              type="button"
+              className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium"
+              onClick={() => setShowCheckIn(false)}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes pulse {

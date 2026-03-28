@@ -1,0 +1,97 @@
+# -----------------------------------------------------------------------------
+# Multi-domain web (app. / partner. / admin.): operational checklist (not CI)
+# - Supabase Auth: add each production origin to Redirect URLs.
+# - OAuth providers: allowlist redirect URIs for each origin.
+# - Backend: include all three origins in CHECKOUT_ALLOWED_ORIGINS (or equivalent).
+# - Static hosting: SPA fallback so deep links (e.g. /portal/partner) serve index.html.
+# -----------------------------------------------------------------------------
+
+name: Validate
+
+# `develop` = staging / pre-launch integration; `main` = production release line — both get CI.
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: app/backend/requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Byte-compile (syntax check)
+        run: python -m compileall -q .
+
+      - name: Smoke import app
+        run: python -c "import main"
+
+      # Integration-style tests expect a running API (REACT_APP_BACKEND_URL). They are
+      # informational on PRs until a dedicated test stack or secrets are wired in.
+      - name: pytest (non-blocking)
+        run: python -m pytest -q
+        continue-on-error: true
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/frontend
+    env:
+      # Non-secret CI placeholders so `vite build` is deterministic without repo .env
+      VITE_API_URL: ""
+      VITE_BACKEND_URL: ""
+      VITE_SUPABASE_URL: ""
+      VITE_SUPABASE_ANON_KEY: ""
+      VITE_PUBLIC_SUPABASE_URL: ""
+      VITE_SUPABASE_PUBLISHABLE_KEY: ""
+      VITE_PUBLIC_SUPABASE_ANON_KEY: ""
+      VITE_OHGO_API_KEY: ""
+      VITE_MAPBOX_TOKEN: ""
+      VITE_APP_VERSION: "0.0.0-ci"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: app/frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+
+      - run: npm ci
+      - run: npx tsc --noEmit

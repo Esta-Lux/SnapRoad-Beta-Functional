@@ -46,7 +46,23 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Authentication required")
     token = credentials.credentials
 
-    # Primary verification path: validate Supabase JWT server-side.
+    # SnapRoad-issued JWTs (e.g. partner v2 login, email/password) — verify locally first
+    # so we do not spam logs / Supabase with tokens signed with JWT_SECRET.
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        if user_id is not None:
+            return {
+                "id": str(user_id),
+                "user_id": str(user_id),
+                "email": payload.get("email"),
+                "role": payload.get("role", "user"),
+                "partner_id": payload.get("partner_id"),
+            }
+    except JWTError:
+        pass
+
+    # Supabase session JWT (mobile OAuth / Supabase access_token)
     supabase_user = sb_get_auth_user_from_access_token(token)
     if supabase_user and supabase_user.get("id"):
         user_id = str(supabase_user.get("id"))
@@ -59,18 +75,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             "partner_id": profile.get("partner_id"),
         }
 
-    # Backward-compatible fallback for legacy SnapRoad JWTs.
-    payload = decode_token(token)
-    user_id = payload.get("sub")
-    if user_id is None:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return {
-        "id": user_id,
-        "user_id": user_id,
-        "email": payload.get("email"),
-        "role": payload.get("role", "user"),
-        "partner_id": payload.get("partner_id"),
-    }
+    raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 async def require_admin(user: dict = Depends(get_current_user)):

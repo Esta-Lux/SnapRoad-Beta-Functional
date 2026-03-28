@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, AlertTriangle, Eye, Gift, Building2, BarChart3,
   Bell, TrendingUp, DollarSign, Scale, Settings, FileText, LogOut,
-  Moon, Sun, Crown, Activity, Sliders
+  Moon, Sun, Crown, LayoutGrid
 } from 'lucide-react'
 
 import { adminApi } from '@/services/adminApi'
@@ -24,15 +24,14 @@ import LegalTab from '@/components/admin/LegalTab'
 import SettingsTab from '@/components/admin/SettingsTab'
 import NotificationsTab from '@/components/admin/NotificationsTab'
 import AuditLogTab from '@/components/admin/AuditLogTab'
-import SystemMonitorTab from '@/components/admin/SystemMonitorTab'
 import { AdminOfferManagement } from '@/components/admin/AdminOfferManagement'
 import AppControl from '@/pages/AdminDashboard/components/AppControl'
 
 const NAV_BASE = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, badgeKey: '' },
-  { id: 'appcontrol', label: 'App Control', icon: Sliders, badgeKey: '' },
+  { id: 'appcontrol', label: 'Operations', icon: LayoutGrid, badgeKey: '' },
   { id: 'users', label: 'Users & Families', icon: Users, badgeKey: 'total_users' },
-  { id: 'incidents', label: 'Incidents', icon: AlertTriangle, badgeKey: '' },
+  { id: 'incidents', label: 'Incidents', icon: AlertTriangle, badgeKey: 'pending_incidents' },
   { id: 'moderation', label: 'AI Moderation Queue', icon: Eye, badgeKey: '' },
   { id: 'rewards', label: 'Rewards & Vouchers', icon: Gift, badgeKey: '' },
   { id: 'partners', label: 'Partners & Campaigns', icon: Building2, badgeKey: 'total_partners' },
@@ -44,7 +43,6 @@ const NAV_BASE = [
   { id: 'legal', label: 'Legal & Compliance', icon: Scale, badgeKey: '' },
   { id: 'settings', label: 'Settings', icon: Settings, badgeKey: '' },
   { id: 'audit', label: 'Audit Log', icon: FileText, badgeKey: '' },
-  { id: 'monitor', label: 'System Monitor', icon: Activity, badgeKey: '' },
 ]
 
 export default function AdminDashboard() {
@@ -62,9 +60,11 @@ export default function AdminDashboard() {
         if (res.success && res.data) {
           setIsConnected(true)
           const s = res.data
+          const pending = s.pending_incidents ?? 0
           setNavBadges({
             total_users: (s.total_users || 0).toLocaleString(),
             total_partners: (s.total_partners || 0).toLocaleString(),
+            pending_incidents: pending > 99 ? '99+' : pending > 0 ? String(pending) : '',
           })
         }
       } catch {
@@ -72,6 +72,8 @@ export default function AdminDashboard() {
       }
     }
     loadBadges()
+    const t = window.setInterval(loadBadges, 45000)
+    return () => window.clearInterval(t)
   }, [])
 
   const NAV_ITEMS = NAV_BASE.map(item => ({
@@ -93,7 +95,12 @@ export default function AdminDashboard() {
           />
         )
       case 'appcontrol':
-        return <AppControl />
+        return (
+          <AppControl
+            theme={darkMode ? 'dark' : 'light'}
+            onNavigate={(tabId) => setActiveTab(tabId)}
+          />
+        )
       case 'users':
         return <UsersTab theme={darkMode ? 'dark' : 'light'} />
       case 'incidents':
@@ -120,8 +127,6 @@ export default function AdminDashboard() {
         return <SettingsTab theme={darkMode ? 'dark' : 'light'} />
       case 'audit':
         return <AuditLogTab theme={darkMode ? 'dark' : 'light'} />
-      case 'monitor':
-        return <SystemMonitorTab theme={darkMode ? 'dark' : 'light'} />
       default:
         return (
           <DashboardOverview
