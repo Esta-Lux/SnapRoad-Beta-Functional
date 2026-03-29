@@ -14,6 +14,8 @@ export interface NavigationData {
   distance: number;
   durationText: string;
   distanceText: string;
+  congestion?: import('../lib/directions').CongestionLevel[];
+  maxspeeds?: (number | null)[];
 }
 
 export interface TripSummary {
@@ -45,6 +47,7 @@ export function useNavigation(params: {
   const [showRoutePreview, setShowRoutePreview] = useState(false);
   const [tripSummary, setTripSummary] = useState<TripSummary | null>(null);
   const [selectedDestination, setSelectedDestination] = useState<GeocodeResult | null>(null);
+  const [isRerouting, setIsRerouting] = useState(false);
 
   const isNavigatingRef = useRef(false);
   const traveledRef = useRef(0);
@@ -59,12 +62,13 @@ export function useNavigation(params: {
   const fetchDirections = useCallback(async (
     destination: Coordinate & { name?: string; address?: string },
     origin?: Coordinate,
+    opts?: { maxHeightMeters?: number },
   ) => {
     const o = origin ?? userLocation;
     if (!Number.isFinite(o.lat) || !Number.isFinite(destination.lat)) return;
 
     try {
-      const options = await getMapboxRouteOptions(o, destination, { mode: drivingMode });
+      const options = await getMapboxRouteOptions(o, destination, { mode: drivingMode, maxHeightMeters: opts?.maxHeightMeters });
       if (!options.length || !options[0].polyline.length) return;
 
       setAvailableRoutes(options);
@@ -80,6 +84,8 @@ export function useNavigation(params: {
         distance: first.distance,
         durationText: first.durationText,
         distanceText: first.distanceText,
+        congestion: first.congestion,
+        maxspeeds: first.maxspeeds,
       };
       setNavigationData(nav);
       setCurrentStepIndex(0);
@@ -115,6 +121,8 @@ export function useNavigation(params: {
       distance: r.distance,
       durationText: r.durationText,
       distanceText: r.distanceText,
+      congestion: r.congestion,
+      maxspeeds: r.maxspeeds,
     });
   }, [availableRoutes, navigationData]);
 
@@ -130,7 +138,9 @@ export function useNavigation(params: {
     tripStartTimeRef.current = Date.now();
     setShowRoutePreview(false);
     const dest = navigationData.destination.name ?? 'your destination';
-    speak(`Starting navigation to ${dest}. Drive safe!`, 'high', drivingMode);
+    const etaMin = Math.round(navigationData.duration / 60);
+    const etaStr = etaMin < 60 ? `About ${etaMin} minutes` : `About ${Math.floor(etaMin / 60)} hours and ${etaMin % 60} minutes`;
+    speak(`Starting navigation to ${dest}. ${etaStr}.`, 'high', drivingMode);
   }, [navigationData, drivingMode]);
 
   const stopNavigation = useCallback(() => {
@@ -144,9 +154,12 @@ export function useNavigation(params: {
     const distMiles = navigationData?.distance
       ? navigationData.distance / 1609.34
       : durationMin * 0.5;
+    const roundedDist = Math.round(distMiles * 10) / 10;
+
+    setTimeout(() => speak(`Trip ended. You drove ${roundedDist} miles.`, 'normal', drivingMode), 500);
 
     setTripSummary({
-      distance: Math.round(distMiles * 10) / 10,
+      distance: roundedDist,
       duration: durationMin,
       safety_score: 85,
       gems_earned: 5,
@@ -163,7 +176,7 @@ export function useNavigation(params: {
     offRouteSinceRef.current = null;
     rerouteInFlightRef.current = false;
     tripStartTimeRef.current = null;
-  }, [navigationData]);
+  }, [navigationData, drivingMode]);
 
   const dismissTripSummary = useCallback(() => setTripSummary(null), []);
 
@@ -209,7 +222,16 @@ export function useNavigation(params: {
     lastSpokenStepRef.current = stepIndex;
     const step = navigationData.steps[stepIndex];
     if (!step?.instruction) return;
-    const phrase = formatTurnInstruction(step.instruction, step.distanceMeters, step.maneuver);
+    const nextStep = navigationData.steps[stepIndex + 1] ?? null;
+    const phrase = formatTurnInstruction(
+      step.instruction,
+      step.distanceMeters,
+      step.maneuver,
+      drivingMode,
+      step.intersections,
+      nextStep ? { maneuver: nextStep.maneuver, distanceMeters: nextStep.distanceMeters } : null,
+    );
+    if (!phrase) return;
 
     if (stepIndex === 0) {
       setTimeout(() => speak(phrase, 'normal', drivingMode), 2500);
@@ -229,7 +251,10 @@ export function useNavigation(params: {
     if (remaining > 0.05 || hasAnnouncedArrival.current) return;
     hasAnnouncedArrival.current = true;
     const dest = navigationData.destination.name ?? 'your destination';
-    speak(`You've arrived at ${dest}.`, 'high', drivingMode);
+    const arrivalMsg = drivingMode === 'calm'
+      ? `You've arrived at ${dest}. Hope you had a nice drive.`
+      : `You've arrived at ${dest}. Have a great day!`;
+    speak(arrivalMsg, 'high', drivingMode);
   }, [isNavigating, liveEta?.distanceMiles, navigationData?.destination, drivingMode]);
 
   // --- ETA from route distance ---
@@ -275,7 +300,8 @@ export function useNavigation(params: {
 
     rerouteInFlightRef.current = true;
     lastRerouteAtRef.current = now;
-    speak('Rerouting.', 'high', drivingMode);
+    const rerouteMsg = drivingMode === 'calm' ? 'Let me find you a new route.' : 'Rerouting.';
+    speak(rerouteMsg, 'high', drivingMode);
 
     const reroute = async () => {
       try {
@@ -294,6 +320,7 @@ export function useNavigation(params: {
   return {
     navigationData,
     isNavigating,
+    isRerouting,
     currentStepIndex,
     traveledDistanceMeters,
     availableRoutes,

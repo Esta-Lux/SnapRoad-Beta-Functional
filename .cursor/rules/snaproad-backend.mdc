@@ -1,0 +1,26 @@
+---
+description: SnapRoad FastAPI backend conventions -- port 8001, connection pooling, caching
+globs: app/backend/**/*.py
+alwaysApply: false
+---
+
+# Backend Rules
+
+## Port
+
+API runs on **8001**. Changing it breaks frontend proxy and mobile client.
+
+## HTTP Clients
+
+Use the shared `httpx.AsyncClient` in `routes/places.py` (`_get_http()`). Never create `async with httpx.AsyncClient() as client:` per-request -- it wastes a TCP+TLS handshake every call.
+
+## Family Routes
+
+`routes/family.py` is a Coming Soon stub (returns 503). Do not restore the full family CRUD unless explicitly asked.
+
+## Environment
+
+- `config.py` loads `.env` and exports all secrets
+- `database.py` has a singleton Supabase client via `get_supabase()`
+- `limiter.py` handles rate limiting with Redis fallback to in-memory
+- Production requires `CORS_ORIGINS`, strong `JWT_SECRET` (32+ chars), and all Stripe/Supabase keys

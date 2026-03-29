@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -15,6 +16,8 @@ from limiter import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+ALLOW_MOCK_AUTH = os.getenv("ALLOW_MOCK_AUTH", "false").strip().lower() in ("1", "true", "yes")
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
 
 
 def _build_token(user_dict: dict) -> str:
@@ -40,15 +43,22 @@ def _clean(user: dict) -> dict:
 
 @router.post("/signup")
 @limiter.limit("5/minute")
-def signup(http_request: Request, request: SignupRequest):
+def signup(request: Request, body: SignupRequest):
     # Supabase only (no mock fallback)
+    email = (body.email or "").strip().lower()
+    name = (body.name or body.full_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
     try:
-        existing = sb_get_user_by_email(request.email)
+        existing = sb_get_user_by_email(email)
         if existing:
-            raise HTTPException(status_code=400, detail="Email already registered")
-        user = sb_create_user(request.email, request.password, request.name, "driver")
+            raise HTTPException(
+                status_code=409,
+                detail="This email is already registered. Use Sign in instead.",
+            )
+        user = sb_create_user(email, body.password, name, "driver")
         token = _build_token(user)
-        logger.info(f"Supabase signup: {request.email}")
+        logger.info(f"Supabase signup: {email}")
         return {"success": True, "data": {"user": _clean(user), "token": token}}
     except HTTPException:
         raise
@@ -59,22 +69,23 @@ def signup(http_request: Request, request: SignupRequest):
 
 @router.post("/login")
 @limiter.limit("10/minute")
-def login(http_request: Request, request: LoginRequest):
+def login(request: Request, body: LoginRequest):
     sb_error: Optional[str] = None
+    email = (body.email or "").strip().lower()
 
     # Supabase only (no mock fallback)
     try:
-        sb_user, sb_error = sb_login_user(request.email, request.password)
+        sb_user, sb_error = sb_login_user(email, body.password)
         if sb_user:
             # Double-check the role by fetching profile again to avoid RLS issues
-            profile = sb_get_user_by_email(request.email)
+            profile = sb_get_user_by_email(email)
             if profile:
                 sb_user = profile
-                logger.info(f"Supabase login: {request.email}, role={profile.get('role')}")
+                logger.info(f"Supabase login: {email}, role={profile.get('role')}")
             token = _build_token(sb_user)
             return {"success": True, "data": {"user": _clean(sb_user), "token": token}}
         if sb_error:
-            logger.warning(f"Supabase login failed for {request.email}: {sb_error}")
+            logger.warning(f"Supabase login failed for {email}: {sb_error}")
     except Exception as e:
         logger.warning(f"Supabase login error: {e}")
         sb_error = str(e)
@@ -158,8 +169,8 @@ def oauth_supabase(payload: dict):
 
 @router.post("/forgot-password")
 @limiter.limit("5/minute")
-def forgot_password(http_request: Request, request: ForgotPasswordRequest):
-    email = (request.email or "").strip().lower()
+def forgot_password(request: Request, body: ForgotPasswordRequest):
+    email = (body.email or "").strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
 
@@ -188,8 +199,8 @@ def forgot_password(http_request: Request, request: ForgotPasswordRequest):
 
 @router.post("/resend-verification")
 @limiter.limit("5/minute")
-def resend_verification(http_request: Request, request: ResendVerificationRequest):
-    email = (request.email or "").strip().lower()
+def resend_verification(request: Request, body: ResendVerificationRequest):
+    email = (body.email or "").strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
 

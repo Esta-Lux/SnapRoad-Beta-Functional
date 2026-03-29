@@ -22,13 +22,24 @@ const SUGGESTIONS = [
   'What is my driving score?',
 ];
 
+interface OrionContext {
+  lat?: number;
+  lng?: number;
+  isNavigating?: boolean;
+  drivingMode?: string;
+  destination?: string;
+  speed?: number;
+}
+
 interface Props {
   visible: boolean;
   onClose: () => void;
   isPremium: boolean;
+  context?: OrionContext;
+  onAction?: (action: { type: string; name?: string; lat?: number; lng?: number }) => void;
 }
 
-export default function OrionChat({ visible, onClose, isPremium }: Props) {
+export default function OrionChat({ visible, onClose, isPremium, context, onAction }: Props) {
   const [messages, setMessages] = useState<Message[]>([
     { id: '1', role: 'assistant', content: "Hey! I'm Orion, your AI co-pilot. How can I help?" },
   ]);
@@ -44,16 +55,19 @@ export default function OrionChat({ visible, onClose, isPremium }: Props) {
     setIsTyping(true);
 
     try {
-      const res = await api.post<{ content?: string }>('/api/orion/completions', {
+      const res = await api.post<{ content?: string; text?: string; actions?: Array<{ type: string; name?: string; lat?: number; lng?: number }> }>('/api/orion/completions', {
         messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
+        context: context ?? {},
       });
-      if (!res.success) {
-        throw new Error(res.error || 'Orion request failed');
-      }
-      const reply = res.data?.content ?? "I couldn't process that right now.";
+      if (!res.success) throw new Error(res.error || 'Orion request failed');
+      const reply = res.data?.content ?? res.data?.text ?? "I couldn't process that right now.";
+      const actions = res.data?.actions;
       const assistantMsg: Message = { id: String(Date.now() + 1), role: 'assistant', content: reply };
       setMessages((prev) => [...prev, assistantMsg]);
-      Speech.speak(reply, { rate: 1.05, language: 'en-US' });
+      Speech.speak(reply, { rate: 0.95, pitch: 0.9, language: 'en-US' });
+      if (actions?.length && onAction) {
+        actions.forEach((a) => onAction(a));
+      }
     } catch {
       setMessages((prev) => [...prev, { id: String(Date.now() + 1), role: 'assistant', content: "Sorry, I'm having trouble connecting. Try again." }]);
     } finally {

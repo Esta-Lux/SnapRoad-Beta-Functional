@@ -43,6 +43,7 @@ function App() {
           <Route path="/driver/auth" element={<WelcomePage />} />
 
           <Route path="/scan/:partnerId/:token" element={<TeamScanPage />} />
+          <Route path="/scan/:partnerId" element={<TeamScanPage />} />
           <Route path="/portal/partner" element={<PartnerGuard><PartnerDashboard /></PartnerGuard>} />
           <Route path="/portal/admin-sr2025secure" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
           <Route path="/partner" element={<Navigate to="/portal/partner" replace />} />

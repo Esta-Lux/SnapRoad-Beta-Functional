@@ -10,6 +10,7 @@ interface Offer {
   distance?: number
   lat?: number
   lng?: number
+  redeemed?: boolean
 }
 
 interface OrionOfferAlertsProps {

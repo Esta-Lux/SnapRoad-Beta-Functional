@@ -4,6 +4,9 @@ This will be progressively replaced by Supabase queries.
 """
 from datetime import datetime, timedelta
 import random
+import os
+
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
 
 # ==================== PRICING ====================
 pricing_config = {
@@ -87,6 +90,12 @@ user_credentials = {
     "partner@snaproad.com": {"password": "password123", "user_id": DEFAULT_PARTNER_ID},
     "admin@snaproad.com": {"password": "password123", "user_id": DEFAULT_ADMIN_ID},
 }
+
+if IS_PRODUCTION:
+    # Safety guard: prevent production from relying on static in-memory identities.
+    users_db.clear()
+    user_credentials.clear()
+    current_user_id = ""
 
 # ==================== ROAD REPORTS ====================
 # Seed traffic cameras and road reports (Columbus OH area) so map overlay has data to show

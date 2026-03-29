@@ -443,7 +443,7 @@ export default function BusinessDashboard() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button 
-                        onClick={() => { setShowEditOffer(offer.id); toast('Edit offer: ' + offer.title) }}
+                        onClick={() => toast('Edit offer: ' + offer.title)}
                         className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
                       >
                         <Edit size={16} />

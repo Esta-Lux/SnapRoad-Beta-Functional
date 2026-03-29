@@ -363,25 +363,117 @@ export function IncidentReportModal({ visible, onClose, onTakePhoto, onPickGalle
   );
 }
 
-export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg: string; text: string; sub: string; currentPlan: PlanTier; onSelectPlan: (tier: PlanTier) => void }) {
-  const { visible, onClose, cardBg, text, sub, currentPlan, onSelectPlan } = props;
+export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg: string; text: string; sub: string; currentPlan: PlanTier; onSelectPlan: (tier: PlanTier) => void; isLight?: boolean }) {
+  const { visible, onClose, cardBg, text, sub, currentPlan, onSelectPlan, isLight } = props;
+  const [selected, setSelected] = useState<PlanTier | null>(null);
+
+  const handleContinue = () => {
+    if (selected) { onSelectPlan(selected); }
+  };
+
+  const PLAN_ICONS: Record<PlanTier, string> = { basic: 'shield-outline', premium: 'flash-outline', family: 'people-outline' };
+  const PLAN_COLORS: Record<PlanTier, string> = { basic: '#007AFF', premium: '#FF9500', family: '#7C3AED' };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[styles.modalSheet, { backgroundColor: cardBg }]} onStartShouldSetResponder={() => true}>
+        <View style={[styles.planModalSheet, { backgroundColor: cardBg }]} onStartShouldSetResponder={() => true}>
           <View style={styles.modalHandle} />
-          <Text style={[styles.modalTitle, { color: text }]}>Choose Your Plan</Text>
-          {(Object.entries(PLANS) as [PlanTier, any][]).map(([tier, plan]) => (
-            <TouchableOpacity key={tier} style={[styles.planCard, currentPlan === tier && styles.planCardActive]} onPress={() => onSelectPlan(tier)}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={[styles.planCardName, { color: text }]}>{plan.name}</Text>
-                <Text style={[styles.planCardPrice, { color: '#3B82F6' }]}>{plan.price}</Text>
-              </View>
-              {plan.features.slice(0, 3).map((f: string, i: number) => (
-                <Text key={i} style={{ color: sub, fontSize: 11, marginTop: 2 }}>- {f}</Text>
-              ))}
+          <View style={{ alignItems: 'center', marginBottom: 16 }}>
+            <Ionicons name="sparkles" size={18} color="#FF9500" />
+            <Text style={{ color: '#FF9500', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 4, textTransform: 'uppercase' }}>Choose your plan</Text>
+            <Text style={[styles.modalTitle, { color: text, marginBottom: 0, marginTop: 4 }]}>Start your journey</Text>
+            <Text style={{ color: sub, fontSize: 13, marginTop: 4 }}>Drive safer. Earn rewards. Privacy guaranteed.</Text>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+            {(Object.entries(PLANS) as [PlanTier, typeof PLANS.basic][]).map(([tier, plan]) => {
+              const isSel = selected === tier;
+              const isCurrent = currentPlan === tier;
+              const accent = PLAN_COLORS[tier as PlanTier];
+              const isComingSoon = !!(plan as any).comingSoon;
+              const isPopular = !!(plan as any).popular;
+
+              return (
+                <TouchableOpacity
+                  key={tier}
+                  activeOpacity={isComingSoon ? 1 : 0.7}
+                  onPress={() => { if (!isComingSoon) setSelected(tier as PlanTier); }}
+                  style={[
+                    styles.planCardNew,
+                    { borderColor: isSel ? accent : isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)', backgroundColor: isLight ? '#fff' : 'rgba(255,255,255,0.04)' },
+                    isSel && { borderWidth: 2, backgroundColor: isLight ? `${accent}08` : `${accent}15` },
+                    isComingSoon && { opacity: 0.55 },
+                  ]}
+                >
+                  {isPopular && (
+                    <LinearGradient colors={['#FF9500', '#FF6B00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.popularBadge}>
+                      <Text style={styles.popularBadgeText}>Most popular</Text>
+                    </LinearGradient>
+                  )}
+                  {isComingSoon && (
+                    <View style={[styles.popularBadge, { backgroundColor: '#7C3AED' }]}>
+                      <Text style={styles.popularBadgeText}>Coming Soon</Text>
+                    </View>
+                  )}
+
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name={PLAN_ICONS[tier as PlanTier] as any} size={16} color={accent} />
+                        <Text style={{ color: accent, fontSize: 16, fontWeight: '800' }}>{plan.name}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 4 }}>
+                        <Text style={{ color: text, fontSize: 26, fontWeight: '900' }}>{plan.price.split('/')[0]}</Text>
+                        {plan.price.includes('/') && <Text style={{ color: sub, fontSize: 13 }}>/{plan.price.split('/')[1]}</Text>}
+                      </View>
+                      {(plan as any).foundersNote && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                          <Ionicons name="star" size={10} color="#FF9500" />
+                          <Text style={{ color: '#FF9500', fontSize: 10, fontWeight: '600' }}>{(plan as any).foundersNote}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={[styles.radioCircle, isSel && { backgroundColor: accent, borderColor: accent }]}>
+                      {isSel && <Ionicons name="checkmark" size={12} color="#fff" />}
+                    </View>
+                  </View>
+
+                  <View style={{ marginTop: 10, gap: 4 }}>
+                    {plan.features.slice(0, tier === 'premium' ? 8 : 4).map((f, i) => (
+                      <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name={tier === 'premium' ? 'checkmark-circle' : 'checkmark'} size={13} color={tier === 'premium' ? '#FF9500' : sub} />
+                        <Text style={{ color: tier === 'premium' ? (isLight ? '#374151' : '#d1d5db') : sub, fontSize: 12 }}>{f}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  {isCurrent && <Text style={{ color: accent, fontSize: 11, fontWeight: '700', marginTop: 8 }}>Current plan</Text>}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <View style={{ paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }}>
+            <TouchableOpacity
+              activeOpacity={selected ? 0.8 : 1}
+              onPress={handleContinue}
+              disabled={!selected}
+              style={{ opacity: selected ? 1 : 0.4 }}
+            >
+              <LinearGradient
+                colors={selected === 'premium' ? ['#FF9500', '#FF6B00'] : ['#007AFF', '#0055CC']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.planContinueBtn}
+              >
+                {selected === 'premium' && <Ionicons name="flash" size={16} color="#fff" />}
+                <Text style={styles.planContinueBtnText}>
+                  {selected === 'premium' ? 'Continue with Premium' : selected === 'basic' ? 'Choose Basic' : selected ? 'Select Plan' : 'Select a plan'}
+                </Text>
+              </LinearGradient>
             </TouchableOpacity>
-          ))}
+            <Text style={{ color: sub, fontSize: 11, textAlign: 'center', marginTop: 8 }}>No contracts · Cancel anytime</Text>
+          </View>
         </View>
       </TouchableOpacity>
     </Modal>
@@ -412,10 +504,13 @@ const styles = StyleSheet.create({
   modalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40, maxHeight: '85%' },
   modalHandle: { width: 36, height: 4, backgroundColor: '#444', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 16 },
-  planCard: { borderRadius: 12, borderWidth: 1, borderColor: 'rgba(128,128,128,0.2)', padding: 16, marginBottom: 10 },
-  planCardActive: { borderColor: '#3B82F6', borderWidth: 2 },
-  planCardName: { fontSize: 16, fontWeight: '700' },
-  planCardPrice: { fontSize: 16, fontWeight: '800' },
+  planModalSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 24, maxHeight: '92%' },
+  planCardNew: { borderRadius: 18, borderWidth: 1.5, padding: 16, marginBottom: 12, overflow: 'hidden', position: 'relative' as const },
+  popularBadge: { position: 'absolute' as const, top: 0, right: 0, borderBottomLeftRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
+  popularBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: 'rgba(128,128,128,0.3)', alignItems: 'center' as const, justifyContent: 'center' as const },
+  planContinueBtn: { borderRadius: 16, paddingVertical: 16, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const, gap: 6 },
+  planContinueBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   upgradeBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
   upgradeBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   modalInput: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 12 },

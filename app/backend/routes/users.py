@@ -7,7 +7,7 @@ from services.mock_data import (
     notification_settings, faq_data,
 )
 from middleware.auth import get_current_user
-from services.supabase_service import sb_update_profile
+from services.supabase_service import sb_get_profile, sb_update_profile
 
 router = APIRouter(prefix="/api", tags=["Users"])
 
@@ -44,6 +44,30 @@ def _persist_user(user_id: str, updates: dict) -> None:
 @router.get("/user/profile")
 def get_user_profile(auth_user: dict = Depends(get_current_user)):
     user = _get_user_store(auth_user)
+    uid = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
+    if uid:
+        try:
+            row = sb_get_profile(uid)
+            if row and isinstance(row, dict):
+                for k in (
+                    "name",
+                    "email",
+                    "gems",
+                    "level",
+                    "xp",
+                    "safety_score",
+                    "total_miles",
+                    "total_trips",
+                    "is_premium",
+                    "plan",
+                    "role",
+                    "streak",
+                    "vehicle_height_meters",
+                ):
+                    if row.get(k) is not None:
+                        user[k] = row[k]
+        except Exception:
+            pass
     return {"success": True, "data": user}
 
 

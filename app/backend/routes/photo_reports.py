@@ -1,4 +1,5 @@
 import base64
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -149,18 +150,23 @@ def get_nearby_photos(
     supabase = get_supabase()
     lat_delta = radius / 69.0
     lng_delta = radius / (69.0 * 0.7)
-    res = (
-        supabase.table("incident_photos")
-        .select("*")
-        .gte("lat", lat - lat_delta)
-        .lte("lat", lat + lat_delta)
-        .gte("lng", lng - lng_delta)
-        .lte("lng", lng + lng_delta)
-        .gt("expires_at", "now()")
-        .limit(limit)
-        .execute()
-    )
-    return {"photos": res.data or []}
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        res = (
+            supabase.table("incident_photos")
+            .select("*")
+            .gte("lat", lat - lat_delta)
+            .lte("lat", lat + lat_delta)
+            .gte("lng", lng - lng_delta)
+            .lte("lng", lng + lng_delta)
+            .gt("expires_at", now_iso)
+            .limit(limit)
+            .execute()
+        )
+        return {"photos": res.data or []}
+    except Exception as e:
+        logging.getLogger(__name__).warning("photo-reports nearby query failed: %s", e)
+        return {"photos": []}
 
 
 @router.post("/{report_id}/upvote")

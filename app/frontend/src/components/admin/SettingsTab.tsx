@@ -2,21 +2,8 @@
 // =============================================
 
 import { useState, useEffect } from 'react'
-import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, ToggleLeft, ToggleRight, Cloud, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, Cloud, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
-
-/**
- * Same auth source as {@link adminApi} (`snaproad_admin_token` via getToken()).
- * Returns null when not logged in so callers skip requests and avoid 401s.
- */
-function getAdminBearerHeaders(): Record<string, string> | null {
-  const token = adminApi.getToken()
-  if (!token) return null
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  }
-}
 
 /**
  * Backend base for admin-only raw fetch calls (Supabase status/migrate).
@@ -161,7 +148,6 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   const security = settings.security ?? defaultSecurity
   const notifications = settings.notifications ?? defaultNotifications
   const features = settings.features ?? defaultFeatures
-  const database = settings.database ?? defaultDatabase
 
   return (
     <div className="space-y-6">

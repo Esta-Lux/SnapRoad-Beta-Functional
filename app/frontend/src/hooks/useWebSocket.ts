@@ -74,8 +74,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
     try {
       const token = localStorage.getItem('snaproad_admin_token');
-      const wsUrl = `${getWebSocketUrl()}/api/ws/admin/moderation${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-      const ws = new WebSocket(wsUrl);
+      const wsUrl = `${getWebSocketUrl()}/api/ws/admin/moderation`;
+      const ws = token ? new WebSocket(wsUrl, [`bearer.${token}`]) : new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {

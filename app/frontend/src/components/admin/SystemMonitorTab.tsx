@@ -54,7 +54,7 @@ export default function SystemMonitorTab({ theme }: Props) {
       setStatus('offline')
       return
     }
-    const ws = new WebSocket(`${WS_BASE}/api/ws/admin/monitor?token=${encodeURIComponent(token)}`)
+    const ws = new WebSocket(`${WS_BASE}/api/ws/admin/monitor`, [`bearer.${token}`])
     wsRef.current = ws
 
     ws.onopen = () => setStatus('live')

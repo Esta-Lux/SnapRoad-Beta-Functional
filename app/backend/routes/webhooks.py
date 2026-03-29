@@ -10,6 +10,29 @@ from services.telemetry_service import telemetry_service
 router = APIRouter(tags=["Webhooks & WebSocket"])
 logger = logging.getLogger(__name__)
 
+
+async def _require_ws_token(websocket: WebSocket) -> dict:
+    token = websocket.query_params.get("token")
+    if not token:
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        # Browser-compatible alternative: send token in subprotocol as "bearer.<jwt>"
+        protocols = websocket.headers.get("sec-websocket-protocol", "")
+        for proto in [p.strip() for p in protocols.split(",") if p.strip()]:
+            if proto.startswith("bearer."):
+                token = proto[len("bearer."):].strip()
+                break
+    if not token:
+        await websocket.close(code=1008, reason="Missing token")
+        return {}
+    try:
+        return decode_token(token)
+    except Exception:
+        await websocket.close(code=1008, reason="Invalid token")
+        return {}
+
 # ==================== STRIPE WEBHOOKS ====================
 
 
@@ -136,6 +159,12 @@ async def stripe_webhook(request: Request):
 async def partner_websocket(websocket: WebSocket, partner_id: str):
     from services.websocket_manager import ws_manager
     import uuid
+    payload = await _require_ws_token(websocket)
+    if not payload:
+        return
+    if payload.get("role") != "partner" or str(payload.get("partner_id") or "") != str(partner_id):
+        await websocket.close(code=1008, reason="Partner access required")
+        return
     connection_id = f"conn_{uuid.uuid4().hex[:8]}"
     try:
         await ws_manager.connect_partner(websocket, partner_id, connection_id)
@@ -158,6 +187,12 @@ async def partner_websocket(websocket: WebSocket, partner_id: str):
 @router.websocket("/api/ws/customer/{customer_id}")
 async def customer_websocket(websocket: WebSocket, customer_id: str):
     from services.websocket_manager import ws_manager
+    payload = await _require_ws_token(websocket)
+    if not payload:
+        return
+    if str(payload.get("sub") or "") != str(customer_id):
+        await websocket.close(code=1008, reason="Customer access denied")
+        return
     try:
         await ws_manager.connect_customer(websocket, customer_id)
         while True:
@@ -175,7 +210,7 @@ async def customer_websocket(websocket: WebSocket, customer_id: str):
 
 
 @router.get("/api/ws/status/{partner_id}")
-async def get_ws_status(partner_id: str):
+async def get_ws_status(partner_id: str, admin: dict = Depends(require_admin)):
     from services.websocket_manager import ws_manager
     count = ws_manager.get_partner_connection_count(partner_id)
     return {"success": True, "active_connections": count, "partner_id": partner_id}
@@ -238,6 +273,12 @@ async def admin_moderation_ws(websocket: WebSocket):
     import uuid
     token = websocket.query_params.get("token")
     if not token:
+        protocols = websocket.headers.get("sec-websocket-protocol", "")
+        for proto in [p.strip() for p in protocols.split(",") if p.strip()]:
+            if proto.startswith("bearer."):
+                token = proto[len("bearer."):].strip()
+                break
+    if not token:
         await websocket.close(code=1008, reason="Missing token")
         return
     try:
@@ -295,7 +336,7 @@ async def simulate_incident(_admin: dict = Depends(require_admin)):
 
 
 @router.get("/api/admin/moderation/status")
-def moderation_status():
+def moderation_status(_admin: dict = Depends(require_admin)):
     from services.websocket_manager import ws_manager
     return {
         "success": True,
@@ -313,6 +354,12 @@ async def admin_monitor_ws(websocket: WebSocket):
     from services.websocket_manager import ws_manager
     import uuid
     token = websocket.query_params.get("token")
+    if not token:
+        protocols = websocket.headers.get("sec-websocket-protocol", "")
+        for proto in [p.strip() for p in protocols.split(",") if p.strip()]:
+            if proto.startswith("bearer."):
+                token = proto[len("bearer."):].strip()
+                break
     if not token:
         await websocket.close(code=1008, reason="Missing token")
         return

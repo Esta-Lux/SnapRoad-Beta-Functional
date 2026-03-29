@@ -4,7 +4,9 @@ from typing import Optional, List, Dict, Any
 
 # ==================== AUTH ====================
 class SignupRequest(BaseModel):
-    name: str
+    """`full_name` is accepted for clients that use that key instead of `name`."""
+    name: Optional[str] = None
+    full_name: Optional[str] = None
     email: str
     password: str
 
@@ -172,7 +174,8 @@ class FuelLog(BaseModel):
     date: str
     gallons: float
     price_per_gallon: float
-    total_cost: float
+    total_cost: Optional[float] = None
+    total: Optional[float] = None
     odometer: float
     mpg: Optional[float]
     station: Optional[str] = "Unknown"

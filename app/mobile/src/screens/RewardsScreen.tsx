@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, RefreshControl } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -28,6 +28,9 @@ import {
   ChallengeHistoryModal,
 } from '../components/rewards/RewardsModals';
 import { rewardsStyles } from '../components/rewards/styles';
+import TripAnalytics from '../components/gamification/TripAnalytics';
+import RouteHistory from '../components/gamification/RouteHistory';
+import ChallengeModal from '../components/gamification/ChallengeModal';
 import type {
   RewardsTab,
   GemTx,
@@ -41,6 +44,7 @@ export default function RewardsScreen() {
   const { colors } = useTheme();
   const { user, updateUser } = useAuth();
   const { location } = useLocation();
+  const insets = useSafeAreaInsets();
   const bg = colors.background;
   const cardBg = colors.card;
   const text = colors.text;
@@ -67,6 +71,9 @@ export default function RewardsScreen() {
   const [challengeHistoryStats, setChallengeHistoryStats] = useState<ChallengeHistoryStats | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [myRank, setMyRank] = useState(0);
+  const [showTripAnalytics, setShowTripAnalytics] = useState(false);
+  const [showRouteHistory, setShowRouteHistory] = useState(false);
+  const [challengeTarget, setChallengeTarget] = useState<{ id: string; name: string } | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -85,10 +92,10 @@ export default function RewardsScreen() {
       const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
       const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
       updateUser({
-        gems: Number(profilePayload.gems ?? user?.gems ?? 0),
-        level: Number(profilePayload.level ?? user?.level ?? 1),
-        totalMiles: Number(profilePayload.total_miles ?? user?.totalMiles ?? 0),
-        totalTrips: Number(profilePayload.total_trips ?? user?.totalTrips ?? 0),
+        gems: Number(profilePayload.gems ?? 0),
+        level: Number(profilePayload.level ?? 1),
+        totalMiles: Number(profilePayload.total_miles ?? 0),
+        totalTrips: Number(profilePayload.total_trips ?? 0),
       });
       const rawChallenges = Array.isArray(unwrap(cRes)) ? unwrap(cRes) : [];
       setChallenges(rawChallenges.map((c: any) => ({
@@ -128,11 +135,11 @@ export default function RewardsScreen() {
         is_premium: Boolean(r.is_premium),
       })));
       setMyRank(Number(lData?.my_rank ?? 0));
-      updateUser({ rank: Number(lData?.my_rank ?? user?.rank ?? 0) });
+      updateUser({ rank: Number(lData?.my_rank ?? 0) });
     } catch {
       setErrorMsg('Could not refresh rewards data. Pull to retry.');
     } finally { setLoading(false); }
-  }, [location.lat, location.lng, updateUser, user?.gems, user?.level, user?.rank, user?.totalMiles, user?.totalTrips]);
+  }, [location.lat, location.lng, updateUser]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -306,7 +313,7 @@ export default function RewardsScreen() {
         cardBg={cardBg}
       />
 
-      <View style={{ height: 40 }} />
+      <View style={{ height: insets.bottom + 20 }} />
 
       <BadgeDetailModal selectedBadge={selectedBadge} cardBg={cardBg} text={text} sub={sub} onClose={() => setSelectedBadge(null)} />
       <OfferDetailModal
@@ -344,6 +351,10 @@ export default function RewardsScreen() {
         onSelectBadge={setSelectedBadge}
       />
       </ScrollView>
+
+      <TripAnalytics visible={showTripAnalytics} onClose={() => setShowTripAnalytics(false)} />
+      <RouteHistory visible={showRouteHistory} onClose={() => setShowRouteHistory(false)} />
+      <ChallengeModal visible={!!challengeTarget} onClose={() => setChallengeTarget(null)} targetFriend={challengeTarget} />
     </SafeAreaView>
   );
 }

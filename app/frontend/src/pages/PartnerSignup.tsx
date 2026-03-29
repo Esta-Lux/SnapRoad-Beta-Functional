@@ -33,7 +33,7 @@ export default function PartnerSignup() {
     setLoading(true)
     try {
       const result = await partnerApi.register(form)
-      if (!result.success) throw new Error(result.detail || 'Registration failed')
+      if (!result.success) throw new Error(result.detail || result.message || 'Registration failed')
       navigate('/portal/partner')
     } catch (err: any) {
       setError(err.message || 'Registration failed')

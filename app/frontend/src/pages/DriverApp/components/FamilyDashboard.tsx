@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { Phone, ChevronRight } from 'lucide-react'
 import api from '@/services/api'
@@ -74,6 +73,7 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
   const [showReportCard, setShowReportCard] = useState(false)
   const [reportCardMember, setReportCardMember] = useState<FamilyMember | null>(null)
   const [showFamilyLeaderboard, setShowFamilyLeaderboard] = useState(false)
+  const [showCheckIn, setShowCheckIn] = useState(false)
   const [locationConsent, setLocationConsent] = useState(true)
   const [shareLocation, setShareLocation] = useState(true)
   const [needsOnboardingFinish, setNeedsOnboardingFinish] = useState(false)
@@ -1201,6 +1201,57 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
         currentUserId={currentUserId}
         groupId={groupId ?? ''}
       />
+
+      {showCheckIn && (
+        <div
+          role="presentation"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+          }}
+          onClick={() => setShowCheckIn(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              maxWidth: 360,
+              width: '100%',
+              borderRadius: 16,
+              padding: 20,
+              background: isLight ? '#fff' : '#1e293b',
+              color: isLight ? '#0f172a' : '#f1f5f9',
+              border: isLight ? '1px solid #e2e8f0' : '1px solid #334155',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5 }}>Check in with your family. Full check-in flow is coming soon.</p>
+            <button
+              type="button"
+              onClick={() => setShowCheckIn(false)}
+              style={{
+                marginTop: 16,
+                width: '100%',
+                padding: '10px 16px',
+                borderRadius: 10,
+                border: 'none',
+                fontWeight: 700,
+                cursor: 'pointer',
+                background: '#007AFF',
+                color: '#fff',
+              }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes pulse {

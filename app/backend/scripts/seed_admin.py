@@ -51,10 +51,11 @@ def _verify_login(sb, uid: str):
 
 
 def _upsert_profile(sb, uid: str):
-    import hashlib
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     profile_data = {
         "id": uid,
-        "password_hash": hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest(),
+        "password_hash": pwd_context.hash(ADMIN_PASSWORD),
         **ADMIN_PROFILE
     }
     sb.table("profiles").upsert(profile_data).execute()

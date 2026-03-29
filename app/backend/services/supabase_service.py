@@ -9,8 +9,10 @@ import logging
 from typing import Optional
 from fastapi import HTTPException
 from database import get_supabase
+from passlib.context import CryptContext
 
 logger = logging.getLogger(__name__)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # ─────────────────────────────────────────────
@@ -44,17 +46,29 @@ def _safe_count(table: str, filters: Optional[dict] = None) -> int:
 
 def sb_get_user_by_email(email: str) -> Optional[dict]:
     try:
-        result = _sb().table("profiles").select("*").eq("email", email).limit(1).execute()
+        email = (email or "").strip().lower()
+        if not email:
+            return None
+        result = _sb().table("profiles").select("*").ilike("email", email).limit(1).execute()
         return result.data[0] if result.data else None
     except Exception as e:
         logger.warning(f"sb_get_user_by_email error: {e}")
         return None
 
 
+def _is_duplicate_error(err_str: str) -> bool:
+    s = err_str.lower()
+    return (("already" in s and "exist" in s) or "duplicate" in s
+            or "user_already_exists" in s or "email address" in s and "already been registered" in s)
+
+
 def sb_create_user(email: str, password: str, name: str, role: str = "driver") -> dict:
-    import hashlib
+    email = (email or "").strip().lower()
     sb = _sb()
+    password_hash = pwd_context.hash(password)
     auth_user_id = None
+
+    # --- Strategy 1: admin.create_user (service-role, skips email confirmation) ---
     try:
         auth_resp = sb.auth.admin.create_user({
             "email": email,
@@ -62,51 +76,85 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
             "email_confirm": True,
         })
         auth_user_id = str(auth_resp.user.id)
+    except Exception as admin_err:
+        admin_str = str(admin_err)
+        if _is_duplicate_error(admin_str):
+            raise HTTPException(
+                status_code=409,
+                detail="This email is already registered. Use Sign in instead.",
+            )
+        logger.warning("admin.create_user failed for %s: %s — trying client sign_up", email, admin_err)
 
-        profile = {
-            "id": auth_user_id,
-            "email": email,
-            "name": name,
-            "password_hash": hashlib.sha256(password.encode()).hexdigest(),
-            "role": role,
-            "status": "active",
-            "xp": 0,
-            "level": 1,
-            "gems": 0,
-        }
+    # --- Strategy 2: client sign_up (works even when admin triggers fail) ---
+    if not auth_user_id:
+        try:
+            sign_up_resp = sb.auth.sign_up({
+                "email": email,
+                "password": password,
+                "options": {"data": {"name": name}},
+            })
+            user_obj = getattr(sign_up_resp, "user", None)
+            if user_obj and getattr(user_obj, "id", None):
+                auth_user_id = str(user_obj.id)
+        except Exception as signup_err:
+            signup_str = str(signup_err)
+            if _is_duplicate_error(signup_str):
+                raise HTTPException(
+                    status_code=409,
+                    detail="This email is already registered. Use Sign in instead.",
+                )
+            logger.warning("client sign_up also failed for %s: %s — creating profile-only account", email, signup_err)
+
+    # --- Build the profiles row (works with or without Supabase Auth id) ---
+    import uuid
+    profile_id = auth_user_id or str(uuid.uuid4())
+
+    profile = {
+        "id": profile_id,
+        "email": email,
+        "name": name,
+        "password_hash": password_hash,
+        "role": role,
+        "status": "active",
+        "xp": 0,
+        "level": 1,
+        "gems": 0,
+    }
+    try:
         sb.table("profiles").upsert(profile).execute()
-        return profile
-    except Exception as e:
-        err = str(e).lower()
+    except Exception as profile_err:
+        profile_str = str(profile_err).lower()
+        if "duplicate" in profile_str or "unique" in profile_str or "already exists" in profile_str:
+            raise HTTPException(
+                status_code=409,
+                detail="This email is already registered. Use Sign in instead.",
+            )
+        logger.error("Profile upsert failed for %s: %s", email, profile_err, exc_info=True)
         if auth_user_id:
             try:
                 sb.auth.admin.delete_user(auth_user_id)
-            except Exception as rollback_err:
-                logger.error("sb_create_user rollback failed for %s: %s", auth_user_id, rollback_err)
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail="Failed to create user account. Please try again.")
 
-        if ("already" in err and "exist" in err) or ("duplicate" in err):
-            raise HTTPException(status_code=400, detail="Email already registered")
-
-        logger.error("sb_create_user failed for %s: %s", email, e, exc_info=True)
-        from config import ENVIRONMENT
-        detail = "Failed to create user account"
-        if ENVIRONMENT != "production":
-            detail += f" — {type(e).__name__}: {e}"
-        raise HTTPException(status_code=500, detail=detail)
+    return profile
 
 
 def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[str]]:
     """Returns (profile_dict, None) on success or (None, error_message) on failure."""
-    import hashlib
     import time
-    
+
+    email = (email or "").strip().lower()
+    if not email:
+        return None, "Invalid email or password"
+
     max_retries = 3
     for attempt in range(max_retries):
         try:
             sb = _sb()
-            
-            # Fetch profile using service role client (bypasses RLS)
-            profile_result = sb.table("profiles").select("*").eq("email", email).limit(1).execute()
+
+            # Fetch profile using service role client (bypasses RLS); ilike = case-insensitive match
+            profile_result = sb.table("profiles").select("*").ilike("email", email).limit(1).execute()
             if not profile_result or not profile_result.data or len(profile_result.data) == 0:
                 logger.warning(f"Profile not found for {email}")
                 return None, "Invalid email or password"
@@ -114,11 +162,25 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
             profile_data = profile_result.data[0]
             logger.info(f"Profile fetch SUCCESS for {email}, role={profile_data.get('role')}")
             
-            # Verify password using stored hash
-            password_hash = hashlib.sha256(password.encode()).hexdigest()
-            stored_hash = profile_data.get("password_hash", "")
-            
-            if password_hash != stored_hash:
+            # Verify password with bcrypt; support legacy sha256 for seamless migration.
+            stored_hash = str(profile_data.get("password_hash", "") or "")
+            password_ok = False
+            if stored_hash.startswith("$2"):
+                password_ok = pwd_context.verify(password, stored_hash)
+            else:
+                import hashlib
+                legacy_sha = hashlib.sha256(password.encode()).hexdigest()
+                password_ok = legacy_sha == stored_hash
+                if password_ok:
+                    # Upgrade legacy hash to bcrypt on successful login.
+                    try:
+                        _sb().table("profiles").update(
+                            {"password_hash": pwd_context.hash(password)}
+                        ).eq("id", profile_data.get("id")).execute()
+                    except Exception as hash_upgrade_error:
+                        logger.warning("Password hash upgrade failed for %s: %s", email, hash_upgrade_error)
+
+            if not password_ok:
                 logger.warning(f"Password mismatch for {email}")
                 return None, "Invalid email or password"
             

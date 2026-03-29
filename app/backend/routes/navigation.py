@@ -2,6 +2,7 @@ from fastapi import APIRouter, Query, Body, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict, Tuple
 from datetime import datetime, timedelta
+import logging
 import random, math
 import httpx
 from models.schemas import NavigationRequest, Location, Route, Widget
@@ -9,7 +10,14 @@ from services.mock_data import (
     saved_locations, saved_routes, widget_settings, MAP_LOCATIONS,
     road_reports_db, users_db,
 )
-from config import CAMERAS_API_KEY, CAMERAS_API_URL, CAMERAS_API_KEY_AS_HEADER, ENVIRONMENT
+from config import (
+    CAMERAS_API_KEY,
+    CAMERAS_API_URL,
+    CAMERAS_API_KEY_AS_HEADER,
+    ENVIRONMENT,
+    OHGO_API_KEY,
+    OHGO_API_BASE,
+)
 from middleware.auth import get_current_user
 from database import get_supabase
 
@@ -460,6 +468,28 @@ def update_widget_position(widget_id: str, body: dict):
     return {"success": True, "data": widget_settings}
 
 
+def _normalize_ohgo_camera_views(cam: dict) -> List[dict]:
+    """Extract still-image URLs for mobile/web clients (matches useMapLayers / OHGOCamera shape)."""
+    raw = cam.get("cameraViews") or cam.get("camera_views") or []
+    if not isinstance(raw, list):
+        return []
+    out: List[dict] = []
+    for v in raw:
+        if not isinstance(v, dict):
+            continue
+        small = (v.get("smallUrl") or v.get("small_url") or "").strip()
+        large = (v.get("largeUrl") or v.get("large_url") or "").strip()
+        if not large and not small:
+            continue
+        out.append({
+            "id": str(v.get("id", "")),
+            "small_url": small or large,
+            "large_url": large or small,
+            "direction": str(v.get("direction") or "").strip(),
+        })
+    return out
+
+
 def _normalize_camera_item(item: Any, index: int) -> Optional[dict]:
     """Convert a single item from an external cameras API into our report shape."""
     if not isinstance(item, dict):
@@ -473,7 +503,7 @@ def _normalize_camera_item(item: Any, index: int) -> Optional[dict]:
     except (TypeError, ValueError):
         return None
     title = item.get("title") or item.get("name") or item.get("description") or "Traffic camera"
-    return {
+    row: dict = {
         "id": item.get("id", f"cam-{index}"),
         "type": "camera",
         "lat": lat_f,
@@ -485,6 +515,10 @@ def _normalize_camera_item(item: Any, index: int) -> Optional[dict]:
         "created_at": item.get("created_at"),
         "expires_at": item.get("expires_at"),
     }
+    cv_raw = item.get("camera_views") or item.get("cameraViews")
+    if isinstance(cv_raw, list) and cv_raw:
+        row["camera_views"] = _normalize_ohgo_camera_views({"cameraViews": cv_raw})
+    return row
 
 
 def _fetch_cameras_from_api(lat: float, lng: float, radius_km: float) -> List[dict]:
@@ -521,15 +555,199 @@ def _fetch_cameras_from_api(lat: float, lng: float, radius_km: float) -> List[di
     return out
 
 
+def _fetch_ohgo_cameras(lat: float, lng: float, radius_km: float) -> List[dict]:
+    """
+    Ohio DOT OHGO public API. Radius query matches web DriverApp: "lat,lng,miles".
+    """
+    if not OHGO_API_KEY:
+        return []
+    # OHGO caps at 50 miles; convert km → miles
+    miles = max(5, min(int(round(radius_km * 0.621371)), 50))
+    radius_param = f"{lat},{lng},{miles}"
+    log = logging.getLogger(__name__)
+    cameras_url = f"{OHGO_API_BASE}/api/v1/cameras"
+    try:
+        with httpx.Client(timeout=12.0) as client:
+            resp = client.get(
+                cameras_url,
+                params={"api-key": OHGO_API_KEY, "radius": radius_param},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        log.warning("OHGO cameras request failed: %s", e)
+        return []
+    if not isinstance(data, dict):
+        return []
+    results = data.get("results")
+    if not isinstance(results, list):
+        return []
+    out: List[dict] = []
+    for i, cam in enumerate(results):
+        if not isinstance(cam, dict):
+            continue
+        try:
+            lat_f = float(cam.get("latitude"))
+            lng_f = float(cam.get("longitude"))
+        except (TypeError, ValueError):
+            continue
+        cid = cam.get("id", i)
+        loc = cam.get("location") or cam.get("mainRoute") or "Traffic camera"
+        route = cam.get("mainRoute") or ""
+        out.append({
+            "id": f"ohgo-{cid}",
+            "type": "camera",
+            "lat": lat_f,
+            "lng": lng_f,
+            "title": str(loc)[:200],
+            "description": str(route)[:500],
+            "severity": "medium",
+            "upvotes": 0,
+            "created_at": None,
+            "expires_at": None,
+            "camera_views": _normalize_ohgo_camera_views(cam),
+        })
+    return out
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance in km (accurate for map radius filtering)."""
+    rlat1, rlng1, rlat2, rlng2 = map(math.radians, (lat1, lng1, lat2, lng2))
+    dlat = rlat2 - rlat1
+    dlng = rlng2 - rlng1
+    a = math.sin(dlat / 2) ** 2 + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlng / 2) ** 2
+    c = 2 * math.asin(min(1.0, math.sqrt(a)))
+    return 6371.0 * c
+
+
+# ==================== CAMERA DETAIL (lazy view-fetch for mobile sheet) ====================
+@router.get("/map/camera-detail")
+def get_camera_detail(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    radius_km: float = Query(default=1.5, ge=0.05, le=20),
+):
+    """
+    Return the OHGO camera nearest to (lat, lng) within radius_km, including full camera_views.
+    Used by the mobile TrafficCameraSheet when a marker was loaded without view URLs.
+    """
+    if not OHGO_API_KEY:
+        return {"success": False, "data": None, "error": "OHGO not configured"}
+    miles = max(1, min(int(round(radius_km * 0.621371)), 5))
+    radius_param = f"{lat},{lng},{miles}"
+    log = logging.getLogger(__name__)
+    cameras_url = f"{OHGO_API_BASE}/api/v1/cameras"
+    try:
+        with httpx.Client(timeout=12.0) as client:
+            resp = client.get(cameras_url, params={"api-key": OHGO_API_KEY, "radius": radius_param})
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        log.warning("OHGO camera-detail request failed: %s", e)
+        return {"success": False, "data": None, "error": "OHGO request failed"}
+
+    results = data.get("results") if isinstance(data, dict) else None
+    if not isinstance(results, list) or not results:
+        return {"success": True, "data": None}
+
+    # Pick the closest camera to the requested coordinates.
+    best = None
+    best_dist = float("inf")
+    for cam in results:
+        if not isinstance(cam, dict):
+            continue
+        try:
+            clat, clng = float(cam.get("latitude")), float(cam.get("longitude"))
+        except (TypeError, ValueError):
+            continue
+        d = _haversine_km(lat, lng, clat, clng)
+        if d < best_dist:
+            best_dist = d
+            best = cam
+
+    if not best:
+        return {"success": True, "data": None}
+
+    cid = best.get("id", "")
+    return {
+        "success": True,
+        "data": {
+            "id": f"ohgo-{cid}",
+            "title": str(best.get("location") or best.get("mainRoute") or "Traffic camera")[:200],
+            "description": str(best.get("mainRoute") or "")[:500],
+            "lat": float(best.get("latitude")),
+            "lng": float(best.get("longitude")),
+            "camera_views": _normalize_ohgo_camera_views(best),
+        },
+    }
+
+
+# ==================== MAP CAMERAS (dedicated, no report-count competition) ====================
+@router.get("/map/cameras")
+def get_map_cameras(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    radius: float = Query(default=80, ge=0.5, le=100),
+):
+    """
+    Return OHGO traffic cameras for the mobile cameras layer.
+    Separated from /map/traffic so cameras are never truncated by the road-report limit.
+    """
+    cameras: List[dict] = []
+
+    # OHGO (Ohio DOT)
+    if OHGO_API_KEY:
+        cameras.extend(_fetch_ohgo_cameras(lat, lng, radius))
+
+    # Optional generic cameras API
+    if CAMERAS_API_KEY and (CAMERAS_API_URL or "").strip():
+        cameras.extend(_fetch_cameras_from_api(lat, lng, radius))
+
+    # Distance filter (haversine; OHGO already radius-filters but a second pass is a no-op cost)
+    filtered: List[dict] = []
+    for c in cameras:
+        clat, clng = c.get("lat"), c.get("lng")
+        if clat is None or clng is None:
+            continue
+        try:
+            d = _haversine_km(float(lat), float(lng), float(clat), float(clng))
+        except (TypeError, ValueError):
+            continue
+        if d <= radius:
+            filtered.append(c)
+
+    # No OHGO → fall back to seed data cameras so the layer always has something in dev
+    if not filtered:
+        for r in road_reports_db:
+            if r.get("type") == "camera":
+                filtered.append(r)
+
+    out = []
+    for c in filtered:
+        row = {
+            "id": c.get("id"),
+            "type": "camera",
+            "lat": c.get("lat"),
+            "lng": c.get("lng"),
+            "title": c.get("title", "Traffic camera"),
+            "description": c.get("description", ""),
+            "severity": "medium",
+            "camera_views": c.get("camera_views") if isinstance(c.get("camera_views"), list) else [],
+        }
+        out.append(row)
+
+    return {"success": True, "data": out, "total": len(out)}
+
+
 # ==================== MAP TRAFFIC ====================
 @router.get("/map/traffic")
 def get_map_traffic(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius: float = Query(default=15, ge=0.1, le=200),
-    limit: int = Query(default=100, ge=1, le=100),
+    limit: int = Query(default=100, ge=1, le=500),
 ):
-    """Return road reports and traffic cameras for map overlay. Uses CAMERAS_API_KEY when CAMERAS_API_URL is set."""
+    """Return road reports and traffic cameras for map overlay. Merges OHGO (Ohio) when OHGO_API_KEY is set; optional generic CAMERAS_API_URL fetch."""
     reports = []
     try:
         sb = get_supabase()
@@ -543,6 +761,9 @@ def get_map_traffic(
     if lat is not None and lng is not None and CAMERAS_API_KEY and (CAMERAS_API_URL or "").strip():
         external = _fetch_cameras_from_api(lat, lng, radius)
         reports.extend(external)
+    # Ohio OHGO cameras (mobile + any client using /api/map/traffic; web may still call OHGO directly)
+    if lat is not None and lng is not None:
+        reports.extend(_fetch_ohgo_cameras(lat, lng, radius))
     # Filter by distance only when lat/lng provided (so external + DB reports near user are shown)
     if lat is not None and lng is not None:
         filtered = []
@@ -550,9 +771,10 @@ def get_map_traffic(
             rlat, rlng = r.get("lat"), r.get("lng")
             if rlat is None or rlng is None:
                 continue
-            dlat = abs(rlat - lat)
-            dlng = abs(rlng - lng)
-            dist_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+            try:
+                dist_km = _haversine_km(float(lat), float(lng), float(rlat), float(rlng))
+            except (TypeError, ValueError):
+                continue
             if dist_km <= radius:
                 filtered.append(r)
         reports = filtered
@@ -564,7 +786,7 @@ def get_map_traffic(
     for r in reports:
         rtype = r.get("type", "hazard")
         severity = "high" if rtype in ("accident", "police") else "medium" if rtype in ("construction", "hazard", "camera") else "low"
-        overlays.append({
+        row = {
             "id": r.get("id"),
             "type": rtype,
             "lat": r.get("lat"),
@@ -575,7 +797,11 @@ def get_map_traffic(
             "upvotes": r.get("upvotes", 0),
             "created_at": r.get("created_at"),
             "expires_at": r.get("expires_at"),
-        })
+        }
+        if rtype == "camera":
+            cv = r.get("camera_views")
+            row["camera_views"] = cv if isinstance(cv, list) else []
+        overlays.append(row)
     overlays = overlays[:limit]
     return {"success": True, "data": overlays, "total": len(overlays)}
 

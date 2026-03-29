@@ -1,41 +1,97 @@
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import * as Device from 'expo-device';
 import type { ApiResponse, AuthResponse, LoginRequest, SignupRequest } from '../types';
 import { supabase } from '../lib/supabase';
 
 const TOKEN_KEY = 'snaproad_token';
+const IS_PRODUCTION = String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
+
+/** Metro host is only a usable API host when it is a private LAN IPv4 (same Wi‑Fi). */
+function isPrivateLanIPv4(host: string): boolean {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host.trim());
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  return false;
+}
+
+function isLoopbackApiUrl(url: string): boolean {
+  return /127\.0\.0\.1|localhost/i.test(url);
+}
+
+function isPhysicalPhoneOrTablet(): boolean {
+  try {
+    return Device.isDevice === true;
+  } catch {
+    return true;
+  }
+}
+
+let apiMisconfigurationMessage: string | null = null;
+
+/** Call from App when the bundle resolves an API base that cannot work on a real device without EXPO_PUBLIC_API_URL. */
+export function getApiMisconfigurationMessage(): string | null {
+  return apiMisconfigurationMessage;
+}
 
 function resolveApiUrl(): string {
-  // 1. Explicit env var (highest priority)
+  apiMisconfigurationMessage = null;
+
+  // 1. Explicit env var (highest priority) — required for off‑Wi‑Fi / Expo tunnel + cloudflared API
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl && envUrl.length > 5) {
-    return envUrl;
+  if (envUrl && envUrl.trim().length > 5) {
+    const u = envUrl.trim();
+    if (IS_PRODUCTION && !/^https:\/\//i.test(u)) {
+      throw new Error('EXPO_PUBLIC_API_URL must be HTTPS in production builds');
+    }
+    return u;
   }
 
-  // 2. Auto-detect from Expo's debugger host (the IP Metro is running on)
-  // This keeps working when Wi-Fi DHCP changes your laptop LAN IP.
+  // 2. Same Wi‑Fi only: private LAN IP from Metro’s host (never use *.exp.direct / tunnel hostnames as :8001)
   const hostUri = Constants.expoConfig?.hostUri ?? '';
-  const expoGoHost = (Constants as any).expoGoConfig?.debuggerHost ?? '';
+  const expoGoHost = (Constants as unknown as { expoGoConfig?: { debuggerHost?: string } }).expoGoConfig
+    ?.debuggerHost ?? '';
   const hostStr = hostUri || expoGoHost;
-  const lanIp = hostStr.split(':')[0];
-  if (lanIp && lanIp.length > 3 && lanIp !== 'localhost' && lanIp !== '127.0.0.1') {
-    return `http://${lanIp}:8001`;
+  const hostOnly = hostStr.split(':')[0];
+  if (!IS_PRODUCTION && hostOnly && isPrivateLanIPv4(hostOnly)) {
+    return `http://${hostOnly}:8001`;
   }
 
-  // 3. app.json extra fallback (for non-Expo production-style builds)
+  // 3. app.json extra fallback (skip localhost on real devices — that points at the phone, not your Mac)
   const extra = Constants.expoConfig?.extra ?? {};
-  const extraUrl = extra.apiUrl as string | undefined;
+  const extraUrl = (extra.apiUrl as string | undefined)?.trim();
   if (extraUrl && extraUrl.length > 5) {
-    return extraUrl;
+    if (IS_PRODUCTION && !/^https:\/\//i.test(extraUrl)) {
+      throw new Error('Expo extra.apiUrl must be HTTPS in production builds');
+    }
+    if (!(isPhysicalPhoneOrTablet() && isLoopbackApiUrl(extraUrl))) {
+      return extraUrl;
+    }
   }
 
-  // 4. Android emulator special IP
-  if (Platform.OS === 'android') {
+  // 4. Android emulator → host machine
+  if (!IS_PRODUCTION && Platform.OS === 'android') {
     return 'http://10.0.2.2:8001';
   }
 
-  return 'http://localhost:8001';
+  if (IS_PRODUCTION) {
+    throw new Error('Missing production API URL. Set EXPO_PUBLIC_API_URL to an HTTPS endpoint.');
+  }
+
+  // 5. iOS Simulator / web dev: localhost is the Mac
+  if (!isPhysicalPhoneOrTablet()) {
+    return 'http://localhost:8001';
+  }
+
+  // 6. Physical device, no env, not on private LAN: must use a tunnel URL (e.g. cloudflared) in EXPO_PUBLIC_API_URL
+  apiMisconfigurationMessage =
+    'Off Wi‑Fi or using Expo tunnel: set EXPO_PUBLIC_API_URL in app/mobile/.env to your HTTPS API URL (run `npm run tunnel:api` from app/mobile, copy the https://….trycloudflare.com URL, restart Metro with `npm run start:dev:tunnel`). Same Wi‑Fi without tunnel: use http://YOUR_MAC_LAN_IP:8001.';
+  return 'http://127.0.0.1:9';
 }
 
 const apiBaseUrl: string = resolveApiUrl();
@@ -47,6 +103,45 @@ function resolveRequestTimeoutMs(baseUrl: string): number {
     return 60000;
   }
   return 30000;
+}
+
+/** FastAPI returns JSON; tunnels and proxies often return HTML or empty bodies. */
+async function parseApiResponseBody(
+  response: Response,
+): Promise<{ ok: true; data: unknown } | { ok: false; error: string }> {
+  const text = await response.text();
+  const status = response.status;
+  const ct = (response.headers.get('content-type') || '').toLowerCase();
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return {
+      ok: false,
+      error: `Empty response (HTTP ${status}). Start the API on port 8001, fix EXPO_PUBLIC_API_URL / tunnel, and ensure uvicorn uses --host 0.0.0.0.`,
+    };
+  }
+  try {
+    return { ok: true, data: JSON.parse(text) as unknown };
+  } catch {
+    // Cloudflare quick tunnel / edge: origin unreachable, tunnel stopped, or hostname reused after tunnel died.
+    if ([530, 524, 502, 521, 522, 523].includes(status)) {
+      return {
+        ok: false,
+        error: `HTTP ${status} — Cloudflare could not reach your API. Fix: (1) Run the FastAPI backend on :8001. (2) Run cloudflared: cloudflared tunnel --url http://127.0.0.1:8001 (or npm run dev:mobile). (3) Put the NEW https://….trycloudflare.com URL in app/mobile/.env as EXPO_PUBLIC_API_URL and restart Metro. Same Wi‑Fi: npm run dev:mobile:lan and remove/comment the tunnel URL in .env.`,
+      };
+    }
+    const htmlish = ct.includes('text/html') || /<\s*html/i.test(text);
+    const snippet = trimmed.slice(0, 140).replace(/\s+/g, ' ');
+    if (htmlish) {
+      return {
+        ok: false,
+        error: `Server returned HTML (HTTP ${status}), not JSON — wrong API URL, expired Cloudflare tunnel, or the request hit a web page instead of FastAPI.`,
+      };
+    }
+    return {
+      ok: false,
+      error: `Not JSON (HTTP ${status}): ${snippet}${trimmed.length > 140 ? '…' : ''}`,
+    };
+  }
 }
 
 class ApiService {
@@ -145,12 +240,11 @@ class ApiService {
         signal: options.signal ?? controller.signal,
       }).finally(() => clearTimeout(timeout));
 
-      let data: unknown;
-      try {
-        data = await response.json();
-      } catch {
-        return { success: false, error: 'Invalid response from server' };
+      const parsed = await parseApiResponseBody(response);
+      if (!parsed.ok) {
+        return { success: false, error: parsed.error };
       }
+      const data = parsed.data;
 
       if (response.status === 401 && attachAuth) {
         const refreshedToken = await this.refreshTokenFromSupabase();
@@ -162,9 +256,9 @@ class ApiService {
               Authorization: `Bearer ${refreshedToken}`,
             },
           });
-          const retryData = await retryResponse.json().catch(() => null);
-          if (retryResponse.ok) {
-            return { success: true, data: retryData as T };
+          const retryParsed = await parseApiResponseBody(retryResponse);
+          if (retryParsed.ok && retryResponse.ok) {
+            return { success: true, data: retryParsed.data as T };
           }
         }
         await this.setToken(null);

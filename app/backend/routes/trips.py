@@ -52,10 +52,10 @@ def get_trips(
         }
     }
 
-@router.get("/trips/${id}")
-def get_trip_by_id(trip_id: int):
+@router.get("/trips/{trip_id}")
+def get_trip_by_id(trip_id: str):
     _legacy_trips_guard()
-    trip = next((t for t in trips_db if t[trip_id] == trip_id), None) # Consider switching to a dictionary system for Trips_db because this is O(n)
+    trip = next((t for t in trips_db if str(t.get("id")) == str(trip_id)), None)
 
     if not trip:
         return {
@@ -68,8 +68,17 @@ def get_trip_by_id(trip_id: int):
         "data": trip
     }
 
-@router.post("/trips/start") # TODO: Determine how we're going to format trips ultimately
-def start_trip(startLocation: str): # Consider Implementing BaseModel later, instead of raw strings/dicts
+class StartTripBody(BaseModel):
+    startLocation: str
+    destination: Optional[str] = None
+
+
+class EndTripBody(BaseModel):
+    endLocation: str
+
+
+@router.post("/trips/start")
+def start_trip(body: StartTripBody):
     _legacy_trips_guard()
     new_id = str(uuid4())
     now = datetime.now()
@@ -78,8 +87,8 @@ def start_trip(startLocation: str): # Consider Implementing BaseModel later, ins
         "id": new_id,
         "date": now.strftime("%Y-%m-%d"),
         "time": now.strftime("%I:%M %p"),
-        "origin": startLocation,
-        "destination": trip.destination or "End",
+        "origin": body.startLocation,
+        "destination": body.destination or "End",
         "active": True,
         "events": [],
         
@@ -105,10 +114,9 @@ def get_trip_history(limit: int = Query(default=10, ge=1, le=100)):
         },
     }
 
-@router.post("/trips/${tripId}/end")
-def end_trip(trip_id: str, endLocation: str):
+@router.post("/trips/{trip_id}/end")
+def end_trip(trip_id: str, body: EndTripBody):
     _legacy_trips_guard()
-    user = users_db.get(current_user_id, {})
     user = users_db.get(current_user_id, {})
 
     #TODO: Calculate distance / implement
@@ -122,6 +130,7 @@ def end_trip(trip_id: str, endLocation: str):
     if not trip:
         return {"success": False, "message": "Trip not found"}
     trip["active"] = False
+    trip["destination"] = body.endLocation or trip.get("destination") or "End"
 
     return {
         "success": True,
@@ -358,9 +367,9 @@ def get_weekly_insights():
 
 
 @router.post("/trips/{trip_id}/share")
-def share_trip(trip_id: int): 
+def share_trip(trip_id: str):
     _legacy_trips_guard()
-    trip = next((t for t in trips_db if t["id"] == trip_id), None)
+    trip = next((t for t in trips_db if str(t.get("id")) == str(trip_id)), None)
     if not trip:
         return {"success": False, "message": "Trip not found"}
     share_url = f"https://snaproad.app/trip/{trip_id}"
@@ -395,7 +404,17 @@ def get_fuel_history(
 def log_fuel(entry: FuelLog):
     _legacy_trips_guard()
     new_id = str(uuid4())
-    new_entry = {"id": new_id, "date": entry.date, "station": entry.station, "price_per_gallon": entry.price_per_gallon, "gallons": entry.gallons, "total": entry.total}
+    total_cost = entry.total_cost if entry.total_cost is not None else entry.total
+    if total_cost is None:
+        total_cost = entry.gallons * entry.price_per_gallon
+    new_entry = {
+        "id": new_id,
+        "date": entry.date,
+        "station": entry.station,
+        "price_per_gallon": entry.price_per_gallon,
+        "gallons": entry.gallons,
+        "total_cost": total_cost,
+    }
     fuel_logs.insert(0, new_entry)
     return {"success": True, "message": "Fuel log entry added", "data": new_entry}
 
@@ -429,7 +448,7 @@ def get_fuel_logs(
 def get_fuel_trends():
     _legacy_trips_guard()
     total_gallons = sum(f["gallons"] for f in fuel_logs)
-    total_spent = sum(f["total"] for f in fuel_logs)
+    total_spent = sum(f.get("total_cost", f.get("total", 0)) for f in fuel_logs)
     avg_price = total_spent / total_gallons if total_gallons > 0 else 0
     return {"success": True, "data": {"total_gallons": round(total_gallons, 1), "total_spent": round(total_spent, 2), "avg_price_per_gallon": round(avg_price, 2), "entries": len(fuel_logs), "monthly_avg_gallons": round(total_gallons / 3, 1)}}
 

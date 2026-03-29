@@ -82,7 +82,9 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
     const connect = () => {
       try {
         const token = localStorage.getItem('snaproad_admin_token')
-        ws = new WebSocket(`${WS_BASE}/api/ws/admin/moderation${token ? `?token=${encodeURIComponent(token)}` : ''}`)
+        ws = token
+          ? new WebSocket(`${WS_BASE}/api/ws/admin/moderation`, [`bearer.${token}`])
+          : new WebSocket(`${WS_BASE}/api/ws/admin/moderation`)
         wsRef.current = ws
 
         ws.onopen = () => {

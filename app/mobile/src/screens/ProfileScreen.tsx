@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, ScrollView, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../contexts/ThemeContext';
@@ -9,6 +10,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../hooks/useLocation';
 import { api } from '../api/client';
 import { PLANS } from '../constants/plans';
+import FuelTracker from '../components/profile/FuelTracker';
+import HelpSupport from '../components/profile/HelpSupport';
+import SubmitConcern from '../components/profile/SubmitConcern';
 import type { DrivingMode, PlanTier, SavedLocation, SavedRoute } from '../types';
 import {
   AboutCard,
@@ -48,6 +52,7 @@ export default function ProfileScreen() {
   const { location } = useLocation();
   const { isLight, colors, toggleTheme } = useTheme();
   const { user, logout, updateUser } = useAuth();
+  const insets = useSafeAreaInsets();
   const bg = colors.background;
   const cardBg = colors.card;
   const text = colors.text;
@@ -87,6 +92,9 @@ export default function ProfileScreen() {
   const [showBadges, setShowBadges] = useState(false);
   const [showIncidentReport, setShowIncidentReport] = useState(false);
   const [showDrivingScore, setShowDrivingScore] = useState(false);
+  const [showFuelTracker, setShowFuelTracker] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showConcern, setShowConcern] = useState(false);
   const [weeklyRecap, setWeeklyRecap] = useState<ProfileWeeklyRecap>({
     totalTrips: 0,
     totalMiles: 0,
@@ -117,11 +125,11 @@ export default function ProfileScreen() {
       const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
       const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
       updateUser({
-        gems: Number(profilePayload.gems ?? user?.gems ?? 0),
-        level: Number(profilePayload.level ?? user?.level ?? 1),
-        totalMiles: Number(profilePayload.total_miles ?? user?.totalMiles ?? 0),
-        totalTrips: Number(profilePayload.total_trips ?? user?.totalTrips ?? 0),
-        safetyScore: Number(profilePayload.safety_score ?? user?.safetyScore ?? 0),
+        gems: Number(profilePayload.gems ?? 0),
+        level: Number(profilePayload.level ?? 1),
+        totalMiles: Number(profilePayload.total_miles ?? 0),
+        totalTrips: Number(profilePayload.total_trips ?? 0),
+        safetyScore: Number(profilePayload.safety_score ?? 0),
       });
       setPlaces(Array.isArray(unwrap(locRes)) ? unwrap(locRes) : []);
       setRoutes(Array.isArray(unwrap(routeRes)) ? unwrap(routeRes) : []);
@@ -149,7 +157,7 @@ export default function ProfileScreen() {
         gems: Number(r.gems ?? 0),
       })));
       setMyRank(Number(lb.my_rank ?? 0));
-      updateUser({ rank: Number(lb.my_rank ?? user?.rank ?? 0) });
+      updateUser({ rank: Number(lb.my_rank ?? 0) });
       const historyData = tripsHistoryRes?.data?.data ?? tripsHistoryRes?.data ?? {};
       const recentTrips = Array.isArray(historyData.recent_trips) ? historyData.recent_trips : [];
       setTripHistoryRows(recentTrips.map((t: any, idx: number) => ({
@@ -179,18 +187,21 @@ export default function ProfileScreen() {
         name: String(b.name ?? 'Badge'),
         earned: Boolean(b.earned),
       })));
-      if (user?.vehicle_height_meters && user.vehicle_height_meters > 0) {
-        setTallVehicle(true);
-        setVehicleHeight(String(user.vehicle_height_meters));
-      }
     } finally {
       setLoading(false);
     }
-  }, [updateUser, user?.gems, user?.level, user?.rank, user?.safetyScore, user?.totalMiles, user?.totalTrips, user?.vehicle_height_meters]);
+  }, [updateUser]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (user?.vehicle_height_meters && user.vehicle_height_meters > 0) {
+      setTallVehicle(true);
+      setVehicleHeight(String(user.vehicle_height_meters));
+    }
+  }, [user?.vehicle_height_meters]);
 
   const handleSaveVehicle = useCallback(async () => {
     const height = tallVehicle ? parseFloat(vehicleHeight) : null;
@@ -239,24 +250,42 @@ export default function ProfileScreen() {
   }, []);
 
   const handleSelectPlan = useCallback(async (plan: PlanTier) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
     if (plan === 'basic') {
-      Alert.alert('Basic Plan', 'You are already on the basic plan.');
+      updateUser({ isPremium: false, isFamilyPlan: false, plan: 'basic', gem_multiplier: 1 });
+      api.post('/api/user/plan', { plan: 'basic' }).catch(() => {});
+      setShowPlanModal(false);
       return;
     }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
     try {
       const res = await api.post<any>('/api/payments/checkout/session', { plan_id: plan });
       const sessionData = (res.data as any)?.data ?? res.data;
       if (sessionData?.url) {
         Alert.alert('Checkout', 'Stripe session created. Native checkout handoff comes next.');
       } else {
-        Alert.alert('Upgrade', `To upgrade to ${plan}, please visit the web app for now.`);
+        updateUser({
+          isPremium: plan === 'premium' || plan === 'family',
+          isFamilyPlan: plan === 'family',
+          plan,
+          gem_multiplier: 2,
+        });
+        api.post('/api/user/plan', { plan }).catch(() => {});
+        Alert.alert('Plan Updated', `You're now on the ${PLANS[plan].name} plan.`);
       }
     } catch {
-      Alert.alert('Error', 'Could not start checkout. Try again.');
+      updateUser({
+        isPremium: plan === 'premium' || plan === 'family',
+        isFamilyPlan: plan === 'family',
+        plan,
+        gem_multiplier: 2,
+      });
+      api.post('/api/user/plan', { plan }).catch(() => {});
+      Alert.alert('Plan Updated', `You're now on the ${PLANS[plan].name} plan.`);
     }
     setShowPlanModal(false);
-  }, []);
+  }, [updateUser]);
 
   const syncNotification = useCallback(async (setting: string, enabled: boolean) => {
     setNotifSyncing(true);
@@ -269,7 +298,7 @@ export default function ProfileScreen() {
 
   const currentPlan = user?.isFamilyPlan ? 'family' : user?.isPremium ? 'premium' : 'basic';
   const planConfig = PLANS[currentPlan];
-  const initials = (user?.name ?? 'U').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+  const initials = (user?.name ?? 'U').split(' ').filter(Boolean).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const actionRows: ProfileOverviewActionItem[] = [
     {
       key: 'share_location',
@@ -360,7 +389,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
         <ProfileHeader user={user} initials={initials} colors={colors} planName={planConfig.name} />
         <ProfileStatsStrip
           cardBg={cardBg}
@@ -395,7 +424,7 @@ export default function ProfileScreen() {
                 <View style={styles.scoreTopRow}>
                   <View>
                     <Text style={[styles.scoreLabel, { color: sub }]}>SnapRoad Score</Text>
-                    <Text style={[styles.scoreValue, { color: '#3B82F6' }]}>{user?.safetyScore ?? 0}</Text>
+                    <Text style={[styles.scoreValue, { color: colors.primary }]}>{user?.safetyScore ?? 0}</Text>
                   </View>
                   <View style={styles.premiumChip}><Text style={styles.premiumChipText}>PREMIUM</Text></View>
                 </View>
@@ -428,7 +457,7 @@ export default function ProfileScreen() {
                   <Text style={[styles.fuelLabel, { color: sub }]}>Efficiency</Text>
                   <Text style={[styles.fuelValue, { color: text }]}>{fuelEfficiency} MPG</Text>
                 </View>
-                <TouchableOpacity style={styles.fuelBtn}>
+                <TouchableOpacity style={styles.fuelBtn} onPress={() => setShowFuelTracker(true)}>
                   <Text style={styles.fuelBtnText}>Log Fuel Fill-up</Text>
                 </TouchableOpacity>
               </View>
@@ -471,6 +500,18 @@ export default function ProfileScreen() {
             <SectionHeader title="Default Driving Mode" isLight={isLight} />
             <DrivingModeCard cardBg={cardBg} text={text} defaultMode={defaultMode} setDefaultMode={setDefaultMode} />
 
+            <SectionHeader title="Support" isLight={isLight} />
+            <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 12 }}>
+              <TouchableOpacity style={[styles.fuelBtn, { flexDirection: 'row', gap: 8, justifyContent: 'center' }]} onPress={() => setShowHelp(true)}>
+                <Ionicons name="help-circle-outline" size={18} color="#fff" />
+                <Text style={styles.fuelBtnText}>Help & Support</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.fuelBtn, { flexDirection: 'row', gap: 8, justifyContent: 'center', backgroundColor: '#7C3AED' }]} onPress={() => setShowConcern(true)}>
+                <Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" />
+                <Text style={styles.fuelBtnText}>Submit Concern</Text>
+              </TouchableOpacity>
+            </View>
+
             <SectionHeader title="About" isLight={isLight} />
             <AboutCard cardBg={cardBg} text={text} sub={sub} />
 
@@ -487,6 +528,7 @@ export default function ProfileScreen() {
         sub={sub}
         currentPlan={currentPlan}
         onSelectPlan={handleSelectPlan}
+        isLight={isLight}
       />
       <AddPlaceModal
         visible={showAddPlace}
@@ -603,6 +645,9 @@ export default function ProfileScreen() {
           }
         }}
       />
+      <FuelTracker visible={showFuelTracker} onClose={() => setShowFuelTracker(false)} isLight={isLight} />
+      <HelpSupport visible={showHelp} onClose={() => setShowHelp(false)} />
+      <SubmitConcern visible={showConcern} onClose={() => setShowConcern(false)} />
     </SafeAreaView>
   );
 }
@@ -613,16 +658,16 @@ const styles = StyleSheet.create({
   scoreLabel: { fontSize: 12, fontWeight: '600' },
   scoreValue: { fontSize: 34, fontWeight: '900', lineHeight: 36 },
   premiumChip: { backgroundColor: 'rgba(245,158,11,0.15)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5 },
-  premiumChipText: { color: '#F59E0B', fontSize: 10, fontWeight: '800' },
+  premiumChipText: { color: '#FF9500', fontSize: 10, fontWeight: '800' },
   scoreMetricRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   scoreMetricLabel: { width: 80, fontSize: 12, fontWeight: '600' },
   scoreTrack: { flex: 1, height: 8, borderRadius: 6, backgroundColor: 'rgba(148,163,184,0.25)', overflow: 'hidden' },
-  scoreFill: { height: '100%', backgroundColor: '#3B82F6', borderRadius: 6 },
+  scoreFill: { height: '100%', backgroundColor: '#007AFF', borderRadius: 6 },
   scoreMetricValue: { width: 30, textAlign: 'right', fontSize: 12, fontWeight: '700' },
   fuelCard: { marginHorizontal: 16, borderRadius: 14, padding: 14 },
   fuelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
   fuelLabel: { fontSize: 13, fontWeight: '600' },
   fuelValue: { fontSize: 18, fontWeight: '800' },
-  fuelBtn: { marginTop: 12, backgroundColor: '#3B82F6', borderRadius: 10, alignItems: 'center', paddingVertical: 11 },
+  fuelBtn: { marginTop: 12, backgroundColor: '#007AFF', borderRadius: 12, alignItems: 'center', paddingVertical: 12 },
   fuelBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });

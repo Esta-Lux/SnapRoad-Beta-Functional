@@ -8,25 +8,11 @@ SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY")
 SUPABASE_PUBLISHABLE_KEY = os.environ.get("SUPABASE_PUBLISHABLE_KEY")
 SUPABASE_DB_PASSWORD = os.environ.get("SUPABASE_DB_PASSWORD")  # Optional: DB password for direct connection
 
-JWT_SECRET_DEFAULT = ""
-JWT_SECRET = os.environ.get("JWT_SECRET", JWT_SECRET_DEFAULT)
+JWT_SECRET = os.environ.get("JWT_SECRET")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+IS_PRODUCTION = ENVIRONMENT.lower() == "production"
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
-
-
-def validate_runtime_config() -> None:
-    """Fail fast on insecure production authentication configuration."""
-    if ENVIRONMENT != "production":
-        return
-    secret = (JWT_SECRET or "").strip()
-    if (
-        not secret
-        or secret == JWT_SECRET_DEFAULT
-        or len(secret) < 32
-        or "change-in-prod" in secret
-    ):
-        raise RuntimeError("Invalid JWT_SECRET for production; set a strong secret (>=32 chars)")
 
 # OpenAI API Key for AI features (Orion Coach, Photo Analysis)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -62,3 +48,43 @@ CAMERAS_API_KEY = os.environ.get("CAMERAS_API_KEY")
 CAMERAS_API_URL = (os.environ.get("CAMERAS_API_URL") or "").strip().rstrip("/")
 # If set to "true" or "1", send API key in X-API-Key header instead of query param "key".
 CAMERAS_API_KEY_AS_HEADER = (os.environ.get("CAMERAS_API_KEY_AS_HEADER") or "").strip().lower() in ("1", "true", "yes")
+
+# OHGO (ODOT) traffic cameras — Ohio. Same key as web VITE_OHGO_API_KEY; Expo uses backend proxy only.
+OHGO_API_KEY = (os.environ.get("OHGO_API_KEY") or os.environ.get("VITE_OHGO_API_KEY") or "").strip()
+# Optional base URL (no trailing path). Default is the public OHGO host.
+OHGO_API_BASE = (os.environ.get("OHGO_API_URL") or "https://publicapi.ohgo.com").strip().rstrip("/")
+
+_WEAK_JWT_SECRETS = {
+    "",
+    "changeme",
+    "change-me",
+    "secret",
+    "password",
+    "snaproad-jwt-secret-change-in-prod",
+}
+
+
+def validate_production_env() -> None:
+    """Fail fast for unsafe or missing production secrets/config."""
+    if not IS_PRODUCTION:
+        return
+
+    missing = []
+    for key, value in (
+        ("JWT_SECRET", JWT_SECRET),
+        ("SUPABASE_URL", SUPABASE_URL),
+        ("SUPABASE_SECRET_KEY", SUPABASE_SECRET_KEY),
+        ("STRIPE_SECRET_KEY", STRIPE_SECRET_KEY),
+    ):
+        if not (value or "").strip():
+            missing.append(key)
+    if missing:
+        raise RuntimeError(f"Missing required production env vars: {', '.join(missing)}")
+
+    jwt_secret = (JWT_SECRET or "").strip()
+    if len(jwt_secret) < 32 or jwt_secret.lower() in _WEAK_JWT_SECRETS:
+        raise RuntimeError("JWT_SECRET is weak. Use a strong secret with at least 32 characters.")
+
+    cors_origins = (os.getenv("CORS_ORIGINS") or "").strip()
+    if not cors_origins:
+        raise RuntimeError("CORS_ORIGINS must be explicitly set in production.")

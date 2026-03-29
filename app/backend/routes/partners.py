@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, Header
 from typing import Optional
 from datetime import datetime, timedelta
 from models.schemas import (
@@ -444,7 +444,6 @@ def partner_login_v2(request: PartnerLoginRequest):
 
 @router.post("/partner/v2/register")
 def partner_register_v2(request: PartnerRegisterRequest):
-    import hashlib
     existing = sb_get_user_by_email(request.email)
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -454,7 +453,6 @@ def partner_register_v2(request: PartnerRegisterRequest):
         "id": str(user["id"]),
         "business_name": request.business_name,
         "email": request.email,
-        "password_hash": hashlib.sha256(request.password.encode()).hexdigest(),
         "plan": "starter",
         "is_founders": True,
         "status": "active",
@@ -587,12 +585,17 @@ def use_credits(partner_id: str, request: CreditUseRequest, user: dict = Depends
 
 
 @router.post("/partner/v2/redeem")
-def redeem_offer(request: QRRedemptionRequest, background_tasks: BackgroundTasks):
+def redeem_offer(
+    request: QRRedemptionRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(require_partner),
+):
     from services.partner_service import partner_service
     from services.websocket_manager import ws_manager
+    partner_id = _require_owned_partner_id(user)
     result = partner_service.validate_redemption(request.qr_data, request.staff_id)
     if result["success"]:
-        background_tasks.add_task(ws_manager.notify_partner_redemption, "partner_001", result)
+        background_tasks.add_task(ws_manager.notify_partner_redemption, partner_id, result)
         customer_id = request.qr_data.get("customerId")
         if customer_id:
             background_tasks.add_task(ws_manager.notify_customer_redeemed, customer_id, result)
@@ -655,6 +658,7 @@ def list_team_links(
 @router.delete("/partner/v2/team-link/{link_id}")
 def revoke_team_link(link_id: str, user: dict = Depends(require_partner)):
     from services.supabase_service import _sb
+    _require_owned_partner_id(user)
     try:
         row = _sb().table("partner_team_links").select("id,partner_id").eq("id", link_id).maybe_single().execute()
         link = row.data if row else None
@@ -671,11 +675,19 @@ def revoke_team_link(link_id: str, user: dict = Depends(require_partner)):
 
 
 @router.post("/partner/v2/scan/validate")
-def validate_scan(token: str, qr_data: str):
+def validate_scan(payload: dict, authorization: Optional[str] = Header(default=None)):
     """Validate a QR code scanned via a team link. Token auth instead of partner login."""
     from services.supabase_service import _sb
     import json
 
+    token = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        token = str(payload.get("team_token") or "").strip()
+    qr_data = payload.get("qr_data")
+    if not token:
+        raise HTTPException(status_code=403, detail="Missing team token")
     # Verify the team link token
     try:
         link = _sb().table("partner_team_links").select("*").eq("token", token).eq("is_active", True).maybe_single().execute()
@@ -852,6 +864,7 @@ def stripe_subscribe(
     partner_id: str = "default_partner",
     plan: str = "starter",
     portal_origin: Optional[str] = Query(None, description="Partner app origin for Stripe return URLs"),
+    user: dict = Depends(require_partner),
 ):
     """Create a Stripe Checkout session for plan subscription."""
     from config import (
@@ -861,6 +874,7 @@ def stripe_subscribe(
     )
     if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
         return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
     try:
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
@@ -892,7 +906,7 @@ def stripe_subscribe(
             payment_method_types=["card"],
             mode="subscription",
             line_items=line_items,
-            metadata={"partner_id": partner_id, "plan": plan},
+            metadata={"partner_id": owned_partner_id, "plan": plan},
             success_url=f"{base}/portal/partner?payment=success",
             cancel_url=f"{base}/portal/partner?payment=cancelled",
         )
@@ -901,7 +915,7 @@ def stripe_subscribe(
         return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
     except Exception as e:
         logger.error(f"Stripe subscribe error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Unable to create subscription checkout session")
 
 
 @router.post("/partner/v2/boosts/purchase")
@@ -910,11 +924,13 @@ def stripe_boost_purchase(
     offer_id: str = "",
     boost_type: str = "basic",
     portal_origin: Optional[str] = Query(None),
+    user: dict = Depends(require_partner),
 ):
     """Create a Stripe payment intent for a boost purchase."""
     from config import STRIPE_SECRET_KEY
     if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
         return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
     try:
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
@@ -933,7 +949,7 @@ def stripe_boost_purchase(
                 },
                 "quantity": 1,
             }],
-            metadata={"partner_id": partner_id, "offer_id": offer_id, "boost_type": boost_type},
+            metadata={"partner_id": owned_partner_id, "offer_id": offer_id, "boost_type": boost_type},
             success_url=f"{base}/portal/partner?boost=success",
             cancel_url=f"{base}/portal/partner?boost=cancelled",
         )
@@ -942,7 +958,7 @@ def stripe_boost_purchase(
         return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
     except Exception as e:
         logger.error(f"Stripe boost error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Unable to create boost checkout session")
 
 
 @router.post("/partner/v2/credits/purchase")
@@ -950,11 +966,15 @@ def stripe_credits_purchase(
     partner_id: str = "default_partner",
     amount: float = 50.0,
     portal_origin: Optional[str] = Query(None),
+    user: dict = Depends(require_partner),
 ):
     """Create a Stripe Checkout session to buy credits."""
     from config import STRIPE_SECRET_KEY
     if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
         return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    if amount <= 0 or amount > 10000:
+        raise HTTPException(status_code=400, detail="Invalid credits amount")
     try:
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
@@ -970,7 +990,7 @@ def stripe_credits_purchase(
                 },
                 "quantity": 1,
             }],
-            metadata={"partner_id": partner_id, "credits_amount": str(amount)},
+            metadata={"partner_id": owned_partner_id, "credits_amount": str(amount)},
             success_url=f"{base}/portal/partner?credits=success",
             cancel_url=f"{base}/portal/partner?credits=cancelled",
         )
@@ -979,4 +999,4 @@ def stripe_credits_purchase(
         return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
     except Exception as e:
         logger.error(f"Stripe credits error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Unable to create credits checkout session")

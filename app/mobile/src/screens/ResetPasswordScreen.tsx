@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Linking } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
 
@@ -113,7 +114,7 @@ export default function ResetPasswordScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: bg }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
       <View style={[styles.card, { backgroundColor: card }]}>
         <Text style={[styles.title, { color: text }]}>Reset Password</Text>
         <Text style={[styles.subtitle, { color: sub }]}>Set a new password for your SnapRoad account.</Text>
@@ -149,7 +150,7 @@ export default function ResetPasswordScreen({ navigation }: Props) {
           </>
         )}
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -159,7 +160,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 26, fontWeight: '800' },
   subtitle: { fontSize: 13, marginTop: 6, marginBottom: 14 },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, marginBottom: 10 },
-  saveBtn: { backgroundColor: '#2563EB', borderRadius: 12, paddingVertical: 13, alignItems: 'center', marginTop: 4 },
+  saveBtn: { backgroundColor: '#007AFF', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   center: { alignItems: 'center', paddingVertical: 10 },
   loadingText: { fontSize: 12, marginTop: 8 },
