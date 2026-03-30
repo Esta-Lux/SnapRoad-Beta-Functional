@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl'
 import api from '@/services/api'
 import { Settings, Battery, Car, Home, Building2, MapPin } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -111,8 +112,8 @@ export default function FamilyCommandCenter({
   const [placeDrafts, setPlaceDrafts] = useState<FamilyPlace[]>([])
   const [miniMapAvailable, setMiniMapAvailable] = useState(true)
   const miniMapEl = useRef<HTMLDivElement | null>(null)
-  const miniMapRef = useRef<mapboxgl.Map | null>(null)
-  const markersRef = useRef<mapboxgl.Marker[]>([])
+  const miniMapRef = useRef<MapboxMap | null>(null)
+  const markersRef = useRef<MapboxMarker[]>([])
   const mapboxRef = useRef<typeof import('mapbox-gl') | null>(null)
   const geofenceStateRef = useRef<Record<string, boolean>>({})
 

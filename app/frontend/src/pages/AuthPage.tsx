@@ -36,17 +36,30 @@ export default function AuthPage() {
       if (tab === 'admin') {
         const result = await api.login({ email, password })
         if (!result.success || !result.data) throw new Error(result.error || 'Login failed')
-        const user = result.data.user
+        const user = result.data.user as {
+          id?: string
+          email?: string
+          role?: string
+          full_name?: string
+          name?: string
+        }
         const token = result.data.token
-        const role = String(user.role ?? '')
-        if (!user || (role !== 'admin' && role !== 'super_admin')) throw new Error('This account does not have admin access')
+        const role = String(user?.role ?? '')
+        if (!user?.id || (role !== 'admin' && role !== 'super_admin')) throw new Error('This account does not have admin access')
         adminApi.setToken(token)
-        const displayName = user.full_name || user.name || user.email
-        setAuth({ id: user.id, email: user.email, fullName: displayName, role: role === 'super_admin' ? 'super_admin' : 'admin' }, token)
+        setAuth(
+          {
+            id: String(user.id),
+            email: String(user.email ?? ''),
+            fullName: String(user.full_name ?? user.name ?? user.email ?? ''),
+            role: role === 'super_admin' ? 'super_admin' : 'admin',
+          },
+          token,
+        )
         navigate('/portal/admin-sr2025secure')
       } else {
         const result = await partnerApi.login(email, password)
-        if (!result.success) throw new Error(result.detail || 'Login failed')
+        if (!result.success) throw new Error(result.detail || result.message || 'Login failed')
         navigate('/portal/partner')
       }
     } catch (err: any) {

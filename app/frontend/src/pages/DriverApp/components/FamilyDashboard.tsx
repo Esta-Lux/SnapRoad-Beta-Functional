@@ -1205,20 +1205,47 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
       {showCheckIn && (
         <div
           role="presentation"
-          className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-4"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+          }}
           onClick={() => setShowCheckIn(false)}
         >
           <div
             role="dialog"
-            className="bg-white rounded-2xl p-4 max-w-sm shadow-xl"
+            aria-modal="true"
+            style={{
+              maxWidth: 360,
+              width: '100%',
+              borderRadius: 16,
+              padding: 20,
+              background: isLight ? '#fff' : '#1e293b',
+              color: isLight ? '#0f172a' : '#f1f5f9',
+              border: isLight ? '1px solid #e2e8f0' : '1px solid #334155',
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-slate-800 font-semibold mb-2">Check-in</p>
-            <p className="text-slate-600 text-sm mb-4">Family check-in will appear here.</p>
+            <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5 }}>Check in with your family. Full check-in flow is coming soon.</p>
             <button
               type="button"
-              className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium"
               onClick={() => setShowCheckIn(false)}
+              style={{
+                marginTop: 16,
+                width: '100%',
+                padding: '10px 16px',
+                borderRadius: 10,
+                border: 'none',
+                fontWeight: 700,
+                cursor: 'pointer',
+                background: '#007AFF',
+                color: '#fff',
+              }}
             >
               OK
             </button>

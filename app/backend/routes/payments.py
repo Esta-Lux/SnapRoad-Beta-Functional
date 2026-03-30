@@ -85,7 +85,6 @@ def _list_txs(limit: int = 100) -> list[dict]:
 class CreateCheckoutRequest(BaseModel):
     plan_id: str  # "premium" or "family"
     origin_url: Optional[str] = None  # Optional hint; server allowlist decides final origin
-    user_id: Optional[str] = None
     user_email: Optional[str] = None
 
 
@@ -98,6 +97,8 @@ def _resolve_allowed_origin(request_origin: Optional[str]) -> str:
     configured = (os.environ.get("CHECKOUT_ALLOWED_ORIGINS") or "").strip()
     allowed = [o.strip().rstrip("/") for o in configured.split(",") if o.strip()]
     if not allowed:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Checkout origins not configured")
         fallback = (os.environ.get("FRONTEND_URL") or "http://localhost:5173").strip().rstrip("/")
         allowed = [fallback]
     requested = (request_origin or "").strip().rstrip("/")
@@ -211,7 +212,7 @@ async def create_checkout_session(
                     "plan_id": checkout_data.plan_id,
                     "plan_name": plan["name"],
                     "user_id": str(
-                        current_user.get("user_id") or current_user.get("id") or checkout_data.user_id or "anonymous"
+                        current_user.get("user_id") or current_user.get("id") or "anonymous"
                     ),
                     "source": "snaproad_mobile",
                 },
@@ -226,7 +227,7 @@ async def create_checkout_session(
             "plan_name": plan["name"],
             "amount": plan["price"],
             "currency": "usd",
-            "user_id": str(current_user.get("user_id") or current_user.get("id") or checkout_data.user_id or ""),
+            "user_id": str(current_user.get("user_id") or current_user.get("id") or ""),
             "user_email": checkout_data.user_email or current_user.get("email"),
             "payment_status": "pending",
             "created_at": datetime.utcnow().isoformat(),
@@ -241,6 +242,8 @@ async def create_checkout_session(
         
     except stripe.error.StripeError:
         raise HTTPException(status_code=502, detail="Payment provider error")
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to create checkout session")
 
@@ -264,16 +267,11 @@ async def get_checkout_status(
     try:
         user_id = str(current_user.get("user_id") or current_user.get("id") or "")
         session = await anyio.to_thread.run_sync(lambda: stripe.checkout.Session.retrieve(session_id))
-        tx = _get_tx(session_id)
-        # Ownership check: only the owner/admin can inspect this checkout session.
-        # Prefer DB tx owner, fallback to Stripe metadata owner.
-        owner_id = ""
-        if tx:
-            owner_id = str(tx.get("user_id") or "")
-        if not owner_id:
-            owner_id = str((dict(session.metadata) if session.metadata else {}).get("user_id") or "")
-        if owner_id and owner_id != user_id and str(current_user.get("role") or "") != "admin":
-            raise HTTPException(status_code=403, detail="Checkout session access denied")
+        is_admin = current_user.get("role") in ("admin", "super_admin")
+        session_user_id = str((session.metadata or {}).get("user_id") or "")
+        caller_user_id = str(current_user.get("id") or current_user.get("user_id") or "")
+        if not is_admin and session_user_id and session_user_id != caller_user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
         
         # Map Stripe status to our format
         payment_status = "pending"
@@ -308,6 +306,8 @@ async def get_checkout_status(
         
     except stripe.error.StripeError:
         raise HTTPException(status_code=502, detail="Payment provider error")
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to get checkout status")
 
@@ -330,7 +330,6 @@ async def get_payment_transaction(session_id: str, _admin: dict = Depends(requir
     tx = _get_tx(session_id)
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    
     return {
         "success": True,
         "data": tx

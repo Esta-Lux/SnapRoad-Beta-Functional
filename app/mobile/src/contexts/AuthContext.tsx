@@ -1,4 +1,5 @@
-import React, { useState, useEffect, createContext, useContext, type ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from 'react';
+import Constants from 'expo-constants';
 import { api } from '../api/client';
 import type { User, ApiUser } from '../types';
 
@@ -6,7 +7,11 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** True while login/signup request is in flight (does not toggle the cold-start splash). */
+  isAuthSubmitting: boolean;
   authError: string | null;
+  /** Clears the last API auth message (e.g. after switching Sign In ↔ Create Account). */
+  clearAuthError: () => void;
   login: (email: string, password: string) => Promise<boolean>;
   signup: (name: string, email: string, password: string) => Promise<boolean>;
   forgotPassword: (email: string) => Promise<{ ok: boolean; message: string }>;
@@ -18,10 +23,39 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const DRIVER_APP_STAFF_BLOCK_MESSAGE =
+  'This email is an admin or partner account. Use the web admin login for the dashboard. To use the driver app here, set role to "driver" in Supabase → profiles, or sign up with a different email.';
+
+function isStaffRole(role: string | undefined): boolean {
+  return role === 'admin' || role === 'super_admin' || role === 'partner';
+}
+
+/**
+ * Allow admin/partner profiles in the driver app when explicitly opted in.
+ * EAS preview/internal builds often set NODE_ENV=production, so we also key off EAS_BUILD_PROFILE
+ * (injected into expo.extra at build time). Never true for the store `production` profile.
+ */
+function allowStaffInDriverApp(): boolean {
+  if (String(process.env.EXPO_PUBLIC_ALLOW_STAFF_IN_DRIVER_APP || '').toLowerCase() !== 'true') {
+    return false;
+  }
+  if (__DEV__) {
+    return true;
+  }
+  const profile = String(
+    (Constants.expoConfig?.extra as { easBuildProfile?: string } | undefined)?.easBuildProfile || '',
+  ).toLowerCase();
+  if (['preview', 'development', 'development-simulator'].includes(profile)) {
+    return true;
+  }
+  return false;
+}
+
 function mapApiUserToContext(apiUser: Record<string, unknown>): User {
   const name = String(apiUser.name ?? apiUser.email ?? 'Driver');
   const initials = name
     .split(' ')
+    .filter(Boolean)
     .map((n) => n[0])
     .join('')
     .slice(0, 2)
@@ -47,7 +81,9 @@ function mapApiUserToContext(apiUser: Record<string, unknown>): User {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const clearAuthError = useCallback(() => setAuthError(null), []);
 
   const restoreSession = async () => {
     const token = await api.getToken();
@@ -61,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const apiUser = payload as Record<string, unknown> | undefined;
       if (res.success && apiUser) {
         const role = apiUser.role as string | undefined;
-        if (role === 'admin' || role === 'super_admin' || role === 'partner') {
+        if (isStaffRole(role) && !allowStaffInDriverApp()) {
           await api.setToken(null);
           setUser(null);
         } else {
@@ -85,39 +121,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setAuthError(null);
-    const result = await api.login({ email: email.trim(), password: password.trim() });
-    if (!result.success || !result.data) {
-      setAuthError(result.error || 'Invalid email or password');
-      return false;
+    setIsAuthSubmitting(true);
+    try {
+      const result = await api.login({ email: email.trim(), password: password.trim() });
+      if (!result.success || !result.data) {
+        setAuthError(result.error || 'Invalid email or password');
+        return false;
+      }
+      const apiUser = (result.data as unknown as { user?: Record<string, unknown> }).user;
+      if (!apiUser) {
+        setAuthError(result.error || 'Login failed');
+        return false;
+      }
+      const role = (apiUser as { role?: string }).role;
+      if (isStaffRole(role) && !allowStaffInDriverApp()) {
+        setAuthError(DRIVER_APP_STAFF_BLOCK_MESSAGE);
+        return false;
+      }
+      setUser(mapApiUserToContext(apiUser));
+      return true;
+    } finally {
+      setIsAuthSubmitting(false);
     }
-    const apiUser = (result.data as unknown as { user?: Record<string, unknown> }).user;
-    if (!apiUser) {
-      setAuthError(result.error || 'Login failed');
-      return false;
-    }
-    const role = (apiUser as { role?: string }).role;
-    if (role === 'admin' || role === 'super_admin' || role === 'partner') {
-      setAuthError('This account cannot access the driver app');
-      return false;
-    }
-    setUser(mapApiUserToContext(apiUser));
-    return true;
   };
 
   const signup = async (name: string, email: string, password: string): Promise<boolean> => {
     setAuthError(null);
-    const result = await api.signup({ name: name.trim(), email: email.trim(), password: password.trim() });
-    if (!result.success || !result.data) {
-      setAuthError(result.error || 'Signup failed');
-      return false;
+    setIsAuthSubmitting(true);
+    try {
+      const result = await api.signup({ name: name.trim(), email: email.trim(), password: password.trim() });
+      if (!result.success || !result.data) {
+        setAuthError(result.error || 'Signup failed');
+        return false;
+      }
+      const apiUser = (result.data as unknown as { user?: Record<string, unknown> }).user;
+      if (!apiUser) {
+        setAuthError(result.error || 'Signup failed');
+        return false;
+      }
+      setUser(mapApiUserToContext(apiUser));
+      return true;
+    } finally {
+      setIsAuthSubmitting(false);
     }
-    const apiUser = (result.data as unknown as { user?: Record<string, unknown> }).user;
-    if (!apiUser) {
-      setAuthError(result.error || 'Signup failed');
-      return false;
-    }
-    setUser(mapApiUserToContext(apiUser));
-    return true;
   };
 
   const forgotPassword = async (email: string): Promise<{ ok: boolean; message: string }> => {
@@ -160,7 +206,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated: !!user, isLoading, authError, login, signup, forgotPassword, resendVerification, logout, updateUser, setUserFromApi }}
+      value={{
+        user,
+        isAuthenticated: !!user,
+        isLoading,
+        isAuthSubmitting,
+        authError,
+        clearAuthError,
+        login,
+        signup,
+        forgotPassword,
+        resendVerification,
+        logout,
+        updateUser,
+        setUserFromApi,
+      }}
     >
       {children}
     </AuthContext.Provider>

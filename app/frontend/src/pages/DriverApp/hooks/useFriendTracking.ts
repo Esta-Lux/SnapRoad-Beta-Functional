@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Map as MapboxMapClass, LngLatBoundsLike } from 'mapbox-gl'
+import type { LngLatBoundsLike, Map as MapboxMap } from 'mapbox-gl'
 import { subscribeFriendLocations, type FriendLocation } from '@/lib/friendLocation'
 import { api } from '@/services/api'
 
@@ -7,7 +7,7 @@ export function useFriendTracking(params: {
   activeTab: string
   userLocation: { lat: number; lng: number }
   isNavigating: boolean
-  mapInstanceRef: { current: MapboxMapClass | null }
+  mapInstanceRef: { current: MapboxMap | null }
   cameraLockedRef: { current: boolean }
   isNavigatingRef: { current: boolean }
   isSharingLocationRef: { current: boolean }
@@ -24,7 +24,6 @@ export function useFriendTracking(params: {
 }) {
   const {
     activeTab,
-    userLocation: _userLocation,
     isNavigating,
     mapInstanceRef,
     cameraLockedRef,

@@ -1,5 +1,3 @@
-// Security: Orion runs through backend only; never expose provider keys in frontend bundles.
-const OPENAI_API_KEY = ''
 const API_BASE =
   (import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -29,7 +27,8 @@ export interface OrionContext {
   timeOfDay?: string
 }
 
-function buildSystemPrompt(ctx: OrionContext | undefined): string {
+/** Exported for tooling / future client-side Orion; backend may mirror this prompt. */
+export function buildSystemPrompt(ctx: OrionContext | undefined): string {
   const c = ctx ?? {}
   const time = new Date().getHours()
   const greeting = time < 12 ? 'morning' : time < 17 ? 'afternoon' : 'evening'
@@ -152,7 +151,7 @@ export const ADD_VOICE_ROAD_REPORT_TOOL = {
   },
 }
 
-const ORION_TOOLS = [START_NAVIGATION_TOOL, NAVIGATE_TO_OFFER_TOOL, ADD_VOICE_ROAD_REPORT_TOOL]
+export const ORION_TOOLS = [START_NAVIGATION_TOOL, NAVIGATE_TO_OFFER_TOOL, ADD_VOICE_ROAD_REPORT_TOOL]
 
 export interface OrionToolCall {
   name: string
@@ -169,57 +168,6 @@ export async function chatWithOrionWithTools(
   context: OrionContext | undefined
 ): Promise<OrionChatResult> {
   const safeContext = context ?? {}
-  if (OPENAI_API_KEY) {
-    const systemMessage: OrionMessage = { role: 'system', content: buildSystemPrompt(safeContext) }
-    const allMessages = [systemMessage, ...messages]
-    const maxTokens = safeContext.isNavigating ? 60 : 300
-    try {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: allMessages,
-          max_tokens: maxTokens,
-          temperature: 0.7,
-          stream: false,
-          tools: ORION_TOOLS,
-          tool_choice: 'auto',
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.text()
-        if (res.status === 401 || /invalid|incorrect.*api.*key/i.test(err))
-          return { content: "Orion couldn't connect. Check VITE_OPENAI_API_KEY in the frontend .env is valid at platform.openai.com." }
-        return { content: 'Sorry, I had a hiccup. Try again!' }
-      }
-      const data = await res.json()
-      const msg = data.choices?.[0]?.message
-      const content = (msg?.content ?? '').trim() || 'Sorry, I had trouble with that.'
-      const toolCallsRaw = msg?.tool_calls
-      const toolCalls: OrionToolCall[] = []
-      const allowed = ['start_navigation', 'navigate_to_nearby_offer', 'add_voice_road_report']
-      if (Array.isArray(toolCallsRaw)) {
-        for (const tc of toolCallsRaw) {
-          const fn = tc?.function
-          if (fn?.name && allowed.includes(fn.name) && fn.arguments) {
-            try {
-              const args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : fn.arguments
-              toolCalls.push({ name: fn.name, arguments: args })
-            } catch {
-              /* skip */
-            }
-          }
-        }
-      }
-      return { content, toolCalls: toolCalls.length ? toolCalls : undefined }
-    } catch {
-      return { content: 'Sorry, I had a hiccup. Try again!' }
-    }
-  }
   if (API_BASE) {
     try {
       const payload = {
@@ -238,7 +186,7 @@ export async function chatWithOrionWithTools(
       return { content: "I'm not configured yet — add OPENAI_API_KEY to the backend .env and ensure the backend is running." }
     }
   }
-  return { content: "I'm not configured yet — set VITE_OPENAI_API_KEY in the frontend .env or VITE_BACKEND_URL so Orion can run." }
+  return { content: "I'm not configured yet — set VITE_BACKEND_URL / VITE_API_URL and run backend Orion." }
 }
 
 export async function chatWithOrion(
@@ -247,42 +195,9 @@ export async function chatWithOrion(
 ): Promise<string> {
   const safeContext = context ?? {}
 
-  // Prefer direct OpenAI when frontend key is set (from .env)
-  if (OPENAI_API_KEY) {
-    const systemMessage: OrionMessage = { role: 'system', content: buildSystemPrompt(safeContext) }
-    const allMessages = [systemMessage, ...messages]
-    const maxTokens = safeContext.isNavigating ? 60 : 300
-    try {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: allMessages,
-          max_tokens: maxTokens,
-          temperature: 0.7,
-          stream: false,
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.text()
-        if (res.status === 401 || /invalid|incorrect.*api.*key/i.test(err))
-          return "Orion couldn't connect. Check VITE_OPENAI_API_KEY in the frontend .env is valid at platform.openai.com."
-        throw new Error(`OpenAI error: ${res.status}`)
-      }
-      const data = await res.json()
-      return data.choices?.[0]?.message?.content?.trim() || 'Sorry, I had trouble with that.'
-    } catch (e) {
-      return "Sorry, I had a hiccup. Try again!"
-    }
-  }
-
   // Otherwise use backend
   if (!API_BASE) {
-    return "I'm not configured yet — set VITE_OPENAI_API_KEY in the frontend .env or VITE_BACKEND_URL so Orion can run."
+    return "I'm not configured yet — set VITE_BACKEND_URL / VITE_API_URL so Orion can run."
   }
 
   const payload = {
@@ -312,63 +227,9 @@ export async function* streamOrion(
 ): AsyncGenerator<string> {
   const safeContext = context ?? {}
 
-  // Prefer direct OpenAI when frontend key is set (from .env)
-  if (OPENAI_API_KEY) {
-    const systemMessage: OrionMessage = { role: 'system', content: buildSystemPrompt(safeContext) }
-    const allMessages = [systemMessage, ...messages]
-    try {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: allMessages,
-          max_tokens: 500,
-          temperature: 0.7,
-          stream: true,
-        }),
-      })
-      if (!res.ok) {
-        if (res.status === 401) yield "Orion couldn't connect. Check VITE_OPENAI_API_KEY in the frontend .env."
-        return
-      }
-      const reader = res.body?.getReader()
-      const decoder = new TextDecoder()
-      if (!reader) return
-      let buffer = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim()
-            if (data === '[DONE]') return
-            try {
-              const parsed = JSON.parse(data)
-              const content = parsed.choices?.[0]?.delta?.content
-              if (content) yield content
-            } catch {
-              /* ignore */
-            }
-          }
-        }
-      }
-      return
-    } catch {
-      yield "Sorry, I had a hiccup. Try again!"
-      return
-    }
-  }
-
   // Otherwise use backend
   if (!API_BASE) {
-    yield "I'm not configured — set VITE_OPENAI_API_KEY in the frontend .env or VITE_BACKEND_URL."
+    yield "I'm not configured — set VITE_BACKEND_URL / VITE_API_URL."
     return
   }
 

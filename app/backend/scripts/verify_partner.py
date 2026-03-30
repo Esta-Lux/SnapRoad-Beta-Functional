@@ -56,12 +56,13 @@ def main():
         print(f"[ERROR] Partner record NOT found in partners table")
         print(f"  - Creating partner record...")
         
-        import hashlib
+        from passlib.context import CryptContext
+        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         partner_data = {
             "id": user_id,
             "business_name": user.get("name", "Test Business"),
             "email": PARTNER_EMAIL,
-            "password_hash": hashlib.sha256("Riyanm909@".encode()).hexdigest(),
+            "password_hash": pwd_context.hash("Riyanm909@"),
             "plan": "starter",
             "is_founders": True,
             "status": "active",

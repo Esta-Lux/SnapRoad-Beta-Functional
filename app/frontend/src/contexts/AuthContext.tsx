@@ -41,6 +41,31 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+const DRIVER_APP_STAFF_BLOCK_MESSAGE =
+  'This email is an admin or partner account, not a driver. Use /login for the admin dashboard. To use the driver app with this email, set role to "driver" in Supabase (Table Editor → profiles). Or sign up with a different email for driver-only testing.'
+
+function isStaffRole(role: string | undefined): boolean {
+  return role === 'admin' || role === 'super_admin' || role === 'partner'
+}
+
+/**
+ * Opt-in: VITE_ALLOW_STAFF_IN_DRIVER_APP=true so admin/partner can use /driver on local dev,
+ * hosted preview, or staging. Blocked when MODE is production and VITE_APP_ENV is not preview/staging/development.
+ */
+function allowStaffInDriverApp(): boolean {
+  if (String(import.meta.env.VITE_ALLOW_STAFF_IN_DRIVER_APP || '').toLowerCase() !== 'true') {
+    return false
+  }
+  if (import.meta.env.DEV) {
+    return true
+  }
+  const appEnv = String(import.meta.env.VITE_APP_ENV || '').toLowerCase()
+  if (['preview', 'staging', 'development'].includes(appEnv)) {
+    return true
+  }
+  return false
+}
+
 function mapApiUserToContext(apiUser: Record<string, unknown>): User {
   const name = String(apiUser.name ?? apiUser.email ?? 'Driver')
   const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -79,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const apiUser = payload as Record<string, unknown> | undefined
       if (res.success && apiUser) {
         const role = apiUser.role as string | undefined
-        if (role === 'admin' || role === 'super_admin' || role === 'partner') {
+        if (isStaffRole(role) && !allowStaffInDriverApp()) {
           api.setToken(null)
           setUser(null)
         } else {
@@ -114,8 +139,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return false
     }
     const role = (apiUser as { role?: string }).role
-    if (role === 'admin' || role === 'super_admin' || role === 'partner') {
-      setAuthError('This account cannot access the driver app')
+    if (isStaffRole(role) && !allowStaffInDriverApp()) {
+      setAuthError(DRIVER_APP_STAFF_BLOCK_MESSAGE)
       return false
     }
     setUser(mapApiUserToContext(apiUser))

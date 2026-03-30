@@ -18,19 +18,21 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: (() => {
-    const raw = storage.getString('auth_user');
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
+    try {
+      const raw = storage.getString('auth_user');
+      return raw ? (JSON.parse(raw) as AuthUser) : null;
+    } catch {
+      return null;
+    }
   })(),
-  token: storage.getString('auth_token') ?? null,
-  isAuthenticated: !!storage.getString('auth_token'),
+  token: null,
+  isAuthenticated: false,
   setAuth: (user, token) => {
     storage.set('auth_user', JSON.stringify(user));
-    storage.set('auth_token', token);
     set({ user, token, isAuthenticated: true });
   },
   logout: () => {
     storage.delete('auth_user');
-    storage.delete('auth_token');
     set({ user: null, token: null, isAuthenticated: false });
   },
 }));

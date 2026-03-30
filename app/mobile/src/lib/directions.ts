@@ -10,16 +10,26 @@ const GEOCODING_BASE = 'https://api.mapbox.com/geocoding/v5/mapbox.places';
 
 export type DirectionsProfile = 'driving' | 'driving-traffic';
 
+export interface StepIntersection {
+  classes?: string[];  // e.g. ['traffic_signal'], ['stop_sign']
+}
+
 export interface DirectionsStep {
   instruction: string;
   distance: string;
   distanceMeters: number;
   duration: string;
   maneuver: string;
+  /** Road name of this step (from Mapbox `step.name`). */
+  name?: string;
   lanes?: string;
   lat: number;
   lng: number;
+  /** Intersections along this step. First entry is usually the turn point. */
+  intersections?: StepIntersection[];
 }
+
+export type CongestionLevel = 'low' | 'moderate' | 'heavy' | 'severe' | 'unknown';
 
 export interface DirectionsResult {
   polyline: Coordinate[];
@@ -29,6 +39,8 @@ export interface DirectionsResult {
   distanceText: string;
   durationText: string;
   routeType?: 'best' | 'eco';
+  congestion?: CongestionLevel[];
+  maxspeeds?: (number | null)[];
 }
 
 export interface GeocodeResult {
@@ -37,6 +49,9 @@ export interface GeocodeResult {
   lat: number;
   lng: number;
   placeType?: string;
+  category?: string;
+  maki?: string;
+  place_id?: string;
 }
 
 function formatDistance(meters: number): string {
@@ -73,10 +88,15 @@ interface RawRoute {
   legs: Array<{
     steps: Array<{
       maneuver?: { instruction?: string; modifier?: string; type?: string; location?: [number, number] };
+      name?: string;
       distance: number;
       duration: number;
       intersections?: Array<{ lanes?: unknown }>;
     }>;
+    annotation?: {
+      congestion?: string[];
+      maxspeed?: Array<{ speed?: number; unit?: string; unknown?: boolean }>;
+    };
   }>;
   distance: number;
   duration: number;
@@ -87,6 +107,9 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
     (coord) => ({ lat: coord[1], lng: coord[0] }),
   );
   const steps: DirectionsStep[] = [];
+  const allCongestion: CongestionLevel[] = [];
+  const allMaxspeeds: (number | null)[] = [];
+
   for (const leg of route.legs) {
     for (const step of leg.steps) {
       steps.push({
@@ -95,10 +118,32 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
         distanceMeters: step.distance,
         duration: formatDuration(step.duration),
         maneuver: mapboxManeuverToSimple(step.maneuver?.modifier, step.maneuver?.type),
+        name: typeof step.name === 'string' && step.name ? step.name : undefined,
         lanes: step.intersections?.[0]?.lanes ? JSON.stringify(step.intersections[0].lanes) : undefined,
         lat: step.maneuver?.location?.[1] ?? 0,
         lng: step.maneuver?.location?.[0] ?? 0,
+        intersections: Array.isArray(step.intersections)
+          ? step.intersections.map((int: any) => ({
+              classes: Array.isArray(int.classes) ? (int.classes as string[]) : [],
+            }))
+          : undefined,
       });
+    }
+    if (leg.annotation?.congestion) {
+      for (const c of leg.annotation.congestion) {
+        allCongestion.push(
+          c === 'low' || c === 'moderate' || c === 'heavy' || c === 'severe' ? c : 'unknown',
+        );
+      }
+    }
+    if (leg.annotation?.maxspeed) {
+      for (const ms of leg.annotation.maxspeed) {
+        if (ms.unknown || typeof ms.speed !== 'number') {
+          allMaxspeeds.push(null);
+        } else {
+          allMaxspeeds.push(ms.unit === 'km/h' ? Math.round(ms.speed * 0.621371) : ms.speed);
+        }
+      }
     }
   }
   return {
@@ -109,34 +154,56 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
     distanceText: formatDistance(route.distance),
     durationText: formatDuration(route.duration),
     routeType,
+    congestion: allCongestion.length > 0 ? allCongestion : undefined,
+    maxspeeds: allMaxspeeds.length > 0 ? allMaxspeeds : undefined,
   };
 }
 
 export async function forwardGeocode(
   query: string,
   proximity?: Coordinate,
-  limit = 8,
+  limit = 10,
 ): Promise<GeocodeResult[]> {
   if (!MAPBOX_TOKEN || !query.trim()) return [];
   const params = new URLSearchParams({
     access_token: MAPBOX_TOKEN,
     limit: String(limit),
     language: 'en',
-    types: 'address,place,poi',
+    autocomplete: 'true',
+    fuzzyMatch: 'true',
+    types: 'poi,address,place,locality,neighborhood',
   });
   if (proximity) params.set('proximity', `${proximity.lng},${proximity.lat}`);
   try {
     const res = await fetch(`${GEOCODING_BASE}/${encodeURIComponent(query)}.json?${params}`);
-    if (!res.ok) return [];
+    if (!res.ok) {
+      if (__DEV__) console.warn('[geocode] HTTP', res.status, await res.text().catch(() => ''));
+      return [];
+    }
     const data = await res.json();
-    return (data.features ?? []).map((f: { text?: string; place_name?: string; center?: [number, number]; place_type?: string[] }) => ({
-      name: f.text ?? f.place_name ?? query,
-      address: f.place_name,
-      lng: f.center?.[0] ?? 0,
-      lat: f.center?.[1] ?? 0,
-      placeType: f.place_type?.[0],
-    }));
-  } catch {
+    return (data.features ?? []).map((f: any) => {
+      const contextParts: string[] = [];
+      if (Array.isArray(f.context)) {
+        for (const ctx of f.context) {
+          if (ctx.id?.startsWith('place.') || ctx.id?.startsWith('region.'))
+            contextParts.push(ctx.text);
+        }
+      }
+      const shortAddress = contextParts.length > 0
+        ? `${f.address ? f.address + ' ' : ''}${f.text ?? ''}${contextParts.length ? ', ' + contextParts.join(', ') : ''}`
+        : f.place_name ?? '';
+      return {
+        name: f.text ?? f.place_name ?? query,
+        address: shortAddress,
+        lng: f.center?.[0] ?? 0,
+        lat: f.center?.[1] ?? 0,
+        placeType: f.place_type?.[0],
+        category: Array.isArray(f.properties?.category) ? f.properties.category[0] : f.properties?.category,
+        maki: f.properties?.maki,
+      };
+    });
+  } catch (err) {
+    if (__DEV__) console.warn('[geocode] error', err);
     return [];
   }
 }
@@ -184,6 +251,7 @@ export async function getMapboxDirections(
     steps: 'true',
     alternatives: String(options?.alternatives ?? false),
     language: 'en',
+    annotations: 'congestion,maxspeed,speed',
   });
   if (options?.exclude) params.set('exclude', options.exclude);
   if (typeof options?.maxHeightMeters === 'number' && Number.isFinite(options.maxHeightMeters)) {
@@ -227,10 +295,10 @@ export async function getMapboxRouteOptions(
   try {
     const [drivingRes, trafficRes] = await Promise.all([
       fetch(
-        `${DIRECTIONS_BASE}/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?access_token=${MAPBOX_TOKEN}&geometries=geojson&overview=full&steps=true&alternatives=true&language=en${maxHeightParam}${excludeParam}`,
+        `${DIRECTIONS_BASE}/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?access_token=${MAPBOX_TOKEN}&geometries=geojson&overview=full&steps=true&alternatives=true&language=en&annotations=congestion,maxspeed,speed${maxHeightParam}${excludeParam}`,
       ).then((r) => (r.ok ? r.json() : { routes: [] })),
       fetch(
-        `${DIRECTIONS_BASE}/${modeConfig.profile}/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?access_token=${MAPBOX_TOKEN}&geometries=geojson&overview=full&steps=true&alternatives=false&language=en${maxHeightParam}${excludeParam}`,
+        `${DIRECTIONS_BASE}/${modeConfig.profile}/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?access_token=${MAPBOX_TOKEN}&geometries=geojson&overview=full&steps=true&alternatives=false&language=en&annotations=congestion,maxspeed,speed${maxHeightParam}${excludeParam}`,
       ).then((r) => (r.ok ? r.json() : { routes: [] })),
     ]);
 

@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Alert, Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
@@ -26,7 +27,7 @@ type Props = {
 };
 
 export default function AuthScreen({ route }: Props) {
-  const { login, signup, forgotPassword, resendVerification, authError, isLoading } = useAuth();
+  const { login, signup, forgotPassword, resendVerification, authError, clearAuthError, isLoading, isAuthSubmitting } = useAuth();
   const { colors } = useTheme();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [name, setName] = useState('');
@@ -50,8 +51,9 @@ export default function AuthScreen({ route }: Props) {
       setMode(incoming);
       setLocalError(null);
       setForgotMode(false);
+      clearAuthError();
     }
-  }, [route?.params?.mode]);
+  }, [route?.params?.mode, clearAuthError]);
 
   const handleSubmit = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -107,7 +109,8 @@ export default function AuthScreen({ route }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView style={[s.container, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <Image source={require('../../assets/brand-logo.png')} style={s.logoImage} resizeMode="contain" />
         <Text style={[s.logo, { color: colors.primary }]}>SnapRoad</Text>
@@ -164,9 +167,9 @@ export default function AuthScreen({ route }: Props) {
 
         {error && <Text style={[s.error, { color: colors.danger }]}>{error}</Text>}
 
-        <TouchableOpacity onPress={forgotMode ? handleForgotPassword : handleSubmit} disabled={isLoading || forgotSending || resendSending} activeOpacity={0.85}>
+        <TouchableOpacity onPress={forgotMode ? handleForgotPassword : handleSubmit} disabled={isLoading || isAuthSubmitting || forgotSending || resendSending} activeOpacity={0.85}>
           <LinearGradient colors={[colors.ctaGradientStart, colors.ctaGradientEnd]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.ctaBtn}>
-            {(isLoading || forgotSending || resendSending) ? <ActivityIndicator color="#fff" /> : (
+            {(isLoading || isAuthSubmitting || forgotSending || resendSending) ? <ActivityIndicator color="#fff" /> : (
               <Text style={s.ctaText}>
                 {forgotMode ? 'Send Reset Email' : (mode === 'signin' ? 'Sign In' : 'Create Account')}
               </Text>
@@ -177,7 +180,7 @@ export default function AuthScreen({ route }: Props) {
         {mode === 'signin' && (
           <TouchableOpacity
             style={s.forgotBtn}
-            onPress={() => { setForgotMode((prev) => !prev); setLocalError(null); }}
+            onPress={() => { setForgotMode((prev) => !prev); setLocalError(null); clearAuthError(); }}
           >
             <Text style={{ color: colors.textTertiary, fontSize: 13 }}>
               {forgotMode ? 'Back to sign in' : 'Forgot password?'}
@@ -187,7 +190,7 @@ export default function AuthScreen({ route }: Props) {
         <TouchableOpacity
           style={s.forgotBtn}
           onPress={handleResendVerification}
-          disabled={resendSending || isLoading}
+          disabled={resendSending || isLoading || isAuthSubmitting}
         >
           <Text style={{ color: colors.textTertiary, fontSize: 13, opacity: resendSending ? 0.6 : 1 }}>
             Resend verification email
@@ -205,6 +208,7 @@ export default function AuthScreen({ route }: Props) {
         </TouchableOpacity>}
       </ScrollView>
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

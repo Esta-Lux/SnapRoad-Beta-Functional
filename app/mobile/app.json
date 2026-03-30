@@ -60,11 +60,6 @@
       "expo-secure-store"
     ],
     "extra": {
-      "mapboxPublicToken": "pk.eyJ1Ijoic25hcHJvYWQiLCJhIjoiY21rdDkxbXR0MTRiODNsb2Q4dDdoaHFraSJ9.gE8IUpGUVsu50hH30SYAtg",
-      "apiUrl": "http://localhost:8001",
-      "supabaseUrl": "https://cuseezsdaqlbwlxnjsyr.supabase.co",
-      "supabaseAnonKey": "sb_publishable_nzMWmL8pGRDgHciQLVcbHw_8qa65YZl",
-      "stripePublishableKey": "pk_test_replace_with_real_test_publishable_key",
       "eas": {
         "projectId": "b800018b-79d3-4b8e-bbad-f5d628ee6a60"
       }

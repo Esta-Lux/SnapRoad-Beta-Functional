@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as Location from 'expo-location';
-import { Magnetometer } from 'expo-sensors';
 import { storage } from '../utils/storage';
 import type { Coordinate } from '../types';
 
@@ -34,6 +33,17 @@ function persistLocation(lat: number, lng: number) {
 }
 
 const DEFAULT_LOCATION: Coordinate = { lat: 39.9612, lng: -82.9988 };
+const HEADING_SMOOTHING = 0.2;
+
+function smoothHeading(current: number, raw: number): number {
+  let delta = raw - current;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+  let result = current + delta * HEADING_SMOOTHING;
+  if (result < 0) result += 360;
+  if (result >= 360) result -= 360;
+  return result;
+}
 
 export function useLocation() {
   const cached = readCachedLocation();
@@ -47,8 +57,8 @@ export function useLocation() {
   });
 
   const watchRef = useRef<Location.LocationSubscription | null>(null);
-  const magnetoSubRef = useRef<{ remove: () => void } | null>(null);
-  const headingRef = useRef(0);
+  const headingSubRef = useRef<Location.LocationSubscription | null>(null);
+  const smoothedRef = useRef(0);
 
   const startWatching = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -87,29 +97,33 @@ export function useLocation() {
 
         persistLocation(lat, lng);
 
-        setState((prev) => ({
-          ...prev,
-          location: { lat, lng },
-          speed: speedMph,
-          accuracy: loc.coords.accuracy ?? null,
-          isLocating: false,
-          heading:
-            typeof gpsHeading === 'number' && gpsHeading >= 0 && speedMph > 2
-              ? gpsHeading
-              : prev.heading,
-        }));
+        const useGpsCourse = typeof gpsHeading === 'number' && gpsHeading >= 0 && speedMph > 3;
+
+        setState((prev) => {
+          let newHeading = prev.heading;
+          if (useGpsCourse) {
+            smoothedRef.current = smoothHeading(smoothedRef.current, gpsHeading);
+            newHeading = smoothedRef.current;
+          }
+          return {
+            ...prev,
+            location: { lat, lng },
+            speed: speedMph,
+            accuracy: loc.coords.accuracy ?? null,
+            isLocating: false,
+            heading: newHeading,
+          };
+        });
       },
     );
 
-    Magnetometer.setUpdateInterval(100);
-    magnetoSubRef.current = Magnetometer.addListener((data) => {
-      const { x, y } = data;
-      let angle = Math.atan2(y, x) * (180 / Math.PI);
-      angle = (angle + 360) % 360;
-      headingRef.current = angle;
+    headingSubRef.current = await Location.watchHeadingAsync((h) => {
+      const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+      if (typeof deg !== 'number' || !Number.isFinite(deg)) return;
       setState((prev) => {
-        if (prev.speed > 2) return prev;
-        return { ...prev, heading: angle };
+        if (prev.speed > 3) return prev;
+        smoothedRef.current = smoothHeading(smoothedRef.current, deg);
+        return { ...prev, heading: smoothedRef.current };
       });
     });
   }, []);
@@ -118,7 +132,7 @@ export function useLocation() {
     startWatching();
     return () => {
       watchRef.current?.remove();
-      magnetoSubRef.current?.remove();
+      headingSubRef.current?.remove();
     };
   }, [startWatching]);
 

@@ -13,7 +13,7 @@ export default function OHGOCameraPopup({ camera, onClose }: Props) {
   const [imgError, setImgError] = useState(false)
   const [thumbErrors, setThumbErrors] = useState<Set<number>>(new Set())
   const [fullscreen, setFullscreen] = useState(false)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const view = camera.cameraViews?.[viewIndex]
   const hasValidView = view && (view.largeUrl || view.smallUrl)
@@ -40,7 +40,10 @@ export default function OHGOCameraPopup({ camera, onClose }: Props) {
       setImgTimestamp(Date.now())
       setTimeout(() => setIsRefreshing(false), 500)
     }, 5000)
-    return () => clearInterval(intervalRef.current)
+    return () => {
+      const id = intervalRef.current
+      if (id != null) clearInterval(id)
+    }
   }, [])
 
   const imageUrl = hasValidView

@@ -30,6 +30,7 @@ import type {
 import { getSupabaseClient } from '@/lib/supabaseClient';
 
 const API_URL_OVERRIDE_KEY = 'snaproad_api_url_override';
+const IS_PRODUCTION = (import.meta.env.MODE === 'production');
 
 function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, '');
@@ -41,7 +42,8 @@ function isLoopbackUrl(url: string): boolean {
 
 function isTunnelHost(): boolean {
   try {
-    return window.location.hostname.endsWith('.tunnelmole.net');
+    const h = window.location.hostname;
+    return h.endsWith('.tunnelmole.net') || h.endsWith('.trycloudflare.com') || h.endsWith('.loca.lt');
   } catch {
     return false;
   }
@@ -58,28 +60,23 @@ function resolveInitialBaseUrl(): string {
     import.meta.env.REACT_APP_BACKEND_URL ||
     '';
 
-  // Allow runtime override for tunnel/dev debugging.
+  // Allow runtime override for tunnel/dev debugging only in non-production builds.
   // - `?api=https://....tunnelmole.net` sets and persists the override.
   // - localStorage override persists across refreshes.
   try {
-    const params = new URLSearchParams(window.location.search);
-    const fromQuery = params.get('api');
-    if (fromQuery && /^https?:\/\//i.test(fromQuery)) {
-      const normalized = normalizeBaseUrl(fromQuery);
-      localStorage.setItem(API_URL_OVERRIDE_KEY, normalized);
-      // #region agent log
-      void 0
-      // #endregion
-      return normalized;
-    }
+    if (!IS_PRODUCTION) {
+      const params = new URLSearchParams(window.location.search);
+      const fromQuery = params.get('api');
+      if (fromQuery && /^https?:\/\//i.test(fromQuery)) {
+        const normalized = normalizeBaseUrl(fromQuery);
+        localStorage.setItem(API_URL_OVERRIDE_KEY, normalized);
+        return normalized;
+      }
 
-    const fromStorage = localStorage.getItem(API_URL_OVERRIDE_KEY);
-    if (fromStorage && /^https?:\/\//i.test(fromStorage)) {
-      const normalized = normalizeBaseUrl(fromStorage);
-      // #region agent log
-      void 0
-      // #endregion
-      return normalized;
+      const fromStorage = localStorage.getItem(API_URL_OVERRIDE_KEY);
+      if (fromStorage && /^https?:\/\//i.test(fromStorage)) {
+        return normalizeBaseUrl(fromStorage);
+      }
     }
   } catch {
     // ignore (SSR / private mode / blocked storage)
@@ -109,11 +106,50 @@ function resolveInitialBaseUrl(): string {
 
 let apiBaseUrl = resolveInitialBaseUrl();
 
+/** FastAPI returns JSON; Vite proxy errors and tunnels may return HTML or empty bodies. */
+async function parseApiResponseBody(
+  response: Response,
+): Promise<{ ok: true; data: unknown } | { ok: false; error: string }> {
+  const text = await response.text();
+  const status = response.status;
+  const ct = (response.headers.get('content-type') || '').toLowerCase();
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return {
+      ok: false,
+      error: `Empty response (HTTP ${status}). Start the API on port 8001 or check VITE_API_URL / Vite /api proxy.`,
+    };
+  }
+  try {
+    return { ok: true, data: JSON.parse(text) as unknown };
+  } catch {
+    if ([530, 524, 502, 521, 522, 523].includes(status)) {
+      return {
+        ok: false,
+        error: `HTTP ${status} — tunnel or edge could not reach your API. Restart cloudflared (or dev:mobile), update the tunnel URL in .env, and ensure FastAPI is on :8001. For web dev, use Vite proxy (empty API base) or a working VITE_API_URL.`,
+      };
+    }
+    const htmlish = ct.includes('text/html') || /<\s*html/i.test(text);
+    const snippet = trimmed.slice(0, 140).replace(/\s+/g, ' ');
+    if (htmlish) {
+      return {
+        ok: false,
+        error: `Server returned HTML (HTTP ${status}), not JSON — backend down, wrong API URL, or not proxied to FastAPI.`,
+      };
+    }
+    return {
+      ok: false,
+      error: `Not JSON (HTTP ${status}): ${snippet}${trimmed.length > 140 ? '…' : ''}`,
+    };
+  }
+}
+
 export function getApiBaseUrl(): string {
   return apiBaseUrl;
 }
 
 export function setApiBaseUrlOverride(url: string | null): void {
+  if (IS_PRODUCTION) return;
   try {
     if (!url) {
       localStorage.removeItem(API_URL_OVERRIDE_KEY);
@@ -206,12 +242,11 @@ class ApiService {
         signal: fetchInit.signal ?? controller.signal,
       }).finally(() => clearTimeout(timeout));
 
-      let data: unknown;
-      try {
-        data = await response.json();
-      } catch {
-        return { success: false, error: 'Invalid response from server' };
+      const parsed = await parseApiResponseBody(response);
+      if (!parsed.ok) {
+        return { success: false, error: parsed.error };
       }
+      const data = parsed.data;
 
       if (!response.ok) {
         if (response.status === 401 && token && !endpoint.startsWith('/api/auth/')) {
@@ -224,9 +259,9 @@ class ApiService {
                 Authorization: `Bearer ${refreshedToken}`,
               },
             });
-            const retryPayload = await retryResponse.json().catch(() => null);
-            if (retryResponse.ok) {
-              return { success: true, data: retryPayload as T };
+            const retryParsed = await parseApiResponseBody(retryResponse);
+            if (retryParsed.ok && retryResponse.ok) {
+              return { success: true, data: retryParsed.data as T };
             }
           }
           this.setToken(null);
