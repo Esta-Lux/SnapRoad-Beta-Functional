@@ -193,8 +193,8 @@ def update_my_location(body: LocationUpdateBody, current_user: dict = Depends(ge
     uid = current_user["id"]
     try:
         from database import get_supabase
-        from config import SUPABASE_URL, SUPABASE_SECRET_KEY
-        if SUPABASE_URL and SUPABASE_SECRET_KEY:
+        from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
             sb = get_supabase()
             sb.table("live_locations").upsert({
                 "user_id": uid,
@@ -220,8 +220,8 @@ def set_location_sharing(body: LocationSharingBody, current_user: dict = Depends
     uid = current_user["id"]
     try:
         from database import get_supabase
-        from config import SUPABASE_URL, SUPABASE_SECRET_KEY
-        if SUPABASE_URL and SUPABASE_SECRET_KEY:
+        from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
             sb = get_supabase()
             sb.table("live_locations").update({
                 "is_sharing": body.is_sharing,
@@ -240,8 +240,8 @@ def send_location_tag(body: LocationTagBody, current_user: dict = Depends(get_cu
     uid = current_user["id"]
     try:
         from database import get_supabase
-        from config import SUPABASE_URL, SUPABASE_SECRET_KEY
-        if SUPABASE_URL and SUPABASE_SECRET_KEY:
+        from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
             sb = get_supabase()
             sb.table("location_tags").insert({
                 "from_user_id": uid,

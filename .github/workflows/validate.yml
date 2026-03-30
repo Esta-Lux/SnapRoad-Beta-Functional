@@ -1,14 +1,20 @@
 # -----------------------------------------------------------------------------
+# Automated checks run HERE ONLY — push/PR to develop|main runs backend tests + coverage,
+# frontend lint/tests/build + Playwright E2E, mobile tsc, Sonar (if token set).
+# You do not need to install Playwright or run the full suite locally before merge.
+# -----------------------------------------------------------------------------
 # Multi-domain web (app. / partner. / admin.): operational checklist (not CI)
 # - Supabase Auth: add each production origin to Redirect URLs.
 # - OAuth providers: allowlist redirect URIs for each origin.
 # - Backend: include all three origins in CHECKOUT_ALLOWED_ORIGINS (or equivalent).
 # - Static hosting: SPA fallback so deep links (e.g. /portal/partner) serve index.html.
 # -----------------------------------------------------------------------------
+# Optional for CI: org var STAGING_API_URL → run tests/integration against staging.
+# SonarCloud: sonarqube job + repo-root sonar-project.properties
+# -----------------------------------------------------------------------------
 
 name: Validate
 
-# `develop` = staging / pre-launch integration; `main` = production release line — both get CI.
 on:
   pull_request:
     branches: [develop, main]
@@ -43,10 +49,39 @@ jobs:
       - name: Smoke import app
         run: python -c "import main"
 
-      # Integration-style tests expect a running API (REACT_APP_BACKEND_URL). They are
-      # informational on PRs until a dedicated test stack or secrets are wired in.
-      - name: pytest (non-blocking)
-        run: python -m pytest -q
+      - name: Install test tooling
+        run: python -m pip install pytest pytest-cov
+
+      - name: Unit + API (in-process) tests + coverage (Sonar)
+        env:
+          SENTRY_DSN: ""
+          ENVIRONMENT: development
+        run: |
+          python -m pytest tests/test_ci_smoke.py tests/unit -q \
+            --cov=. \
+            --cov-report=xml:coverage.xml \
+            --junitxml=test-results.xml
+
+      - name: Upload backend reports for Sonar
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonar-backend-reports
+          path: |
+            app/backend/coverage.xml
+            app/backend/test-results.xml
+
+      - name: Integration tests (staging)
+        if: ${{ vars.STAGING_API_URL != '' }}
+        env:
+          REACT_APP_BACKEND_URL: ${{ vars.STAGING_API_URL }}
+        run: python -m pytest tests/integration -m integration -q
+
+      - name: Legacy HTTP pytest suite (non-blocking)
+        run: |
+          python -m pytest tests/ -q \
+            --ignore=tests/unit \
+            --ignore=tests/integration \
+            --ignore=tests/test_ci_smoke.py
         continue-on-error: true
 
   frontend:
@@ -55,7 +90,6 @@ jobs:
       run:
         working-directory: app/frontend
     env:
-      # Non-secret CI placeholders so `vite build` is deterministic without repo .env
       VITE_API_URL: ""
       VITE_BACKEND_URL: ""
       VITE_SUPABASE_URL: ""
@@ -77,7 +111,21 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
+      - run: npm run test:coverage
       - run: npm run build
+
+      - name: E2E (Playwright)
+        env:
+          CI: true
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+
+      - name: Upload frontend LCOV for Sonar
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonar-frontend-lcov
+          path: app/frontend/coverage/lcov.info
 
   mobile:
     runs-on: ubuntu-latest
@@ -95,3 +143,30 @@ jobs:
 
       - run: npm ci
       - run: npx tsc --noEmit
+
+  sonarqube:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, mobile]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sonar-backend-reports
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sonar-frontend-lcov
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

@@ -46,7 +46,7 @@ def _verify_login(sb, uid: str):
         print("  -> password reset done")
     except Exception as admin_err:
         print(f"  -> Admin API password reset failed: {admin_err}")
-        print("  -> NOTE: You may need to use the service_role key in SUPABASE_SECRET_KEY")
+        print("  -> NOTE: Use the service_role secret in SUPABASE_SERVICE_ROLE_KEY (not the anon key)")
         print("  -> The profile has been created/updated. Try logging in with the password.")
 
 

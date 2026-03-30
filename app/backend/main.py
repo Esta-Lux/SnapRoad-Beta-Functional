@@ -49,7 +49,7 @@ from routes.webhooks import router as webhooks_router
 from routes.payments import router as payments_router
 from routes.family import router as family_router
 from routes.photo_reports import router as photo_reports_router
-from config import JWT_SECRET, SUPABASE_URL, SUPABASE_SECRET_KEY, OPENAI_API_KEY, validate_runtime_config
+from config import JWT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY, validate_runtime_config
 from services.telemetry_service import telemetry_service
 from database import get_supabase
 
@@ -177,7 +177,7 @@ def create_app() -> FastAPI:
             "env_file_exists": (Path(__file__).resolve().parent / ".env").is_file(),
             "jwt_configured": bool(JWT_SECRET),
             "supabase_configured": bool(
-                (SUPABASE_URL or "").strip() and (SUPABASE_SECRET_KEY or "").strip()
+                (SUPABASE_URL or "").strip() and (SUPABASE_SERVICE_ROLE_KEY or "").strip()
             ),
             "mapkit_configured": bool(
                 (os.environ.get("MAPKIT_KEY_ID") or "").strip()

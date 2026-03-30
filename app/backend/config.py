@@ -4,7 +4,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY")
+# Server-side PostgREST/Auth admin operations MUST use the service_role JWT from
+# Supabase Dashboard → Project Settings → API ("service_role" secret).
+# Do NOT put the anon / publishable key here — RLS will block inserts/updates (e.g. profiles).
+SUPABASE_SERVICE_ROLE_KEY = (
+    (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SECRET_KEY") or "").strip()
+)
+# Backward-compatible name; same value as SUPABASE_SERVICE_ROLE_KEY (not the anon key).
+SUPABASE_SECRET_KEY = SUPABASE_SERVICE_ROLE_KEY
 SUPABASE_PUBLISHABLE_KEY = os.environ.get("SUPABASE_PUBLISHABLE_KEY")
 SUPABASE_DB_PASSWORD = os.environ.get("SUPABASE_DB_PASSWORD")  # Optional: DB password for direct connection
 
