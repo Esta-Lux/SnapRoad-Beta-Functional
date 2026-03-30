@@ -54,7 +54,7 @@ from routes.photo_reports import router as photo_reports_router
 from config import (
     JWT_SECRET,
     SUPABASE_URL,
-    SUPABASE_SECRET_KEY,
+    SUPABASE_SERVICE_ROLE_KEY,
     OPENAI_API_KEY,
     IS_PRODUCTION,
     OHGO_API_KEY,
