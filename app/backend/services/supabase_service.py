@@ -144,11 +144,13 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
     """Returns (profile_dict, None) on success or (None, error_message) on failure."""
     import time
 
+    raw_email = (email or "").strip()
     email = (email or "").strip().lower()
     if not email:
         return None, "Invalid email or password"
 
-    max_retries = 3
+    # Keep login latency bounded; frontend/mobile otherwise hit client-side timeouts.
+    max_retries = 2
     for attempt in range(max_retries):
         try:
             sb = _sb()
@@ -184,7 +186,7 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
                 logger.warning(f"Password mismatch for {email}")
                 return None, "Invalid email or password"
 
-            logger.info("Legacy password verified for %s", raw_email)
+            logger.info("Password verified for %s", raw_email or email)
             return profile_data, None
 
         except Exception as e:
@@ -196,7 +198,7 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
                 if attempt < max_retries - 1:
                     logger.warning(
                         "Network error for %s (attempt %s/%s): %s. Retrying...",
-                        raw_email,
+                        raw_email or email,
                         attempt + 1,
                         max_retries,
                         e,
@@ -204,16 +206,16 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
                     from database import reset_supabase_client
 
                     reset_supabase_client()
-                    time.sleep(0.5)
+                    time.sleep(0.25)
                     continue
                 logger.error(
                     "Network error for %s after %s attempts: %s",
-                    raw_email,
+                    raw_email or email,
                     max_retries,
                     e,
                 )
                 return None, "Service temporarily unavailable. Please try again."
-            logger.warning("sb_login_user error for %s: %s", raw_email, e)
+            logger.warning("sb_login_user error for %s: %s", raw_email or email, e)
             return None, str(e)
 
     return None, "Invalid email or password"
@@ -1100,8 +1102,10 @@ def sb_create_concern(payload: dict) -> Optional[dict]:
             "status": payload.get("status", "open"),
             "context": payload.get("context"),
         }
-        result = _sb().table("concerns").insert(data).execute()
-        return result.data[0] if result.data else None
+        # PostgREST often returns no body on insert unless we ask for representation.
+        result = _sb().table("concerns").insert(data).select("*").execute()
+        rows = result.data if result.data else []
+        return rows[0] if rows else None
     except Exception as e:
         if not _table_missing(e):
             logger.error(f"sb_create_concern: {e}")

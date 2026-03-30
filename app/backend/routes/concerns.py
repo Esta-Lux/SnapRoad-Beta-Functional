@@ -14,9 +14,12 @@ router = APIRouter(prefix="/api", tags=["Concerns"])
 
 class SubmitConcernBody(BaseModel):
     user_id: Optional[str] = None
-    category: str
+    category: Optional[str] = None
+    # Legacy mobile / older clients
+    type: Optional[str] = None
     title: Optional[str] = None
-    description: str
+    description: Optional[str] = None
+    message: Optional[str] = None
     severity: str = "medium"
     context: Optional[dict[str, Any]] = None
     status: str = "open"
@@ -29,16 +32,30 @@ def submit_concern(body: SubmitConcernBody, user: dict = Depends(get_current_use
     user_id = user.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
+    category = (body.category or body.type or "").strip()
+    description = (body.description or body.message or "").strip()
+    if not category or not description:
+        raise HTTPException(
+            status_code=422,
+            detail="category and description are required (use category + description, or legacy type + message)",
+        )
     payload = {
         "user_id": user_id,
-        "category": body.category,
-        "title": body.title or "",
-        "description": body.description,
+        "category": category,
+        "title": (body.title or "").strip() or category.replace("_", " ").title(),
+        "description": description,
         "severity": body.severity,
         "context": body.context,
         "status": body.status,
     }
     row = sb_create_concern(payload)
     if not row:
-        raise HTTPException(status_code=500, detail="Failed to save concern")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Could not save concern. Ensure table public.concerns exists "
+                "(run app/backend/sql/005_concerns_app_config.sql) and "
+                "SUPABASE_SERVICE_ROLE_KEY is set on the API."
+            ),
+        )
     return {"success": True, "data": {"id": str(row.get("id", ""))}}

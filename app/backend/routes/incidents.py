@@ -111,9 +111,10 @@ def report_incident(request: Request, report: IncidentReportCompat, user: dict =
     try:
         sb = get_supabase()
         payload = _to_road_report_payload(report, uid, now)
-        created = sb.table("road_reports").insert(payload).execute()
-        if created.data:
-            row = created.data[0]
+        created = sb.table("road_reports").insert(payload).select("*").execute()
+        rows = created.data or []
+        if rows:
+            row = rows[0]
             incident = {
                 "id": row.get("id"),
                 "type": row.get("type"),

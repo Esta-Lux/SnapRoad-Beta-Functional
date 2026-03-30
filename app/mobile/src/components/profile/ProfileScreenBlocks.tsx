@@ -1,5 +1,16 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+function formatGemsCompact(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return String(n);
+}
+
+function formatMilesCompact(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return String(Math.round(n));
+}
 
 type StatsProps = {
   cardBg: string;
@@ -12,24 +23,21 @@ type StatsProps = {
 };
 
 export function ProfileStatsStrip({ cardBg, text, sub, gems, rank, trips, miles }: StatsProps) {
+  const cols = [
+    { icon: 'diamond-outline' as const, val: formatGemsCompact(gems), lbl: 'Gems' },
+    { icon: 'trophy-outline' as const, val: `#${rank}`, lbl: 'Rank' },
+    { icon: 'car-outline' as const, val: String(trips), lbl: 'Trips' },
+    { icon: 'location-outline' as const, val: `${formatMilesCompact(miles)}`, lbl: 'Miles' },
+  ];
   return (
     <View style={[styles.statsRow, { backgroundColor: cardBg }]}>
-      <View style={styles.statCol}>
-        <Text style={[styles.statVal, { color: text }]}>{gems}</Text>
-        <Text style={[styles.statLbl, { color: sub }]}>Gems</Text>
-      </View>
-      <View style={styles.statCol}>
-        <Text style={[styles.statVal, { color: text }]}>#{rank}</Text>
-        <Text style={[styles.statLbl, { color: sub }]}>Rank</Text>
-      </View>
-      <View style={styles.statCol}>
-        <Text style={[styles.statVal, { color: text }]}>{trips}</Text>
-        <Text style={[styles.statLbl, { color: sub }]}>Trips</Text>
-      </View>
-      <View style={styles.statCol}>
-        <Text style={[styles.statVal, { color: text }]}>{miles}</Text>
-        <Text style={[styles.statLbl, { color: sub }]}>Miles</Text>
-      </View>
+      {cols.map((c) => (
+        <View key={c.lbl} style={styles.statCol}>
+          <Ionicons name={c.icon} size={14} color={sub} style={styles.statIcon} />
+          <Text style={[styles.statVal, { color: text }]}>{c.val}</Text>
+          <Text style={[styles.statLbl, { color: sub }]}>{c.lbl}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -72,6 +80,7 @@ const styles = StyleSheet.create({
   tabBtnText: { fontSize: 12, fontWeight: '700' },
   statsRow: { marginHorizontal: 16, marginBottom: 2, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 8, flexDirection: 'row' },
   statCol: { flex: 1, alignItems: 'center' },
-  statVal: { fontSize: 18, fontWeight: '800' },
-  statLbl: { fontSize: 11, marginTop: 2 },
+  statIcon: { marginBottom: 2 },
+  statVal: { fontSize: 17, fontWeight: '800' },
+  statLbl: { fontSize: 10, marginTop: 2, fontWeight: '600' },
 });

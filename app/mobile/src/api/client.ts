@@ -43,7 +43,8 @@ function resolveApiUrl(): string {
   apiMisconfigurationMessage = null;
 
   // 1. Explicit env var (highest priority) — required for off‑Wi‑Fi / Expo tunnel + cloudflared API
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  // Backward compatibility: support older API_URL env while preferring EXPO_PUBLIC_API_URL.
+  const envUrl = process.env.EXPO_PUBLIC_API_URL || process.env.API_URL;
   if (envUrl && envUrl.trim().length > 5) {
     const u = envUrl.trim();
     if (IS_PRODUCTION && !/^https:\/\//i.test(u)) {

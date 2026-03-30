@@ -5,7 +5,6 @@ import { Ionicons } from '@expo/vector-icons';
 import Skeleton from '../common/Skeleton';
 import { DRIVING_MODES } from '../../constants/modes';
 import type { DrivingMode, PlanTier, SavedLocation, SavedRoute, User } from '../../types';
-import type { ThemeColors } from '../../contexts/ThemeContext';
 import type { ProfileOverviewActionItem } from './types';
 export type {
   ProfileBadgeItem,
@@ -38,34 +37,113 @@ export function SectionHeader({ title, isLight }: { title: string; isLight: bool
 export function ProfileHeader({
   user,
   initials,
-  colors,
   planName,
+  level,
 }: {
   user: User | null;
   initials: string;
-  colors: ThemeColors;
   planName: string;
+  level: number;
 }) {
   return (
     <LinearGradient colors={['#1D4ED8', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerCard}>
-      <TouchableOpacity style={styles.avatarCircle}>
+      <TouchableOpacity style={styles.avatarCircle} accessibilityRole="button" accessibilityLabel="Profile avatar">
         <Text style={styles.avatarText}>{initials}</Text>
       </TouchableOpacity>
       <Text style={[styles.userName, { color: '#fff' }]}>{user?.name ?? 'Driver'}</Text>
-      <Text style={[styles.userEmail, { color: 'rgba(255,255,255,0.7)' }]}>{user?.email ?? ''}</Text>
-      <View style={[styles.planBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-        <Ionicons name="diamond-outline" size={12} color="#fff" />
-        <Text style={styles.planBadgeText}>{planName}</Text>
+      <View style={styles.headerLevelRow}>
+        <Text style={styles.headerLevelText}>Level {level}</Text>
+        <View style={[styles.planBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+          <Ionicons name="diamond-outline" size={12} color="#fff" />
+          <Text style={styles.planBadgeText}>{planName}</Text>
+        </View>
       </View>
+      <Text style={[styles.userEmail, { color: 'rgba(255,255,255,0.7)' }]}>{user?.email ?? ''}</Text>
     </LinearGradient>
   );
 }
+
+/** Compact “My Car” row — customize is coming soon; matches native list + CTA pattern. */
+export function MyCarRow({
+  cardBg,
+  text,
+  sub,
+  accent,
+  subtitle,
+}: {
+  cardBg: string;
+  text: string;
+  sub: string;
+  accent: string;
+  subtitle?: string;
+}) {
+  const line = subtitle ?? 'Ocean Blue sedan';
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={[myCarStyles.wrap, { backgroundColor: cardBg }]}
+      onPress={() =>
+        Alert.alert('My Car', 'Vehicle customization is coming soon. You’ll be able to save make, model, and color here.')
+      }
+      accessibilityRole="button"
+      accessibilityLabel="My Car, coming soon"
+    >
+      <View style={myCarStyles.iconWrap}>
+        <Ionicons name="car-sport-outline" size={22} color={accent} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={myCarStyles.titleRow}>
+          <Text style={[myCarStyles.title, { color: text }]}>My Car</Text>
+          <View style={myCarStyles.badgeSoon}>
+            <Text style={myCarStyles.badgeSoonText}>Coming soon</Text>
+          </View>
+        </View>
+        <Text style={[myCarStyles.sub, { color: sub }]} numberOfLines={1}>
+          {line}
+        </Text>
+      </View>
+      <Text style={[myCarStyles.cta, { color: accent }]} pointerEvents="none">
+        Customize <Text style={myCarStyles.ctaArrow}>→</Text>
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+const myCarStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(148,163,184,0.25)',
+  },
+  iconWrap: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(59,130,246,0.12)' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  title: { fontSize: 16, fontWeight: '800' },
+  badgeSoon: {
+    backgroundColor: 'rgba(245,158,11,0.22)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  badgeSoonText: { fontSize: 10, fontWeight: '800', color: '#B45309' },
+  sub: { fontSize: 12, marginTop: 4, fontWeight: '500' },
+  cta: { fontSize: 13, fontWeight: '700' },
+  ctaArrow: { fontWeight: '600' },
+});
 
 export function ProfileOverviewSection({
   actions,
   cardBg,
   text,
   sub,
+  level,
+  totalXp,
   onPressLevelProgress,
   onPressShareScore,
 }: {
@@ -73,19 +151,21 @@ export function ProfileOverviewSection({
   cardBg: string;
   text: string;
   sub: string;
+  level: number;
+  totalXp: number;
   onPressLevelProgress?: () => void;
-  onPressShareScore?: () => void;
+  onPressShareScore?: () => void | Promise<void>;
 }) {
   return (
     <>
       <TouchableOpacity activeOpacity={0.9} onPress={onPressLevelProgress} style={[styles.progressCard, { backgroundColor: cardBg }]}>
         <LinearGradient colors={['#2563EB', '#3B82F6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.progressGradient}>
           <View style={styles.progressLevelIcon}>
-            <Text style={styles.progressLevelText}>LVL</Text>
+            <Text style={styles.progressLevelText}>{level}</Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.progressTitle}>Level</Text>
-            <Text style={styles.progressSub}>0 XP total</Text>
+            <Text style={styles.progressSub}>{`${totalXp.toLocaleString()} XP total`}</Text>
           </View>
           <Text style={styles.progressAction}>View Progress</Text>
         </LinearGradient>
@@ -113,8 +193,8 @@ export function ProfileOverviewSection({
         <LinearGradient colors={['#3B82F6', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.shareScoreCta}>
           <Ionicons name="share-social-outline" size={16} color="#fff" />
           <View style={{ flex: 1 }}>
-            <Text style={styles.shareScoreTitle}>Share Trip Score</Text>
-            <Text style={styles.shareScoreSub}>Show off your safe driving!</Text>
+            <Text style={styles.shareScoreTitle}>Share driving snapshot</Text>
+            <Text style={styles.shareScoreSub}>Opens sheet · preview · system share</Text>
           </View>
           <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.9)" />
         </LinearGradient>
@@ -432,7 +512,9 @@ const styles = StyleSheet.create({
   headerCard: { margin: 16, borderRadius: 16, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 },
   avatarCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#3B82F6', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   avatarText: { color: '#fff', fontSize: 28, fontWeight: '800' },
-  userName: { fontSize: 22, fontWeight: '800', marginBottom: 2 },
+  userName: { fontSize: 22, fontWeight: '800', marginBottom: 6 },
+  headerLevelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' },
+  headerLevelText: { color: 'rgba(255,255,255,0.92)', fontSize: 13, fontWeight: '700' },
   userEmail: { fontSize: 13, marginBottom: 8 },
   planBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
   planBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
@@ -460,8 +542,8 @@ const styles = StyleSheet.create({
   upgradeBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   progressCard: { marginHorizontal: 16, marginBottom: 8, borderRadius: 12, overflow: 'hidden' },
   progressGradient: { paddingHorizontal: 12, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  progressLevelIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
-  progressLevelText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  progressLevelIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
+  progressLevelText: { color: '#fff', fontSize: 14, fontWeight: '800' },
   progressTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
   progressSub: { color: 'rgba(255,255,255,0.86)', fontSize: 11, marginTop: 1 },
   progressAction: { color: '#fff', fontSize: 12, fontWeight: '700' },

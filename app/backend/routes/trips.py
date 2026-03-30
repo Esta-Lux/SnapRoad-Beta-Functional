@@ -2,7 +2,8 @@ from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
 from datetime import datetime, timedelta
 import json
-from models.schemas import TripResult, FuelLog
+from models.schemas import TripResult, FuelLogCreate
+from middleware.auth import get_current_user
 from pydantic import BaseModel
 from uuid import uuid4
 from services.mock_data import (
@@ -377,12 +378,15 @@ def share_trip(trip_id: str):
 
 
 # ==================== FUEL ====================
+# In-memory fuel mock: available in all environments (not gated by _legacy_trips_guard).
+
+
 @router.get("/fuel/history")
 def get_fuel_history(
+    _user: dict = Depends(get_current_user),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
 ):
-    _legacy_trips_guard()
     start = (page - 1) * limit
     end = start + limit
     total = len(fuel_logs)
@@ -401,29 +405,40 @@ def get_fuel_history(
 
 
 @router.post("/fuel/logs")
-def log_fuel(entry: FuelLog):
-    _legacy_trips_guard()
+@router.post("/fuel/log")
+def log_fuel(entry: FuelLogCreate, user: dict = Depends(get_current_user)):
     new_id = str(uuid4())
-    total_cost = entry.total_cost if entry.total_cost is not None else entry.total
-    if total_cost is None:
-        total_cost = entry.gallons * entry.price_per_gallon
+    date_str = datetime.utcnow().date().isoformat()
+    total_cost = round(float(entry.gallons) * float(entry.price_per_gallon), 2)
+    prev_odom = None
+    if fuel_logs:
+        prev_odom = fuel_logs[0].get("odometer")
+    mpg_val = None
+    if prev_odom is not None and entry.odometer > float(prev_odom) and entry.gallons > 0:
+        mpg_val = round((float(entry.odometer) - float(prev_odom)) / float(entry.gallons), 1)
+    uid = str(user.get("user_id") or user.get("id") or "")
     new_entry = {
         "id": new_id,
-        "date": entry.date,
-        "station": entry.station,
-        "price_per_gallon": entry.price_per_gallon,
-        "gallons": entry.gallons,
+        "date": date_str,
+        "station": (entry.station or "Unknown").strip() or "Unknown",
+        "price_per_gallon": round(float(entry.price_per_gallon), 4),
+        "gallons": round(float(entry.gallons), 4),
         "total_cost": total_cost,
+        "total": total_cost,
+        "odometer": round(float(entry.odometer), 1),
+        "mpg": mpg_val,
+        "user_id": uid,
     }
     fuel_logs.insert(0, new_entry)
     return {"success": True, "message": "Fuel log entry added", "data": new_entry}
 
+
 @router.get("/fuel/logs")
 def get_fuel_logs(
+    _user: dict = Depends(get_current_user),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
 ):
-    _legacy_trips_guard()
     start = (page - 1) * limit
     end = start + limit
 
@@ -445,8 +460,7 @@ def get_fuel_logs(
 
 
 @router.get("/fuel/trends")
-def get_fuel_trends():
-    _legacy_trips_guard()
+def get_fuel_trends(_user: dict = Depends(get_current_user)):
     total_gallons = sum(f["gallons"] for f in fuel_logs)
     total_spent = sum(f.get("total_cost", f.get("total", 0)) for f in fuel_logs)
     avg_price = total_spent / total_gallons if total_gallons > 0 else 0
@@ -454,8 +468,7 @@ def get_fuel_trends():
 
 
 @router.get("/fuel/prices")
-def get_fuel_prices(lat: float = 39.9612, lng: float = -82.9988):
-    _legacy_trips_guard()
+def get_fuel_prices(_user: dict = Depends(get_current_user), lat: float = 39.9612, lng: float = -82.9988):
     return {
         "success": True,
         "data": {
@@ -469,17 +482,15 @@ def get_fuel_prices(lat: float = 39.9612, lng: float = -82.9988):
         },
     }
 
-@router.get("/api/fuel/stats")
-def get_fuel_stats():
-    _legacy_trips_guard()
+@router.get("/fuel/stats")
+def get_fuel_stats(_user: dict = Depends(get_current_user)):
     return {
         "success": True,
         "data": fuel_stats
     }
 
 @router.get("/fuel/analytics")
-def get_fuel_analytics(months: int = Query(default=3, ge=1, le=24)):
-    _legacy_trips_guard()
+def get_fuel_analytics(_user: dict = Depends(get_current_user), months: int = Query(default=3, ge=1, le=24)):
     monthly_data = []
     for i in range(months):
         month_date = datetime.now() - timedelta(days=30 * i)
@@ -544,12 +555,6 @@ if ENVIRONMENT == "production":
         "/api/trips/history/detailed",
         "/api/trips/weekly-insights",
         "/api/trips/{trip_id}/share",
-        "/api/fuel/history",
-        "/api/fuel/logs",
-        "/api/fuel/trends",
-        "/api/fuel/prices",
-        "/api/api/fuel/stats",
-        "/api/fuel/analytics",
         "/api/incidents/report-legacy",
         "/api/routes/history-3d",
     }

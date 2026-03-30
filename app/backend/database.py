@@ -53,9 +53,10 @@ def get_supabase():
                 "Supabase is not installed. Run: pip install supabase (or use app/backend/.venv)"
             ) from None
         # Windows + httpx HTTP/2 can raise WinError 10035 during reads; PostgREST uses sync httpx.
+        # Keep auth/data calls responsive; long hangs cause frontend request timeouts.
         _shared_httpx = httpx.Client(
             http2=False,
-            timeout=httpx.Timeout(120.0, connect=30.0),
+            timeout=httpx.Timeout(10.0, connect=5.0),
         )
         opts = ClientOptions(
             storage=SyncMemoryStorage(),

@@ -1,5 +1,5 @@
 import React, { useEffect, type ReactNode } from 'react';
-import { View, Modal as RNModal, StyleSheet, Pressable, Dimensions } from 'react-native';
+import { View, Modal as RNModal, StyleSheet, Pressable, Dimensions, Platform } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -61,12 +61,15 @@ export default function Modal({ visible, onClose, children }: Props) {
         </Animated.View>
 
         <Animated.View
+          needsOffscreenAlphaCompositing={false}
+          collapsable={false}
           style={[
             styles.sheet,
             {
               backgroundColor: colors.surface,
               paddingBottom: Math.max(insets.bottom, 20) + 16,
               borderTopColor: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)',
+              ...(Platform.OS === 'android' ? { elevation: 24 } : {}),
             },
             sheetStyle,
           ]}

@@ -75,15 +75,17 @@ export default function RewardsScreen() {
   const [showRouteHistory, setShowRouteHistory] = useState(false);
   const [challengeTarget, setChallengeTarget] = useState<{ id: string; name: string } | null>(null);
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (coords?: { lat: number; lng: number }) => {
     setLoading(true);
     setErrorMsg(null);
+    const lat = coords?.lat ?? location.lat;
+    const lng = coords?.lng ?? location.lng;
     try {
       const [profileRes, cRes, bRes, oRes, tRes, iRes, gRes, lRes] = await Promise.all([
         api.getProfile(),
         api.get<any>('/api/challenges'),
         api.get<any>('/api/badges'),
-        api.get<any>(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}&radius=5`),
+        api.get<any>(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=5`),
         api.get<any>('/api/trips?limit=10'),
         api.get<any>('/api/trips/weekly-insights'),
         api.get<any>('/api/gems/history'),
@@ -139,9 +141,13 @@ export default function RewardsScreen() {
     } catch {
       setErrorMsg('Could not refresh rewards data. Pull to retry.');
     } finally { setLoading(false); }
-  }, [location.lat, location.lng, updateUser]);
+  }, [updateUser, location.lat, location.lng]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => {
+    loadAll({ lat: location.lat, lng: location.lng });
+    // Intentionally load once on screen mount; subsequent refresh is manual via pull-to-refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const earnedBadges = badges.filter((b) => b.earned).length;
   const multiplier = user?.isPremium ? '2x' : '1x';
@@ -220,7 +226,13 @@ export default function RewardsScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
       <ScrollView style={{ flex: 1, backgroundColor: bg }}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadAll} tintColor="#3B82F6" />}>
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={() => loadAll({ lat: location.lat, lng: location.lng })}
+            tintColor="#3B82F6"
+          />
+        }>
       <RewardsHeader
         colors={colors}
         gems={user?.gems ?? 0}

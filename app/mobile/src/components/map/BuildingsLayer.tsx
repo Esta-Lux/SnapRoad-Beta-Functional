@@ -60,9 +60,6 @@ export default React.memo(function BuildingsLayer({
   const aoIntensity = isClassic ? 0 : isCalm ? (isNavigating ? 0.40 : 0.25) : 0.18;
   const aoRadius    = isClassic ? 0 : isCalm ? 3.5 : 2.5;
 
-  // Classic styles: render below the map's own label layers
-  const layerIndex = isClassic ? 40 : 70;
-
   try {
     return (
       <MapboxGL.FillExtrusionLayer
@@ -73,7 +70,7 @@ export default React.memo(function BuildingsLayer({
         filter={['==', ['get', 'extrude'], 'true']}
         minZoomLevel={14}
         maxZoomLevel={24}
-        layerIndex={layerIndex}
+        // Avoid hardcoded layer indexes; some styles have fewer layers and Android crashes.
         style={{
           fillExtrusionColor: [
             'interpolate', ['linear'], ['get', 'height'],

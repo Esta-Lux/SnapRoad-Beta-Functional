@@ -177,7 +177,16 @@ class FuelLog(BaseModel):
     total_cost: Optional[float] = None
     total: Optional[float] = None
     odometer: float
-    mpg: Optional[float]
+    mpg: Optional[float] = None
+    station: Optional[str] = "Unknown"
+
+
+class FuelLogCreate(BaseModel):
+    """Mobile / web payload to log a fill-up (server fills id, date, mpg from prior entry)."""
+
+    gallons: float
+    price_per_gallon: float
+    odometer: float
     station: Optional[str] = "Unknown"
 
 

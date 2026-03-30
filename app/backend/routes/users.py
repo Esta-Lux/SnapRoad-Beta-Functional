@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, HTTPException, Depends, Query
 from models.schemas import PlanUpdate, CarCustomization
 from services.mock_data import (
@@ -8,8 +9,10 @@ from services.mock_data import (
 )
 from middleware.auth import get_current_user
 from services.supabase_service import sb_get_profile, sb_update_profile
+from services.snap_road_score import compute_snap_road_fields
 
 router = APIRouter(prefix="/api", tags=["Users"])
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
 
 def _get_user_store(user: dict | None) -> dict:
@@ -76,32 +79,38 @@ def get_user_profile(auth_user: dict = Depends(get_current_user)):
                         user[k] = row[k]
         except Exception:
             pass
-    return {"success": True, "data": user}
+    payload = {**user, **compute_snap_road_fields(user)}
+    return {"success": True, "data": payload}
 
 
 @router.get("/user/stats")
 def get_user_stats(auth_user: dict = Depends(get_current_user)):
     user = _get_user_store(auth_user)
-    return {
-        "success": True,
-        "data": {
-            "total_miles": user.get("total_miles", 0),
-            "total_trips": user.get("total_trips", 0),
-            "safety_score": user.get("safety_score", 85),
-            "gems": user.get("gems", 0),
-            "level": user.get("level", 1),
-            "xp": user.get("xp", 0),
-        },
+    base = {
+        "total_miles": user.get("total_miles", 0),
+        "total_trips": user.get("total_trips", 0),
+        "safety_score": user.get("safety_score", 85),
+        "gems": user.get("gems", 0),
+        "level": user.get("level", 1),
+        "xp": user.get("xp", 0),
+        "streak": user.get("streak") if user.get("streak") is not None else user.get("safe_drive_streak", 0),
     }
+    return {"success": True, "data": {**base, **compute_snap_road_fields(user)}}
 
 
 @router.post("/user/plan")
 def update_user_plan(plan: PlanUpdate, auth_user: dict = Depends(get_current_user)):
     user = _get_user_store(auth_user)
     user_id = str(user.get("id"))
-    if plan.plan == "premium":
+    requested = str(plan.plan or "").strip().lower()
+    if requested == "premium":
         user["is_premium"] = True
         user["plan"] = "premium"
+        user["gem_multiplier"] = 2
+        user["plan_selected"] = True
+    elif requested == "family":
+        user["is_premium"] = True
+        user["plan"] = "family"
         user["gem_multiplier"] = 2
         user["plan_selected"] = True
     else:
@@ -115,7 +124,7 @@ def update_user_plan(plan: PlanUpdate, auth_user: dict = Depends(get_current_use
         "gem_multiplier": user["gem_multiplier"],
         "plan_selected": True,
     })
-    return {"success": True, "message": f"Plan updated to {plan.plan}", "data": users_db[user_id]}
+    return {"success": True, "message": f"Plan updated to {user['plan']}", "data": users_db[user_id]}
 
 
 @router.post("/user/car")

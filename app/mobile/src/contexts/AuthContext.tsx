@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, createContext, useContext, typ
 import Constants from 'expo-constants';
 import { api } from '../api/client';
 import type { User, ApiUser } from '../types';
+import { applySnapRoadFromProfilePayload } from '../utils/profileScore';
 
 interface AuthContextType {
   user: User | null;
@@ -60,22 +61,36 @@ function mapApiUserToContext(apiUser: Record<string, unknown>): User {
     .join('')
     .slice(0, 2)
     .toUpperCase();
-  return {
+  const planStr = typeof apiUser.plan === 'string' ? apiUser.plan : '';
+  let isPremium = Boolean(apiUser.is_premium);
+  let isFamilyPlan = false;
+  if (planStr) {
+    isFamilyPlan = planStr === 'family';
+    isPremium = planStr === 'premium' || planStr === 'family';
+  }
+
+  const user: User = {
     id: String(apiUser.id ?? ''),
     name,
     email: String(apiUser.email ?? ''),
     avatar: initials,
-    isPremium: Boolean(apiUser.is_premium ?? apiUser.plan === 'premium'),
-    isFamilyPlan: Boolean(apiUser.plan === 'family'),
+    isPremium,
+    isFamilyPlan,
     gems: Number(apiUser.gems ?? 0),
     level: Number(apiUser.level ?? 1),
     safetyScore: Number(apiUser.safety_score ?? 0),
-    streak: Number(apiUser.streak ?? 0),
+    streak: Number(apiUser.streak ?? apiUser.safe_drive_streak ?? 0),
     totalMiles: Number(apiUser.total_miles ?? 0),
     totalTrips: Number(apiUser.total_trips ?? 0),
     badges: Number(apiUser.badges ?? 0),
     rank: 0,
+    xp: apiUser.xp != null ? Number(apiUser.xp) : undefined,
+    plan: planStr || undefined,
+    gem_multiplier:
+      apiUser.gem_multiplier != null ? Number(apiUser.gem_multiplier) : undefined,
   };
+  applySnapRoadFromProfilePayload(user, apiUser);
+  return user;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -191,9 +206,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  const updateUser = (updates: Partial<User>) => {
-    if (user) setUser({ ...user, ...updates });
-  };
+  const updateUser = useCallback((updates: Partial<User>) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      const next: Partial<User> = {};
+      (Object.keys(updates) as (keyof User)[]).forEach((k) => {
+        const v = updates[k];
+        if (v !== undefined) (next as Record<string, unknown>)[k as string] = v;
+      });
+      return { ...prev, ...next };
+    });
+  }, []);
 
   const setUserFromApi = (apiUser: ApiUser | null) => {
     if (!apiUser) {

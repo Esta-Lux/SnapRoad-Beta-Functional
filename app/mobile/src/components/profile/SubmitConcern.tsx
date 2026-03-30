@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -11,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Modal from '../common/Modal';
 import { api } from '../../api/client';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface Props {
   visible: boolean;
@@ -21,9 +25,12 @@ const CONCERN_TYPES = ['Bug', 'Feature Request', 'Safety Concern', 'Other'] as c
 type ConcernType = (typeof CONCERN_TYPES)[number];
 
 export default function SubmitConcern({ visible, onClose }: Props) {
+  const { colors } = useTheme();
   const [type, setType] = useState<ConcernType>('Bug');
+  const [severity, setSeverity] = useState<'low' | 'medium' | 'high'>('medium');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     const msg = message.trim();
@@ -32,10 +39,16 @@ export default function SubmitConcern({ visible, onClose }: Props) {
       return;
     }
     setSubmitting(true);
+    setErrorMsg(null);
     try {
+      const category = type.toLowerCase().replace(/\s+/g, '_');
+      const title = msg.split('\n')[0]?.trim().slice(0, 80) || type;
       const res = await api.post('/api/concerns/submit', {
-        type: type.toLowerCase().replace(' ', '_'),
-        message: msg,
+        category,
+        title,
+        description: msg,
+        severity,
+        context: { source: 'mobile_profile' },
       });
       if (res.success) {
         Alert.alert('Submitted', "Thank you! We'll review your concern shortly.", [
@@ -43,11 +56,12 @@ export default function SubmitConcern({ visible, onClose }: Props) {
         ]);
         setMessage('');
         setType('Bug');
+        setSeverity('medium');
       } else {
-        Alert.alert('Error', res.error || 'Failed to submit concern');
+        setErrorMsg(res.error || 'Failed to submit concern');
       }
     } catch {
-      Alert.alert('Error', 'Network error. Please try again.');
+      setErrorMsg('Network error. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -55,33 +69,69 @@ export default function SubmitConcern({ visible, onClose }: Props) {
 
   return (
     <Modal visible={visible} onClose={onClose}>
-      <Text style={styles.title}>Submit Concern</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ backgroundColor: colors.surface }}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          style={{ backgroundColor: colors.surface }}
+        >
+          <Text style={[styles.title, { color: colors.text }]}>Submit Concern</Text>
 
-      <Text style={styles.label}>Type</Text>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>Type</Text>
       <View style={styles.pillRow}>
         {CONCERN_TYPES.map((t) => (
           <TouchableOpacity
             key={t}
-            style={[styles.pill, type === t && styles.pillActive]}
+            style={[
+              styles.pill,
+              { backgroundColor: colors.card, borderColor: 'rgba(148,163,184,0.25)' },
+              type === t && styles.pillActive,
+            ]}
             onPress={() => setType(t)}
             activeOpacity={0.7}
           >
-            <Text style={[styles.pillText, type === t && styles.pillTextActive]}>{t}</Text>
+            <Text style={[styles.pillText, { color: colors.textSecondary }, type === t && styles.pillTextActive]}>{t}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      <Text style={styles.label}>Message</Text>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>Severity</Text>
+      <View style={styles.pillRow}>
+        {(['low', 'medium', 'high'] as const).map((s) => (
+          <TouchableOpacity
+            key={s}
+            style={[
+              styles.pill,
+              { backgroundColor: colors.card, borderColor: 'rgba(148,163,184,0.25)' },
+              severity === s && styles.pillActive,
+            ]}
+            onPress={() => setSeverity(s)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.pillText, { color: colors.textSecondary }, severity === s && styles.pillTextActive]}>
+              {s[0].toUpperCase() + s.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <Text style={[styles.label, { color: colors.textSecondary }]}>Message</Text>
       <TextInput
-        style={styles.messageInput}
+        style={[styles.messageInput, { backgroundColor: colors.card, color: colors.text, borderColor: 'rgba(148,163,184,0.2)' }]}
         placeholder="Describe your concern..."
-        placeholderTextColor="#64748b"
+        placeholderTextColor={colors.textSecondary}
         multiline
         numberOfLines={4}
         textAlignVertical="top"
         value={message}
         onChangeText={setMessage}
       />
+      <Text style={[styles.counter, { color: colors.textSecondary }]}>{message.trim().length}/500</Text>
+
+      {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
 
       <TouchableOpacity
         style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
@@ -98,6 +148,8 @@ export default function SubmitConcern({ visible, onClose }: Props) {
           </>
         )}
       </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -106,7 +158,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#f8fafc',
     textAlign: 'center',
     marginBottom: 20,
     letterSpacing: -0.3,
@@ -114,7 +165,6 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#94a3b8',
     marginBottom: 8,
     marginTop: 4,
   },
@@ -145,14 +195,23 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   messageInput: {
-    backgroundColor: '#334155',
     borderRadius: 12,
+    borderWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
-    color: '#f8fafc',
     minHeight: 110,
-    marginBottom: 16,
+    marginBottom: 8,
+  },
+  counter: {
+    fontSize: 12,
+    textAlign: 'right',
+    marginBottom: 10,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 12,
+    marginBottom: 10,
   },
   submitBtn: {
     backgroundColor: '#3B82F6',

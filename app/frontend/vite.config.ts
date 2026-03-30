@@ -11,6 +11,11 @@ const frontendRoot = configDir
 export default defineConfig(({ mode }) => {
   // Load from app/frontend/.env — third arg limits to VITE_* keys
   const env = loadEnv(mode, frontendRoot, 'VITE_')
+  const envAll = loadEnv(mode, frontendRoot, '')
+  const apiProxyTarget =
+    env.VITE_BACKEND_PROXY_TARGET ||
+    envAll.VITE_BACKEND_PROXY_TARGET ||
+    'http://127.0.0.1:8002'
   // Hard-inject into the client bundle. Fixes cases where import.meta.env was empty
   // (wrong cwd, tooling, or env not merged) even though .env exists next to this file.
   const importMetaEnvDefine = Object.fromEntries(
@@ -57,7 +62,7 @@ export default defineConfig(({ mode }) => {
       allowedHosts: true,
       proxy: {
         '/api': {
-          target: 'http://127.0.0.1:8001',
+          target: apiProxyTarget,
           changeOrigin: true,
         },
       },

@@ -1,9 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import SheetModal from '../common/Modal';
+import { useTheme } from '../../contexts/ThemeContext';
 import { PLANS } from '../../constants/plans';
-import type { PlanTier } from '../../types';
+import type { PlanTier, User } from '../../types';
+import { computeSnapRoadScoreBreakdown } from '../../utils/profileScore';
 import type {
   ProfileBadgeItem,
   ProfileGemTxItem,
@@ -166,61 +169,191 @@ export function LeaderboardModal({
 export function DrivingScoreModal({
   visible,
   onClose,
-  cardBg,
-  text,
-  sub,
-  score,
+  user,
   isPremium,
   onUpgrade,
 }: {
   visible: boolean;
   onClose: () => void;
-  cardBg: string;
-  text: string;
-  sub: string;
-  score: number;
+  user: User | null;
   isPremium: boolean;
   onUpgrade: () => void;
 }) {
-  const metrics = [
-    { label: 'Speed', value: 92, color: '#6EE7B7' },
-    { label: 'Braking', value: 85, color: '#FBBF24' },
-    { label: 'Acceleration', value: 88, color: '#FBBF24' },
-    { label: 'Phone Use', value: 78, color: '#F59E0B' },
+  const { colors, radius, spacing } = useTheme();
+  const b = useMemo(() => computeSnapRoadScoreBreakdown(user), [user]);
+
+  const coachingMetrics = [
+    { label: 'Speed discipline', value: Math.min(100, Math.round((user?.safetyScore ?? 0) * 0.92)), color: colors.success },
+    { label: 'Smooth braking', value: Math.min(100, Math.round((user?.safetyScore ?? 0) * 0.85)), color: colors.warning },
+    { label: 'Acceleration', value: Math.min(100, Math.round((user?.safetyScore ?? 0) * 0.88)), color: colors.warning },
+    { label: 'Focus / phone use', value: Math.min(100, Math.round((user?.safetyScore ?? 0) * 0.78)), color: '#F59E0B' },
   ];
+
+  const rows = [
+    {
+      key: 'safety',
+      title: 'Safety score',
+      sub: `${b.safety.toFixed(0)} avg`,
+      earned: b.safetyPts,
+      cap: 300,
+      accent: '#3B82F6',
+      hint: `${b.safety.toFixed(0)}/100 avg safety. Drive smoother to improve.`,
+    },
+    {
+      key: 'streak',
+      title: 'Streak bonus',
+      sub: `${b.streak} day streak`,
+      earned: b.streakPts,
+      cap: 200,
+      accent: '#F97316',
+      hint: `${b.streak} day streak. Keep it going.`,
+    },
+    {
+      key: 'miles',
+      title: 'Miles driven',
+      sub: `${Math.round(b.miles)} miles`,
+      earned: b.milesPts,
+      cap: 200,
+      accent: '#38BDF8',
+      hint: `${Math.round(b.miles)} total miles logged.`,
+    },
+    {
+      key: 'gems',
+      title: 'Gems earned',
+      sub: `${b.gems} gems`,
+      earned: b.gemsPts,
+      cap: 200,
+      accent: '#A855F7',
+      hint: `${b.gems} total gems. Redeem offers to earn more.`,
+    },
+  ];
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[styles.modalSheet, { backgroundColor: cardBg }]} onStartShouldSetResponder={() => true}>
-          <View style={styles.modalHandle} />
-          <Text style={[styles.modalTitle, { color: text, marginBottom: 8 }]}>Driving Score</Text>
-          {isPremium ? (
-            <View style={[styles.scoreDetailCard, { backgroundColor: '#1E293B' }]}>
-              <View style={styles.scoreRingWrap}>
-                <View style={styles.scoreRing}><Text style={styles.scoreRingVal}>{score}</Text><Text style={styles.scoreRingLbl}>Safety Score</Text></View>
-              </View>
-              {metrics.map((m) => (
-                <View key={m.label} style={{ marginTop: 10 }}>
-                  <View style={styles.scoreMetricTop}>
-                    <Text style={{ color: '#CBD5E1', fontSize: 12 }}>{m.label}</Text>
-                    <Text style={{ color: '#E2E8F0', fontSize: 12, fontWeight: '700' }}>{m.value}</Text>
+    <SheetModal visible={visible} onClose={onClose}>
+      <ScrollView
+        style={{ maxHeight: Dimensions.get('window').height * 0.72 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 4 }]}>Your SnapRoad Score</Text>
+        <Text style={{ color: colors.textSecondary, fontSize: 12, textAlign: 'center', marginBottom: 8 }}>out of 1,000</Text>
+        <Text style={{ color: colors.primary, fontSize: 44, fontWeight: '900', textAlign: 'center' }}>{b.total}</Text>
+        <View style={{ alignItems: 'center', marginBottom: 10 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              backgroundColor: colors.surfaceSecondary,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: radius.pill,
+            }}
+          >
+            <Ionicons name="ribbon-outline" size={14} color={colors.textSecondary} />
+            <Text style={{ color: colors.text, fontSize: 12, fontWeight: '800' }}>{b.tier}</Text>
+          </View>
+        </View>
+        <View style={{ height: 6, borderRadius: 4, backgroundColor: colors.border, overflow: 'hidden', marginHorizontal: spacing.md, marginBottom: 8 }}>
+          <View style={{ width: `${(b.total / 1000) * 100}%`, height: '100%', backgroundColor: colors.primary }} />
+        </View>
+        <Text style={{ color: colors.textSecondary, fontSize: 12, textAlign: 'center', marginBottom: spacing.md }}>
+          {b.toPerfect} points to perfect score
+        </Text>
+
+        <Text style={[styles.modalSectionTitle, { color: colors.text, marginHorizontal: spacing.sm }]}>Score breakdown</Text>
+        {rows.map((r) => {
+          const pct = r.cap > 0 ? Math.min(1, r.earned / r.cap) : 0;
+          return (
+            <View
+              key={r.key}
+              style={{
+                borderRadius: radius.md,
+                padding: spacing.md,
+                marginBottom: spacing.sm,
+                marginHorizontal: spacing.sm,
+                backgroundColor: colors.surfaceSecondary,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                <View style={{ width: 36, alignItems: 'center', paddingTop: 2 }}>
+                  <Ionicons
+                    name={
+                      r.key === 'safety'
+                        ? 'shield-checkmark-outline'
+                        : r.key === 'streak'
+                          ? 'flame-outline'
+                          : r.key === 'miles'
+                            ? 'navigate-outline'
+                            : 'diamond-outline'
+                    }
+                    size={22}
+                    color={r.accent}
+                  />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                    <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>{r.title}</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '800' }}>
+                      <Text style={{ color: r.accent }}>{r.earned}</Text>
+                      <Text style={{ color: colors.textSecondary }}>{` / ${r.cap}`}</Text>
+                    </Text>
                   </View>
-                  <View style={styles.scoreMetricTrack}><View style={[styles.scoreMetricFill, { width: `${m.value}%`, backgroundColor: m.color }]} /></View>
+                  <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>{r.sub}</Text>
+                  <View style={{ height: 5, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden', marginTop: 8 }}>
+                    <View style={{ width: `${pct * 100}%`, height: '100%', backgroundColor: r.accent }} />
+                  </View>
+                  <Text style={{ color: colors.textTertiary, fontSize: 11, marginTop: 8, lineHeight: 15 }}>{r.hint}</Text>
+                </View>
+              </View>
+            </View>
+          );
+        })}
+
+        {isPremium ? (
+          <>
+            <Text style={[styles.modalSectionTitle, { color: colors.text, marginHorizontal: spacing.sm, marginTop: 4 }]}>
+              Orion coaching (Premium)
+            </Text>
+            <View
+              style={{
+                borderRadius: radius.md,
+                padding: spacing.md,
+                marginHorizontal: spacing.sm,
+                marginBottom: spacing.sm,
+                backgroundColor: colors.surfaceSecondary,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+              }}
+            >
+              {coachingMetrics.map((m, i) => (
+                <View key={m.label} style={{ marginTop: i === 0 ? 0 : 12 }}>
+                  <View style={styles.scoreMetricTop}>
+                    <Text style={{ color: colors.textSecondary, fontSize: 12 }}>{m.label}</Text>
+                    <Text style={{ color: colors.text, fontSize: 12, fontWeight: '700' }}>{m.value}</Text>
+                  </View>
+                  <View style={[styles.scoreMetricTrack, { backgroundColor: colors.border }]}>
+                    <View style={[styles.scoreMetricFill, { width: `${m.value}%`, backgroundColor: m.color }]} />
+                  </View>
                 </View>
               ))}
             </View>
-          ) : (
-            <View style={styles.inlineUpsell}>
-              <Text style={styles.inlineUpsellTitle}>Premium Feature</Text>
-              <Text style={styles.inlineUpsellSub}>Unlock detailed score breakdown and Orion coaching insights.</Text>
-              <TouchableOpacity style={styles.inlineUpsellBtn} onPress={onUpgrade}>
-                <Text style={styles.inlineUpsellBtnText}>Choose Plan</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-    </Modal>
+          </>
+        ) : (
+          <View style={[styles.inlineUpsell, { marginHorizontal: spacing.sm, borderColor: colors.primary }]}>
+            <Text style={[styles.inlineUpsellTitle, { color: colors.primary }]}>Premium coaching</Text>
+            <Text style={[styles.inlineUpsellSub, { color: colors.textSecondary }]}>
+              Unlock Orion’s per-trip coaching metrics and personalized tips.
+            </Text>
+            <TouchableOpacity style={[styles.inlineUpsellBtn, { backgroundColor: colors.primary }]} onPress={onUpgrade}>
+              <Text style={styles.inlineUpsellBtnText}>Choose Plan</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
+    </SheetModal>
   );
 }
 
@@ -246,89 +379,172 @@ export function BadgesModal({ visible, onClose, cardBg, text, sub, badges }: { v
   );
 }
 
-export function TripHistoryModal({ visible, onClose, trips }: { visible: boolean; onClose: () => void; trips: ProfileTripHistoryItem[] }) {
+export function TripHistoryModal({
+  visible,
+  onClose,
+  trips,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  trips: ProfileTripHistoryItem[];
+}) {
+  const { colors, spacing, typography } = useTheme();
+  const winH = Dimensions.get('window').height;
   const totalTrips = trips.length;
   const totalMiles = trips.reduce((sum, t) => sum + Number(t.distance_miles ?? 0), 0);
   const avgScore = totalTrips > 0 ? trips.reduce((sum, t) => sum + Number(t.safety_score ?? 0), 0) / totalTrips : 0;
   const totalGems = trips.reduce((sum, t) => sum + Number(t.gems_earned ?? 0), 0);
+  const listMax = Math.min(420, winH * 0.48);
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[styles.modalSheet, { backgroundColor: '#0F172A' }]} onStartShouldSetResponder={() => true}>
-          <LinearGradient colors={['#4F46E5', '#3B82F6']} style={styles.historyHeader}>
-            <Text style={styles.historyTitle}>Trip History</Text>
-            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color="#fff" /></TouchableOpacity>
-          </LinearGradient>
-          <View style={styles.historyStatsRow}>
-            <View style={styles.historyStat}><Text style={styles.historyStatVal}>{totalTrips}</Text><Text style={styles.historyStatLbl}>Trips</Text></View>
-            <View style={styles.historyStat}><Text style={styles.historyStatVal}>{totalMiles.toFixed(1)}</Text><Text style={styles.historyStatLbl}>Miles</Text></View>
-            <View style={styles.historyStat}><Text style={styles.historyStatVal}>{avgScore.toFixed(0)}</Text><Text style={styles.historyStatLbl}>Avg Score</Text></View>
-            <View style={styles.historyStat}><Text style={styles.historyStatVal}>{totalGems}</Text><Text style={styles.historyStatLbl}>Gems</Text></View>
+    <SheetModal visible={visible} onClose={onClose}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: spacing.md }}>
+        <Text style={[typography.h2, { color: colors.text, flex: 1 }]}>Trip history</Text>
+        <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel="Done">
+          <Text style={{ fontSize: 17, fontWeight: '600', color: colors.primary }}>Done</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={[typography.caption, { color: colors.textSecondary, marginBottom: spacing.sm }]}>Recent trips</Text>
+      <View style={styles.historyStatsRow}>
+        {(
+          [
+            { v: totalTrips, l: 'Trips' },
+            { v: totalMiles.toFixed(1), l: 'Miles' },
+            { v: avgScore.toFixed(0), l: 'Avg' },
+            { v: totalGems, l: 'Gems' },
+          ] as const
+        ).map((s) => (
+          <View key={s.l} style={[styles.historyStat, { backgroundColor: colors.surfaceSecondary }]}>
+            <Text style={[styles.historyStatVal, { color: colors.text }]}>{s.v}</Text>
+            <Text style={[styles.historyStatLbl, { color: colors.textSecondary }]}>{s.l}</Text>
           </View>
-          <View style={styles.monthChipsRow}>
-            {['All Time', 'Feb 2025', 'Jan 2025', 'Dec 2024'].map((chip, idx) => (
-              <View key={chip} style={[styles.monthChip, idx === 0 && styles.monthChipActive]}>
-                <Text style={[styles.monthChipText, idx === 0 && styles.monthChipTextActive]}>{chip}</Text>
+        ))}
+      </View>
+      <ScrollView
+        style={{ maxHeight: listMax }}
+        contentContainerStyle={{ paddingBottom: spacing.sm }}
+        showsVerticalScrollIndicator={false}
+      >
+        {trips.length === 0 ? (
+          <Text style={[typography.body, { color: colors.textSecondary, textAlign: 'center', paddingVertical: spacing.lg }]}>
+            No trips yet.
+          </Text>
+        ) : (
+          trips.slice(0, 40).map((trip) => (
+            <View
+              key={trip.id}
+              style={[styles.historyItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
+                <Text style={[styles.historyItemDate, { color: colors.textSecondary }]} numberOfLines={1}>{`${trip.date} · ${trip.time}`}</Text>
+                <Text style={[styles.historyItemRoute, { color: colors.text }]} numberOfLines={2}>
+                  {`${trip.origin} › ${trip.destination}`}
+                </Text>
+                <Text style={[styles.historyItemMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {`${Number(trip.distance_miles ?? 0).toFixed(1)} mi · ${trip.duration_minutes ?? 0} min`}
+                </Text>
               </View>
-            ))}
-          </View>
-          <ScrollView style={{ maxHeight: 380 }} contentContainerStyle={{ padding: 8 }}>
-            {trips.slice(0, 20).map((trip) => (
-              <View key={trip.id} style={styles.historyItem}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.historyItemDate}>{`${trip.date} · ${trip.time}`}</Text>
-                  <Text style={styles.historyItemRoute}>{`${trip.origin}  ›  ${trip.destination}`}</Text>
-                  <Text style={styles.historyItemMeta}>{`${Number(trip.distance_miles ?? 0).toFixed(1)} mi  •  ${trip.duration_minutes ?? 0} min`}</Text>
+              <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                <View style={[styles.historyScoreChip, { backgroundColor: `${colors.success}22` }]}>
+                  <Text style={[styles.historyScoreChipText, { color: colors.success }]}>{trip.safety_score ?? 0}</Text>
                 </View>
-                <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                  <View style={styles.historyScoreChip}><Text style={styles.historyScoreChipText}>{trip.safety_score ?? 0}</Text></View>
-                  <Text style={styles.historyGemText}>{`+${trip.gems_earned ?? 0}`}</Text>
-                </View>
+                <Text style={[styles.historyGemText, { color: colors.success }]}>{`+${trip.gems_earned ?? 0}`}</Text>
               </View>
-            ))}
-          </ScrollView>
-        </View>
-      </TouchableOpacity>
-    </Modal>
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </SheetModal>
   );
 }
 
-export function GemHistoryModal({ visible, onClose, tx }: { visible: boolean; onClose: () => void; tx: ProfileGemTxItem[] }) {
+export function GemHistoryModal({
+  visible,
+  onClose,
+  tx,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  tx: ProfileGemTxItem[];
+}) {
+  const { colors, spacing, typography } = useTheme();
+  const winH = Dimensions.get('window').height;
   const [filter, setFilter] = useState<'all' | 'earned' | 'spent'>('all');
   const filtered = useMemo(() => (filter === 'all' ? tx : tx.filter((t) => t.type === filter)), [filter, tx]);
+  const listMax = Math.min(440, winH * 0.5);
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[styles.modalSheet, { backgroundColor: '#0F172A' }]} onStartShouldSetResponder={() => true}>
-          <LinearGradient colors={['#34D399', '#60A5FA']} style={styles.gemHeader}>
-            <Text style={styles.gemTitle}>Gem History</Text>
-            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color="#fff" /></TouchableOpacity>
-          </LinearGradient>
-          <View style={styles.gemFilterRow}>
-            {([
-              { id: 'all', label: 'All' },
-              { id: 'earned', label: 'Earned' },
-              { id: 'spent', label: 'Spent' },
-            ] as const).map((f) => (
-              <TouchableOpacity key={f.id} style={[styles.gemFilterChip, filter === f.id && styles.gemFilterChipActive]} onPress={() => setFilter(f.id)}>
-                <Text style={[styles.gemFilterText, filter === f.id && styles.gemFilterTextActive]}>{f.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <ScrollView style={{ maxHeight: 450 }} contentContainerStyle={{ padding: 10 }}>
-            {filtered.map((row) => (
-              <View key={row.id} style={styles.gemItem}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.gemItemTitle}>{row.source}</Text>
-                  <Text style={styles.gemItemDate}>{new Date(row.date).toLocaleString()}</Text>
-                </View>
-                <Text style={[styles.gemItemAmount, { color: row.type === 'spent' ? '#F87171' : '#6EE7B7' }]}>{row.type === 'spent' ? '-' : '+'}{row.amount}</Text>
+    <SheetModal visible={visible} onClose={onClose}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: spacing.md }}>
+        <Text style={[typography.h2, { color: colors.text, flex: 1 }]}>Gem history</Text>
+        <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel="Done">
+          <Text style={{ fontSize: 17, fontWeight: '600', color: colors.primary }}>Done</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={[typography.caption, { color: colors.textSecondary, marginBottom: spacing.sm }]}>Transactions</Text>
+      <View style={[styles.gemFilterRow, { marginBottom: spacing.sm }]}>
+        {([
+          { id: 'all', label: 'All' },
+          { id: 'earned', label: 'Earned' },
+          { id: 'spent', label: 'Spent' },
+        ] as const).map((f) => (
+          <TouchableOpacity
+            key={f.id}
+            style={[
+              styles.gemFilterChip,
+              { backgroundColor: colors.surfaceSecondary },
+              filter === f.id && {
+                backgroundColor: colors.card,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+              },
+            ]}
+            onPress={() => setFilter(f.id)}
+          >
+            <Text
+              style={[
+                styles.gemFilterText,
+                { color: colors.textSecondary },
+                filter === f.id && { color: colors.text, fontWeight: '800' },
+              ]}
+            >
+              {f.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <ScrollView style={{ maxHeight: listMax }} contentContainerStyle={{ paddingBottom: spacing.sm }} showsVerticalScrollIndicator={false}>
+        {filtered.length === 0 ? (
+          <Text style={[typography.body, { color: colors.textSecondary, textAlign: 'center', paddingVertical: spacing.lg }]}>
+            No transactions yet.
+          </Text>
+        ) : (
+          filtered.map((row) => (
+            <View
+              key={row.id}
+              style={[styles.gemItem, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: StyleSheet.hairlineWidth }]}
+            >
+              <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
+                <Text style={[styles.gemItemTitle, { color: colors.text }]} numberOfLines={2}>
+                  {row.source}
+                </Text>
+                <Text style={[styles.gemItemDate, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {new Date(row.date).toLocaleString()}
+                </Text>
               </View>
-            ))}
-          </ScrollView>
-        </View>
-      </TouchableOpacity>
-    </Modal>
+              <Text
+                style={[
+                  styles.gemItemAmount,
+                  { color: row.type === 'spent' ? colors.danger : colors.success, flexShrink: 0 },
+                ]}
+              >
+                {row.type === 'spent' ? '-' : '+'}
+                {row.amount}
+              </Text>
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </SheetModal>
   );
 }
 
@@ -543,11 +759,11 @@ const styles = StyleSheet.create({
   badgeTile: { width: '31%' as any, borderRadius: 10, padding: 10, backgroundColor: 'rgba(15,23,42,0.7)', alignItems: 'center' },
   badgeName: { fontSize: 11, fontWeight: '700', marginTop: 4 },
   historyHeader: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 12, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  historyTitle: { color: '#fff', fontSize: 28, fontWeight: '900' },
-  historyStatsRow: { flexDirection: 'row', gap: 8, padding: 8 },
-  historyStat: { flex: 1, borderRadius: 12, backgroundColor: 'rgba(99,102,241,0.4)', alignItems: 'center', paddingVertical: 8 },
-  historyStatVal: { color: '#fff', fontSize: 16, fontWeight: '900' },
-  historyStatLbl: { color: '#DBEAFE', fontSize: 10, marginTop: 2 },
+  historyTitle: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  historyStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  historyStat: { flexGrow: 1, flexBasis: '22%', minWidth: 72, borderRadius: 12, alignItems: 'center', paddingVertical: 10 },
+  historyStatVal: { fontSize: 17, fontWeight: '800' },
+  historyStatLbl: { fontSize: 10, marginTop: 2, fontWeight: '600' },
   monthChipsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 8, paddingBottom: 4 },
   monthChip: { borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(148,163,184,0.22)' },
   monthChipActive: { backgroundColor: '#fff' },
@@ -561,7 +777,7 @@ const styles = StyleSheet.create({
   historyScoreChipText: { color: '#6EE7B7', fontSize: 14, fontWeight: '900' },
   historyGemText: { color: '#6EE7B7', fontSize: 18, fontWeight: '900' },
   gemHeader: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  gemTitle: { color: '#fff', fontSize: 30, fontWeight: '900' },
+  gemTitle: { color: '#fff', fontSize: 22, fontWeight: '800' },
   gemFilterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 10, marginTop: 8 },
   gemFilterChip: { flex: 1, borderRadius: 10, backgroundColor: '#1E293B', alignItems: 'center', paddingVertical: 9 },
   gemFilterChipActive: { backgroundColor: '#6EE7B7' },

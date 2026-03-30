@@ -70,7 +70,17 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
       navigate('/driver')
     } catch (error) {
       console.error('Auth error:', error)
-      const msg = (error as any)?.message || 'Login failed. Please try again.'
+      let msg = (error as any)?.message || 'Login failed. Please try again.'
+      const low = String(msg).toLowerCase()
+      if (
+        low.includes('failed to fetch') ||
+        low.includes('networkerror') ||
+        low.includes('name_not_resolved') ||
+        low.includes('err_name_not_resolved')
+      ) {
+        msg =
+          'Cannot reach Supabase (sign-in). Check internet and DNS/VPN/firewall, then try again. FastAPI port does not fix this — the browser must resolve *.supabase.co.'
+      }
       toast.error(msg, {
         style: { background: '#1E293B', color: '#fff', borderRadius: '12px', padding: '12px 16px' },
         duration: 4000,
