@@ -1,11 +1,11 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
-  Platform, Keyboard, Alert, Switch,
+  Platform, Keyboard, Alert, Switch, Pressable,
 } from 'react-native';
 import Animated, {
   FadeIn, FadeOut, SlideInDown, SlideOutDown,
-  useSharedValue, useAnimatedStyle, withTiming,
+  useSharedValue, useAnimatedStyle, withTiming, Easing,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapboxGL, { isMapAvailable } from '../utils/mapbox';
@@ -20,7 +20,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useMapLayers } from '../hooks/useMapLayers';
 import { DRIVING_MODES } from '../constants/modes';
-import { forwardGeocode, type GeocodeResult } from '../lib/directions';
+import { forwardGeocode, reverseGeocode, type GeocodeResult } from '../lib/directions';
 import RouteOverlay from '../components/map/RouteOverlay';
 import OfferMarkers from '../components/map/OfferMarkers';
 import ReportMarkers from '../components/map/ReportMarkers';
@@ -34,20 +34,26 @@ import PlaceCard from '../components/map/PlaceCard';
 import PlaceDetailSheet from '../components/map/PlaceDetailSheet';
 import OfferRedemptionSheet from '../components/map/OfferRedemptionSheet';
 import BuildingsLayer from '../components/map/BuildingsLayer';
-import PhotoReportMarkers from '../components/map/PhotoReportMarkers';
+import PhotoReportMarkers, { type PhotoReport } from '../components/map/PhotoReportMarkers';
+import TrafficSafetyLayer, { type TrafficSafetyZone } from '../components/map/TrafficSafetyLayer';
+import PhotoReportDetailModal from '../components/map/PhotoReportDetailModal';
+import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config/restrictedRegions';
 import FuelStationMarkers from '../components/map/FuelStationMarkers';
 import PhotoReportSheet from '../components/map/PhotoReportSheet';
 import LaneGuide from '../components/navigation/LaneGuide';
 import GemOverlay from '../components/gamification/GemOverlay';
 import TripShare from '../components/gamification/TripShare';
 import HamburgerMenu from '../components/profile/HamburgerMenu';
-import { useCrashDetection } from '../hooks/useCrashDetection';
+// Crash detection hook removed (no SOS backend); friend locations handled inline via Supabase realtime
 import { formatDistance, haversineMeters } from '../utils/distance';
 import { formatDuration } from '../utils/format';
 import { speak, stopSpeaking } from '../utils/voice';
 import { api } from '../api/client';
 import OrionChat from '../components/orion/OrionChat';
+import TripSummaryModal from '../components/common/Modal';
 import { useNavigatingState } from '../contexts/NavigatingContext';
+import { useCameraController } from '../hooks/useCameraController';
+import { useNavigation as useRNNavigation } from '@react-navigation/native';
 import { storage } from '../utils/storage';
 import { supabase } from '../lib/supabase';
 import type { DrivingMode, Incident, SavedLocation, Offer, FriendLocation } from '../types';
@@ -156,7 +162,9 @@ function parseCameraViewsFromTraffic(raw: unknown): CameraViewFeed[] | undefined
 
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
-  const { location, heading, speed, isLocating, permissionDenied } = useLocation();
+  const rnNav = useRNNavigation();
+  const [isNavActive, setIsNavActive] = useState(false);
+  const { location, heading, speed, isLocating, permissionDenied } = useLocation(isNavActive);
   const { isLight, colors } = useTheme();
   const { user } = useAuth();
 
@@ -166,6 +174,13 @@ export default function MapScreen() {
 
   // ── Navigation hook ──
   const nav = useNav({ userLocation: location, speed, heading, drivingMode });
+
+  // Sync nav.isNavigating → useLocation accuracy
+  useEffect(() => { setIsNavActive(nav.isNavigating); }, [nav.isNavigating]);
+
+  // Stable ref for latest location (avoids re-running interval effects on every GPS tick)
+  const locationRef = useRef(location);
+  useEffect(() => { locationRef.current = location; }, [location.lat, location.lng]);
 
   // ── Search ──
   const [searchQuery, setSearchQuery] = useState('');
@@ -182,6 +197,9 @@ export default function MapScreen() {
   const [cameraLocked, setCameraLocked] = useState(true);
   const [isExploring, setIsExploring] = useState(false);
   const [compassMode, setCompassMode] = useState(false);
+  const [followMode, setFollowMode] = useState<'free' | 'follow' | 'heading'>('follow');
+  const nextStepDist = nav.navigationData?.steps?.[nav.currentStepIndex]?.distanceMeters;
+  const camCtrl = useCameraController({ speed, drivingMode, isNavigating: nav.isNavigating, cameraLocked, heading, nextStepDistance: nextStepDist });
   const userInteracting = useRef(false);
   const lastCameraUpdate = useRef({ lat: 0, lng: 0, heading: 0 });
 
@@ -194,6 +212,8 @@ export default function MapScreen() {
   const reportPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const announcedRef = useRef<Set<string>>(new Set());
   const confirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reportCardTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startNavTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Map style ──
   const [styleOverride, setStyleOverride] = useState(0);
@@ -201,7 +221,7 @@ export default function MapScreen() {
 
   // ── Data ──
   const [savedPlaces, setSavedPlaces] = useState<SavedLocation[]>([]);
-  const [activeChip, setActiveChip] = useState<'favorites' | 'nearby'>('favorites');
+  const [activeChip, setActiveChip] = useState<string>('favorites');
   const [nearbyOffers, setNearbyOffers] = useState<Offer[]>([]);
   const [friendLocations, setFriendLocations] = useState<FriendLocation[]>([]);
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
@@ -210,15 +230,18 @@ export default function MapScreen() {
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [showOrion, setShowOrion] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [currentAddress, setCurrentAddress] = useState<string>('');
   const [recentSearches, setRecentSearches] = useState<GeocodeResult[]>([]);
 
   // ── Layers ──
   const { showTraffic, showIncidents, showCameras, setShowTraffic, setShowIncidents, setShowCameras,
     showConstruction, setShowConstruction, showFuel, setShowFuel,
-    showPhotoReports, setShowPhotoReports } = useMapLayers();
+    showPhotoReports, setShowPhotoReports, showTrafficSafety, setShowTrafficSafety } = useMapLayers();
 
   // ── New layer data ──
-  const [photoReports, setPhotoReports] = useState<{id: string; lat: number; lng: number; type: string; description?: string; created_at: string}[]>([]);
+  const [photoReports, setPhotoReports] = useState<PhotoReport[]>([]);
+  const [trafficSafetyZones, setTrafficSafetyZones] = useState<TrafficSafetyZone[]>([]);
+  const [selectedPhotoReport, setSelectedPhotoReport] = useState<PhotoReport | null>(null);
   const [fuelStations, setFuelStations] = useState<{id: string; name?: string; lat: number; lng: number; price?: number}[]>([]);
   const [isMuted, setIsMuted] = useState(false);
   const [showPhotoReport, setShowPhotoReport] = useState(false);
@@ -234,7 +257,7 @@ export default function MapScreen() {
   }));
 
   // ── Crash detection ──
-  const { crashDetected, dismissCrash } = useCrashDetection();
+  // crashDetected / dismissCrash removed — re-enable when SOS endpoints are built
 
   // ── Truck ──
   const [avoidLowClearances, setAvoidLowClearances] = useState(false);
@@ -248,16 +271,21 @@ export default function MapScreen() {
   // ─── Derived values ────────────────────────────────────────────────────────
 
   // Calm → streets-v12 (shows everything: labels, POIs, cameras, road features, building names)
-  // Sport → navigation-night-v1 (dusk/blue-hour, navigation-optimised, fully featured)
+  // Sport → same base map as calm/adaptive when exploring (dusk comes from MapView atmosphere); night style only while navigating
   // Adaptive → standard (default)
   // styleOverride 0 means "mode default"; higher indexes are explicit user picks
-  const activeStyleURL = (drivingMode === 'calm' && styleOverride === 0)
-    ? 'mapbox://styles/mapbox/streets-v12'
-    : (drivingMode === 'sport' && styleOverride === 0)
-      ? 'mapbox://styles/mapbox/navigation-night-v1'
-      : (MAP_STYLES[styleOverride]?.url ?? MAP_STYLES[0].url);
+  const activeStyleURL = (() => {
+    if (styleOverride !== 0) return MAP_STYLES[styleOverride]?.url ?? MAP_STYLES[0].url;
+    if (drivingMode === 'calm') return 'mapbox://styles/mapbox/streets-v12';
+    if (drivingMode === 'sport') {
+      return nav.isNavigating
+        ? 'mapbox://styles/mapbox/navigation-night-v1'
+        : 'mapbox://styles/mapbox/streets-v12';
+    }
+    return MAP_STYLES[0].url;
+  })();
   /** streets-v12 and navigation-night-v1 support heading indicator; Standard omits it. */
-  const userLocationHeadingOk = /streets-v\d+|navigation-/.test(activeStyleURL);
+  const userLocationHeadingOk = true;
   const atmosphereStyle = ATMOSPHERE[drivingMode];
   const isCalm = drivingMode === 'calm';
   const isAdaptive = drivingMode === 'adaptive';
@@ -320,7 +348,7 @@ export default function MapScreen() {
       const d = (r.data as any)?.data ?? r.data;
       if (Array.isArray(d)) setSavedPlaces(d);
     }).catch(() => {});
-    api.get<any>('/api/social/friends/locations').then((r) => {
+    api.get<any>('/api/social/friends/list').then((r) => {
       const d = (r.data as any)?.data ?? r.data;
       if (Array.isArray(d)) setFriendLocations(d);
     }).catch(() => {});
@@ -337,8 +365,22 @@ export default function MapScreen() {
     }).catch(() => {});
   }, [Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
+  // Reverse geocode for Orion context (throttled to ~1km moves)
+  useEffect(() => {
+    const rLat = Math.round(location.lat * 100);
+    const rLng = Math.round(location.lng * 100);
+    if (rLat === 0 && rLng === 0) return;
+    reverseGeocode(location.lat, location.lng).then((r) => {
+      if (r?.address) setCurrentAddress(r.address);
+      else if (r?.name) setCurrentAddress(r.name);
+    }).catch(() => {});
+  }, [Math.round(location.lat * 100), Math.round(location.lng * 100)]);
+
   useEffect(() => {
     if (!showCameras) return;
+    const rLat = Math.round(location.lat * 100);
+    const rLng = Math.round(location.lng * 100);
+    if (rLat === 0 && rLng === 0) return;
     api.get<any>(`/api/map/cameras?lat=${location.lat}&lng=${location.lng}&radius=80`).then((r) => {
       if (!r.success || r.data == null) return;
       const raw = r.data;
@@ -359,17 +401,76 @@ export default function MapScreen() {
     }).catch(() => {});
   }, [showCameras, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
-  // Fetch photo reports when layer enabled
+  // Fetch photo reports when layer enabled (API returns only active, public blurred URLs)
   useEffect(() => {
     if (!showPhotoReports) return;
-    api.get<any>(`/api/photo-reports/nearby?lat=${location.lat}&lng=${location.lng}&radius=5`).then((r) => {
-      const d = (r.data as any)?.data ?? r.data;
-      if (Array.isArray(d)) setPhotoReports(d.map((p: any) => ({ id: String(p.id), lat: p.lat, lng: p.lng, type: p.type ?? 'photo', description: p.description, created_at: p.created_at ?? new Date().toISOString() })));
+    api.get<{ photos?: unknown[] }>(`/api/photo-reports/nearby?lat=${location.lat}&lng=${location.lng}&radius=5`).then((r) => {
+      if (!r.success) return;
+      const raw = r.data as { photos?: unknown[] };
+      const d = raw?.photos;
+      if (!Array.isArray(d)) return;
+      setPhotoReports(
+        d.map((p: any) => ({
+          id: String(p.id),
+          lat: p.lat,
+          lng: p.lng,
+          type: p.type ?? 'photo',
+          description: p.description,
+          created_at: p.created_at ?? new Date().toISOString(),
+          photo_url: typeof p.photo_url === 'string' ? p.photo_url : undefined,
+          thumbnail_url: typeof p.thumbnail_url === 'string' ? p.thumbnail_url : undefined,
+          upvotes: typeof p.upvotes === 'number' ? p.upvotes : 0,
+        })),
+      );
     }).catch(() => {});
   }, [showPhotoReports, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
+  // Traffic safety POIs (Overpass via API; hidden in restricted regions)
+  useEffect(() => {
+    const rLat = Math.round(location.lat * 100);
+    const rLng = Math.round(location.lng * 100);
+    if (rLat === 0 && rLng === 0) {
+      setTrafficSafetyZones([]);
+      return;
+    }
+    if (!showTrafficSafety || !isTrafficSafetyLayerEnabled(location.lat, location.lng)) {
+      setTrafficSafetyZones([]);
+      return;
+    }
+    const region = trafficSafetyRegionQuery(location.lat, location.lng);
+    api
+      .get<{ zones?: unknown[]; disabled?: boolean }>(
+        `/api/traffic-safety/zones?lat=${location.lat}&lng=${location.lng}&radius_km=8&region=${encodeURIComponent(region)}`,
+      )
+      .then((r) => {
+        if (!r.success) return;
+        const payload = r.data as { zones?: unknown[]; disabled?: boolean };
+        if (payload?.disabled) {
+          setTrafficSafetyZones([]);
+          return;
+        }
+        const zl = payload?.zones;
+        if (!Array.isArray(zl)) return;
+        setTrafficSafetyZones(
+          zl
+            .map((z: any) => ({
+              id: String(z?.id ?? ''),
+              lat: Number(z?.lat),
+              lng: Number(z?.lng),
+              kind: typeof z?.kind === 'string' ? z.kind : 'speed_camera',
+              maxspeed: z?.maxspeed ?? null,
+            }))
+            .filter((z: TrafficSafetyZone) => z.id && isFinite(z.lat) && isFinite(z.lng)),
+        );
+      })
+      .catch(() => {});
+  }, [showTrafficSafety, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
+
   useEffect(() => {
     if (!showFuel) return;
+    const rLat = Math.round(location.lat * 100);
+    const rLng = Math.round(location.lng * 100);
+    if (rLat === 0 && rLng === 0) return;
     api.get<any>(`/api/places/autocomplete?q=gas+station&lat=${location.lat}&lng=${location.lng}`).then((r) => {
       const predictions = (r.data as any)?.data ?? [];
       if (!Array.isArray(predictions) || predictions.length === 0) return;
@@ -388,24 +489,8 @@ export default function MapScreen() {
     }).catch(() => {});
   }, [showFuel, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
-  // Crash detection → SOS alert
-  useEffect(() => {
-    if (!crashDetected) return;
-    Alert.alert(
-      'Crash Detected',
-      'A sudden impact was detected. Do you need help?',
-      [
-        { text: "I'm OK", onPress: dismissCrash },
-        { text: 'Send SOS', style: 'destructive', onPress: async () => {
-          try { await api.post('/api/family/sos', { lat: location.lat, lng: location.lng, type: 'crash' }); } catch {}
-          try { await api.post('/api/concerns/submit', { type: 'crash_detected', lat: location.lat, lng: location.lng }); } catch {}
-          dismissCrash();
-          Alert.alert('SOS Sent', 'Emergency contacts have been notified.');
-        }},
-      ],
-      { cancelable: false },
-    );
-  }, [crashDetected, dismissCrash, location.lat, location.lng]);
+  // Crash detection removed — SOS endpoints (/api/family/sos, /api/concerns/submit) do not exist.
+  // Will be re-implemented when family/emergency features are built with real backend support.
 
   // Fix 7: Supabase realtime for friend locations
   useEffect(() => {
@@ -441,11 +526,10 @@ export default function MapScreen() {
     }
   }, [nav.isNavigating]);
 
-  // Show gem overlay when trip ends
+  // Trip end: show summary card directly (no gem bounce animation)
   useEffect(() => {
-    if (nav.tripSummary && nav.tripSummary.gems_earned > 0) {
-      setGemOverlayAmount(nav.tripSummary.gems_earned);
-      setShowGemOverlay(true);
+    if (nav.tripSummary) {
+      setShowGemOverlay(false);
     }
   }, [nav.tripSummary]);
 
@@ -476,10 +560,11 @@ export default function MapScreen() {
     }
   }, [activeReportCard?.id]);
 
-  // Incident polling
+  // Incident polling -- cadence changes only with nav state, not every GPS tick
   useEffect(() => {
     const poll = async () => {
-      const res = await api.get<{ data?: Incident[] }>(`/api/incidents/nearby?lat=${location.lat}&lng=${location.lng}&radius_miles=2`);
+      const loc = locationRef.current;
+      const res = await api.get<{ data?: Incident[] }>(`/api/incidents/nearby?lat=${loc.lat}&lng=${loc.lng}&radius_miles=2`);
       const d = (res.data as { data?: Incident[] })?.data;
       if (Array.isArray(d)) setNearbyIncidents(d);
     };
@@ -487,7 +572,7 @@ export default function MapScreen() {
     const ms = nav.isNavigating ? 30000 : 60000;
     reportPollRef.current = setInterval(poll, ms);
     return () => { if (reportPollRef.current) clearInterval(reportPollRef.current); };
-  }, [nav.isNavigating, location.lat, location.lng]);
+  }, [nav.isNavigating]);
 
   // Report cards during navigation
   useEffect(() => {
@@ -501,11 +586,13 @@ export default function MapScreen() {
       const nearest = ahead[0];
       announcedRef.current.add(`a:${nearest.id}`);
       setActiveReportCard(nearest);
-      if (nearest.type === 'accident' || nearest.type === 'police') {
+      const voiceTypes = ['accident', 'police', 'crash', 'hazard', 'construction', 'closure', 'weather'];
+      if (voiceTypes.includes(nearest.type)) {
         const dist = (haversineMeters(location.lat, location.lng, nearest.lat, nearest.lng) / 1609.34).toFixed(1);
-        speak(`${nearest.title} reported ${dist} miles ahead.`, 'high', drivingMode);
+        speak(`Caution, ${nearest.title || nearest.type} reported ${dist} miles ahead.`, 'high', drivingMode);
       }
-      setTimeout(() => setActiveReportCard(null), 10000);
+      if (reportCardTimeoutRef.current) clearTimeout(reportCardTimeoutRef.current);
+      reportCardTimeoutRef.current = setTimeout(() => setActiveReportCard(null), 10000);
     }
   }, [nav.isNavigating, nearbyIncidents, location.lat, location.lng, drivingMode]);
 
@@ -517,11 +604,38 @@ export default function MapScreen() {
       if (d < 200 && !announcedRef.current.has(`c:${inc.id}`)) {
         announcedRef.current.add(`c:${inc.id}`);
         setConfirmIncident(inc);
+        if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current);
         confirmTimeoutRef.current = setTimeout(() => setConfirmIncident(null), 10000);
         break;
       }
     }
   }, [nav.isNavigating, isAmbient, location.lat, location.lng, nearbyIncidents]);
+
+  // Offer voice announcements during navigation (max 2 per trip, 1-2 miles)
+  const offerAnnouncementCount = useRef(0);
+  const announcedOfferIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!nav.isNavigating) {
+      offerAnnouncementCount.current = 0;
+      announcedOfferIds.current.clear();
+      return;
+    }
+  }, [nav.isNavigating]);
+  useEffect(() => {
+    if (!nav.isNavigating || !nearbyOffers.length || offerAnnouncementCount.current >= 2) return;
+    for (const offer of nearbyOffers) {
+      const oid = String(offer.id);
+      if (announcedOfferIds.current.has(oid)) continue;
+      const d = haversineMeters(location.lat, location.lng, offer.lat ?? 0, offer.lng ?? 0) / 1609.34;
+      if (d >= 0.5 && d <= 2.0) {
+        announcedOfferIds.current.add(oid);
+        offerAnnouncementCount.current += 1;
+        const name = offer.business_name || 'a nearby store';
+        speak(`Hey, there's a deal at ${name} about ${d.toFixed(1)} miles ahead. Say take me there to add a stop.`, 'normal', drivingMode);
+        break;
+      }
+    }
+  }, [nav.isNavigating, nearbyOffers, location.lat, location.lng, drivingMode]);
 
   // Fix 13: Ambient mode with direction-based filtering
   useEffect(() => {
@@ -538,7 +652,8 @@ export default function MapScreen() {
       announcedRef.current.add(`amb:${n.id}`);
       setActiveReportCard(n);
       speak(`Caution: ${n.title} reported ahead.`, 'normal', drivingMode);
-      setTimeout(() => setActiveReportCard(null), 8000);
+      if (reportCardTimeoutRef.current) clearTimeout(reportCardTimeoutRef.current);
+      reportCardTimeoutRef.current = setTimeout(() => setActiveReportCard(null), 8000);
     }
   }, [isAmbient, nearbyIncidents, drivingMode, heading, location.lat, location.lng]);
 
@@ -551,10 +666,15 @@ export default function MapScreen() {
     setIsSearching(true);
     const gen = ++searchGenRef.current;
     searchTimerRef.current = setTimeout(async () => {
+      const loc = locationRef.current;
+      const biasQs = (Math.abs(loc.lat) > 1e-5 || Math.abs(loc.lng) > 1e-5)
+        ? `&lat=${loc.lat}&lng=${loc.lng}`
+        : '';
       try {
-        const res = await api.get<any>(`/api/places/autocomplete?q=${encodeURIComponent(text)}&lat=${location.lat}&lng=${location.lng}`);
+        const res = await api.get<any>(`/api/places/autocomplete?q=${encodeURIComponent(text)}${biasQs}`);
         if (searchGenRef.current !== gen) return;
-        const predictions = res.data?.data ?? [];
+        const root = res.data as any;
+        const predictions = root?.data ?? root?.predictions ?? [];
         if (Array.isArray(predictions) && predictions.length > 0) {
           setSearchResults(predictions.map((p: any) => ({
             name: p.name || p.description || text,
@@ -569,12 +689,16 @@ export default function MapScreen() {
         }
       } catch {}
       if (searchGenRef.current !== gen) return;
-      const mbResults = await forwardGeocode(text, location);
+      const mbResults = await forwardGeocode(text, loc);
       if (searchGenRef.current !== gen) return;
-      setSearchResults(mbResults);
+      const filtered =
+        Math.abs(loc.lat) > 1e-5 || Math.abs(loc.lng) > 1e-5
+          ? mbResults.filter((r) => haversineMeters(loc.lat, loc.lng, r.lat, r.lng) <= 60000)
+          : mbResults;
+      setSearchResults(filtered);
       setIsSearching(false);
     }, 200);
-  }, [location]);
+  }, []);
 
   const handleSelectResult = useCallback(async (result: GeocodeResult & { place_id?: string }) => {
     Keyboard.dismiss();
@@ -632,10 +756,17 @@ export default function MapScreen() {
     nav.setShowRoutePreview(false);
   }, [nav]);
 
+  const autoRelockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleMapTouch = useCallback(() => {
-    // Fix 1: set exploring when user drags (nav or not)
-    if (nav.isNavigating) { userInteracting.current = true; setCameraLocked(false); }
-    else { setIsExploring(true); }
+    if (nav.isNavigating) {
+      userInteracting.current = true;
+      setCameraLocked(false);
+      setFollowMode('free');
+      if (autoRelockTimer.current) clearTimeout(autoRelockTimer.current);
+      autoRelockTimer.current = setTimeout(() => {
+        if (nav.isNavigating) { setCameraLocked(true); userInteracting.current = false; setFollowMode('follow'); }
+      }, 10000);
+    } else { setIsExploring(true); setFollowMode('free'); }
   }, [nav.isNavigating]);
 
   const handleRecenter = useCallback(() => {
@@ -643,6 +774,7 @@ export default function MapScreen() {
       setCameraLocked(true);
       userInteracting.current = false;
       setIsExploring(false);
+      setFollowMode('follow');
     } else {
       stableCenterRef.current = [location.lng, location.lat];
       setStableCenter([location.lng, location.lat]);
@@ -751,6 +883,12 @@ export default function MapScreen() {
 
   return (
     <View style={s.root}>
+      {isSearchFocused && !nav.isNavigating && !nav.showRoutePreview && (
+        <Pressable
+          style={[StyleSheet.absoluteFillObject, { zIndex: 14, backgroundColor: 'transparent' }]}
+          onPress={() => { Keyboard.dismiss(); setIsSearchFocused(false); }}
+        />
+      )}
 
       {/* ═══ MAP ═══════════════════════════════════════════════════════════ */}
       {mapOk && MapboxGL ? (
@@ -777,11 +915,11 @@ export default function MapScreen() {
             zoomLevel={nav.isNavigating || compassMode ? undefined : (isCalm ? 14 : isSport ? 15.5 : 15)}
             pitch={nav.isNavigating || compassMode ? undefined : (isCalm ? 35 : isSport ? 50 : 45)}
             animationMode="easeTo"
-            animationDuration={animDuration}
+            animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
             followUserLocation={(nav.isNavigating && cameraLocked) || compassMode}
-            followPitch={(nav.isNavigating && cameraLocked) ? (isCalm ? 55 : isSport ? 65 : 60) : compassMode ? 45 : undefined}
-            followZoomLevel={(nav.isNavigating && cameraLocked) ? (isCalm ? 16 : isSport ? 17.5 : 17) : compassMode ? 15 : undefined}
-            followPadding={nav.isNavigating && cameraLocked ? { paddingBottom: isCalm ? 290 : 260, paddingTop: 0, paddingLeft: 0, paddingRight: 0 } : undefined}
+            followPitch={camCtrl ? camCtrl.followPitch : compassMode ? 45 : undefined}
+            followZoomLevel={camCtrl ? camCtrl.followZoomLevel : compassMode ? 15 : undefined}
+            followPadding={camCtrl ? camCtrl.followPadding : undefined}
           />
 
           {/* Terrain only on Standard/Satellite — classic styles don't reliably support it */}
@@ -803,7 +941,19 @@ export default function MapScreen() {
           />
           {showTraffic && <TrafficLayer />}
           <IncidentHeatmap incidents={nearbyIncidents} visible={showIncidents} />
-          {showPhotoReports && <PhotoReportMarkers reports={photoReports} onReportTap={(r) => Alert.alert('Photo Report', r.description || r.type)} />}
+          {showPhotoReports && (
+            <PhotoReportMarkers reports={photoReports} onReportTap={(r) => setSelectedPhotoReport(r)} />
+          )}
+          {showTrafficSafety && isTrafficSafetyLayerEnabled(location.lat, location.lng) && (
+            <TrafficSafetyLayer
+              zones={trafficSafetyZones}
+              onZoneTap={(z) =>
+                Alert.alert(
+                  'Traffic safety zone',
+                  `Community-sourced map data (speed camera location). Coverage may be incomplete; verify with posted signs.\n\nAlways obey posted speed limits.${z.maxspeed ? `\n\nOSM maxspeed tag: ${z.maxspeed}` : ''}`,
+                )}
+            />
+          )}
           {showFuel && <FuelStationMarkers stations={fuelStations} visible={showFuel} onStationTap={(s) => Alert.alert(s.name || 'Gas Station', s.price ? `$${s.price.toFixed(2)}/gal` : 'Tap for directions')} />}
 
           {nav.navigationData?.polyline && (
@@ -813,11 +963,11 @@ export default function MapScreen() {
               isNavigating={nav.isNavigating}
               routeColor="#3B82F6"
               casingColor="#1E40AF"
-              passedColor="#93C5FD"
+              passedColor="#9CA3AF"
               routeWidth={modeConfig.routeWidth}
               useGradient={false}
               congestion={nav.navigationData.congestion}
-              showCongestion={false}
+              showCongestion={nav.isNavigating}
               isCalm={isCalm}
               isRerouting={nav.isRerouting}
             />
@@ -879,7 +1029,7 @@ export default function MapScreen() {
             if (inc.type === 'construction') return showConstruction;
             return true;
           })} onIncidentTap={setActiveReportCard} />}
-          {showCameras && (
+          {showCameras && !nav.isNavigating && (
             <CameraMarkers cameras={cameraLocations} onCameraTap={(cam) => setSelectedTrafficCamera(cam)} />
           )}
           <FriendMarkers friends={friendLocations} onFriendTap={(f) => Alert.alert(f.name, 'What would you like to do?', [
@@ -892,7 +1042,7 @@ export default function MapScreen() {
             visible={true}
             showsUserHeadingIndicator={userLocationHeadingOk}
             androidRenderMode="compass"
-            animated={true}
+            animated={!((nav.isNavigating && cameraLocked) || compassMode)}
             minDisplacement={1}
           />
 
@@ -977,7 +1127,7 @@ export default function MapScreen() {
 
       {/* ═══ TOP BAR (not navigating, not previewing) ═════════════════════ */}
       {!nav.isNavigating && !nav.showRoutePreview && (
-        <View style={[s.topBar, { top: insets.top + 8 }]}>
+        <View style={[s.topBar, { top: insets.top + 8, zIndex: 15 }]} pointerEvents="box-none">
           <View style={s.searchRow}>
             <TouchableOpacity style={[s.menuBtn, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => setShowMenu(!showMenu)}>
               <Ionicons name="menu" size={18} color={colors.text} />
@@ -991,7 +1141,10 @@ export default function MapScreen() {
                 value={searchQuery}
                 onChangeText={handleSearchChange}
                 onFocus={() => setIsSearchFocused(true)}
-                returnKeyType="search"
+                blurOnSubmit
+                returnKeyType="done"
+                onSubmitEditing={() => { Keyboard.dismiss(); setIsSearchFocused(false); }}
+                clearButtonMode="while-editing"
               />
               {searchQuery.length > 0 ? (
                 <TouchableOpacity onPress={handleClearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -1011,6 +1164,7 @@ export default function MapScreen() {
               data={[
                 { key: 'favorites', label: 'Favorites', icon: 'star-outline' as const, query: '' },
                 { key: 'nearby', label: 'Nearby', icon: 'location-outline' as const, query: '' },
+                { key: 'cheap_gas', label: 'Cheap Gas', icon: 'pricetag-outline' as const, query: '' },
                 { key: 'gas', label: 'Gas', icon: 'flash-outline' as const, query: 'gas station' },
                 { key: 'food', label: 'Food', icon: 'restaurant-outline' as const, query: 'restaurant' },
                 { key: 'coffee', label: 'Coffee', icon: 'cafe-outline' as const, query: 'coffee' },
@@ -1024,12 +1178,27 @@ export default function MapScreen() {
                 return (
                   <TouchableOpacity style={[s.chip, { backgroundColor: sel ? colors.primary : colors.surface, borderColor: sel ? 'transparent' : colors.border }]}
                     onPress={() => {
-                      setActiveChip(chip.key as any);
+                      setActiveChip(chip.key);
                       if (chip.query) { handleSearchChange(chip.query); setIsSearchFocused(true); }
-                      else if (chip.key === 'nearby') {
-                        api.get<any>(`/api/places/nearby?lat=${location.lat}&lng=${location.lng}&radius=1000`).then((r) => {
+                      else if (chip.key === 'nearby' || chip.key === 'cheap_gas') {
+                        const lat0 = location.lat;
+                        const lng0 = location.lng;
+                        const radius = chip.key === 'cheap_gas' ? 20000 : 1000;
+                        const typeQs = chip.key === 'cheap_gas' ? '&type=gas_station' : '';
+                        api.get<any>(`/api/places/nearby?lat=${lat0}&lng=${lng0}&radius=${radius}${typeQs}`).then((r) => {
                           const d = (r.data as any)?.data ?? r.data;
-                          if (Array.isArray(d)) setSearchResults(d.map((p: any) => ({ name: p.name, address: p.address ?? '', lat: p.lat ?? 0, lng: p.lng ?? 0, placeType: p.types?.[0], place_id: p.place_id })));
+                          if (Array.isArray(d)) {
+                            const mapped = d.map((p: any) => ({
+                              name: p.name,
+                              address: p.address ?? '',
+                              lat: p.lat ?? 0,
+                              lng: p.lng ?? 0,
+                              placeType: p.types?.[0],
+                              place_id: p.place_id,
+                            }));
+                            mapped.sort((a, b) => haversineMeters(lat0, lng0, a.lat, a.lng) - haversineMeters(lat0, lng0, b.lat, b.lng));
+                            setSearchResults(mapped);
+                          }
                           setIsSearchFocused(true);
                         }).catch(() => {});
                       }
@@ -1126,7 +1295,10 @@ export default function MapScreen() {
 
         const tcRadius = isCalm ? 26 : isSport ? 16 : 20;
         const tcShadowColor = isCalm ? '#3E7DC4' : isAdaptive ? '#1D4ED8' : isSport ? '#DC2626' : '#000';
-        const distParts = (currentStep.distance ?? '').split(' ');
+        const stepDm = currentStep.distanceMeters;
+        const distParts = typeof stepDm === 'number' && stepDm > 0
+          ? (stepDm < 160 ? [`${Math.round(stepDm * 3.281)}`, 'ft'] : [`${(stepDm / 1609.34).toFixed(1)}`, 'mi'])
+          : (currentStep.distance ?? '').split(' ');
         // Road we're currently on = next step's name (Mapbox gives the name of the road you're on next)
         const currentRoad = currentStep.name ?? null;
 
@@ -1160,7 +1332,7 @@ export default function MapScreen() {
                   </View>
                   {/* Instruction + next step */}
                   <View style={s.tcPremInstrBlock}>
-                    <Text style={s.tcPremInstr} numberOfLines={2}>{currentStep.instruction}</Text>
+                    <Text style={s.tcPremInstr} numberOfLines={3}>{currentStep.instruction}</Text>
                     {nextStep && (
                       <View style={s.tcPremThenRow}>
                         <Ionicons name="return-down-forward-outline" size={12} color="rgba(255,255,255,0.65)" />
@@ -1366,7 +1538,7 @@ export default function MapScreen() {
           .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
         const textPrimary = isSport ? '#f1f5f9' : colors.text;
         const textSec = isSport ? 'rgba(241,245,249,0.5)' : colors.textTertiary;
-        const distLabel = formatDistance(nav.liveEta.distanceMiles * 1609.34);
+        const distLabel = formatDistance(nav.liveEta.distanceMiles);
 
         return (
           <Animated.View
@@ -1375,13 +1547,13 @@ export default function MapScreen() {
             style={[
               s.etaBarUnified,
               {
+                flexDirection: 'column',
                 paddingBottom: Math.max(insets.bottom, 8) + 4,
                 backgroundColor: etaBg,
                 borderTopColor: etaAccent + '33',
               },
             ]}
           >
-            {/* ── Single row: stats + compact End button ── */}
             <View style={s.etaStatsRow}>
               {isSport && (
                 <>
@@ -1406,17 +1578,15 @@ export default function MapScreen() {
                 <Text style={[s.etaUniLbl, { color: textSec }]}>ARRIVE</Text>
                 <Text style={[s.etaUniVal, { color: '#22C55E' }]}>{arrivalTime}</Text>
               </View>
-              <View style={[s.etaUniDiv, { backgroundColor: etaAccent + '33' }]} />
-              {/* Compact End button inline with stats — minimal vertical space */}
-              <TouchableOpacity
-                style={[s.etaEndInline, { backgroundColor: '#EF4444' }]}
-                onPress={nav.stopNavigation}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="close" size={16} color="#fff" />
-                <Text style={s.etaEndInlineT}>End</Text>
-              </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={[s.etaEndRowBtn, { marginTop: 10, marginHorizontal: 4 }]}
+              onPress={nav.stopNavigation}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="stop-circle" size={22} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={s.etaEndRowBtnT}>End navigation</Text>
+            </TouchableOpacity>
           </Animated.View>
         );
       })()}
@@ -1428,14 +1598,14 @@ export default function MapScreen() {
         const fastestTraffic = fastestRoute ? analyzeCongestion(fastestRoute.congestion) : null;
         const ecoTraffic     = ecoRoute     ? analyzeCongestion(ecoRoute.congestion)     : null;
         const selectedRoute  = nav.availableRoutes[nav.selectedRouteIndex];
-        const isFastestSel   = selectedRoute?.routeType === 'best' || nav.selectedRouteIndex === 0;
+        const isFastestSel   = selectedRoute?.routeType === 'best';
 
         const timeSaving = (fastestRoute && ecoRoute)
           ? Math.max(0, Math.round((ecoRoute.duration - fastestRoute.duration) / 60))
           : 0;
 
         return (
-        <Animated.View entering={SlideInDown.duration(320).easing((t) => 1 - Math.pow(1 - t, 3))} exiting={SlideOutDown.duration(220)} style={[s.preview, { paddingBottom: Math.max(insets.bottom, 20) + 16, backgroundColor: isLight ? 'rgba(255,255,255,0.97)' : 'rgba(15,23,42,0.97)', borderColor: colors.border }]}>
+        <Animated.View entering={SlideInDown.duration(320).easing(Easing.out(Easing.cubic))} exiting={SlideOutDown.duration(220)} style={[s.preview, { paddingBottom: Math.max(insets.bottom, 20) + 16, backgroundColor: isLight ? 'rgba(255,255,255,0.97)' : 'rgba(15,23,42,0.97)', borderColor: colors.border }]}>
           <View style={[s.handle, { backgroundColor: colors.border }]} />
           {/* Destination header */}
           <Text style={[s.previewTitle, { color: colors.text }]} numberOfLines={1}>
@@ -1513,7 +1683,7 @@ export default function MapScreen() {
           {hasTallVehicle && (
             <View style={s.truckRow}>
               <Ionicons name="car-outline" size={16} color={colors.primary} />
-              <Text style={[s.truckLbl, { color: colors.primary }]}>Avoid low clearances ({vehicleHeight?.toFixed(1)}m)</Text>
+              <Text style={[s.truckLbl, { color: colors.primary }]}>Avoid low clearances ({typeof vehicleHeight === 'number' ? vehicleHeight.toFixed(1) : vehicleHeight ?? '—'}m)</Text>
               <Switch value={avoidLowClearances} onValueChange={setAvoidLowClearances} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#fff" />
             </View>
           )}
@@ -1527,7 +1697,8 @@ export default function MapScreen() {
                 animationDuration: 600, animationMode: 'flyTo',
               });
               // 2. Start nav, then swoop in to 3D follow camera
-              setTimeout(() => {
+              if (startNavTimeoutRef.current) clearTimeout(startNavTimeoutRef.current);
+              startNavTimeoutRef.current = setTimeout(() => {
                 nav.startNavigation();
                 cameraRef.current?.setCamera({
                   centerCoordinate: [location.lng, location.lat],
@@ -1548,7 +1719,8 @@ export default function MapScreen() {
                 centerCoordinate: [location.lng, location.lat],
                 zoomLevel: 13, pitch: 30, heading: 0, animationDuration: 300,
               });
-              setTimeout(() => {
+              if (startNavTimeoutRef.current) clearTimeout(startNavTimeoutRef.current);
+              startNavTimeoutRef.current = setTimeout(() => {
                 nav.startNavigation();
                 cameraRef.current?.setCamera({
                   centerCoordinate: [location.lng, location.lat],
@@ -1574,14 +1746,14 @@ export default function MapScreen() {
       })()}
 
       {/* ═══ TRIP SUMMARY ═════════════════════════════════════════════════ */}
-      {nav.tripSummary && (
-        <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)} style={s.tripOverlay}>
-          <Animated.View entering={SlideInDown.springify().damping(22).stiffness(200)} style={[s.tripCard, { paddingBottom: Math.max(insets.bottom, 20) + 16, backgroundColor: isLight ? 'rgba(255,255,255,0.97)' : 'rgba(15,23,42,0.97)' }]}>
-            <Text style={[s.tripTitle, { color: colors.text }]}>Trip Summary</Text>
+      <TripSummaryModal visible={!!nav.tripSummary} onClose={nav.dismissTripSummary}>
+        {nav.tripSummary ? (
+          <>
+            <Text style={[s.tripTitle, {	color: colors.text }]}>Trip Summary</Text>
             <Text style={[s.tripRoute, { color: colors.textTertiary }]}>{nav.tripSummary.origin} → {nav.tripSummary.destination}</Text>
             <View style={s.tripGrid}>
               {[
-                { l: 'Distance', v: `${nav.tripSummary.distance.toFixed(1)} mi`, c: colors.text },
+                { l: 'Distance', v: `${(nav.tripSummary.distance ?? 0).toFixed(1)} mi`, c: colors.text },
                 { l: 'Time', v: formatDuration(nav.tripSummary.duration), c: colors.text },
                 { l: 'Safety', v: String(nav.tripSummary.safety_score), c: colors.success },
                 { l: 'Gems', v: `+${nav.tripSummary.gems_earned}`, c: colors.warning },
@@ -1593,7 +1765,7 @@ export default function MapScreen() {
                 </View>
               ))}
             </View>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
               <TouchableOpacity style={[s.tripDone, { backgroundColor: 'rgba(59,130,246,0.12)', flex: 1 }]} onPress={() => setShowTripShare(true)}>
                 <Text style={[s.tripDoneT, { color: colors.primary }]}>Share</Text>
               </TouchableOpacity>
@@ -1601,14 +1773,19 @@ export default function MapScreen() {
                 <Text style={s.tripDoneT}>Done</Text>
               </TouchableOpacity>
             </View>
-          </Animated.View>
-        </Animated.View>
-      )}
+          </>
+        ) : null}
+      </TripSummaryModal>
 
       {/* ═══ FLOATING BUTTONS ═════════════════════════════════════════════ */}
 
       {!nav.showRoutePreview && !nav.tripSummary && !selectedPlace && !selectedPlaceId && (
-        <TouchableOpacity style={[s.reportFab, { bottom: (nav.isNavigating ? 100 : 40) + insets.bottom, right: 16 }]}
+        <TouchableOpacity style={[s.reportFab, {
+          bottom: (nav.isNavigating ? 100 : 40) + insets.bottom,
+          right: 16,
+          backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
+          borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
+        }]}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowReportPicker(true); }}
           onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); setShowPhotoReport(true); }}>
           <Ionicons name="camera-outline" size={20} color={colors.textSecondary} />
@@ -1616,21 +1793,34 @@ export default function MapScreen() {
       )}
 
       {!nav.showRoutePreview && !nav.tripSummary && !nav.isNavigating && !selectedPlace && !selectedPlaceId && (
-        <TouchableOpacity style={[s.communityBtn, { bottom: 40 + insets.bottom, left: 16 }]} onPress={() => setShowCommunitySheet(true)}>
+        <TouchableOpacity
+          style={[s.communityBtn, {
+            bottom: 108 + insets.bottom,
+            left: 16,
+            backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(30,30,46,0.92)',
+            borderColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)',
+          }]}
+          onPress={() => setShowCommunitySheet(true)}
+        >
           <Ionicons name="people-outline" size={18} color={colors.text} /><Text style={[s.communityT, { color: colors.text }]}>Community</Text>
         </TouchableOpacity>
       )}
 
       {((nav.isNavigating && !cameraLocked) || (!nav.isNavigating && isExploring && !isSearchFocused && !nav.showRoutePreview && !nav.tripSummary)) && (
         <TouchableOpacity style={[s.recenter, { top: insets.top + 88 }]} onPress={handleRecenter}>
-          <Text style={s.recenterT}>Recenter</Text>
+          <Ionicons name={nav.isNavigating ? 'lock-closed' : 'navigate'} size={14} color="#fff" style={{ marginRight: 6 }} />
+          <Text style={s.recenterT}>{nav.isNavigating ? 'Lock Camera' : 'Recenter'}</Text>
         </TouchableOpacity>
       )}
 
       {!nav.isNavigating && !nav.showRoutePreview && (
-        <TouchableOpacity style={[s.orionFab, { top: insets.top + 210 }]} onPress={() => setShowOrion(true)} activeOpacity={0.8}>
+        <TouchableOpacity style={[s.orionFab, { top: insets.top + 210 }]} onPress={() => {
+          if (user?.isPremium) { setShowOrion(true); }
+          else { Alert.alert('Premium Feature', 'Orion AI co-pilot is available with SnapRoad Premium. Upgrade to unlock.', [{ text: 'Later' }, { text: 'Upgrade', onPress: () => rnNav.navigate('Profile' as never) }]); }
+        }} activeOpacity={0.8}>
           <LinearGradient colors={user?.isPremium ? ['#7C3AED', '#5B21B6'] : ['#94a3b8', '#64748b']} style={s.orionGrad}>
             <Ionicons name="mic-outline" size={22} color="#fff" />
+            {!user?.isPremium && <View style={{ position: 'absolute', top: -2, right: -2, backgroundColor: '#F59E0B', borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="lock-closed" size={8} color="#fff" /></View>}
           </LinearGradient>
         </TouchableOpacity>
       )}
@@ -1694,15 +1884,18 @@ export default function MapScreen() {
             <Ionicons name="layers-outline" size={20} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[s.layerBtn, { top: insets.top + 152, backgroundColor: compassMode ? colors.primary : colors.surface, borderColor: compassMode ? colors.primary : colors.border }]}
+            style={[s.layerBtn, { top: insets.top + 152, backgroundColor: followMode === 'heading' ? '#3B82F6' : followMode === 'follow' ? '#10B981' : colors.surface, borderColor: followMode !== 'free' ? 'transparent' : colors.border }]}
             onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setCompassMode((prev) => {
-                if (!prev) setIsExploring(false);
-                return !prev;
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setFollowMode((prev) => {
+                const next = prev === 'free' ? 'follow' : prev === 'follow' ? 'heading' : 'free';
+                if (next === 'follow') { setIsExploring(false); setCompassMode(false); setCameraLocked(true); }
+                else if (next === 'heading') { setIsExploring(false); setCompassMode(true); setCameraLocked(true); }
+                else { setCompassMode(false); }
+                return next;
               });
             }}>
-            <Ionicons name="compass-outline" size={20} color={compassMode ? '#fff' : colors.text} />
+            <Ionicons name={followMode === 'heading' ? 'navigate' : followMode === 'follow' ? 'locate' : 'compass-outline'} size={20} color={followMode !== 'free' ? '#fff' : colors.text} />
           </TouchableOpacity>
         </>
       )}
@@ -1774,12 +1967,32 @@ export default function MapScreen() {
               { k: 'cameras', l: 'Cameras', ic: 'videocam-outline' as const, v: showCameras, t: setShowCameras },
               { k: 'construction', l: 'Construction', ic: 'construct-outline' as const, v: showConstruction, t: setShowConstruction },
               { k: 'fuel', l: 'Gas Stations', ic: 'flash-outline' as const, v: showFuel, t: setShowFuel },
-              { k: 'photos', l: 'Photo Reports', ic: 'camera-outline' as const, v: showPhotoReports, t: setShowPhotoReports },
+              {
+                k: 'trafficSafety',
+                l: 'Traffic safety (speed cameras)',
+                ic: 'speedometer-outline' as const,
+                v: showTrafficSafety,
+                t: setShowTrafficSafety,
+                disabled: !isTrafficSafetyLayerEnabled(location.lat, location.lng),
+                sub: !isTrafficSafetyLayerEnabled(location.lat, location.lng) ? 'Not available in your region' : undefined,
+              },
+              { k: 'photos', l: 'Photo reports', ic: 'camera-outline' as const, v: showPhotoReports, t: setShowPhotoReports },
             ].map((ly) => (
               <View key={ly.k} style={s.layerRow}>
                 <Ionicons name={ly.ic} size={18} color={colors.textSecondary} />
-                <Text style={[s.layerLbl, { color: colors.text }]}>{ly.l}</Text>
-                <Switch value={ly.v} onValueChange={ly.t} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#fff" />
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={[s.layerLbl, { color: colors.text }]}>{ly.l}</Text>
+                  {'sub' in ly && ly.sub ? (
+                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>{ly.sub}</Text>
+                  ) : null}
+                </View>
+                <Switch
+                  value={ly.v}
+                  disabled={'disabled' in ly && ly.disabled}
+                  onValueChange={ly.t}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
               </View>
             ))}
           </View>
@@ -1787,7 +2000,12 @@ export default function MapScreen() {
       )}
 
       <PhotoReportSheet visible={showPhotoReport} lat={location.lat} lng={location.lng} onClose={() => setShowPhotoReport(false)} isLight={isLight} />
-      <HamburgerMenu visible={showMenu} onClose={() => setShowMenu(false)} isLight={isLight} onNavigate={() => setShowMenu(false)} />
+      <PhotoReportDetailModal
+        visible={!!selectedPhotoReport}
+        report={selectedPhotoReport}
+        onClose={() => setSelectedPhotoReport(null)}
+      />
+      <HamburgerMenu visible={showMenu} onClose={() => setShowMenu(false)} isLight={isLight} onNavigate={(screen) => { setShowMenu(false); if (screen === 'Profile' || screen === 'Help') { rnNav.navigate('Profile' as never); } else if (screen === 'TripAnalytics' || screen === 'RouteHistory') { rnNav.navigate('Rewards' as never); } }} />
       {showGemOverlay && <GemOverlay visible={showGemOverlay} gemsEarned={gemOverlayAmount} onDone={() => setShowGemOverlay(false)} />}
       <TripShare visible={showTripShare} onClose={() => setShowTripShare(false)} trip={nav.tripSummary ?? null} />
 
@@ -1795,11 +2013,31 @@ export default function MapScreen() {
         visible={showOrion}
         onClose={() => setShowOrion(false)}
         isPremium={user?.isPremium ?? false}
-        context={{ lat: location.lat, lng: location.lng, isNavigating: nav.isNavigating, drivingMode, destination: nav.navigationData?.destination?.name, speed }}
+        context={{
+          lat: location.lat,
+          lng: location.lng,
+          isNavigating: nav.isNavigating,
+          drivingMode,
+          destination: nav.navigationData?.destination?.name,
+          speed,
+          currentAddress,
+          userName: user?.name || user?.email,
+          nearbyOffers: nearbyOffers.slice(0, 5).map((o) => ({
+            id: o.id,
+            title: o.business_name,
+            partner_name: o.business_name,
+            lat: o.lat,
+            lng: o.lng,
+          })),
+        }}
         onAction={(action) => {
-          if (action.type === 'navigate' && action.lat && action.lng) {
+          if (action.type === 'navigate' && action.lat != null && action.lng != null) {
             setShowOrion(false);
-            handleSelectResult({ name: action.name ?? 'Destination', address: '', lat: action.lat, lng: action.lng });
+            const dest = { name: action.name ?? 'Destination', address: '', lat: action.lat, lng: action.lng };
+            handleStartDirections(dest);
+          } else if (action.type === 'add_stop' && action.lat && action.lng) {
+            setShowOrion(false);
+            nav.addWaypoint({ lat: action.lat, lng: action.lng, name: action.name ?? 'Stop' });
           } else if (action.type === 'mode' && action.name) {
             const m = action.name.toLowerCase();
             if (m === 'calm' || m === 'adaptive' || m === 'sport') setDrivingMode(m as DrivingMode);
@@ -1860,7 +2098,7 @@ const s = StyleSheet.create({
   tcPremRow: { flexDirection: 'row', alignItems: 'center' },
   // Distance block: bigger numbers
   tcPremDistBlock: { alignItems: 'center', minWidth: 60, flexShrink: 0 },
-  tcPremDistVal: { color: '#fff', fontSize: 32, fontWeight: '900', letterSpacing: -1.5, lineHeight: 34 },
+  tcPremDistVal: { color: '#fff', fontSize: 34, fontWeight: '900', letterSpacing: -1.5, lineHeight: 36 },
   tcPremDistUnit: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '700', marginTop: -2, textTransform: 'uppercase', letterSpacing: 0.5 },
   // Icon box: larger
   tcPremIconBox: {
@@ -1872,7 +2110,7 @@ const s = StyleSheet.create({
   },
   tcPremInstrBlock: { flex: 1, minWidth: 0 },
   // Instruction: slightly larger
-  tcPremInstr: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: -0.3, lineHeight: 24 },
+  tcPremInstr: { color: '#fff', fontSize: 19, fontWeight: '800', letterSpacing: -0.3, lineHeight: 26 },
   tcPremThenRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5 },
   tcPremThen: { color: 'rgba(255,255,255,0.70)', fontSize: 13, fontWeight: '600', flex: 1 },
   tcPremMute: { paddingLeft: 12, paddingTop: 2, flexShrink: 0 },
@@ -1941,8 +2179,8 @@ const s = StyleSheet.create({
   // ─── Unified ETA bar: single compact row ────────────────────────────────
   etaBarUnified: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    paddingHorizontal: 12, paddingTop: 10,
-    flexDirection: 'row',              // single row — stats + End button inline
+    paddingHorizontal: 10, paddingTop: 6,
+    flexDirection: 'row',
     borderTopWidth: 1.5,
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     ...Platform.select({
@@ -1964,10 +2202,10 @@ const s = StyleSheet.create({
   },
   etaEndInlineT: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
   etaUniCol: { flex: 1, alignItems: 'center' },
-  etaUniLbl: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.9 },
-  etaUniValAccent: { fontSize: 21, fontWeight: '900', marginTop: 3, letterSpacing: -0.5 },
-  etaUniVal: { fontSize: 18, fontWeight: '800', marginTop: 3 },
-  etaUniDiv: { width: 1, height: 38 },
+  etaUniLbl: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.9 },
+  etaUniValAccent: { fontSize: 24, fontWeight: '900', marginTop: 4, letterSpacing: -0.5 },
+  etaUniVal: { fontSize: 21, fontWeight: '800', marginTop: 4 },
+  etaUniDiv: { width: 1, height: 40 },
   etaUniSpeedBlock: { alignItems: 'center', minWidth: 48 },
   etaUniSpeedVal: { fontSize: 28, fontWeight: '900', letterSpacing: -1, lineHeight: 30 },
   etaUniSpeedUnit: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: -2 },
@@ -2064,9 +2302,9 @@ const s = StyleSheet.create({
   tripTitle: { fontSize: 22, fontWeight: '800', marginBottom: 4, letterSpacing: -0.3 },
   tripRoute: { fontSize: 13, marginBottom: 18 },
   tripGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 22 },
-  tripStat: { width: '47%' as any, borderRadius: 16, padding: 14 },
-  tripStatL: { fontSize: 12, fontWeight: '500' },
-  tripStatV: { fontSize: 20, fontWeight: '800', marginTop: 2 },
+  tripStat: { width: '47%' as any, borderRadius: 16, padding: 16 },
+  tripStatL: { fontSize: 13, fontWeight: '600' },
+  tripStatV: { fontSize: 22, fontWeight: '800', marginTop: 4 },
   tripDone: { borderRadius: 16, paddingVertical: 16, alignItems: 'center', ...shadow(12, 0.3) },
   tripDoneT: { color: '#fff', fontSize: 16, fontWeight: '800' },
 
@@ -2074,7 +2312,7 @@ const s = StyleSheet.create({
   reportFab: { position: 'absolute', width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.94)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', ...shadow(8, 0.12) },
   communityBtn: { position: 'absolute', minHeight: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.94)', paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', ...shadow(8, 0.12) },
   communityT: { fontSize: 12, fontWeight: '700' },
-  recenter: { position: 'absolute', alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.8)', paddingHorizontal: 22, paddingVertical: 10, borderRadius: 22, zIndex: 12 },
+  recenter: { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)', paddingHorizontal: 22, paddingVertical: 10, borderRadius: 22, zIndex: 12 },
   recenterT: { color: '#fff', fontSize: 13, fontWeight: '700' },
   orionFab: { position: 'absolute', right: 16, zIndex: 12 },
   orionGrad: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', ...shadow(16, 0.5) },

@@ -178,21 +178,75 @@ def get_leaderboard(
     time_filter: str = "weekly",
     user: dict = Depends(get_current_user),
 ):
+    user_id = str(user.get("id") or current_user_id)
+    tf = (time_filter or "weekly").lower()
+
+    # Try Supabase first for real user data
+    try:
+        sb = get_supabase()
+        query = sb.table("profiles").select("id,name,safety_score,level,gems,total_miles,is_premium,state")
+        if state and state.lower() != "all":
+            query = query.eq("state", state.upper())
+        if tf in ("all_time", "alltime", "lifetime"):
+            query = query.order("total_miles", desc=True).order("gems", desc=True)
+        elif tf in ("month", "monthly"):
+            query = query.order("level", desc=True).order("gems", desc=True)
+        elif tf == "all":
+            query = query.order("gems", desc=True).order("safety_score", desc=True)
+        else:
+            # weekly (default): safety-first board
+            query = query.order("safety_score", desc=True).order("gems", desc=True)
+        res = query.limit(limit).execute()
+        if res.data and len(res.data) > 0:
+            leaderboard = []
+            for i, u in enumerate(res.data):
+                leaderboard.append({
+                    "rank": i + 1,
+                    "id": str(u.get("id", "")),
+                    "name": u.get("name") or "Driver",
+                    "safety_score": u.get("safety_score") or 0,
+                    "level": u.get("level") or 1,
+                    "gems": u.get("gems") or 0,
+                    "total_miles": u.get("total_miles") or 0,
+                    "state": u.get("state") or "",
+                    "is_premium": bool(u.get("is_premium")),
+                })
+            my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == user_id), len(leaderboard) + 1)
+            my_profile = sb.table("profiles").select("name,safety_score,gems,level,state").eq("id", user_id).limit(1).execute()
+            my_data = my_profile.data[0] if my_profile.data else {}
+            return {
+                "success": True,
+                "data": {
+                    "leaderboard": leaderboard,
+                    "my_rank": my_rank,
+                    "my_score": my_data.get("safety_score", 0),
+                    "total_drivers": len(leaderboard),
+                    "my_data": {
+                        "name": my_data.get("name", "Driver"),
+                        "safety_score": my_data.get("safety_score", 0),
+                        "gems": my_data.get("gems", 0),
+                        "level": my_data.get("level", 1),
+                        "state": my_data.get("state", ""),
+                    },
+                    "states": [],
+                },
+            }
+    except Exception:
+        pass
+
+    # Fallback to mock data in dev
     all_users = list(users_db.values())
     if state and state.lower() != "all":
         all_users = [u for u in all_users if (u.get("state") or "").upper() == state.upper()]
-    # Count challenges participated per user (challenger or opponent)
-    def challenges_count(uid):
-        return sum(
-            1 for c in challenges_db
-            if str(c.get("challenger_id")) == str(uid) or str(c.get("opponent_id")) == str(uid)
-        )
-    # Sort by safety_score desc, then gems desc (tie-break)
-    sorted_users = sorted(
-        all_users,
-        key=lambda x: (x.get("safety_score", 0), x.get("gems", 0)),
-        reverse=True,
-    )[:limit]
+    if tf in ("all_time", "alltime", "lifetime"):
+        sort_key = lambda x: (x.get("total_miles", 0), x.get("gems", 0))
+    elif tf in ("month", "monthly"):
+        sort_key = lambda x: (x.get("level", 0), x.get("gems", 0))
+    elif tf == "all":
+        sort_key = lambda x: (x.get("gems", 0), x.get("safety_score", 0))
+    else:
+        sort_key = lambda x: (x.get("safety_score", 0), x.get("gems", 0))
+    sorted_users = sorted(all_users, key=sort_key, reverse=True)[:limit]
     leaderboard = []
     for i, u in enumerate(sorted_users):
         uid = str(u["id"])
@@ -204,24 +258,11 @@ def get_leaderboard(
             "level": u.get("level", 1),
             "gems": u.get("gems", 0),
             "total_miles": u.get("total_miles", 0),
-            "streak": u.get("streak", 0),
             "state": u.get("state", ""),
             "is_premium": u.get("is_premium", False),
-            "badges_count": len(u.get("badges_earned", [])),
-            "challenges_participated": challenges_count(uid),
         })
-    user_id = str(user.get("id") or current_user_id)
     current_user = _user_state(user_id)
     my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == user_id), len(leaderboard) + 1)
-    # Current user summary for "Your Rank" card
-    my_data = {
-        "name": current_user.get("name", "Driver"),
-        "safety_score": current_user.get("safety_score", 0),
-        "gems": current_user.get("gems", 0),
-        "level": current_user.get("level", 1),
-        "state": current_user.get("state", ""),
-    }
-    states = sorted(set(u.get("state", "") for u in list(users_db.values()) if u.get("state")))
     return {
         "success": True,
         "data": {
@@ -229,8 +270,14 @@ def get_leaderboard(
             "my_rank": my_rank,
             "my_score": current_user.get("safety_score", 0),
             "total_drivers": len(all_users),
-            "my_data": my_data,
-            "states": states,
+            "my_data": {
+                "name": current_user.get("name", "Driver"),
+                "safety_score": current_user.get("safety_score", 0),
+                "gems": current_user.get("gems", 0),
+                "level": current_user.get("level", 1),
+                "state": current_user.get("state", ""),
+            },
+            "states": [],
         },
     }
 
@@ -382,48 +429,131 @@ def get_trip_gem_summary(trip_id: str):
 @router.get("/gems/history")
 def get_gem_history(user: dict = Depends(get_current_user)):
     user_id = str(user.get("id") or current_user_id)
-    user = _user_state(user_id)
-    return {"success": True, "data": {"current_balance": user.get("gems", 0), "total_earned": user.get("gems", 0) + 500, "total_spent": 500, "recent_transactions": [{"type": "earned", "amount": 50, "source": "Trip completion", "date": datetime.now().isoformat()}, {"type": "earned", "amount": 100, "source": "Challenge won", "date": (datetime.now() - timedelta(hours=2)).isoformat()}, {"type": "spent", "amount": 500, "source": "Car skin purchase", "date": (datetime.now() - timedelta(days=1)).isoformat()}]}}
+    try:
+        sb = get_supabase()
+        profile = sb_get_profile(user_id)
+        balance = int((profile or {}).get("gems", 0))
+
+        earned_rows = sb.table("trips").select("gems_earned, created_at").eq("profile_id", user_id).gt("gems_earned", 0).order("created_at", desc=True).limit(20).execute()
+        spent_rows = sb.table("redemptions").select("gems_cost, created_at, offer_id").eq("user_id", user_id).order("created_at", desc=True).limit(20).execute()
+
+        transactions = []
+        for r in (earned_rows.data or []):
+            transactions.append({"type": "earned", "amount": int(r.get("gems_earned", 0)), "source": "Trip completion", "date": r.get("created_at", "")})
+        for r in (spent_rows.data or []):
+            transactions.append({"type": "spent", "amount": int(r.get("gems_cost", 0)), "source": "Offer redemption", "date": r.get("created_at", "")})
+        transactions.sort(key=lambda x: x.get("date", ""), reverse=True)
+
+        total_earned = sum(t["amount"] for t in transactions if t["type"] == "earned")
+        total_spent = sum(t["amount"] for t in transactions if t["type"] == "spent")
+        return {"success": True, "data": {"current_balance": balance, "total_earned": total_earned, "total_spent": total_spent, "recent_transactions": transactions[:20]}}
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        u = _user_state(user_id)
+        return {"success": True, "data": {"current_balance": u.get("gems", 0), "total_earned": 0, "total_spent": 0, "recent_transactions": []}}
 
 
 # ==================== DRIVING SCORE ====================
 @router.get("/driving-score")
 def get_driving_score(user: dict = Depends(get_current_user)):
     user_id = str(user.get("id") or current_user_id)
-    user = _user_state(user_id)
-    base_score = user.get("safety_score", 85)
-    metrics = [
-        {"id": "speed", "name": "Speed Compliance", "score": min(100, base_score + random.randint(-5, 10)), "trend": random.choice(["up", "stable"]), "description": "Staying within speed limits"},
-        {"id": "braking", "name": "Smooth Braking", "score": min(100, base_score + random.randint(-15, 5)), "trend": random.choice(["down", "stable", "up"]), "description": "Gradual, safe braking"},
-        {"id": "acceleration", "name": "Smooth Acceleration", "score": min(100, base_score + random.randint(-8, 8)), "trend": "up", "description": "Gradual speed increases"},
-        {"id": "following", "name": "Following Distance", "score": min(100, base_score + random.randint(-3, 10)), "trend": "stable", "description": "Safe distance from other cars"},
-        {"id": "turns", "name": "Turn Signals", "score": min(100, base_score + random.randint(0, 12)), "trend": "up", "description": "Signaling before turns"},
-        {"id": "focus", "name": "Focus Time", "score": min(100, base_score + random.randint(-10, 5)), "trend": random.choice(["stable", "up"]), "description": "Minimal phone distractions"},
-    ]
-    sorted_metrics = sorted(metrics, key=lambda x: x["score"])
     tip_templates = {"speed": "Try cruise control on highways.", "braking": "Start braking earlier for smoother stops.", "acceleration": "Ease into the gas pedal.", "following": "The 3-second rule is your friend!", "turns": "Keep signaling even when no one's around.", "focus": "Mount your phone for hands-free navigation!"}
-    orion_tips = [{"id": str(i + 1), "metric": m["id"], "tip": tip_templates.get(m["id"], "Keep driving safely!"), "priority": "high" if i == 0 else "medium"} for i, m in enumerate(sorted_metrics[:3])]
-    overall_score = sum(m["score"] for m in metrics) // len(metrics)
-    return {"success": True, "data": {"overall_score": overall_score, "metrics": metrics, "orion_tips": orion_tips, "last_updated": datetime.now().isoformat()}}
+    try:
+        sb = get_supabase()
+        profile = sb_get_profile(user_id) or {}
+        base_score = int(profile.get("safety_score", 0))
+
+        trips = sb.table("trips").select("safety_score, hard_braking_events, speeding_events, created_at").eq("profile_id", user_id).order("created_at", desc=True).limit(50).execute()
+        rows = trips.data or []
+
+        if not rows:
+            metrics = [
+                {"id": "speed", "name": "Speed Compliance", "score": 0, "trend": "stable", "description": "Staying within speed limits"},
+                {"id": "braking", "name": "Smooth Braking", "score": 0, "trend": "stable", "description": "Gradual, safe braking"},
+                {"id": "acceleration", "name": "Smooth Acceleration", "score": 0, "trend": "stable", "description": "Gradual speed increases"},
+                {"id": "following", "name": "Following Distance", "score": 0, "trend": "stable", "description": "Safe distance from other cars"},
+                {"id": "turns", "name": "Turn Signals", "score": 0, "trend": "stable", "description": "Signaling before turns"},
+                {"id": "focus", "name": "Focus Time", "score": 0, "trend": "stable", "description": "Minimal phone distractions"},
+            ]
+            return {"success": True, "data": {"overall_score": base_score, "metrics": metrics, "orion_tips": [], "last_updated": datetime.now().isoformat(), "no_data": True}}
+
+        avg_safety = sum(float(r.get("safety_score", 0)) for r in rows) / len(rows)
+        avg_braking = sum(int(r.get("hard_braking_events", 0)) for r in rows) / len(rows)
+        avg_speeding = sum(int(r.get("speeding_events", 0)) for r in rows) / len(rows)
+        speed_score = max(0, min(100, int(100 - avg_speeding * 10)))
+        braking_score = max(0, min(100, int(100 - avg_braking * 8)))
+
+        metrics = [
+            {"id": "speed", "name": "Speed Compliance", "score": speed_score, "trend": "stable", "description": "Staying within speed limits"},
+            {"id": "braking", "name": "Smooth Braking", "score": braking_score, "trend": "stable", "description": "Gradual, safe braking"},
+            {"id": "acceleration", "name": "Smooth Acceleration", "score": int(avg_safety), "trend": "stable", "description": "Gradual speed increases"},
+            {"id": "following", "name": "Following Distance", "score": min(100, int(avg_safety) + 5), "trend": "stable", "description": "Safe distance from other cars"},
+            {"id": "turns", "name": "Turn Signals", "score": min(100, int(avg_safety) + 3), "trend": "stable", "description": "Signaling before turns"},
+            {"id": "focus", "name": "Focus Time", "score": int(avg_safety), "trend": "stable", "description": "Minimal phone distractions"},
+        ]
+        sorted_metrics = sorted(metrics, key=lambda x: x["score"])
+        orion_tips = [{"id": str(i + 1), "metric": m["id"], "tip": tip_templates.get(m["id"], "Keep driving safely!"), "priority": "high" if i == 0 else "medium"} for i, m in enumerate(sorted_metrics[:3])]
+        overall_score = base_score or (sum(m["score"] for m in metrics) // len(metrics))
+        return {"success": True, "data": {"overall_score": overall_score, "metrics": metrics, "orion_tips": orion_tips, "last_updated": datetime.now().isoformat()}}
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        u = _user_state(user_id)
+        base_score = u.get("safety_score", 85)
+        metrics = [{"id": k, "name": k.title(), "score": base_score, "trend": "stable", "description": ""} for k in ("speed", "braking", "acceleration", "following", "turns", "focus")]
+        return {"success": True, "data": {"overall_score": base_score, "metrics": metrics, "orion_tips": [], "last_updated": datetime.now().isoformat()}}
 
 
 # ==================== WEEKLY RECAP ====================
 @router.get("/weekly-recap")
 def get_weekly_recap(user: dict = Depends(get_current_user)):
     user_id = str(user.get("id") or current_user_id)
-    user = _user_state(user_id)
-    base_trips = random.randint(8, 15)
-    base_miles = base_trips * random.uniform(10, 25)
-    stats = {
-        "total_trips": base_trips, "total_miles": round(base_miles, 1),
-        "total_time_minutes": int(base_miles * 2.5), "gems_earned": random.randint(1500, 3500),
-        "xp_earned": random.randint(10000, 20000), "safety_score_avg": user.get("safety_score", 85),
-        "safety_score_change": random.randint(-2, 5), "challenges_won": random.randint(0, 3),
-        "offers_redeemed": random.randint(2, 6), "streak_days": user.get("safe_drive_streak", 0),
-        "rank_change": random.randint(0, 12),
-        "highlights": [f"Best safety score: {min(100, user.get('safety_score', 85) + random.randint(2, 8))} on Wednesday", f"Longest trip: {random.randint(25, 60)} miles on Saturday"],
-    }
-    return {"success": True, "data": stats}
+    try:
+        sb = get_supabase()
+        profile = sb_get_profile(user_id) or {}
+        week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+
+        trip_res = sb.table("trips").select(
+            "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, created_at"
+        ).eq("profile_id", user_id).gte("created_at", week_ago).execute()
+        trips = trip_res.data or []
+
+        redemption_res = sb.table("redemptions").select("id").eq("user_id", user_id).gte("created_at", week_ago).execute()
+        offers_redeemed = len(redemption_res.data or [])
+
+        total_miles = sum(float(t.get("distance_miles", 0)) for t in trips)
+        total_time = sum(int(t.get("duration_minutes", 0)) for t in trips)
+        gems_earned = sum(int(t.get("gems_earned", 0)) for t in trips)
+        xp_earned = sum(int(t.get("xp_earned", 0)) for t in trips)
+        safety_scores = [float(t["safety_score"]) for t in trips if t.get("safety_score")]
+        safety_avg = int(sum(safety_scores) / len(safety_scores)) if safety_scores else int(profile.get("safety_score", 0))
+
+        best_safety = max(safety_scores) if safety_scores else 0
+        longest = max((float(t.get("distance_miles", 0)) for t in trips), default=0)
+        highlights = []
+        if best_safety:
+            highlights.append(f"Best safety score: {int(best_safety)}")
+        if longest:
+            highlights.append(f"Longest trip: {round(longest, 1)} miles")
+
+        stats = {
+            "total_trips": len(trips),
+            "total_miles": round(total_miles, 1),
+            "total_time_minutes": total_time,
+            "gems_earned": gems_earned,
+            "xp_earned": xp_earned,
+            "safety_score_avg": safety_avg,
+            "offers_redeemed": offers_redeemed,
+            "streak_days": int(profile.get("safe_drive_streak", 0)),
+            "highlights": highlights,
+        }
+        return {"success": True, "data": stats}
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        u = _user_state(user_id)
+        return {"success": True, "data": {"total_trips": 0, "total_miles": 0, "total_time_minutes": 0, "gems_earned": 0, "xp_earned": 0, "safety_score_avg": u.get("safety_score", 0), "offers_redeemed": 0, "streak_days": u.get("safe_drive_streak", 0), "highlights": []}}
 
 
 if ENVIRONMENT == "production":

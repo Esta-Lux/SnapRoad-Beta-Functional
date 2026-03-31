@@ -21,6 +21,8 @@ interface Props {
 const WAGER_OPTIONS = [10, 25, 50, 100] as const;
 
 export default function SnapRaceMode({ visible, onClose, userId, friends, gems }: Props) {
+  // Backend route /api/social/snaprace/start does not exist yet — hide until built
+  if (!__DEV__) return null;
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [wager, setWager] = useState<number>(10);
   const [starting, setStarting] = useState(false);

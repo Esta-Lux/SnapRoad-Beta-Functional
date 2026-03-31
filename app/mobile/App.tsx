@@ -76,15 +76,7 @@ function MainTabs() {
         tabBarInactiveTintColor: colors.textTertiary,
         tabBarStyle: isNavigating
           ? {
-              // Keep layout space so MapScreen doesn't jump, but make it invisible.
-              // ETA bar uses position:absolute and covers this area seamlessly.
-              opacity: 0,
-              pointerEvents: 'none' as const,
-              backgroundColor: colors.tabBar,
-              borderTopWidth: 0,
-              paddingBottom: Platform.OS === 'ios' ? 28 : 8,
-              paddingTop: 8,
-              height: Platform.OS === 'ios' ? 88 : 64,
+              display: 'none' as const,
             }
           : {
               backgroundColor: colors.tabBar,

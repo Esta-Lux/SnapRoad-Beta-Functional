@@ -14,10 +14,10 @@ def calculate_auto_gems(discount_percent: int, is_free_item: bool = False) -> in
 
 
 def calculate_free_discount(premium_discount: int) -> int:
-    """Free users get ~25% of the premium discount, minimum 1%."""
+    """Free users get ~30% of the premium discount (premium gets 70%), minimum 1%."""
     if premium_discount <= 0:
         return 0
-    return max(1, premium_discount // 4)
+    return max(1, round(premium_discount * 0.3))
 
 
 def calculate_redemption_fee(total_redemptions: int) -> float:

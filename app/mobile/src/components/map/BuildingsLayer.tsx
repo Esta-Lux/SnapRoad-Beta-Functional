@@ -22,6 +22,24 @@ const SPORT_COLORS = {
 
 const ADAPTIVE_COLORS = { low: '#d4d4d8', mid: '#c0c0c8', high: '#b0b0b8', opacity: 0.75 };
 
+// Only Mapbox Studio / classic styles ship a "composite" vector source that
+// contains a "building" source-layer. Custom or non-Mapbox styles don't, and
+// referencing a missing source causes dozens of native errors per second.
+const STYLES_WITH_COMPOSITE = [
+  'streets-v', 'navigation-', 'dark-v', 'light-v', 'outdoors-v',
+  'satellite-streets-v',
+];
+
+const STYLES_WITHOUT_BUILDINGS = [
+  '/standard', '/standard-satellite',
+];
+
+function hasCompositeSource(url: string): boolean {
+  if (!url) return false;
+  if (STYLES_WITHOUT_BUILDINGS.some((s) => url.includes(s))) return false;
+  return STYLES_WITH_COMPOSITE.some((s) => url.includes(s));
+}
+
 export default React.memo(function BuildingsLayer({
   drivingMode = 'adaptive',
   isLight = true,
@@ -29,20 +47,12 @@ export default React.memo(function BuildingsLayer({
   activeStyleURL = '',
 }: Props) {
   if (!isMapAvailable() || !MapboxGL) return null;
+  if (!hasCompositeSource(activeStyleURL)) return null;
 
   const isCalm  = drivingMode === 'calm';
   const isSport = drivingMode === 'sport';
 
-  // Whether we're on a classic Mapbox style (streets-v12, navigation-night-v1, etc.)
-  // Classic styles render their own label layers internally; we use a very low layerIndex
-  // and reduced opacity so building-name labels still show through our extrusion.
-  const isClassic = (
-    activeStyleURL.includes('streets-v') ||
-    activeStyleURL.includes('navigation-') ||
-    activeStyleURL.includes('dark-v') ||
-    activeStyleURL.includes('light-v') ||
-    activeStyleURL.includes('outdoors-v')
-  );
+  const isClassic = hasCompositeSource(activeStyleURL);
 
   let colors: { low: string; mid: string; high: string; opacity: number };
   if (isCalm) {
@@ -53,10 +63,8 @@ export default React.memo(function BuildingsLayer({
     colors = isLight ? ADAPTIVE_COLORS : SPORT_COLORS.explore;
   }
 
-  // On classic styles keep opacity low so building labels remain readable
   const opacity = isClassic ? Math.min(colors.opacity, 0.40) : colors.opacity;
 
-  // Ambient occlusion: off for classic styles (labels already compete for space)
   const aoIntensity = isClassic ? 0 : isCalm ? (isNavigating ? 0.40 : 0.25) : 0.18;
   const aoRadius    = isClassic ? 0 : isCalm ? 3.5 : 2.5;
 
@@ -68,9 +76,8 @@ export default React.memo(function BuildingsLayer({
         sourceID="composite"
         sourceLayerID="building"
         filter={['==', ['get', 'extrude'], 'true']}
-        minZoomLevel={14}
-        maxZoomLevel={24}
-        // Avoid hardcoded layer indexes; some styles have fewer layers and Android crashes.
+        minZoomLevel={14.5}
+        maxZoomLevel={22}
         style={{
           fillExtrusionColor: [
             'interpolate', ['linear'], ['get', 'height'],
@@ -80,18 +87,16 @@ export default React.memo(function BuildingsLayer({
           ],
           fillExtrusionHeight: [
             'interpolate', ['linear'], ['zoom'],
-            14, 0,
-            14.5, ['get', 'height'],
+            14.5, 0,
+            15, ['get', 'height'],
           ],
           fillExtrusionBase: [
             'interpolate', ['linear'], ['zoom'],
-            14, 0,
-            14.5, ['get', 'min_height'],
+            14.5, 0,
+            15, ['get', 'min_height'],
           ],
-          fillExtrusionOpacity: opacity,
+          fillExtrusionOpacity: Math.min(opacity, 0.5),
           fillExtrusionVerticalGradient: true,
-          fillExtrusionAmbientOcclusionIntensity: aoIntensity,
-          fillExtrusionAmbientOcclusionRadius: aoRadius,
         }}
       />
     );

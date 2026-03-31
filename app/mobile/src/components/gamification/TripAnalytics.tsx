@@ -34,10 +34,18 @@ export default function TripAnalytics({ visible, onClose }: Props) {
     setError(null);
     api.get<Analytics>('/api/trips/analytics')
       .then((res) => {
-        if (res.success) {
-          setData(res.data ?? null);
-        } else {
+        if (!res.success) {
           setError(res.error || 'Failed to load analytics');
+          return;
+        }
+        const root = res.data as unknown as Record<string, unknown> | Analytics | null;
+        const payload = root && typeof root === 'object' && 'data' in root
+          ? (root as { data: Analytics }).data
+          : (root as Analytics);
+        if (payload && typeof (payload as Analytics).total_miles === 'number') {
+          setData(payload as Analytics);
+        } else {
+          setError('No analytics data');
         }
       })
       .catch(() => setError('Network error'))

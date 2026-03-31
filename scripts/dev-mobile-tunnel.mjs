@@ -173,12 +173,20 @@ function spawnCloudflared(onUrl) {
   return child;
 }
 
-function spawnExpo() {
+function spawnExpo(packagerHostname, metroPort = 8081) {
   const args = useLanMetro
     ? ["expo", "start", "--dev-client", "--lan", "--clear"]
     : ["expo", "start", "--dev-client", "--tunnel", "--clear"];
   const expoEnv = { ...process.env, FORCE_COLOR: "1" };
   delete expoEnv.CI;
+  // Physical device: Expo UrlCreator reads EXPO_PACKAGER_PROXY_URL first, then REACT_NATIVE_PACKAGER_HOSTNAME.
+  // Without these, --lan may pick the wrong interface (VPN) and the dev client shows "Could not connect to development server".
+  if (packagerHostname) {
+    expoEnv.REACT_NATIVE_PACKAGER_HOSTNAME = packagerHostname;
+    expoEnv.EXPO_PACKAGER_PROXY_URL = `http://${packagerHostname}:${metroPort}`;
+  }
+  // Listen on all interfaces so phones on LAN can reach Metro (not only 127.0.0.1).
+  expoEnv.EXPO_DEVTOOLS_LISTEN_ADDRESS = expoEnv.EXPO_DEVTOOLS_LISTEN_ADDRESS || "0.0.0.0";
   return spawn("npx", args, {
     cwd: MOBILE_DIR,
     shell: true,
@@ -214,16 +222,20 @@ async function main() {
   }
 
   let cf = null;
+  /** LAN IPv4 for API URL + Metro packager hostname (physical device). */
+  let lanIp = null;
 
   if (useLanMetro) {
-    const ip = pickLanIPv4();
-    if (ip) {
-      const lanUrl = `http://${ip}:8001`;
+    lanIp = pickLanIPv4();
+    if (lanIp) {
+      const lanUrl = `http://${lanIp}:8001`;
       writeMobileApiUrl(lanUrl);
       console.log(
         `[dev:mobile] LAN mode: wrote EXPO_PUBLIC_API_URL → ${lanUrl} (same Wi‑Fi as this Mac).\n` +
           "  • Phone + Mac on the same Wi‑Fi; open the dev client from Metro’s QR / URL.\n" +
           "  • If this IP is wrong (VPN / multiple interfaces), edit app/mobile/.env manually.\n" +
+          `  • Metro URL for dev client: EXPO_PACKAGER_PROXY_URL=http://${lanIp}:8081 (and REACT_NATIVE_PACKAGER_HOSTNAME)\n` +
+          `  • If Metro uses another port, set METRO_PORT before starting (default 8081).\n` +
           "[dev:mobile] Starting Expo (dev client + LAN)…\n",
       );
     } else {
@@ -279,7 +291,8 @@ async function main() {
     );
   }
 
-  const expo = spawnExpo();
+  const metroPort = Number(process.env.METRO_PORT || process.env.RCT_METRO_PORT || 8081) || 8081;
+  const expo = spawnExpo(useLanMetro ? lanIp : null, metroPort);
   expo.on("error", (err) => {
     console.error("[dev:mobile] Expo failed:", err.message);
   });

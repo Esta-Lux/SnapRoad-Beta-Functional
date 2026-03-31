@@ -1,9 +1,11 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { Coordinate, DrivingMode } from '../types';
 import type { DirectionsResult, DirectionsStep, GeocodeResult } from '../lib/directions';
 import { getMapboxRouteOptions } from '../lib/directions';
-import { distanceToPolyline, haversineMeters } from '../utils/distance';
-import { speak, formatTurnInstruction, stopSpeaking } from '../utils/voice';
+import { distanceToPolyline, haversineMeters, remainingDistanceOnPolyline } from '../utils/distance';
+import { speak, formatTurnInstruction, stopSpeaking, configureAudioSession } from '../utils/voice';
+import { api } from '../api/client';
+import * as Haptics from 'expo-haptics';
 
 export interface NavigationData {
   origin: Coordinate & { name?: string };
@@ -104,12 +106,8 @@ export function useNavigation(params: {
   // --- Route select (best/eco) ---
   const handleRouteSelect = useCallback((routeType: 'best' | 'eco') => {
     if (!availableRoutes.length || !navigationData) return;
-    let index = 0;
-    if (routeType === 'eco') {
-      index = availableRoutes.reduce((best, r, i) => (r.distance < availableRoutes[best].distance ? i : best), 0);
-    } else {
-      index = availableRoutes.reduce((best, r, i) => (r.duration < availableRoutes[best].duration ? i : best), 0);
-    }
+    const taggedIdx = availableRoutes.findIndex((r) => r.routeType === routeType);
+    const index = taggedIdx >= 0 ? taggedIdx : 0;
     setSelectedRouteIndex(index);
     const r = availableRoutes[index];
     if (!r?.polyline?.length || !navigationData) return;
@@ -129,6 +127,7 @@ export function useNavigation(params: {
   // --- Start / Stop navigation ---
   const startNavigation = useCallback(() => {
     if (!navigationData) return;
+    configureAudioSession();
     setIsNavigating(true);
     isNavigatingRef.current = true;
     traveledRef.current = 0;
@@ -148,26 +147,32 @@ export function useNavigation(params: {
     isNavigatingRef.current = false;
     stopSpeaking();
 
-    const durationMin = tripStartTimeRef.current
-      ? Math.round((Date.now() - tripStartTimeRef.current) / 60000)
-      : 5;
-    const distMiles = navigationData?.distance
-      ? navigationData.distance / 1609.34
-      : durationMin * 0.5;
-    const roundedDist = Math.round(distMiles * 10) / 10;
+    /** Must match backend /api/trips/complete gates (distance + duration + real GPS movement). */
+    const MIN_QUALIFYING_MI = 0.15;
+    const MIN_QUALIFYING_SEC = 45;
+    /** ~200 m of actual GPS path — stops "start nav → instant end" from inflating polyline progress */
+    const MIN_GPS_METERS = 200;
 
-    setTimeout(() => speak(`Trip ended. You drove ${roundedDist} miles.`, 'normal', drivingMode), 500);
+    const now = Date.now();
+    const durationSec = tripStartTimeRef.current
+      ? Math.round((now - tripStartTimeRef.current) / 1000)
+      : 0;
+    const durationMin = Math.max(0, Math.round(durationSec / 60));
 
-    setTripSummary({
-      distance: roundedDist,
-      duration: durationMin,
-      safety_score: 85,
-      gems_earned: 5,
-      xp_earned: 1000,
-      origin: navigationData?.origin?.name ?? 'Start',
-      destination: navigationData?.destination?.name ?? 'End',
-      date: new Date().toLocaleDateString(),
-    });
+    let polyMiles = 0;
+    if (navigationData?.polyline && navigationData.polyline.length >= 2) {
+      const remainMeters = remainingDistanceOnPolyline(userLocation, navigationData.polyline);
+      const drivenMeters = Math.max(0, (navigationData.distance ?? 0) - remainMeters);
+      polyMiles = drivenMeters / 1609.34;
+    }
+    const gpsMiles = traveledRef.current / 1609.34;
+    // Credit the lower of route progress and GPS odometry (tiny slack for drift)
+    const distMiles = Math.max(0, Math.min(polyMiles, gpsMiles + 0.03));
+    const roundedDist = Math.max(0, Math.round(distMiles * 100) / 100);
+
+    const originName = navigationData?.origin?.name ?? 'Start';
+    const destName = navigationData?.destination?.name ?? 'End';
+    const tripStartMs = tripStartTimeRef.current;
 
     setNavigationData(null);
     setAvailableRoutes([]);
@@ -176,7 +181,70 @@ export function useNavigation(params: {
     offRouteSinceRef.current = null;
     rerouteInFlightRef.current = false;
     tripStartTimeRef.current = null;
-  }, [navigationData, drivingMode]);
+
+    if (
+      traveledRef.current < MIN_GPS_METERS
+      || durationSec < MIN_QUALIFYING_SEC
+      || roundedDist < MIN_QUALIFYING_MI
+    ) {
+      setTimeout(
+        () =>
+          speak(
+            'Navigation ended. Trips count after you drive a short distance for at least a minute.',
+            'normal',
+            drivingMode,
+          ),
+        400,
+      );
+      return;
+    }
+
+    setTimeout(() => speak(`Trip ended. You drove ${roundedDist} miles.`, 'normal', drivingMode), 500);
+
+    const startedAt = tripStartMs
+      ? new Date(tripStartMs).toISOString()
+      : new Date(now - durationSec * 1000).toISOString();
+
+    const summaryPayload: TripSummary = {
+      distance: roundedDist,
+      duration: Math.max(1, durationMin),
+      safety_score: 85,
+      gems_earned: 5,
+      xp_earned: 100,
+      origin: originName,
+      destination: destName,
+      date: new Date().toLocaleDateString(),
+    };
+
+    queueMicrotask(() => setTripSummary(summaryPayload));
+
+    api.post<{ success: boolean; data?: { gems_earned?: number; xp_earned?: number; safety_score?: number } }>(
+      '/api/trips/complete',
+      {
+        distance_miles: roundedDist,
+        duration_seconds: durationSec,
+        safety_score: 85,
+        started_at: startedAt,
+        ended_at: new Date(now).toISOString(),
+        hard_braking_events: 0,
+        speeding_events: 0,
+        incidents_reported: 0,
+      },
+    ).then((res) => {
+      if (!res.success || !res.data) return;
+      const root = res.data as Record<string, unknown>;
+      const d = (root?.data as Record<string, unknown> | undefined) ?? root;
+      setTripSummary((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          gems_earned: Number(d?.gems_earned ?? prev.gems_earned),
+          xp_earned: Number(d?.xp_earned ?? prev.xp_earned),
+          safety_score: Number(d?.safety_score ?? prev.safety_score),
+        };
+      });
+    }).catch(() => { /* offline */ });
+  }, [navigationData, drivingMode, userLocation]);
 
   const dismissTripSummary = useCallback(() => setTripSummary(null), []);
 
@@ -194,6 +262,17 @@ export function useNavigation(params: {
     prevLocationRef.current = { lat, lng };
   }, [navigationData]);
 
+  const progressAlongRouteMeters = useMemo(() => {
+    if (!isNavigating || !navigationData?.polyline?.length || navigationData.polyline.length < 2) {
+      return traveledDistanceMeters;
+    }
+    const total = navigationData.distance ?? 0;
+    if (total <= 0) return traveledDistanceMeters;
+    const rem = remainingDistanceOnPolyline(userLocation, navigationData.polyline);
+    const along = total - rem;
+    return Math.max(0, Math.min(total, along));
+  }, [isNavigating, navigationData?.polyline, navigationData?.distance, userLocation.lat, userLocation.lng, traveledDistanceMeters]);
+
   // --- Step index tracking ---
   useEffect(() => {
     if (!isNavigating || !navigationData?.steps?.length) return;
@@ -201,7 +280,7 @@ export function useNavigation(params: {
     let nextIndex = 0;
     for (let i = 0; i < navigationData.steps.length; i++) {
       const stepDist = navigationData.steps[i].distanceMeters ?? 0;
-      if (traveledDistanceMeters < cumulative + stepDist) {
+      if (progressAlongRouteMeters < cumulative + stepDist) {
         nextIndex = i;
         break;
       }
@@ -209,7 +288,7 @@ export function useNavigation(params: {
       nextIndex = i + 1;
     }
     setCurrentStepIndex(Math.min(nextIndex, navigationData.steps.length - 1));
-  }, [isNavigating, navigationData?.steps, traveledDistanceMeters]);
+  }, [isNavigating, navigationData?.steps, progressAlongRouteMeters]);
 
   // --- Voice announcements on step change ---
   useEffect(() => {
@@ -236,9 +315,46 @@ export function useNavigation(params: {
     if (stepIndex === 0) {
       setTimeout(() => speak(phrase, 'normal', drivingMode), 2500);
     } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       speak(phrase, 'normal', drivingMode);
     }
   }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode]);
+
+  // --- Early turn warnings (500ft and 150ft before next step) ---
+  const earlyWarningRef = useRef<{ stepIdx: number; spoke500: boolean; spoke150: boolean }>({ stepIdx: -1, spoke500: false, spoke150: false });
+  useEffect(() => {
+    if (!isNavigating || !navigationData?.steps?.length) return;
+    const steps = navigationData.steps;
+    const nextIdx = currentStepIndex + 1;
+    if (nextIdx >= steps.length) return;
+
+    let cumulative = 0;
+    for (let i = 0; i <= currentStepIndex && i < steps.length; i++) {
+      cumulative += steps[i].distanceMeters ?? 0;
+    }
+    const nextStepStart = cumulative;
+    const distToNext = nextStepStart - progressAlongRouteMeters;
+
+    if (earlyWarningRef.current.stepIdx !== nextIdx) {
+      earlyWarningRef.current = { stepIdx: nextIdx, spoke500: false, spoke150: false };
+    }
+    const w = earlyWarningRef.current;
+    const nextStep = steps[nextIdx];
+    if (!nextStep?.instruction) return;
+
+    const FEET_500 = 152;
+    const FEET_150 = 46;
+
+    if (distToNext <= FEET_500 && distToNext > FEET_150 && !w.spoke500) {
+      w.spoke500 = true;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      speak(`In 500 feet, ${nextStep.instruction}`, 'normal', drivingMode);
+    } else if (distToNext <= FEET_150 && !w.spoke150) {
+      w.spoke150 = true;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      speak(nextStep.instruction, 'normal', drivingMode);
+    }
+  }, [isNavigating, navigationData?.steps, currentStepIndex, progressAlongRouteMeters, drivingMode]);
 
   // --- Arrival announcement ---
   const hasAnnouncedArrival = useRef(false);
@@ -257,19 +373,31 @@ export function useNavigation(params: {
     speak(arrivalMsg, 'high', drivingMode);
   }, [isNavigating, liveEta?.distanceMiles, navigationData?.destination, drivingMode]);
 
-  // --- ETA from route distance ---
+  // --- ETA from route-snapped remaining distance ---
   useEffect(() => {
     if (!isNavigating || !navigationData) return;
     const totalMeters = navigationData.distance;
     const durationSeconds = navigationData.duration;
     if (totalMeters <= 0 || durationSeconds <= 0) return;
-    const totalMiles = totalMeters / 1609.34;
-    const traveledMiles = traveledDistanceMeters / 1609.34;
-    const remainingMiles = Math.max(0, totalMiles - traveledMiles);
-    const initialDurationMin = durationSeconds / 60;
-    const etaMinutes = totalMiles > 0 ? (remainingMiles / totalMiles) * initialDurationMin : 0;
-    setLiveEta({ distanceMiles: remainingMiles, etaMinutes: Math.max(0, Math.round(etaMinutes)) });
-  }, [isNavigating, navigationData?.distance, navigationData?.duration, traveledDistanceMeters]);
+
+    const polyline = navigationData.polyline;
+    let remainingMeters: number;
+    if (polyline && polyline.length >= 2) {
+      remainingMeters = remainingDistanceOnPolyline(userLocation, polyline);
+    } else {
+      remainingMeters = Math.max(0, totalMeters - traveledDistanceMeters);
+    }
+
+    const remainingMiles = Math.max(0, remainingMeters / 1609.34);
+    const fraction = Math.min(1, Math.max(0, remainingMeters / totalMeters));
+    const etaMinutesLinear = (durationSeconds / 60) * fraction;
+    const speedMph = Math.max(0, speed);
+    const etaFromSpeed = speedMph > 3 ? (remainingMiles / speedMph) * 60 : etaMinutesLinear;
+    const etaMinutes = speedMph > 3
+      ? Math.max(0, Math.round(0.5 * etaMinutesLinear + 0.5 * etaFromSpeed))
+      : Math.max(0, Math.round(etaMinutesLinear));
+    setLiveEta({ distanceMiles: remainingMiles, etaMinutes });
+  }, [isNavigating, navigationData?.distance, navigationData?.duration, navigationData?.polyline, userLocation.lat, userLocation.lng, speed, traveledDistanceMeters]);
 
   // --- Off-route detection + auto-reroute ---
   useEffect(() => {
@@ -300,6 +428,7 @@ export function useNavigation(params: {
 
     rerouteInFlightRef.current = true;
     lastRerouteAtRef.current = now;
+    setIsRerouting(true);
     const rerouteMsg = drivingMode === 'calm' ? 'Let me find you a new route.' : 'Rerouting.';
     speak(rerouteMsg, 'high', drivingMode);
 
@@ -312,10 +441,59 @@ export function useNavigation(params: {
       } finally {
         rerouteInFlightRef.current = false;
         offRouteSinceRef.current = null;
+        setIsRerouting(false);
       }
     };
     reroute();
   }, [userLocation.lat, userLocation.lng, speed, isNavigating, navigationData?.destination, navigationData?.polyline, drivingMode, fetchDirections]);
+
+  const addWaypoint = useCallback(async (waypoint: Coordinate & { name?: string }) => {
+    if (!isNavigatingRef.current || !navigationData?.destination) return;
+    speak('Adding a stop. Rerouting.', 'high', drivingMode);
+    setIsRerouting(true);
+    try {
+      const coords = `${userLocation.lng},${userLocation.lat};${waypoint.lng},${waypoint.lat};${navigationData.destination.lng},${navigationData.destination.lat}`;
+      const token = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '';
+      const res = await fetch(
+        `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coords}?access_token=${token}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed`,
+      );
+      const json = await res.json();
+      const route = json?.routes?.[0];
+      if (route?.geometry?.coordinates?.length) {
+        const polyline = route.geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+        const steps = (route.legs ?? []).flatMap((leg: any) =>
+          (leg.steps ?? []).map((s: any) => ({
+            instruction: s.maneuver?.instruction ?? '',
+            distance: `${(s.distance / 1609.34).toFixed(1)} mi`,
+            distanceMeters: s.distance ?? 0,
+            maneuver: s.maneuver?.type ?? 'turn',
+            name: s.name ?? '',
+            intersections: s.intersections,
+            lanes: s.intersections?.[0]?.lanes,
+          })),
+        );
+        traveledRef.current = 0;
+        setTraveledDistanceMeters(0);
+        setCurrentStepIndex(0);
+        lastSpokenStepRef.current = -1;
+        const totalDuration = route.duration ?? 0;
+        const totalDistance = route.distance ?? 0;
+        setNavigationData({
+          ...navigationData,
+          steps,
+          polyline,
+          duration: totalDuration,
+          distance: totalDistance,
+          durationText: totalDuration < 3600 ? `${Math.round(totalDuration / 60)} min` : `${Math.floor(totalDuration / 3600)}h ${Math.round((totalDuration % 3600) / 60)}min`,
+          distanceText: `${(totalDistance / 1609.34).toFixed(1)} mi`,
+        });
+      }
+    } catch (e) {
+      console.warn('addWaypoint error:', e);
+    } finally {
+      setIsRerouting(false);
+    }
+  }, [navigationData, userLocation, drivingMode]);
 
   return {
     navigationData,
@@ -337,5 +515,6 @@ export function useNavigation(params: {
     stopNavigation,
     dismissTripSummary,
     updatePosition,
+    addWaypoint,
   };
 }

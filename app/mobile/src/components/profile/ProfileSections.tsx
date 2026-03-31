@@ -46,7 +46,7 @@ export function ProfileHeader({
   level: number;
 }) {
   return (
-    <LinearGradient colors={['#1D4ED8', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerCard}>
+    <LinearGradient colors={user?.isPremium ? ['#D97706', '#F59E0B'] : ['#1D4ED8', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerCard}>
       <TouchableOpacity style={styles.avatarCircle} accessibilityRole="button" accessibilityLabel="Profile avatar">
         <Text style={styles.avatarText}>{initials}</Text>
       </TouchableOpacity>

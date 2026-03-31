@@ -47,10 +47,12 @@ from routes.incidents import router as incidents_router
 from routes.concerns import router as concerns_router
 from routes.config_public import router as config_public_router
 from routes.osm import router as osm_router
+from routes.traffic_safety import router as traffic_safety_router
 from routes.webhooks import router as webhooks_router
 from routes.payments import router as payments_router
 from routes.family import router as family_router
 from routes.photo_reports import router as photo_reports_router
+from routes.place_alerts import router as place_alerts_router
 from config import (
     JWT_SECRET,
     SUPABASE_URL,
@@ -286,10 +288,12 @@ def create_app() -> FastAPI:
     app.include_router(concerns_router)
     app.include_router(config_public_router)
     app.include_router(osm_router)
+    app.include_router(traffic_safety_router)
     app.include_router(webhooks_router)
     app.include_router(payments_router)
     app.include_router(family_router)
     app.include_router(photo_reports_router)
+    app.include_router(place_alerts_router)
 
     return app
 

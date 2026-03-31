@@ -10,7 +10,7 @@
     "web": "expo start --web",
     "tunnel:api": "cloudflared tunnel --no-autoupdate --url http://localhost:8001",
     "start:dev:tunnel": "expo start --dev-client --tunnel --clear",
-    "start:dev:lan": "expo start --dev-client --lan --clear",
+    "start:dev:lan": "node ./scripts/start-dev-client-lan.mjs",
     "eas:build:dev:ios": "eas build --profile development --platform ios",
     "eas:build:dev:android": "eas build --profile development --platform android",
     "eas:build:dev:ios-sim": "eas build --profile development-simulator --platform ios",

@@ -98,7 +98,8 @@ def login(request: Request, body: LoginRequest):
 
 
 @router.post("/oauth/supabase")
-def oauth_supabase(payload: dict):
+@limiter.limit("10/minute")
+def oauth_supabase(request: Request, payload: dict):
     """
     Exchange a Supabase access token (OAuth session) for a SnapRoad JWT.
     Frontend uses Supabase OAuth (Google/Apple), then calls this endpoint.

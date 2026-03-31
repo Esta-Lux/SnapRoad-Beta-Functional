@@ -122,7 +122,6 @@ def update_user_plan(plan: PlanUpdate, auth_user: dict = Depends(get_current_use
         "is_premium": user["is_premium"],
         "plan": user["plan"],
         "gem_multiplier": user["gem_multiplier"],
-        "plan_selected": True,
     })
     return {"success": True, "message": f"Plan updated to {user['plan']}", "data": users_db[user_id]}
 

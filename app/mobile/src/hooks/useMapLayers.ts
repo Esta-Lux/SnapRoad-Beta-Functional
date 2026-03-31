@@ -10,6 +10,8 @@ interface LayerState {
   showConstruction: boolean;
   showFuel: boolean;
   showPhotoReports: boolean;
+  /** Open data speed camera / traffic safety POIs (not available in some regions). */
+  showTrafficSafety: boolean;
 }
 
 const DEFAULTS: LayerState = {
@@ -19,6 +21,7 @@ const DEFAULTS: LayerState = {
   showConstruction: false,
   showFuel: false,
   showPhotoReports: false,
+  showTrafficSafety: false,
 };
 
 function loadSaved(): LayerState {
@@ -52,6 +55,7 @@ export function useMapLayers() {
   const setShowConstruction = useCallback((v: boolean) => setState((p) => ({ ...p, showConstruction: v })), []);
   const setShowFuel = useCallback((v: boolean) => setState((p) => ({ ...p, showFuel: v })), []);
   const setShowPhotoReports = useCallback((v: boolean) => setState((p) => ({ ...p, showPhotoReports: v })), []);
+  const setShowTrafficSafety = useCallback((v: boolean) => setState((p) => ({ ...p, showTrafficSafety: v })), []);
 
   return {
     ...state,
@@ -62,5 +66,6 @@ export function useMapLayers() {
     setShowConstruction,
     setShowFuel,
     setShowPhotoReports,
+    setShowTrafficSafety,
   };
 }

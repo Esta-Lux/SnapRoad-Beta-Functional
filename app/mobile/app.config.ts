@@ -24,6 +24,8 @@ const resolveApiUrl = (): string => {
   return value;
 };
 
+const _prod = isProductionBuild();
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: "SnapRoad",
@@ -45,12 +47,23 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       NSLocationWhenInUseUsageDescription:
         "SnapRoad needs your location to show your position on the map and provide turn-by-turn navigation.",
       NSLocationAlwaysAndWhenInUseUsageDescription:
-        "SnapRoad uses your location in the background to track trips and share location with family.",
+        "Turn-by-turn navigation requires background location to update route guidance when your phone is locked.",
+      NSCameraUsageDescription:
+        "SnapRoad uses your camera to take photos of road hazards and incidents for community safety reports.",
+      NSMicrophoneUsageDescription:
+        "SnapRoad uses your microphone for voice commands with the Orion driving assistant.",
+      UIBackgroundModes: ["audio", "location", "fetch"],
       ITSAppUsesNonExemptEncryption: false,
+      ...(_prod ? {} : {
+        NSLocalNetworkUsageDescription:
+          "SnapRoad uses your local network to connect to the development server.",
+        NSAppTransportSecurity: { NSAllowsLocalNetworking: true },
+      }),
     },
   },
   android: {
     package: "com.snaproad.app",
+    usesCleartextTraffic: !_prod,
     adaptiveIcon: {
       backgroundColor: "#0a0a0f",
       foregroundImage: "./assets/android-icon-foreground.png",
@@ -89,7 +102,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-secure-store",
   ],
   extra: {
-    /** Set by EAS during `eas build` — used at runtime to treat preview/internal builds as non-store. */
+    /** Set by EAS during `eas build` -- used at runtime to treat preview/internal builds as non-store. */
     easBuildProfile: process.env.EAS_BUILD_PROFILE || "",
     apiUrl: resolveApiUrl(),
     mapboxPublicToken: envAny(["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"]),

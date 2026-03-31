@@ -3,8 +3,16 @@ import type { DrivingMode } from '../types';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
-/** Tightened to 6 s for safety-critical instructions. */
-const MIN_GAP_MS = 6000;
+const MIN_GAP_MS = 3000;
+
+/**
+ * Reserved for future optional native audio session tuning (playsInSilentMode, background).
+ * We do not import expo-audio here: it requires a matching dev-client / EAS build; a static
+ * import crashes with "Cannot find native module 'ExpoAudio'" on binaries built without it.
+ */
+export async function configureAudioSession(): Promise<void> {
+  /* no-op — expo-speech works without expo-audio; silent-switch behavior may vary by OS */
+}
 
 const SPEECH_RATES: Record<DrivingMode, number> = {
   calm: 0.95,

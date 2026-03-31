@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, memo } from 'react';
+import React, { useEffect, useState, useCallback, memo, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList, Alert,
   TextInput, RefreshControl, Switch, ScrollView,
@@ -61,7 +61,9 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
         </LinearGradient>
       </View>
 
-      {/* Mock member cards */}
+      <View style={{ backgroundColor: 'rgba(124,58,237,0.08)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, marginHorizontal: 16, marginBottom: 8 }}>
+        <Text style={{ color: '#7C3AED', fontSize: 11, fontWeight: '600', textAlign: 'center' }}>Preview data shown below -- real family tracking coming soon</Text>
+      </View>
       <Text style={[styles.previewSection, { color: colors.text }]}>Family Members</Text>
       {MOCK_FAMILY.map((m) => (
         <Animated.View key={m.id} entering={FadeInDown.duration(300).delay(Number(m.id) * 80)}>
@@ -159,6 +161,11 @@ export default function DashboardScreen() {
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [isSharingLocation, setIsSharingLocation] = useState(false);
   const [showSnapRace, setShowSnapRace] = useState(false);
+  const [incomingReq, setIncomingReq] = useState<{ id: string; from_user_id: string; from_name?: string; from_email?: string }[]>([]);
+  const [outgoingReq, setOutgoingReq] = useState<{ id: string; to_user_id: string; to_name?: string }[]>([]);
+  const [searchHits, setSearchHits] = useState<{ id: string; name: string; email?: string; friend_code?: string; is_friend?: boolean }[]>([]);
+  const [addTargetId, setAddTargetId] = useState<string | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadFriends = useCallback(async () => {
     setFriendsLoading(true);
@@ -169,21 +176,53 @@ export default function DashboardScreen() {
     } catch {} finally { setFriendsLoading(false); }
   }, []);
 
-  useEffect(() => { if (section === 'friends') loadFriends(); }, [section, loadFriends]);
+  const loadPending = useCallback(async () => {
+    try {
+      const [inc, out] = await Promise.all([
+        api.get<any>('/api/friends/requests'),
+        api.get<any>('/api/friends/requests/sent'),
+      ]);
+      const idata = (inc.data as any)?.data ?? inc.data;
+      const odata = (out.data as any)?.data ?? out.data;
+      setIncomingReq(Array.isArray(idata) ? idata : []);
+      setOutgoingReq(Array.isArray(odata) ? odata : []);
+    } catch {
+      setIncomingReq([]);
+      setOutgoingReq([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (section === 'friends') {
+      loadFriends();
+      loadPending();
+    }
+  }, [section, loadFriends, loadPending]);
 
   const handleAddFriend = useCallback(async () => {
-    if (!friendCode.trim()) return;
+    const uid = (addTargetId || '').trim();
+    if (!uid) {
+      Alert.alert('Pick someone', 'Search by name, email, or friend code and select a driver from the list.');
+      return;
+    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const res = await api.post('/api/friends/add', { user_id: friendCode.trim() });
-    if (res.success) { Alert.alert('Sent', 'Friend request sent!'); setShowAddFriend(false); setFriendCode(''); loadFriends(); }
-    else Alert.alert('Error', res.error ?? 'Could not add friend');
-  }, [friendCode, loadFriends]);
+    const res = await api.post('/api/friends/add', { user_id: uid });
+    if (res.success) {
+      Alert.alert('Sent', 'Friend request sent!');
+      setShowAddFriend(false);
+      setFriendCode('');
+      setAddTargetId(null);
+      setSearchHits([]);
+      loadFriends();
+      loadPending();
+    } else Alert.alert('Error', res.error ?? 'Could not add friend');
+  }, [addTargetId, loadFriends, loadPending]);
 
   const handleRemoveFriend = useCallback(async (id: string) => {
     Alert.alert('Remove Friend', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: async () => {
-        await api.post(`/api/friends/remove`, { friend_id: id });
+        await api.delete(`/api/friends/${id}`);
         setSelectedFriend(null);
         loadFriends();
       }},
@@ -215,11 +254,55 @@ export default function DashboardScreen() {
       {/* ─── Friends tab ────────────────────────────────────────────── */}
       {section === 'friends' && (
         <View style={{ flex: 1 }}>
+          {(incomingReq.length > 0 || outgoingReq.length > 0) && (
+            <View style={{ paddingHorizontal: 16, marginBottom: 8, gap: 8 }}>
+              {incomingReq.map((r) => (
+                <View key={r.id} style={[styles.requestCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800' }}>{r.from_name ?? 'Friend request'}</Text>
+                    <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
+                      {r.from_email ? r.from_email : `Wants to connect`}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.reqBtn, { backgroundColor: colors.primary }]}
+                    onPress={async () => {
+                      const res = await api.post('/api/friends/accept', { friendship_id: r.id });
+                      if (res.success) { loadFriends(); loadPending(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }
+                      else Alert.alert('Error', res.error ?? 'Could not accept');
+                    }}
+                  >
+                    <Text style={styles.reqBtnT}>Accept</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.reqBtn, { backgroundColor: colors.danger }]}
+                    onPress={async () => {
+                      await api.post('/api/friends/reject', { friendship_id: r.id });
+                      loadPending();
+                    }}
+                  >
+                    <Text style={styles.reqBtnT}>Decline</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {outgoingReq.map((r) => (
+                <View key={r.id} style={[styles.requestCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                  <Ionicons name="time-outline" size={18} color={colors.textSecondary} />
+                  <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Request pending</Text>
+                    <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
+                      Waiting for {r.to_name ?? 'them'} to accept
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
           <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Friends{onlineCount > 0 ? ` · ${onlineCount} online` : ''}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: '600' }}>Share Location</Text>
-              <Switch value={isSharingLocation} onValueChange={(v) => { setIsSharingLocation(v); api.post('/api/social/sharing', { enabled: v }).catch(() => {}); }} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#fff" />
+              <Switch value={isSharingLocation} onValueChange={(v) => { setIsSharingLocation(v); api.put('/api/friends/location/sharing', { is_sharing: v }).catch(() => {}); }} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#fff" />
             </View>
           </View>
           {friendsLoading ? (
@@ -234,7 +317,13 @@ export default function DashboardScreen() {
             </View>
           ) : (
             <FlatList data={friends} keyExtractor={(f) => f.id}
-              refreshControl={<RefreshControl refreshing={friendsLoading} onRefresh={loadFriends} tintColor={colors.primary} />}
+              refreshControl={
+                <RefreshControl
+                  refreshing={friendsLoading}
+                  onRefresh={() => { loadFriends(); loadPending(); }}
+                  tintColor={colors.primary}
+                />
+              }
               contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 80 }}
               renderItem={renderFriend}
             />
@@ -254,13 +343,78 @@ export default function DashboardScreen() {
       )}
 
       {/* Modals */}
-      <Modal visible={showAddFriend} onClose={() => setShowAddFriend(false)}>
+      <Modal visible={showAddFriend} onClose={() => { setShowAddFriend(false); setSearchHits([]); setAddTargetId(null); }}>
         <Text style={[styles.modalTitle, { color: colors.text }]}>Add Friend</Text>
-        <TextInput style={[styles.modalInput, { color: colors.text, backgroundColor: colors.surfaceSecondary }]}
-          placeholder="Enter friend code or email" placeholderTextColor={colors.textSecondary}
-          value={friendCode} onChangeText={setFriendCode} autoCapitalize="none" />
-        <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.primary }]} onPress={handleAddFriend} activeOpacity={0.8}>
-          <Text style={styles.modalBtnText}>Send Request</Text>
+        <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 10, textAlign: 'center', lineHeight: 18 }}>
+          Search by name, email, or 6-character SnapRoad friend code. Tap a result before sending — we will not guess from free text.
+        </Text>
+        <TextInput
+          style={[styles.modalInput, { color: colors.text, backgroundColor: colors.surfaceSecondary }]}
+          placeholder="Search drivers…" placeholderTextColor={colors.textSecondary}
+          value={friendCode}
+          onChangeText={(t) => {
+            setFriendCode(t);
+            setAddTargetId(null);
+            if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+            const q = t.trim();
+            if (q.length < 2) {
+              setSearchHits([]);
+              return;
+            }
+            searchTimerRef.current = setTimeout(async () => {
+              const res = await api.get<any>(`/api/friends/search?q=${encodeURIComponent(q)}`);
+              const data = (res.data as any)?.data ?? res.data;
+              setSearchHits(Array.isArray(data) ? data : []);
+            }, 380);
+          }}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {searchHits.length > 0 && (
+          <FlatList
+            style={{ maxHeight: 220, marginBottom: 12 }}
+            keyboardShouldPersistTaps="handled"
+            data={searchHits}
+            keyExtractor={(h) => h.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[
+                  styles.searchHit,
+                  {
+                    backgroundColor: addTargetId === item.id ? `${colors.primary}22` : colors.surfaceSecondary,
+                    borderColor: addTargetId === item.id ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={() => {
+                  if (item.is_friend) {
+                    Alert.alert('Already friends', 'You are already connected with this driver.');
+                    return;
+                  }
+                  setAddTargetId(item.id);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{item.name}</Text>
+                {!!item.email && <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>{item.email}</Text>}
+                {!!item.friend_code && (
+                  <Text style={{ color: colors.textTertiary, fontSize: 11, marginTop: 2 }}>Code {item.friend_code}</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          />
+        )}
+        {friendCode.trim().length >= 2 && searchHits.length === 0 && (
+          <Text style={{ color: colors.textTertiary, fontSize: 13, marginBottom: 14, textAlign: 'center' }}>
+            No driver matches that search. Check spelling or ask for their friend code.
+          </Text>
+        )}
+        <TouchableOpacity
+          style={[styles.modalBtn, { backgroundColor: addTargetId ? colors.primary : colors.border }]}
+          onPress={handleAddFriend}
+          activeOpacity={0.8}
+          disabled={!addTargetId}
+        >
+          <Text style={styles.modalBtnText}>{addTargetId ? 'Send Request' : 'Select someone above'}</Text>
         </TouchableOpacity>
       </Modal>
 
@@ -338,4 +492,9 @@ const styles = StyleSheet.create({
   modalBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   friendAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, paddingVertical: 14, marginTop: 12 },
   friendActionText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  requestCard: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, padding: 12, borderWidth: StyleSheet.hairlineWidth },
+  reqBtn: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  reqBtnT: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  searchHit: { borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: StyleSheet.hairlineWidth },
 });

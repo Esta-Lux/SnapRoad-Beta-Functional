@@ -119,12 +119,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(mapApiUserToContext(apiUser));
         }
       } else {
-        await api.setToken(null);
-        setUser(null);
+        const errMsg = (res as { error?: string }).error ?? '';
+        const isAuthReject = errMsg.includes('expired') || errMsg.includes('401') || errMsg.includes('Session expired');
+        if (isAuthReject) {
+          await api.setToken(null);
+          setUser(null);
+        }
+        // Network errors / 5xx: keep token so the user isn't logged out offline
       }
     } catch {
-      await api.setToken(null);
-      setUser(null);
+      // Network failure, timeout, backend down — keep the token for retry on next launch
     } finally {
       setIsLoading(false);
     }
@@ -203,7 +207,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     await api.logout();
+    try {
+      const { supabase } = await import('../lib/supabase');
+      await supabase.auth.signOut();
+    } catch { /* Supabase may not be configured */ }
     setUser(null);
+    setAuthError(null);
   };
 
   const updateUser = useCallback((updates: Partial<User>) => {

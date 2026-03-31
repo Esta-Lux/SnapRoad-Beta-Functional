@@ -69,21 +69,43 @@ export default function PhotoReportSheet({
   }
 
   async function submitReport() {
+    if (!imageUri) return;
     setSubmitting(true);
     try {
-      const res = await api.post('/api/incidents/report', {
-        type: 'photo',
-        lat,
-        lng,
-        description: 'Photo road report',
-      });
+      const formData = new FormData();
+      const filename = imageUri.split('/').pop() || 'photo.jpg';
+      const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
+      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      formData.append('file', { uri: imageUri, name: filename, type: mimeType } as unknown as Blob);
+      formData.append('lat', String(lat));
+      formData.append('lng', String(lng));
+      formData.append('description', 'Photo road report');
+
+      const res = await api.upload<{
+        success?: boolean;
+        pending_review?: boolean;
+        message?: string;
+        report?: unknown;
+      }>('/api/photo-reports/upload', formData);
       if (!res.success) {
-        Alert.alert('Could not submit', res.error || 'Please try again.');
+        Alert.alert('Could not submit', (res as { error?: string }).error || 'Please try again.');
         return;
       }
-      Alert.alert('Report submitted', 'Your road hazard report was sent.', [
-        { text: 'OK', onPress: onClose },
-      ]);
+      const data = res.data as { pending_review?: boolean; message?: string };
+      if (data?.pending_review) {
+        Alert.alert(
+          'Privacy review',
+          data?.message ||
+            'This photo needs a quick human review before it can appear on the map. Faces and plates are never shown unblurred.',
+          [{ text: 'OK', onPress: onClose }],
+        );
+        return;
+      }
+      Alert.alert(
+        'Report submitted',
+        'Your photo was checked on our servers; faces and plates are blurred before others can see it. Always drive safely — this is for awareness, not for avoiding enforcement.',
+        [{ text: 'OK', onPress: onClose }],
+      );
     } catch {
       Alert.alert('Error', 'Could not submit the report right now.');
     } finally {
@@ -212,6 +234,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.3,
     lineHeight: 22,
+  },
+  privacyNote: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 10,
+    marginBottom: 4,
   },
   closeBtn: {
     width: 30,

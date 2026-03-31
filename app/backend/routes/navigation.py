@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Query, Body, Depends, HTTPException
+from starlette.requests import Request
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict, Tuple
 from datetime import datetime, timedelta
 import logging
 import random, math
 import httpx
+from limiter import limiter
 from models.schemas import NavigationRequest, Location, Route, Widget
 from services.mock_data import (
     saved_locations, saved_routes, widget_settings, MAP_LOCATIONS,
@@ -391,13 +393,39 @@ def voice_command(body: VoiceCommandBody):
 
 
 # ==================== MAP SEARCH ====================
+import os as _os
+
+
 @router.get("/map/search")
-def search_map_locations(
+async def search_map_locations(
     q: str = Query(..., min_length=1),
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     limit: int = Query(default=8, ge=1, le=100),
 ):
+    places_key = _os.environ.get("GOOGLE_PLACES_API_KEY", "")
+    if places_key:
+        try:
+            params: Dict[str, Any] = {"input": q, "key": places_key, "language": "en"}
+            if lat is not None and lng is not None:
+                params["location"] = f"{lat},{lng}"
+                params["radius"] = "50000"
+            async with httpx.AsyncClient(timeout=8) as client:
+                r = await client.get("https://maps.googleapis.com/maps/api/place/autocomplete/json", params=params)
+            data = r.json()
+            predictions = data.get("predictions", [])[:limit]
+            results = []
+            for p in predictions:
+                results.append({
+                    "name": p.get("structured_formatting", {}).get("main_text", p.get("description", "")),
+                    "address": p.get("description", ""),
+                    "place_id": p.get("place_id", ""),
+                    "type": ", ".join(p.get("types", [])[:2]),
+                })
+            return {"success": True, "data": results, "query": q, "total_results": len(results)}
+        except Exception as exc:
+            _nav_log.warning("Places API search failed, falling back to local: %s", exc)
+
     query = q.lower().strip()
     results = []
     for loc in MAP_LOCATIONS:
@@ -693,7 +721,9 @@ def get_camera_detail(
 
 # ==================== MAP CAMERAS (dedicated, no report-count competition) ====================
 @router.get("/map/cameras")
+@limiter.limit("60/minute")
 def get_map_cameras(
+    request: Request,
     lat: float = Query(...),
     lng: float = Query(...),
     radius: float = Query(default=80, ge=0.5, le=100),
@@ -750,7 +780,9 @@ def get_map_cameras(
 
 # ==================== MAP TRAFFIC ====================
 @router.get("/map/traffic")
+@limiter.limit("60/minute")
 def get_map_traffic(
+    request: Request,
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius: float = Query(default=15, ge=0.1, le=200),

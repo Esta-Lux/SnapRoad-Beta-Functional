@@ -113,6 +113,7 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
         "id": profile_id,
         "email": email,
         "name": name,
+        "full_name": name,
         "password_hash": password_hash,
         "role": role,
         "status": "active",

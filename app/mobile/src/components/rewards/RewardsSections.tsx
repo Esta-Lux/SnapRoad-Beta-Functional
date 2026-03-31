@@ -234,6 +234,8 @@ export function WeeklyInsightsSection({
   );
 }
 
+export type LeaderboardTimeFilter = 'all_time' | 'weekly' | 'monthly' | 'all';
+
 export function LeaderboardPreview({
   loading,
   entries,
@@ -242,13 +244,24 @@ export function LeaderboardPreview({
   text,
   sub,
   cardBg,
+  timeFilter = 'weekly',
+  onTimeFilterChange,
 }: {
   loading: boolean;
   entries: LeaderboardEntry[];
   myRank: number;
   myGems: number;
+  timeFilter?: LeaderboardTimeFilter;
+  onTimeFilterChange?: (t: LeaderboardTimeFilter) => void;
 } & ThemeProps) {
-  if (loading) {
+  const subLabels: Record<LeaderboardTimeFilter, string> = {
+    all_time: 'Ranked by lifetime miles',
+    weekly: 'Ranked by safety score',
+    monthly: 'Ranked by level & gems',
+    all: 'Ranked by gems · all states',
+  };
+
+  if (loading && entries.length === 0) {
     return <View style={{ paddingHorizontal: 16, gap: 8 }}>{[1, 2].map((i) => <Skeleton key={i} width="100%" height={68} borderRadius={14} />)}</View>;
   }
   const top3 = entries.slice(0, 3);
@@ -257,16 +270,33 @@ export function LeaderboardPreview({
   const second = top3.find((e) => e.rank === 2);
   const third = top3.find((e) => e.rank === 3);
 
+  const chips: { key: LeaderboardTimeFilter; label: string }[] = [
+    { key: 'all_time', label: 'All Time' },
+    { key: 'weekly', label: 'Week' },
+    { key: 'monthly', label: 'Month' },
+    { key: 'all', label: 'All' },
+  ];
+
   return (
     <>
       <LinearGradient colors={['#10B981', '#0F766E']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={rewardsStyles.leaderboardHeader}>
         <Text style={rewardsStyles.leaderboardHeaderTitle}>Leaderboard</Text>
-        <Text style={rewardsStyles.leaderboardSub}>Top 10 by state · Weekly</Text>
+        <Text style={rewardsStyles.leaderboardSub}>{subLabels[timeFilter]}</Text>
         <View style={rewardsStyles.leaderboardChipRow}>
-          <View style={rewardsStyles.leaderboardChip}><Text style={rewardsStyles.leaderboardChipText}>All Time</Text></View>
-          <View style={rewardsStyles.leaderboardChipActive}><Text style={rewardsStyles.leaderboardChipText}>Week</Text></View>
-          <View style={rewardsStyles.leaderboardChip}><Text style={rewardsStyles.leaderboardChipText}>Month</Text></View>
-          <View style={rewardsStyles.leaderboardChip}><Text style={rewardsStyles.leaderboardChipText}>All</Text></View>
+          {chips.map((c) => {
+            const active = timeFilter === c.key;
+            return (
+              <TouchableOpacity
+                key={c.key}
+                activeOpacity={0.85}
+                disabled={!onTimeFilterChange}
+                onPress={() => onTimeFilterChange?.(c.key)}
+                style={active ? rewardsStyles.leaderboardChipActive : rewardsStyles.leaderboardChip}
+              >
+                <Text style={rewardsStyles.leaderboardChipText}>{c.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
         <View style={rewardsStyles.leaderboardRankRow}>
           <Text style={rewardsStyles.leaderboardRankText}>Your rank #{myRank || '--'}</Text>

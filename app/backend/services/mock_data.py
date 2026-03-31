@@ -92,10 +92,23 @@ user_credentials = {
 }
 
 if IS_PRODUCTION:
-    # Safety guard: prevent production from relying on static in-memory identities.
     users_db.clear()
     user_credentials.clear()
     current_user_id = ""
+
+# Defer clearing mutable collections until after they are defined below.
+# _clear_all_mock_in_production() is called at the end of this module.
+def _clear_all_mock_in_production() -> None:
+    """Wipe every mutable mock structure so production never serves seed data."""
+    if not IS_PRODUCTION:
+        return
+    for name, obj in list(globals().items()):
+        if name.startswith("_") or name.isupper():
+            continue
+        if isinstance(obj, list):
+            obj.clear()
+        elif isinstance(obj, dict) and name.endswith("_db"):
+            obj.clear()
 
 # ==================== ROAD REPORTS ====================
 # Seed traffic cameras and road reports (Columbus OH area) so map overlay has data to show
@@ -296,3 +309,5 @@ CAR_SKINS = [
 # ==================== TRIPS ====================
 # Real-time only: trips added when user completes a trip via app (no mock seed).
 trips_db = []
+
+_clear_all_mock_in_production()

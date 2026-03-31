@@ -97,6 +97,17 @@ function resolveApiUrl(): string {
 
 const apiBaseUrl: string = resolveApiUrl();
 
+if (IS_PRODUCTION) {
+  const missing: string[] = [];
+  if (!process.env.EXPO_PUBLIC_MAPBOX_TOKEN) missing.push('EXPO_PUBLIC_MAPBOX_TOKEN');
+  if (!process.env.EXPO_PUBLIC_SUPABASE_URL) missing.push('EXPO_PUBLIC_SUPABASE_URL');
+  if (!process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) missing.push('EXPO_PUBLIC_SUPABASE_ANON_KEY');
+  if (!process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY) missing.push('EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY');
+  if (missing.length > 0) {
+    console.error(`[SnapRoad] Production build missing critical env vars: ${missing.join(', ')}`);
+  }
+}
+
 /** Tunnels and HTTPS edge URLs are slower; LAN HTTP is usually fast. */
 function resolveRequestTimeoutMs(baseUrl: string): number {
   const u = baseUrl.toLowerCase();
@@ -289,7 +300,13 @@ class ApiService {
               ? detailRaw
               : JSON.stringify(detailRaw)
             : 'Request failed';
-        const normalized = response.status === 401 ? 'Session expired. Please sign in again.' : detail;
+        let normalized = detail;
+        if (response.status === 401) normalized = 'Session expired. Please sign in again.';
+        else if (response.status === 403) normalized = 'You don\'t have permission to access this feature.';
+        else if (response.status === 404) normalized = 'This feature is not available yet.';
+        else if (response.status === 422) normalized = detail || 'Invalid input. Please check your data and try again.';
+        else if (response.status === 429) normalized = 'Too many requests. Please wait a moment and try again.';
+        else if (response.status >= 500) normalized = 'Server error. Please try again later.';
         return { success: false, error: normalized };
       }
 
@@ -378,6 +395,38 @@ class ApiService {
 
   async delete<T = unknown>(endpoint: string): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, { method: 'DELETE' });
+  }
+
+  async upload<T = unknown>(endpoint: string, formData: FormData): Promise<ApiResponse<T>> {
+    const token = await this.getToken();
+    const url = `${apiBaseUrl}${endpoint}`;
+    const headers: Record<string, string> = {
+      'Bypass-Tunnel-Reminder': 'true',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    const timeoutMs = resolveRequestTimeoutMs(apiBaseUrl);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeout));
+
+      const parsed = await parseApiResponseBody(response);
+      if (!parsed.ok) return { success: false, error: parsed.error };
+      if (!response.ok) {
+        const data = parsed.data as { detail?: string } | null;
+        return { success: false, error: data?.detail ?? 'Upload failed' };
+      }
+      return { success: true, data: parsed.data as T };
+    } catch (error) {
+      const isAbort = (error as { name?: string })?.name === 'AbortError';
+      return { success: false, error: isAbort ? 'Upload timed out' : 'Network error during upload' };
+    }
   }
 }
 

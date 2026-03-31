@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, Modal, TouchableOpacity, TextInput, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform,
@@ -29,6 +29,9 @@ interface OrionContext {
   drivingMode?: string;
   destination?: string;
   speed?: number;
+  userName?: string;
+  currentAddress?: string;
+  nearbyOffers?: Array<{ id?: number | string; title?: string; partner_name?: string; lat?: number; lng?: number }>;
 }
 
 interface Props {
@@ -60,13 +63,22 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
         context: context ?? {},
       });
       if (!res.success) throw new Error(res.error || 'Orion request failed');
-      const reply = res.data?.content ?? res.data?.text ?? "I couldn't process that right now.";
-      const actions = res.data?.actions;
+      const raw = res.data as Record<string, unknown> | undefined;
+      const reply =
+        (typeof raw?.content === 'string' ? raw.content : null)
+        ?? (typeof raw?.text === 'string' ? raw.text : null)
+        ?? "I couldn't process that right now.";
+      const inner = raw?.data as Record<string, unknown> | undefined;
+      const actions = (raw?.actions ?? inner?.actions) as
+        | Array<{ type: string; name?: string; lat?: number; lng?: number }>
+        | undefined;
       const assistantMsg: Message = { id: String(Date.now() + 1), role: 'assistant', content: reply };
       setMessages((prev) => [...prev, assistantMsg]);
       Speech.speak(reply, { rate: 0.95, pitch: 0.9, language: 'en-US' });
-      if (actions?.length && onAction) {
-        actions.forEach((a) => onAction(a));
+      if (Array.isArray(actions) && actions.length && onAction) {
+        const navFirst = actions.find((a) => a?.type === 'navigate');
+        if (navFirst) onAction(navFirst);
+        else actions.forEach((a) => onAction(a));
       }
     } catch {
       setMessages((prev) => [...prev, { id: String(Date.now() + 1), role: 'assistant', content: "Sorry, I'm having trouble connecting. Try again." }]);
@@ -75,16 +87,30 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
     }
   };
 
-  const handleMicPress = () => {
+  const micTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!visible && micTimeoutRef.current) {
+      clearTimeout(micTimeoutRef.current);
+      micTimeoutRef.current = null;
+    }
+  }, [visible]);
+
+  const handleMicPress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsListening(!isListening);
     if (!isListening) {
-      setTimeout(() => {
+      if (micTimeoutRef.current) clearTimeout(micTimeoutRef.current);
+      micTimeoutRef.current = setTimeout(() => {
         setIsListening(false);
         sendMessage('What is my driving score?');
+        micTimeoutRef.current = null;
       }, 3000);
+    } else if (micTimeoutRef.current) {
+      clearTimeout(micTimeoutRef.current);
+      micTimeoutRef.current = null;
     }
-  };
+  }, [isListening, sendMessage]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>

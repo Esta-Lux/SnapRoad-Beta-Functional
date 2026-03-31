@@ -37,7 +37,7 @@ incident_counter = 0
 incident_votes: Dict[str, set[str]] = {}
 incident_report_times: Dict[str, List[datetime]] = {}
 ALLOWED_INCIDENT_TYPES = {
-    "police", "accident", "crash", "construction", "hazard", "weather", "pothole", "closure", "camera"
+    "police", "accident", "crash", "construction", "hazard", "weather", "pothole", "closure", "camera", "photo"
 }
 
 

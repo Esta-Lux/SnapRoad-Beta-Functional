@@ -82,6 +82,7 @@ def validate_production_env() -> None:
         ("SUPABASE_URL", SUPABASE_URL),
         ("SUPABASE_SECRET_KEY", SUPABASE_SECRET_KEY),
         ("STRIPE_SECRET_KEY", STRIPE_SECRET_KEY),
+        ("STRIPE_WEBHOOK_SECRET", STRIPE_WEBHOOK_SECRET),
     ):
         if not (value or "").strip():
             missing.append(key)

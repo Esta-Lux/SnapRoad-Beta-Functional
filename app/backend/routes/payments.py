@@ -283,6 +283,7 @@ async def get_checkout_status(
             payment_status = "paid"
         
         # Update transaction record if exists
+        tx = _get_tx(session_id)
         if tx and tx.get("payment_status") != "paid" and payment_status == "paid":
             tx["payment_status"] = "paid"
             tx["updated_at"] = datetime.utcnow().isoformat()
@@ -290,7 +291,16 @@ async def get_checkout_status(
                 _persist_tx(tx)
             except RuntimeError:
                 raise HTTPException(status_code=503, detail="Payment transaction storage unavailable")
-            # Here you would also update user's subscription in database
+            uid = tx.get("user_id") or session_user_id
+            plan_id = tx.get("plan_id") or (session.metadata or {}).get("plan_id") or "premium"
+            if uid and uid != "anonymous" and plan_id in ("premium", "family"):
+                try:
+                    sb = get_supabase()
+                    existing = sb.table("profiles").select("is_premium").eq("id", uid).limit(1).execute()
+                    if not (existing.data and existing.data[0].get("is_premium")):
+                        sb_update_profile(uid, {"plan": plan_id, "is_premium": True})
+                except Exception:
+                    pass
         
         return {
             "success": True,

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Query, Depends, Request
+from fastapi import APIRouter, Query, Depends
+from starlette.requests import Request
 from typing import Optional
 from datetime import datetime, timedelta
 import random
@@ -30,7 +31,8 @@ def _active_offers_source(limit: int = 500) -> list[dict]:
 
 
 @router.get("/offers")
-def get_offers(limit: int = Query(default=100, ge=1, le=100)):
+@limiter.limit("60/minute")
+def get_offers(request: Request, limit: int = Query(default=100, ge=1, le=100)):
     """Get all active offers from database (both admin and partner offers)"""
     try:
         sb = _sb()
@@ -109,7 +111,11 @@ def get_offers(limit: int = Query(default=100, ge=1, le=100)):
 
 
 @router.post("/offers")
-def create_offer(offer: OfferCreate):
+def create_offer(offer: OfferCreate, user: dict = Depends(get_current_user)):
+    user_role = (user.get("role") or "").lower()
+    if user_role not in ("admin", "partner"):
+        from fastapi import HTTPException as _H
+        raise _H(status_code=403, detail="Only admins or partners can create offers")
     if ENVIRONMENT == "production":
         sb = _sb()
         payload = {
@@ -124,7 +130,7 @@ def create_offer(offer: OfferCreate):
             "is_admin_offer": offer.is_admin_offer,
             "created_at": datetime.now().isoformat(),
             "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
-            "created_by": "admin" if offer.is_admin_offer else "business",
+            "created_by": user.get("id", "admin") if offer.is_admin_offer else user.get("id", "business"),
             "redemption_count": 0,
             "status": "active",
         }
@@ -155,7 +161,7 @@ def create_offer(offer: OfferCreate):
 
 @router.post("/offers/{offer_id}/redeem")
 @limiter.limit("30/minute")
-def redeem_offer(request: Request, offer_id: int, auth_user: dict = Depends(get_current_user)):
+def redeem_offer(request: Request, offer_id: str, auth_user: dict = Depends(get_current_user)):
     import logging
     from services.runtime_config import require_enabled
 
@@ -202,16 +208,16 @@ def redeem_offer(request: Request, offer_id: int, auth_user: dict = Depends(get_
             discount = premium_disc if is_premium else free_disc
             gem_reward = odata.get("base_gems", 25)
 
-            # Update profile gems in DB first; keep in-memory cache in sync as fallback.
             try:
-                p = sb.table("profiles").select("gems").eq("id", user_id).limit(1).execute()
-                if p.data:
-                    cur_gems = int(p.data[0].get("gems") or 0)
-                    sb.table("profiles").update({"gems": cur_gems + gem_reward}).eq("id", user_id).execute()
+                sb.rpc("increment_gems", {"uid": user_id, "amount": gem_reward}).execute()
             except Exception:
-                pass
-            if user_id in users_db:
-                users_db[user_id]["gems"] = user.get("gems", 0) + gem_reward
+                try:
+                    p = sb.table("profiles").select("gems").eq("id", user_id).limit(1).execute()
+                    if p.data:
+                        cur_gems = int(p.data[0].get("gems") or 0)
+                        sb.table("profiles").update({"gems": cur_gems + gem_reward}).eq("id", user_id).execute()
+                except Exception:
+                    logger.warning("Gem update failed for user %s", user_id)
 
             # Increment offer redemption_count
             new_count = (odata.get("redemption_count") or 0) + 1
@@ -234,7 +240,6 @@ def redeem_offer(request: Request, offer_id: int, auth_user: dict = Depends(get_
                 except Exception as e:
                     logger.warning(f"Fee tracking error: {e}")
 
-            # Record in redemptions table
             try:
                 sb.table("redemptions").insert({
                     "offer_id": offer_id,
@@ -246,7 +251,8 @@ def redeem_offer(request: Request, offer_id: int, auth_user: dict = Depends(get_
                     "status": "verified",
                 }).execute()
             except Exception as e:
-                logger.warning(f"Redemption insert error: {e}")
+                logger.error("Redemption insert failed — aborting to prevent double-redeem: %s", e)
+                raise HTTPException(status_code=503, detail="Could not record redemption. Please try again.")
 
             return {
                 "success": True,
@@ -356,7 +362,7 @@ def get_personalized_offers(
 
 
 @router.post("/offers/{offer_id}/accept-voice")
-def accept_offer_via_voice(offer_id: int, add_as_stop: bool = True):
+def accept_offer_via_voice(offer_id: str, add_as_stop: bool = True):
     source = _active_offers_source(limit=500)
     offer = next((o for o in source if str(o.get("id")) == str(offer_id)), None)
     if not offer:
@@ -369,7 +375,7 @@ def accept_offer_via_voice(offer_id: int, add_as_stop: bool = True):
 
 
 @router.post("/offers/{offer_id}/favorite")
-def favorite_offer(offer_id: int):
+def favorite_offer(offer_id: str):
     if ENVIRONMENT == "production":
         return {"success": False, "message": "Favorites unavailable in production path"}
     offer = next((o for o in offers_db if o["id"] == offer_id), None)

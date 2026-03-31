@@ -25,25 +25,10 @@ def get_friends(
     limit: int = Query(default=100, ge=1, le=100),
     current_user: dict = Depends(get_current_user),
 ):
+    """Redirects to Supabase-backed friends list (was previously in-memory mock)."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    uid = current_user["id"]
-    user = users_db.get(uid, {})
-    friend_ids = user.get("friends", [])
-    friends = []
-    for fid in friend_ids:
-        f = users_db.get(str(fid), {})
-        if f:
-            friends.append({
-                "id": str(fid),
-                "name": f.get("name", "Driver"),
-                "level": f.get("level", 1),
-                "safety_score": f.get("safety_score", 0),
-                "gems": f.get("gems", 0),
-                "state": f.get("state", ""),
-                "is_premium": f.get("is_premium", False),
-            })
-    return {"success": True, "data": friends[:limit], "count": len(friends[:limit])}
+    return get_friends_list(limit=limit, current_user=current_user)
 
 
 @router.get("/friends/search")
@@ -55,18 +40,29 @@ def search_friends(q: str = "", user_id: str = "", current_user: dict = Depends(
     if not query:
         return {"success": True, "data": []}
     supabase = get_supabase()
-    # Search profiles by name (column may be full_name or name)
-    try:
-        res = supabase.table("profiles").select("id, full_name, email").neq("id", uid).ilike(
-            "full_name", f"%{query}%"
-        ).limit(10).execute()
-        name_key = "full_name"
-    except Exception:
-        res = supabase.table("profiles").select("id, name, email").neq("id", uid).ilike(
-            "name", f"%{query}%"
-        ).limit(10).execute()
-        name_key = "name"
-    results = []
+
+    # Search by friend_code (exact match, case-insensitive), email, or name
+    code_res = supabase.table("profiles").select(
+        "id, name, full_name, email, friend_code"
+    ).neq("id", uid).ilike("friend_code", query).limit(5).execute()
+
+    safe_q = query[:100].replace("%", "").replace(",", "").replace("(", "").replace(")", "").replace(".", "").strip()
+    if not safe_q:
+        return {"success": True, "data": []}
+    name_res = supabase.table("profiles").select(
+        "id, name, full_name, email, friend_code"
+    ).neq("id", uid).or_(
+        f"full_name.ilike.%{safe_q}%,name.ilike.%{safe_q}%,email.ilike.%{safe_q}%"
+    ).limit(10).execute()
+
+    seen = set()
+    combined = []
+    for row in (code_res.data or []) + (name_res.data or []):
+        rid = str(row["id"])
+        if rid not in seen:
+            seen.add(rid)
+            combined.append(row)
+
     friend_ids_res = supabase.table("friendships").select("user_id_1, user_id_2").or_(
         f"user_id_1.eq.{uid},user_id_2.eq.{uid}"
     ).eq("status", "accepted").execute()
@@ -74,14 +70,29 @@ def search_friends(q: str = "", user_id: str = "", current_user: dict = Depends(
     for row in (friend_ids_res.data or []):
         fid = row["user_id_2"] if str(row["user_id_1"]) == str(uid) else row["user_id_1"]
         friend_set.add(str(fid))
-    for row in (res.data or []):
+
+    results = []
+    for row in combined:
         results.append({
             "id": str(row["id"]),
-            "name": row.get(name_key) or row.get("full_name") or row.get("name") or "Driver",
+            "name": row.get("name") or row.get("full_name") or "Driver",
             "email": row.get("email"),
+            "friend_code": row.get("friend_code"),
             "is_friend": str(row["id"]) in friend_set,
         })
     return {"success": True, "data": results[:20]}
+
+
+@router.get("/friends/my-code")
+def get_my_friend_code(current_user: dict = Depends(get_current_user)):
+    """Return the current user's 6-character friend code for sharing."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
+    supabase = get_supabase()
+    res = supabase.table("profiles").select("friend_code").eq("id", uid).limit(1).execute()
+    code = (res.data[0].get("friend_code") if res.data else None) or ""
+    return {"success": True, "data": {"friend_code": code}}
 
 
 @router.post("/friends/add")
@@ -135,7 +146,26 @@ def get_friends_list(
     for row in (res.data or []):
         fid = row["user_id_2"] if str(row["user_id_1"]) == str(uid) else row["user_id_1"]
         friend_ids.append(str(fid))
-    out = [{"friend_id": fid, "id": fid, "status": "accepted"} for fid in friend_ids]
+    if not friend_ids:
+        return {"success": True, "data": []}
+    profiles = supabase.table("profiles").select(
+        "id, name, full_name, avatar_url, level, gems, safety_score, friend_code"
+    ).in_("id", friend_ids).execute()
+    profile_map = {str(p["id"]): p for p in (profiles.data or [])}
+    out = []
+    for fid in friend_ids:
+        p = profile_map.get(fid, {})
+        out.append({
+            "friend_id": fid,
+            "id": fid,
+            "status": "accepted",
+            "name": p.get("name") or p.get("full_name") or "Friend",
+            "avatar_url": p.get("avatar_url"),
+            "level": p.get("level", 1),
+            "gems": p.get("gems", 0),
+            "safety_score": p.get("safety_score", 0),
+            "friend_code": p.get("friend_code"),
+        })
     return {"success": True, "data": out}
 
 
@@ -152,15 +182,79 @@ def get_friend_requests(
     res = supabase.table("friendships").select(
         "id, user_id_1, status, created_at"
     ).eq("user_id_2", uid).eq("status", "pending").limit(limit).execute()
+    from_ids = [str(r.get("user_id_1")) for r in (res.data or []) if r.get("user_id_1")]
+    profile_map = {}
+    if from_ids:
+        prof = supabase.table("profiles").select(
+            "id, name, full_name, email, avatar_url, friend_code"
+        ).in_("id", from_ids).execute()
+        for p in (prof.data or []):
+            profile_map[str(p["id"])] = p
     requests = []
     for row in (res.data or []):
+        fid = str(row.get("user_id_1") or "")
+        p = profile_map.get(fid, {})
         requests.append({
             "id": row.get("id"),
-            "from_user_id": row.get("user_id_1"),
+            "from_user_id": fid,
+            "from_name": p.get("name") or p.get("full_name") or "Driver",
+            "from_email": p.get("email"),
+            "from_friend_code": p.get("friend_code"),
             "status": "pending",
             "created_at": row.get("created_at"),
         })
     return {"success": True, "data": requests}
+
+
+@router.get("/friends/requests/sent")
+def get_outgoing_friend_requests(
+    limit: int = Query(default=100, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+):
+    """Pending friend requests you sent (waiting on the other person)."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
+    supabase = get_supabase()
+    res = supabase.table("friendships").select(
+        "id, user_id_2, created_at"
+    ).eq("user_id_1", uid).eq("status", "pending").limit(limit).execute()
+    to_ids = [str(r.get("user_id_2")) for r in (res.data or []) if r.get("user_id_2")]
+    profile_map = {}
+    if to_ids:
+        prof = supabase.table("profiles").select(
+            "id, name, full_name, email, friend_code"
+        ).in_("id", to_ids).execute()
+        for p in (prof.data or []):
+            profile_map[str(p["id"])] = p
+    out = []
+    for row in (res.data or []):
+        tid = str(row.get("user_id_2") or "")
+        p = profile_map.get(tid, {})
+        out.append({
+            "id": row.get("id"),
+            "to_user_id": tid,
+            "to_name": p.get("name") or p.get("full_name") or "Driver",
+            "to_email": p.get("email"),
+            "created_at": row.get("created_at"),
+        })
+    return {"success": True, "data": out}
+
+
+@router.post("/friends/reject")
+def reject_friend_request(body: dict, current_user: dict = Depends(get_current_user)):
+    """Decline an incoming request (body.friendship_id = row id)."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = current_user["id"]
+    friendship_id = body.get("friendship_id")
+    if not friendship_id:
+        raise HTTPException(status_code=400, detail="friendship_id required")
+    supabase = get_supabase()
+    supabase.table("friendships").delete().eq("id", friendship_id).eq("user_id_2", uid).eq(
+        "status", "pending"
+    ).execute()
+    return {"success": True, "message": "Request declined"}
 
 
 @router.post("/friends/accept")

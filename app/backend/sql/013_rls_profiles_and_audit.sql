@@ -1,0 +1,4 @@
+-- 013: RLS for core tables
+-- DEPRECATED: Use 014_align_schemas.sql instead (it includes all RLS + column alignment).
+-- This file is kept for reference only.
+-- Run 014_align_schemas.sql in Supabase SQL Editor.

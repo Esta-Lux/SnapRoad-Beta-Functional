@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -71,6 +71,7 @@ export default function RewardsScreen() {
   const [challengeHistoryStats, setChallengeHistoryStats] = useState<ChallengeHistoryStats | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [myRank, setMyRank] = useState(0);
+  const [leaderboardTf, setLeaderboardTf] = useState<'all_time' | 'weekly' | 'monthly' | 'all'>('weekly');
   const [showTripAnalytics, setShowTripAnalytics] = useState(false);
   const [showRouteHistory, setShowRouteHistory] = useState(false);
   const [challengeTarget, setChallengeTarget] = useState<{ id: string; name: string } | null>(null);
@@ -81,15 +82,18 @@ export default function RewardsScreen() {
     const lat = coords?.lat ?? location.lat;
     const lng = coords?.lng ?? location.lng;
     try {
+      const safeGet = async (url: string) => {
+        try { return await api.get<any>(url); } catch { return { success: false, data: null }; }
+      };
       const [profileRes, cRes, bRes, oRes, tRes, iRes, gRes, lRes] = await Promise.all([
-        api.getProfile(),
-        api.get<any>('/api/challenges'),
-        api.get<any>('/api/badges'),
-        api.get<any>(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=5`),
-        api.get<any>('/api/trips?limit=10'),
-        api.get<any>('/api/trips/weekly-insights'),
-        api.get<any>('/api/gems/history'),
-        api.get<any>('/api/leaderboard?time_filter=weekly&limit=10'),
+        api.getProfile().catch(() => ({ success: false, data: null })),
+        safeGet('/api/challenges'),
+        safeGet('/api/badges'),
+        safeGet(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=5`),
+        safeGet('/api/trips?limit=10'),
+        safeGet('/api/trips/weekly-insights'),
+        safeGet('/api/gems/history'),
+        safeGet('/api/leaderboard?time_filter=weekly&limit=10'),
       ]);
       const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
       const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
@@ -141,13 +145,11 @@ export default function RewardsScreen() {
     } catch {
       setErrorMsg('Could not refresh rewards data. Pull to retry.');
     } finally { setLoading(false); }
-  }, [updateUser, location.lat, location.lng]);
+  }, [updateUser, location.lat, location.lng, leaderboardTf]);
 
   useEffect(() => {
     loadAll({ lat: location.lat, lng: location.lng });
-    // Intentionally load once on screen mount; subsequent refresh is manual via pull-to-refresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadAll, location.lat, location.lng]);
 
   const earnedBadges = badges.filter((b) => b.earned).length;
   const multiplier = user?.isPremium ? '2x' : '1x';
@@ -238,12 +240,47 @@ export default function RewardsScreen() {
         gems={user?.gems ?? 0}
         level={user?.level ?? 1}
         multiplier={multiplier}
-        miles={user?.totalMiles?.toFixed(0) ?? 0}
+        miles={String(Math.round(user?.totalMiles ?? 0))}
       />
       {errorMsg && (
         <View style={[rewardsStyles.errorBanner, { backgroundColor: cardBg }]}>
           <Ionicons name="alert-circle-outline" size={14} color="#EF4444" />
           <Text style={{ color: '#EF4444', fontSize: 12, flex: 1 }}>{errorMsg}</Text>
+        </View>
+      )}
+
+      {/* Daily streak & quick stats */}
+      <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 16, marginBottom: 14 }}>
+        <View style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, padding: 14, alignItems: 'center' }}>
+          <Ionicons name="flame" size={22} color="#F59E0B" />
+          <Text style={{ color: text, fontSize: 20, fontWeight: '900', marginTop: 4 }}>{user?.totalTrips ?? 0}</Text>
+          <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Trips</Text>
+        </View>
+        <View style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, padding: 14, alignItems: 'center' }}>
+          <Ionicons name="trophy" size={22} color="#3B82F6" />
+          <Text style={{ color: text, fontSize: 20, fontWeight: '900', marginTop: 4 }}>#{myRank || '—'}</Text>
+          <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Rank</Text>
+        </View>
+        <View style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, padding: 14, alignItems: 'center' }}>
+          <Ionicons name="ribbon" size={22} color="#10B981" />
+          <Text style={{ color: text, fontSize: 20, fontWeight: '900', marginTop: 4 }}>{earnedBadges}</Text>
+          <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Badges</Text>
+        </View>
+        <View style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, padding: 14, alignItems: 'center' }}>
+          <Ionicons name="diamond" size={22} color="#8B5CF6" />
+          <Text style={{ color: text, fontSize: 20, fontWeight: '900', marginTop: 4 }}>{multiplier}</Text>
+          <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Gems</Text>
+        </View>
+      </View>
+
+      {!user?.isPremium && (
+        <View style={{ marginHorizontal: 16, marginBottom: 14, backgroundColor: 'rgba(59,130,246,0.08)', borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)' }}>
+          <Ionicons name="diamond" size={20} color="#3B82F6" style={{ marginRight: 10 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: text, fontSize: 14, fontWeight: '700' }}>Upgrade to Premium</Text>
+            <Text style={{ color: sub, fontSize: 12 }}>2x gems, advanced offers, analytics & more</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#3B82F6" />
         </View>
       )}
 
@@ -296,8 +333,14 @@ export default function RewardsScreen() {
       {rewardsTab === 'offers' && (
         <>
           <ViewAllButton title="View all offers" onPress={() => setShowAllOffers(true)} cardBg={cardBg} text={text} sub={sub} />
-          <SectionTitle title="Nearby Offers" text={text} />
-          <OffersPreview loading={loading} offers={offers} onPressOffer={setSelectedOffer} cardBg={cardBg} text={text} sub={sub} />
+          <SectionTitle title="Nearby Partner Offers" text={text} />
+          <OffersPreview loading={loading} offers={offers.filter((o: any) => !o.is_admin_offer)} onPressOffer={setSelectedOffer} cardBg={cardBg} text={text} sub={sub} />
+          {offers.some((o: any) => o.is_admin_offer) && (
+            <>
+              <SectionTitle title="Featured Deals" text={text} />
+              <OffersPreview loading={loading} offers={offers.filter((o: any) => o.is_admin_offer)} onPressOffer={setSelectedOffer} cardBg={cardBg} text={text} sub={sub} />
+            </>
+          )}
         </>
       )}
 
@@ -314,6 +357,20 @@ export default function RewardsScreen() {
         </>
       )}
 
+      {/* Quick action buttons */}
+      <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 16, marginBottom: 14 }}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: cardBg, borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }} onPress={() => setShowTripAnalytics(true)} activeOpacity={0.7}>
+          <Ionicons name="analytics-outline" size={18} color="#3B82F6" style={{ marginRight: 8 }} />
+          <Text style={{ color: text, fontSize: 13, fontWeight: '700', flex: 1 }}>Trip Analytics</Text>
+          <Ionicons name="chevron-forward" size={14} color={sub} />
+        </TouchableOpacity>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: cardBg, borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }} onPress={() => setShowRouteHistory(true)} activeOpacity={0.7}>
+          <Ionicons name="time-outline" size={18} color="#10B981" style={{ marginRight: 8 }} />
+          <Text style={{ color: text, fontSize: 13, fontWeight: '700', flex: 1 }}>Route History</Text>
+          <Ionicons name="chevron-forward" size={14} color={sub} />
+        </TouchableOpacity>
+      </View>
+
       <SectionTitle title="Rank & Leaderboard" text={text} />
       <LeaderboardPreview
         loading={loading}
@@ -323,6 +380,8 @@ export default function RewardsScreen() {
         text={text}
         sub={sub}
         cardBg={cardBg}
+        timeFilter={leaderboardTf}
+        onTimeFilterChange={setLeaderboardTf}
       />
 
       <View style={{ height: insets.bottom + 20 }} />

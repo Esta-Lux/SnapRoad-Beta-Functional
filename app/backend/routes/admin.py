@@ -2,6 +2,7 @@
 SnapRoad Admin API Routes
 All endpoints use the Supabase DAO layer (supabase_service.py).
 """
+from pydantic import BaseModel
 from fastapi import APIRouter, Body, Depends, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from typing import Optional
@@ -51,6 +52,10 @@ from services.supabase_service import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Admin"], dependencies=[Depends(require_admin)])
+
+class AdminPhotoRejectBody(BaseModel):
+    review_notes: Optional[str] = None
+
 
 BOOST_PRICING_ADMIN = {
     "base_daily_cost": 25, "additional_day_cost": 20,
@@ -1213,3 +1218,175 @@ def get_supabase_status():
 def get_admin_events(limit: int = Query(default=100, ge=1, le=100)):
     challenges = sb_get_challenges()[:limit]
     return {"success": True, "data": challenges}
+
+
+# ==================== PHOTO REPORT MODERATION ====================
+
+
+def _photo_original_signed_url(supabase, storage_path: str) -> Optional[str]:
+    from services.photo_report_processing import PRIVATE_ORIGINALS_BUCKET
+
+    try:
+        r = supabase.storage.from_(PRIVATE_ORIGINALS_BUCKET).create_signed_url(storage_path, 3600)
+        if isinstance(r, dict):
+            return r.get("signedURL") or r.get("signed_url") or r.get("signedUrl")
+        su = getattr(r, "signed_url", None) or getattr(r, "signedURL", None)
+        return str(su) if su else None
+    except Exception as e:
+        logger.warning("signed URL for original failed: %s", e)
+        return None
+
+
+@router.get("/admin/photo-reports/pending")
+def admin_photo_reports_pending(limit: int = Query(default=50, ge=1, le=200)):
+    from database import get_supabase
+
+    supabase = get_supabase()
+    res = (
+        supabase.table("incident_photos")
+        .select("*")
+        .eq("moderation_status", "pending_review")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    reports = []
+    for row in res.data or []:
+        item = dict(row)
+        opath = item.get("original_storage_path")
+        if opath:
+            item["original_signed_url"] = _photo_original_signed_url(supabase, opath)
+        reports.append(item)
+    return {"success": True, "data": {"reports": reports, "total": len(reports)}}
+
+
+@router.post("/admin/photo-reports/{report_id}/approve")
+async def admin_photo_report_approve(report_id: str):
+    import uuid
+
+    from database import get_supabase
+
+    from services.photo_report_processing import (
+        PUBLIC_PHOTO_BUCKET,
+        PRIVATE_ORIGINALS_BUCKET,
+        analyze_and_prepare_public_bytes,
+        heavy_blur_full_jpeg,
+    )
+
+    supabase = get_supabase()
+    fetch = (
+        supabase.table("incident_photos")
+        .select("*")
+        .eq("id", report_id)
+        .eq("moderation_status", "pending_review")
+        .limit(1)
+        .execute()
+    )
+    if not fetch.data:
+        return {"success": False, "message": "Report not found or not pending"}
+    row = fetch.data[0]
+    opath = row.get("original_storage_path")
+    uid = row.get("user_id") or "unknown"
+    if not opath:
+        return {"success": False, "message": "No private original path"}
+    try:
+        raw = supabase.storage.from_(PRIVATE_ORIGINALS_BUCKET).download(opath)
+        if not raw:
+            return {"success": False, "message": "Could not download original"}
+    except Exception as e:
+        logger.exception("download original: %s", e)
+        return {"success": False, "message": "Could not download original"}
+
+    prep = await analyze_and_prepare_public_bytes(raw)
+    needs_pii = prep["needs_pii"]
+    regions_blurred = prep["regions_blurred"]
+    analysis_ok = prep["analysis_ok"]
+
+    if needs_pii and regions_blurred > 0:
+        public_bytes = prep["blurred_jpeg"]
+        blur_applied = True
+    elif (not analysis_ok) or (needs_pii and regions_blurred == 0):
+        public_bytes = heavy_blur_full_jpeg(raw)
+        blur_applied = True
+    else:
+        public_bytes = prep["base_jpeg"]
+        blur_applied = False
+
+    file_path = f"{uid}/{uuid.uuid4().hex}_approved.jpg"
+    try:
+        supabase.storage.from_(PUBLIC_PHOTO_BUCKET).upload(
+            file_path,
+            public_bytes,
+            file_options={"content-type": "image/jpeg"},
+        )
+        photo_url = supabase.storage.from_(PUBLIC_PHOTO_BUCKET).get_public_url(file_path)
+    except Exception as e:
+        logger.exception("public upload on approve: %s", e)
+        return {"success": False, "message": "Public storage upload failed"}
+
+    try:
+        supabase.table("incident_photos").update(
+            {
+                "photo_url": photo_url,
+                "thumbnail_url": photo_url,
+                "moderation_status": "active",
+                "blur_applied": blur_applied,
+                "needs_admin_review": False,
+                "original_storage_path": None,
+                "review_notes": None,
+            }
+        ).eq("id", report_id).execute()
+    except Exception as e:
+        logger.exception("db update approve: %s", e)
+        return {"success": False, "message": "Database update failed"}
+
+    try:
+        supabase.storage.from_(PRIVATE_ORIGINALS_BUCKET).remove([opath])
+    except Exception:
+        logger.warning("could not delete private original %s", opath)
+
+    return {"success": True, "message": "Published blurred image", "data": {"photo_url": photo_url}}
+
+
+@router.post("/admin/photo-reports/{report_id}/reject")
+def admin_photo_report_reject(
+    report_id: str,
+    body: AdminPhotoRejectBody = Body(default_factory=AdminPhotoRejectBody),
+):
+    from database import get_supabase
+
+    from services.photo_report_processing import PRIVATE_ORIGINALS_BUCKET
+
+    notes = body.review_notes
+    supabase = get_supabase()
+    fetch = (
+        supabase.table("incident_photos")
+        .select("id,original_storage_path")
+        .eq("id", report_id)
+        .eq("moderation_status", "pending_review")
+        .limit(1)
+        .execute()
+    )
+    if not fetch.data:
+        return {"success": False, "message": "Report not found or not pending"}
+    opath = fetch.data[0].get("original_storage_path")
+    if opath:
+        try:
+            supabase.storage.from_(PRIVATE_ORIGINALS_BUCKET).remove([opath])
+        except Exception:
+            logger.warning("could not remove private object %s", opath)
+    try:
+        supabase.table("incident_photos").update(
+            {
+                "moderation_status": "rejected",
+                "photo_url": None,
+                "thumbnail_url": None,
+                "needs_admin_review": False,
+                "original_storage_path": None,
+                "review_notes": str(notes)[:2000] if notes else None,
+            }
+        ).eq("id", report_id).execute()
+    except Exception as e:
+        logger.exception("reject update: %s", e)
+        return {"success": False, "message": "Database update failed"}
+    return {"success": True, "message": "Report rejected"}

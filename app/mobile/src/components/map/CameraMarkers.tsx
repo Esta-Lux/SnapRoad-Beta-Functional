@@ -82,10 +82,8 @@ export default React.memo(function CameraMarkers({ cameras, onCameraTap }: Props
       onPress={handlePress}
       hitbox={{ width: 28, height: 28 }}
     >
-      {/* 1. Soft blue glow around the whole marker */}
       <MB.CircleLayer
         id="sr-cameras-glow"
-        layerIndex={90}
         style={{
           circleRadius: ['interpolate', ['linear'], ['zoom'], 10, 10, 14, 16, 18, 24],
           circleColor: '#2563EB',
@@ -93,10 +91,8 @@ export default React.memo(function CameraMarkers({ cameras, onCameraTap }: Props
           circleBlur: 1.0,
         }}
       />
-      {/* 2. White iris ring — the lens housing */}
       <MB.CircleLayer
         id="sr-cameras-iris"
-        layerIndex={91}
         style={{
           circleRadius: ['interpolate', ['linear'], ['zoom'], 10, 6, 14, 10, 18, 15],
           circleColor: '#ffffff',
@@ -104,10 +100,8 @@ export default React.memo(function CameraMarkers({ cameras, onCameraTap }: Props
           circlePitchAlignment: 'map',
         }}
       />
-      {/* 3. Dark navy lens center — camera aperture */}
       <MB.CircleLayer
         id="sr-cameras-lens"
-        layerIndex={92}
         style={{
           circleRadius: ['interpolate', ['linear'], ['zoom'], 10, 3.5, 14, 6, 18, 9],
           circleColor: '#1E3A8A',
@@ -115,10 +109,8 @@ export default React.memo(function CameraMarkers({ cameras, onCameraTap }: Props
           circlePitchAlignment: 'map',
         }}
       />
-      {/* 4. Plain-text "CAM" label — visible at zoom 14+, plain ASCII so it renders on native */}
       <MB.SymbolLayer
         id="sr-cameras-label"
-        layerIndex={93}
         style={{
           textField: 'CAM',
           textSize: ['interpolate', ['linear'], ['zoom'], 12, 0, 14, 7, 18, 10],

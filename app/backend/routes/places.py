@@ -69,34 +69,37 @@ def _cache_set(cache: OrderedDict, key: str, val, maxsize: int = _CACHE_MAX):
 
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# Shared helpers (Orion, tests, tighter local bias)
 # ---------------------------------------------------------------------------
 
-@router.get("/autocomplete")
-@limiter.limit("60/minute")
-async def autocomplete(
-    request: Request,
-    q: str = Query(..., min_length=1),
-    lat: Optional[float] = None,
-    lng: Optional[float] = None,
-):
-    key = _KEY()
-    if not key:
-        return {"success": False, "error": "Google Places API key not configured", "data": []}
+def _location_bias_ok(lat: Optional[float], lng: Optional[float]) -> bool:
+    if lat is None or lng is None:
+        return False
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return False
+    # Skip (0,0) — would skew global results
+    if abs(lat) < 1e-5 and abs(lng) < 1e-5:
+        return False
+    return True
 
-    cache_key = f"{q.lower().strip()}|{round(lat, 2) if lat else ''}|{round(lng, 2) if lng else ''}"
+
+async def fetch_autocomplete_predictions(q: str, lat: Optional[float] = None, lng: Optional[float] = None) -> list:
+    """Google Place Autocomplete with optional circular bias; nearest-first when `distance_meters` is present."""
+    key = _KEY()
+    if not key or not (q or "").strip():
+        return []
+
+    cache_key = f"{q.lower().strip()}|{round(lat, 2) if lat is not None else ''}|{round(lng, 2) if lng is not None else ''}"
     cached = _cache_get(_autocomplete_cache, cache_key)
     if cached is not None:
-        return {"success": True, "data": cached}
+        return cached
 
-    params: dict = {
-        "input": q,
-        "key": key,
-        "language": "en",
-    }
-    if lat is not None and lng is not None:
+    params: dict = {"input": q.strip(), "key": key, "language": "en"}
+    if _location_bias_ok(lat, lng):
         params["location"] = f"{lat},{lng}"
-        params["radius"] = "50000"
+        # Tighter local bias + strictbounds so autocomplete stays near the user
+        params["radius"] = "25000"
+        params["strictbounds"] = "true"
 
     r = await _get_http().get(f"{_BASE}/autocomplete/json", params=params)
     data = r.json()
@@ -112,7 +115,64 @@ async def autocomplete(
             "distance_meters": p.get("distance_meters"),
         })
 
+    predictions.sort(
+        key=lambda x: (
+            x.get("distance_meters") is None,
+            x.get("distance_meters") if x.get("distance_meters") is not None else 10**9,
+        ),
+    )
+
+    if _location_bias_ok(lat, lng):
+        predictions = [
+            p for p in predictions
+            if p.get("distance_meters") is None or p.get("distance_meters") <= 42000
+        ]
+
     _cache_set(_autocomplete_cache, cache_key, predictions)
+    return predictions
+
+
+async def fetch_place_coords_for_orion(place_id: str) -> Optional[dict]:
+    """Minimal Place Details for navigation actions (name + lat/lng). Uses details cache when warm."""
+    key = _KEY()
+    if not key or not place_id:
+        return None
+
+    cached = _cache_get(_details_cache, place_id)
+    if cached is not None:
+        la, ln = cached.get("lat"), cached.get("lng")
+        if la is not None and ln is not None:
+            return {"name": cached.get("name") or "", "lat": float(la), "lng": float(ln)}
+
+    params = {"place_id": place_id, "fields": "name,geometry", "key": key, "language": "en"}
+    r = await _get_http().get(f"{_BASE}/details/json", params=params)
+    data = r.json()
+    result = data.get("result") or {}
+    geo = result.get("geometry", {}).get("location", {})
+    la, ln = geo.get("lat"), geo.get("lng")
+    if la is None or ln is None:
+        return None
+    name = result.get("name") or ""
+    return {"name": name, "lat": float(la), "lng": float(ln)}
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/autocomplete")
+@limiter.limit("60/minute")
+async def autocomplete(
+    request: Request,
+    q: str = Query(..., min_length=1),
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+):
+    key = _KEY()
+    if not key:
+        return {"success": False, "error": "Google Places API key not configured", "data": []}
+
+    predictions = await fetch_autocomplete_predictions(q, lat, lng)
     return {"success": True, "data": predictions}
 
 
@@ -187,7 +247,8 @@ async def place_details(place_id: str):
 async def nearby_places(
     lat: float = Query(..., ge=-90, le=90),
     lng: float = Query(..., ge=-180, le=180),
-    radius: int = Query(50, ge=20, le=5000),
+    radius: int = Query(50, ge=20, le=50000),
+    place_type: Optional[str] = Query(default=None, alias="type", description="Google place type, e.g. gas_station"),
 ):
     """Return places near a point (for map click). Uses Google Places Nearby Search."""
     key = _KEY()
@@ -196,10 +257,12 @@ async def nearby_places(
 
     params = {
         "location": f"{lat},{lng}",
-        "radius": radius,
+        "radius": min(radius, 50000),
         "key": key,
         "language": "en",
     }
+    if place_type and place_type.strip():
+        params["type"] = place_type.strip()
     r = await _get_http().get(f"{_BASE}/nearbysearch/json", params=params)
     data = r.json()
 
