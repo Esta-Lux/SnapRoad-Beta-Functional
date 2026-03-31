@@ -13,8 +13,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY app/backend /app
 
-# Railway injects PORT into the container environment. Do not use shell $PORT in CMD — if Railway
-# (or a Start Command override) invokes the process without a shell, uvicorn sees the literal "$PORT".
-# Reading PORT in Python avoids that. Clear Railway Settings → Deploy → Start Command so this CMD runs.
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# Railway: railway.toml startCommand also points here (dashboard overrides must not use bare `uvicorn ... $PORT`).
 EXPOSE 8001
-CMD ["python", "-c", "import os; port=int((os.environ.get('PORT') or '8001').strip()); import uvicorn; uvicorn.run('main:app', host='0.0.0.0', port=port)"]
+CMD ["/docker-entrypoint.sh"]
