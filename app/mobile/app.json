@@ -1,0 +1,71 @@
+{
+  "expo": {
+    "name": "SnapRoad",
+    "slug": "snaproad",
+    "scheme": "snaproad",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0f"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.snaproad.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SnapRoad needs your location to show your position on the map and provide turn-by-turn navigation.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "SnapRoad uses your location in the background to track trips and share location with family.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.snaproad.app",
+      "usesCleartextTraffic": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0a0f",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsImpl": "mapbox"
+        }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.snaproad",
+          "enableGooglePay": true
+        }
+      ],
+      "expo-location",
+      "expo-sensors",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b800018b-79d3-4b8e-bbad-f5d628ee6a60"
+      },
+      "supportEmail": "support@snaproad.co",
+      "iosAppStoreId": "",
+      "androidPackage": "com.snaproad.app"
+    }
+  }
+}

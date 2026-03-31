@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head><title>MapKit Test</title></head>
+<body style="margin:0;font-family:sans-serif;">
+<div id="status" style="padding:10px;background:#1e293b;color:#e2e8f0;font-size:14px;">Loading...</div>
+<div id="map" style="width:100vw;height:90vh;"></div>
+<script>
+const log = (msg, data) => {
+  const el = document.getElementById('status');
+  el.textContent = msg + (data ? ' | ' + JSON.stringify(data) : '');
+  console.log('[MapKit Test]', msg, data);
+};
+
+(async () => {
+  try {
+    log('Step 1: Fetching token...');
+    const origin = window.location.origin;
+    const tokenRes = await fetch('/api/mapkit/token?origin=' + encodeURIComponent(origin));
+    const tokenData = await tokenRes.json();
+    if (!tokenData.success || !tokenData.token) {
+      log('FAIL: Token fetch failed', tokenData);
+      return;
+    }
+    log('Step 2: Token OK (len=' + tokenData.token.length + '). Loading MapKit JS...');
+
+    const script = document.createElement('script');
+    script.src = 'https://cdn.apple-mapkit.com/mk/5.69.0/mapkit.js';
+    script.crossOrigin = 'anonymous';
+    document.head.appendChild(script);
+    await new Promise((res, rej) => { script.onload = res; script.onerror = () => rej('Script load failed'); });
+    log('Step 3: MapKit JS loaded. Initializing...');
+
+    await new Promise((resolve, reject) => {
+      mapkit.addEventListener('configuration-change', () => {
+        log('Step 4: configuration-change event fired. MapKit ready!');
+        resolve();
+      });
+      mapkit.addEventListener('error', (e) => {
+        log('FAIL: MapKit error event', { type: e.type, status: e.status, message: e.message });
+        reject(e);
+      });
+      mapkit.init({ authorizationCallback: (done) => done(tokenData.token) });
+      setTimeout(() => { log('WARN: 5s timeout, resolving anyway'); resolve(); }, 5000);
+    });
+
+    log('Step 5: Creating map...');
+    const mapEl = document.getElementById('map');
+    log('Step 5b: Container size', { w: mapEl.offsetWidth, h: mapEl.offsetHeight });
+    
+    try {
+      const map = new mapkit.Map(mapEl);
+      log('SUCCESS: Map created!', { center: map.center, region: !!map.region });
+    } catch (e) {
+      log('FAIL: Map constructor threw', { message: e.message, name: e.name, stack: (e.stack||'').substring(0,200) });
+    }
+  } catch (e) {
+    log('FAIL: ' + String(e), { message: e.message });
+  }
+})();
+</script>
+</body>
+</html>
