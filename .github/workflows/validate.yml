@@ -1,6 +1,7 @@
 # -----------------------------------------------------------------------------
 # Automated checks run HERE ONLY — push/PR to develop|main runs backend tests + coverage,
-# frontend lint/tests/build + Playwright E2E, mobile tsc, Sonar (if token set).
+# frontend lint/tests/build + Playwright E2E (routing, auth screens, welcome UI, optional
+# live admin/partner login if E2E_* secrets set), mobile tsc, Sonar (if token set).
 # You do not need to install Playwright or run the full suite locally before merge.
 # -----------------------------------------------------------------------------
 # Multi-domain web (app. / partner. / admin.): operational checklist (not CI)
@@ -114,11 +115,22 @@ jobs:
       - run: npm run test:coverage
       - run: npm run build
 
+      # Optional: E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD / E2E_PARTNER_* repo vars for live-login specs.
+      # Optional: E2E_ALL_BROWSERS=true → install firefox+webkit and run multi-browser (slower).
       - name: E2E (Playwright)
         env:
           CI: true
+          E2E_ADMIN_EMAIL: ${{ vars.E2E_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_PARTNER_EMAIL: ${{ vars.E2E_PARTNER_EMAIL }}
+          E2E_PARTNER_PASSWORD: ${{ secrets.E2E_PARTNER_PASSWORD }}
+          E2E_ALL_BROWSERS: ${{ vars.E2E_ALL_BROWSERS }}
         run: |
-          npx playwright install --with-deps chromium
+          if [ "${E2E_ALL_BROWSERS}" = "true" ] || [ "${E2E_ALL_BROWSERS}" = "1" ]; then
+            npx playwright install --with-deps
+          else
+            npx playwright install --with-deps chromium
+          fi
           npm run test:e2e
 
       - name: Upload frontend LCOV for Sonar

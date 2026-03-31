@@ -153,6 +153,7 @@ export default function AuthScreen({ navigation, route }: Props) {
 
           {mode === 'signup' && (
             <TextInput
+              testID="e2e-auth-name"
               style={[s.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
               placeholder="Full Name"
               placeholderTextColor={colors.textTertiary}
@@ -165,6 +166,7 @@ export default function AuthScreen({ navigation, route }: Props) {
           )}
           <TextInput
             ref={emailRef}
+            testID="e2e-auth-email"
             style={[s.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
             placeholder="Email"
             placeholderTextColor={colors.textTertiary}
@@ -179,6 +181,7 @@ export default function AuthScreen({ navigation, route }: Props) {
           <View style={s.pwRow}>
             <TextInput
               ref={pwRef}
+              testID="e2e-auth-password"
               style={[s.input, { flex: 1, marginBottom: 0, backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
               placeholder="Password"
               placeholderTextColor={colors.textTertiary}
@@ -218,7 +221,12 @@ export default function AuthScreen({ navigation, route }: Props) {
 
           {error ? <Text style={[s.error, { color: colors.danger }]}>{error}</Text> : null}
 
-          <TouchableOpacity onPress={handleSubmit} disabled={isLoading || isAuthSubmitting} activeOpacity={0.85}>
+          <TouchableOpacity
+            testID="e2e-auth-submit"
+            onPress={handleSubmit}
+            disabled={isLoading || isAuthSubmitting}
+            activeOpacity={0.85}
+          >
             <LinearGradient
               colors={[colors.ctaGradientStart, colors.ctaGradientEnd]}
               start={{ x: 0, y: 0 }}

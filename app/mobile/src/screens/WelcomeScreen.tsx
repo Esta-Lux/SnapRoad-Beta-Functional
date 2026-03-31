@@ -35,6 +35,7 @@ export default function WelcomeScreen({ navigation }: Props) {
 
       <Animated.View entering={FadeInUp.duration(500).delay(500)} style={styles.actions}>
         <TouchableOpacity
+          testID="e2e-welcome-sign-in"
           style={styles.primaryBtn}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('Auth', { mode: 'signin' }); }}
           activeOpacity={0.85}
@@ -42,6 +43,7 @@ export default function WelcomeScreen({ navigation }: Props) {
           <Text style={styles.primaryText}>Sign In</Text>
         </TouchableOpacity>
         <TouchableOpacity
+          testID="e2e-welcome-create-account"
           style={styles.secondaryBtn}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('Auth', { mode: 'signup' }); }}
           activeOpacity={0.85}

@@ -12,6 +12,8 @@ playwright/.cache/
 
 # Environment files (keep .env.example)
 .env
+.env.e2e
+app/frontend/.env.e2e
 .env.local
 .env.development
 .env.production
