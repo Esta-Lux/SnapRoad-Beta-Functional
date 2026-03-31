@@ -24,7 +24,7 @@ _BASE = "https://maps.googleapis.com/maps/api/place"
 # Persistent HTTP client — avoids TCP+TLS handshake on every keystroke.
 # Created lazily on first request so import-time failures are avoided.
 # ---------------------------------------------------------------------------
-_http: httpx.AsyncClient | None = None
+_http: Optional[httpx.AsyncClient] = None
 
 
 def _get_http() -> httpx.AsyncClient:

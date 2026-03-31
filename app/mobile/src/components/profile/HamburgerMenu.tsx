@@ -22,6 +22,7 @@ interface MenuItem {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   action: () => void;
+  accent?: string;
 }
 
 export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }: Props) {
@@ -31,14 +32,22 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
 
   const items: MenuItem[] = [
     {
-      icon: 'settings-outline',
-      label: 'Settings',
-      action: () => { onClose(); onNavigate('Profile'); },
+      icon: 'people-outline',
+      label: 'Social',
+      accent: '#8B5CF6',
+      action: () => { onClose(); onNavigate('Social'); },
     },
     {
-      icon: 'help-circle-outline',
-      label: 'Help & Support',
-      action: () => { onClose(); onNavigate('Help'); },
+      icon: 'flag-outline',
+      label: 'SnapRace',
+      accent: '#EF4444',
+      action: () => { onClose(); onNavigate('SnapRace'); },
+    },
+    {
+      icon: 'car-sport-outline',
+      label: 'Convoy',
+      accent: '#F59E0B',
+      action: () => { onClose(); onNavigate('Convoy'); },
     },
     {
       icon: 'analytics-outline',
@@ -64,7 +73,7 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
       icon: 'information-circle-outline',
       label: 'About',
       action: () => {
-        Alert.alert('SnapRoad', 'Version 1.0.0\n\n© 2025 SnapRoad Inc.\nAll rights reserved.');
+        Alert.alert('SnapRoad', 'Version 1.0.0\n\n\u00A9 2025 SnapRoad Inc.\nAll rights reserved.');
       },
     },
   ];
@@ -89,8 +98,8 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
               onPress={item.action}
               activeOpacity={0.7}
             >
-              <View style={styles.iconWrap}>
-                <Ionicons name={item.icon} size={22} color="#3B82F6" />
+              <View style={[styles.iconWrap, item.accent ? { backgroundColor: `${item.accent}18` } : undefined]}>
+                <Ionicons name={item.icon} size={22} color={item.accent || '#3B82F6'} />
               </View>
               <Text style={[styles.menuLabel, { color: text }]}>{item.label}</Text>
               <Ionicons name="chevron-forward" size={18} color={sub} />

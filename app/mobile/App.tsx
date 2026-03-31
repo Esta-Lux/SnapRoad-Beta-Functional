@@ -21,8 +21,10 @@ import RewardsScreen from './src/screens/RewardsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
 import AppTour from './src/components/gamification/AppTour';
+import LegalConsentGate from './src/components/legal/LegalConsentGate';
 import { storage } from './src/utils/storage';
 
 const Tab = createBottomTabNavigator();
@@ -147,6 +149,7 @@ function RootNavigator() {
       screens: {
         Welcome: 'welcome',
         Auth: 'auth',
+        ForgotPassword: 'forgot-password',
         ResetPassword: 'reset-password',
       },
     },
@@ -175,12 +178,14 @@ function RootNavigator() {
       {isAuthenticated ? (
         <>
           <MainTabs />
+          <LegalConsentGate />
           <AppTour visible={showTour} onComplete={() => { setShowTour(false); storage.set('snaproad_tour_done', '1'); }} />
         </>
       ) : (
         <PublicStack.Navigator screenOptions={{ headerShown: false }}>
           <PublicStack.Screen name="Welcome" component={WelcomeScreen} />
           <PublicStack.Screen name="Auth" component={AuthScreen} />
+          <PublicStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
           <PublicStack.Screen name="ResetPassword" component={ResetPasswordScreen} />
         </PublicStack.Navigator>
       )}

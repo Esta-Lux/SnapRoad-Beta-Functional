@@ -122,7 +122,7 @@ async function parseApiResponseBody(
   if (!trimmed) {
     return {
       ok: false,
-      error: `Empty response (HTTP ${status}). Start the API (Vite proxies /api to VITE_BACKEND_PROXY_TARGET, default :8002) or check VITE_API_URL.`,
+      error: `Empty response (HTTP ${status}). Start the API (Vite proxies /api to VITE_BACKEND_PROXY_TARGET, default :8001) or check VITE_API_URL.`,
     };
   }
   try {
@@ -305,10 +305,10 @@ class ApiService {
       // #endregion
       const baseHint =
         apiBaseUrl ||
-        '(empty base → same-origin /api, proxied by Vite; see VITE_BACKEND_PROXY_TARGET, default http://127.0.0.1:8002)'
+        '(empty base → same-origin /api, proxied by Vite; see VITE_BACKEND_PROXY_TARGET, default http://127.0.0.1:8001)'
       const msg =
         (error as any)?.name === 'AbortError'
-          ? `Request timed out after ${ms}ms. Start the FastAPI backend on the port Vite proxies to (default 8002). API base: ${baseHint}. Set VITE_API_URL / VITE_BACKEND_PROXY_TARGET if needed; clear localStorage key "snaproad_api_url_override" if you used a bad ?api= URL.`
+          ? `Request timed out after ${ms}ms. Start the FastAPI backend on the port Vite proxies to (default 8001). API base: ${baseHint}. Set VITE_API_URL / VITE_BACKEND_PROXY_TARGET if needed; clear localStorage key "snaproad_api_url_override" if you used a bad ?api= URL.`
           : 'Network error';
       return { success: false, error: msg };
     }

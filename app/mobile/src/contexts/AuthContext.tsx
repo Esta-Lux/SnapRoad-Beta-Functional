@@ -25,7 +25,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const DRIVER_APP_STAFF_BLOCK_MESSAGE =
-  'This email is an admin or partner account. Use the web admin login for the dashboard. To use the driver app here, set role to "driver" in Supabase → profiles, or sign up with a different email.';
+  'This account cannot sign in to the driver app. Use a driver account, or ask your team to change your role to driver in the admin tools.';
 
 function isStaffRole(role: string | undefined): boolean {
   return role === 'admin' || role === 'super_admin' || role === 'partner';

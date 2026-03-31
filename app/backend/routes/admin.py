@@ -47,6 +47,7 @@ from services.supabase_service import (
     sb_get_app_config, sb_update_app_config,
     sb_get_app_config_with_meta,
     sb_get_road_reports_for_admin_map,
+    sb_get_road_reports_admin_list,
     sb_get_live_users,
 )
 
@@ -466,13 +467,46 @@ def get_audit_log(limit: int = Query(default=50, ge=1, le=100)):
 
 # ==================== INCIDENTS ====================
 
+def _road_report_row_to_admin_item(row: dict) -> dict:
+    """Align driver map reports (road_reports) with admin Incidents tab shape."""
+    t = str(row.get("type") or "report")
+    sev = "high" if t in ("accident", "crash", "closure") else ("low" if t in ("pothole",) else "medium")
+    lat, lng = row.get("lat"), row.get("lng")
+    loc = ""
+    try:
+        if lat is not None and lng is not None:
+            loc = f"{float(lat):.5f}, {float(lng):.5f}"
+    except (TypeError, ValueError):
+        loc = ""
+    return {
+        "id": str(row.get("id")),
+        "type": t,
+        "description": row.get("description") or "",
+        "location": loc,
+        "severity": sev,
+        "status": str(row.get("status") or "active"),
+        "created_at": row.get("created_at"),
+        "reported_by": str(row.get("user_id") or ""),
+        "source": "road_reports",
+        "image_url": None,
+    }
+
+
 @router.get("/admin/incidents")
 def get_incidents(
     status: Optional[str] = None,
-    limit: int = Query(default=100, ge=1, le=100),
+    limit: int = Query(default=100, ge=1, le=200),
 ):
-    data = sb_get_incidents(status=status, limit=limit)
-    return {"success": True, "data": data}
+    legacy = sb_get_incidents(status=status, limit=limit)
+    road_rows = sb_get_road_reports_admin_list(min(limit, 120))
+    road_items = [_road_report_row_to_admin_item(r) for r in road_rows]
+    merged = road_items + list(legacy)
+
+    def sort_key(item: dict):
+        return str(item.get("created_at") or "")
+
+    merged.sort(key=sort_key, reverse=True)
+    return {"success": True, "data": merged[:limit]}
 
 
 @router.post("/admin/incidents/{incident_id}/moderate")

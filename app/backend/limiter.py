@@ -1,6 +1,7 @@
 """Shared rate limiter for SnapRoad API (slowapi)."""
 import logging
 import os
+from typing import Optional
 from urllib.parse import urlparse
 
 from slowapi import Limiter
@@ -17,7 +18,7 @@ _REDIS_PLACEHOLDER_HOSTS = frozenset(
 )
 
 
-def _limiter_storage_uri() -> str | None:
+def _limiter_storage_uri() -> Optional[str]:
     """
     Use Redis for rate-limit state only when URL looks usable.
     Otherwise slowapi falls back to in-memory storage (fine for single-process dev).

@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
   const apiProxyTarget =
     env.VITE_BACKEND_PROXY_TARGET ||
     envAll.VITE_BACKEND_PROXY_TARGET ||
-    'http://127.0.0.1:8002'
+    'http://127.0.0.1:8001'
   // Hard-inject into the client bundle. Fixes cases where import.meta.env was empty
   // (wrong cwd, tooling, or env not merged) even though .env exists next to this file.
   const importMetaEnvDefine = Object.fromEntries(

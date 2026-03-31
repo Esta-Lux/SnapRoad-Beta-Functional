@@ -62,7 +62,10 @@
     "extra": {
       "eas": {
         "projectId": "b800018b-79d3-4b8e-bbad-f5d628ee6a60"
-      }
+      },
+      "supportEmail": "support@snaproad.co",
+      "iosAppStoreId": "",
+      "androidPackage": "com.snaproad.app"
     }
   }
 }

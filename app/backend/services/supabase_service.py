@@ -1233,6 +1233,24 @@ def sb_get_app_config_with_meta() -> tuple:
         return {}, {}
 
 
+def sb_get_road_reports_admin_list(limit: int = 100) -> list:
+    """Recent driver-submitted road reports for admin Incidents tab (same rows as /api/incidents/report)."""
+    try:
+        r = (
+            _sb()
+            .table("road_reports")
+            .select("id,user_id,type,lat,lng,description,upvotes,status,created_at,expires_at")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return r.data or []
+    except Exception as e:
+        if not _table_missing(e):
+            logger.warning(f"sb_get_road_reports_admin_list: {e}")
+        return []
+
+
 def sb_get_road_reports_for_admin_map(limit: int = 400) -> list:
     """Active road reports with coordinates for admin live map."""
     try:

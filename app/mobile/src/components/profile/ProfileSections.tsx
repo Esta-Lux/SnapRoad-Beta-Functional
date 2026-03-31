@@ -1,5 +1,20 @@
 import React from 'react';
-import { Alert, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import Constants from 'expo-constants';
+import { api } from '../../api/client';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Skeleton from '../common/Skeleton';
@@ -467,24 +482,157 @@ export function DrivingModeCard({
   );
 }
 
+function extraConfig(): { supportEmail?: string; iosAppStoreId?: string; androidPackage?: string } {
+  return (Constants.expoConfig?.extra ?? {}) as {
+    supportEmail?: string;
+    iosAppStoreId?: string;
+    androidPackage?: string;
+  };
+}
+
 export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string; sub: string }) {
+  const [legalDocs, setLegalDocs] = React.useState<{ id: string; name: string; type?: string }[]>([]);
+  const [legalModal, setLegalModal] = React.useState<{ title: string; body: string } | null>(null);
+  const [legalLoading, setLegalLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/api/legal/documents');
+        const payload = res.data as { data?: { id: string; name: string; type?: string }[] };
+        if (res.success && Array.isArray(payload?.data)) setLegalDocs(payload.data);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
+
+  const openLegalDoc = async (doc: { id: string; name: string }) => {
+    setLegalLoading(true);
+    try {
+      const res = await api.get(`/api/legal/documents/${doc.id}`);
+      const row = (res.data as { data?: Record<string, string> })?.data;
+      const body =
+        String(row?.content ?? row?.body ?? row?.text ?? row?.description ?? '').trim() ||
+        'No text has been published for this document yet. Ask your admin to publish content in Legal Compliance.';
+      setLegalModal({ title: doc.name, body });
+    } catch {
+      Alert.alert(doc.name, 'Could not load this document. Check your connection and try again.');
+    } finally {
+      setLegalLoading(false);
+    }
+  };
+
+  const supportEmail = (extraConfig().supportEmail || 'support@snaproad.co').trim();
+  const androidPkg = (extraConfig().androidPackage || 'com.snaproad.app').trim();
+  const iosStoreId = (extraConfig().iosAppStoreId || '').trim();
+
+  const openRate = () => {
+    if (Platform.OS === 'android') {
+      const market = `market://details?id=${encodeURIComponent(androidPkg)}`;
+      const web = `https://play.google.com/store/apps/details?id=${encodeURIComponent(androidPkg)}`;
+      Linking.canOpenURL(market).then((ok) => Linking.openURL(ok ? market : web)).catch(() => Linking.openURL(web));
+      return;
+    }
+    if (Platform.OS === 'ios' && iosStoreId) {
+      Linking.openURL(`itms-apps://itunes.apple.com/app/id${iosStoreId}`).catch(() =>
+        Linking.openURL(`https://apps.apple.com/app/id${iosStoreId}`),
+      );
+      return;
+    }
+    Alert.alert(
+      'Rate SnapRoad',
+      iosStoreId
+        ? 'Open the App Store listing from your device.'
+        : 'Set iosAppStoreId in app.json extra after your App Store listing is live.',
+    );
+  };
+
+  const openSupport = () => {
+    const mail = `mailto:${supportEmail}?subject=${encodeURIComponent('SnapRoad support')}`;
+    Linking.openURL(mail).catch(() => Alert.alert('Contact support', `Email us at ${supportEmail}`));
+  };
+
+  const legalRows =
+    legalDocs.length > 0
+      ? legalDocs.map((d) => ({ label: d.name, docId: d.id }))
+      : [
+          { label: 'Privacy Policy', docId: '' as const },
+          { label: 'Terms of Service', docId: '' as const },
+        ];
+
   return (
     <View style={[styles.card, { backgroundColor: cardBg }]}>
-      {[
-        { label: 'App Version', value: '1.0.0' },
-        { label: 'Rate SnapRoad', link: true },
-        { label: 'Contact Support', link: true },
-        { label: 'Privacy Policy', link: true },
-        { label: 'Terms of Service', link: true },
-      ].map((item, i) => (
-        <View key={i} style={styles.aboutRow}>
+      <View style={styles.aboutRow}>
+        <Text style={[styles.settingLabel, { color: text }]}>App Version</Text>
+        <Text style={{ color: sub, fontSize: 13 }}>{String(Constants.expoConfig?.version ?? '1.0.0')}</Text>
+      </View>
+      <TouchableOpacity style={styles.aboutRow} onPress={openRate} activeOpacity={0.7}>
+        <Text style={[styles.settingLabel, { color: text }]}>Rate SnapRoad</Text>
+        <Ionicons name="star-outline" size={16} color={sub} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.aboutRow} onPress={openSupport} activeOpacity={0.7}>
+        <Text style={[styles.settingLabel, { color: text }]}>Contact Support</Text>
+        <Ionicons name="mail-outline" size={16} color={sub} />
+      </TouchableOpacity>
+      {legalRows.map((item, i) => (
+        <TouchableOpacity
+          key={`legal-${i}`}
+          style={styles.aboutRow}
+          onPress={() => {
+            if (item.docId) openLegalDoc({ id: item.docId, name: item.label });
+            else Alert.alert(item.label, 'Your team has not published this document yet. It will appear here once it is set to Published in the admin portal.');
+          }}
+          activeOpacity={0.7}
+          disabled={legalLoading}
+        >
           <Text style={[styles.settingLabel, { color: text }]}>{item.label}</Text>
-          {item.value ? <Text style={{ color: sub, fontSize: 13 }}>{item.value}</Text> : <Ionicons name="open-outline" size={14} color={sub} />}
-        </View>
+          {legalLoading ? <ActivityIndicator size="small" color={sub} /> : <Ionicons name="document-text-outline" size={16} color={sub} />}
+        </TouchableOpacity>
       ))}
+
+      <Modal visible={!!legalModal} transparent animationType="slide" onRequestClose={() => setLegalModal(null)}>
+        <View style={aboutStyles.modalBackdrop}>
+          <View style={[aboutStyles.modalCard, { backgroundColor: cardBg }]}>
+            <Text style={[aboutStyles.modalTitle, { color: text }]}>{legalModal?.title}</Text>
+            <ScrollView style={aboutStyles.modalScroll} showsVerticalScrollIndicator>
+              <Text style={[aboutStyles.modalBody, { color: text }]}>{legalModal?.body}</Text>
+            </ScrollView>
+            <TouchableOpacity style={aboutStyles.modalClose} onPress={() => setLegalModal(null)} activeOpacity={0.85}>
+              <Text style={aboutStyles.modalCloseText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
+
+const aboutStyles = StyleSheet.create({
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  modalCard: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 18,
+    maxHeight: '88%',
+  },
+  modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 10 },
+  modalScroll: { maxHeight: 420 },
+  modalBody: { fontSize: 14, lineHeight: 22 },
+  modalClose: {
+    marginTop: 14,
+    backgroundColor: '#2563EB',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalCloseText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+});
 
 export function SignOutButton({ onSignOut }: { onSignOut: () => void }) {
   return (

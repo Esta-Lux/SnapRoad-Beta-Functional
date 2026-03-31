@@ -1,4 +1,6 @@
 import os
+from typing import Any, Dict, Optional
+
 from fastapi import APIRouter, HTTPException, Depends, Query
 from models.schemas import PlanUpdate, CarCustomization
 from services.mock_data import (
@@ -15,7 +17,7 @@ router = APIRouter(prefix="/api", tags=["Users"])
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
 
-def _get_user_store(user: dict | None) -> dict:
+def _get_user_store(user: Optional[Dict[str, Any]]) -> dict:
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
     user_id = str(user.get("user_id") or user.get("id") or "").strip()

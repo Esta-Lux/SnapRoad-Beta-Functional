@@ -466,19 +466,7 @@ def get_incidents(
     return {"success": True, "data": capped, "total": len(capped)}
 
 
-@router.post("/incidents/{incident_id}/upvote")
-def upvote_incident(incident_id: int):
-    if ENVIRONMENT == "production":
-        raise HTTPException(status_code=503, detail="Use /api/incidents/{incident_id}/upvote in production")
-    report = next((r for r in road_reports_db if r["id"] == incident_id), None)
-    if not report:
-        return {"success": False, "message": "Incident not found"}
-    if current_user_id in report.get("upvoters", []):
-        return {"success": False, "message": "Already upvoted"}
-    report["upvotes"] = report.get("upvotes", 0) + 1
-    report.setdefault("upvoters", []).append(current_user_id)
-    return {"success": True, "data": {"id": incident_id, "upvotes": report["upvotes"]}}
-
+# Legacy /incidents/{incident_id}/upvote removed — canonical route is in routes/incidents.py (str param, DB-backed).
 
 if ENVIRONMENT == "production":
     _LEGACY_PROD_DISABLED = {
@@ -487,6 +475,5 @@ if ENVIRONMENT == "production":
         "/api/reports/{report_id}",
         "/api/reports/my",
         "/api/incidents",
-        "/api/incidents/{incident_id}/upvote",
     }
     router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]

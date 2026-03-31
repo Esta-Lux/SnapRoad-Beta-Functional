@@ -99,12 +99,21 @@ def _handle_checkout_session_completed(session: dict) -> None:
                 })
                 logger.info("Partner %s boost %s for offer %s", partner_id, boost_type, offer_id)
 
-    # Driver / mobile subscription (metadata from /api/payments/checkout/session)
+    # Driver / mobile checkout (metadata from /api/payments/checkout/session)
     user_id = (meta.get("user_id") or "").strip()
     plan_id = (meta.get("plan_id") or "").strip()
-    if user_id and user_id != "anonymous" and plan_id in ("premium", "family") and mode == "subscription":
-        sb_update_profile(user_id, {"plan": plan_id, "is_premium": True})
-        logger.info("Profile %s upgraded to %s", user_id, plan_id)
+    customer = str(session.get("customer") or "").strip()
+    if user_id and user_id != "anonymous":
+        profile_updates: dict = {}
+        if customer.startswith("cus_"):
+            profile_updates["stripe_customer_id"] = customer
+        if plan_id in ("premium", "family") and mode == "subscription":
+            profile_updates["plan"] = plan_id
+            profile_updates["is_premium"] = True
+        if profile_updates:
+            sb_update_profile(user_id, profile_updates)
+            if "plan" in profile_updates:
+                logger.info("Profile %s upgraded to %s", user_id, plan_id)
 
 
 @router.post("/api/webhooks/stripe")

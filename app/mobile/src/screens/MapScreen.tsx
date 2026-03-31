@@ -44,6 +44,8 @@ import LaneGuide from '../components/navigation/LaneGuide';
 import GemOverlay from '../components/gamification/GemOverlay';
 import TripShare from '../components/gamification/TripShare';
 import HamburgerMenu from '../components/profile/HamburgerMenu';
+import SnapRaceMode from '../components/social/SnapRaceMode';
+import ConvoyMode from '../components/social/ConvoyMode';
 // Crash detection hook removed (no SOS backend); friend locations handled inline via Supabase realtime
 import { formatDistance, haversineMeters } from '../utils/distance';
 import { formatDuration } from '../utils/format';
@@ -86,6 +88,14 @@ const ATMOSPHERE: Record<DrivingMode, { color: string; highColor: string; horizo
   adaptive: { color: 'rgb(186, 210, 235)', highColor: 'rgb(36, 92, 223)', horizonBlend: 0.04, spaceColor: 'rgb(187, 214, 237)', starIntensity: 0 },
   sport: { color: 'rgb(22, 30, 60)', highColor: 'rgb(45, 55, 120)', horizonBlend: 0.06, spaceColor: 'rgb(12, 18, 45)', starIntensity: 0.35 },
 };
+
+/** Android RNMBXCameraManager.setFollowPadding calls asMap() — undefined breaks Fabric (ClassCastException). */
+const MAPBOX_DEFAULT_FOLLOW_PADDING = {
+  paddingTop: 0,
+  paddingRight: 0,
+  paddingBottom: 0,
+  paddingLeft: 0,
+} as const;
 
 const REPORT_TYPES = [
   { type: 'police', label: 'Police', icon: 'shield-outline' as const },
@@ -230,6 +240,8 @@ export default function MapScreen() {
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [showOrion, setShowOrion] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showSnapRace, setShowSnapRace] = useState(false);
+  const [showConvoy, setShowConvoy] = useState(false);
   const [currentAddress, setCurrentAddress] = useState<string>('');
   const [recentSearches, setRecentSearches] = useState<GeocodeResult[]>([]);
 
@@ -826,20 +838,58 @@ export default function MapScreen() {
     } catch { setActiveReportCard(null); }
   }, []);
 
-  const handleMapPress = useCallback(async (e: any) => {
-    const features = e.features;
-    if (features?.length > 0) {
-      const f = features[0];
-      const name = f.properties?.name || f.properties?.name_en;
-      if (name && f.geometry?.coordinates) {
-        const [lng, lat] = f.geometry.coordinates;
-        setSelectedPlace({ name, address: f.properties?.address ?? '', category: f.properties?.category, lat, lng });
-        return;
+  const lngLatFromPressGeometry = useCallback((geometry: any): { lng: number; lat: number } | null => {
+    try {
+      if (!geometry?.coordinates) return null;
+      const c = geometry.coordinates;
+      const t = geometry.type;
+      if (t === 'Point' && Array.isArray(c) && c.length >= 2) {
+        const lng = Number(c[0]);
+        const lat = Number(c[1]);
+        return Number.isFinite(lng) && Number.isFinite(lat) ? { lng, lat } : null;
       }
+      if (t === 'LineString' && Array.isArray(c[0]) && c[0].length >= 2) {
+        const lng = Number(c[0][0]);
+        const lat = Number(c[0][1]);
+        return Number.isFinite(lng) && Number.isFinite(lat) ? { lng, lat } : null;
+      }
+      if (t === 'Polygon' && Array.isArray(c[0]) && Array.isArray(c[0][0]) && c[0][0].length >= 2) {
+        const lng = Number(c[0][0][0]);
+        const lat = Number(c[0][0][1]);
+        return Number.isFinite(lng) && Number.isFinite(lat) ? { lng, lat } : null;
+      }
+    } catch {
+      return null;
     }
-    const coords = e.geometry?.coordinates;
-    if (coords) {
-      const [tapLng, tapLat] = coords;
+    return null;
+  }, []);
+
+  const handleMapPress = useCallback(async (e: any) => {
+    try {
+      // During turn-by-turn, pan/zoom is handled via onTouchStart (handleMapPress would still fire on rnmapbox
+      // and could receive non-Point geometries from vector tiles — destructuring crashed the app).
+      if (nav.isNavigating) return;
+
+      const asFeatures = Array.isArray(e?.features) ? e.features : e?.type === 'Feature' ? [e] : [];
+      for (const f of asFeatures) {
+        const name = f?.properties?.name || f?.properties?.name_en;
+        const pos = lngLatFromPressGeometry(f?.geometry);
+        if (name && pos) {
+          setSelectedPlace({
+            name,
+            address: f.properties?.address ?? '',
+            category: f.properties?.category,
+            lat: pos.lat,
+            lng: pos.lng,
+          });
+          return;
+        }
+      }
+
+      const tap = lngLatFromPressGeometry(e?.geometry);
+      if (!tap) return;
+      const { lng: tapLng, lat: tapLat } = tap;
+
       try {
         const res = await api.get<any>(`/api/places/nearby?lat=${tapLat}&lng=${tapLng}&radius=40`);
         const nearby = (res.data as any)?.data ?? res.data;
@@ -856,13 +906,23 @@ export default function MapScreen() {
             return;
           }
         }
-      } catch {}
+      } catch { /* ignore */ }
       const { reverseGeocode } = await import('../lib/directions');
       const geo = await reverseGeocode(tapLat, tapLng);
-      if (geo) { setSelectedPlace({ name: geo.name, address: geo.address, lat: tapLat, lng: tapLng }); return; }
-      setSelectedPlace({ name: 'Dropped Pin', address: `${tapLat.toFixed(5)}, ${tapLng.toFixed(5)}`, lat: tapLat, lng: tapLng });
+      if (geo) {
+        setSelectedPlace({ name: geo.name, address: geo.address, lat: tapLat, lng: tapLng });
+        return;
+      }
+      setSelectedPlace({
+        name: 'Dropped Pin',
+        address: `${tapLat.toFixed(5)}, ${tapLng.toFixed(5)}`,
+        lat: tapLat,
+        lng: tapLng,
+      });
+    } catch (err) {
+      console.warn('[MapScreen] handleMapPress', err);
     }
-  }, []);
+  }, [nav.isNavigating, lngLatFromPressGeometry]);
 
   // ─── Permission denied ─────────────────────────────────────────────────────
 
@@ -919,7 +979,7 @@ export default function MapScreen() {
             followUserLocation={(nav.isNavigating && cameraLocked) || compassMode}
             followPitch={camCtrl ? camCtrl.followPitch : compassMode ? 45 : undefined}
             followZoomLevel={camCtrl ? camCtrl.followZoomLevel : compassMode ? 15 : undefined}
-            followPadding={camCtrl ? camCtrl.followPadding : undefined}
+            followPadding={camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING}
           />
 
           {/* Terrain only on Standard/Satellite — classic styles don't reliably support it */}
@@ -1879,12 +1939,12 @@ export default function MapScreen() {
 
       {!nav.isNavigating && !nav.showRoutePreview && (
         <>
-          <TouchableOpacity style={[s.layerBtn, { top: insets.top + 100, backgroundColor: colors.surface, borderColor: colors.border }]}
+          <TouchableOpacity style={[s.layerBtn, { top: insets.top + 116, backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowStylePicker(true); }}>
             <Ionicons name="layers-outline" size={20} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[s.layerBtn, { top: insets.top + 152, backgroundColor: followMode === 'heading' ? '#3B82F6' : followMode === 'follow' ? '#10B981' : colors.surface, borderColor: followMode !== 'free' ? 'transparent' : colors.border }]}
+            style={[s.layerBtn, { top: insets.top + 170, backgroundColor: followMode === 'heading' ? '#3B82F6' : followMode === 'follow' ? '#10B981' : colors.surface, borderColor: followMode !== 'free' ? 'transparent' : colors.border }]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               setFollowMode((prev) => {
@@ -1934,9 +1994,14 @@ export default function MapScreen() {
                       <Text style={[s.ciTitle, { color: colors.text }]}>{item.title}</Text>
                       <Text style={[s.ciSub, { color: colors.textTertiary }]}>{typeof item.distance_miles === 'number' ? `${item.distance_miles.toFixed(1)} mi` : 'Nearby'} · {timeAgo(item.created_at)}</Text>
                     </View>
-                    <TouchableOpacity style={s.ciVote} onPress={() => handleUpvote(item)}>
-                      <Ionicons name="thumbs-up-outline" size={14} color="#fff" /><Text style={s.ciVoteT}>{item.upvotes}</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <TouchableOpacity style={s.ciVote} onPress={() => handleUpvote(item)}>
+                        <Ionicons name="thumbs-up-outline" size={14} color="#fff" /><Text style={s.ciVoteT}>{item.upvotes}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[s.ciVote, { backgroundColor: 'rgba(239,68,68,0.85)' }]} onPress={() => handleDownvote(item)}>
+                        <Ionicons name="thumbs-down-outline" size={14} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 )}
               />
@@ -2005,7 +2070,9 @@ export default function MapScreen() {
         report={selectedPhotoReport}
         onClose={() => setSelectedPhotoReport(null)}
       />
-      <HamburgerMenu visible={showMenu} onClose={() => setShowMenu(false)} isLight={isLight} onNavigate={(screen) => { setShowMenu(false); if (screen === 'Profile' || screen === 'Help') { rnNav.navigate('Profile' as never); } else if (screen === 'TripAnalytics' || screen === 'RouteHistory') { rnNav.navigate('Rewards' as never); } }} />
+      <HamburgerMenu visible={showMenu} onClose={() => setShowMenu(false)} isLight={isLight} onNavigate={(screen) => { setShowMenu(false); if (screen === 'Profile' || screen === 'Help') { rnNav.navigate('Profile' as never); } else if (screen === 'TripAnalytics' || screen === 'RouteHistory') { rnNav.navigate('Rewards' as never); } else if (screen === 'SnapRace') { setShowSnapRace(true); } else if (screen === 'Convoy') { setShowConvoy(true); } else if (screen === 'Social') { rnNav.navigate('Dashboards' as never); } }} />
+      <SnapRaceMode visible={showSnapRace} onClose={() => setShowSnapRace(false)} userId={user?.id ?? ''} friends={friendLocations.map(f => ({ id: f.id, name: f.name }))} gems={user?.gems ?? 0} />
+      <ConvoyMode visible={showConvoy} onClose={() => setShowConvoy(false)} members={friendLocations.map(f => ({ id: f.id, name: f.name, lat: f.lat, lng: f.lng }))} onStartConvoy={() => setShowConvoy(false)} />
       {showGemOverlay && <GemOverlay visible={showGemOverlay} gemsEarned={gemOverlayAmount} onDone={() => setShowGemOverlay(false)} />}
       <TripShare visible={showTripShare} onClose={() => setShowTripShare(false)} trip={nav.tripSummary ?? null} />
 

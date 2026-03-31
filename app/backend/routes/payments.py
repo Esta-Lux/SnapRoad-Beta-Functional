@@ -6,12 +6,13 @@ import os
 import anyio
 from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from pydantic import BaseModel
-from typing import Optional, Dict
+from typing import List, Optional, Dict
 from datetime import datetime
 from dotenv import load_dotenv
 from middleware.auth import get_current_user, require_admin
 from limiter import limiter
 from database import get_supabase
+from services.supabase_service import sb_get_profile, sb_update_profile
 from config import ENVIRONMENT
 
 load_dotenv()
@@ -70,7 +71,7 @@ def _get_tx(session_id: str) -> Optional[dict]:
     return payment_transactions.get(session_id)
 
 
-def _list_txs(limit: int = 100) -> list[dict]:
+def _list_txs(limit: int = 100) -> List[dict]:
     try:
         sb = get_supabase()
         result = sb.table("payment_transactions").select("*").order("created_at", desc=True).limit(limit).execute()
@@ -344,3 +345,139 @@ async def get_payment_transaction(session_id: str, _admin: dict = Depends(requir
         "success": True,
         "data": tx
     }
+
+
+class BillingPortalRequest(BaseModel):
+    return_url: Optional[str] = None
+
+
+def _billing_portal_return_url(requested: Optional[str]) -> str:
+    """Mobile sends snaproad://…; web sends an allowed https origin (no path required)."""
+    raw = (requested or "").strip()
+    if raw.startswith("snaproad://") or raw.startswith("exp://"):
+        return raw
+    if raw.startswith("https://") or raw.startswith("http://"):
+        try:
+            from urllib.parse import urlparse
+
+            u = urlparse(raw)
+            origin = f"{u.scheme}://{u.netloc}".rstrip("/")
+        except ValueError:
+            origin = ""
+        configured = (os.environ.get("CHECKOUT_ALLOWED_ORIGINS") or "").strip()
+        allowed = [o.strip().rstrip("/") for o in configured.split(",") if o.strip()]
+        if ENVIRONMENT != "production":
+            if origin:
+                return raw.split("#", 1)[0]
+            return _resolve_allowed_origin(requested).rstrip("/") + "/driver"
+        if origin and allowed and origin in allowed:
+            return raw.split("#", 1)[0]
+    return _resolve_allowed_origin(requested).rstrip("/") + "/driver"
+
+
+def _stripe_customer_id_for_user(user_id: str, user_email: Optional[str]) -> Optional[str]:
+    import stripe
+
+    prof = sb_get_profile(user_id)
+    if prof:
+        cid = str(prof.get("stripe_customer_id") or "").strip()
+        if cid.startswith("cus_"):
+            return cid
+    if user_email:
+        customers = stripe.Customer.list(email=str(user_email).strip(), limit=5)
+        if customers.data:
+            return customers.data[0].id
+    try:
+        sb = get_supabase()
+        r = (
+            sb.table("payment_transactions")
+            .select("session_id")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(10)
+            .execute()
+        )
+        for row in r.data or []:
+            sid = row.get("session_id")
+            if not sid:
+                continue
+            sess = stripe.checkout.Session.retrieve(sid)
+            cust = sess.get("customer")
+            if cust and str(cust).startswith("cus_"):
+                return str(cust)
+    except Exception:
+        pass
+    return None
+
+
+def _ensure_stripe_customer_id(user_id: str, user_email: str) -> Optional[str]:
+    """
+    If no customer exists yet (no checkout, empty profile column), create a Stripe Customer
+    so Billing Portal can open. Portal still shows subscriptions/invoices only after real checkout.
+    """
+    import stripe
+
+    existing = _stripe_customer_id_for_user(user_id, user_email)
+    if existing:
+        return existing
+    try:
+        cust = stripe.Customer.create(
+            email=str(user_email).strip(),
+            metadata={"user_id": str(user_id), "source": "snaproad_billing_portal"},
+        )
+        cid = str(cust.get("id") or "")
+        if cid.startswith("cus_"):
+            sb_update_profile(user_id, {"stripe_customer_id": cid})
+            return cid
+    except Exception:
+        pass
+    return None
+
+
+@router.post("/billing-portal")
+@limiter.limit("10/minute")
+async def create_billing_portal_session(
+    request: Request,
+    body: BillingPortalRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Create a Stripe Customer Portal session for managing subscriptions."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    import stripe
+    stripe.api_key = api_key
+
+    uid = str(current_user.get("user_id") or current_user.get("id") or "")
+    user_email = current_user.get("email")
+    if not uid:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if not user_email:
+        raise HTTPException(status_code=400, detail="User email not found")
+
+    return_url = _billing_portal_return_url(body.return_url)
+
+    def _portal_sync():
+        cust_id = _ensure_stripe_customer_id(uid, str(user_email))
+        if not cust_id:
+            return None
+        return stripe.billing_portal.Session.create(customer=cust_id, return_url=return_url)
+
+    try:
+        session = await anyio.to_thread.run_sync(_portal_sync)
+        if session is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Could not open billing portal. Check STRIPE_SECRET_KEY, Stripe Dashboard "
+                    "Billing Portal settings, and that your account email is valid."
+                ),
+            )
+        return {"success": True, "data": {"url": session.url}}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to create billing portal session")

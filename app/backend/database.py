@@ -1,13 +1,13 @@
 import base64
 import json
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
 from config import SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL
 
 _client: Any = None
-_shared_httpx: httpx.Client | None = None
+_shared_httpx: Optional[httpx.Client] = None
 
 
 def _reject_if_supabase_key_is_anon(key: str) -> None:

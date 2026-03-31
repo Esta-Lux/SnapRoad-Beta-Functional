@@ -17,8 +17,11 @@ from limiter import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
-ALLOW_MOCK_AUTH = os.getenv("ALLOW_MOCK_AUTH", "false").strip().lower() in ("1", "true", "yes")
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
+ALLOW_MOCK_AUTH = (
+    not IS_PRODUCTION
+    and os.getenv("ALLOW_MOCK_AUTH", "false").strip().lower() in ("1", "true", "yes")
+)
 
 
 def _build_token(user_dict: dict) -> str:
@@ -185,11 +188,11 @@ def forgot_password(request: Request, body: ForgotPasswordRequest):
     try:
         sb = get_supabase()
         options = {"redirect_to": "snaproad://reset-password"}
-        # supabase-py auth API differs by version, so support both.
-        if hasattr(sb.auth, "reset_password_email"):
-            sb.auth.reset_password_email(email, options)
-        elif hasattr(sb.auth, "reset_password_for_email"):
+        # Prefer reset_password_for_email (recovery). Older reset_password_email can mis-route templates.
+        if hasattr(sb.auth, "reset_password_for_email"):
             sb.auth.reset_password_for_email(email, options)
+        elif hasattr(sb.auth, "reset_password_email"):
+            sb.auth.reset_password_email(email, options)
         else:
             logger.warning("Supabase client missing password reset method")
         return generic_ok

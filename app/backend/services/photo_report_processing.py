@@ -4,7 +4,7 @@ Shared blur + normalization for photo reports (upload + admin approve).
 import base64
 import logging
 import os
-from typing import Any
+from typing import Any, Optional
 
 from services.photo_analysis import PhotoAnalysisService
 
@@ -16,7 +16,7 @@ PRIVATE_ORIGINALS_BUCKET = (os.environ.get("INCIDENT_PHOTO_ORIGINALS_BUCKET") or
 ALLOWED_IMAGE_TYPES = {"jpeg", "png", "webp"}
 
 
-def detect_image_type(contents: bytes) -> str | None:
+def detect_image_type(contents: bytes) -> Optional[str]:
     if contents.startswith(b"\xff\xd8\xff"):
         return "jpeg"
     if contents.startswith(b"\x89PNG\r\n\x1a\n"):

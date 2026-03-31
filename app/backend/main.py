@@ -53,6 +53,7 @@ from routes.payments import router as payments_router
 from routes.family import router as family_router
 from routes.photo_reports import router as photo_reports_router
 from routes.place_alerts import router as place_alerts_router
+from routes.legal import router as legal_router
 from config import (
     JWT_SECRET,
     SUPABASE_URL,
@@ -294,6 +295,7 @@ def create_app() -> FastAPI:
     app.include_router(family_router)
     app.include_router(photo_reports_router)
     app.include_router(place_alerts_router)
+    app.include_router(legal_router)
 
     return app
 

@@ -358,16 +358,28 @@ export default function RewardsScreen() {
       )}
 
       {/* Quick action buttons */}
-      <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 16, marginBottom: 14 }}>
-        <TouchableOpacity style={{ flex: 1, backgroundColor: cardBg, borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }} onPress={() => setShowTripAnalytics(true)} activeOpacity={0.7}>
-          <Ionicons name="analytics-outline" size={18} color="#3B82F6" style={{ marginRight: 8 }} />
-          <Text style={{ color: text, fontSize: 13, fontWeight: '700', flex: 1 }}>Trip Analytics</Text>
-          <Ionicons name="chevron-forward" size={14} color={sub} />
+      <View style={{ flexDirection: 'row', gap: 12, marginHorizontal: 16, marginBottom: 16, marginTop: 8 }}>
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(59,130,246,0.15)' }}
+          onPress={() => setShowTripAnalytics(true)}
+          activeOpacity={0.7}
+        >
+          <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(59,130,246,0.12)', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+            <Ionicons name="analytics-outline" size={18} color="#3B82F6" />
+          </View>
+          <Text style={{ color: text, fontSize: 14, fontWeight: '700', flex: 1 }}>Trip Analytics</Text>
+          <Ionicons name="chevron-forward" size={16} color={sub} />
         </TouchableOpacity>
-        <TouchableOpacity style={{ flex: 1, backgroundColor: cardBg, borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }} onPress={() => setShowRouteHistory(true)} activeOpacity={0.7}>
-          <Ionicons name="time-outline" size={18} color="#10B981" style={{ marginRight: 8 }} />
-          <Text style={{ color: text, fontSize: 13, fontWeight: '700', flex: 1 }}>Route History</Text>
-          <Ionicons name="chevron-forward" size={14} color={sub} />
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(16,185,129,0.15)' }}
+          onPress={() => setShowRouteHistory(true)}
+          activeOpacity={0.7}
+        >
+          <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(16,185,129,0.12)', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+            <Ionicons name="time-outline" size={18} color="#10B981" />
+          </View>
+          <Text style={{ color: text, fontSize: 14, fontWeight: '700', flex: 1 }}>Route History</Text>
+          <Ionicons name="chevron-forward" size={16} color={sub} />
         </TouchableOpacity>
       </View>
 

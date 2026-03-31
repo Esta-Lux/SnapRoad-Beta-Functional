@@ -5,7 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
 
 type Props = {
-  navigation: any;
+  navigation: { navigate: (name: string, params?: object) => void };
 };
 
 function parseParamsFromUrl(url: string): Record<string, string> {
@@ -57,6 +57,10 @@ export default function ResetPasswordScreen({ navigation }: Props) {
       }
 
       if (accessToken && refreshToken) {
+        if (type === 'signup' || type === 'email') {
+          setLinkError('This link confirms signup, not a password reset. Use “Request a new reset link” below.');
+          return;
+        }
         const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
         if (error) throw error;
         setReady(true);
@@ -77,7 +81,9 @@ export default function ResetPasswordScreen({ navigation }: Props) {
       if (initial) {
         await verifyRecoveryLink(initial);
       } else {
-        setLinkError('Open this screen from your password reset email link.');
+        setLinkError(
+          'Open this screen by tapping the password reset link in your email (it opens SnapRoad). If the link expired, request a new one below.',
+        );
       }
     })();
     const sub = Linking.addEventListener('url', (event: { url: string }) => {
@@ -120,7 +126,12 @@ export default function ResetPasswordScreen({ navigation }: Props) {
         <Text style={[styles.subtitle, { color: sub }]}>Set a new password for your SnapRoad account.</Text>
 
         {linkError ? (
-          <Text style={styles.error}>{linkError}</Text>
+          <>
+            <Text style={styles.error}>{linkError}</Text>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.navigate('ForgotPassword')}>
+              <Text style={styles.secondaryBtnText}>Request a new reset link</Text>
+            </TouchableOpacity>
+          </>
         ) : !ready ? (
           <View style={styles.center}>
             <ActivityIndicator color="#3B82F6" />
@@ -165,5 +176,14 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', paddingVertical: 10 },
   loadingText: { fontSize: 12, marginTop: 8 },
   error: { color: '#EF4444', fontSize: 13, marginBottom: 6 },
+  secondaryBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(59,130,246,0.5)',
+  },
+  secondaryBtnText: { color: '#3B82F6', fontSize: 15, fontWeight: '600' },
 });
 

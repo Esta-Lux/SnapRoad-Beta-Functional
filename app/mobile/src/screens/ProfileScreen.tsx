@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, View, Text, TouchableOpacity, StyleSheet, RefreshControl, Share, Linking } from 'react-native';
+import { Alert, ScrollView, View, Text, TouchableOpacity, StyleSheet, RefreshControl, Share, Linking, Platform, TextInput } from 'react-native';
 import Modal from '../components/common/Modal';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -96,6 +96,9 @@ export default function ProfileScreen() {
   const [newPlaceAddress, setNewPlaceAddress] = useState('');
   const [newPlaceCategory] = useState('favorite');
   const [profileTab, setProfileTab] = useState<'overview' | 'score' | 'fuel' | 'settings'>('overview');
+  const [showEditName, setShowEditName] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [savingName, setSavingName] = useState(false);
   const [showLevelProgress, setShowLevelProgress] = useState(false);
   const [showWeeklyRecap, setShowWeeklyRecap] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -151,6 +154,12 @@ export default function ProfileScreen() {
       const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
       const pp = profilePayload as Record<string, unknown>;
       const planStr = typeof pp.plan === 'string' ? pp.plan : '';
+      const displayName =
+        typeof pp.name === 'string' && pp.name.trim()
+          ? pp.name.trim()
+          : typeof pp.full_name === 'string' && pp.full_name.trim()
+            ? pp.full_name.trim()
+            : undefined;
       const userPatch: Partial<User> = {
         gems: Number(pp.gems ?? 0),
         level: Number(pp.level ?? 1),
@@ -160,6 +169,7 @@ export default function ProfileScreen() {
         streak: Number(pp.streak ?? pp.safe_drive_streak ?? 0),
         xp: pp.xp != null ? Number(pp.xp) : undefined,
       };
+      if (displayName) userPatch.name = displayName;
       if (planStr) {
         userPatch.plan = planStr;
         userPatch.isFamilyPlan = planStr === 'family';
@@ -321,7 +331,6 @@ export default function ProfileScreen() {
     }
 
     try {
-      // Try Stripe Checkout first for paid plans
       const checkoutRes = await api.post<any>('/api/payments/checkout/session', {
         plan_id: plan,
         user_email: user?.email ?? undefined,
@@ -334,22 +343,7 @@ export default function ProfileScreen() {
           return;
         }
       }
-
-      // Fallback: direct plan update (dev/no Stripe keys)
-      const res = await api.post<any>('/api/user/plan', { plan });
-      if (!res.success) {
-        Alert.alert('Upgrade Failed', res.error ?? 'Could not process upgrade. Please try again.');
-        return;
-      }
-      const payload = (res.data as any)?.data ?? res.data ?? {};
-      const apiPlan = String(payload.plan ?? plan).toLowerCase();
-      updateUser({
-        isPremium: Boolean(payload.is_premium ?? (apiPlan === 'premium' || apiPlan === 'family')),
-        isFamilyPlan: apiPlan === 'family',
-        plan: apiPlan,
-        gem_multiplier: Number(payload.gem_multiplier ?? 2),
-      });
-      Alert.alert('Plan Updated', `You're now on the ${PLANS[apiPlan as PlanTier]?.name ?? PLANS[plan].name} plan! Enjoy your premium features.`);
+      Alert.alert('Upgrade Failed', checkoutRes.error ?? 'Could not start checkout. Please try again.');
     } catch (err) {
       Alert.alert('Upgrade Failed', 'Could not process upgrade right now. Check your connection and try again.');
     }
@@ -701,8 +695,47 @@ export default function ProfileScreen() {
 
         {profileTab === 'settings' && (
           <>
+            <SectionHeader title="Account" isLight={isLight} />
+            <TouchableOpacity
+              style={{ marginHorizontal: 16, marginBottom: 12, paddingVertical: 14, paddingHorizontal: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+              onPress={() => { setDraftName(user?.name ?? ''); setShowEditName(true); }}
+              activeOpacity={0.75}
+            >
+              <View>
+                <Text style={{ color: sub, fontSize: 12, marginBottom: 4 }}>Display name</Text>
+                <Text style={{ color: text, fontSize: 16, fontWeight: '600' }}>{user?.name ?? 'Driver'}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={sub} />
+            </TouchableOpacity>
+
             <SectionHeader title="Your Plan" isLight={isLight} />
             <PlanCard cardBg={cardBg} text={text} sub={sub} planName={planConfig.name} planPrice={planConfig.price} planFeatures={planConfig.features} currentPlan={currentPlan} onUpgrade={() => setShowPlanModal(true)} />
+
+            {currentPlan !== 'basic' && (
+              <TouchableOpacity
+                style={{ marginHorizontal: 16, marginBottom: 12, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', backgroundColor: cardBg }}
+                onPress={async () => {
+                  try {
+                    const res = await api.post<{ success?: boolean; data?: { url?: string } }>('/api/payments/billing-portal', {
+                      return_url: Platform.OS === 'web' ? undefined : 'snaproad://welcome',
+                    });
+                    if (!res.success) {
+                      Alert.alert('Manage Subscription', res.error || 'Could not open billing portal.');
+                      return;
+                    }
+                    const body = res.data as { success?: boolean; data?: { url?: string } } | undefined;
+                    const url = body?.data?.url;
+                    if (url) await Linking.openURL(url);
+                    else Alert.alert('Manage Subscription', 'No billing link returned. Complete a subscription purchase once, or run DB migration 016_profiles_stripe_customer.sql and try again after checkout.');
+                  } catch (e: any) {
+                    Alert.alert('Error', e?.message || 'Could not open billing portal.');
+                  }
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: colors.primary, fontSize: 14, fontWeight: '600' }}>Manage Subscription</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Premium vs Free comparison */}
             <View style={{ marginHorizontal: 16, marginBottom: 16, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: colors.border }}>
@@ -838,6 +871,52 @@ export default function ProfileScreen() {
           </>
         )}
       </ScrollView>
+
+      <Modal visible={showEditName} onClose={() => setShowEditName(false)}>
+        <View style={{ paddingVertical: 8 }}>
+          <Text style={{ color: text, fontWeight: '800', fontSize: 18, marginBottom: 12 }}>Edit display name</Text>
+          <Text style={{ color: sub, fontSize: 13, marginBottom: 10 }}>This updates how your name appears in the app. Your sign-in email does not change.</Text>
+          <TextInput
+            value={draftName}
+            onChangeText={setDraftName}
+            placeholder="Your name"
+            placeholderTextColor={sub}
+            autoCapitalize="words"
+            style={{
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 12,
+              paddingHorizontal: 14,
+              paddingVertical: 12,
+              color: text,
+              fontSize: 16,
+              marginBottom: 16,
+              backgroundColor: cardBg,
+            }}
+          />
+          <TouchableOpacity
+            style={{ backgroundColor: colors.primary, paddingVertical: 14, borderRadius: 12, alignItems: 'center', opacity: savingName || !draftName.trim() ? 0.5 : 1 }}
+            disabled={savingName || !draftName.trim()}
+            onPress={async () => {
+              setSavingName(true);
+              try {
+                const res = await api.put('/api/user/profile', { name: draftName.trim() });
+                if (!res.success) {
+                  Alert.alert('Could not update', res.error || 'Try again.');
+                  return;
+                }
+                updateUser({ name: draftName.trim() });
+                setShowEditName(false);
+                await loadData('silent');
+              } finally {
+                setSavingName(false);
+              }
+            }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>{savingName ? 'Saving…' : 'Save'}</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       <PlanModal
         visible={showPlanModal}

@@ -85,6 +85,7 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
       case 'pending': return 'bg-blue-500/20 text-blue-400'
       case 'approved': return 'bg-green-500/20 text-green-400'
       case 'rejected': return 'bg-red-500/20 text-red-400'
+      case 'active': return 'bg-cyan-500/20 text-cyan-400'
       default: return 'bg-slate-500/20 text-slate-400'
     }
   }
@@ -159,6 +160,7 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
           >
             <option value="All Status">All Status</option>
             <option value="pending">Pending</option>
+            <option value="active">Active (map)</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
           </select>
