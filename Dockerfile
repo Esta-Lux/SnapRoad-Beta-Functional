@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY app/backend /app
 
-# Railway injects PORT at runtime — shell-form CMD so ${PORT} is expanded (exec JSON form would not).
-# Leave Railway "Start Command" empty so this CMD is used.
-# Local docker: defaults to 8001 if PORT unset.
+# Railway injects PORT into the container environment. Do not use shell $PORT in CMD — if Railway
+# (or a Start Command override) invokes the process without a shell, uvicorn sees the literal "$PORT".
+# Reading PORT in Python avoids that. Clear Railway Settings → Deploy → Start Command so this CMD runs.
 EXPOSE 8001
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8001}
+CMD ["python", "-c", "import os; port=int((os.environ.get('PORT') or '8001').strip()); import uvicorn; uvicorn.run('main:app', host='0.0.0.0', port=port)"]
