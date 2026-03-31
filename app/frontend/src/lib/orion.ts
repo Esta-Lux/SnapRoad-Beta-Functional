@@ -183,7 +183,10 @@ export async function chatWithOrionWithTools(
       const data = await response.json()
       return { content: data?.content ?? 'Sorry, I had trouble with that.' }
     } catch {
-      return { content: "I'm not configured yet — add OPENAI_API_KEY to the backend .env and ensure the backend is running." }
+      return {
+        content:
+          "I'm not configured yet — add NVIDIA_API_KEY or OPENAI_API_KEY to the backend .env and ensure the API is running.",
+      }
     }
   }
   return { content: "I'm not configured yet — set VITE_BACKEND_URL / VITE_API_URL and run backend Orion." }
@@ -217,7 +220,7 @@ export async function chatWithOrion(
     const data = await response.json()
     return data?.content ?? 'Sorry, I had trouble with that.'
   } catch (e) {
-    return "I'm not configured yet — add OPENAI_API_KEY to the backend .env and ensure the backend is running."
+    return "I'm not configured yet — add NVIDIA_API_KEY or OPENAI_API_KEY to the backend .env and ensure the backend is running."
   }
 }
 

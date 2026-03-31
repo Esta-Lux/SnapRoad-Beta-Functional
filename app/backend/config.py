@@ -21,7 +21,14 @@ IS_PRODUCTION = ENVIRONMENT.lower() == "production"
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 
-# OpenAI API Key for AI features (Orion Coach, Photo Analysis)
+# Orion / photo AI: prefer NVIDIA (OpenAI-compatible endpoint); else OpenAI.
+# See https://build.nvidia.com — API key typically starts with nvapi-.
+NVIDIA_API_KEY = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+NVIDIA_API_BASE = (os.environ.get("NVIDIA_API_BASE") or "https://integrate.api.nvidia.com/v1").strip().rstrip("/")
+NVIDIA_CHAT_MODEL = os.environ.get("NVIDIA_CHAT_MODEL", "meta/llama-3.1-8b-instruct")
+NVIDIA_VISION_MODEL = os.environ.get("NVIDIA_VISION_MODEL", "meta/llama-3.2-11b-vision-instruct")
+
+# OpenAI fallback when NVIDIA_API_KEY is unset (legacy / local)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_VISION_MODEL = os.environ.get("OPENAI_VISION_MODEL", "gpt-4o-mini")

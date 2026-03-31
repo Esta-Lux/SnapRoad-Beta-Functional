@@ -59,10 +59,12 @@ from config import (
     SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY,
     OPENAI_API_KEY,
+    NVIDIA_API_KEY,
     IS_PRODUCTION,
     OHGO_API_KEY,
     validate_production_env,
 )
+from services.llm_client import is_llm_configured
 from services.telemetry_service import telemetry_service
 from database import get_supabase
 
@@ -227,6 +229,8 @@ def create_app() -> FastAPI:
                     or ""
                 ).strip()
             ),
+            "orion_llm_configured": is_llm_configured(),
+            "nvidia_configured": bool(NVIDIA_API_KEY),
             "openai_configured": bool((OPENAI_API_KEY or "").strip()),
             "ohgo_cameras_configured": bool((OHGO_API_KEY or "").strip()),
         }

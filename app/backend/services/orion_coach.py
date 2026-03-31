@@ -1,13 +1,17 @@
 # SnapRoad - Orion AI Coach Service (Portable)
-# AI-powered driving assistant using OpenAI SDK directly
-# No platform-specific dependencies - works anywhere
+# AI-powered driving assistant via OpenAI SDK (OpenAI or NVIDIA integrate API).
 
-import os
 import re
 from datetime import datetime
 from typing import Optional, List, Dict, Any, AsyncGenerator
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
+
+from services.llm_client import (
+    chat_completion_model,
+    get_async_openai_client,
+    is_llm_configured,
+    llm_provider,
+)
 
 load_dotenv()
 
@@ -15,8 +19,8 @@ load_dotenv()
 def _sanitize_openai_error(err: Exception) -> str:
     """Redact API keys and return a safe user-facing message."""
     msg = str(err).strip()
-    # Redact any sk-... key material
     msg = re.sub(r"sk-[A-Za-z0-9_-]{20,}", "sk-***REDACTED***", msg)
+    msg = re.sub(r"nvapi-[A-Za-z0-9_-]{20,}", "nvapi-***REDACTED***", msg)
     if not msg or len(msg) > 120:
         msg = msg[:120] + "..." if len(msg) > 120 else msg or "Unknown error"
     return msg
@@ -135,26 +139,16 @@ Orion: "Traffic can be frustrating, but it's a great opportunity to practice pat
 """
 
 class OrionCoachService:
-    """Service for handling Orion AI Coach conversations using OpenAI"""
-    
+    """Orion coach — LLM via NVIDIA (preferred) or OpenAI."""
+
     def __init__(self):
-        # Support multiple env var names for API key
-        self.api_key = (
-            os.environ.get('OPENAI_API_KEY') or 
-            os.environ.get('OPENAI_KEY') or
-            os.environ.get('LLM_API_KEY')
-        )
-        self.model = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')  # Default to cost-effective model
-        self.sessions = {}  # Store chat sessions by session_id
-        self._client = None
-    
-    def _get_client(self) -> AsyncOpenAI:
-        """Get or create OpenAI client"""
-        if self._client is None:
-            if not self.api_key:
-                raise ValueError("OpenAI API key not configured. Set OPENAI_API_KEY in environment.")
-            self._client = AsyncOpenAI(api_key=self.api_key)
-        return self._client
+        self.sessions = {}
+
+    def _get_client(self):
+        client = get_async_openai_client()
+        if client is None:
+            raise ValueError("LLM API key not configured. Set NVIDIA_API_KEY or OPENAI_API_KEY in environment.")
+        return client
     
     def _get_or_create_session(self, session_id: str) -> dict:
         """Get existing session or create a new one"""
@@ -192,9 +186,8 @@ class OrionCoachService:
             # Add user message to conversation
             session["messages"].append({"role": "user", "content": enhanced_text})
             
-            # Call OpenAI API
             response = await client.chat.completions.create(
-                model=self.model,
+                model=chat_completion_model(),
                 messages=session["messages"],
                 max_tokens=300,
                 temperature=0.7,
@@ -258,8 +251,8 @@ class OrionCoachService:
         self, messages: List[Dict[str, str]], context: Optional[Dict[str, Any]] = None
     ) -> str:
         """One-shot completion: system prompt from context + messages, return assistant content."""
-        if not self.api_key:
-            return "I'm not configured yet — add OPENAI_API_KEY to the backend .env to enable Orion."
+        if not is_llm_configured():
+            return "I'm not configured yet — add NVIDIA_API_KEY (or OPENAI_API_KEY) to the backend .env to enable Orion."
         try:
             client = self._get_client()
             system_content = build_orion_system_prompt(context)
@@ -268,7 +261,7 @@ class OrionCoachService:
                 full_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
             max_tokens = 60 if (context or {}).get("isNavigating") else 300
             response = await client.chat.completions.create(
-                model=self.model,
+                model=chat_completion_model(),
                 messages=full_messages,
                 max_tokens=max_tokens,
                 temperature=0.7,
@@ -277,15 +270,17 @@ class OrionCoachService:
         except Exception as e:
             err_lower = str(e).lower()
             if "401" in err_lower or "incorrect api key" in err_lower or "invalid_api_key" in err_lower or "authentication" in err_lower:
-                return "Orion couldn't connect. Please check that OPENAI_API_KEY in the backend .env is valid and active at platform.openai.com."
+                if llm_provider() == "nvidia":
+                    return "Orion couldn't connect. Check NVIDIA_API_KEY in the backend .env (NVIDIA Build / API catalog)."
+                return "Orion couldn't connect. Please check OPENAI_API_KEY in the backend .env."
             return f"Sorry, I had a hiccup. Try again! ({_sanitize_openai_error(e)})"
 
     async def completion_stream(
         self, messages: List[Dict[str, str]], context: Optional[Dict[str, Any]] = None
     ) -> AsyncGenerator[str, None]:
         """Stream completion: yield content chunks (SSE-style delta content)."""
-        if not self.api_key:
-            yield "I'm not configured — add OPENAI_API_KEY to the backend .env."
+        if not is_llm_configured():
+            yield "I'm not configured — add NVIDIA_API_KEY or OPENAI_API_KEY to the backend .env."
             return
         try:
             client = self._get_client()
@@ -294,7 +289,7 @@ class OrionCoachService:
             for m in messages:
                 full_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
             stream = await client.chat.completions.create(
-                model=self.model,
+                model=chat_completion_model(),
                 messages=full_messages,
                 max_tokens=500,
                 temperature=0.7,
@@ -307,7 +302,10 @@ class OrionCoachService:
         except Exception as e:
             err_lower = str(e).lower()
             if "401" in err_lower or "incorrect api key" in err_lower or "invalid_api_key" in err_lower or "authentication" in err_lower:
-                yield "Orion couldn't connect. Please check that OPENAI_API_KEY in the backend .env is valid and active at platform.openai.com."
+                if llm_provider() == "nvidia":
+                    yield "Orion couldn't connect. Check NVIDIA_API_KEY in the backend .env."
+                else:
+                    yield "Orion couldn't connect. Check OPENAI_API_KEY in the backend .env."
             else:
                 yield f"Sorry, I had a hiccup. Try again! ({_sanitize_openai_error(e)})"
 
