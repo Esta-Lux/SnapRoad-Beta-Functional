@@ -1,0 +1,11 @@
+# Railway: use Docker so the monorepo is not mis-detected as a pure Node app by Railpack.
+# Service root directory should stay the repo root (default) so paths in Dockerfile match.
+# Set PORT is automatic on Railway; CORS_ORIGINS, JWT_SECRET, SUPABASE_*, etc. in Variables.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
