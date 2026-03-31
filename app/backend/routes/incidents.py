@@ -366,6 +366,8 @@ def confirm_incident(request: Request, body: ConfirmBody, _user: dict = Depends(
                 "upvotes": new_votes,
                 "removed": (not body.confirmed and new_votes <= -3),
             }
+    except HTTPException:
+        raise
     except Exception:
         if ENVIRONMENT == "production":
             raise HTTPException(status_code=503, detail="Incident service unavailable")
@@ -420,6 +422,8 @@ def downvote_incident(request: Request, incident_id: str, _user: dict = Depends(
                 updates["status"] = "inactive"
             sb.table("road_reports").update(updates).eq("id", row.get("id")).execute()
             return {"success": True, "upvotes": new_votes, "removed": new_votes <= -3}
+    except HTTPException:
+        raise
     except Exception:
         if ENVIRONMENT == "production":
             raise HTTPException(status_code=503, detail="Incident service unavailable")

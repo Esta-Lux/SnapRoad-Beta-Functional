@@ -122,12 +122,6 @@ async def fetch_autocomplete_predictions(q: str, lat: Optional[float] = None, ln
         ),
     )
 
-    if _location_bias_ok(lat, lng):
-        predictions = [
-            p for p in predictions
-            if p.get("distance_meters") is None or p.get("distance_meters") <= 42000
-        ]
-
     _cache_set(_autocomplete_cache, cache_key, predictions)
     return predictions
 

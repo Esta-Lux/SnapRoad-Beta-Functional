@@ -163,7 +163,7 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
               <Zap className="text-blue-400" size={18} />
               <span className="text-blue-300 text-sm">XP Earned</span>
             </div>
-            <span className="text-white font-bold">+{Number(tripData.xp_earned) ?? 0}</span>
+            <span className="text-white font-bold">+{Number(tripData.xp_earned) || 0}</span>
           </div>
         </div>
 

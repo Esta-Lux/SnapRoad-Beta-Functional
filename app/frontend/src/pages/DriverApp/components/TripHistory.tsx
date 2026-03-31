@@ -147,7 +147,7 @@ export default function TripHistory({ isOpen, onClose }: TripHistoryProps) {
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <div className={`flex items-center gap-3 ${textMuted}`}>
-                    <span>{(Number(trip.distance) ?? 0).toFixed(1)} mi</span>
+                    <span>{(Number(trip.distance) || 0).toFixed(1)} mi</span>
                     <span>•</span>
                     <span>{trip.duration} min</span>
                   </div>

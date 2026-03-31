@@ -619,7 +619,7 @@ export default function FamilyCommandCenter({
                     </button>
                     <button
                       onClick={async () => {
-                        await api.put(`/api/family/group/${groupId}/member/${m.user_id}/sharing`, { is_sharing: !Boolean(m.live?.is_sharing) })
+                        await api.put(`/api/family/group/${groupId}/member/${m.user_id}/sharing`, { is_sharing: !m.live?.is_sharing })
                         await loadDashboard()
                       }}
                       style={{ border: 'none', borderRadius: 8, padding: '6px 8px', background: m.live?.is_sharing ? '#e2e8f0' : '#dcfce7', color: '#0f172a', cursor: 'pointer', fontWeight: 700 }}

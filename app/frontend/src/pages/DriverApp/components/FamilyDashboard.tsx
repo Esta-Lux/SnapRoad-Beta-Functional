@@ -543,6 +543,8 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
             />
           )}
 
+          {/* Legacy SOS UI — gated off until product re-enables */}
+          {/* eslint-disable-next-line no-constant-binary-expression -- intentional dead branch */}
           {screen === 'members' && false && (
             <div>
               <button

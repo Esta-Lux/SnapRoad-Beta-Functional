@@ -272,7 +272,7 @@ export async function* streamOrion(
 
 // Ensure voices are loaded (Chrome often returns [] until after first interaction / voiceschanged)
 function getVoicesList(): SpeechSynthesisVoice[] {
-  let list = window.speechSynthesis.getVoices()
+  const list = window.speechSynthesis.getVoices()
   if (list.length > 0) return list
   // Trigger load on Chrome; next call may have voices
   if (typeof window.speechSynthesis.onvoiceschanged !== 'undefined') {
