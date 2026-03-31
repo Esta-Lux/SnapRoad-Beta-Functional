@@ -2,6 +2,7 @@
   "expo": {
     "name": "SnapRoad",
     "slug": "snaproad",
+    "scheme": "snaproad",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -22,6 +23,7 @@
     },
     "android": {
       "package": "com.snaproad.app",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#0a0a0f",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -58,14 +60,12 @@
       "expo-secure-store"
     ],
     "extra": {
-      "apiUrl": "https://ten-radios-roll.loca.lt",
-      "mapboxPublicToken": "pk.eyJ1Ijoic25hcHJvYWQiLCJhIjoiY21rdDkxbXR0MTRiODNsb2Q4dDdoaHFraSJ9.gE8IUpGUVsu50hH30SYAtg",
-      "supabaseUrl": "https://cuseezsdaqlbwlxnjsyr.supabase.co",
-      "supabaseAnonKey": "sb_publishable_nzMWmL8pGRDgHciQLVcbHw_8qa65YZl",
-      "stripePublishableKey": "pk_test_replace_with_real_test_publishable_key",
       "eas": {
         "projectId": "b800018b-79d3-4b8e-bbad-f5d628ee6a60"
-      }
+      },
+      "supportEmail": "support@snaproad.co",
+      "iosAppStoreId": "",
+      "androidPackage": "com.snaproad.app"
     }
   }
 }

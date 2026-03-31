@@ -2,10 +2,12 @@
 SnapRoad Admin API Routes
 All endpoints use the Supabase DAO layer (supabase_service.py).
 """
-from fastapi import APIRouter, Body, Depends, UploadFile, File
+from pydantic import BaseModel
+from fastapi import APIRouter, Body, Depends, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from typing import Optional
 from datetime import datetime, timedelta, timezone
+import json
 import logging
 import io
 from middleware.auth import require_admin
@@ -16,12 +18,14 @@ from models.schemas import (
 )
 from services.offer_utils import calculate_auto_gems, calculate_free_discount
 from services.cache import cache_delete
+from services.telemetry_service import telemetry_service
 from services.supabase_service import (
     sb_list_profiles, sb_get_profile, sb_update_profile,
     sb_suspend_profile, sb_activate_profile, sb_delete_profile,
     sb_get_partners, sb_get_partner, sb_create_partner,
     sb_update_partner, sb_delete_partner,
     sb_get_partner_locations,
+    sb_get_partner_locations_for_admin_map,
     sb_get_offers, sb_create_offer, sb_update_offer, sb_delete_offer,
     sb_get_boosts, sb_create_boost, sb_cancel_boost,
     sb_get_redemptions, sb_get_redemption_stats,
@@ -41,11 +45,18 @@ from services.supabase_service import (
     test_connection,
     sb_get_concerns, sb_update_concern_status, sb_get_concerns_count_by_status,
     sb_get_app_config, sb_update_app_config,
+    sb_get_app_config_with_meta,
+    sb_get_road_reports_for_admin_map,
+    sb_get_road_reports_admin_list,
     sb_get_live_users,
 )
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Admin"], dependencies=[Depends(require_admin)])
+
+class AdminPhotoRejectBody(BaseModel):
+    review_notes: Optional[str] = None
+
 
 BOOST_PRICING_ADMIN = {
     "base_daily_cost": 25, "additional_day_cost": 20,
@@ -63,6 +74,7 @@ def get_admin_stats():
     redemption_stats = sb_get_redemption_stats()
     finance = sb_get_finance_summary()
     open_concerns = sb_get_concerns_count_by_status("open")
+    pending_incidents = len(sb_get_incidents(status="pending", limit=500))
     if not stats:
         stats = {}
     data = {
@@ -71,6 +83,7 @@ def get_admin_stats():
         "trips_today": stats.get("trips_today", trip_stats.get("total_trips", 0)),
         "total_miles": stats.get("total_miles", 0),
         "open_concerns": open_concerns,
+        "pending_incidents": pending_incidents,
         "offers_redeemed": stats.get("total_redemptions", redemption_stats.get("total", 0)),
         "revenue": finance.get("total_mrr", 0),
         "user_growth": stats.get("user_growth", "+0%"),
@@ -81,7 +94,11 @@ def get_admin_stats():
 # ==================== CONCERNS (admin) ====================
 
 @router.get("/admin/concerns")
-def get_admin_concerns(limit: int = 50, severity: Optional[str] = None, status: Optional[str] = None):
+def get_admin_concerns(
+    limit: int = Query(default=50, ge=1, le=200),
+    severity: Optional[str] = None,
+    status: Optional[str] = None,
+):
     concerns = sb_get_concerns(limit=limit, severity=severity, status=status)
     return {"success": True, "data": {"concerns": concerns, "total": len(concerns)}}
 
@@ -103,6 +120,61 @@ def update_concern_status(concern_id: str, body: dict = Body(..., embed=True)):
 def get_live_users():
     users = sb_get_live_users()
     return {"success": True, "data": {"users": users}}
+
+
+# ==================== TELEMETRY (aggregate app / API usage) ====================
+
+_SKIP_USAGE_PREFIXES = (
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/api/admin/monitor",
+    "/api/ws/",
+    "/favicon.ico",
+)
+
+
+@router.get("/admin/telemetry/app-usage")
+def get_admin_app_usage_telemetry(limit: int = Query(default=500, ge=50, le=500)):
+    """
+    Summarize recent HTTP telemetry into API area counts (driver/partner flows proxy).
+
+    Privacy: no per-user identity in telemetry events today—this is aggregate traffic only.
+    """
+    from collections import Counter
+
+    events = telemetry_service.snapshot(limit=limit)
+    prefix_counts: Counter[str] = Counter()
+    path_counts: Counter[str] = Counter()
+    analyzed = 0
+
+    for e in events:
+        path = (e.get("path") or "").split("?")[0]
+        if not path.startswith("/api/"):
+            continue
+        if any(path.startswith(p) for p in _SKIP_USAGE_PREFIXES):
+            continue
+        analyzed += 1
+        path_counts[path] += 1
+        parts = [p for p in path.split("/") if p]
+        if len(parts) >= 2:
+            prefix = f"/{parts[0]}/{parts[1]}"
+        else:
+            prefix = path or "/"
+        prefix_counts[prefix] += 1
+
+    top_prefixes = [{"prefix": k, "count": v} for k, v in prefix_counts.most_common(24)]
+    top_paths = [{"path": k, "count": v} for k, v in path_counts.most_common(30)]
+
+    return {
+        "success": True,
+        "data": {
+            "events_in_buffer": len(events),
+            "api_events_counted": analyzed,
+            "top_prefixes": top_prefixes,
+            "top_paths": top_paths,
+        },
+    }
 
 
 # ==================== HEALTH ====================
@@ -191,12 +263,65 @@ def get_admin_config():
 
 
 @router.post("/admin/config")
-def update_admin_config(config: dict, user: dict = Depends(require_admin)):
+def update_admin_config(body: dict, user: dict = Depends(require_admin)):
+    """Apply key/value pairs to app_config. Reserved keys: _reason, reason (ops runbook text for audit)."""
     updated_by = user.get("user_id") if user else None
-    for key, value in config.items():
+    payload = dict(body) if isinstance(body, dict) else {}
+    reason = payload.pop("_reason", None) or payload.pop("reason", None)
+    payload.pop("_previous_snapshot", None)  # optional client echo; not persisted
+
+    patch = {k: v for k, v in payload.items() if isinstance(k, str) and not k.startswith("_")}
+    if not patch:
+        return {"success": False, "message": "No config keys to update", "data": sb_get_app_config()}
+
+    before = sb_get_app_config()
+    changes = {}
+    for key, value in patch.items():
+        changes[key] = {"from": before.get(key), "to": value}
         sb_update_app_config(key, value, updated_by=updated_by)
+
     cache_delete("app_config_public")
+    try:
+        from services.runtime_config import invalidate_runtime_config_cache
+
+        invalidate_runtime_config_cache()
+    except Exception:
+        pass
+
+    keys_sorted = sorted(patch.keys())
+    audit_obj = {
+        "keys": keys_sorted,
+        "changes": changes,
+        "reason": (str(reason).strip() or None),
+        "updated_by": str(updated_by or ""),
+    }
+    detail = json.dumps(audit_obj, default=str)[:12000]
+    sb_create_audit_log(
+        "APP_CONFIG_UPDATED",
+        "admin",
+        str(updated_by or ""),
+        detail,
+    )
     return {"success": True, "data": sb_get_app_config()}
+
+
+@router.get("/admin/config/detailed")
+def get_admin_config_detailed():
+    """Config values plus per-key updated_at / updated_by for ops audit trail in UI."""
+    cfg, meta = sb_get_app_config_with_meta()
+    return {"success": True, "data": {"config": cfg, "meta": meta}}
+
+
+@router.get("/admin/map/road-reports")
+def get_admin_map_road_reports(limit: int = Query(default=400, ge=1, le=800)):
+    reports = sb_get_road_reports_for_admin_map(limit=limit)
+    return {"success": True, "data": {"reports": reports}}
+
+
+@router.get("/admin/map/partner-locations")
+def get_admin_map_partner_locations(limit: int = Query(default=500, ge=1, le=1000)):
+    locations = sb_get_partner_locations_for_admin_map(limit=limit)
+    return {"success": True, "data": {"locations": locations}}
 
 
 # ==================== ANALYTICS ====================
@@ -253,8 +378,8 @@ def get_finance_data():
 # ==================== NOTIFICATIONS ====================
 
 @router.get("/admin/notifications")
-def get_notifications():
-    data = sb_get_admin_notifications(limit=50)
+def get_notifications(limit: int = Query(default=50, ge=1, le=100)):
+    data = sb_get_admin_notifications(limit=limit)
     return {"success": True, "data": data}
 
 
@@ -335,17 +460,53 @@ def update_settings(settings_data: dict):
 # ==================== AUDIT LOG ====================
 
 @router.get("/admin/audit-log")
-def get_audit_log(limit: int = 50):
+def get_audit_log(limit: int = Query(default=50, ge=1, le=100)):
     data = sb_get_audit_logs(limit=limit)
     return {"success": True, "data": data}
 
 
 # ==================== INCIDENTS ====================
 
+def _road_report_row_to_admin_item(row: dict) -> dict:
+    """Align driver map reports (road_reports) with admin Incidents tab shape."""
+    t = str(row.get("type") or "report")
+    sev = "high" if t in ("accident", "crash", "closure") else ("low" if t in ("pothole",) else "medium")
+    lat, lng = row.get("lat"), row.get("lng")
+    loc = ""
+    try:
+        if lat is not None and lng is not None:
+            loc = f"{float(lat):.5f}, {float(lng):.5f}"
+    except (TypeError, ValueError):
+        loc = ""
+    return {
+        "id": str(row.get("id")),
+        "type": t,
+        "description": row.get("description") or "",
+        "location": loc,
+        "severity": sev,
+        "status": str(row.get("status") or "active"),
+        "created_at": row.get("created_at"),
+        "reported_by": str(row.get("user_id") or ""),
+        "source": "road_reports",
+        "image_url": None,
+    }
+
+
 @router.get("/admin/incidents")
-def get_incidents(status: Optional[str] = None):
-    data = sb_get_incidents(status=status)
-    return {"success": True, "data": data}
+def get_incidents(
+    status: Optional[str] = None,
+    limit: int = Query(default=100, ge=1, le=200),
+):
+    legacy = sb_get_incidents(status=status, limit=limit)
+    road_rows = sb_get_road_reports_admin_list(min(limit, 120))
+    road_items = [_road_report_row_to_admin_item(r) for r in road_rows]
+    merged = road_items + list(legacy)
+
+    def sort_key(item: dict):
+        return str(item.get("created_at") or "")
+
+    merged.sort(key=sort_key, reverse=True)
+    return {"success": True, "data": merged[:limit]}
 
 
 @router.post("/admin/incidents/{incident_id}/moderate")
@@ -371,17 +532,20 @@ async def moderate_incident(incident_id: str, outcome: str = Body(..., embed=Tru
 
 
 @router.get("/admin/incidents/moderated")
-def get_moderated_incidents():
-    approved = sb_get_incidents(status="approved")
-    rejected = sb_get_incidents(status="rejected")
+def get_moderated_incidents(limit: int = Query(default=100, ge=1, le=100)):
+    approved = sb_get_incidents(status="approved", limit=limit)
+    rejected = sb_get_incidents(status="rejected", limit=limit)
     return {"success": True, "data": approved + rejected, "total": len(approved) + len(rejected)}
 
 
 # ==================== OFFERS CRUD ====================
 
 @router.get("/admin/offers")
-def get_offers(status: str = "all"):
-    data = sb_get_offers(status=status)
+def get_offers(
+    status: str = "all",
+    limit: int = Query(default=100, ge=1, le=100),
+):
+    data = sb_get_offers(status=status, limit=limit)
     return {"success": True, "data": data}
 
 
@@ -704,7 +868,7 @@ def import_offers(import_data: OfferImport):
 async def import_groupon_deals(
     area: str = "Columbus, OH",
     category: Optional[str] = None,
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100),
 ):
     """Fetch deals from Groupon via CJ Affiliate API and return a preview list."""
     from services.groupon_service import fetch_groupon_deals, import_deals_to_offers
@@ -787,8 +951,8 @@ async def enrich_offer_with_yelp(offer_id: str):
 # ==================== PARTNERS CRUD ====================
 
 @router.get("/admin/partners")
-def get_partners():
-    data = sb_get_partners()
+def get_partners(limit: int = Query(default=100, ge=1, le=100)):
+    data = sb_get_partners(limit=limit)
     return {"success": True, "data": data}
 
 
@@ -841,8 +1005,8 @@ def suspend_partner(partner_id: str):
 # ==================== CAMPAIGNS CRUD ====================
 
 @router.get("/admin/campaigns")
-def get_campaigns():
-    data = sb_get_campaigns()
+def get_campaigns(limit: int = Query(default=100, ge=1, le=100)):
+    data = sb_get_campaigns(limit=limit)
     return {"success": True, "data": data}
 
 
@@ -882,8 +1046,8 @@ def activate_campaign(campaign_id: str):
 # ==================== REWARDS CRUD ====================
 
 @router.get("/admin/rewards")
-def get_rewards():
-    data = sb_get_rewards()
+def get_rewards(limit: int = Query(default=100, ge=1, le=100)):
+    data = sb_get_rewards(limit=limit)
     return {"success": True, "data": data}
 
 
@@ -927,7 +1091,7 @@ def claim_reward(reward_id: str, user_data: dict):
 # ==================== USERS CRUD ====================
 
 @router.get("/admin/users")
-def get_users(limit: int = 100):
+def get_users(limit: int = Query(default=100, ge=1, le=100)):
     data = sb_list_profiles(limit=limit)
     return {"success": True, "source": "supabase", "data": data, "total": len(data)}
 
@@ -1027,8 +1191,11 @@ def create_boost(boost: BoostCreate):
 
 
 @router.get("/boosts")
-def get_boosts(partner_id: Optional[str] = None):
-    data = sb_get_boosts(partner_id=partner_id)
+def get_boosts(
+    partner_id: Optional[str] = None,
+    limit: int = Query(default=100, ge=1, le=100),
+):
+    data = sb_get_boosts(partner_id=partner_id)[:limit]
     return {"success": True, "data": data}
 
 
@@ -1082,6 +1249,178 @@ def get_supabase_status():
 
 
 @router.get("/admin/events")
-def get_admin_events():
-    challenges = sb_get_challenges()
+def get_admin_events(limit: int = Query(default=100, ge=1, le=100)):
+    challenges = sb_get_challenges()[:limit]
     return {"success": True, "data": challenges}
+
+
+# ==================== PHOTO REPORT MODERATION ====================
+
+
+def _photo_original_signed_url(supabase, storage_path: str) -> Optional[str]:
+    from services.photo_report_processing import PRIVATE_ORIGINALS_BUCKET
+
+    try:
+        r = supabase.storage.from_(PRIVATE_ORIGINALS_BUCKET).create_signed_url(storage_path, 3600)
+        if isinstance(r, dict):
+            return r.get("signedURL") or r.get("signed_url") or r.get("signedUrl")
+        su = getattr(r, "signed_url", None) or getattr(r, "signedURL", None)
+        return str(su) if su else None
+    except Exception as e:
+        logger.warning("signed URL for original failed: %s", e)
+        return None
+
+
+@router.get("/admin/photo-reports/pending")
+def admin_photo_reports_pending(limit: int = Query(default=50, ge=1, le=200)):
+    from database import get_supabase
+
+    supabase = get_supabase()
+    res = (
+        supabase.table("incident_photos")
+        .select("*")
+        .eq("moderation_status", "pending_review")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    reports = []
+    for row in res.data or []:
+        item = dict(row)
+        opath = item.get("original_storage_path")
+        if opath:
+            item["original_signed_url"] = _photo_original_signed_url(supabase, opath)
+        reports.append(item)
+    return {"success": True, "data": {"reports": reports, "total": len(reports)}}
+
+
+@router.post("/admin/photo-reports/{report_id}/approve")
+async def admin_photo_report_approve(report_id: str):
+    import uuid
+
+    from database import get_supabase
+
+    from services.photo_report_processing import (
+        PUBLIC_PHOTO_BUCKET,
+        PRIVATE_ORIGINALS_BUCKET,
+        analyze_and_prepare_public_bytes,
+        heavy_blur_full_jpeg,
+    )
+
+    supabase = get_supabase()
+    fetch = (
+        supabase.table("incident_photos")
+        .select("*")
+        .eq("id", report_id)
+        .eq("moderation_status", "pending_review")
+        .limit(1)
+        .execute()
+    )
+    if not fetch.data:
+        return {"success": False, "message": "Report not found or not pending"}
+    row = fetch.data[0]
+    opath = row.get("original_storage_path")
+    uid = row.get("user_id") or "unknown"
+    if not opath:
+        return {"success": False, "message": "No private original path"}
+    try:
+        raw = supabase.storage.from_(PRIVATE_ORIGINALS_BUCKET).download(opath)
+        if not raw:
+            return {"success": False, "message": "Could not download original"}
+    except Exception as e:
+        logger.exception("download original: %s", e)
+        return {"success": False, "message": "Could not download original"}
+
+    prep = await analyze_and_prepare_public_bytes(raw)
+    needs_pii = prep["needs_pii"]
+    regions_blurred = prep["regions_blurred"]
+    analysis_ok = prep["analysis_ok"]
+
+    if needs_pii and regions_blurred > 0:
+        public_bytes = prep["blurred_jpeg"]
+        blur_applied = True
+    elif (not analysis_ok) or (needs_pii and regions_blurred == 0):
+        public_bytes = heavy_blur_full_jpeg(raw)
+        blur_applied = True
+    else:
+        public_bytes = prep["base_jpeg"]
+        blur_applied = False
+
+    file_path = f"{uid}/{uuid.uuid4().hex}_approved.jpg"
+    try:
+        supabase.storage.from_(PUBLIC_PHOTO_BUCKET).upload(
+            file_path,
+            public_bytes,
+            file_options={"content-type": "image/jpeg"},
+        )
+        photo_url = supabase.storage.from_(PUBLIC_PHOTO_BUCKET).get_public_url(file_path)
+    except Exception as e:
+        logger.exception("public upload on approve: %s", e)
+        return {"success": False, "message": "Public storage upload failed"}
+
+    try:
+        supabase.table("incident_photos").update(
+            {
+                "photo_url": photo_url,
+                "thumbnail_url": photo_url,
+                "moderation_status": "active",
+                "blur_applied": blur_applied,
+                "needs_admin_review": False,
+                "original_storage_path": None,
+                "review_notes": None,
+            }
+        ).eq("id", report_id).execute()
+    except Exception as e:
+        logger.exception("db update approve: %s", e)
+        return {"success": False, "message": "Database update failed"}
+
+    try:
+        supabase.storage.from_(PRIVATE_ORIGINALS_BUCKET).remove([opath])
+    except Exception:
+        logger.warning("could not delete private original %s", opath)
+
+    return {"success": True, "message": "Published blurred image", "data": {"photo_url": photo_url}}
+
+
+@router.post("/admin/photo-reports/{report_id}/reject")
+def admin_photo_report_reject(
+    report_id: str,
+    body: AdminPhotoRejectBody = Body(default_factory=AdminPhotoRejectBody),
+):
+    from database import get_supabase
+
+    from services.photo_report_processing import PRIVATE_ORIGINALS_BUCKET
+
+    notes = body.review_notes
+    supabase = get_supabase()
+    fetch = (
+        supabase.table("incident_photos")
+        .select("id,original_storage_path")
+        .eq("id", report_id)
+        .eq("moderation_status", "pending_review")
+        .limit(1)
+        .execute()
+    )
+    if not fetch.data:
+        return {"success": False, "message": "Report not found or not pending"}
+    opath = fetch.data[0].get("original_storage_path")
+    if opath:
+        try:
+            supabase.storage.from_(PRIVATE_ORIGINALS_BUCKET).remove([opath])
+        except Exception:
+            logger.warning("could not remove private object %s", opath)
+    try:
+        supabase.table("incident_photos").update(
+            {
+                "moderation_status": "rejected",
+                "photo_url": None,
+                "thumbnail_url": None,
+                "needs_admin_review": False,
+                "original_storage_path": None,
+                "review_notes": str(notes)[:2000] if notes else None,
+            }
+        ).eq("id", report_id).execute()
+    except Exception as e:
+        logger.exception("reject update: %s", e)
+        return {"success": False, "message": "Database update failed"}
+    return {"success": True, "message": "Report rejected"}

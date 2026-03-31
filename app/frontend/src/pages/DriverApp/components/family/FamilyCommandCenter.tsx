@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type mapboxgl from 'mapbox-gl'
+import type { Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl'
 import api from '@/services/api'
-import { Settings, Battery, Car, Home, Building2, MapPin, ShieldAlert } from 'lucide-react'
+import { Settings, Battery, Car, Home, Building2, MapPin } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { updateMyLocation } from '@/lib/friendLocation'
 
@@ -112,8 +112,8 @@ export default function FamilyCommandCenter({
   const [placeDrafts, setPlaceDrafts] = useState<FamilyPlace[]>([])
   const [miniMapAvailable, setMiniMapAvailable] = useState(true)
   const miniMapEl = useRef<HTMLDivElement | null>(null)
-  const miniMapRef = useRef<mapboxgl.Map | null>(null)
-  const markersRef = useRef<mapboxgl.Marker[]>([])
+  const miniMapRef = useRef<MapboxMap | null>(null)
+  const markersRef = useRef<MapboxMarker[]>([])
   const mapboxRef = useRef<typeof import('mapbox-gl') | null>(null)
   const geofenceStateRef = useRef<Record<string, boolean>>({})
 
@@ -619,7 +619,7 @@ export default function FamilyCommandCenter({
                     </button>
                     <button
                       onClick={async () => {
-                        await api.put(`/api/family/group/${groupId}/member/${m.user_id}/sharing`, { is_sharing: !Boolean(m.live?.is_sharing) })
+                        await api.put(`/api/family/group/${groupId}/member/${m.user_id}/sharing`, { is_sharing: !m.live?.is_sharing })
                         await loadDashboard()
                       }}
                       style={{ border: 'none', borderRadius: 8, padding: '6px 8px', background: m.live?.is_sharing ? '#e2e8f0' : '#dcfce7', color: '#0f172a', cursor: 'pointer', fontWeight: 700 }}

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, type ViewStyle } from 'react-native';
 import Animated, { useSharedValue, withRepeat, withTiming, useAnimatedStyle } from 'react-native-reanimated';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface Props {
   width?: number | string;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function Skeleton({ width = '100%', height = 16, borderRadius = 8, style }: Props) {
+  const { colors } = useTheme();
   const opacity = useSharedValue(0.3);
 
   useEffect(() => {
@@ -21,7 +23,7 @@ export default function Skeleton({ width = '100%', height = 16, borderRadius = 8
   return (
     <Animated.View
       style={[
-        { width: width as number, height, borderRadius, backgroundColor: 'rgba(128,128,128,0.15)' },
+        { width: width as number, height, borderRadius, backgroundColor: colors.surfaceSecondary },
         animStyle,
         style,
       ]}
@@ -31,7 +33,7 @@ export default function Skeleton({ width = '100%', height = 16, borderRadius = 8
 
 export function SkeletonCard({ style }: { style?: ViewStyle }) {
   return (
-    <View style={[{ borderRadius: 12, padding: 16, gap: 10 }, style]}>
+    <View style={[{ borderRadius: 14, padding: 16, gap: 10 }, style]}>
       <Skeleton width="60%" height={14} />
       <Skeleton width="100%" height={10} />
       <Skeleton width="40%" height={10} />

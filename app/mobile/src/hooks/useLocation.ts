@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as Location from 'expo-location';
-import { Magnetometer } from 'expo-sensors';
+import { Platform } from 'react-native';
 import { storage } from '../utils/storage';
 import type { Coordinate } from '../types';
 
 const LAST_LOC_KEY = 'last_location_v1';
+const PERSIST_THROTTLE_MS = 30_000;
 
 interface LocationState {
   location: Coordinate;
@@ -29,16 +30,32 @@ function readCachedLocation(): Coordinate | null {
   return null;
 }
 
+let lastPersistAt = 0;
 function persistLocation(lat: number, lng: number) {
-  storage.set(LAST_LOC_KEY, JSON.stringify({ lat, lng, t: Date.now() }));
+  const now = Date.now();
+  if (now - lastPersistAt < PERSIST_THROTTLE_MS) return;
+  lastPersistAt = now;
+  storage.set(LAST_LOC_KEY, JSON.stringify({ lat, lng, t: now }));
 }
 
-const DEFAULT_LOCATION: Coordinate = { lat: 39.9612, lng: -82.9988 };
+/** Sentinel until first GPS fix or persisted last location — avoids biasing places/search to a dev default. */
+const UNKNOWN_LOCATION: Coordinate = { lat: 0, lng: 0 };
+const HEADING_SMOOTHING = 0.2;
 
-export function useLocation() {
+function smoothHeading(current: number, raw: number): number {
+  let delta = raw - current;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+  let result = current + delta * HEADING_SMOOTHING;
+  if (result < 0) result += 360;
+  if (result >= 360) result -= 360;
+  return result;
+}
+
+export function useLocation(isNavigating = false) {
   const cached = readCachedLocation();
   const [state, setState] = useState<LocationState>({
-    location: cached ?? DEFAULT_LOCATION,
+    location: cached ?? UNKNOWN_LOCATION,
     heading: 0,
     speed: 0,
     accuracy: null,
@@ -47,14 +64,22 @@ export function useLocation() {
   });
 
   const watchRef = useRef<Location.LocationSubscription | null>(null);
-  const magnetoSubRef = useRef<{ remove: () => void } | null>(null);
-  const headingRef = useRef(0);
+  const headingSubRef = useRef<Location.LocationSubscription | null>(null);
+  const smoothedRef = useRef(0);
+  const bgPermRequested = useRef(false);
 
   const startWatching = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       setState((prev) => ({ ...prev, isLocating: false, permissionDenied: true }));
       return;
+    }
+
+    if (isNavigating && !bgPermRequested.current) {
+      bgPermRequested.current = true;
+      try {
+        await Location.requestBackgroundPermissionsAsync();
+      } catch { /* user denied — foreground-only nav still works */ }
     }
 
     try {
@@ -73,11 +98,20 @@ export function useLocation() {
       }));
     } catch {}
 
+    const accuracy = isNavigating
+      ? Location.Accuracy.BestForNavigation
+      : Location.Accuracy.Balanced;
+    const timeInterval = isNavigating ? 1000 : 5000;
+    const distanceInterval = isNavigating ? 2 : 20;
+
     watchRef.current = await Location.watchPositionAsync(
       {
-        accuracy: Location.Accuracy.BestForNavigation,
-        timeInterval: 1000,
-        distanceInterval: 2,
+        accuracy,
+        timeInterval,
+        distanceInterval,
+        ...(Platform.OS === 'ios' && isNavigating && {
+          activityType: Location.ActivityType.AutomotiveNavigation,
+        }),
       },
       (loc) => {
         const lat = loc.coords.latitude;
@@ -87,38 +121,44 @@ export function useLocation() {
 
         persistLocation(lat, lng);
 
-        setState((prev) => ({
-          ...prev,
-          location: { lat, lng },
-          speed: speedMph,
-          accuracy: loc.coords.accuracy ?? null,
-          isLocating: false,
-          heading:
-            typeof gpsHeading === 'number' && gpsHeading >= 0 && speedMph > 2
-              ? gpsHeading
-              : prev.heading,
-        }));
+        const useGpsCourse = typeof gpsHeading === 'number' && gpsHeading >= 0 && speedMph > 3;
+
+        setState((prev) => {
+          let newHeading = prev.heading;
+          if (useGpsCourse) {
+            smoothedRef.current = smoothHeading(smoothedRef.current, gpsHeading);
+            newHeading = smoothedRef.current;
+          }
+          return {
+            ...prev,
+            location: { lat, lng },
+            speed: speedMph,
+            accuracy: loc.coords.accuracy ?? null,
+            isLocating: false,
+            heading: newHeading,
+          };
+        });
       },
     );
 
-    Magnetometer.setUpdateInterval(100);
-    magnetoSubRef.current = Magnetometer.addListener((data) => {
-      const { x, y } = data;
-      let angle = Math.atan2(y, x) * (180 / Math.PI);
-      angle = (angle + 360) % 360;
-      headingRef.current = angle;
+    headingSubRef.current = await Location.watchHeadingAsync((h) => {
+      const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+      if (typeof deg !== 'number' || !Number.isFinite(deg)) return;
       setState((prev) => {
-        if (prev.speed > 2) return prev;
-        return { ...prev, heading: angle };
+        if (prev.speed > 3) return prev;
+        smoothedRef.current = smoothHeading(smoothedRef.current, deg);
+        return { ...prev, heading: smoothedRef.current };
       });
     });
-  }, []);
+  }, [isNavigating]);
 
   useEffect(() => {
     startWatching();
     return () => {
       watchRef.current?.remove();
-      magnetoSubRef.current?.remove();
+      watchRef.current = null;
+      headingSubRef.current?.remove();
+      headingSubRef.current = null;
     };
   }, [startWatching]);
 

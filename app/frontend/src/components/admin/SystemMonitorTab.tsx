@@ -1,18 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, AlertTriangle, Download, Filter, RefreshCw } from 'lucide-react'
 import type { TelemetryEvent, WSMessage } from '@/types/admin'
+import { getApiBaseUrl } from '@/services/api'
 
 interface Props {
   theme: 'dark' | 'light'
 }
 
-const WS_BASE = (() => {
-  const apiUrl = (import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || import.meta.env.VITE_API_URL || '')
-  const httpBase = apiUrl || 'http://localhost:8001'
-  return httpBase.replace(/^https/, 'wss').replace(/^http:\/\//, 'ws://')
-})()
-
-const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+const HTTP_BASE = getApiBaseUrl()
+const WS_BASE = HTTP_BASE.replace(/^https/, 'wss').replace(/^http:\/\//, 'ws://')
 
 export default function SystemMonitorTab({ theme }: Props) {
   const [events, setEvents] = useState<TelemetryEvent[]>([])
@@ -34,7 +30,7 @@ export default function SystemMonitorTab({ theme }: Props) {
   const loadSnapshot = async () => {
     try {
       const token = localStorage.getItem('snaproad_admin_token')
-      const res = await fetch(`${API_BASE}/api/admin/monitor/events?limit=200`, {
+      const res = await fetch(`${HTTP_BASE}/api/admin/monitor/events?limit=200`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       })
       if (!res.ok) return
@@ -54,7 +50,7 @@ export default function SystemMonitorTab({ theme }: Props) {
       setStatus('offline')
       return
     }
-    const ws = new WebSocket(`${WS_BASE}/api/ws/admin/monitor?token=${encodeURIComponent(token)}`)
+    const ws = new WebSocket(`${WS_BASE}/api/ws/admin/monitor`, [`bearer.${token}`])
     wsRef.current = ws
 
     ws.onopen = () => setStatus('live')
@@ -130,7 +126,7 @@ export default function SystemMonitorTab({ theme }: Props) {
   const exportEvents = async (format: 'json' | 'csv') => {
     try {
       const token = localStorage.getItem('snaproad_admin_token')
-      const res = await fetch(`${API_BASE}/api/admin/monitor/events/export?limit=500&format=${format}`, {
+      const res = await fetch(`${HTTP_BASE}/api/admin/monitor/events/export?limit=500&format=${format}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       })
       if (!res.ok) return

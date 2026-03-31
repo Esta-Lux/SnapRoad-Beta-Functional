@@ -1,5 +1,10 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
+import { Text, StyleSheet, Pressable, type ViewStyle, type TextStyle } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
+import { useTheme } from '../../contexts/ThemeContext';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface Props {
   title: string;
@@ -11,20 +16,47 @@ interface Props {
 }
 
 export default function Button({ title, onPress, variant = 'primary', disabled, style, textStyle }: Props) {
-  const bg = variant === 'danger' ? '#EF4444' : variant === 'secondary' ? '#1e1e2e' : '#3B82F6';
+  const { colors } = useTheme();
+  const scale = useSharedValue(1);
+
+  const bg =
+    variant === 'danger' ? colors.danger :
+    variant === 'secondary' ? colors.surfaceSecondary :
+    colors.primary;
+
+  const textColor = variant === 'secondary' ? colors.text : '#fff';
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = () => {
+    scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+  };
+
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress();
+  };
+
   return (
-    <TouchableOpacity
-      style={[styles.btn, { backgroundColor: bg, opacity: disabled ? 0.5 : 1 }, style]}
-      onPress={onPress}
+    <AnimatedPressable
+      style={[styles.btn, { backgroundColor: bg, opacity: disabled ? 0.5 : 1 }, animStyle, style]}
+      onPress={handlePress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
       disabled={disabled}
-      activeOpacity={0.7}
     >
-      <Text style={[styles.text, textStyle]}>{title}</Text>
-    </TouchableOpacity>
+      <Text style={[styles.text, { color: textColor }, textStyle]}>{title}</Text>
+    </AnimatedPressable>
   );
 }
 
 const styles = StyleSheet.create({
-  btn: { borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  text: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  btn: { borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
+  text: { fontSize: 16, fontWeight: '700' },
 });

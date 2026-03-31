@@ -50,7 +50,7 @@ except Exception as e:
 # Test 3: Fresh client
 print("\n3. Fresh client (no cached auth):")
 from supabase import create_client
-fresh_sb = create_client(config.SUPABASE_URL, config.SUPABASE_SECRET_KEY)
+fresh_sb = create_client(config.SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY)
 try:
     result = fresh_sb.table("profiles").select("*").eq("email", "Riyan@snaproad.co").limit(1).execute()
     if result.data:

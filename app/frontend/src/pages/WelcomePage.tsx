@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { 
   Shield, Gem, Trophy, Zap, ArrowRight, X, Eye, EyeOff, Star
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { api } from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
 import snaproadLogo from '../assets/images/f1ce41940925932061ca7e2e293db7cdf37e4b87.png'
@@ -29,7 +30,12 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
     const { data } = await sb.auth.getSession()
     const accessToken = data.session?.access_token
     if (!accessToken) throw new Error('No Supabase session found')
-    const res = await api.oauthSupabase(accessToken)
+    let res: Awaited<ReturnType<typeof api.oauthSupabase>>
+    try {
+      res = await api.oauthSupabase(accessToken)
+    } catch {
+      throw new Error('Unable to reach the server. Please check your connection and try again.')
+    }
     if (!res.success || !res.data?.token || !res.data?.user) {
       throw new Error(res.error || 'OAuth exchange failed')
     }
@@ -64,7 +70,21 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
       navigate('/driver')
     } catch (error) {
       console.error('Auth error:', error)
-      alert((error as any)?.message || 'Login failed. Please try again.')
+      let msg = (error as any)?.message || 'Login failed. Please try again.'
+      const low = String(msg).toLowerCase()
+      if (
+        low.includes('failed to fetch') ||
+        low.includes('networkerror') ||
+        low.includes('name_not_resolved') ||
+        low.includes('err_name_not_resolved')
+      ) {
+        msg =
+          'Cannot reach Supabase (sign-in). Check internet and DNS/VPN/firewall, then try again. FastAPI port does not fix this — the browser must resolve *.supabase.co.'
+      }
+      toast.error(msg, {
+        style: { background: '#1E293B', color: '#fff', borderRadius: '12px', padding: '12px 16px' },
+        duration: 4000,
+      })
     } finally {
       setLoading(false)
     }
@@ -79,7 +99,10 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
       const { error } = await sb.auth.signInWithOAuth({ provider, options: { redirectTo } })
       if (error) throw new Error(error.message)
     } catch (e: any) {
-      alert(e?.message || 'OAuth failed')
+      toast.error(e?.message || 'OAuth failed. Please try again.', {
+        style: { background: '#1E293B', color: '#fff', borderRadius: '12px', padding: '12px 16px' },
+        duration: 4000,
+      })
       setLoading(false)
     }
   }

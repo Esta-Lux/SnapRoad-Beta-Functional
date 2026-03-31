@@ -4,7 +4,11 @@
   "description": "SnapRoad – run frontend and backend together",
   "scripts": {
     "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "cd app/backend && (test -x .venv/bin/python && .venv/bin/python run_server.py || test -x venv/bin/python && venv/bin/python run_server.py || python3 run_server.py)",
+    "dev:mobile": "node scripts/dev-mobile-tunnel.mjs",
+    "dev:mobile:lan": "node scripts/dev-mobile-tunnel.mjs --lan",
+    "expo:qr": "node scripts/expo-dev-client-qr.mjs",
+    "dev:backend": "cd app/backend && if [ -x .venv/bin/python3 ]; then .venv/bin/python3 run_server.py; elif [ -x .venv/bin/python ]; then .venv/bin/python run_server.py; elif [ -x venv/bin/python3 ]; then venv/bin/python3 run_server.py; elif [ -x venv/bin/python ]; then venv/bin/python run_server.py; else python3 run_server.py; fi",
+    "dev:phone:web": "concurrently -n backend,frontend+cloudflared -c blue,green \"npm run dev:backend\" \"cd app/frontend && npm run dev:tunnel:cloudflared\"",
     "dev:frontend": "cd app/frontend && npm run dev",
     "dev:tunnel:stable": "concurrently -n backend,frontend+tunnel -c blue,green \"npm run dev:backend\" \"cd app/frontend && npm run dev:tunnel:stable\"",
     "dev:tunnel:cloudflared": "concurrently -n backend,frontend+cloudflared -c blue,green \"npm run dev:backend\" \"cd app/frontend && npm run dev:tunnel:cloudflared\"",
@@ -20,6 +24,7 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "ngrok": "^4.3.3",
+    "qrcode": "^1.5.4",
     "tunnelmole": "^2.4.0"
   }
 }

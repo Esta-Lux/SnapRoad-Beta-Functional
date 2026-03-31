@@ -1,97 +1,91 @@
-import React, { useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import Animated, { useSharedValue, withRepeat, withTiming, useAnimatedStyle } from 'react-native-reanimated';
+import React, { useMemo } from 'react';
+import { TouchableOpacity, View, StyleSheet, Platform } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
-import type { Offer, Coordinate } from '../../types';
+import type { Offer } from '../../types';
 
-interface Props {
-  offers: Offer[];
-  onOfferTap?: (offer: Offer) => void;
+interface Props { offers: Offer[]; onOfferTap?: (offer: Offer) => void; }
+
+function tierFill(d: number): string {
+  if (d >= 20) return '#B45309';
+  if (d >= 10) return '#6D28D9';
+  if (d >= 5) return '#1D4ED8';
+  return '#166534';
 }
 
-function gemColor(discount: number): string {
-  if (discount >= 15) return '#8B5CF6';
-  if (discount >= 5) return '#3B82F6';
-  return '#22C55E';
-}
+const DISC = 32;
+const ICON = 16;
 
-export default function OfferMarkers({ offers, onOfferTap }: Props) {
-  const pulseOpacity = useSharedValue(0.7);
-
-  useEffect(() => {
-    pulseOpacity.value = withRepeat(withTiming(1, { duration: 1000 }), -1, true);
-  }, []);
-
-  const geoJSON = useMemo(() => ({
-    type: 'FeatureCollection' as const,
-    features: offers
+export default React.memo(function OfferMarkers({ offers, onOfferTap }: Props) {
+  const markers = useMemo(
+    () => offers
       .filter((o) => o.lat != null && o.lng != null)
-      .map((o) => ({
-        type: 'Feature' as const,
-        properties: {
-          id: o.id,
-          color: gemColor(o.discount_percent),
-          size: o.business_type === 'chain' ? 40 : o.business_type === 'medium' ? 32 : 28,
-          title: o.business_name,
-          discount: `${o.discount_percent}%`,
-        },
-        geometry: {
-          type: 'Point' as const,
-          coordinates: [o.lng!, o.lat!],
-        },
-      })),
-  }), [offers]);
+      .slice(0, 120),
+    [offers],
+  );
 
-  if (!isMapAvailable() || !MapboxGL || !offers.length) return null;
+  if (!isMapAvailable() || !MapboxGL || !markers.length) return null;
+  const MB = MapboxGL;
 
   return (
-    <MapboxGL.ShapeSource
-      id="sr-offers"
-      shape={geoJSON as GeoJSON.FeatureCollection}
-      cluster
-      clusterMaxZoomLevel={13}
-      clusterRadius={50}
-      onPress={(e: any) => {
-        const feature = e.features?.[0];
-        if (!feature?.properties?.id) return;
-        const offer = offers.find((o) => o.id === feature.properties.id);
-        if (offer && onOfferTap) onOfferTap(offer);
-      }}
-    >
-      <MapboxGL.CircleLayer
-        id="sr-offers-cluster"
-        filter={['has', 'point_count']}
-        style={{
-          circleColor: '#F59E0B',
-          circleRadius: ['step', ['get', 'point_count'], 18, 5, 22, 10, 28],
-          circleOpacity: 0.85,
-          circleStrokeWidth: 2,
-          circleStrokeColor: '#ffffff',
-        }}
-        minZoomLevel={11}
-      />
-      <MapboxGL.SymbolLayer
-        id="sr-offers-cluster-count"
-        filter={['has', 'point_count']}
-        style={{
-          textField: ['get', 'point_count_abbreviated'],
-          textSize: 12,
-          textColor: '#ffffff',
-        }}
-        minZoomLevel={11}
-      />
-      <MapboxGL.CircleLayer
-        id="sr-offers-gems"
-        filter={['!', ['has', 'point_count']]}
-        style={{
-          circleColor: ['get', 'color'],
-          circleRadius: ['interpolate', ['linear'], ['zoom'], 11, 6, 15, 10, 18, 14],
-          circleOpacity: ['interpolate', ['linear'], ['zoom'], 10, 0, 11, 0.85],
-          circleStrokeWidth: 2,
-          circleStrokeColor: '#ffffff',
-        }}
-        minZoomLevel={10}
-      />
-    </MapboxGL.ShapeSource>
+    <>
+      {markers.map((offer) => {
+        const fill = tierFill(offer.discount_percent);
+        return (
+          <MB.MarkerView
+            key={String(offer.id)}
+            id={`sr-offer-${offer.id}`}
+            coordinate={[offer.lng!, offer.lat!]}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <TouchableOpacity
+              activeOpacity={0.88}
+              onPress={() => onOfferTap?.(offer)}
+              style={styles.hit}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <View style={[styles.glow, { backgroundColor: fill, opacity: 0.22 }]} />
+              <View style={[styles.disc, { backgroundColor: fill }]}>
+                <MaterialCommunityIcons name="diamond-stone" size={ICON} color="#fff" />
+              </View>
+            </TouchableOpacity>
+          </MB.MarkerView>
+        );
+      })}
+    </>
   );
-}
+});
+
+const styles = StyleSheet.create({
+  hit: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: DISC + 14,
+    height: DISC + 14,
+  },
+  glow: {
+    position: 'absolute',
+    width: DISC + 8,
+    height: DISC + 8,
+    borderRadius: (DISC + 8) / 2,
+  },
+  disc: {
+    width: DISC,
+    height: DISC,
+    borderRadius: DISC / 2,
+    borderWidth: 2.5,
+    borderColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.22,
+        shadowRadius: 2.5,
+        shadowOffset: { width: 0, height: 1 },
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
+  },
+});

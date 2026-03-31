@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import datetime, timedelta
 import random
 from models.schemas import XPEvent, ChallengeCreate, GemGenerateRequest, GemCollectRequest
@@ -7,19 +7,52 @@ from services.mock_data import (
     challenges_data, challenges_db, route_gems_db, collected_gems_db,
     XP_CONFIG, calculate_xp_for_level, calculate_xp_to_next_level,
 )
+from middleware.auth import get_current_user
+from database import get_supabase
+from services.supabase_service import (
+    sb_get_profile,
+    sb_update_profile,
+    sb_create_challenge,
+    sb_get_challenges,
+)
+from config import ENVIRONMENT
 import uuid
 
 router = APIRouter(prefix="/api", tags=["Gamification"])
+processed_xp_events: set[str] = set()
+
+
+def _user_state(user_id: str) -> dict:
+    profile = sb_get_profile(user_id) or {}
+    local = users_db.get(user_id, {})
+    merged = {**local, **profile}
+    if ENVIRONMENT == "production":
+        merged.setdefault("id", user_id)
+        return merged
+    if user_id not in users_db:
+        users_db[user_id] = {"id": user_id}
+    users_db[user_id].update(merged)
+    return users_db[user_id]
+
+
+def _persist_user_fields(user_id: str, updates: dict) -> None:
+    if ENVIRONMENT != "production":
+        users_db.setdefault(user_id, {"id": user_id})
+        users_db[user_id].update(updates)
+    try:
+        ok = sb_update_profile(user_id, updates)
+        if ENVIRONMENT == "production" and not ok:
+            raise HTTPException(status_code=503, detail="Gamification persistence unavailable")
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Gamification persistence unavailable")
 
 
 def add_xp_to_user(user_id: str, xp_amount: int) -> dict:
-    if user_id not in users_db:
-        return {}
-    user = users_db[user_id]
+    user = _user_state(user_id)
     old_level = user.get("level", 1)
     old_xp = user.get("xp", 0)
     new_xp = max(0, old_xp + xp_amount)
-    users_db[user_id]["xp"] = new_xp
 
     new_level = 1
     xp_threshold = 0
@@ -31,20 +64,21 @@ def add_xp_to_user(user_id: str, xp_amount: int) -> dict:
         else:
             break
     new_level = min(new_level, XP_CONFIG["max_level"])
-    users_db[user_id]["level"] = new_level
+    updates = {"xp": new_xp, "level": new_level}
 
     if new_level < XP_CONFIG["max_level"]:
         xp_to_next = XP_CONFIG["base_xp_to_level"] + (new_level - 1) * XP_CONFIG["xp_increment"]
         xp_at_current_level = calculate_xp_for_level(new_level)
         xp_progress = new_xp - xp_at_current_level
-        users_db[user_id]["xp_to_next_level"] = xp_to_next
-        users_db[user_id]["xp_progress"] = xp_progress
+        updates["xp_to_next_level"] = xp_to_next
+        updates["xp_progress"] = xp_progress
     else:
-        users_db[user_id]["xp_to_next_level"] = 0
-        users_db[user_id]["xp_progress"] = 0
+        updates["xp_to_next_level"] = 0
+        updates["xp_progress"] = 0
+    _persist_user_fields(user_id, updates)
 
     level_change = new_level - old_level
-    return {"old_level": old_level, "new_level": new_level, "level_change": level_change, "leveled_up": level_change > 0, "leveled_down": level_change < 0, "xp_gained": xp_amount, "total_xp": new_xp, "xp_to_next_level": users_db[user_id].get("xp_to_next_level", 0)}
+    return {"old_level": old_level, "new_level": new_level, "level_change": level_change, "leveled_up": level_change > 0, "leveled_down": level_change < 0, "xp_gained": xp_amount, "total_xp": new_xp, "xp_to_next_level": updates.get("xp_to_next_level", 0)}
 
 
 def check_community_badges(user_id: str) -> list:
@@ -66,13 +100,19 @@ def check_community_badges(user_id: str) -> list:
 
 # ==================== XP ====================
 @router.post("/xp/add")
-def add_xp(event: XPEvent):
+def add_xp(event: XPEvent, user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    if event.event_id:
+        key = f"{user_id}:{event.event_id}"
+        if key in processed_xp_events:
+            return {"success": True, "message": "XP already processed for this event", "data": {"duplicate": True}}
+        processed_xp_events.add(key)
     event_type = event.event_type.lower()
     xp_map = {"photo_report": XP_CONFIG["photo_report"], "offer_redemption": XP_CONFIG["offer_redemption"], "safe_drive": XP_CONFIG["safe_drive"], "consistent_bonus": XP_CONFIG["consistent_driving"], "safety_penalty": XP_CONFIG["safety_score_penalty"]}
     xp_amount = event.amount if event.amount is not None else xp_map.get(event_type, 0)
     if xp_amount == 0:
         return {"success": False, "message": f"Unknown event type: {event_type}"}
-    result = add_xp_to_user(current_user_id, xp_amount)
+    result = add_xp_to_user(user_id, xp_amount)
     message = f"+{xp_amount} XP" if xp_amount > 0 else f"{xp_amount} XP"
     if result.get("leveled_up"):
         message += f" Level up! Now level {result['new_level']}"
@@ -80,8 +120,9 @@ def add_xp(event: XPEvent):
 
 
 @router.get("/xp/status")
-def get_xp_status():
-    user = users_db.get(current_user_id, {})
+def get_xp_status(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    user = _user_state(user_id)
     level = user.get("level", 1)
     xp = user.get("xp", 0)
     xp_at_current = calculate_xp_for_level(level)
@@ -98,8 +139,9 @@ def get_xp_config():
 
 # ==================== BADGES ====================
 @router.get("/badges")
-def get_badges():
-    user = users_db.get(current_user_id, {})
+def get_badges(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    user = _user_state(user_id)
     earned = set(user.get("badges_earned", []))
     badges = [{**b, "earned": b["id"] in earned} for b in ALL_BADGES]
     return {"success": True, "data": {"badges": badges, "earned_count": len(earned), "total_count": len(ALL_BADGES)}}
@@ -118,8 +160,9 @@ def get_badge_categories():
 
 
 @router.get("/badges/community")
-def get_community_badges():
-    user = users_db.get(current_user_id, {})
+def get_community_badges(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    user = _user_state(user_id)
     earned_ids = set(user.get("community_badges", []))
     badges = [{**b, "earned": b["id"] in earned_ids} for b in COMMUNITY_BADGES]
     return {"success": True, "data": badges, "earned_count": len(earned_ids), "total_count": len(COMMUNITY_BADGES)}
@@ -129,22 +172,81 @@ def get_community_badges():
 # Top 10 by state; weekly default. Ranked by safety_score (primary), then gems (secondary).
 # Each entry includes challenges_participated and badges_count (show on click).
 @router.get("/leaderboard")
-def get_leaderboard(state: str = "all", limit: int = 10, time_filter: str = "weekly"):
+def get_leaderboard(
+    state: str = "all",
+    limit: int = Query(default=10, ge=1, le=100),
+    time_filter: str = "weekly",
+    user: dict = Depends(get_current_user),
+):
+    user_id = str(user.get("id") or current_user_id)
+    tf = (time_filter or "weekly").lower()
+
+    # Try Supabase first for real user data
+    try:
+        sb = get_supabase()
+        query = sb.table("profiles").select("id,name,safety_score,level,gems,total_miles,is_premium,state")
+        if state and state.lower() != "all":
+            query = query.eq("state", state.upper())
+        if tf in ("all_time", "alltime", "lifetime"):
+            query = query.order("total_miles", desc=True).order("gems", desc=True)
+        elif tf in ("month", "monthly"):
+            query = query.order("level", desc=True).order("gems", desc=True)
+        elif tf == "all":
+            query = query.order("gems", desc=True).order("safety_score", desc=True)
+        else:
+            # weekly (default): safety-first board
+            query = query.order("safety_score", desc=True).order("gems", desc=True)
+        res = query.limit(limit).execute()
+        if res.data and len(res.data) > 0:
+            leaderboard = []
+            for i, u in enumerate(res.data):
+                leaderboard.append({
+                    "rank": i + 1,
+                    "id": str(u.get("id", "")),
+                    "name": u.get("name") or "Driver",
+                    "safety_score": u.get("safety_score") or 0,
+                    "level": u.get("level") or 1,
+                    "gems": u.get("gems") or 0,
+                    "total_miles": u.get("total_miles") or 0,
+                    "state": u.get("state") or "",
+                    "is_premium": bool(u.get("is_premium")),
+                })
+            my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == user_id), len(leaderboard) + 1)
+            my_profile = sb.table("profiles").select("name,safety_score,gems,level,state").eq("id", user_id).limit(1).execute()
+            my_data = my_profile.data[0] if my_profile.data else {}
+            return {
+                "success": True,
+                "data": {
+                    "leaderboard": leaderboard,
+                    "my_rank": my_rank,
+                    "my_score": my_data.get("safety_score", 0),
+                    "total_drivers": len(leaderboard),
+                    "my_data": {
+                        "name": my_data.get("name", "Driver"),
+                        "safety_score": my_data.get("safety_score", 0),
+                        "gems": my_data.get("gems", 0),
+                        "level": my_data.get("level", 1),
+                        "state": my_data.get("state", ""),
+                    },
+                    "states": [],
+                },
+            }
+    except Exception:
+        pass
+
+    # Fallback to mock data in dev
     all_users = list(users_db.values())
     if state and state.lower() != "all":
         all_users = [u for u in all_users if (u.get("state") or "").upper() == state.upper()]
-    # Count challenges participated per user (challenger or opponent)
-    def challenges_count(uid):
-        return sum(
-            1 for c in challenges_db
-            if str(c.get("challenger_id")) == str(uid) or str(c.get("opponent_id")) == str(uid)
-        )
-    # Sort by safety_score desc, then gems desc (tie-break)
-    sorted_users = sorted(
-        all_users,
-        key=lambda x: (x.get("safety_score", 0), x.get("gems", 0)),
-        reverse=True,
-    )[:limit]
+    if tf in ("all_time", "alltime", "lifetime"):
+        sort_key = lambda x: (x.get("total_miles", 0), x.get("gems", 0))
+    elif tf in ("month", "monthly"):
+        sort_key = lambda x: (x.get("level", 0), x.get("gems", 0))
+    elif tf == "all":
+        sort_key = lambda x: (x.get("gems", 0), x.get("safety_score", 0))
+    else:
+        sort_key = lambda x: (x.get("safety_score", 0), x.get("gems", 0))
+    sorted_users = sorted(all_users, key=sort_key, reverse=True)[:limit]
     leaderboard = []
     for i, u in enumerate(sorted_users):
         uid = str(u["id"])
@@ -156,23 +258,11 @@ def get_leaderboard(state: str = "all", limit: int = 10, time_filter: str = "wee
             "level": u.get("level", 1),
             "gems": u.get("gems", 0),
             "total_miles": u.get("total_miles", 0),
-            "streak": u.get("streak", 0),
             "state": u.get("state", ""),
             "is_premium": u.get("is_premium", False),
-            "badges_count": len(u.get("badges_earned", [])),
-            "challenges_participated": challenges_count(uid),
         })
-    current_user = users_db.get(current_user_id, {})
-    my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == str(current_user_id)), len(leaderboard) + 1)
-    # Current user summary for "Your Rank" card
-    my_data = {
-        "name": current_user.get("name", "Driver"),
-        "safety_score": current_user.get("safety_score", 0),
-        "gems": current_user.get("gems", 0),
-        "level": current_user.get("level", 1),
-        "state": current_user.get("state", ""),
-    }
-    states = sorted(set(u.get("state", "") for u in list(users_db.values()) if u.get("state")))
+    current_user = _user_state(user_id)
+    my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == user_id), len(leaderboard) + 1)
     return {
         "success": True,
         "data": {
@@ -180,59 +270,103 @@ def get_leaderboard(state: str = "all", limit: int = 10, time_filter: str = "wee
             "my_rank": my_rank,
             "my_score": current_user.get("safety_score", 0),
             "total_drivers": len(all_users),
-            "my_data": my_data,
-            "states": states,
+            "my_data": {
+                "name": current_user.get("name", "Driver"),
+                "safety_score": current_user.get("safety_score", 0),
+                "gems": current_user.get("gems", 0),
+                "level": current_user.get("level", 1),
+                "state": current_user.get("state", ""),
+            },
+            "states": [],
         },
     }
 
 
 # ==================== CHALLENGES ====================
 @router.get("/challenges")
-def get_challenges():
-    return {"success": True, "data": challenges_data}
+def get_challenges(limit: int = Query(default=50, ge=1, le=100)):
+    return {"success": True, "data": challenges_data[:limit], "count": len(challenges_data[:limit])}
 
 
 @router.post("/challenges")
-def create_challenge(challenge: ChallengeCreate):
-    user = users_db.get(current_user_id, {})
-    opponent = users_db.get(challenge.opponent_id, {})
+def create_challenge(challenge: ChallengeCreate, auth_user: dict = Depends(get_current_user)):
+    user_id = str(auth_user.get("id") or current_user_id)
+    user = _user_state(user_id)
+    opponent = _user_state(str(challenge.opponent_id))
     if not opponent:
         raise HTTPException(status_code=404, detail="Opponent not found")
     if user.get("gems", 0) < challenge.stake:
         raise HTTPException(status_code=400, detail="Not enough gems")
-    users_db[current_user_id]["gems"] = user.get("gems", 0) - challenge.stake
-    new_challenge = {"id": str(len(challenges_db) + 1), "challenger_id": current_user_id, "opponent_id": challenge.opponent_id, "challenger_name": user.get("name", "Unknown"), "opponent_name": opponent.get("name", "Unknown"), "stake": challenge.stake, "duration_hours": challenge.duration_hours, "status": "pending", "your_score": user.get("safety_score", 85), "opponent_score": opponent.get("safety_score", 85), "created_at": datetime.now().isoformat(), "ends_at": (datetime.now() + timedelta(hours=challenge.duration_hours)).isoformat()}
+    _persist_user_fields(user_id, {"gems": user.get("gems", 0) - challenge.stake})
+    new_challenge = {"id": str(len(challenges_db) + 1), "challenger_id": user_id, "opponent_id": challenge.opponent_id, "challenger_name": user.get("name", "Unknown"), "opponent_name": opponent.get("name", "Unknown"), "stake": challenge.stake, "duration_hours": challenge.duration_hours, "status": "pending", "your_score": user.get("safety_score", 85), "opponent_score": opponent.get("safety_score", 85), "created_at": datetime.now().isoformat(), "ends_at": (datetime.now() + timedelta(hours=challenge.duration_hours)).isoformat()}
+    created = sb_create_challenge(new_challenge)
+    if created:
+        return {"success": True, "message": f"Challenge sent to {opponent.get('name')}!", "data": created}
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Challenge service unavailable")
     challenges_db.append(new_challenge)
     return {"success": True, "message": f"Challenge sent to {opponent.get('name')}!", "data": new_challenge}
 
 
 @router.post("/challenges/{challenge_id}/accept")
-def accept_challenge(challenge_id: str):
+def accept_challenge(challenge_id: str, auth_user: dict = Depends(get_current_user)):
+    user_id = str(auth_user.get("id") or current_user_id)
+    try:
+        db_challenges = sb_get_challenges(limit=200)
+        c = next((x for x in db_challenges if str(x.get("id")) == str(challenge_id) and str(x.get("opponent_id")) == user_id), None)
+        if c:
+            user = _user_state(user_id)
+            stake = int(c.get("stake") or 0)
+            if user.get("gems", 0) < stake:
+                raise HTTPException(status_code=400, detail="Not enough gems")
+            _persist_user_fields(user_id, {"gems": user.get("gems", 0) - stake})
+            try:
+                get_supabase().table("challenges").update({"status": "active"}).eq("id", c.get("id")).execute()
+            except Exception:
+                pass
+            c["status"] = "active"
+            return {"success": True, "message": "Challenge accepted!", "data": c}
+    except HTTPException:
+        raise
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Challenge service unavailable")
     for c in challenges_db:
-        if c["id"] == challenge_id and c["opponent_id"] == current_user_id:
-            user = users_db.get(current_user_id, {})
+        if c["id"] == challenge_id and c["opponent_id"] == user_id:
+            user = _user_state(user_id)
             if user.get("gems", 0) < c["stake"]:
                 raise HTTPException(status_code=400, detail="Not enough gems")
-            users_db[current_user_id]["gems"] = user.get("gems", 0) - c["stake"]
+            _persist_user_fields(user_id, {"gems": user.get("gems", 0) - c["stake"]})
             c["status"] = "active"
             return {"success": True, "message": "Challenge accepted!", "data": c}
     raise HTTPException(status_code=404, detail="Challenge not found")
 
 
 @router.post("/challenges/{challenge_id}/claim")
-def claim_challenge(challenge_id: int):
+def claim_challenge(challenge_id: int, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Challenge claim unavailable in production path")
+    user_id = str(auth_user.get("id") or current_user_id)
     for ch in challenges_data:
         if ch["id"] == challenge_id and ch.get("completed") and not ch.get("claimed"):
             ch["claimed"] = True
-            if current_user_id in users_db:
-                users_db[current_user_id]["gems"] = users_db[current_user_id].get("gems", 0) + ch["gems"]
-            return {"success": True, "message": f"Claimed {ch['gems']} gems!", "data": {"gems_earned": ch["gems"], "new_total": users_db.get(current_user_id, {}).get("gems", 0)}}
+            user = _user_state(user_id)
+            new_total = user.get("gems", 0) + ch["gems"]
+            _persist_user_fields(user_id, {"gems": new_total})
+            return {"success": True, "message": f"Claimed {ch['gems']} gems!", "data": {"gems_earned": ch["gems"], "new_total": new_total}}
     return {"success": False, "message": "Challenge not found or not completed"}
 
 
 @router.get("/challenges/history")
-def get_challenge_history():
-    user_challenges = [c for c in challenges_db if c["challenger_id"] == current_user_id or c["opponent_id"] == current_user_id]
+def get_challenge_history(
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+):
+    user_id = str(user.get("id") or current_user_id)
+    db_challenges = sb_get_challenges(limit=200)
+    source = db_challenges if db_challenges else challenges_db
+    user_challenges = [c for c in source if str(c.get("challenger_id")) == user_id or str(c.get("opponent_id")) == user_id]
+    user_challenges = user_challenges[:limit]
     wins = sum(1 for c in user_challenges if c.get("status") == "won")
     losses = sum(1 for c in user_challenges if c.get("status") == "lost")
     total = wins + losses
@@ -248,6 +382,8 @@ def get_challenge_history():
 # ==================== GEMS ====================
 @router.post("/gems/generate-route")
 def generate_route_gems(req: GemGenerateRequest):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Gem generation unavailable in production path")
     gems = []
     for i, point in enumerate(req.route_points):
         gem_id = f"gem_{req.trip_id}_{i}_{uuid.uuid4().hex[:4]}"
@@ -261,69 +397,170 @@ def generate_route_gems(req: GemGenerateRequest):
 
 
 @router.post("/gems/collect")
-def collect_gem(req: GemCollectRequest):
+def collect_gem(req: GemCollectRequest, user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Gem collection unavailable in production path")
+    user_id = str(user.get("id") or current_user_id)
     gems = route_gems_db.get(req.trip_id, [])
     gem = next((g for g in gems if g["id"] == req.gem_id and not g["collected"]), None)
     if not gem:
         return {"success": False, "message": "Gem not found or already collected"}
     gem["collected"] = True
-    user = users_db.get(current_user_id, {})
-    multiplier = user.get("gem_multiplier", 1)
+    user_profile = _user_state(user_id)
+    multiplier = user_profile.get("gem_multiplier", 1)
     earned = gem["value"] * multiplier
-    if current_user_id in users_db:
-        users_db[current_user_id]["gems"] = user.get("gems", 0) + earned
+    new_total = user_profile.get("gems", 0) + earned
+    _persist_user_fields(user_id, {"gems": new_total})
     if req.trip_id not in collected_gems_db:
         collected_gems_db[req.trip_id] = []
     collected_gems_db[req.trip_id].append({"gem_id": req.gem_id, "value": earned})
-    return {"success": True, "data": {"gem_id": req.gem_id, "value": earned, "multiplier": multiplier, "new_total": users_db.get(current_user_id, {}).get("gems", 0)}}
+    return {"success": True, "data": {"gem_id": req.gem_id, "value": earned, "multiplier": multiplier, "new_total": new_total}}
 
 
 @router.get("/gems/trip-summary/{trip_id}")
 def get_trip_gem_summary(trip_id: str):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Gem trip summary unavailable in production path")
     collected = collected_gems_db.get(trip_id, [])
     total = route_gems_db.get(trip_id, [])
     return {"success": True, "data": {"trip_id": trip_id, "total_gems_on_route": len(total), "gems_collected": len(collected), "total_value": sum(g["value"] for g in collected), "collection_rate": round(len(collected) / max(len(total), 1) * 100, 1)}}
 
 
 @router.get("/gems/history")
-def get_gem_history():
-    user = users_db.get(current_user_id, {})
-    return {"success": True, "data": {"current_balance": user.get("gems", 0), "total_earned": user.get("gems", 0) + 500, "total_spent": 500, "recent_transactions": [{"type": "earned", "amount": 50, "source": "Trip completion", "date": datetime.now().isoformat()}, {"type": "earned", "amount": 100, "source": "Challenge won", "date": (datetime.now() - timedelta(hours=2)).isoformat()}, {"type": "spent", "amount": 500, "source": "Car skin purchase", "date": (datetime.now() - timedelta(days=1)).isoformat()}]}}
+def get_gem_history(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    try:
+        sb = get_supabase()
+        profile = sb_get_profile(user_id)
+        balance = int((profile or {}).get("gems", 0))
+
+        earned_rows = sb.table("trips").select("gems_earned, created_at").eq("profile_id", user_id).gt("gems_earned", 0).order("created_at", desc=True).limit(20).execute()
+        spent_rows = sb.table("redemptions").select("gems_cost, created_at, offer_id").eq("user_id", user_id).order("created_at", desc=True).limit(20).execute()
+
+        transactions = []
+        for r in (earned_rows.data or []):
+            transactions.append({"type": "earned", "amount": int(r.get("gems_earned", 0)), "source": "Trip completion", "date": r.get("created_at", "")})
+        for r in (spent_rows.data or []):
+            transactions.append({"type": "spent", "amount": int(r.get("gems_cost", 0)), "source": "Offer redemption", "date": r.get("created_at", "")})
+        transactions.sort(key=lambda x: x.get("date", ""), reverse=True)
+
+        total_earned = sum(t["amount"] for t in transactions if t["type"] == "earned")
+        total_spent = sum(t["amount"] for t in transactions if t["type"] == "spent")
+        return {"success": True, "data": {"current_balance": balance, "total_earned": total_earned, "total_spent": total_spent, "recent_transactions": transactions[:20]}}
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        u = _user_state(user_id)
+        return {"success": True, "data": {"current_balance": u.get("gems", 0), "total_earned": 0, "total_spent": 0, "recent_transactions": []}}
 
 
 # ==================== DRIVING SCORE ====================
 @router.get("/driving-score")
-def get_driving_score():
-    user = users_db.get(current_user_id, {})
-    base_score = user.get("safety_score", 85)
-    metrics = [
-        {"id": "speed", "name": "Speed Compliance", "score": min(100, base_score + random.randint(-5, 10)), "trend": random.choice(["up", "stable"]), "description": "Staying within speed limits"},
-        {"id": "braking", "name": "Smooth Braking", "score": min(100, base_score + random.randint(-15, 5)), "trend": random.choice(["down", "stable", "up"]), "description": "Gradual, safe braking"},
-        {"id": "acceleration", "name": "Smooth Acceleration", "score": min(100, base_score + random.randint(-8, 8)), "trend": "up", "description": "Gradual speed increases"},
-        {"id": "following", "name": "Following Distance", "score": min(100, base_score + random.randint(-3, 10)), "trend": "stable", "description": "Safe distance from other cars"},
-        {"id": "turns", "name": "Turn Signals", "score": min(100, base_score + random.randint(0, 12)), "trend": "up", "description": "Signaling before turns"},
-        {"id": "focus", "name": "Focus Time", "score": min(100, base_score + random.randint(-10, 5)), "trend": random.choice(["stable", "up"]), "description": "Minimal phone distractions"},
-    ]
-    sorted_metrics = sorted(metrics, key=lambda x: x["score"])
+def get_driving_score(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
     tip_templates = {"speed": "Try cruise control on highways.", "braking": "Start braking earlier for smoother stops.", "acceleration": "Ease into the gas pedal.", "following": "The 3-second rule is your friend!", "turns": "Keep signaling even when no one's around.", "focus": "Mount your phone for hands-free navigation!"}
-    orion_tips = [{"id": str(i + 1), "metric": m["id"], "tip": tip_templates.get(m["id"], "Keep driving safely!"), "priority": "high" if i == 0 else "medium"} for i, m in enumerate(sorted_metrics[:3])]
-    overall_score = sum(m["score"] for m in metrics) // len(metrics)
-    return {"success": True, "data": {"overall_score": overall_score, "metrics": metrics, "orion_tips": orion_tips, "last_updated": datetime.now().isoformat()}}
+    try:
+        sb = get_supabase()
+        profile = sb_get_profile(user_id) or {}
+        base_score = int(profile.get("safety_score", 0))
+
+        trips = sb.table("trips").select("safety_score, hard_braking_events, speeding_events, created_at").eq("profile_id", user_id).order("created_at", desc=True).limit(50).execute()
+        rows = trips.data or []
+
+        if not rows:
+            metrics = [
+                {"id": "speed", "name": "Speed Compliance", "score": 0, "trend": "stable", "description": "Staying within speed limits"},
+                {"id": "braking", "name": "Smooth Braking", "score": 0, "trend": "stable", "description": "Gradual, safe braking"},
+                {"id": "acceleration", "name": "Smooth Acceleration", "score": 0, "trend": "stable", "description": "Gradual speed increases"},
+                {"id": "following", "name": "Following Distance", "score": 0, "trend": "stable", "description": "Safe distance from other cars"},
+                {"id": "turns", "name": "Turn Signals", "score": 0, "trend": "stable", "description": "Signaling before turns"},
+                {"id": "focus", "name": "Focus Time", "score": 0, "trend": "stable", "description": "Minimal phone distractions"},
+            ]
+            return {"success": True, "data": {"overall_score": base_score, "metrics": metrics, "orion_tips": [], "last_updated": datetime.now().isoformat(), "no_data": True}}
+
+        avg_safety = sum(float(r.get("safety_score", 0)) for r in rows) / len(rows)
+        avg_braking = sum(int(r.get("hard_braking_events", 0)) for r in rows) / len(rows)
+        avg_speeding = sum(int(r.get("speeding_events", 0)) for r in rows) / len(rows)
+        speed_score = max(0, min(100, int(100 - avg_speeding * 10)))
+        braking_score = max(0, min(100, int(100 - avg_braking * 8)))
+
+        metrics = [
+            {"id": "speed", "name": "Speed Compliance", "score": speed_score, "trend": "stable", "description": "Staying within speed limits"},
+            {"id": "braking", "name": "Smooth Braking", "score": braking_score, "trend": "stable", "description": "Gradual, safe braking"},
+            {"id": "acceleration", "name": "Smooth Acceleration", "score": int(avg_safety), "trend": "stable", "description": "Gradual speed increases"},
+            {"id": "following", "name": "Following Distance", "score": min(100, int(avg_safety) + 5), "trend": "stable", "description": "Safe distance from other cars"},
+            {"id": "turns", "name": "Turn Signals", "score": min(100, int(avg_safety) + 3), "trend": "stable", "description": "Signaling before turns"},
+            {"id": "focus", "name": "Focus Time", "score": int(avg_safety), "trend": "stable", "description": "Minimal phone distractions"},
+        ]
+        sorted_metrics = sorted(metrics, key=lambda x: x["score"])
+        orion_tips = [{"id": str(i + 1), "metric": m["id"], "tip": tip_templates.get(m["id"], "Keep driving safely!"), "priority": "high" if i == 0 else "medium"} for i, m in enumerate(sorted_metrics[:3])]
+        overall_score = base_score or (sum(m["score"] for m in metrics) // len(metrics))
+        return {"success": True, "data": {"overall_score": overall_score, "metrics": metrics, "orion_tips": orion_tips, "last_updated": datetime.now().isoformat()}}
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        u = _user_state(user_id)
+        base_score = u.get("safety_score", 85)
+        metrics = [{"id": k, "name": k.title(), "score": base_score, "trend": "stable", "description": ""} for k in ("speed", "braking", "acceleration", "following", "turns", "focus")]
+        return {"success": True, "data": {"overall_score": base_score, "metrics": metrics, "orion_tips": [], "last_updated": datetime.now().isoformat()}}
 
 
 # ==================== WEEKLY RECAP ====================
 @router.get("/weekly-recap")
-def get_weekly_recap():
-    user = users_db.get(current_user_id, {})
-    base_trips = random.randint(8, 15)
-    base_miles = base_trips * random.uniform(10, 25)
-    stats = {
-        "total_trips": base_trips, "total_miles": round(base_miles, 1),
-        "total_time_minutes": int(base_miles * 2.5), "gems_earned": random.randint(1500, 3500),
-        "xp_earned": random.randint(10000, 20000), "safety_score_avg": user.get("safety_score", 85),
-        "safety_score_change": random.randint(-2, 5), "challenges_won": random.randint(0, 3),
-        "offers_redeemed": random.randint(2, 6), "streak_days": user.get("safe_drive_streak", 0),
-        "rank_change": random.randint(0, 12),
-        "highlights": [f"Best safety score: {min(100, user.get('safety_score', 85) + random.randint(2, 8))} on Wednesday", f"Longest trip: {random.randint(25, 60)} miles on Saturday"],
+def get_weekly_recap(user: dict = Depends(get_current_user)):
+    user_id = str(user.get("id") or current_user_id)
+    try:
+        sb = get_supabase()
+        profile = sb_get_profile(user_id) or {}
+        week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+
+        trip_res = sb.table("trips").select(
+            "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, created_at"
+        ).eq("profile_id", user_id).gte("created_at", week_ago).execute()
+        trips = trip_res.data or []
+
+        redemption_res = sb.table("redemptions").select("id").eq("user_id", user_id).gte("created_at", week_ago).execute()
+        offers_redeemed = len(redemption_res.data or [])
+
+        total_miles = sum(float(t.get("distance_miles", 0)) for t in trips)
+        total_time = sum(int(t.get("duration_minutes", 0)) for t in trips)
+        gems_earned = sum(int(t.get("gems_earned", 0)) for t in trips)
+        xp_earned = sum(int(t.get("xp_earned", 0)) for t in trips)
+        safety_scores = [float(t["safety_score"]) for t in trips if t.get("safety_score")]
+        safety_avg = int(sum(safety_scores) / len(safety_scores)) if safety_scores else int(profile.get("safety_score", 0))
+
+        best_safety = max(safety_scores) if safety_scores else 0
+        longest = max((float(t.get("distance_miles", 0)) for t in trips), default=0)
+        highlights = []
+        if best_safety:
+            highlights.append(f"Best safety score: {int(best_safety)}")
+        if longest:
+            highlights.append(f"Longest trip: {round(longest, 1)} miles")
+
+        stats = {
+            "total_trips": len(trips),
+            "total_miles": round(total_miles, 1),
+            "total_time_minutes": total_time,
+            "gems_earned": gems_earned,
+            "xp_earned": xp_earned,
+            "safety_score_avg": safety_avg,
+            "offers_redeemed": offers_redeemed,
+            "streak_days": int(profile.get("safe_drive_streak", 0)),
+            "highlights": highlights,
+        }
+        return {"success": True, "data": stats}
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        u = _user_state(user_id)
+        return {"success": True, "data": {"total_trips": 0, "total_miles": 0, "total_time_minutes": 0, "gems_earned": 0, "xp_earned": 0, "safety_score_avg": u.get("safety_score", 0), "offers_redeemed": 0, "streak_days": u.get("safe_drive_streak", 0), "highlights": []}}
+
+
+if ENVIRONMENT == "production":
+    _LEGACY_PROD_DISABLED = {
+        "/api/challenges/{challenge_id}/claim",
+        "/api/gems/generate-route",
+        "/api/gems/collect",
+        "/api/gems/trip-summary/{trip_id}",
     }
-    return {"success": True, "data": stats}
+    router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]

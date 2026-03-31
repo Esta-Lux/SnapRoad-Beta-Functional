@@ -1,4 +1,4 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, Depends, Query
 from fastapi.responses import Response, JSONResponse
 from datetime import datetime, timedelta
 import json
@@ -9,6 +9,29 @@ from services.telemetry_service import telemetry_service
 
 router = APIRouter(tags=["Webhooks & WebSocket"])
 logger = logging.getLogger(__name__)
+
+
+async def _require_ws_token(websocket: WebSocket) -> dict:
+    token = websocket.query_params.get("token")
+    if not token:
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        # Browser-compatible alternative: send token in subprotocol as "bearer.<jwt>"
+        protocols = websocket.headers.get("sec-websocket-protocol", "")
+        for proto in [p.strip() for p in protocols.split(",") if p.strip()]:
+            if proto.startswith("bearer."):
+                token = proto[len("bearer."):].strip()
+                break
+    if not token:
+        await websocket.close(code=1008, reason="Missing token")
+        return {}
+    try:
+        return decode_token(token)
+    except Exception:
+        await websocket.close(code=1008, reason="Invalid token")
+        return {}
 
 # ==================== STRIPE WEBHOOKS ====================
 
@@ -76,12 +99,21 @@ def _handle_checkout_session_completed(session: dict) -> None:
                 })
                 logger.info("Partner %s boost %s for offer %s", partner_id, boost_type, offer_id)
 
-    # Driver / mobile subscription (metadata from /api/payments/checkout/session)
+    # Driver / mobile checkout (metadata from /api/payments/checkout/session)
     user_id = (meta.get("user_id") or "").strip()
     plan_id = (meta.get("plan_id") or "").strip()
-    if user_id and user_id != "anonymous" and plan_id in ("premium", "family") and mode == "subscription":
-        sb_update_profile(user_id, {"plan": plan_id, "is_premium": True})
-        logger.info("Profile %s upgraded to %s", user_id, plan_id)
+    customer = str(session.get("customer") or "").strip()
+    if user_id and user_id != "anonymous":
+        profile_updates: dict = {}
+        if customer.startswith("cus_"):
+            profile_updates["stripe_customer_id"] = customer
+        if plan_id in ("premium", "family") and mode == "subscription":
+            profile_updates["plan"] = plan_id
+            profile_updates["is_premium"] = True
+        if profile_updates:
+            sb_update_profile(user_id, profile_updates)
+            if "plan" in profile_updates:
+                logger.info("Profile %s upgraded to %s", user_id, plan_id)
 
 
 @router.post("/api/webhooks/stripe")
@@ -136,6 +168,12 @@ async def stripe_webhook(request: Request):
 async def partner_websocket(websocket: WebSocket, partner_id: str):
     from services.websocket_manager import ws_manager
     import uuid
+    payload = await _require_ws_token(websocket)
+    if not payload:
+        return
+    if payload.get("role") != "partner" or str(payload.get("partner_id") or "") != str(partner_id):
+        await websocket.close(code=1008, reason="Partner access required")
+        return
     connection_id = f"conn_{uuid.uuid4().hex[:8]}"
     try:
         await ws_manager.connect_partner(websocket, partner_id, connection_id)
@@ -158,6 +196,12 @@ async def partner_websocket(websocket: WebSocket, partner_id: str):
 @router.websocket("/api/ws/customer/{customer_id}")
 async def customer_websocket(websocket: WebSocket, customer_id: str):
     from services.websocket_manager import ws_manager
+    payload = await _require_ws_token(websocket)
+    if not payload:
+        return
+    if str(payload.get("sub") or "") != str(customer_id):
+        await websocket.close(code=1008, reason="Customer access denied")
+        return
     try:
         await ws_manager.connect_customer(websocket, customer_id)
         while True:
@@ -175,7 +219,7 @@ async def customer_websocket(websocket: WebSocket, customer_id: str):
 
 
 @router.get("/api/ws/status/{partner_id}")
-async def get_ws_status(partner_id: str):
+async def get_ws_status(partner_id: str, admin: dict = Depends(require_admin)):
     from services.websocket_manager import ws_manager
     count = ws_manager.get_partner_connection_count(partner_id)
     return {"success": True, "active_connections": count, "partner_id": partner_id}
@@ -238,6 +282,12 @@ async def admin_moderation_ws(websocket: WebSocket):
     import uuid
     token = websocket.query_params.get("token")
     if not token:
+        protocols = websocket.headers.get("sec-websocket-protocol", "")
+        for proto in [p.strip() for p in protocols.split(",") if p.strip()]:
+            if proto.startswith("bearer."):
+                token = proto[len("bearer."):].strip()
+                break
+    if not token:
         await websocket.close(code=1008, reason="Missing token")
         return
     try:
@@ -295,7 +345,7 @@ async def simulate_incident(_admin: dict = Depends(require_admin)):
 
 
 @router.get("/api/admin/moderation/status")
-def moderation_status():
+def moderation_status(_admin: dict = Depends(require_admin)):
     from services.websocket_manager import ws_manager
     return {
         "success": True,
@@ -313,6 +363,12 @@ async def admin_monitor_ws(websocket: WebSocket):
     from services.websocket_manager import ws_manager
     import uuid
     token = websocket.query_params.get("token")
+    if not token:
+        protocols = websocket.headers.get("sec-websocket-protocol", "")
+        for proto in [p.strip() for p in protocols.split(",") if p.strip()]:
+            if proto.startswith("bearer."):
+                token = proto[len("bearer."):].strip()
+                break
     if not token:
         await websocket.close(code=1008, reason="Missing token")
         return
@@ -352,14 +408,17 @@ async def admin_monitor_ws(websocket: WebSocket):
 
 
 @router.get("/api/admin/monitor/events")
-def get_monitor_events(limit: int = 100, _admin: dict = Depends(require_admin)):
+def get_monitor_events(
+    limit: int = Query(default=100, ge=1, le=100),
+    _admin: dict = Depends(require_admin),
+):
     """Pull latest telemetry events (fallback for UI reloads)."""
     return {"success": True, "data": telemetry_service.snapshot(limit=limit)}
 
 
 @router.get("/api/admin/monitor/events/export")
 def export_monitor_events(
-    limit: int = 500,
+    limit: int = Query(default=500, ge=1, le=1000),
     format: str = "json",
     _admin: dict = Depends(require_admin),
 ):

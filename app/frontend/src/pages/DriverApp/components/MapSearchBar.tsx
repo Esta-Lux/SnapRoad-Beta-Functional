@@ -77,20 +77,23 @@ export default function MapSearchBar({ onSelect, onNavigate, userLocation }: Map
   const [activePOI, setActivePOI] = useState<POICategory | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchGenRef = useRef(0)
 
-  const search = useCallback(async (q: string) => {
+  const search = useCallback(async (q: string, gen: number) => {
     if (q.length < 2) { setResults([]); return }
     setLoading(true)
 
-    // 1. Google Places autocomplete via backend
     try {
       const res = await withTimeout(placesAutocomplete(q, userLocation), 5000)
+      if (searchGenRef.current !== gen) return
       if (res.length > 0) { setResults(res); setLoading(false); return }
     } catch { /* fall through */ }
 
-    // 2. Backend /api/map/search fallback
+    if (searchGenRef.current !== gen) return
+
     try {
       const fallback = await fetch(`${getApiBaseUrl()}/api/map/search?q=${encodeURIComponent(q)}`, { credentials: 'include' })
+      if (searchGenRef.current !== gen) return
       if (fallback.ok) {
         const data = await fallback.json()
         const list = Array.isArray(data.data) ? data.data : data.results ?? []
@@ -98,14 +101,16 @@ export default function MapSearchBar({ onSelect, onNavigate, userLocation }: Map
       }
     } catch { /* exhausted */ }
 
-    setLoading(false)
+    if (searchGenRef.current === gen) setLoading(false)
   }, [userLocation])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (query.length >= 2) {
-      debounceRef.current = setTimeout(() => search(query), 300)
+      const gen = ++searchGenRef.current
+      debounceRef.current = setTimeout(() => search(query, gen), 300)
     } else {
+      searchGenRef.current++
       setResults([])
     }
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }

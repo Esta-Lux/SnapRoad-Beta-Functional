@@ -1,4 +1,4 @@
-# Python 3.9: python-multipart 0.0.21+ requires Python >=3.10 — use 0.0.20 on 3.9
+# Python 3.13+
 redis
 fastapi==0.110.1
 uvicorn==0.25.0

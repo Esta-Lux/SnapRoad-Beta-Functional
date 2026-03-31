@@ -19,9 +19,20 @@ export interface User {
   totalTrips: number;
   badges: number;
   rank: number;
+  /** Total XP from profile API */
+  xp?: number;
   plan?: string;
   gem_multiplier?: number;
   vehicle_height_meters?: number;
+  /** From GET /api/user/profile — server-computed gamification score */
+  snapRoadScore?: number;
+  snapRoadTier?: string;
+  snapRoadBreakdown?: {
+    safetyPts: number;
+    streakPts: number;
+    milesPts: number;
+    gemsPts: number;
+  };
 }
 
 export interface ApiUser {
@@ -129,8 +140,10 @@ export interface Challenge {
   description: string;
   progress: number;
   goal: number;
+  target?: number;
   gems: number;
   completed: boolean;
+  claimed?: boolean;
   type?: string;
 }
 
@@ -198,7 +211,7 @@ export interface Coordinate {
 }
 
 export interface Incident {
-  id: number;
+  id: string | number;
   type: string;
   lat: number;
   lng: number;

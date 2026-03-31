@@ -1,0 +1,47 @@
+---
+description: SnapRoad Expo mobile app conventions -- Reanimated v4, gesture handler v2, Mapbox, safe area
+globs: app/mobile/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Mobile App Rules
+
+## Animations & Gestures
+
+Reanimated v4 -- these are REMOVED and will crash:
+- `useAnimatedGestureHandler` -- use `Gesture.Pan()` + `GestureDetector`
+- `useAnimatedScrollHandler` -- use `useScrollViewOffset`
+
+```tsx
+// CORRECT (Reanimated v4 + gesture-handler v2)
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+
+const pan = Gesture.Pan()
+  .onUpdate((e) => { translateY.value = e.translationY; })
+  .onEnd(() => { translateY.value = withSpring(0); });
+
+<GestureDetector gesture={pan}>
+  <Animated.View />
+</GestureDetector>
+```
+
+## Forbidden Imports
+
+- `expo-blur` -- not installed, crashes on import
+- `useAnimatedGestureHandler` from `react-native-reanimated` -- removed in v4
+- `PanGestureHandler` from `react-native-gesture-handler` -- deprecated, use `Gesture.Pan()` + `GestureDetector`
+
+## Mapbox
+
+- Use `MapboxGL.MarkerView` for custom markers (live RN view, sharp rendering)
+- Do NOT use `MapboxGL.PointAnnotation` for custom views (rasterizes to blurry bitmap)
+- `BuildingsLayer` sourceID="composite" may not exist in all styles -- wrap in try/catch
+
+## Safe Area
+
+Every screen and bottom sheet must use `useSafeAreaInsets()` for top/bottom padding.
+Never hardcode pixel values for notch or home indicator spacing.
+
+## Common Modal
+
+Use `src/components/common/Modal.tsx` for bottom sheets. It handles safe area, spring animation, and backdrop dismiss automatically. Do not create inline RN `Modal` with manual overlay styles.

@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, Header
 from typing import Optional
 from datetime import datetime, timedelta
 from models.schemas import (
@@ -148,12 +148,16 @@ def update_partner_plan(plan_update: PartnerPlanUpdate, partner_id: str = "defau
 
 # ==================== LOCATIONS ====================
 @router.get("/partner/locations")
-def get_partner_locations(partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def get_partner_locations(
+    partner_id: str = "default_partner",
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(require_partner),
+):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
     plan_key = partner.get("plan", "starter") if partner else "starter"
     max_locs = PLAN_LOCATION_LIMITS.get(plan_key, 5)
-    locations = sb_get_partner_locations(owned_partner_id)
+    locations = sb_get_partner_locations(owned_partner_id)[:limit]
     return {
         "success": True,
         "data": locations,
@@ -261,9 +265,13 @@ def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_p
 
 
 @router.get("/partner/offers")
-def get_partner_offers(partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def get_partner_offers(
+    partner_id: str = "default_partner",
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(require_partner),
+):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
-    offers = sb_get_offers_by_partner(owned_partner_id)
+    offers = sb_get_offers_by_partner(owned_partner_id)[:limit]
     return {"success": True, "data": offers, "count": len(offers)}
 
 
@@ -346,12 +354,16 @@ def create_offer_boost(boost_req: BoostRequest, partner_id: str = "default_partn
 
 
 @router.get("/partner/boosts/active")
-def get_active_boosts(partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def get_active_boosts(
+    partner_id: str = "default_partner",
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(require_partner),
+):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     boosts = sb_get_boosts(owned_partner_id)
     now = datetime.now()
     active = []
-    for b in boosts:
+    for b in boosts[:limit]:
         ends = b.get("ends_at")
         is_active = False
         hours_remaining = 0
@@ -408,7 +420,7 @@ def add_partner_credits(credits_req: BoostCreditsRequest, partner_id: str = "def
 
 # ==================== PARTNER V2 ENDPOINTS ====================
 @router.post("/partner/v2/login")
-async def partner_login_v2(request: PartnerLoginRequest):
+def partner_login_v2(request: PartnerLoginRequest):
     user, _login_err = sb_login_user(request.email, request.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -431,8 +443,7 @@ async def partner_login_v2(request: PartnerLoginRequest):
 
 
 @router.post("/partner/v2/register")
-async def partner_register_v2(request: PartnerRegisterRequest):
-    import hashlib
+def partner_register_v2(request: PartnerRegisterRequest):
     existing = sb_get_user_by_email(request.email)
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -442,7 +453,6 @@ async def partner_register_v2(request: PartnerRegisterRequest):
         "id": str(user["id"]),
         "business_name": request.business_name,
         "email": request.email,
-        "password_hash": hashlib.sha256(request.password.encode()).hexdigest(),
         "plan": "starter",
         "is_founders": True,
         "status": "active",
@@ -454,7 +464,7 @@ async def partner_register_v2(request: PartnerRegisterRequest):
 
 
 @router.get("/partner/v2/profile/{partner_id}")
-async def get_partner_profile_v2(partner_id: str, user: dict = Depends(require_partner)):
+def get_partner_profile_v2(partner_id: str, user: dict = Depends(require_partner)):
     _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
     if not partner:
@@ -475,15 +485,19 @@ async def get_partner_profile_v2(partner_id: str, user: dict = Depends(require_p
 
 
 @router.get("/partner/v2/team/{partner_id}")
-async def get_team_members(partner_id: str, user: dict = Depends(require_partner)):
+def get_team_members(
+    partner_id: str,
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(require_partner),
+):
     _require_owned_partner_id(user, partner_id)
     from services.partner_service import partner_service
-    team = partner_service.get_team_members(partner_id)
+    team = partner_service.get_team_members(partner_id)[:limit]
     return {"success": True, "data": team, "count": len(team)}
 
 
 @router.post("/partner/v2/team/{partner_id}/invite")
-async def invite_team_member(partner_id: str, request: TeamInviteRequest, user: dict = Depends(require_partner)):
+def invite_team_member(partner_id: str, request: TeamInviteRequest, user: dict = Depends(require_partner)):
     _require_owned_partner_id(user, partner_id)
     from services.partner_service import partner_service
     result = partner_service.invite_team_member(
@@ -493,8 +507,12 @@ async def invite_team_member(partner_id: str, request: TeamInviteRequest, user: 
 
 
 @router.put("/partner/v2/team/{member_id}/role")
-async def update_member_role(member_id: str, role: str):
+def update_member_role(member_id: str, role: str, user: dict = Depends(require_partner)):
     from services.partner_service import partner_service
+    member = partner_service.get_team_member(member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+    _require_owned_partner_id(user, member.get("partner_id"))
     success = partner_service.update_team_member_role(member_id, role)
     if not success:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -502,8 +520,12 @@ async def update_member_role(member_id: str, role: str):
 
 
 @router.delete("/partner/v2/team/{member_id}")
-async def revoke_team_access(member_id: str):
+def revoke_team_access(member_id: str, user: dict = Depends(require_partner)):
     from services.partner_service import partner_service
+    member = partner_service.get_team_member(member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+    _require_owned_partner_id(user, member.get("partner_id"))
     success = partner_service.revoke_team_access(member_id)
     if not success:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -511,9 +533,13 @@ async def revoke_team_access(member_id: str):
 
 
 @router.get("/partner/v2/referrals/{partner_id}")
-async def get_referrals(partner_id: str, user: dict = Depends(require_partner)):
+def get_referrals(
+    partner_id: str,
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(require_partner),
+):
     _require_owned_partner_id(user, partner_id)
-    referrals = sb_get_partner_referrals(partner_id)
+    referrals = sb_get_partner_referrals(partner_id)[:limit]
     total = len(referrals)
     credits_earned = sum(float(r.get("credits_awarded", 0)) for r in referrals)
     return {
@@ -529,7 +555,13 @@ async def get_referrals(partner_id: str, user: dict = Depends(require_partner)):
 
 
 @router.post("/partner/v2/referrals/{partner_id}")
-async def send_referral(partner_id: str, request: ReferralRequest, user: dict = Depends(require_partner)):
+def send_referral(partner_id: str, request: ReferralRequest, user: dict = Depends(require_partner)):
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "partner_referrals_enabled",
+        "Partner referrals are temporarily disabled.",
+    )
     _require_owned_partner_id(user, partner_id)
     ref = sb_create_partner_referral({
         "referrer_partner_id": partner_id,
@@ -541,7 +573,7 @@ async def send_referral(partner_id: str, request: ReferralRequest, user: dict = 
 
 
 @router.post("/partner/v2/credits/{partner_id}/use")
-async def use_credits(partner_id: str, request: CreditUseRequest, user: dict = Depends(require_partner)):
+def use_credits(partner_id: str, request: CreditUseRequest, user: dict = Depends(require_partner)):
     _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
     if not partner:
@@ -559,12 +591,17 @@ async def use_credits(partner_id: str, request: CreditUseRequest, user: dict = D
 
 
 @router.post("/partner/v2/redeem")
-async def redeem_offer(request: QRRedemptionRequest, background_tasks: BackgroundTasks):
+def redeem_offer(
+    request: QRRedemptionRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(require_partner),
+):
     from services.partner_service import partner_service
     from services.websocket_manager import ws_manager
+    partner_id = _require_owned_partner_id(user)
     result = partner_service.validate_redemption(request.qr_data, request.staff_id)
     if result["success"]:
-        background_tasks.add_task(ws_manager.notify_partner_redemption, "partner_001", result)
+        background_tasks.add_task(ws_manager.notify_partner_redemption, partner_id, result)
         customer_id = request.qr_data.get("customerId")
         if customer_id:
             background_tasks.add_task(ws_manager.notify_customer_redeemed, customer_id, result)
@@ -573,7 +610,7 @@ async def redeem_offer(request: QRRedemptionRequest, background_tasks: Backgroun
 
 # ==================== TEAM LINKS ====================
 @router.post("/partner/v2/team-link/generate")
-async def generate_team_link(partner_id: str, label: str = "Team Link", user: dict = Depends(require_partner)):
+def generate_team_link(partner_id: str, label: str = "Team Link", user: dict = Depends(require_partner)):
     """Generate a shareable QR scan link for partner team members."""
     _require_owned_partner_id(user, partner_id)
     import secrets
@@ -609,33 +646,54 @@ async def generate_team_link(partner_id: str, label: str = "Team Link", user: di
 
 
 @router.get("/partner/v2/team-links/{partner_id}")
-async def list_team_links(partner_id: str, user: dict = Depends(require_partner)):
+def list_team_links(
+    partner_id: str,
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(require_partner),
+):
     _require_owned_partner_id(user, partner_id)
     from services.supabase_service import _sb
     try:
         result = _sb().table("partner_team_links").select("*").eq("partner_id", partner_id).eq("is_active", True).execute()
-        links = result.data or []
+        links = (result.data or [])[:limit]
     except Exception:
         links = []
     return {"success": True, "data": links, "count": len(links)}
 
 
 @router.delete("/partner/v2/team-link/{link_id}")
-async def revoke_team_link(link_id: str):
+def revoke_team_link(link_id: str, user: dict = Depends(require_partner)):
     from services.supabase_service import _sb
+    _require_owned_partner_id(user)
     try:
+        row = _sb().table("partner_team_links").select("id,partner_id").eq("id", link_id).maybe_single().execute()
+        link = row.data if row else None
+        if not link:
+            raise HTTPException(status_code=404, detail="Team link not found")
+        _require_owned_partner_id(user, link.get("partner_id"))
         _sb().table("partner_team_links").update({"is_active": False}).eq("id", link_id).execute()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning(f"Revoke team link error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to revoke team link")
     return {"success": True, "message": "Team link revoked"}
 
 
 @router.post("/partner/v2/scan/validate")
-async def validate_scan(token: str, qr_data: str):
+def validate_scan(payload: dict, authorization: Optional[str] = Header(default=None)):
     """Validate a QR code scanned via a team link. Token auth instead of partner login."""
     from services.supabase_service import _sb
     import json
 
+    token = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        token = str(payload.get("team_token") or "").strip()
+    qr_data = payload.get("qr_data")
+    if not token:
+        raise HTTPException(status_code=403, detail="Missing team token")
     # Verify the team link token
     try:
         link = _sb().table("partner_team_links").select("*").eq("token", token).eq("is_active", True).maybe_single().execute()
@@ -683,14 +741,18 @@ async def validate_scan(token: str, qr_data: str):
 
 
 @router.get("/partner/v2/redemptions/{partner_id}")
-async def get_recent_redemptions(partner_id: str, limit: int = 10, user: dict = Depends(require_partner)):
+def get_recent_redemptions(
+    partner_id: str,
+    limit: int = Query(default=10, ge=1, le=100),
+    user: dict = Depends(require_partner),
+):
     _require_owned_partner_id(user, partner_id)
     redemptions = sb_get_redemptions_by_partner(partner_id, limit)
     return {"success": True, "data": redemptions, "count": len(redemptions)}
 
 
 @router.get("/partner/v2/fees/{partner_id}")
-async def get_partner_fees(partner_id: str, user: dict = Depends(require_partner)):
+def get_partner_fees(partner_id: str, user: dict = Depends(require_partner)):
     _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
     if not partner:
@@ -711,7 +773,7 @@ async def get_partner_fees(partner_id: str, user: dict = Depends(require_partner
 
 
 @router.get("/partner/v2/analytics/{partner_id}")
-async def get_partner_analytics(partner_id: str, user: dict = Depends(require_partner)):
+def get_partner_analytics(partner_id: str, user: dict = Depends(require_partner)):
     _require_owned_partner_id(user, partner_id)
     offers = sb_get_offers_by_partner(partner_id)
     total_redemptions = sum(o.get("redemption_count", 0) or 0 for o in offers)
@@ -733,7 +795,11 @@ async def get_partner_analytics(partner_id: str, user: dict = Depends(require_pa
 
 
 @router.get("/partner/v2/credits/history/{partner_id}")
-async def get_credit_history(partner_id: str, user: dict = Depends(require_partner)):
+def get_credit_history(
+    partner_id: str,
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(require_partner),
+):
     """Credit transaction history from boosts, referrals, and bonuses."""
     _require_owned_partner_id(user, partner_id)
     boosts = sb_get_boosts(partner_id)
@@ -761,10 +827,11 @@ async def get_credit_history(partner_id: str, user: dict = Depends(require_partn
 
     total_earned = sum(h["amount"] for h in history if h["amount"] > 0)
     total_spent = abs(sum(h["amount"] for h in history if h["amount"] < 0))
+    history = history[:limit]
     return {
         "success": True,
         "data": {
-            "history": history[:20],
+            "history": history,
             "total_earned": total_earned,
             "total_spent": total_spent,
         },
@@ -772,7 +839,7 @@ async def get_credit_history(partner_id: str, user: dict = Depends(require_partn
 
 
 @router.get("/partner/v2/referrals/leaderboard")
-async def get_referral_leaderboard():
+def get_referral_leaderboard(limit: int = Query(default=10, ge=1, le=100)):
     """Top referrers across all partners."""
     partners = sb_get_partners(limit=100)
     leaderboard = []
@@ -787,24 +854,31 @@ async def get_referral_leaderboard():
                 "partner_id": p["id"],
             })
     leaderboard.sort(key=lambda x: x["referrals"], reverse=True)
-    for i, entry in enumerate(leaderboard[:10]):
+    for i, entry in enumerate(leaderboard[:limit]):
         entry["rank"] = i + 1
         badge = None
         if i == 0: badge = "gold"
         elif i == 1: badge = "silver"
         elif i == 2: badge = "bronze"
         entry["badge"] = badge
-    return {"success": True, "data": leaderboard[:10]}
+    return {"success": True, "data": leaderboard[:limit]}
 
 
 # ==================== STRIPE PAYMENT ENDPOINTS ====================
 @router.post("/partner/v2/subscribe")
-async def stripe_subscribe(
+def stripe_subscribe(
     partner_id: str = "default_partner",
     plan: str = "starter",
     portal_origin: Optional[str] = Query(None, description="Partner app origin for Stripe return URLs"),
+    user: dict = Depends(require_partner),
 ):
     """Create a Stripe Checkout session for plan subscription."""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "partner_payments_enabled",
+        "Partner billing and payments are temporarily disabled.",
+    )
     from config import (
         STRIPE_SECRET_KEY,
         STRIPE_PARTNER_STARTER_PRICE_ID,
@@ -812,6 +886,7 @@ async def stripe_subscribe(
     )
     if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
         return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
     try:
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
@@ -839,11 +914,12 @@ async def stripe_subscribe(
                 },
                 "quantity": 1,
             }]
+        owned_partner_id = _require_owned_partner_id(user, partner_id)
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="subscription",
             line_items=line_items,
-            metadata={"partner_id": partner_id, "plan": plan},
+            metadata={"partner_id": owned_partner_id, "plan": plan},
             success_url=f"{base}/portal/partner?payment=success",
             cancel_url=f"{base}/portal/partner?payment=cancelled",
         )
@@ -852,20 +928,28 @@ async def stripe_subscribe(
         return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
     except Exception as e:
         logger.error(f"Stripe subscribe error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Unable to create subscription checkout session")
 
 
 @router.post("/partner/v2/boosts/purchase")
-async def stripe_boost_purchase(
+def stripe_boost_purchase(
     partner_id: str = "default_partner",
     offer_id: str = "",
     boost_type: str = "basic",
     portal_origin: Optional[str] = Query(None),
+    user: dict = Depends(require_partner),
 ):
     """Create a Stripe payment intent for a boost purchase."""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "partner_payments_enabled",
+        "Partner payments are temporarily disabled.",
+    )
     from config import STRIPE_SECRET_KEY
     if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
         return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
     try:
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
@@ -873,6 +957,7 @@ async def stripe_boost_purchase(
         if not boost_info:
             raise HTTPException(status_code=400, detail="Invalid boost type")
         base = _resolve_partner_portal_base(portal_origin)
+        owned_partner_id = _require_owned_partner_id(user, partner_id)
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="payment",
@@ -884,7 +969,7 @@ async def stripe_boost_purchase(
                 },
                 "quantity": 1,
             }],
-            metadata={"partner_id": partner_id, "offer_id": offer_id, "boost_type": boost_type},
+            metadata={"partner_id": owned_partner_id, "offer_id": offer_id, "boost_type": boost_type},
             success_url=f"{base}/portal/partner?boost=success",
             cancel_url=f"{base}/portal/partner?boost=cancelled",
         )
@@ -893,23 +978,34 @@ async def stripe_boost_purchase(
         return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
     except Exception as e:
         logger.error(f"Stripe boost error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Unable to create boost checkout session")
 
 
 @router.post("/partner/v2/credits/purchase")
-async def stripe_credits_purchase(
+def stripe_credits_purchase(
     partner_id: str = "default_partner",
     amount: float = 50.0,
     portal_origin: Optional[str] = Query(None),
+    user: dict = Depends(require_partner),
 ):
     """Create a Stripe Checkout session to buy credits."""
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "partner_payments_enabled",
+        "Partner billing is temporarily disabled.",
+    )
     from config import STRIPE_SECRET_KEY
     if not STRIPE_SECRET_KEY or STRIPE_SECRET_KEY.startswith("sk_test_your"):
         return {"success": False, "message": "Stripe not configured. Set STRIPE_SECRET_KEY in .env"}
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    if amount <= 0 or amount > 10000:
+        raise HTTPException(status_code=400, detail="Invalid credits amount")
     try:
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
         base = _resolve_partner_portal_base(portal_origin)
+        owned_partner_id = _require_owned_partner_id(user, partner_id)
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="payment",
@@ -921,7 +1017,7 @@ async def stripe_credits_purchase(
                 },
                 "quantity": 1,
             }],
-            metadata={"partner_id": partner_id, "credits_amount": str(amount)},
+            metadata={"partner_id": owned_partner_id, "credits_amount": str(amount)},
             success_url=f"{base}/portal/partner?credits=success",
             cancel_url=f"{base}/portal/partner?credits=cancelled",
         )
@@ -930,4 +1026,4 @@ async def stripe_credits_purchase(
         return {"success": False, "message": "stripe package not installed. Run: pip install stripe"}
     except Exception as e:
         logger.error(f"Stripe credits error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Unable to create credits checkout session")

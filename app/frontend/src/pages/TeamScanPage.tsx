@@ -24,13 +24,20 @@ export default function TeamScanPage() {
 
   const pathParts = window.location.pathname.split('/')
   const partnerId = pathParts[2] || ''
-  const token = pathParts[3] || ''
+  const tokenRef = useRef(pathParts[3] || sessionStorage.getItem('snaproad_team_token') || '')
+  const token = tokenRef.current
 
   useEffect(() => {
+    // Remove token from the visible URL after first render.
+    if (partnerId && token) {
+      sessionStorage.setItem('snaproad_team_token', token)
+      window.history.replaceState({}, '', `/scan/${partnerId}`)
+    }
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop())
       }
+      sessionStorage.removeItem('snaproad_team_token')
     }
   }, [])
 
@@ -61,8 +68,13 @@ export default function TeamScanPage() {
   const validateQr = async (qrData: string) => {
     stopCamera()
     try {
-      const res = await fetch(`${API_URL}/api/partner/v2/scan/validate?token=${token}&qr_data=${encodeURIComponent(qrData)}`, {
+      const res = await fetch(`${API_URL}/api/partner/v2/scan/validate`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ qr_data: qrData }),
       })
       const data = await res.json()
       if (data.success) {

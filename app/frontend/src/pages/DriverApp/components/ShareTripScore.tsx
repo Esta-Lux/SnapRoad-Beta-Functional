@@ -17,7 +17,8 @@ interface TripSummary {
 interface ShareTripScoreProps {
   isOpen: boolean
   onClose: () => void
-  tripData: TripSummary | null
+  /** Backend may return a partial trip summary; we coerce fields when rendering. */
+  tripData: TripSummary | Record<string, unknown> | null
   userName: string
   userLevel: number
 }
@@ -38,11 +39,13 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
 
   if (!isOpen || !tripData) return null
 
+  const t = tripData as TripSummary
+
   const shareText = `🚗 Just completed a trip with SnapRoad!\n\n` +
-    `📍 ${tripData.origin} → ${tripData.destination}\n` +
-    `🛡️ Safety Score: ${tripData.safety_score}\n` +
-    `💎 +${tripData.gems_earned} gems earned\n` +
-    `⭐ +${tripData.xp_earned} XP\n\n` +
+    `📍 ${t.origin} → ${t.destination}\n` +
+    `🛡️ Safety Score: ${t.safety_score}\n` +
+    `💎 +${t.gems_earned} gems earned\n` +
+    `⭐ +${t.xp_earned} XP\n\n` +
     `Drive safe with #SnapRoad 🚀`
 
   const handleCopyText = () => {
@@ -62,7 +65,7 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
     handleCopyText()
   }
 
-  const score = Number(tripData.safety_score) ?? 0
+  const score = Number(t.safety_score) || 0
   const scoreColor = score >= 90 ? 'text-emerald-400' : score >= 70 ? 'text-amber-400' : 'text-red-400'
 
   return (
@@ -100,8 +103,8 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
           <div className="flex items-center gap-3">
             <Route className="text-blue-500" size={20} />
             <div className="flex-1">
-              <p className={`font-medium ${textPrimary}`}>{tripData.origin}</p>
-              <p className={`text-sm ${textMuted}`}>to {tripData.destination}</p>
+              <p className={`font-medium ${textPrimary}`}>{t.origin}</p>
+              <p className={`text-sm ${textMuted}`}>to {t.destination}</p>
             </div>
           </div>
         </div>
@@ -116,18 +119,18 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
                 stroke={score >= 90 ? '#10b981' : score >= 70 ? '#f59e0b' : '#ef4444'}
                 strokeWidth="8" 
                 fill="none" 
-                strokeDasharray={`${((Number(tripData.safety_score) ?? 0) / 100) * 352} 352`} 
+                strokeDasharray={`${((Number(t.safety_score) || 0) / 100) * 352} 352`} 
                 strokeLinecap="round"
                 className="transition-all duration-1000"
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className={`text-4xl font-bold ${scoreColor}`}>{Number(tripData.safety_score) ?? 0}</span>
+              <span className={`text-4xl font-bold ${scoreColor}`}>{Number(t.safety_score) || 0}</span>
               <span className="text-slate-400 text-xs">Safety Score</span>
             </div>
           </div>
 
-          {tripData.is_safe_drive && (
+          {t.is_safe_drive && (
             <div className="inline-flex items-center gap-2 bg-emerald-500/20 text-emerald-400 px-4 py-2 rounded-full text-sm font-medium mb-4">
               <Shield size={16} />
               Safe Drive!
@@ -138,17 +141,17 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
         <div className="px-6 pb-6 grid grid-cols-3 gap-3">
           <div className={`${statCardBg} rounded-xl p-3 text-center border ${isLight ? 'border-slate-200' : 'border-slate-700'}`}>
             <Route size={18} className="text-blue-500 mx-auto mb-1" />
-            <p className={`font-bold ${textPrimary}`}>{(Number(tripData.distance) ?? 0).toFixed(1)}</p>
+            <p className={`font-bold ${textPrimary}`}>{(Number(t.distance) || 0).toFixed(1)}</p>
             <p className={`text-xs ${textMuted}`}>miles</p>
           </div>
           <div className={`${statCardBg} rounded-xl p-3 text-center border ${isLight ? 'border-slate-200' : 'border-slate-700'}`}>
             <Clock size={18} className="text-purple-500 mx-auto mb-1" />
-            <p className={`font-bold ${textPrimary}`}>{Number(tripData.duration) ?? 0}</p>
+            <p className={`font-bold ${textPrimary}`}>{Number(t.duration) || 0}</p>
             <p className={`text-xs ${textMuted}`}>mins</p>
           </div>
           <div className={`${statCardBg} rounded-xl p-3 text-center border ${isLight ? 'border-slate-200' : 'border-slate-700'}`}>
             <Gem size={18} className="text-cyan-500 mx-auto mb-1" />
-            <p className={`font-bold ${textPrimary}`}>+{Number(tripData.gems_earned) ?? 0}</p>
+            <p className={`font-bold ${textPrimary}`}>+{Number(t.gems_earned) || 0}</p>
             <p className={`text-xs ${textMuted}`}>gems</p>
           </div>
         </div>
@@ -160,7 +163,7 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
               <Zap className="text-blue-400" size={18} />
               <span className="text-blue-300 text-sm">XP Earned</span>
             </div>
-            <span className="text-white font-bold">+{Number(tripData.xp_earned) ?? 0}</span>
+            <span className="text-white font-bold">+{Number(tripData.xp_earned) || 0}</span>
           </div>
         </div>
 
@@ -169,7 +172,7 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
             <p className={`font-medium ${textPrimary}`}>{userName}</p>
             <p className={`text-xs ${textMuted}`}>Level {userLevel}</p>
           </div>
-          <p className={`text-xs ${textMuted}`}>{tripData.date}</p>
+          <p className={`text-xs ${textMuted}`}>{t.date}</p>
         </div>
       </div>
 

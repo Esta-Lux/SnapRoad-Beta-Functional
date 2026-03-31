@@ -46,15 +46,16 @@ def _verify_login(sb, uid: str):
         print("  -> password reset done")
     except Exception as admin_err:
         print(f"  -> Admin API password reset failed: {admin_err}")
-        print("  -> NOTE: You may need to use the service_role key in SUPABASE_SECRET_KEY")
+        print("  -> NOTE: Use the service_role secret in SUPABASE_SERVICE_ROLE_KEY (not the anon key)")
         print("  -> The profile has been created/updated. Try logging in with the password.")
 
 
 def _upsert_profile(sb, uid: str):
-    import hashlib
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     profile_data = {
         "id": uid,
-        "password_hash": hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest(),
+        "password_hash": pwd_context.hash(ADMIN_PASSWORD),
         **ADMIN_PROFILE
     }
     sb.table("profiles").upsert(profile_data).execute()

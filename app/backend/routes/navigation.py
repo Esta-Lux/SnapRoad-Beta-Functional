@@ -1,15 +1,27 @@
-from fastapi import APIRouter, Query, Body
+from fastapi import APIRouter, Query, Body, Depends, HTTPException
+from starlette.requests import Request
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict, Tuple
 from datetime import datetime, timedelta
+import logging
 import random, math
 import httpx
+from limiter import limiter
 from models.schemas import NavigationRequest, Location, Route, Widget
 from services.mock_data import (
     saved_locations, saved_routes, widget_settings, MAP_LOCATIONS,
-    road_reports_db, current_user_id, users_db,
+    road_reports_db, users_db,
 )
-from config import CAMERAS_API_KEY, CAMERAS_API_URL, CAMERAS_API_KEY_AS_HEADER
+from config import (
+    CAMERAS_API_KEY,
+    CAMERAS_API_URL,
+    CAMERAS_API_KEY_AS_HEADER,
+    ENVIRONMENT,
+    OHGO_API_KEY,
+    OHGO_API_BASE,
+)
+from middleware.auth import get_current_user
+from database import get_supabase
 
 
 class VoiceCommandBody(BaseModel):
@@ -20,35 +32,73 @@ class VoiceCommandBody(BaseModel):
 router = APIRouter(prefix="/api", tags=["Navigation"])
 
 
+def _resolve_user_scoped_data(auth_user: dict) -> tuple[str, list, list]:
+    user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid auth context")
+    user = users_db.get(user_id)
+    if not user:
+        if ENVIRONMENT == "production":
+            # Avoid mutating in-memory state in production read paths.
+            return user_id, list(saved_locations), list(saved_routes)
+        user = users_db.setdefault(user_id, {"id": user_id})
+    if "saved_locations" not in user:
+        if ENVIRONMENT == "production":
+            return user_id, list(saved_locations), list(user.get("saved_routes", saved_routes))
+        user["saved_locations"] = list(saved_locations)
+    if "saved_routes" not in user:
+        if ENVIRONMENT == "production":
+            return user_id, list(user.get("saved_locations", saved_locations)), list(saved_routes)
+        user["saved_routes"] = list(saved_routes)
+    return user_id, user["saved_locations"], user["saved_routes"]
+
+
 # ==================== SAVED LOCATIONS ====================
 @router.get("/locations")
-def get_locations():
-    return {"success": True, "data": saved_locations}
+def get_locations(
+    limit: int = Query(default=100, ge=1, le=100),
+    auth_user: dict = Depends(get_current_user),
+):
+    _, user_locations, _ = _resolve_user_scoped_data(auth_user)
+    return {"success": True, "data": user_locations[:limit], "count": len(user_locations[:limit])}
 
 
 @router.post("/locations")
-def add_location(location: Location):
-    new_id = max([l.get("id", 0) for l in saved_locations], default=0) + 1
+def add_location(location: Location, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved locations unavailable in production")
+    _, user_locations, _ = _resolve_user_scoped_data(auth_user)
+    new_id = max([l.get("id", 0) for l in user_locations], default=0) + 1
     loc = {"id": new_id, "name": location.name, "address": location.address, "category": location.category, "lat": location.lat, "lng": location.lng, "created_at": datetime.now().isoformat()}
-    saved_locations.append(loc)
+    user_locations.append(loc)
     return {"success": True, "message": "Location saved", "data": loc}
 
 
 @router.delete("/locations/{location_id}")
-def delete_location(location_id: int):
-    saved_locations[:] = [l for l in saved_locations if l.get("id") != location_id]
+def delete_location(location_id: int, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved locations unavailable in production")
+    _, user_locations, _ = _resolve_user_scoped_data(auth_user)
+    user_locations[:] = [l for l in user_locations if l.get("id") != location_id]
     return {"success": True, "message": "Location deleted"}
 
 
 # ==================== ROUTES ====================
 @router.get("/routes")
-def get_routes():
-    return {"success": True, "data": saved_routes}
+def get_routes(
+    limit: int = Query(default=100, ge=1, le=100),
+    auth_user: dict = Depends(get_current_user),
+):
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    return {"success": True, "data": user_routes[:limit], "count": len(user_routes[:limit])}
 
 
 @router.post("/routes")
-def add_route(route: Route):
-    new_id = max([r.get("id", 0) for r in saved_routes], default=0) + 1
+def add_route(route: Route, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved routes unavailable in production")
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    new_id = max([r.get("id", 0) for r in user_routes], default=0) + 1
     estimated_time = int(route.estimated_time or 18)
     distance = round(float(route.distance or max(1, estimated_time * 0.33)), 1)
     r = {
@@ -64,23 +114,29 @@ def add_route(route: Route):
         "active": True,
         "created_at": datetime.now().isoformat(),
     }
-    saved_routes.append(r)
+    user_routes.append(r)
     return {"success": True, "message": "Route saved", "data": r}
 
 
 @router.delete("/routes/{route_id}")
-def delete_route(route_id: int):
-    before = len(saved_routes)
-    saved_routes[:] = [r for r in saved_routes if r.get("id") != route_id]
-    if len(saved_routes) == before:
+def delete_route(route_id: int, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved routes unavailable in production")
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    before = len(user_routes)
+    user_routes[:] = [r for r in user_routes if r.get("id") != route_id]
+    if len(user_routes) == before:
         return {"success": False, "message": "Route not found"}
     return {"success": True, "message": "Route deleted"}
 
 
 @router.post("/routes/{route_id}/toggle")
 @router.put("/routes/{route_id}/toggle")
-def toggle_route(route_id: int):
-    route = next((r for r in saved_routes if r.get("id") == route_id), None)
+def toggle_route(route_id: int, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved routes unavailable in production")
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    route = next((r for r in user_routes if r.get("id") == route_id), None)
     if not route:
         return {"success": False, "message": "Route not found"}
     route["active"] = not route.get("active", True)
@@ -89,8 +145,11 @@ def toggle_route(route_id: int):
 
 @router.post("/routes/{route_id}/notifications")
 @router.put("/routes/{route_id}/notifications")
-def toggle_notifications(route_id: int):
-    route = next((r for r in saved_routes if r.get("id") == route_id), None)
+def toggle_notifications(route_id: int, auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy saved routes unavailable in production")
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    route = next((r for r in user_routes if r.get("id") == route_id), None)
     if not route:
         return {"success": False, "message": "Route not found"}
     route["notifications"] = not route.get("notifications", True)
@@ -167,9 +226,11 @@ def _compute_route_options(route: Dict[str, Any], dep_minutes: int, now_minutes:
 
 @router.get("/routes/notifications")
 def get_route_notifications(
+    auth_user: dict = Depends(get_current_user),
     lat: Optional[float] = Query(None, description="Current latitude for ETA/leave-by"),
     lng: Optional[float] = Query(None, description="Current longitude for ETA/leave-by"),
     window_minutes: int = Query(120, description="Notify when departure is within this many minutes"),
+    limit: int = Query(default=100, ge=1, le=100),
 ):
     """
     Return route notifications with two options:
@@ -177,14 +238,15 @@ def get_route_notifications(
     2) Faster route to avoid traffic stress.
     Premium/family users are push-eligible; free users receive in-app only notifications.
     """
-    user = users_db.get(str(current_user_id), {})
+    user_id, _, user_routes = _resolve_user_scoped_data(auth_user)
+    user = users_db.get(user_id, {})
     push_eligible = _is_premium_or_family(user)
     now = datetime.now()
     today_weekday = now.strftime("%a")  # Mon, Tue, ...
     current_minutes = now.hour * 60 + now.minute
     notifications: List[Dict[str, Any]] = []
 
-    for route in saved_routes:
+    for route in user_routes:
         if not route.get("notifications") or not route.get("active", True):
             continue
         days = route.get("days_active") or []
@@ -248,6 +310,7 @@ def get_route_notifications(
             "message": f"Try a faster route: save ~{options['saved_minutes']} min and still arrive by {options['desired_arrival']}",
         })
 
+    notifications = notifications[:limit]
     return {"success": True, "data": notifications, "total": len(notifications), "push_eligible": push_eligible}
 
 
@@ -260,9 +323,10 @@ class LeaveEarlyBody(BaseModel):
 
 
 @router.post("/routes/{route_id}/notify-leave-early")
-def notify_leave_early(route_id: int, body: Optional[LeaveEarlyBody] = Body(None)):
+def notify_leave_early(route_id: int, body: Optional[LeaveEarlyBody] = Body(None), auth_user: dict = Depends(get_current_user)):
     """Compute leave-by time for a route so user can arrive by desired time. Returns leave_by and eta_minutes."""
-    route = next((r for r in saved_routes if r.get("id") == route_id), None)
+    _, _, user_routes = _resolve_user_scoped_data(auth_user)
+    route = next((r for r in user_routes if r.get("id") == route_id), None)
     if not route:
         return {"success": False, "message": "Route not found"}
     if body is None:
@@ -329,8 +393,39 @@ def voice_command(body: VoiceCommandBody):
 
 
 # ==================== MAP SEARCH ====================
+import os as _os
+
+
 @router.get("/map/search")
-def search_map_locations(q: str = Query(..., min_length=1), lat: Optional[float] = None, lng: Optional[float] = None, limit: int = 8):
+async def search_map_locations(
+    q: str = Query(..., min_length=1),
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    limit: int = Query(default=8, ge=1, le=100),
+):
+    places_key = _os.environ.get("GOOGLE_PLACES_API_KEY", "")
+    if places_key:
+        try:
+            params: Dict[str, Any] = {"input": q, "key": places_key, "language": "en"}
+            if lat is not None and lng is not None:
+                params["location"] = f"{lat},{lng}"
+                params["radius"] = "50000"
+            async with httpx.AsyncClient(timeout=8) as client:
+                r = await client.get("https://maps.googleapis.com/maps/api/place/autocomplete/json", params=params)
+            data = r.json()
+            predictions = data.get("predictions", [])[:limit]
+            results = []
+            for p in predictions:
+                results.append({
+                    "name": p.get("structured_formatting", {}).get("main_text", p.get("description", "")),
+                    "address": p.get("description", ""),
+                    "place_id": p.get("place_id", ""),
+                    "type": ", ".join(p.get("types", [])[:2]),
+                })
+            return {"success": True, "data": results, "query": q, "total_results": len(results)}
+        except Exception as exc:
+            _nav_log.warning("Places API search failed, falling back to local: %s", exc)
+
     query = q.lower().strip()
     results = []
     for loc in MAP_LOCATIONS:
@@ -353,6 +448,8 @@ def search_map_locations(q: str = Query(..., min_length=1), lat: Optional[float]
 
 @router.get("/map/directions")
 def get_mock_directions(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float, dest_name: Optional[str] = "Destination"):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Mock directions unavailable in production")
     dlat = abs(dest_lat - origin_lat)
     dlng = abs(dest_lng - origin_lng)
     distance_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
@@ -374,12 +471,16 @@ def get_mock_directions(origin_lat: float, origin_lng: float, dest_lat: float, d
 # ==================== WIDGETS ====================
 @router.get("/widgets")
 def get_widgets():
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
     return {"success": True, "data": widget_settings}
 
 
 @router.post("/widgets/{widget_id}/toggle")
 @router.put("/widgets/{widget_id}/toggle")
 def toggle_widget(widget_id: str):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
     if widget_id in widget_settings:
         widget_settings[widget_id]["visible"] = not widget_settings[widget_id]["visible"]
     return {"success": True, "data": widget_settings}
@@ -388,6 +489,8 @@ def toggle_widget(widget_id: str):
 @router.post("/widgets/{widget_id}/collapse")
 @router.put("/widgets/{widget_id}/collapse")
 def collapse_widget(widget_id: str):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
     if widget_id in widget_settings:
         widget_settings[widget_id]["collapsed"] = not widget_settings[widget_id]["collapsed"]
     return {"success": True, "data": widget_settings}
@@ -395,9 +498,33 @@ def collapse_widget(widget_id: str):
 
 @router.put("/widgets/{widget_id}/position")
 def update_widget_position(widget_id: str, body: dict):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
     if widget_id in widget_settings:
         widget_settings[widget_id]["position"] = body.get("position", 0)
     return {"success": True, "data": widget_settings}
+
+
+def _normalize_ohgo_camera_views(cam: dict) -> List[dict]:
+    """Extract still-image URLs for mobile/web clients (matches useMapLayers / OHGOCamera shape)."""
+    raw = cam.get("cameraViews") or cam.get("camera_views") or []
+    if not isinstance(raw, list):
+        return []
+    out: List[dict] = []
+    for v in raw:
+        if not isinstance(v, dict):
+            continue
+        small = (v.get("smallUrl") or v.get("small_url") or "").strip()
+        large = (v.get("largeUrl") or v.get("large_url") or "").strip()
+        if not large and not small:
+            continue
+        out.append({
+            "id": str(v.get("id", "")),
+            "small_url": small or large,
+            "large_url": large or small,
+            "direction": str(v.get("direction") or "").strip(),
+        })
+    return out
 
 
 def _normalize_camera_item(item: Any, index: int) -> Optional[dict]:
@@ -413,7 +540,7 @@ def _normalize_camera_item(item: Any, index: int) -> Optional[dict]:
     except (TypeError, ValueError):
         return None
     title = item.get("title") or item.get("name") or item.get("description") or "Traffic camera"
-    return {
+    row: dict = {
         "id": item.get("id", f"cam-{index}"),
         "type": "camera",
         "lat": lat_f,
@@ -425,6 +552,10 @@ def _normalize_camera_item(item: Any, index: int) -> Optional[dict]:
         "created_at": item.get("created_at"),
         "expires_at": item.get("expires_at"),
     }
+    cv_raw = item.get("camera_views") or item.get("cameraViews")
+    if isinstance(cv_raw, list) and cv_raw:
+        row["camera_views"] = _normalize_ohgo_camera_views({"cameraViews": cv_raw})
+    return row
 
 
 def _fetch_cameras_from_api(lat: float, lng: float, radius_km: float) -> List[dict]:
@@ -461,15 +592,219 @@ def _fetch_cameras_from_api(lat: float, lng: float, radius_km: float) -> List[di
     return out
 
 
+def _fetch_ohgo_cameras(lat: float, lng: float, radius_km: float) -> List[dict]:
+    """
+    Ohio DOT OHGO public API. Radius query matches web DriverApp: "lat,lng,miles".
+    """
+    if not OHGO_API_KEY:
+        return []
+    # OHGO caps at 50 miles; convert km → miles
+    miles = max(5, min(int(round(radius_km * 0.621371)), 50))
+    radius_param = f"{lat},{lng},{miles}"
+    log = logging.getLogger(__name__)
+    cameras_url = f"{OHGO_API_BASE}/api/v1/cameras"
+    try:
+        with httpx.Client(timeout=12.0) as client:
+            resp = client.get(
+                cameras_url,
+                params={"api-key": OHGO_API_KEY, "radius": radius_param},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        log.warning("OHGO cameras request failed: %s", e)
+        return []
+    if not isinstance(data, dict):
+        return []
+    results = data.get("results")
+    if not isinstance(results, list):
+        return []
+    out: List[dict] = []
+    for i, cam in enumerate(results):
+        if not isinstance(cam, dict):
+            continue
+        try:
+            lat_f = float(cam.get("latitude"))
+            lng_f = float(cam.get("longitude"))
+        except (TypeError, ValueError):
+            continue
+        cid = cam.get("id", i)
+        loc = cam.get("location") or cam.get("mainRoute") or "Traffic camera"
+        route = cam.get("mainRoute") or ""
+        out.append({
+            "id": f"ohgo-{cid}",
+            "type": "camera",
+            "lat": lat_f,
+            "lng": lng_f,
+            "title": str(loc)[:200],
+            "description": str(route)[:500],
+            "severity": "medium",
+            "upvotes": 0,
+            "created_at": None,
+            "expires_at": None,
+            "camera_views": _normalize_ohgo_camera_views(cam),
+        })
+    return out
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance in km (accurate for map radius filtering)."""
+    rlat1, rlng1, rlat2, rlng2 = map(math.radians, (lat1, lng1, lat2, lng2))
+    dlat = rlat2 - rlat1
+    dlng = rlng2 - rlng1
+    a = math.sin(dlat / 2) ** 2 + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlng / 2) ** 2
+    c = 2 * math.asin(min(1.0, math.sqrt(a)))
+    return 6371.0 * c
+
+
+# ==================== CAMERA DETAIL (lazy view-fetch for mobile sheet) ====================
+@router.get("/map/camera-detail")
+def get_camera_detail(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    radius_km: float = Query(default=1.5, ge=0.05, le=20),
+):
+    """
+    Return the OHGO camera nearest to (lat, lng) within radius_km, including full camera_views.
+    Used by the mobile TrafficCameraSheet when a marker was loaded without view URLs.
+    """
+    if not OHGO_API_KEY:
+        return {"success": False, "data": None, "error": "OHGO not configured"}
+    miles = max(1, min(int(round(radius_km * 0.621371)), 5))
+    radius_param = f"{lat},{lng},{miles}"
+    log = logging.getLogger(__name__)
+    cameras_url = f"{OHGO_API_BASE}/api/v1/cameras"
+    try:
+        with httpx.Client(timeout=12.0) as client:
+            resp = client.get(cameras_url, params={"api-key": OHGO_API_KEY, "radius": radius_param})
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        log.warning("OHGO camera-detail request failed: %s", e)
+        return {"success": False, "data": None, "error": "OHGO request failed"}
+
+    results = data.get("results") if isinstance(data, dict) else None
+    if not isinstance(results, list) or not results:
+        return {"success": True, "data": None}
+
+    # Pick the closest camera to the requested coordinates.
+    best = None
+    best_dist = float("inf")
+    for cam in results:
+        if not isinstance(cam, dict):
+            continue
+        try:
+            clat, clng = float(cam.get("latitude")), float(cam.get("longitude"))
+        except (TypeError, ValueError):
+            continue
+        d = _haversine_km(lat, lng, clat, clng)
+        if d < best_dist:
+            best_dist = d
+            best = cam
+
+    if not best:
+        return {"success": True, "data": None}
+
+    cid = best.get("id", "")
+    return {
+        "success": True,
+        "data": {
+            "id": f"ohgo-{cid}",
+            "title": str(best.get("location") or best.get("mainRoute") or "Traffic camera")[:200],
+            "description": str(best.get("mainRoute") or "")[:500],
+            "lat": float(best.get("latitude")),
+            "lng": float(best.get("longitude")),
+            "camera_views": _normalize_ohgo_camera_views(best),
+        },
+    }
+
+
+# ==================== MAP CAMERAS (dedicated, no report-count competition) ====================
+@router.get("/map/cameras")
+@limiter.limit("60/minute")
+def get_map_cameras(
+    request: Request,
+    lat: float = Query(...),
+    lng: float = Query(...),
+    radius: float = Query(default=80, ge=0.5, le=100),
+):
+    """
+    Return OHGO traffic cameras for the mobile cameras layer.
+    Separated from /map/traffic so cameras are never truncated by the road-report limit.
+    """
+    cameras: List[dict] = []
+
+    # OHGO (Ohio DOT)
+    if OHGO_API_KEY:
+        cameras.extend(_fetch_ohgo_cameras(lat, lng, radius))
+
+    # Optional generic cameras API
+    if CAMERAS_API_KEY and (CAMERAS_API_URL or "").strip():
+        cameras.extend(_fetch_cameras_from_api(lat, lng, radius))
+
+    # Distance filter (haversine; OHGO already radius-filters but a second pass is a no-op cost)
+    filtered: List[dict] = []
+    for c in cameras:
+        clat, clng = c.get("lat"), c.get("lng")
+        if clat is None or clng is None:
+            continue
+        try:
+            d = _haversine_km(float(lat), float(lng), float(clat), float(clng))
+        except (TypeError, ValueError):
+            continue
+        if d <= radius:
+            filtered.append(c)
+
+    # No OHGO → fall back to seed data cameras so the layer always has something in dev
+    if not filtered:
+        for r in road_reports_db:
+            if r.get("type") == "camera":
+                filtered.append(r)
+
+    out = []
+    for c in filtered:
+        row = {
+            "id": c.get("id"),
+            "type": "camera",
+            "lat": c.get("lat"),
+            "lng": c.get("lng"),
+            "title": c.get("title", "Traffic camera"),
+            "description": c.get("description", ""),
+            "severity": "medium",
+            "camera_views": c.get("camera_views") if isinstance(c.get("camera_views"), list) else [],
+        }
+        out.append(row)
+
+    return {"success": True, "data": out, "total": len(out)}
+
+
 # ==================== MAP TRAFFIC ====================
 @router.get("/map/traffic")
-def get_map_traffic(lat: Optional[float] = None, lng: Optional[float] = None, radius: float = 15):
-    """Return road reports and traffic cameras for map overlay. Uses CAMERAS_API_KEY when CAMERAS_API_URL is set."""
-    reports = list(road_reports_db)
+@limiter.limit("60/minute")
+def get_map_traffic(
+    request: Request,
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    radius: float = Query(default=15, ge=0.1, le=200),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    """Return road reports and traffic cameras for map overlay. Merges OHGO (Ohio) when OHGO_API_KEY is set; optional generic CAMERAS_API_URL fetch."""
+    reports = []
+    try:
+        sb = get_supabase()
+        rr = sb.table("road_reports").select("id,type,lat,lng,description,upvotes,created_at,expires_at").eq("status", "active").limit(300).execute()
+        reports = rr.data or []
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Traffic overlay unavailable")
+        reports = list(road_reports_db)
     # Fetch cameras from external API when key and URL are configured
     if lat is not None and lng is not None and CAMERAS_API_KEY and (CAMERAS_API_URL or "").strip():
         external = _fetch_cameras_from_api(lat, lng, radius)
         reports.extend(external)
+    # Ohio OHGO cameras (mobile + any client using /api/map/traffic; web may still call OHGO directly)
+    if lat is not None and lng is not None:
+        reports.extend(_fetch_ohgo_cameras(lat, lng, radius))
     # Filter by distance only when lat/lng provided (so external + DB reports near user are shown)
     if lat is not None and lng is not None:
         filtered = []
@@ -477,9 +812,10 @@ def get_map_traffic(lat: Optional[float] = None, lng: Optional[float] = None, ra
             rlat, rlng = r.get("lat"), r.get("lng")
             if rlat is None or rlng is None:
                 continue
-            dlat = abs(rlat - lat)
-            dlng = abs(rlng - lng)
-            dist_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+            try:
+                dist_km = _haversine_km(float(lat), float(lng), float(rlat), float(rlng))
+            except (TypeError, ValueError):
+                continue
             if dist_km <= radius:
                 filtered.append(r)
         reports = filtered
@@ -491,7 +827,7 @@ def get_map_traffic(lat: Optional[float] = None, lng: Optional[float] = None, ra
     for r in reports:
         rtype = r.get("type", "hazard")
         severity = "high" if rtype in ("accident", "police") else "medium" if rtype in ("construction", "hazard", "camera") else "low"
-        overlays.append({
+        row = {
             "id": r.get("id"),
             "type": rtype,
             "lat": r.get("lat"),
@@ -502,7 +838,12 @@ def get_map_traffic(lat: Optional[float] = None, lng: Optional[float] = None, ra
             "upvotes": r.get("upvotes", 0),
             "created_at": r.get("created_at"),
             "expires_at": r.get("expires_at"),
-        })
+        }
+        if rtype == "camera":
+            cv = r.get("camera_views")
+            row["camera_views"] = cv if isinstance(cv, list) else []
+        overlays.append(row)
+    overlays = overlays[:limit]
     return {"success": True, "data": overlays, "total": len(overlays)}
 
 
@@ -532,3 +873,20 @@ def get_navigation_eta(
             "speed_mph": speed,
         },
     }
+
+
+if ENVIRONMENT == "production":
+    _LEGACY_PROD_DISABLED = {
+        "/api/locations",
+        "/api/locations/{location_id}",
+        "/api/routes",
+        "/api/routes/{route_id}",
+        "/api/routes/{route_id}/toggle",
+        "/api/routes/{route_id}/notifications",
+        "/api/map/directions",
+        "/api/widgets",
+        "/api/widgets/{widget_id}/toggle",
+        "/api/widgets/{widget_id}/collapse",
+        "/api/widgets/{widget_id}/position",
+    }
+    router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]

@@ -1,47 +1,118 @@
-from fastapi import APIRouter, HTTPException
+import os
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, HTTPException, Depends, Query
 from models.schemas import PlanUpdate, CarCustomization
 from services.mock_data import (
-    users_db, current_user_id, pricing_config,
+    users_db, pricing_config,
     calculate_xp_for_level, calculate_xp_to_next_level,
     CAR_MODELS, CAR_SKINS, PREMIUM_COLORS,
     notification_settings, faq_data,
 )
+from middleware.auth import get_current_user
+from services.supabase_service import sb_get_profile, sb_update_profile
+from services.snap_road_score import compute_snap_road_fields
 
 router = APIRouter(prefix="/api", tags=["Users"])
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+
+def _get_user_store(user: Optional[Dict[str, Any]]) -> dict:
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    user_id = str(user.get("user_id") or user.get("id") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid auth context")
+    if user_id not in users_db:
+        initial = {
+            "id": user_id,
+            "name": user.get("email", "Driver").split("@")[0].title() if user.get("email") else "Driver",
+            "email": user.get("email", ""),
+            "plan": "basic",
+            "is_premium": False,
+            "gem_multiplier": 1,
+            "vehicle_height_meters": None,
+        }
+        # Ensure first-write is not memory-only in production.
+        try:
+            sb_update_profile(user_id, initial)
+        except Exception:
+            if ENVIRONMENT == "production":
+                raise HTTPException(status_code=503, detail="User profile unavailable")
+        users_db[user_id] = initial
+    users_db[user_id].setdefault("vehicle_height_meters", None)
+    return users_db[user_id]
+
+
+def _persist_user(user_id: str, updates: dict) -> None:
+    users_db.setdefault(user_id, {"id": user_id})
+    users_db[user_id].update(updates)
+    try:
+        sb_update_profile(user_id, updates)
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="User persistence unavailable")
 
 
 @router.get("/user/profile")
-def get_user_profile():
-    user = users_db.get(current_user_id, {})
-    # Nullable profile field: null => no clearance restrictions configured.
-    user.setdefault("vehicle_height_meters", None)
-    return {"success": True, "data": user}
+def get_user_profile(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    uid = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
+    if uid:
+        try:
+            row = sb_get_profile(uid)
+            if row and isinstance(row, dict):
+                for k in (
+                    "name",
+                    "email",
+                    "gems",
+                    "level",
+                    "xp",
+                    "safety_score",
+                    "total_miles",
+                    "total_trips",
+                    "is_premium",
+                    "plan",
+                    "role",
+                    "streak",
+                    "vehicle_height_meters",
+                ):
+                    if row.get(k) is not None:
+                        user[k] = row[k]
+        except Exception:
+            pass
+    payload = {**user, **compute_snap_road_fields(user)}
+    return {"success": True, "data": payload}
 
 
 @router.get("/user/stats")
-def get_user_stats():
-    user = users_db.get(current_user_id, {})
-    return {
-        "success": True,
-        "data": {
-            "total_miles": user.get("total_miles", 0),
-            "total_trips": user.get("total_trips", 0),
-            "safety_score": user.get("safety_score", 85),
-            "gems": user.get("gems", 0),
-            "level": user.get("level", 1),
-            "xp": user.get("xp", 0),
-        },
+def get_user_stats(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    base = {
+        "total_miles": user.get("total_miles", 0),
+        "total_trips": user.get("total_trips", 0),
+        "safety_score": user.get("safety_score", 85),
+        "gems": user.get("gems", 0),
+        "level": user.get("level", 1),
+        "xp": user.get("xp", 0),
+        "streak": user.get("streak") if user.get("streak") is not None else user.get("safe_drive_streak", 0),
     }
+    return {"success": True, "data": {**base, **compute_snap_road_fields(user)}}
 
 
 @router.post("/user/plan")
-def update_user_plan(plan: PlanUpdate):
-    if current_user_id not in users_db:
-        return {"success": False, "message": "User not found"}
-    user = users_db[current_user_id]
-    if plan.plan == "premium":
+def update_user_plan(plan: PlanUpdate, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
+    requested = str(plan.plan or "").strip().lower()
+    if requested == "premium":
         user["is_premium"] = True
         user["plan"] = "premium"
+        user["gem_multiplier"] = 2
+        user["plan_selected"] = True
+    elif requested == "family":
+        user["is_premium"] = True
+        user["plan"] = "family"
         user["gem_multiplier"] = 2
         user["plan_selected"] = True
     else:
@@ -49,22 +120,30 @@ def update_user_plan(plan: PlanUpdate):
         user["plan"] = "basic"
         user["gem_multiplier"] = 1
         user["plan_selected"] = True
-    return {"success": True, "message": f"Plan updated to {plan.plan}", "data": user}
+    _persist_user(user_id, {
+        "is_premium": user["is_premium"],
+        "plan": user["plan"],
+        "gem_multiplier": user["gem_multiplier"],
+    })
+    return {"success": True, "message": f"Plan updated to {user['plan']}", "data": users_db[user_id]}
 
 
 @router.post("/user/car")
-def update_user_car(car: CarCustomization):
-    if current_user_id in users_db:
-        users_db[current_user_id]["car_category"] = car.category
-        users_db[current_user_id]["car_variant"] = car.variant
-        users_db[current_user_id]["car_color"] = car.color
-        users_db[current_user_id]["car_selected"] = True
+def update_user_car(car: CarCustomization, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
+    _persist_user(user_id, {
+        "car_category": car.category,
+        "car_variant": car.variant,
+        "car_color": car.color,
+        "car_selected": True,
+    })
     return {"success": True, "message": "Car customization saved"}
 
 
 @router.get("/user/car")
-def get_user_car():
-    user = users_db.get(current_user_id, {})
+def get_user_car(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     return {
         "success": True,
         "data": {
@@ -77,8 +156,8 @@ def get_user_car():
 
 
 @router.get("/user/car/colors")
-def get_car_colors():
-    user = users_db.get(current_user_id, {})
+def get_car_colors(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     is_premium = user.get("is_premium", False)
     gems = user.get("gems", 0)
     colors = {
@@ -95,20 +174,21 @@ def get_car_colors():
 
 
 @router.post("/user/car/color/{color_key}/purchase")
-def purchase_car_color(color_key: str):
-    user = users_db.get(current_user_id, {})
+def purchase_car_color(color_key: str, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
     cost = PREMIUM_COLORS.get(color_key, 0)
     if cost > 0:
         if user.get("gems", 0) < cost:
             return {"success": False, "message": "Not enough gems"}
-        users_db[current_user_id]["gems"] = user["gems"] - cost
-    users_db[current_user_id]["car_color"] = color_key
+        _persist_user(user_id, {"gems": user["gems"] - cost})
+    _persist_user(user_id, {"car_color": color_key})
     return {"success": True, "message": f"Color {color_key} applied!"}
 
 
 @router.get("/user/onboarding-status")
-def get_onboarding_status():
-    user = users_db.get(current_user_id, {})
+def get_onboarding_status(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     return {
         "success": True,
         "data": {
@@ -121,17 +201,20 @@ def get_onboarding_status():
 
 
 @router.get("/session/reset")
-def reset_session():
-    if current_user_id in users_db:
-        users_db[current_user_id]["onboarding_complete"] = False
-        users_db[current_user_id]["plan_selected"] = False
-        users_db[current_user_id]["car_selected"] = False
+def reset_session(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
+    _persist_user(user_id, {
+        "onboarding_complete": False,
+        "plan_selected": False,
+        "car_selected": False,
+    })
     return {"success": True, "message": "Session reset"}
 
 
 @router.get("/cars")
-def get_cars():
-    user = users_db.get(current_user_id, {})
+def get_cars(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     owned = user.get("owned_cars", [1])
     equipped = user.get("equipped_car", 1)
     return {
@@ -144,27 +227,31 @@ def get_cars():
 
 
 @router.post("/cars/{car_id}/purchase")
-def purchase_car(car_id: int):
+def purchase_car(car_id: int, auth_user: dict = Depends(get_current_user)):
     car = next((c for c in CAR_MODELS if c["id"] == car_id), None)
     if not car:
         return {"success": False, "message": "Car not found"}
-    user = users_db.get(current_user_id, {})
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
     if user.get("gems", 0) < car["price"]:
         return {"success": False, "message": "Not enough gems"}
-    users_db[current_user_id]["gems"] -= car["price"]
-    users_db[current_user_id].setdefault("owned_cars", [1]).append(car_id)
+    new_owned = list(users_db[user_id].get("owned_cars", [1]))
+    if car_id not in new_owned:
+        new_owned.append(car_id)
+    _persist_user(user_id, {"gems": users_db[user_id]["gems"] - car["price"], "owned_cars": new_owned})
     return {"success": True, "message": f"Purchased {car['name']}!"}
 
 
 @router.post("/cars/{car_id}/equip")
-def equip_car(car_id: int):
-    users_db.setdefault(current_user_id, {})["equipped_car"] = car_id
+def equip_car(car_id: int, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    _persist_user(str(user.get("id")), {"equipped_car": car_id})
     return {"success": True, "message": "Car equipped!"}
 
 
 @router.get("/skins")
-def get_skins():
-    user = users_db.get(current_user_id, {})
+def get_skins(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     owned = user.get("owned_skins", [1])
     equipped = user.get("equipped_skin", 1)
     return {
@@ -177,21 +264,25 @@ def get_skins():
 
 
 @router.post("/skins/{skin_id}/purchase")
-def purchase_skin(skin_id: int):
+def purchase_skin(skin_id: int, auth_user: dict = Depends(get_current_user)):
     skin = next((s for s in CAR_SKINS if s["id"] == skin_id), None)
     if not skin:
         return {"success": False, "message": "Skin not found"}
-    user = users_db.get(current_user_id, {})
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
     if user.get("gems", 0) < skin["price"]:
         return {"success": False, "message": "Not enough gems"}
-    users_db[current_user_id]["gems"] -= skin["price"]
-    users_db[current_user_id].setdefault("owned_skins", [1]).append(skin_id)
+    new_owned = list(users_db[user_id].get("owned_skins", [1]))
+    if skin_id not in new_owned:
+        new_owned.append(skin_id)
+    _persist_user(user_id, {"gems": users_db[user_id]["gems"] - skin["price"], "owned_skins": new_owned})
     return {"success": True, "message": f"Purchased {skin['name']}!"}
 
 
 @router.post("/skins/{skin_id}/equip")
-def equip_skin(skin_id: int):
-    users_db.setdefault(current_user_id, {})["equipped_skin"] = skin_id
+def equip_skin(skin_id: int, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    _persist_user(str(user.get("id")), {"equipped_skin": skin_id})
     return {"success": True, "message": "Skin equipped!"}
 
 
@@ -201,14 +292,25 @@ def get_pricing():
 
 
 @router.get("/settings/notifications")
-def get_notification_settings():
-    return {"success": True, "data": notification_settings}
+def get_notification_settings(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    settings = user.get("notification_settings")
+    if not isinstance(settings, dict):
+        settings = {**notification_settings}
+        user["notification_settings"] = settings
+    return {"success": True, "data": settings}
 
 
 @router.post("/settings/notifications")
-def update_notification_settings(settings: dict):
-    notification_settings.update(settings)
-    return {"success": True, "message": "Settings updated"}
+def update_notification_settings(settings: dict, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
+    current = user.get("notification_settings")
+    if not isinstance(current, dict):
+        current = {**notification_settings}
+    current.update(settings)
+    _persist_user(user_id, {"notification_settings": current})
+    return {"success": True, "message": "Settings updated", "data": users_db[user_id].get("notification_settings", current)}
 
 
 @router.get("/help/faq")
@@ -236,44 +338,65 @@ _notifications = [
 
 
 @router.get("/notifications")
-def get_notifications():
-    return {"success": True, "data": _notifications}
+def get_notifications(
+    limit: int = Query(default=100, ge=1, le=100),
+    _auth_user: dict = Depends(get_current_user),
+):
+    user = _get_user_store(_auth_user)
+    notes = user.get("notifications")
+    if not isinstance(notes, list):
+        notes = [dict(n) for n in _notifications]
+        user["notifications"] = notes
+    scoped = notes[:limit]
+    return {"success": True, "data": scoped, "count": len(scoped)}
 
 
 @router.put("/notifications/{notification_id}/read")
-def mark_notification_read(notification_id: int):
-    for n in _notifications:
+def mark_notification_read(notification_id: int, _auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(_auth_user)
+    notes = user.get("notifications")
+    if not isinstance(notes, list):
+        notes = [dict(n) for n in _notifications]
+    for n in notes:
         if n["id"] == notification_id:
             n["read"] = True
+            _persist_user(str(user.get("id")), {"notifications": notes})
             return {"success": True, "data": n}
     return {"success": False, "message": "Notification not found"}
 
 
 @router.put("/notifications/read-all")
-def mark_all_read():
-    for n in _notifications:
+def mark_all_read(_auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(_auth_user)
+    notes = user.get("notifications")
+    if not isinstance(notes, list):
+        notes = [dict(n) for n in _notifications]
+    for n in notes:
         n["read"] = True
+    _persist_user(str(user.get("id")), {"notifications": notes})
     return {"success": True, "message": "All notifications marked as read"}
 
 
 # ==================== VEHICLES ====================
 @router.get("/user/vehicles")
-def get_vehicles():
-    user = users_db.get(current_user_id, {})
+def get_vehicles(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     car = user.get("car", {})
     return {"success": True, "data": [car] if car else []}
 
 
 @router.post("/user/vehicles")
-def add_vehicle(vehicle: dict):
-    user = users_db.get(current_user_id, {})
-    user["car"] = vehicle
+def add_vehicle(vehicle: dict, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    _persist_user(str(user.get("id")), {"car": vehicle})
     return {"success": True, "data": vehicle}
 
 
 # ==================== FAMILY GROUP ====================
 @router.get("/family/group")
-def get_family_group():
+def get_family_group(_auth_user: dict = Depends(get_current_user)):
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Family group service unavailable")
     return {
         "success": True,
         "data": {
@@ -288,17 +411,27 @@ def get_family_group():
 
 # ==================== SETTINGS (PUT support) ====================
 @router.put("/settings/notifications")
-def update_notification_settings_put(category: str = "", setting: str = "", enabled: bool = True):
+def update_notification_settings_put(
+    auth_user: dict = Depends(get_current_user),
+    category: str = Query(default=""),
+    setting: str = Query(default=""),
+    enabled: bool = Query(default=True),
+):
+    user = _get_user_store(auth_user)
+    settings = user.get("notification_settings")
+    if not isinstance(settings, dict):
+        settings = {**notification_settings}
     if category and setting:
-        if category not in notification_settings:
-            notification_settings[category] = {}
-        notification_settings[category][setting] = enabled
-    return {"success": True, "message": "Settings updated", "data": notification_settings}
+        if category not in settings:
+            settings[category] = {}
+        settings[category][setting] = enabled
+    _persist_user(str(user.get("id")), {"notification_settings": settings})
+    return {"success": True, "message": "Settings updated", "data": users_db[str(user.get("id"))].get("notification_settings", settings)}
 
 
 @router.put("/user/profile")
-def update_profile(body: dict):
-    user = users_db.get(current_user_id, {})
+def update_profile(body: dict, auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
     updates = {k: v for k, v in body.items() if k not in ("id", "email")}
     if "vehicle_height_meters" in updates:
         raw = updates.get("vehicle_height_meters")
@@ -314,6 +447,13 @@ def update_profile(body: dict):
             updates["vehicle_height_meters"] = height
     # Graceful write behavior: if persistence layer/schema lacks this field,
     # keeping it in-memory remains non-fatal for this endpoint.
-    user.update(updates)
-    user.setdefault("vehicle_height_meters", None)
-    return {"success": True, "data": user}
+    _persist_user(str(user.get("id")), updates)
+    users_db[str(user.get("id"))].setdefault("vehicle_height_meters", None)
+    return {"success": True, "data": users_db[str(user.get("id"))]}
+
+
+if ENVIRONMENT == "production":
+    _LEGACY_PROD_DISABLED = {
+        "/api/family/group",
+    }
+    router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]

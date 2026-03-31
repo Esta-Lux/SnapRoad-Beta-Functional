@@ -4,18 +4,33 @@
  * synchronous in-memory cache (with AsyncStorage persistence when possible).
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+type AsyncStorageLike = {
+  getAllKeys: () => Promise<string[]>;
+  getItem: (key: string) => Promise<string | null>;
+  setItem: (key: string, value: string) => Promise<void>;
+  removeItem: (key: string) => Promise<void>;
+};
+
+let asyncStorage: AsyncStorageLike | null = null;
+try {
+  // Resolve dynamically so a missing native module does not crash app startup.
+  const maybeModule = require('@react-native-async-storage/async-storage');
+  asyncStorage = (maybeModule?.default ?? maybeModule) as AsyncStorageLike;
+} catch {
+  asyncStorage = null;
+}
 
 const memoryCache: Record<string, string> = {};
 let asyncLoaded = false;
 
 function loadFromAsync() {
-  if (asyncLoaded) return;
+  if (asyncLoaded || !asyncStorage) return;
   asyncLoaded = true;
-  AsyncStorage.getAllKeys()
+  asyncStorage
+    .getAllKeys()
     .then((keys) => {
       if (!keys.length) return;
-      const promises = keys.map((k) => AsyncStorage.getItem(k).then((v) => [k, v] as const));
+      const promises = keys.map((k) => asyncStorage!.getItem(k).then((v) => [k, v] as const));
       return Promise.all(promises);
     })
     .then((pairs) => {
@@ -35,10 +50,10 @@ export const storage = {
   },
   set(key: string, value: string): void {
     memoryCache[key] = value;
-    AsyncStorage.setItem(key, value).catch(() => {});
+    asyncStorage?.setItem(key, value).catch(() => {});
   },
   delete(key: string): void {
     delete memoryCache[key];
-    AsyncStorage.removeItem(key).catch(() => {});
+    asyncStorage?.removeItem(key).catch(() => {});
   },
 };

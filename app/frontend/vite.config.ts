@@ -11,6 +11,11 @@ const frontendRoot = configDir
 export default defineConfig(({ mode }) => {
   // Load from app/frontend/.env — third arg limits to VITE_* keys
   const env = loadEnv(mode, frontendRoot, 'VITE_')
+  const envAll = loadEnv(mode, frontendRoot, '')
+  const apiProxyTarget =
+    env.VITE_BACKEND_PROXY_TARGET ||
+    envAll.VITE_BACKEND_PROXY_TARGET ||
+    'http://127.0.0.1:8001'
   // Hard-inject into the client bundle. Fixes cases where import.meta.env was empty
   // (wrong cwd, tooling, or env not merged) even though .env exists next to this file.
   const importMetaEnvDefine = Object.fromEntries(
@@ -50,6 +55,9 @@ export default defineConfig(({ mode }) => {
         '@store': path.resolve(frontendRoot, './src/store'),
         '@utils': path.resolve(frontendRoot, './src/utils'),
       },
+      // Recharts in a separate chunk must share one React instance or runtime throws
+      // (__SECRET_INTERNALS on undefined) and Playwright sees body as non-visible.
+      dedupe: ['react', 'react-dom', 'react-is'],
     },
     server: {
       port: 3000,
@@ -57,7 +65,7 @@ export default defineConfig(({ mode }) => {
       allowedHosts: true,
       proxy: {
         '/api': {
-          target: 'http://127.0.0.1:8001',
+          target: apiProxyTarget,
           changeOrigin: true,
         },
       },
@@ -66,12 +74,25 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks(id: string) {
+            const norm = id.replace(/\\/g, '/')
+            if (norm.includes('node_modules') && /\/node_modules\/(react-dom|react)\//.test(norm)) {
+              return 'react-vendor'
+            }
             if (id.includes('mapbox-gl')) return 'mapbox'
             if (id.includes('recharts') || id.includes('d3-')) return 'charts'
             if (id.includes('/admin/')) return 'admin'
             if (id.includes('/partner/')) return 'partner'
           },
         },
+      },
+    },
+    test: {
+      environment: 'jsdom',
+      include: ['src/**/*.{test,spec}.{ts,tsx}'],
+      coverage: {
+        provider: 'v8',
+        reporter: ['text', 'lcov'],
+        reportsDirectory: './coverage',
       },
     },
   }

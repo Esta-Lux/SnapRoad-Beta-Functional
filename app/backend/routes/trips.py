@@ -1,8 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query, HTTPException, Depends, Request
 from typing import Optional
 from datetime import datetime, timedelta
 import json
-from models.schemas import TripResult, FuelLog, ReportIncident
+import logging
+from models.schemas import TripResult, FuelLogCreate
+from middleware.auth import get_current_user
 from pydantic import BaseModel
 from uuid import uuid4
 from services.mock_data import (
@@ -10,7 +12,11 @@ from services.mock_data import (
     create_new_user,
 )
 from routes.gamification import add_xp_to_user
-from config import OPENAI_API_KEY
+from config import OPENAI_API_KEY, ENVIRONMENT
+from database import get_supabase
+from services.supabase_service import sb_update_profile
+
+_trips_log = logging.getLogger(__name__)
 
 try:
     from openai import OpenAI
@@ -20,11 +26,19 @@ except Exception:  # pragma: no cover
 router = APIRouter(prefix="/api", tags=["Trips"])
 
 
+def _legacy_trips_guard() -> None:
+    if ENVIRONMENT == "production":
+        raise HTTPException(status_code=503, detail="Legacy trips endpoints unavailable in production")
+
+
 # ==================== TRIP HISTORY ====================
 
 @router.get("/trips")
-def get_trips(page: int = 1, limit: int = 20):
-    
+def get_trips(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    _legacy_trips_guard()
     start = (page - 1) * limit
     end = start + limit
 
@@ -44,9 +58,10 @@ def get_trips(page: int = 1, limit: int = 20):
         }
     }
 
-@router.get("/trips/${id}")
-def get_trip_by_id(trip_id: int):
-    trip = next((t for t in trips_db if t[trip_id] == trip_id), None) # Consider switching to a dictionary system for Trips_db because this is O(n)
+@router.get("/trips/{trip_id}")
+def get_trip_by_id(trip_id: str):
+    _legacy_trips_guard()
+    trip = next((t for t in trips_db if str(t.get("id")) == str(trip_id)), None)
 
     if not trip:
         return {
@@ -59,8 +74,18 @@ def get_trip_by_id(trip_id: int):
         "data": trip
     }
 
-@router.post("/trips/start") # TODO: Determine how we're going to format trips ultimately
-def start_trip(startLocation: str): # Consider Implementing BaseModel later, instead of raw strings/dicts
+class StartTripBody(BaseModel):
+    startLocation: str
+    destination: Optional[str] = None
+
+
+class EndTripBody(BaseModel):
+    endLocation: str
+
+
+@router.post("/trips/start")
+def start_trip(body: StartTripBody):
+    _legacy_trips_guard()
     new_id = str(uuid4())
     now = datetime.now()
 
@@ -68,8 +93,8 @@ def start_trip(startLocation: str): # Consider Implementing BaseModel later, ins
         "id": new_id,
         "date": now.strftime("%Y-%m-%d"),
         "time": now.strftime("%I:%M %p"),
-        "origin": startLocation,
-        "destination": trip.destination or "End",
+        "origin": body.startLocation,
+        "destination": body.destination or "End",
         "active": True,
         "events": [],
         
@@ -83,20 +108,101 @@ def start_trip(startLocation: str): # Consider Implementing BaseModel later, ins
 
 
 @router.get("/trips/history")
-def get_trip_history():
+def get_trip_history(limit: int = Query(default=10, ge=1, le=100)):
+    _legacy_trips_guard()
     user = users_db.get(current_user_id, {})
     return {
         "success": True,
         "data": {
-            "recent_trips": trips_db[:10],
+            "recent_trips": trips_db[:limit],
             "total_trips": user.get("total_trips", 0),
             "total_miles": user.get("total_miles", 0),
         },
     }
 
-@router.post("/trips/${tripId}/end")
-def end_trip(trip_id: str, endLocation: str):
-    user = users_db.get(current_user_id, {})
+
+@router.get("/trips/analytics")
+def get_trip_analytics(user: dict = Depends(get_current_user)):
+    """Aggregate stats for the Rewards / Trip Analytics modal."""
+    user_id = str(user.get("id") or "")
+    try:
+        sb = get_supabase()
+        prof = sb.table("profiles").select("total_miles,total_trips,safety_score,gems").eq("id", user_id).limit(1).execute()
+        if prof.data:
+            p = prof.data[0]
+            trips_q = sb.table("trips").select("safety_score,gems_earned").eq("user_id", user_id).limit(500).execute()
+            rows = trips_q.data or []
+            n = len(rows)
+            avg_safety = (
+                sum(float(r.get("safety_score") or 0) for r in rows) / max(n, 1)
+                if n
+                else float(p.get("safety_score") or 85)
+            )
+            return {
+                "success": True,
+                "data": {
+                    "total_miles": float(p.get("total_miles") or 0),
+                    "total_trips": int(p.get("total_trips") or 0),
+                    "avg_safety_score": round(avg_safety, 1),
+                    "total_gems": int(p.get("gems") or 0),
+                },
+            }
+    except Exception as exc:
+        _trips_log.warning("trips/analytics: %s", exc)
+
+    return {
+        "success": True,
+        "data": {
+            "total_miles": float(user.get("total_miles") or 0),
+            "total_trips": int(user.get("total_trips") or 0),
+            "avg_safety_score": float(user.get("safety_score") or 85),
+            "total_gems": int(user.get("gems") or 0),
+        },
+    }
+
+
+@router.get("/trips/history/recent")
+def get_recent_trips_mobile(
+    user: dict = Depends(get_current_user),
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    """Flat trip list for Route History modal (matches mobile `Trip` shape)."""
+    user_id = str(user.get("id") or "")
+    out: list = []
+    try:
+        sb = get_supabase()
+        res = (
+            sb.table("trips")
+            .select("id,started_at,ended_at,distance_miles,duration_seconds,safety_score")
+            .eq("user_id", user_id)
+            .order("ended_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        for r in res.data or []:
+            dur_sec = r.get("duration_seconds")
+            if dur_sec is None and r.get("duration_minutes") is not None:
+                dur_sec = int(r["duration_minutes"] or 0) * 60
+            else:
+                dur_sec = int(dur_sec or 0)
+            out.append({
+                "id": str(r.get("id")),
+                "date": r.get("ended_at") or r.get("started_at") or "",
+                "origin": "Start",
+                "destination": "End",
+                "distance": float(r.get("distance_miles") or 0),
+                "duration": dur_sec,
+                "safety_score": float(r.get("safety_score") or 0),
+            })
+        return {"success": True, "data": out}
+    except Exception as exc:
+        _trips_log.warning("trips/history/recent: %s", exc)
+
+    return {"success": True, "data": []}
+
+@router.post("/trips/{trip_id}/end")
+def end_trip(trip_id: str, body: EndTripBody):
+    _legacy_trips_guard()
     user = users_db.get(current_user_id, {})
 
     #TODO: Calculate distance / implement
@@ -110,6 +216,7 @@ def end_trip(trip_id: str, endLocation: str):
     if not trip:
         return {"success": False, "message": "Trip not found"}
     trip["active"] = False
+    trip["destination"] = body.endLocation or trip.get("destination") or "End"
 
     return {
         "success": True,
@@ -122,21 +229,94 @@ def end_trip(trip_id: str, endLocation: str):
 
 
 
-@router.post("/trips/complete") # TODO: Unsure how to reconcile this with end trip, have replaced
-def complete_trip(distance: float = 5.0, duration: int = 15):
-    if current_user_id not in users_db:
-        users_db[current_user_id] = create_new_user(current_user_id, "Driver")
-    user = users_db[current_user_id]
-    gems_earned = int(distance * 2)
-    xp_earned = int(distance * 100)
-    user["total_trips"] = user.get("total_trips", 0) + 1
-    user["total_miles"] = user.get("total_miles", 0) + distance
-    user["gems"] = user.get("gems", 0) + gems_earned
-    return {"success": True, "data": {"gems_earned": gems_earned, "xp_earned": xp_earned, "total_miles": user.get("total_miles", 0)}}
+class TripCompleteBody(BaseModel):
+    distance_miles: float = 0
+    duration_seconds: int = 0
+    safety_score: float = 85
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+    hard_braking_events: int = 0
+    speeding_events: int = 0
+    incidents_reported: int = 0
+
+@router.post("/trips/complete")
+def complete_trip(body: TripCompleteBody, user: dict = Depends(get_current_user)):
+    """Persist a completed trip to Supabase and update profile stats."""
+    user_id = user.get("id", "")
+    distance = max(0, body.distance_miles)
+    # Keep in sync with mobile MIN_QUALIFYING_MI — no DB write or rewards for GPS-only / instant cancels
+    min_trip_miles = 0.15
+    min_trip_seconds = 45
+    if body.duration_seconds < min_trip_seconds or distance < min_trip_miles:
+        return {
+            "success": True,
+            "data": {
+                "trip_id": None,
+                "counted": False,
+                "gems_earned": 0,
+                "xp_earned": 0,
+                "safety_score": max(0, min(100, body.safety_score)),
+                "distance_miles": round(distance, 2),
+                "message": f"Trips need at least ~{min_trip_miles} mi and {min_trip_seconds}s of driving.",
+            },
+        }
+    penalty = body.hard_braking_events * 5 + body.speeding_events * 10
+    safety = max(0, min(100, body.safety_score))
+    is_premium = user.get("is_premium") or user.get("plan", "basic") not in ("basic", "free", "")
+    base_gems = max(1, int(distance * 2)) + (5 if safety > 90 else 0)
+    gems_earned = base_gems * 2 if is_premium else base_gems
+    xp_earned = max(10, int(distance * 100)) + (100 if safety > 90 else 0)
+
+    trip_id = str(uuid4())
+    trip_row = {
+        "id": trip_id,
+        "user_id": user_id,
+        "profile_id": user_id,
+        "distance_miles": round(distance, 2),
+        "duration_seconds": body.duration_seconds,
+        "safety_score": round(safety, 1),
+        "gems_earned": gems_earned,
+        "xp_earned": xp_earned,
+        "started_at": body.started_at or datetime.utcnow().isoformat(),
+        "ended_at": body.ended_at or datetime.utcnow().isoformat(),
+        "hard_braking_events": body.hard_braking_events,
+        "speeding_events": body.speeding_events,
+        "incidents_reported": body.incidents_reported,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+
+    try:
+        sb = get_supabase()
+        sb.table("trips").insert(trip_row).execute()
+        profile = sb.table("profiles").select("gems, xp, total_trips, total_miles").eq("id", user_id).limit(1).execute()
+        if profile.data:
+            p = profile.data[0]
+            sb.table("profiles").update({
+                "gems": (p.get("gems") or 0) + gems_earned,
+                "xp": (p.get("xp") or 0) + xp_earned,
+                "total_trips": (p.get("total_trips") or 0) + 1,
+                "total_miles": round((p.get("total_miles") or 0) + distance, 2),
+            }).eq("id", user_id).execute()
+    except Exception as exc:
+        _trips_log.error("Supabase trip write failed: %s", exc)
+        if ENVIRONMENT == "production":
+            raise HTTPException(status_code=503, detail="Trip storage unavailable")
+
+    return {
+        "success": True,
+        "data": {
+            "trip_id": trip_id,
+            "gems_earned": gems_earned,
+            "xp_earned": xp_earned,
+            "safety_score": round(safety, 1),
+            "distance_miles": round(distance, 2),
+        },
+    }
 
 
 @router.post("/trips/complete-with-safety")
 def complete_trip_with_safety(trip: TripResult):
+    _legacy_trips_guard()
     if current_user_id not in users_db:
         users_db[current_user_id] = create_new_user(current_user_id, "Driver")
     user = users_db[current_user_id]
@@ -216,7 +396,12 @@ def complete_trip_with_safety(trip: TripResult):
 
 
 @router.get("/trips/history/detailed")
-def get_detailed_trip_history(days: int = 30, limit: int = 50, sort_by: str = "date"):
+def get_detailed_trip_history(
+    days: int = Query(default=30, ge=1, le=365),
+    limit: int = Query(default=50, ge=1, le=100),
+    sort_by: str = "date",
+):
+    _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     filtered = [t for t in trips_db if t["date"] >= cutoff_date][:limit]
     total_distance = sum(t["distance_miles"] for t in filtered)
@@ -245,6 +430,7 @@ def get_detailed_trip_history(days: int = 30, limit: int = 50, sort_by: str = "d
 
 @router.get("/trips/weekly-insights")
 def get_weekly_insights():
+    _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
     week_trips = [t for t in trips_db if t.get("date", "") >= cutoff_date]
 
@@ -338,8 +524,9 @@ def get_weekly_insights():
 
 
 @router.post("/trips/{trip_id}/share")
-def share_trip(trip_id: int): 
-    trip = next((t for t in trips_db if t["id"] == trip_id), None)
+def share_trip(trip_id: str):
+    _legacy_trips_guard()
+    trip = next((t for t in trips_db if str(t.get("id")) == str(trip_id)), None)
     if not trip:
         return {"success": False, "message": "Trip not found"}
     share_url = f"https://snaproad.app/trip/{trip_id}"
@@ -347,92 +534,193 @@ def share_trip(trip_id: int):
 
 
 # ==================== FUEL ====================
+# Wired to Supabase fuel_history table. In-memory fallback only for non-production.
+
+
+def _fuel_uid(user: dict) -> str:
+    return str(user.get("user_id") or user.get("id") or "")
+
+
+def _fuel_query(user: dict, sb=None):
+    """Paginated fuel_history for the authenticated user."""
+    if sb is None:
+        sb = get_supabase()
+    return sb.table("fuel_history").select("*").eq("user_id", _fuel_uid(user)).order("created_at", desc=True)
+
+
 @router.get("/fuel/history")
-def get_fuel_logs():
-    return {"success": True, "data": fuel_logs}
+def get_fuel_history(
+    user: dict = Depends(get_current_user),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    try:
+        sb = get_supabase()
+        uid = _fuel_uid(user)
+        offset = (page - 1) * limit
+        rows = sb.table("fuel_history").select("*", count="exact").eq("user_id", uid).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+        total = rows.count if rows.count is not None else len(rows.data or [])
+        return {
+            "success": True,
+            "data": {
+                "items": rows.data or [],
+                "pagination": {"page": page, "limit": limit, "total": total, "total_pages": max(1, (total + limit - 1) // limit)},
+            },
+        }
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        start = (page - 1) * limit
+        return {"success": True, "data": {"items": fuel_logs[start:start + limit], "pagination": {"page": page, "limit": limit, "total": len(fuel_logs), "total_pages": max(1, (len(fuel_logs) + limit - 1) // limit)}}}
 
 
 @router.post("/fuel/logs")
-def log_fuel(entry: FuelLog):
-    new_id = str(uuid4())
-    new_entry = {"id": new_id, "date": entry.date, "station": entry.station, "price_per_gallon": entry.price_per_gallon, "gallons": entry.gallons, "total": entry.total}
-    fuel_logs.insert(0, new_entry)
-    return {"success": True, "message": "Fuel log entry added", "data": new_entry}
+@router.post("/fuel/log")
+def log_fuel(entry: FuelLogCreate, user: dict = Depends(get_current_user)):
+    uid = _fuel_uid(user)
+    total_cost = round(float(entry.gallons) * float(entry.price_per_gallon), 2)
+    payload = {
+        "user_id": uid,
+        "station_name": (entry.station or "Unknown").strip() or "Unknown",
+        "price_per_gallon": round(float(entry.price_per_gallon), 4),
+        "gallons": round(float(entry.gallons), 4),
+        "total_cost": total_cost,
+        "odometer": round(float(entry.odometer), 1) if entry.odometer else None,
+    }
+    try:
+        sb = get_supabase()
+        created = sb.table("fuel_history").insert(payload).execute()
+        row = (created.data or [{}])[0]
+        return {"success": True, "message": "Fuel log entry added", "data": row}
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        new_entry = {**payload, "id": str(uuid4()), "date": datetime.utcnow().date().isoformat(), "total": total_cost}
+        fuel_logs.insert(0, new_entry)
+        return {"success": True, "message": "Fuel log entry added (dev/memory)", "data": new_entry}
+
 
 @router.get("/fuel/logs")
-def get_fuel_logs(page: int = 1, limit: int = 20):
-    
-    start = (page - 1) * limit
-    end = start + limit
-
-    total = len(trips_db)
-    trips = trips_db[start:end]
-
-    return {
-        "success": True,
-        "data": {
-            "items": fuel_logs,
-            "pagination": {
-                "page": page,
-                "limit": limit,
-                "total": total,
-                "total_pages": (total + limit - 1) // limit
-            }
-        }
-    }
+def get_fuel_logs(
+    user: dict = Depends(get_current_user),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    try:
+        sb = get_supabase()
+        uid = _fuel_uid(user)
+        offset = (page - 1) * limit
+        rows = sb.table("fuel_history").select("*", count="exact").eq("user_id", uid).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+        total = rows.count if rows.count is not None else len(rows.data or [])
+        return {"success": True, "data": {"items": rows.data or [], "pagination": {"page": page, "limit": limit, "total": total, "total_pages": max(1, (total + limit - 1) // limit)}}}
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        start = (page - 1) * limit
+        return {"success": True, "data": {"items": fuel_logs[start:start + limit], "pagination": {"page": page, "limit": limit, "total": len(fuel_logs), "total_pages": max(1, (len(fuel_logs) + limit - 1) // limit)}}}
 
 
 @router.get("/fuel/trends")
-def get_fuel_trends():
-    total_gallons = sum(f["gallons"] for f in fuel_logs)
-    total_spent = sum(f["total"] for f in fuel_logs)
-    avg_price = total_spent / total_gallons if total_gallons > 0 else 0
-    return {"success": True, "data": {"total_gallons": round(total_gallons, 1), "total_spent": round(total_spent, 2), "avg_price_per_gallon": round(avg_price, 2), "entries": len(fuel_logs), "monthly_avg_gallons": round(total_gallons / 3, 1)}}
+def get_fuel_trends(user: dict = Depends(get_current_user)):
+    try:
+        sb = get_supabase()
+        uid = _fuel_uid(user)
+        rows = sb.table("fuel_history").select("gallons, total_cost, created_at").eq("user_id", uid).execute()
+        items = rows.data or []
+        total_gallons = sum(float(f.get("gallons", 0)) for f in items)
+        total_spent = sum(float(f.get("total_cost", 0)) for f in items)
+        avg_price = total_spent / total_gallons if total_gallons > 0 else 0
+        return {"success": True, "data": {"total_gallons": round(total_gallons, 1), "total_spent": round(total_spent, 2), "avg_price_per_gallon": round(avg_price, 2), "entries": len(items), "monthly_avg_gallons": round(total_gallons / max(1, len(items) // 30 + 1), 1)}}
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        total_gallons = sum(f["gallons"] for f in fuel_logs)
+        total_spent = sum(f.get("total_cost", f.get("total", 0)) for f in fuel_logs)
+        avg_price = total_spent / total_gallons if total_gallons > 0 else 0
+        return {"success": True, "data": {"total_gallons": round(total_gallons, 1), "total_spent": round(total_spent, 2), "avg_price_per_gallon": round(avg_price, 2), "entries": len(fuel_logs), "monthly_avg_gallons": round(total_gallons / 3, 1)}}
 
 
 @router.get("/fuel/prices")
-def get_fuel_prices(lat: float = 39.9612, lng: float = -82.9988):
+def get_fuel_prices(user: dict = Depends(get_current_user), lat: float = 39.9612, lng: float = -82.9988):
     return {
         "success": True,
         "data": {
             "prices": FUEL_PRICES,
-            "nearby_stations": [
-                {"name": "Shell", "address": "123 Main St", "regular": 3.19, "distance_miles": 0.5},
-                {"name": "BP", "address": "456 Oak Ave", "regular": 3.29, "distance_miles": 0.8},
-                {"name": "Speedway", "address": "789 Elm Rd", "regular": 3.25, "distance_miles": 1.2},
-            ],
             "location": {"lat": lat, "lng": lng},
         },
     }
 
-@router.get("/api/fuel/stats")
-def get_fuel_stats():
-    return {
-        "success": True,
-        "data": fuel_stats
-    }
+
+@router.get("/fuel/stats")
+def get_fuel_stats(user: dict = Depends(get_current_user)):
+    try:
+        sb = get_supabase()
+        uid = _fuel_uid(user)
+        rows = sb.table("fuel_history").select("gallons, total_cost, odometer, created_at").eq("user_id", uid).order("created_at", desc=True).execute()
+        items = rows.data or []
+        total_gallons = sum(float(f.get("gallons", 0)) for f in items)
+        total_spent = sum(float(f.get("total_cost", 0)) for f in items)
+        avg_mpg = None
+        if len(items) >= 2:
+            first_odom = float(items[-1].get("odometer") or 0)
+            last_odom = float(items[0].get("odometer") or 0)
+            if last_odom > first_odom and total_gallons > 0:
+                avg_mpg = round((last_odom - first_odom) / total_gallons, 1)
+        return {"success": True, "data": {"total_entries": len(items), "total_gallons": round(total_gallons, 1), "total_spent": round(total_spent, 2), "avg_mpg": avg_mpg}}
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        return {"success": True, "data": fuel_stats}
+
 
 @router.get("/fuel/analytics")
-def get_fuel_analytics(months: int = 3):
-    monthly_data = []
-    for i in range(months):
-        month_date = datetime.now() - timedelta(days=30 * i)
-        month_trips = [t for t in trips_db if t["date"].startswith(month_date.strftime("%Y-%m"))]
-        distance = sum(t["distance_miles"] for t in month_trips)
-        fuel = sum(t["fuel_used_gallons"] for t in month_trips)
-        monthly_data.append({"month": month_date.strftime("%B %Y"), "trips": len(month_trips), "distance_miles": round(distance, 1), "fuel_gallons": round(fuel, 2), "avg_mpg": round(distance / max(fuel, 0.1), 1), "cost_estimate": round(fuel * FUEL_PRICES["regular"], 2)})
-    return {"success": True, "data": {"monthly_breakdown": monthly_data, "current_fuel_price": FUEL_PRICES["regular"], "vehicle_efficiency": {"your_avg_mpg": 31.2, "national_avg_mpg": 25.4, "efficiency_rating": "Excellent"}}}
+def get_fuel_analytics(user: dict = Depends(get_current_user), months: int = Query(default=3, ge=1, le=24)):
+    try:
+        sb = get_supabase()
+        uid = _fuel_uid(user)
+        since = (datetime.now() - timedelta(days=30 * months)).isoformat()
+        fuel_rows = sb.table("fuel_history").select("gallons, total_cost, created_at").eq("user_id", uid).gte("created_at", since).execute()
+        trip_rows = sb.table("trips").select("distance_miles, created_at").eq("profile_id", uid).gte("created_at", since).execute()
+        monthly_data = []
+        for i in range(months):
+            month_date = datetime.now() - timedelta(days=30 * i)
+            prefix = month_date.strftime("%Y-%m")
+            m_fuel = [f for f in (fuel_rows.data or []) if (f.get("created_at") or "").startswith(prefix)]
+            m_trips = [t for t in (trip_rows.data or []) if (t.get("created_at") or "").startswith(prefix)]
+            distance = sum(float(t.get("distance_miles", 0)) for t in m_trips)
+            fuel = sum(float(f.get("gallons", 0)) for f in m_fuel)
+            cost = sum(float(f.get("total_cost", 0)) for f in m_fuel)
+            monthly_data.append({"month": month_date.strftime("%B %Y"), "trips": len(m_trips), "distance_miles": round(distance, 1), "fuel_gallons": round(fuel, 2), "avg_mpg": round(distance / max(fuel, 0.1), 1), "cost_estimate": round(cost, 2)})
+        return {"success": True, "data": {"monthly_breakdown": monthly_data}}
+    except Exception:
+        if ENVIRONMENT == "production":
+            raise
+        monthly_data = []
+        for i in range(months):
+            month_date = datetime.now() - timedelta(days=30 * i)
+            month_trips = [t for t in trips_db if t["date"].startswith(month_date.strftime("%Y-%m"))]
+            distance = sum(t["distance_miles"] for t in month_trips)
+            fuel = sum(t["fuel_used_gallons"] for t in month_trips)
+            monthly_data.append({"month": month_date.strftime("%B %Y"), "trips": len(month_trips), "distance_miles": round(distance, 1), "fuel_gallons": round(fuel, 2), "avg_mpg": round(distance / max(fuel, 0.1), 1), "cost_estimate": round(fuel * FUEL_PRICES["regular"], 2)})
+        return {"success": True, "data": {"monthly_breakdown": monthly_data}}
 
 
-# ==================== INCIDENTS ====================
-@router.post("/incidents/report")
-def report_incident(incident: ReportIncident):
-    return {"success": True, "message": f"Incident '{incident.incident_type}' reported. Thank you for keeping roads safe!"}
+# ==================== INCIDENTS (legacy shim) ====================
+# Keep a non-conflicting legacy endpoint to avoid shadowing the dedicated incidents router.
+@router.post("/incidents/report-legacy")
+def report_incident_legacy(incident: dict):
+    _legacy_trips_guard()
+    incident_type = str(incident.get("incident_type") or incident.get("type") or "unknown")
+    return {"success": True, "message": f"Incident '{incident_type}' reported. Thank you for keeping roads safe!"}
 
 
 # ==================== 3D ROUTE HISTORY ====================
 @router.get("/routes/history-3d")
-def get_route_history_3d(days: int = 90, limit: int = 100):
+def get_route_history_3d(
+    days: int = Query(default=90, ge=1, le=365),
+    limit: int = Query(default=100, ge=1, le=100),
+):
+    _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     filtered = [t for t in trips_db if t["date"] >= cutoff_date][:limit]
     route_groups = {}
@@ -456,3 +744,22 @@ def get_route_history_3d(days: int = 90, limit: int = 100):
     routes_3d.sort(key=lambda x: x["total_trips"], reverse=True)
     total_distance = sum(r["total_distance_miles"] for r in routes_3d)
     return {"success": True, "data": {"routes": routes_3d, "center": {"lat": 39.9612, "lng": -82.9988}, "total_unique_routes": len(routes_3d), "total_trips": sum(r["total_trips"] for r in routes_3d), "total_distance": total_distance}}
+
+
+if ENVIRONMENT == "production":
+    # Remove legacy/dev-only endpoints from the production API surface.
+    _LEGACY_PROD_DISABLED = {
+        "/api/trips",
+        "/api/trips/${id}",
+        "/api/trips/start",
+        "/api/trips/history",
+        "/api/trips/${tripId}/end",
+        "/api/trips/complete",
+        "/api/trips/complete-with-safety",
+        "/api/trips/history/detailed",
+        "/api/trips/weekly-insights",
+        "/api/trips/{trip_id}/share",
+        "/api/incidents/report-legacy",
+        "/api/routes/history-3d",
+    }
+    router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]

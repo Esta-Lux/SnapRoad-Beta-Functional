@@ -9,8 +9,10 @@ import logging
 from typing import Optional
 from fastapi import HTTPException
 from database import get_supabase
+from passlib.context import CryptContext
 
 logger = logging.getLogger(__name__)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # ─────────────────────────────────────────────
@@ -44,17 +46,29 @@ def _safe_count(table: str, filters: Optional[dict] = None) -> int:
 
 def sb_get_user_by_email(email: str) -> Optional[dict]:
     try:
-        result = _sb().table("profiles").select("*").eq("email", email).limit(1).execute()
+        email = (email or "").strip().lower()
+        if not email:
+            return None
+        result = _sb().table("profiles").select("*").ilike("email", email).limit(1).execute()
         return result.data[0] if result.data else None
     except Exception as e:
         logger.warning(f"sb_get_user_by_email error: {e}")
         return None
 
 
+def _is_duplicate_error(err_str: str) -> bool:
+    s = err_str.lower()
+    return (("already" in s and "exist" in s) or "duplicate" in s
+            or "user_already_exists" in s or "email address" in s and "already been registered" in s)
+
+
 def sb_create_user(email: str, password: str, name: str, role: str = "driver") -> dict:
-    import hashlib
+    email = (email or "").strip().lower()
     sb = _sb()
+    password_hash = pwd_context.hash(password)
     auth_user_id = None
+
+    # --- Strategy 1: admin.create_user (service-role, skips email confirmation) ---
     try:
         auth_resp = sb.auth.admin.create_user({
             "email": email,
@@ -62,47 +76,88 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
             "email_confirm": True,
         })
         auth_user_id = str(auth_resp.user.id)
+    except Exception as admin_err:
+        admin_str = str(admin_err)
+        if _is_duplicate_error(admin_str):
+            raise HTTPException(
+                status_code=409,
+                detail="This email is already registered. Use Sign in instead.",
+            )
+        logger.warning("admin.create_user failed for %s: %s — trying client sign_up", email, admin_err)
 
-        profile = {
-            "id": auth_user_id,
-            "email": email,
-            "name": name,
-            "password_hash": hashlib.sha256(password.encode()).hexdigest(),
-            "role": role,
-            "status": "active",
-            "xp": 0,
-            "level": 1,
-            "gems": 0,
-        }
+    # --- Strategy 2: client sign_up (works even when admin triggers fail) ---
+    if not auth_user_id:
+        try:
+            sign_up_resp = sb.auth.sign_up({
+                "email": email,
+                "password": password,
+                "options": {"data": {"name": name}},
+            })
+            user_obj = getattr(sign_up_resp, "user", None)
+            if user_obj and getattr(user_obj, "id", None):
+                auth_user_id = str(user_obj.id)
+        except Exception as signup_err:
+            signup_str = str(signup_err)
+            if _is_duplicate_error(signup_str):
+                raise HTTPException(
+                    status_code=409,
+                    detail="This email is already registered. Use Sign in instead.",
+                )
+            logger.warning("client sign_up also failed for %s: %s — creating profile-only account", email, signup_err)
+
+    # --- Build the profiles row (works with or without Supabase Auth id) ---
+    import uuid
+    profile_id = auth_user_id or str(uuid.uuid4())
+
+    profile = {
+        "id": profile_id,
+        "email": email,
+        "name": name,
+        "full_name": name,
+        "password_hash": password_hash,
+        "role": role,
+        "status": "active",
+        "xp": 0,
+        "level": 1,
+        "gems": 0,
+    }
+    try:
         sb.table("profiles").upsert(profile).execute()
-        return profile
-    except Exception as e:
-        err = str(e).lower()
+    except Exception as profile_err:
+        profile_str = str(profile_err).lower()
+        if "duplicate" in profile_str or "unique" in profile_str or "already exists" in profile_str:
+            raise HTTPException(
+                status_code=409,
+                detail="This email is already registered. Use Sign in instead.",
+            )
+        logger.error("Profile upsert failed for %s: %s", email, profile_err, exc_info=True)
         if auth_user_id:
             try:
                 sb.auth.admin.delete_user(auth_user_id)
-            except Exception as rollback_err:
-                logger.error("sb_create_user rollback failed for %s: %s", auth_user_id, rollback_err)
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail="Failed to create user account. Please try again.")
 
-        if ("already" in err and "exist" in err) or ("duplicate" in err):
-            raise HTTPException(status_code=400, detail="Email already registered")
-
-        logger.error("sb_create_user failed for %s: %s", email, e)
-        raise HTTPException(status_code=500, detail="Failed to create user account")
+    return profile
 
 
 def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[str]]:
     """Returns (profile_dict, None) on success or (None, error_message) on failure."""
-    import hashlib
     import time
-    
-    max_retries = 3
+
+    raw_email = (email or "").strip()
+    email = (email or "").strip().lower()
+    if not email:
+        return None, "Invalid email or password"
+
+    # Keep login latency bounded; frontend/mobile otherwise hit client-side timeouts.
+    max_retries = 2
     for attempt in range(max_retries):
         try:
             sb = _sb()
-            
-            # Fetch profile using service role client (bypasses RLS)
-            profile_result = sb.table("profiles").select("*").eq("email", email).limit(1).execute()
+
+            # Fetch profile using service role client (bypasses RLS); ilike = case-insensitive match
+            profile_result = sb.table("profiles").select("*").ilike("email", email).limit(1).execute()
             if not profile_result or not profile_result.data or len(profile_result.data) == 0:
                 logger.warning(f"Profile not found for {email}")
                 return None, "Invalid email or password"
@@ -110,36 +165,60 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
             profile_data = profile_result.data[0]
             logger.info(f"Profile fetch SUCCESS for {email}, role={profile_data.get('role')}")
             
-            # Verify password using stored hash
-            password_hash = hashlib.sha256(password.encode()).hexdigest()
-            stored_hash = profile_data.get("password_hash", "")
-            
-            if password_hash != stored_hash:
+            # Verify password with bcrypt; support legacy sha256 for seamless migration.
+            stored_hash = str(profile_data.get("password_hash", "") or "")
+            password_ok = False
+            if stored_hash.startswith("$2"):
+                password_ok = pwd_context.verify(password, stored_hash)
+            else:
+                import hashlib
+                legacy_sha = hashlib.sha256(password.encode()).hexdigest()
+                password_ok = legacy_sha == stored_hash
+                if password_ok:
+                    # Upgrade legacy hash to bcrypt on successful login.
+                    try:
+                        _sb().table("profiles").update(
+                            {"password_hash": pwd_context.hash(password)}
+                        ).eq("id", profile_data.get("id")).execute()
+                    except Exception as hash_upgrade_error:
+                        logger.warning("Password hash upgrade failed for %s: %s", email, hash_upgrade_error)
+
+            if not password_ok:
                 logger.warning(f"Password mismatch for {email}")
                 return None, "Invalid email or password"
-            
-            logger.info(f"Password verified for {email}")
+
+            logger.info("Password verified for %s", raw_email or email)
             return profile_data, None
-            
+
         except Exception as e:
             error_str = str(e)
-            # Check if it's a network/connection error
-            if any(err in error_str.lower() for err in ["timeout", "connection", "getaddrinfo", "disconnected"]):
+            if any(
+                err in error_str.lower()
+                for err in ["timeout", "connection", "getaddrinfo", "disconnected"]
+            ):
                 if attempt < max_retries - 1:
-                    logger.warning(f"Network error for {email} (attempt {attempt + 1}/{max_retries}): {e}. Retrying...")
-                    # Reset client and retry
+                    logger.warning(
+                        "Network error for %s (attempt %s/%s): %s. Retrying...",
+                        raw_email or email,
+                        attempt + 1,
+                        max_retries,
+                        e,
+                    )
                     from database import reset_supabase_client
+
                     reset_supabase_client()
-                    time.sleep(0.5)  # Brief delay before retry
+                    time.sleep(0.25)
                     continue
-                else:
-                    logger.error(f"Network error for {email} after {max_retries} attempts: {e}")
-                    return None, "Service temporarily unavailable. Please try again."
-            else:
-                # Non-network error, don't retry
-                logger.warning(f"sb_login_user error for {email}: {e}")
-                return None, str(e)
-    
+                logger.error(
+                    "Network error for %s after %s attempts: %s",
+                    raw_email or email,
+                    max_retries,
+                    e,
+                )
+                return None, "Service temporarily unavailable. Please try again."
+            logger.warning("sb_login_user error for %s: %s", raw_email or email, e)
+            return None, str(e)
+
     return None, "Invalid email or password"
 
 
@@ -305,6 +384,29 @@ def sb_get_partner_locations(partner_id: Optional[str] = None, limit: int = 100)
         if not _table_missing(e):
             logger.error(f"sb_get_partner_locations: {e}")
         return []
+
+
+def sb_get_partner_locations_for_admin_map(limit: int = 500) -> list:
+    """All partner_locations rows with business_name for admin live map."""
+    locs = sb_get_partner_locations(partner_id=None, limit=limit)
+    if not locs:
+        return []
+    pids = list({str(l.get("partner_id")) for l in locs if l.get("partner_id")})
+    name_map: dict = {}
+    if pids:
+        try:
+            pr = _sb().table("partners").select("id,business_name").in_("id", pids).execute()
+            for p in pr.data or []:
+                name_map[str(p.get("id"))] = p.get("business_name") or ""
+        except Exception:
+            pass
+    out = []
+    for l in locs:
+        pid = str(l.get("partner_id") or "")
+        row = dict(l)
+        row["partner_business_name"] = name_map.get(pid, "")
+        out.append(row)
+    return out
 
 
 def sb_create_partner_location(data: dict) -> Optional[dict]:
@@ -1001,8 +1103,10 @@ def sb_create_concern(payload: dict) -> Optional[dict]:
             "status": payload.get("status", "open"),
             "context": payload.get("context"),
         }
-        result = _sb().table("concerns").insert(data).execute()
-        return result.data[0] if result.data else None
+        # PostgREST often returns no body on insert unless we ask for representation.
+        result = _sb().table("concerns").insert(data).select("*").execute()
+        rows = result.data if result.data else []
+        return rows[0] if rows else None
     except Exception as e:
         if not _table_missing(e):
             logger.error(f"sb_create_concern: {e}")
@@ -1097,13 +1201,93 @@ def sb_get_app_config() -> dict:
         return {}
 
 
+def sb_get_app_config_with_meta() -> tuple:
+    """Returns (flat_config_dict, meta_dict keyed by config key with updated_at, updated_by)."""
+    try:
+        result = _sb().table("app_config").select("key,value,updated_at,updated_by").execute()
+        out = {}
+        meta = {}
+        for row in (result.data or []):
+            k = row.get("key")
+            if k is None:
+                continue
+            v = row.get("value")
+            if v is None:
+                out[k] = None
+            elif isinstance(v, bool):
+                out[k] = v
+            elif isinstance(v, (int, float)):
+                out[k] = v
+            elif isinstance(v, str):
+                out[k] = v
+            else:
+                out[k] = v
+            meta[k] = {
+                "updated_at": row.get("updated_at"),
+                "updated_by": row.get("updated_by"),
+            }
+        return out, meta
+    except Exception as e:
+        if not _table_missing(e):
+            logger.warning(f"sb_get_app_config_with_meta: {e}")
+        return {}, {}
+
+
+def sb_get_road_reports_admin_list(limit: int = 100) -> list:
+    """Recent driver-submitted road reports for admin Incidents tab (same rows as /api/incidents/report)."""
+    try:
+        r = (
+            _sb()
+            .table("road_reports")
+            .select("id,user_id,type,lat,lng,description,upvotes,status,created_at,expires_at")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return r.data or []
+    except Exception as e:
+        if not _table_missing(e):
+            logger.warning(f"sb_get_road_reports_admin_list: {e}")
+        return []
+
+
+def sb_get_road_reports_for_admin_map(limit: int = 400) -> list:
+    """Active road reports with coordinates for admin live map."""
+    try:
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        r = (
+            _sb()
+            .table("road_reports")
+            .select("id,type,lat,lng,upvotes,status,created_at,expires_at,description")
+            .eq("status", "active")
+            .gt("expires_at", now)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return r.data or []
+    except Exception as e:
+        if not _table_missing(e):
+            logger.warning(f"sb_get_road_reports_for_admin_map: {e}")
+        return []
+
+
 def sb_update_app_config(key: str, value, updated_by: Optional[str] = None) -> bool:
     try:
         from datetime import datetime, timezone
+
         row = {"key": key, "value": value, "updated_at": datetime.now(timezone.utc).isoformat()}
         if updated_by:
             row["updated_by"] = updated_by
         _sb().table("app_config").upsert(row, on_conflict="key").execute()
+        try:
+            from services.runtime_config import invalidate_runtime_config_cache
+
+            invalidate_runtime_config_cache()
+        except Exception:
+            pass
         return True
     except Exception as e:
         logger.warning(f"sb_update_app_config: {e}")

@@ -1,10 +1,10 @@
 import logging
-import uuid
+import os
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from models.schemas import SignupRequest, LoginRequest
-from services.mock_data import users_db, user_credentials, create_new_user
+from starlette.requests import Request
+from models.schemas import SignupRequest, LoginRequest, ForgotPasswordRequest, ResendVerificationRequest
 from middleware.auth import create_access_token
 from database import get_supabase
 from services.supabase_service import (
@@ -13,9 +13,15 @@ from services.supabase_service import (
     sb_login_user,
     sb_get_auth_user_from_access_token,
 )
+from limiter import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
+ALLOW_MOCK_AUTH = (
+    not IS_PRODUCTION
+    and os.getenv("ALLOW_MOCK_AUTH", "false").strip().lower() in ("1", "true", "yes")
+)
 
 
 def _build_token(user_dict: dict) -> str:
@@ -40,76 +46,63 @@ def _clean(user: dict) -> dict:
 
 
 @router.post("/signup")
-def signup(request: SignupRequest):
-    # 1. Try Supabase first (skip if not configured)
+@limiter.limit("5/minute")
+def signup(request: Request, body: SignupRequest):
+    # Supabase only (no mock fallback)
+    email = (body.email or "").strip().lower()
+    name = (body.name or body.full_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
     try:
-        existing = sb_get_user_by_email(request.email)
+        existing = sb_get_user_by_email(email)
         if existing:
-            raise HTTPException(status_code=400, detail="Email already registered")
-        user = sb_create_user(request.email, request.password, request.name, "driver")
+            raise HTTPException(
+                status_code=409,
+                detail="This email is already registered. Use Sign in instead.",
+            )
+        user = sb_create_user(email, body.password, name, "driver")
         token = _build_token(user)
-        logger.info(f"Supabase signup: {request.email}")
+        logger.info(f"Supabase signup: {email}")
         return {"success": True, "data": {"user": _clean(user), "token": token}}
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning(f"Supabase signup failed, using mock: {e}")
-
-    # 2. Mock fallback
-    try:
-        if request.email in user_credentials:
-            raise HTTPException(status_code=400, detail="Email already registered")
-        import services.mock_data as mock_data
-        # Use a UUID so mock tokens can still hit Supabase-backed routes (which expect UUID user ids).
-        new_id = str(uuid.uuid4())
-        user_credentials[request.email] = {"password": request.password, "user_id": new_id}
-        users_db[new_id] = create_new_user(new_id, request.name, request.email)
-        token = create_access_token({"sub": new_id, "email": request.email, "role": "user"})
-        return {"success": True, "data": {"user": _clean(users_db[new_id]), "token": token}}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Signup mock path failed: %s", e)
-        raise HTTPException(status_code=500, detail="Signup failed. Please try again.")
+        logger.exception("Supabase signup failed: %s", e)
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
 
 
 @router.post("/login")
-def login(request: LoginRequest):
+@limiter.limit("10/minute")
+def login(request: Request, body: LoginRequest):
     sb_error: Optional[str] = None
+    email = (body.email or "").strip().lower()
 
-    # 1. Try Supabase auth
+    # Supabase only (no mock fallback)
     try:
-        sb_user, sb_error = sb_login_user(request.email, request.password)
+        sb_user, sb_error = sb_login_user(email, body.password)
         if sb_user:
             # Double-check the role by fetching profile again to avoid RLS issues
-            profile = sb_get_user_by_email(request.email)
+            profile = sb_get_user_by_email(email)
             if profile:
                 sb_user = profile
-                logger.info(f"Supabase login: {request.email}, role={profile.get('role')}")
+                logger.info(f"Supabase login: {email}, role={profile.get('role')}")
             token = _build_token(sb_user)
             return {"success": True, "data": {"user": _clean(sb_user), "token": token}}
         if sb_error:
-            logger.warning(f"Supabase login failed for {request.email}: {sb_error}")
+            logger.warning(f"Supabase login failed for {email}: {sb_error}")
     except Exception as e:
         logger.warning(f"Supabase login error: {e}")
         sb_error = str(e)
 
-    # 2. Mock fallback
-    cred = user_credentials.get(request.email)
-    if not cred or cred["password"] != request.password:
-        detail = "Invalid email or password"
-        if sb_error:
-            logger.info(f"Both Supabase and mock failed for {request.email}. Supabase reason: {sb_error}")
-        raise HTTPException(status_code=401, detail=detail)
-
-    uid = cred["user_id"]
-    user = users_db.get(uid, {})
-    token = create_access_token({"sub": uid, "email": request.email, "role": "user"})
-    return {"success": True, "data": {"user": _clean(user), "token": token}}
+    detail = "Invalid email or password"
+    if sb_error and "invalid email or password" not in sb_error.lower():
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
+    raise HTTPException(status_code=401, detail=detail)
 
 
 @router.post("/oauth/supabase")
-def oauth_supabase(payload: dict):
+@limiter.limit("10/minute")
+def oauth_supabase(request: Request, payload: dict):
     """
     Exchange a Supabase access token (OAuth session) for a SnapRoad JWT.
     Frontend uses Supabase OAuth (Google/Apple), then calls this endpoint.
@@ -175,17 +168,62 @@ def oauth_supabase(payload: dict):
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("oauth_supabase profile sync failed, falling back to mock: %s", e)
+        logger.exception("oauth_supabase profile sync failed: %s", e)
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
 
-    # 3. Mock fallback (still returns a valid SnapRoad JWT)
-    new_id = uid or str(uuid.uuid4())
-    if email not in user_credentials:
-        user_credentials[email] = {"password": "__oauth__", "user_id": new_id}
-    if new_id not in users_db:
-        users_db[new_id] = create_new_user(new_id, name, email)
+
+@router.post("/forgot-password")
+@limiter.limit("5/minute")
+def forgot_password(request: Request, body: ForgotPasswordRequest):
+    email = (body.email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    # Keep response generic to avoid account enumeration.
+    generic_ok = {
+        "success": True,
+        "data": {"message": "If an account exists, a reset email has been sent."},
+    }
+
     try:
-        token = create_access_token({"sub": new_id, "email": email, "role": "user"})
-        return {"success": True, "data": {"user": _clean(users_db[new_id]), "token": token}}
+        sb = get_supabase()
+        options = {"redirect_to": "snaproad://reset-password"}
+        # Prefer reset_password_for_email (recovery). Older reset_password_email can mis-route templates.
+        if hasattr(sb.auth, "reset_password_for_email"):
+            sb.auth.reset_password_for_email(email, options)
+        elif hasattr(sb.auth, "reset_password_email"):
+            sb.auth.reset_password_email(email, options)
+        else:
+            logger.warning("Supabase client missing password reset method")
+        return generic_ok
     except Exception as e:
-        logger.exception("oauth_supabase mock fallback failed: %s", e)
-        raise HTTPException(status_code=500, detail="OAuth login failed. Please try again.")
+        logger.warning("forgot_password failed for %s: %s", email, e)
+        # Return generic success to avoid leaking account existence/system state.
+        return generic_ok
+
+
+@router.post("/resend-verification")
+@limiter.limit("5/minute")
+def resend_verification(request: Request, body: ResendVerificationRequest):
+    email = (body.email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    generic_ok = {
+        "success": True,
+        "data": {"message": "If an account exists, a verification email has been sent."},
+    }
+
+    try:
+        sb = get_supabase()
+        # Support multiple supabase-py versions.
+        if hasattr(sb.auth, "resend"):
+            sb.auth.resend({"type": "signup", "email": email, "options": {"email_redirect_to": "snaproad://auth"}})
+        elif hasattr(sb.auth, "resend_signup_confirmation"):
+            sb.auth.resend_signup_confirmation(email)
+        else:
+            logger.warning("Supabase client missing resend verification method")
+        return generic_ok
+    except Exception as e:
+        logger.warning("resend_verification failed for %s: %s", email, e)
+        return generic_ok

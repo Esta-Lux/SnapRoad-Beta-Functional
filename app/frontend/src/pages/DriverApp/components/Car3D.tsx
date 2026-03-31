@@ -1,7 +1,22 @@
 import { useMemo } from 'react'
 
+/** Paint entry: base fields plus optional metallic / matte / premium flags. */
+export type CarPaintSpec = {
+  name: string
+  hex: string
+  type: string
+  body: string
+  highlight: string
+  reflection: string
+  shine?: boolean
+  matte?: boolean
+  premium?: boolean
+  glow?: boolean
+  price?: number
+}
+
 // Extended Color Palette - 24 colors with realistic car paint effects
-export const CAR_COLORS = {
+export const CAR_COLORS: Record<string, CarPaintSpec> = {
   // Standard Colors
   'midnight-black': { name: 'Midnight Black', hex: '#0a0a0a', type: 'standard', 
     body: 'linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 40%, #050505 100%)',

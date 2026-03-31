@@ -17,6 +17,10 @@ export interface User {
   totalMiles: number;
   badges: number;
   createdAt: string;
+  /** Present on some login/profile payloads (admin, Supabase-shaped users). */
+  role?: string;
+  full_name?: string;
+  user_metadata?: { full_name?: string; name?: string; [key: string]: unknown };
 }
 
 export interface UserStats {

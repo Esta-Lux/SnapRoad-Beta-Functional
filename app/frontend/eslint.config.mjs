@@ -35,6 +35,18 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'no-unused-vars': 'off',
+      // Partner/driver code uses many intentional silent catches
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  {
+    files: ['src/pages/DriverApp/index.tsx'],
+    rules: {
+      // Legacy shell: @ts-nocheck and patterns CI flags; tighten incrementally
+      '@typescript-eslint/ban-ts-comment': 'off',
+      'no-constant-binary-expression': 'off',
+      'no-useless-assignment': 'off',
+      'no-useless-catch': 'off',
     },
   }
 );

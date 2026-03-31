@@ -4,6 +4,9 @@ This will be progressively replaced by Supabase queries.
 """
 from datetime import datetime, timedelta
 import random
+import os
+
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
 
 # ==================== PRICING ====================
 pricing_config = {
@@ -87,6 +90,25 @@ user_credentials = {
     "partner@snaproad.com": {"password": "password123", "user_id": DEFAULT_PARTNER_ID},
     "admin@snaproad.com": {"password": "password123", "user_id": DEFAULT_ADMIN_ID},
 }
+
+if IS_PRODUCTION:
+    users_db.clear()
+    user_credentials.clear()
+    current_user_id = ""
+
+# Defer clearing mutable collections until after they are defined below.
+# _clear_all_mock_in_production() is called at the end of this module.
+def _clear_all_mock_in_production() -> None:
+    """Wipe every mutable mock structure so production never serves seed data."""
+    if not IS_PRODUCTION:
+        return
+    for name, obj in list(globals().items()):
+        if name.startswith("_") or name.isupper():
+            continue
+        if isinstance(obj, list):
+            obj.clear()
+        elif isinstance(obj, dict) and name.endswith("_db"):
+            obj.clear()
 
 # ==================== ROAD REPORTS ====================
 # Seed traffic cameras and road reports (Columbus OH area) so map overlay has data to show
@@ -287,3 +309,5 @@ CAR_SKINS = [
 # ==================== TRIPS ====================
 # Real-time only: trips added when user completes a trip via app (no mock seed).
 trips_db = []
+
+_clear_all_mock_in_production()

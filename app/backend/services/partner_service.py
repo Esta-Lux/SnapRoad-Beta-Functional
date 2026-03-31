@@ -125,11 +125,27 @@ partner_db["offers"] = {
     }
 }
 
+def _is_prod():
+    return os.getenv("ENVIRONMENT", "development").lower() == "production"
+
+
+def _sb():
+    from database import get_supabase
+    return get_supabase()
+
+
 class PartnerService:
     """Service for Partner Portal operations"""
-    
+
     def authenticate(self, email: str, password: str) -> Optional[dict]:
         """Authenticate a partner user"""
+        if _is_prod():
+            sb = _sb()
+            res = sb.table("partners").select("*").eq("email", email).limit(1).execute()
+            if res.data:
+                partner = res.data[0]
+                return {"success": True, "partner_id": partner["id"], "business_name": partner.get("business_name", "")}
+            return None
         for partner in partner_db["partners"].values():
             if partner["email"] == email and partner["password"] == password:
                 return {
@@ -139,9 +155,12 @@ class PartnerService:
                     "token": f"partner_token_{partner['id']}"
                 }
         return None
-    
+
     def get_partner(self, partner_id: str) -> Optional[dict]:
         """Get partner details"""
+        if _is_prod():
+            res = _sb().table("partners").select("*").eq("id", partner_id).limit(1).execute()
+            return res.data[0] if res.data else None
         return partner_db["partners"].get(partner_id)
     
     # ==================== TEAM MANAGEMENT ====================
@@ -152,6 +171,10 @@ class PartnerService:
             tm for tm in partner_db["team_members"].values()
             if tm["partner_id"] == partner_id
         ]
+
+    def get_team_member(self, member_id: str) -> Optional[dict]:
+        """Get a single team member by ID."""
+        return partner_db["team_members"].get(member_id)
     
     def invite_team_member(self, partner_id: str, email: str, role: str, method: str = "email") -> dict:
         """Invite a new team member"""
@@ -310,48 +333,51 @@ class PartnerService:
     
     def get_recent_redemptions(self, partner_id: str, limit: int = 10) -> List[dict]:
         """Get recent redemptions for a partner"""
+        if _is_prod():
+            sb = _sb()
+            offers_res = sb.table("offers").select("id").eq("partner_id", partner_id).execute()
+            offer_ids = [o["id"] for o in (offers_res.data or [])]
+            if not offer_ids:
+                return []
+            red_res = sb.table("redemptions").select("*").in_("offer_id", offer_ids).order("created_at", desc=True).limit(limit).execute()
+            return red_res.data or []
+
         partner_offers = [o["id"] for o in partner_db["offers"].values() if o["partner_id"] == partner_id]
-        
-        redemptions = [
-            r for r in partner_db["redemptions"].values()
-            if r["offer_id"] in partner_offers
-        ]
-        
-        # Sort by time, most recent first
-        redemptions.sort(key=lambda x: x["redeemed_at"], reverse=True)
-        
-        # Add staff and offer info
+        redemptions = [r for r in partner_db["redemptions"].values() if r["offer_id"] in partner_offers]
+        redemptions.sort(key=lambda x: x.get("redeemed_at", ""), reverse=True)
         result = []
         for r in redemptions[:limit]:
             staff = partner_db["team_members"].get(r["staff_id"], {})
             offer = partner_db["offers"].get(r["offer_id"], {})
-            result.append({
-                **r,
-                "staff_name": staff.get("name", "Unknown"),
-                "offer_title": offer.get("title", "Unknown")
-            })
-        
+            result.append({**r, "staff_name": staff.get("name", "Unknown"), "offer_title": offer.get("title", "Unknown")})
         return result
     
     # ==================== ANALYTICS ====================
     
     def get_analytics(self, partner_id: str) -> dict:
         """Get partner analytics data"""
+        if _is_prod():
+            sb = _sb()
+            offers_res = sb.table("offers").select("id, status, redemption_count").eq("partner_id", partner_id).execute()
+            partner_offers = offers_res.data or []
+            total_redemptions = sum(int(o.get("redemption_count", 0)) for o in partner_offers)
+            active = len([o for o in partner_offers if o.get("status") == "active"])
+            return {
+                "total_redemptions": total_redemptions,
+                "active_offers": active,
+                "revenue": round(total_redemptions * 8.50, 2),
+            }
+
         partner_offers = [o for o in partner_db["offers"].values() if o["partner_id"] == partner_id]
         total_redemptions = sum(o["total_redemptions"] for o in partner_offers)
-        
         team = self.get_team_members(partner_id)
         today_redemptions = sum(tm["redemptions_today"] for tm in team)
-        
         return {
-            "total_views": 12400,  # Mock data
-            "total_clicks": 3680,
             "total_redemptions": total_redemptions,
             "today_redemptions": today_redemptions,
-            "revenue": total_redemptions * 8.50,  # Estimated average
+            "revenue": total_redemptions * 8.50,
             "active_offers": len([o for o in partner_offers if o["status"] == "active"]),
             "team_members": len([tm for tm in team if tm["status"] != "revoked"]),
-            "conversion_rate": 4.2
         }
 
 # Create singleton instance

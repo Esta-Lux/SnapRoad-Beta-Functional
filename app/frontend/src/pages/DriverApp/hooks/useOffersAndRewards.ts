@@ -15,6 +15,56 @@ type Offer = {
   [key: string]: unknown
 }
 
+/** Profile row for rewards / header surfaces (matches `/api/user/profile` merge targets). */
+export type DriverUserData = {
+  id: string
+  name: string
+  gems: number
+  level: number
+  xp: number
+  safety_score: number
+  streak: number
+  total_miles: number
+  total_trips: number
+  badges_earned_count: number
+  rank: number
+  is_premium: boolean
+  member_since: string
+  friends_count: number
+  state: string
+  plan: string | null
+  gem_multiplier: number
+  safe_drive_streak: number
+  reports_posted: number
+  reports_upvotes_received: number
+  vehicle_height_meters?: number | null
+}
+
+export function emptyDriverUserData(initialName: string): DriverUserData {
+  return {
+    id: '',
+    name: initialName || 'Driver',
+    gems: 0,
+    level: 1,
+    xp: 0,
+    safety_score: 100,
+    streak: 0,
+    total_miles: 0,
+    total_trips: 0,
+    badges_earned_count: 0,
+    rank: 0,
+    is_premium: false,
+    member_since: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+    friends_count: 0,
+    state: 'OH',
+    plan: null,
+    gem_multiplier: 1,
+    safe_drive_streak: 0,
+    reports_posted: 0,
+    reports_upvotes_received: 0,
+  }
+}
+
 function payload<T>(res: { success?: boolean; data?: unknown }): T | undefined {
   const d = res.data as { data?: T } | T | undefined
   if (d && typeof d === 'object' && 'data' in (d as Record<string, unknown>) && (d as { data?: T }).data !== undefined) {
@@ -68,16 +118,7 @@ export function useOffersAndRewards(params: {
   const [challenges, setChallenges] = useState<Record<string, unknown>[]>([])
   const [badges, setBadges] = useState<Record<string, unknown>[]>([])
   const [, setSkins] = useState<Record<string, unknown>[]>([])
-  const [userData, setUserData] = useState<Record<string, unknown>>({
-    id: '',
-    name: initialName || 'Driver',
-    gems: 0, level: 1, xp: 0, safety_score: 100, streak: 0,
-    total_miles: 0, total_trips: 0, badges_earned_count: 0, rank: 0,
-    is_premium: false, member_since: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-    friends_count: 0, state: 'OH',
-    plan: null, gem_multiplier: 1, safe_drive_streak: 0,
-    reports_posted: 0, reports_upvotes_received: 0,
-  })
+  const [userData, setUserData] = useState<DriverUserData>(() => emptyDriverUserData(initialName))
   const apiCacheRef = useRef<Map<string, { data: unknown; ts: number }>>(new globalThis.Map())
 
   const cachedGet = useCallback(async (url: string, ttlMs = 5 * 60 * 1000) => {
@@ -156,8 +197,9 @@ export function useOffersAndRewards(params: {
         setBadges(Array.isArray(arr) ? arr : [])
       }
       if ((userRes as any).success && user != null && typeof user === 'object') {
-        setUserData(user as Record<string, unknown>)
-        setUserPlan((user as { plan?: any }).plan || 'basic')
+        setUserData({ ...emptyDriverUserData(initialName), ...(user as Record<string, unknown>) } as DriverUserData)
+        const rawPlan = (user as { plan?: string | null }).plan
+        setUserPlan(rawPlan === 'premium' || rawPlan === 'family' ? rawPlan : 'basic')
         setGemMultiplier((user as { gem_multiplier?: number }).gem_multiplier || 1)
         setRouteLimit((user as { is_premium?: boolean }).is_premium ? 20 : 5)
       }

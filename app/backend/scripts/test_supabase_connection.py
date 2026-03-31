@@ -16,7 +16,7 @@ print("=" * 60)
 
 print(f"\n1. Environment variables:")
 print(f"   SUPABASE_URL: {config.SUPABASE_URL}")
-print(f"   SUPABASE_SECRET_KEY: {config.SUPABASE_SECRET_KEY[:50]}...")
+print(f"   SUPABASE_SERVICE_ROLE_KEY: {config.SUPABASE_SERVICE_ROLE_KEY[:50]}...")
 
 print(f"\n2. DNS resolution test:")
 try:

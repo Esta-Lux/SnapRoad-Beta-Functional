@@ -25,7 +25,14 @@ class PartnerApiService {
     return this.token
   }
 
-  private async request<T = unknown>(endpoint: string, options: RequestInit = {}): Promise<{ success: boolean; data?: T; message?: string; token?: string; partner_id?: string }> {
+  private async request<T = unknown>(endpoint: string, options: RequestInit = {}): Promise<{
+    success: boolean
+    data?: T
+    message?: string
+    token?: string
+    partner_id?: string
+    detail?: string
+  }> {
     const url = `${getApiBaseUrl()}${endpoint}`
     const token = this.getToken()
     const config: RequestInit = {
@@ -47,28 +54,44 @@ class PartnerApiService {
   }
 
   // Auth
-  async login(email: string, password: string): Promise<{ success: boolean; data?: unknown; message?: string; token?: string; partner_id?: string }> {
+  async login(email: string, password: string): Promise<{
+    success: boolean
+    data?: unknown
+    message?: string
+    token?: string
+    partner_id?: string
+    detail?: string
+  }> {
     const result = await this.request('/api/partner/v2/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })
     if (result.success && result.token) {
       this.setToken(result.token)
-      this.setPartnerId(result.partner_id)
-      localStorage.setItem('snaproad_partner_id', result.partner_id)
+      const pid = result.partner_id ?? this.partnerId
+      this.setPartnerId(pid)
+      localStorage.setItem('snaproad_partner_id', pid)
     }
     return result
   }
 
-  async register(data: { first_name: string; last_name: string; business_name: string; business_address: string; email: string; password: string; referral_code?: string }): Promise<{ success: boolean; data?: unknown; message?: string; token?: string; partner_id?: string }> {
+  async register(data: { first_name: string; last_name: string; business_name: string; business_address: string; email: string; password: string; referral_code?: string }): Promise<{
+    success: boolean
+    data?: unknown
+    message?: string
+    token?: string
+    partner_id?: string
+    detail?: string
+  }> {
     const result = await this.request('/api/partner/v2/register', {
       method: 'POST',
       body: JSON.stringify(data),
     })
     if (result.success && result.token) {
       this.setToken(result.token)
-      this.setPartnerId(result.partner_id)
-      localStorage.setItem('snaproad_partner_id', result.partner_id)
+      const pid = result.partner_id ?? this.partnerId
+      this.setPartnerId(pid)
+      localStorage.setItem('snaproad_partner_id', pid)
     }
     return result
   }
@@ -271,17 +294,17 @@ class PartnerApiService {
     try {
       const result = await this.request(`/api/partner/v2/analytics/${this.partnerId}`)
       if (result.success && result.data) {
-        const d = result.data
+        const d = result.data as Record<string, unknown>
         return {
           success: true,
           data: {
             summary: {
-              total_views: d.total_views || 0,
-              total_clicks: d.total_clicks || 0,
-              total_redemptions: d.total_redemptions || 0,
-              total_revenue: d.revenue || 0,
-              ctr: d.conversion_rate || 0,
-              conversion_rate: d.conversion_rate || 0,
+              total_views: Number(d.total_views) || 0,
+              total_clicks: Number(d.total_clicks) || 0,
+              total_redemptions: Number(d.total_redemptions) || 0,
+              total_revenue: Number(d.revenue) || 0,
+              ctr: Number(d.conversion_rate) || 0,
+              conversion_rate: Number(d.conversion_rate) || 0,
             },
             chart_data: [],
             geo_data: [],
