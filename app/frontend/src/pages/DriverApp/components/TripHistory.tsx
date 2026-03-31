@@ -17,15 +17,44 @@ interface Trip {
 }
 
 interface TripHistoryProps {
-  isOpen: boolean
-  onClose: () => void
+  readonly isOpen: boolean
+  readonly onClose: () => void
+}
+
+function statsFromPayload(d: Record<string, unknown>): Record<string, unknown> {
+  return {
+    total_trips: d.total_trips,
+    total_miles: d.total_miles,
+    avg_safety_score: d.avg_safety_score ?? 0,
+    total_gems_earned: d.total_gems_earned ?? 0,
+  }
+}
+
+function applyHistoryPayload(
+  raw: { success?: boolean; data?: unknown; stats?: unknown },
+  setTrips: (t: Trip[]) => void,
+  setStats: (s: Record<string, unknown> | null) => void
+) {
+  if (!raw.success) return
+  const d = raw.data
+  const list = Array.isArray(d) ? d : Array.isArray((d as { recent_trips?: Trip[] })?.recent_trips) ? (d as { recent_trips: Trip[] }).recent_trips : []
+  setTrips(list)
+  if (raw.stats !== undefined && raw.stats !== null) {
+    setStats(raw.stats as Record<string, unknown>)
+    return
+  }
+  if (d && typeof d === 'object' && !Array.isArray(d)) {
+    setStats(statsFromPayload(d as Record<string, unknown>))
+    return
+  }
+  setStats(null)
 }
 
 export default function TripHistory({ isOpen, onClose }: TripHistoryProps) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
   const [trips, setTrips] = useState<Trip[]>([])
-  const [stats, setStats] = useState<any>(null)
+  const [stats, setStats] = useState<Record<string, unknown> | null>(null)
   const [selectedMonth, setSelectedMonth] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -47,13 +76,10 @@ export default function TripHistory({ isOpen, onClose }: TripHistoryProps) {
         ? `${API_URL}/api/trips/history?month=${selectedMonth}` 
         : `${API_URL}/api/trips/history`
       const res = await fetch(url)
-      const data = await res.json()
-      if (data.success) {
-        const d = data.data
-        setTrips(Array.isArray(d) ? d : Array.isArray(d?.recent_trips) ? d.recent_trips : [])
-        setStats(data.stats ?? (d && !Array.isArray(d) ? { total_trips: d.total_trips, total_miles: d.total_miles, avg_safety_score: d.avg_safety_score ?? 0, total_gems_earned: d.total_gems_earned ?? 0 } : null))
-      }
-    } catch (e) {
+      const data = (await res.json()) as { success?: boolean; data?: unknown; stats?: unknown }
+      applyHistoryPayload(data, setTrips, setStats)
+    } catch (err: unknown) {
+      console.warn('[TripHistory] load failed', err)
     }
     setLoading(false)
   }
@@ -73,13 +99,27 @@ export default function TripHistory({ isOpen, onClose }: TripHistoryProps) {
 
   if (!isOpen) return null
 
-  const safeStats = stats && typeof stats === 'object' ? stats : null
+  const safeStats = stats
   const totalMiles = safeStats?.total_miles != null ? Number(safeStats.total_miles) : 0
   const totalGems = safeStats?.total_gems_earned != null ? Number(safeStats.total_gems_earned) : 0
 
   return (
-    <div className={`fixed inset-0 ${backdrop} z-50 flex items-center justify-center p-2`} onClick={onClose}>
-      <div className={`w-full max-w-md h-[85vh] ${modalBg} rounded-2xl overflow-hidden flex flex-col shadow-xl border ${isLight ? 'border-slate-200' : 'border-slate-700'}`} onClick={e => e.stopPropagation()}>
+    <div
+      className={`fixed inset-0 ${backdrop} z-50 flex items-center justify-center p-2`}
+      role="button"
+      tabIndex={0}
+      aria-label="Close trip history"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClose()
+        }
+      }}
+    >
+      <div className={`w-full max-w-md h-[85vh] ${modalBg} rounded-2xl overflow-hidden flex flex-col shadow-xl border ${isLight ? 'border-slate-200' : 'border-slate-700'}`}>
         <div className={`${headerBg} p-4 flex-shrink-0`}>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-white font-bold text-lg">Trip History</h2>

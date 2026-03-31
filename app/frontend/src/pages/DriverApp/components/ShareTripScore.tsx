@@ -15,12 +15,30 @@ interface TripSummary {
 }
 
 interface ShareTripScoreProps {
-  isOpen: boolean
-  onClose: () => void
+  readonly isOpen: boolean
+  readonly onClose: () => void
   /** Backend may return a partial trip summary; we coerce fields when rendering. */
-  tripData: TripSummary | Record<string, unknown> | null
-  userName: string
-  userLevel: number
+  readonly tripData: TripSummary | Record<string, unknown> | null
+  readonly userName: string
+  readonly userLevel: number
+}
+
+function scoreAccentClass(score: number): string {
+  if (score >= 90) return 'text-emerald-400'
+  if (score >= 70) return 'text-amber-400'
+  return 'text-red-400'
+}
+
+function scoreStrokeHex(score: number): string {
+  if (score >= 90) return '#10b981'
+  if (score >= 70) return '#f59e0b'
+  return '#ef4444'
+}
+
+function copyButtonClass(isLight: boolean, copied: boolean): string {
+  if (copied) return 'bg-emerald-500 text-white'
+  if (isLight) return 'bg-slate-200 hover:bg-slate-300 text-slate-800'
+  return 'bg-slate-700 hover:bg-slate-600 text-white'
 }
 
 export default function ShareTripScore({ isOpen, onClose, tripData, userName, userLevel }: ShareTripScoreProps) {
@@ -34,7 +52,7 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
   const textPrimary = isLight ? 'text-slate-900' : 'text-white'
   const textMuted = isLight ? 'text-slate-500' : 'text-slate-400'
   const statCardBg = isLight ? 'bg-slate-100' : 'bg-slate-800/50'
-  const copyBtnBg = copied ? 'bg-emerald-500 text-white' : isLight ? 'bg-slate-200 hover:bg-slate-300 text-slate-800' : 'bg-slate-700 hover:bg-slate-600 text-white'
+  const copyBtnBg = copyButtonClass(isLight, copied)
   const downloadBtnBg = isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
 
   if (!isOpen || !tripData) return null
@@ -56,7 +74,7 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
 
   const handleShareTwitter = () => {
     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`
-    window.open(url, '_blank')
+    globalThis.open(url, '_blank', 'noopener,noreferrer')
   }
 
   const handleDownloadImage = async () => {
@@ -66,7 +84,8 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
   }
 
   const score = Number(t.safety_score) || 0
-  const scoreColor = score >= 90 ? 'text-emerald-400' : score >= 70 ? 'text-amber-400' : 'text-red-400'
+  const scoreColor = scoreAccentClass(score)
+  const scoreStroke = scoreStrokeHex(score)
 
   return (
     <div className={`fixed inset-0 ${backdrop} z-50 flex flex-col items-center justify-center p-4`}>
@@ -116,7 +135,7 @@ export default function ShareTripScore({ isOpen, onClose, tripData, userName, us
               <circle cx="64" cy="64" r="56" stroke="#334155" strokeWidth="8" fill="none" />
               <circle 
                 cx="64" cy="64" r="56" 
-                stroke={score >= 90 ? '#10b981' : score >= 70 ? '#f59e0b' : '#ef4444'}
+                stroke={scoreStroke}
                 strokeWidth="8" 
                 fill="none" 
                 strokeDasharray={`${((Number(t.safety_score) || 0) / 100) * 352} 352`} 

@@ -8,7 +8,6 @@ import { updateMyLocation } from '@/lib/friendLocation'
 import FamilyPrivacyControls from './FamilyPrivacyControls'
 import TeenReportCard from './TeenReportCard'
 import FamilyLeaderboard from './FamilyLeaderboard'
-import FamilyCommandCenter from './family/FamilyCommandCenter'
 
 interface FamilyMember {
   id: string
@@ -371,7 +370,7 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
     } catch {
       alert('Failed to send SOS')
     }
-    window.setTimeout(() => setSosActive(false), 5000)
+    globalThis.setTimeout(() => setSosActive(false), 5000)
   }
 
   const updateMemberSettings = async (member: FamilyMember, updates: Record<string, unknown>) => {
@@ -403,7 +402,18 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
   return (
     <>
       <div
-        onClick={onClose}
+        role="button"
+        tabIndex={0}
+        aria-label="Close family dashboard"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose()
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onClose()
+          }
+        }}
         style={{
           position: 'fixed',
           inset: 0,
@@ -522,30 +532,8 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
             </div>
           )}
 
+          {/* Classic family dashboard. Family Command Center is a future feature (not live). */}
           {screen === 'members' && (
-            <FamilyCommandCenter
-              groupId={groupId ?? ''}
-              groupName={groupName || 'Family Group'}
-              inviteCode={inviteCode}
-              currentUserId={currentUserId}
-              isAdmin={Boolean(isAdmin)}
-              onRenameGroup={async (name) => {
-                await api.put('/api/family/group/name', { group_id: groupId, name })
-                setGroupName(name)
-              }}
-              onSendSOS={async () => {
-                await sendSOS()
-              }}
-              onOpenFullMap={() => {
-                onClose()
-                window.dispatchEvent(new CustomEvent('snaproad:open-map-from-family'))
-              }}
-            />
-          )}
-
-          {/* Legacy SOS UI — gated off until product re-enables */}
-          {/* eslint-disable-next-line no-constant-binary-expression -- intentional dead branch */}
-          {screen === 'members' && false && (
             <div>
               <button
                 onClick={sendSOS}
@@ -808,7 +796,7 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
                           >
                             <Phone size={16} />
                           </button>
-                          <ChevronRight size={20} style={{ opacity: 0.55, color: isLight ? '#94a3b8' : '#94a3b8' }} />
+                          <ChevronRight size={20} style={{ opacity: 0.55, color: '#94a3b8' }} />
                         </div>
                       </div>
                     )
@@ -993,15 +981,15 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
               <div style={{ fontSize: 13, color: muted, marginBottom: 16, lineHeight: 1.5 }}>
                 Finish setup so your family can see live safety updates. You can change this later in settings.
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, border: isLight ? '1px solid rgba(2,6,23,0.12)' : '1px solid rgba(255,255,255,0.2)', marginBottom: 10 }}>
-                <input type="checkbox" checked={locationConsent} onChange={(e) => setLocationConsent(e.target.checked)} />
+              <label htmlFor="family-consent-location" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, border: isLight ? '1px solid rgba(2,6,23,0.12)' : '1px solid rgba(255,255,255,0.2)', marginBottom: 10 }}>
+                <input id="family-consent-location" type="checkbox" checked={locationConsent} onChange={(e) => setLocationConsent(e.target.checked)} />
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: sheetText }}>Allow location permission</div>
                   <div style={{ fontSize: 12, color: muted }}>Required for live map and place alerts.</div>
                 </div>
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, border: isLight ? '1px solid rgba(2,6,23,0.12)' : '1px solid rgba(255,255,255,0.2)', marginBottom: 16 }}>
-                <input type="checkbox" checked={shareLocation} onChange={(e) => setShareLocation(e.target.checked)} />
+              <label htmlFor="family-consent-share" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, border: isLight ? '1px solid rgba(2,6,23,0.12)' : '1px solid rgba(255,255,255,0.2)', marginBottom: 16 }}>
+                <input id="family-consent-share" type="checkbox" checked={shareLocation} onChange={(e) => setShareLocation(e.target.checked)} />
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: sheetText }}>Share live location with family</div>
                   <div style={{ fontSize: 12, color: muted }}>Lets all members and admins receive safety updates.</div>
@@ -1108,7 +1096,12 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
                     Locks phone to navigation only while driving
                   </div>
                 </div>
-                <div
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={selectedMember.focus_mode}
+                  aria-label="Focus mode"
+                  disabled={!isAdmin && String(selectedMember.user_id) !== String(currentUserId)}
                   onClick={() => {
                     if (!isAdmin && String(selectedMember.user_id) !== String(currentUserId)) return
                     const val = !selectedMember.focus_mode
@@ -1120,14 +1113,17 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
                     width: 50,
                     height: 28,
                     borderRadius: 14,
+                    border: 'none',
+                    padding: 0,
                     background: selectedMember.focus_mode ? '#FF9500' : (isLight ? 'rgba(2,6,23,0.12)' : 'rgba(255,255,255,0.15)'),
                     position: 'relative',
-                    cursor: 'pointer',
+                    cursor: !isAdmin && String(selectedMember.user_id) !== String(currentUserId) ? 'not-allowed' : 'pointer',
                     transition: 'background 0.2s',
                     flexShrink: 0,
                   }}
                 >
-                  <div
+                  <span
+                    aria-hidden="true"
                     style={{
                       position: 'absolute',
                       top: 3,
@@ -1139,7 +1135,7 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
                       transition: 'left 0.2s',
                     }}
                   />
-                </div>
+                </button>
               </div>
 
               <div
@@ -1206,7 +1202,9 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
 
       {showCheckIn && (
         <div
-          role="presentation"
+          role="button"
+          tabIndex={0}
+          aria-label="Close check-in"
           style={{
             position: 'fixed',
             inset: 0,
@@ -1217,11 +1215,20 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
             justifyContent: 'center',
             padding: 24,
           }}
-          onClick={() => setShowCheckIn(false)}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCheckIn(false)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setShowCheckIn(false)
+            }
+          }}
         >
           <div
             role="dialog"
             aria-modal="true"
+            aria-labelledby="check-in-dialog-title"
             style={{
               maxWidth: 360,
               width: '100%',
@@ -1231,9 +1238,8 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
               color: isLight ? '#0f172a' : '#f1f5f9',
               border: isLight ? '1px solid #e2e8f0' : '1px solid #334155',
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5 }}>Check in with your family. Full check-in flow is coming soon.</p>
+            <p id="check-in-dialog-title" style={{ margin: 0, fontSize: 15, lineHeight: 1.5 }}>Check in with your family. Full check-in flow is coming soon.</p>
             <button
               type="button"
               onClick={() => setShowCheckIn(false)}
