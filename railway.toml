@@ -1,6 +1,8 @@
 # Railway: use Docker so the monorepo is not mis-detected as a pure Node app by Railpack.
 # Service root directory should stay the repo root (default) so paths in Dockerfile match.
-# Set PORT is automatic on Railway; CORS_ORIGINS, JWT_SECRET, SUPABASE_*, etc. in Variables.
+# Variables (production): CORS_ORIGINS, CHECKOUT_ALLOWED_ORIGINS, JWT_SECRET, SUPABASE_*, NVIDIA_*/OPENAI_*, etc.
+# Example: CORS_ORIGINS=https://app.snaproad.app
+# Example: CHECKOUT_ALLOWED_ORIGINS=https://app.snaproad.app/driver
 
 [build]
 builder = "DOCKERFILE"
