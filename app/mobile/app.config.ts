@@ -61,9 +61,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       }),
     },
   },
+  // `usesCleartextTraffic` is honored by Expo prebuild but omitted from ExpoConfig.android types (SDK 54).
   android: {
     package: "com.snaproad.app",
-    usesCleartextTraffic: !_prod,
     adaptiveIcon: {
       backgroundColor: "#0a0a0f",
       foregroundImage: "./assets/android-icon-foreground.png",

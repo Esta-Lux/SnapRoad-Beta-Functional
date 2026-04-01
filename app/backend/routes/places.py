@@ -9,13 +9,16 @@ import os
 import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
+from typing import Annotated, Optional
+
 from fastapi import APIRouter, Query, Request, Response
-from typing import Optional
 import httpx
 
 from limiter import limiter
 
 router = APIRouter(prefix="/api/places", tags=["Places"])
+
+MSG_GOOGLE_PLACES_KEY_NOT_CONFIGURED = "Google Places API key not configured"
 
 _KEY = lambda: os.environ.get("GOOGLE_PLACES_API_KEY", "")
 _BASE = "https://maps.googleapis.com/maps/api/place"
@@ -122,12 +125,6 @@ async def fetch_autocomplete_predictions(q: str, lat: Optional[float] = None, ln
         ),
     )
 
-    if _location_bias_ok(lat, lng):
-        predictions = [
-            p for p in predictions
-            if p.get("distance_meters") is None or p.get("distance_meters") <= 42000
-        ]
-
     _cache_set(_autocomplete_cache, cache_key, predictions)
     return predictions
 
@@ -164,13 +161,13 @@ async def fetch_place_coords_for_orion(place_id: str) -> Optional[dict]:
 @limiter.limit("60/minute")
 async def autocomplete(
     request: Request,
-    q: str = Query(..., min_length=1),
-    lat: Optional[float] = None,
-    lng: Optional[float] = None,
+    q: Annotated[str, Query(..., min_length=1)],
+    lat: Annotated[Optional[float], Query()] = None,
+    lng: Annotated[Optional[float], Query()] = None,
 ):
     key = _KEY()
     if not key:
-        return {"success": False, "error": "Google Places API key not configured", "data": []}
+        return {"success": False, "error": MSG_GOOGLE_PLACES_KEY_NOT_CONFIGURED, "data": []}
 
     predictions = await fetch_autocomplete_predictions(q, lat, lng)
     return {"success": True, "data": predictions}
@@ -180,7 +177,7 @@ async def autocomplete(
 async def place_details(place_id: str):
     key = _KEY()
     if not key:
-        return {"success": False, "error": "Google Places API key not configured"}
+        return {"success": False, "error": MSG_GOOGLE_PLACES_KEY_NOT_CONFIGURED}
 
     cached = _cache_get(_details_cache, place_id)
     if cached is not None:
@@ -245,15 +242,18 @@ async def place_details(place_id: str):
 
 @router.get("/nearby")
 async def nearby_places(
-    lat: float = Query(..., ge=-90, le=90),
-    lng: float = Query(..., ge=-180, le=180),
-    radius: int = Query(50, ge=20, le=50000),
-    place_type: Optional[str] = Query(default=None, alias="type", description="Google place type, e.g. gas_station"),
+    lat: Annotated[float, Query(..., ge=-90, le=90)],
+    lng: Annotated[float, Query(..., ge=-180, le=180)],
+    radius: Annotated[int, Query(ge=20, le=50000)] = 50,
+    place_type: Annotated[
+        Optional[str],
+        Query(alias="type", description="Google place type, e.g. gas_station"),
+    ] = None,
 ):
     """Return places near a point (for map click). Uses Google Places Nearby Search."""
     key = _KEY()
     if not key:
-        return {"success": False, "error": "Google Places API key not configured", "data": []}
+        return {"success": False, "error": MSG_GOOGLE_PLACES_KEY_NOT_CONFIGURED, "data": []}
 
     params = {
         "location": f"{lat},{lng}",
@@ -297,8 +297,8 @@ async def nearby_places(
 
 @router.get("/photo")
 async def place_photo(
-    ref: str = Query(..., min_length=1),
-    maxwidth: int = Query(400, ge=50, le=1600),
+    ref: Annotated[str, Query(..., min_length=1)],
+    maxwidth: Annotated[int, Query(ge=50, le=1600)] = 400,
 ):
     key = _KEY()
     if not key:
