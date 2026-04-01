@@ -409,13 +409,6 @@ export default function WelcomePage() {
                   App Preview
                 </Link>
                 <span className="text-slate-700">|</span>
-                <Link
-                  to="/portal/partner/welcome"
-                  className="text-slate-400 hover:text-emerald-400 transition-colors"
-                >
-                  Partner portal
-                </Link>
-                <span className="text-slate-700">|</span>
                 <a 
                   href="#" 
                   className="text-slate-400 hover:text-white transition-colors"
