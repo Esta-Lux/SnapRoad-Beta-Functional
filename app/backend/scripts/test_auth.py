@@ -18,7 +18,7 @@ sb = get_supabase()
 # Test authentication for partner account
 print("Testing partner account authentication...")
 email = "john.don@estaluxtest.com"
-password = "Riyanm909@"
+password = os.getenv("SNAPROAD_TEST_PASSWORD", "")
 
 try:
     auth_resp = sb.auth.sign_in_with_password({"email": email, "password": password})

@@ -9,6 +9,7 @@ class SignupRequest(BaseModel):
     full_name: Optional[str] = None
     email: str
     password: str
+    date_of_birth: Optional[str] = None
 
 class LoginRequest(BaseModel):
     email: str

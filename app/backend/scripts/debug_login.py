@@ -42,7 +42,7 @@ print("=" * 60)
 
 from services.supabase_service import sb_login_user
 
-for email, password in [("Riyan@snaproad.co", "Riyanm909@"), ("john.don@estaluxtest.com", "Riyanm909@")]:
+for email, password in [("Riyan@snaproad.co", os.getenv("SNAPROAD_TEST_PASSWORD", "")), ("john.don@estaluxtest.com", os.getenv("SNAPROAD_TEST_PASSWORD", ""))]:
     print(f"\nEmail: {email}")
     profile, err = sb_login_user(email, password)
     if err:

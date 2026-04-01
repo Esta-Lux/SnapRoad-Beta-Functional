@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+from datetime import date
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -16,6 +17,7 @@ from services.supabase_service import (
     sb_get_user_by_email,
     sb_login_user,
     sb_get_auth_user_from_access_token,
+    sb_update_profile,
 )
 from limiter import limiter
 
@@ -55,6 +57,24 @@ def _build_token(user_dict: dict) -> str:
     })
 
 
+def _parse_and_validate_dob(raw_value: Optional[str]) -> date:
+    value = str(raw_value or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Date of birth is required")
+    try:
+        dob = date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="date_of_birth must use YYYY-MM-DD format") from exc
+    today = date.today()
+    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    if age < 16:
+        raise HTTPException(
+            status_code=400,
+            detail="You must be at least 16 years old to use SnapRoad",
+        )
+    return dob
+
+
 def _clean(user: dict) -> dict:
     """Return a JSON-serializable user dict (no secrets, no UUIDs)."""
     out = {}
@@ -74,6 +94,7 @@ def signup(request: Request, body: SignupRequest):
     # Supabase only (no mock fallback)
     email = (body.email or "").strip().lower()
     name = (body.name or body.full_name or "").strip()
+    dob = _parse_and_validate_dob(body.date_of_birth)
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
     try:
@@ -84,6 +105,7 @@ def signup(request: Request, body: SignupRequest):
                 detail="This email is already registered. Use Sign in instead.",
             )
         user = sb_create_user(email, body.password, name, "driver")
+        sb_update_profile(str(user.get("id") or ""), {"date_of_birth": dob.isoformat()})
         token = _build_token(user)
         logger.info(f"Supabase signup: {email}")
         return {"success": True, "data": {"user": _clean(user), "token": token}}
@@ -191,20 +213,17 @@ def oauth_supabase(request: Request, payload: dict):
     try:
         profile = sb_get_user_by_email(email) or {}
         if not profile:
-            # Create a minimal profile. We don't store a password hash for OAuth.
-            sb = get_supabase()
-            profile = {
-                "id": uid or None,
-                "email": email,
-                "name": name,
-                "role": "driver",
-                "status": "active",
-                "xp": 0,
-                "level": 1,
-                "gems": 0,
-            }
-            sb.table("profiles").upsert(profile).execute()
-            profile = sb_get_user_by_email(email) or profile
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "OAuth sign-up is not available yet. Create your account with email and password first, "
+                    "including date of birth verification, then you can sign in."
+                ),
+            )
+
+        status = str(profile.get("status") or "active").strip().lower()
+        if status in {"deleted", "deactivated", "suspended", "disabled"}:
+            raise HTTPException(status_code=403, detail="This account is unavailable")
 
         # Ensure id is present for JWT.
         if not profile.get("id") and uid:

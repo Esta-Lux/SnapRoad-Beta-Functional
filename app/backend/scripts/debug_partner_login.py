@@ -15,7 +15,7 @@ from services.supabase_service import sb_login_user, sb_get_partners, sb_get_use
 import json
 
 email = "john.don@estaluxtest.com"
-password = "Riyanm909@"
+password = os.getenv("SNAPROAD_TEST_PASSWORD", "")
 
 print("=" * 60)
 print("DEBUGGING PARTNER LOGIN")

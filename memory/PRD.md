@@ -205,7 +205,6 @@ User must manually run the migration SQL in Supabase dashboard:
 | API Guide | `/app/memory/API_INTEGRATION_GUIDE.md` | Backend |
 | PM Guide | `/app/memory/PM_COORDINATION_GUIDE.md` | PM |
 | Mobile Guide | `/app/memory/KATHIR_MOBILE_GUIDE.md` | Mobile |
-| Backend Guide | `/app/memory/ANDREW_BACKEND_GUIDE.md` | Backend |
 | Web Guide | `/app/memory/BRIAN_WEB_GUIDE.md` | Frontend |
 
 ---

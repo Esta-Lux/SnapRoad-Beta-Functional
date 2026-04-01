@@ -32,7 +32,7 @@ except Exception as e:
 print("\n2. Query after sign_in (with auth context):")
 try:
     # Sign in first
-    auth_resp = sb.auth.sign_in_with_password({"email": "Riyan@snaproad.co", "password": "Riyanm909@"})
+    auth_resp = sb.auth.sign_in_with_password({"email": "Riyan@snaproad.co", "password": os.getenv("SNAPROAD_TEST_PASSWORD", "")})
     print(f"   Auth successful, user ID: {auth_resp.user.id}")
     
     # Now try to query

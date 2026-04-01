@@ -1,4 +1,6 @@
 import os
+import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Query
@@ -10,11 +12,17 @@ from services.mock_data import (
     notification_settings, faq_data,
 )
 from middleware.auth import get_current_user
-from services.supabase_service import sb_get_profile, sb_update_profile
+from services.supabase_service import (
+    sb_get_profile,
+    sb_update_profile,
+    sb_soft_delete_profile,
+    sb_delete_auth_user,
+)
 from services.snap_road_score import compute_snap_road_fields
 
 router = APIRouter(prefix="/api", tags=["Users"])
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+logger = logging.getLogger(__name__)
 
 
 def _get_user_store(user: Optional[Dict[str, Any]]) -> dict:
@@ -52,6 +60,10 @@ def _persist_user(user_id: str, updates: dict) -> None:
     except Exception:
         if ENVIRONMENT == "production":
             raise HTTPException(status_code=503, detail="User persistence unavailable")
+
+
+def _deleted_email(user_id: str) -> str:
+    return f"deleted_{user_id}@deleted.snaproad.app"
 
 
 @router.get("/user/profile")
@@ -105,27 +117,21 @@ def update_user_plan(plan: PlanUpdate, auth_user: dict = Depends(get_current_use
     user = _get_user_store(auth_user)
     user_id = str(user.get("id"))
     requested = str(plan.plan or "").strip().lower()
-    if requested == "premium":
-        user["is_premium"] = True
-        user["plan"] = "premium"
-        user["gem_multiplier"] = 2
-        user["plan_selected"] = True
-    elif requested == "family":
-        user["is_premium"] = True
-        user["plan"] = "family"
-        user["gem_multiplier"] = 2
-        user["plan_selected"] = True
-    else:
+    if requested in ("basic", "free", ""):
         user["is_premium"] = False
         user["plan"] = "basic"
         user["gem_multiplier"] = 1
         user["plan_selected"] = True
-    _persist_user(user_id, {
-        "is_premium": user["is_premium"],
-        "plan": user["plan"],
-        "gem_multiplier": user["gem_multiplier"],
-    })
-    return {"success": True, "message": f"Plan updated to {user['plan']}", "data": users_db[user_id]}
+        _persist_user(user_id, {
+            "is_premium": user["is_premium"],
+            "plan": user["plan"],
+            "gem_multiplier": user["gem_multiplier"],
+        })
+        return {"success": True, "message": "Plan updated to basic", "data": users_db[user_id]}
+    raise HTTPException(
+        status_code=403,
+        detail="Plan upgrades must go through checkout",
+    )
 
 
 @router.post("/user/car")
@@ -139,6 +145,44 @@ def update_user_car(car: CarCustomization, auth_user: dict = Depends(get_current
         "car_selected": True,
     })
     return {"success": True, "message": "Car customization saved"}
+
+
+@router.delete("/user/account")
+def delete_account(auth_user: dict = Depends(get_current_user)):
+    user = _get_user_store(auth_user)
+    user_id = str(auth_user.get("user_id") or auth_user.get("id") or user.get("id") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid auth context")
+
+    deleted_at = datetime.now(timezone.utc).isoformat()
+    soft_delete_updates = {
+        "email": _deleted_email(user_id),
+        "name": "Deleted User",
+        "full_name": "Deleted User",
+        "status": "deleted",
+        "password_hash": None,
+        "plan": "basic",
+        "is_premium": False,
+        "gem_multiplier": 1,
+        "partner_id": None,
+        "stripe_customer_id": None,
+        "state": None,
+        "city": None,
+        "deleted_at": deleted_at,
+    }
+    if not sb_soft_delete_profile(user_id, soft_delete_updates):
+        raise HTTPException(status_code=503, detail="Account deletion failed")
+
+    users_db.pop(user_id, None)
+
+    if not sb_delete_auth_user(user_id):
+        logger.warning("Soft-deleted profile %s but failed to delete auth user", user_id)
+
+    return {
+        "success": True,
+        "message": "Account deleted successfully",
+        "data": {"deleted_at": deleted_at},
+    }
 
 
 @router.get("/user/car")

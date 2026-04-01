@@ -20,7 +20,7 @@ importlib.reload(config)
 from services.supabase_service import sb_create_user, sb_get_user_by_email, sb_login_user
 
 ADMIN_EMAIL = "Riyan@snaproad.co"
-ADMIN_PASSWORD = "Riyanm909@"
+ADMIN_PASSWORD = os.getenv("SNAPROAD_TEST_PASSWORD", "")
 
 ADMIN_PROFILE = {
     "email": ADMIN_EMAIL,

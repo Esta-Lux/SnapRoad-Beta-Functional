@@ -92,8 +92,75 @@ def _supabase_env_health_hint() -> dict:
 
 def create_app() -> FastAPI:
     _env = os.getenv("ENVIRONMENT", "development")
+    _is_prod = _env.strip().lower() == "production"
     validate_production_env()
-    app = FastAPI(title="SnapRoad API")
+    app = FastAPI(
+        title="SnapRoad API",
+        docs_url=None if _is_prod else "/docs",
+        redoc_url=None if _is_prod else "/redoc",
+        openapi_url=None if _is_prod else "/openapi.json",
+    )
+    # TLS terminates at Railway / most PaaS edges; traffic to this process is HTTP.
+    _railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
+
+    # --- CORS allowlist (computed here; CORSMiddleware is registered LAST below so it is outermost.) ---
+    # In Starlette/FastAPI, the last add_middleware() wraps the stack first on incoming requests — so CORS runs
+    # before SecurityHeaders and handles OPTIONS preflight correctly.
+    def _normalize_cors_origin(origin: str) -> str:
+        o = (origin or "").strip()
+        return o.rstrip("/") if o else ""
+
+    _cors_origins_raw = os.getenv("CORS_ORIGINS", "")
+    if _cors_origins_raw:
+        cors_origins = [o for o in (_normalize_cors_origin(x) for x in _cors_origins_raw.split(",")) if o]
+    elif _env == "production":
+        cors_origins = []
+    else:
+        cors_origins = [
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:3000",
+            "http://localhost:8001",
+            "http://127.0.0.1:8001",
+        ]
+
+    _snaproad_web_defaults = (
+        "https://app.snaproad.app",
+        "https://www.snaproad.app",
+        "https://snaproad.app",
+        "https://api.snaproad.app",
+        "http://app.snaproad.app",
+    )
+    if (_env == "production" or _railway) and cors_origins:
+        cors_origins = list(dict.fromkeys(list(cors_origins) + list(_snaproad_web_defaults)))
+
+    _allowed_cors_origins = frozenset(cors_origins)
+
+    class EnsureCorsHeadersMiddleware(BaseHTTPMiddleware):
+        """If the CORS layer did not attach headers (some error paths), echo Origin when allowlisted."""
+
+        async def dispatch(self, request: Request, call_next):
+            response = await call_next(request)
+            origin = request.headers.get("origin")
+            if (
+                origin
+                and origin in _allowed_cors_origins
+                and not response.headers.get("access-control-allow-origin")
+            ):
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+            return response
+
+    _origin_regex = (
+        None
+        if _env == "production"
+        else os.environ.get(
+            "CORS_ORIGIN_REGEX",
+            r"^https?://.*\.(tunnelmole\.net|trycloudflare\.com|loca\.lt)$",
+        )
+    )
+
     class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
             response = await call_next(request)
@@ -104,9 +171,7 @@ def create_app() -> FastAPI:
             return response
 
     app.add_middleware(SecurityHeadersMiddleware)
-    # TLS terminates at Railway / most PaaS edges; traffic to this process is HTTP.
     # HTTPSRedirectMiddleware breaks internal health checks and proxy → container routing (502 / connection refused).
-    _railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
     _skip_https_redirect = (os.getenv("SKIP_HTTPS_REDIRECT") or "").strip().lower() in ("1", "true", "yes")
     if _env == "production" and not (_railway or _skip_https_redirect):
         app.add_middleware(HTTPSRedirectMiddleware)
@@ -197,6 +262,8 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     def root():
+        if _is_prod:
+            return {"message": "SnapRoad API"}
         return {"message": "SnapRoad API", "docs": "/docs", "redoc": "/redoc"}
 
     @app.get("/health")
@@ -264,46 +331,6 @@ def create_app() -> FastAPI:
             "ohgo_cameras_configured": bool((OHGO_API_KEY or "").strip()),
         }
 
-    # Parse CORS origins from env (comma-separated)
-    _cors_origins_raw = os.getenv("CORS_ORIGINS", "")
-
-    if _cors_origins_raw:
-        cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
-    elif _env == "production":
-        cors_origins = []  # Force explicit configuration in production
-    else:
-        cors_origins = [
-            "http://localhost:5173",
-            "http://localhost:3000",
-            "http://127.0.0.1:5173",
-            "http://127.0.0.1:3000",
-            "http://localhost:8001",
-            "http://127.0.0.1:8001",
-        ]
-
-    # Keep regex support for dev tunnels; gate it off by default in production.
-    _origin_regex = (
-        None
-        if _env == "production"
-        else os.environ.get(
-            "CORS_ORIGIN_REGEX",
-            r"^https?://.*\.(tunnelmole\.net|trycloudflare\.com|loca\.lt)$",
-        )
-    )
-    _cors_headers = (
-        ["*"]
-        if _env != "production"
-        else ["Authorization", "Content-Type", "Bypass-Tunnel-Reminder", "X-Requested-With", "Accept"]
-    )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_origin_regex=_origin_regex,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=_cors_headers,
-    )
-
     # Register all route modules
     app.include_router(auth_router)
     app.include_router(users_router)
@@ -329,6 +356,19 @@ def create_app() -> FastAPI:
     app.include_router(photo_reports_router)
     app.include_router(place_alerts_router)
     app.include_router(legal_router)
+
+    # CORS last = outermost (handles OPTIONS / preflight first). allow_origins must be explicit when
+    # allow_credentials=True — never ["*"].
+    app.add_middleware(EnsureCorsHeadersMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_origin_regex=_origin_regex,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
 
     return app
 

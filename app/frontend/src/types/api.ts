@@ -57,6 +57,7 @@ export interface SignupRequest {
   email: string;
   password: string;
   name: string;
+  date_of_birth: string;
   plan?: 'free' | 'premium' | 'family';
 }
 

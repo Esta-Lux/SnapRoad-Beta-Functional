@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, Header
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, Header, Request
 from typing import Optional
 from datetime import datetime, timedelta
 from models.schemas import (
@@ -21,10 +21,12 @@ from services.supabase_service import (
     sb_get_redemptions_by_partner,
     sb_get_partner_referrals, sb_create_partner_referral,
     sb_login_user, sb_create_user, sb_get_user_by_email,
+    _sb,
 )
 from services.mock_data import PARTNER_PLANS, BOOST_PRICING
 from middleware.auth import create_access_token, require_partner
 from config import PARTNER_PORTAL_ORIGIN
+from limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,30 @@ def _require_owned_partner_id(user: dict, partner_id: Optional[str] = None) -> s
     if partner_id and str(partner_id) != token_partner_id:
         raise HTTPException(status_code=403, detail="Partner access denied")
     return token_partner_id
+
+
+def _assert_partner_resource_owner(
+    table: str,
+    resource_id: str,
+    partner_id: str,
+    detail: str,
+) -> dict:
+    try:
+        result = (
+            _sb()
+            .table(table)
+            .select("id,partner_id")
+            .eq("id", str(resource_id))
+            .eq("partner_id", str(partner_id))
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning("Resource ownership check failed for %s/%s: %s", table, resource_id, exc)
+        raise HTTPException(status_code=503, detail="Unable to verify resource ownership") from exc
+    if not result.data:
+        raise HTTPException(status_code=403, detail=detail)
+    return result.data[0]
 
 
 # ==================== PARTNER PLANS ====================
@@ -197,6 +223,7 @@ def add_partner_location(location: PartnerLocation, partner_id: str = "default_p
 @router.put("/partner/locations/{location_id}")
 def update_partner_location(location_id: str, location: PartnerLocation, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
+    _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, "Not your location")
     updates = {
         "name": location.name,
         "address": location.address,
@@ -212,6 +239,7 @@ def update_partner_location(location_id: str, location: PartnerLocation, partner
 @router.delete("/partner/locations/{location_id}")
 def delete_partner_location(location_id: str, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
+    _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, "Not your location")
     sb_delete_partner_location(location_id)
     remaining = sb_get_partner_locations(owned_partner_id)
     if remaining and not any(l.get("is_primary") for l in remaining):
@@ -222,6 +250,7 @@ def delete_partner_location(location_id: str, partner_id: str = "default_partner
 @router.post("/partner/locations/{location_id}/set-primary")
 def set_primary_location(location_id: str, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
+    _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, "Not your location")
     sb_set_primary_location(owned_partner_id, location_id)
     return {"success": True, "message": "Primary location updated"}
 
@@ -278,6 +307,7 @@ def get_partner_offers(
 @router.put("/partner/offers/{offer_id}")
 def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
+    _assert_partner_resource_owner("offers", offer_id, owned_partner_id, "Not your offer")
     partner = sb_get_partner(owned_partner_id)
     if not partner:
         return {"success": False, "message": "Partner not found"}
@@ -327,6 +357,7 @@ def get_boost_pricing():
 @router.post("/partner/boosts/create")
 def create_offer_boost(boost_req: BoostRequest, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
+    _assert_partner_resource_owner("offers", str(boost_req.offer_id), owned_partner_id, "Not your offer")
     if boost_req.boost_type not in BOOST_PRICING:
         return {"success": False, "message": "Invalid boost type"}
     config = BOOST_PRICING[boost_req.boost_type]
@@ -384,7 +415,8 @@ def get_active_boosts(
 
 @router.delete("/partner/boosts/{boost_id}")
 def cancel_boost(boost_id: str, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
-    _require_owned_partner_id(user, partner_id)
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    _assert_partner_resource_owner("boosts", boost_id, owned_partner_id, "Not your boost")
     sb_cancel_boost(boost_id)
     return {"success": True, "message": "Boost cancelled"}
 
@@ -420,7 +452,8 @@ def add_partner_credits(credits_req: BoostCreditsRequest, partner_id: str = "def
 
 # ==================== PARTNER V2 ENDPOINTS ====================
 @router.post("/partner/v2/login")
-def partner_login_v2(request: PartnerLoginRequest):
+@limiter.limit("10/minute")
+def partner_login_v2(http_request: Request, request: PartnerLoginRequest):
     user, _login_err = sb_login_user(request.email, request.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -443,24 +476,48 @@ def partner_login_v2(request: PartnerLoginRequest):
 
 
 @router.post("/partner/v2/register")
-def partner_register_v2(request: PartnerRegisterRequest):
+@limiter.limit("5/minute")
+def partner_register_v2(http_request: Request, request: PartnerRegisterRequest):
     existing = sb_get_user_by_email(request.email)
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     full_name = f"{request.first_name} {request.last_name}"
-    user = sb_create_user(request.email, request.password, full_name, "partner")
-    partner_data = {
-        "id": str(user["id"]),
-        "business_name": request.business_name,
-        "email": request.email,
-        "plan": "starter",
-        "is_founders": True,
-        "status": "active",
-        "is_approved": True,
-    }
-    sb_create_partner(partner_data)
-    token = create_access_token({"sub": str(user["id"]), "email": request.email, "role": "partner", "partner_id": str(user["id"])})
-    return {"success": True, "token": token, "partner_id": str(user["id"]), "business_name": request.business_name}
+    try:
+        user = sb_create_user(request.email, request.password, full_name, "partner")
+        # Match public.partners columns (see app/backend/sql/supabase_migration.sql).
+        # Omit is_founders here so inserts work before optional migration 019; founders can be set in admin.
+        partner_data = {
+            "id": str(user["id"]),
+            "business_name": request.business_name,
+            "business_type": "retail",
+            "email": request.email,
+            "plan": "starter",
+            "status": "active",
+            "is_approved": True,
+        }
+        created = sb_create_partner(partner_data)
+        if not created:
+            logger.error(
+                "partner_register_v2: sb_create_partner returned no row for email=%s id=%s",
+                request.email,
+                user.get("id"),
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Could not create partner record. Please try again or contact support.",
+            )
+        token = create_access_token(
+            {"sub": str(user["id"]), "email": request.email, "role": "partner", "partner_id": str(user["id"])}
+        )
+        return {"success": True, "token": token, "partner_id": str(user["id"]), "business_name": request.business_name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("partner_register_v2 failed: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail="Registration failed. Please try again.",
+        ) from e
 
 
 @router.get("/partner/v2/profile/{partner_id}")
