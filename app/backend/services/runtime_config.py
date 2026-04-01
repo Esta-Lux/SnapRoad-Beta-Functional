@@ -31,7 +31,13 @@ def get_runtime_config() -> Dict[str, Any]:
 
 
 def cfg_enabled(config: Dict[str, Any], key: str, default: bool = True) -> bool:
-    """True = feature allowed. Missing key uses default (usually True = normal ops)."""
+    """True = feature allowed.
+
+    If *key* is absent from ``app_config`` (empty fetch, failed query, or row missing),
+    returns *default*. So e.g. ``incident_submissions_enabled`` with default True stays
+    on unless a row explicitly sets it false. ``sb_get_app_config()`` returns ``{}`` on
+    error, which also yields *default* for missing keys.
+    """
     if key not in config:
         return default
     v = config.get(key)

@@ -18,6 +18,14 @@ SUPABASE_DB_PASSWORD = os.environ.get("SUPABASE_DB_PASSWORD")  # Optional: DB pa
 JWT_SECRET = os.environ.get("JWT_SECRET")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 IS_PRODUCTION = ENVIRONMENT.lower() == "production"
+
+
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+# When true, POST /api/incidents/* returns 503 detail including str(exc) for Supabase failures (debug prod only).
+EXPOSE_INCIDENT_BACKEND_ERRORS = _truthy_env("EXPOSE_INCIDENT_BACKEND_ERRORS")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 
