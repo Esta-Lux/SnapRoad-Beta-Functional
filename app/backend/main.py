@@ -104,7 +104,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "1; mode=block"
         return response
 
-
 def _register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -194,7 +193,6 @@ def _add_telemetry_middleware(app: FastAPI) -> None:
             }
             telemetry_service.publish_fire_and_forget(event)
 
-
 def _cors_settings(env: str) -> tuple[list[str], Optional[str], list[str]]:
     raw = os.getenv("CORS_ORIGINS", "")
     if raw:
@@ -251,7 +249,6 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(photo_reports_router)
     app.include_router(place_alerts_router)
     app.include_router(legal_router)
-
 
 def _build_health_response() -> dict:
     checks = {"database": "ok", "cache": "unknown", "supabase_env": _supabase_env_health_hint()}
@@ -318,8 +315,14 @@ def _build_env_check_response() -> dict:
 
 def create_app() -> FastAPI:
     env = os.getenv("ENVIRONMENT", "development")
+    is_prod = env.strip().lower() == "production"
     validate_production_env()
-    app = FastAPI(title=API_TITLE)
+    app = FastAPI(
+        title=API_TITLE,
+        docs_url=None if is_prod else "/docs",
+        redoc_url=None if is_prod else "/redoc",
+        openapi_url=None if is_prod else "/openapi.json",
+    )
 
     app.add_middleware(SecurityHeadersMiddleware)
     _maybe_add_https_redirect(app, env)
@@ -331,6 +334,8 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     def root():
+        if is_prod:
+            return {"message": API_TITLE}
         return {"message": API_TITLE, "docs": "/docs", "redoc": "/redoc"}
 
     @app.get("/health")

@@ -24,6 +24,7 @@ import {
   BadgesModal,
   DrivingScoreModal,
   DrivingModeCard,
+  DeleteAccountButton,
   GemHistoryModal,
   IncidentReportModal,
   LevelProgressModal,
@@ -110,6 +111,7 @@ export default function ProfileScreen() {
   const [showFuelTracker, setShowFuelTracker] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showConcern, setShowConcern] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [showDriverSnapshot, setShowDriverSnapshot] = useState(false);
   const [showPlaceAlertsDashboard, setShowPlaceAlertsDashboard] = useState(false);
   const [weeklyRecap, setWeeklyRecap] = useState<ProfileWeeklyRecap>({
@@ -129,6 +131,22 @@ export default function ProfileScreen() {
     monthlyEstimate: null,
     avgMpg: null,
   });
+
+  const handleDeleteAccount = useCallback(async () => {
+    setDeletingAccount(true);
+    try {
+      const result = await api.delete<{ message?: string }>('/api/user/account');
+      if (!result.success) {
+        Alert.alert('Delete Account', result.error || 'Unable to delete your account right now.');
+        return;
+      }
+      await logout();
+      Alert.alert('Account Deleted', 'Your SnapRoad account has been deleted.');
+      navigation.navigate('Welcome');
+    } finally {
+      setDeletingAccount(false);
+    }
+  }, [logout, navigation]);
 
   const loadData = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
     if (mode === 'initial') setInitialLoading(true);
@@ -868,6 +886,7 @@ export default function ProfileScreen() {
             <AboutCard cardBg={cardBg} text={text} sub={sub} />
 
             <SignOutButton onSignOut={logout} />
+            <DeleteAccountButton onDeleteAccount={handleDeleteAccount} isDeleting={deletingAccount} />
           </>
         )}
       </ScrollView>

@@ -205,8 +205,8 @@ CREATE TABLE IF NOT EXISTS public.legal_documents (
 
 -- Seed default legal documents
 INSERT INTO public.legal_documents (name, type, status, version, description, is_required) VALUES
-  ('Privacy Policy', 'privacy', 'active', '2.1', 'How we collect and use user data', true),
-  ('Terms of Service', 'terms', 'active', '3.0', 'Rules and guidelines for platform usage', true),
+  ('Privacy Policy', 'privacy', 'published', '2.1', 'How we collect and use user data', true),
+  ('Terms of Service', 'terms', 'published', '3.0', 'Rules and guidelines for platform usage', true),
   ('GDPR Compliance', 'compliance', 'active', '1.0', 'EU data protection compliance', true),
   ('Cookie Policy', 'privacy', 'active', '1.5', 'How we use cookies and tracking', false),
   ('Partner Agreement', 'agreement', 'active', '2.0', 'Terms for business partners', true),

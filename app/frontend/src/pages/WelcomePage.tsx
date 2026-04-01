@@ -21,6 +21,7 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+  const [dateOfBirth, setDateOfBirth] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -54,18 +55,21 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
       if (!cleanEmail || !cleanPassword) throw new Error('Please fill in all fields')
 
       if (mode === 'signup') {
-        const { error } = await sb.auth.signUp({
+        const cleanDob = dateOfBirth.trim()
+        if (!cleanDob) throw new Error('Date of birth is required')
+        const result = await api.signup({
           email: cleanEmail,
           password: cleanPassword,
-          options: { data: { full_name: cleanName || cleanEmail.split('@')[0], name: cleanName || cleanEmail.split('@')[0] } },
+          name: cleanName || cleanEmail.split('@')[0],
+          date_of_birth: cleanDob,
         })
-        if (error) throw new Error(error.message)
+        if (!result.success || !result.data?.user) throw new Error(result.error || 'Signup failed')
+        setUserFromApi(result.data.user as any)
       } else {
-        const { error } = await sb.auth.signInWithPassword({ email: cleanEmail, password: cleanPassword })
-        if (error) throw new Error(error.message)
+        const result = await api.login({ email: cleanEmail, password: cleanPassword })
+        if (!result.success || !result.data?.user) throw new Error(result.error || 'Login failed')
+        setUserFromApi(result.data.user as any)
       }
-
-      await exchangeSupabaseSession()
       onClose()
       navigate('/driver')
     } catch (error) {
@@ -91,6 +95,13 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
   }
 
   const handleOAuth = async (provider: 'google' | 'apple') => {
+    if (mode === 'signup') {
+      toast.error('Use email signup to complete age verification before using social sign-in.', {
+        style: { background: '#1E293B', color: '#fff', borderRadius: '12px', padding: '12px 16px' },
+        duration: 4000,
+      })
+      return
+    }
     setLoading(true)
     try {
       const sb = getSupabaseClient()
@@ -153,6 +164,17 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="John Doe"
+                    className="w-full bg-slate-800/50 backdrop-blur border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              )}
+              {mode === 'signup' && (
+                <div>
+                  <label className="text-slate-400 text-xs font-medium mb-1 block">Date of Birth</label>
+                  <input
+                    type="date"
+                    value={dateOfBirth}
+                    onChange={(e) => setDateOfBirth(e.target.value)}
                     className="w-full bg-slate-800/50 backdrop-blur border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>

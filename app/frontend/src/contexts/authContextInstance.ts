@@ -31,7 +31,7 @@ export interface AuthContextType {
   isLoading: boolean
   authError: string | null
   login: (email: string, password: string) => Promise<boolean>
-  signup: (name: string, email: string, password: string) => Promise<boolean>
+  signup: (name: string, email: string, password: string, dateOfBirth: string) => Promise<boolean>
   logout: () => void
   updateUser: (updates: Partial<User>) => void
   /** Set user from API login/signup response so post-login pages have auth state */

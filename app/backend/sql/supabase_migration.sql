@@ -8,6 +8,7 @@
 --   4) 016_profiles_stripe_customer.sql
 --   5) 018_admin_runtime_tables.sql  → incidents, campaigns, rewards, audit_log, platform_settings,
 --                                       legal_documents + notification columns (admin API / test_connection)
+--   5b) 019_partners_founders_subscription.sql → optional partners.is_founders, subscription_status
 --   6) 002_redemption_fees.sql   → fee columns, partner_team_links (redemptions fees if not in 014)
 --   7) 003_tiered_offers.sql
 --   8) 004_friend_locations.sql → 005 → 006_family_mode.sql → 006_operational_runtime_flags.sql

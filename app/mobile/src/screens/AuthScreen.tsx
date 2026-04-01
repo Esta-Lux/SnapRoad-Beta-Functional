@@ -45,6 +45,7 @@ export default function AuthScreen({ navigation, route }: Props) {
 
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
   const [name, setName] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
@@ -59,6 +60,7 @@ export default function AuthScreen({ navigation, route }: Props) {
 
   const resetForm = useCallback(() => {
     setName('');
+    setDateOfBirth('');
     setEmail('');
     setPassword('');
     setConfirmPw('');
@@ -84,10 +86,11 @@ export default function AuthScreen({ navigation, route }: Props) {
     setLocalError(null);
     if (mode === 'signup') {
       if (!name.trim()) { setLocalError('Name is required'); return; }
+      if (!dateOfBirth.trim()) { setLocalError('Date of birth is required'); return; }
       if (!email.trim()) { setLocalError('Email is required'); return; }
       if (password.length < 6) { setLocalError('Password must be at least 6 characters'); return; }
       if (password !== confirmPw) { setLocalError('Passwords do not match'); return; }
-      await signup(name, email, password);
+      await signup(name, email, password, dateOfBirth);
     } else {
       if (!email.trim() || !password) { setLocalError('Email and password required'); return; }
       await login(email, password);
@@ -96,6 +99,10 @@ export default function AuthScreen({ navigation, route }: Props) {
 
   const handleGoogleSignIn = async () => {
     setLocalError(null);
+    if (mode === 'signup') {
+      setLocalError('Use email signup to complete age verification before signing in with Google.');
+      return;
+    }
     setGoogleLoading(true);
     try {
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
@@ -160,6 +167,19 @@ export default function AuthScreen({ navigation, route }: Props) {
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
+              returnKeyType="next"
+              onSubmitEditing={() => emailRef.current?.focus()}
+            />
+          )}
+          {mode === 'signup' && (
+            <TextInput
+              style={[s.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+              placeholder="Date of Birth (YYYY-MM-DD)"
+              placeholderTextColor={colors.textTertiary}
+              value={dateOfBirth}
+              onChangeText={setDateOfBirth}
+              autoCapitalize="none"
+              keyboardType="numbers-and-punctuation"
               returnKeyType="next"
               onSubmitEditing={() => emailRef.current?.focus()}
             />
@@ -262,7 +282,9 @@ export default function AuthScreen({ navigation, route }: Props) {
             {googleLoading ? (
               <ActivityIndicator color={colors.text} size="small" />
             ) : (
-              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '600' }}>Sign in with Google</Text>
+              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '600' }}>
+                {mode === 'signup' ? 'Google sign-in (existing accounts only)' : 'Sign in with Google'}
+              </Text>
             )}
           </TouchableOpacity>
         </ScrollView>

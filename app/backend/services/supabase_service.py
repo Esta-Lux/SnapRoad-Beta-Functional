@@ -163,7 +163,14 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
             
             profile_data = profile_result.data[0]
             logger.info(f"Profile fetch SUCCESS for {email}, role={profile_data.get('role')}")
-            
+            status = str(profile_data.get("status") or "active").strip().lower()
+            if status in {"deleted", "deactivated"}:
+                logger.warning("Login blocked for deleted profile %s", email)
+                return None, "This account is no longer available"
+            if status in {"suspended", "disabled"}:
+                logger.warning("Login blocked for suspended profile %s", email)
+                return None, "This account is unavailable"
+
             # Verify password with bcrypt; support legacy sha256 for seamless migration.
             stored_hash = str(profile_data.get("password_hash", "") or "")
             password_ok = False
@@ -288,6 +295,24 @@ def sb_update_profile(profile_id: str, updates: dict) -> bool:
         return True
     except Exception as e:
         logger.warning(f"sb_update_profile: {e}")
+        return False
+
+
+def sb_soft_delete_profile(profile_id: str, updates: dict) -> bool:
+    try:
+        _sb().table("profiles").update(updates).eq("id", profile_id).execute()
+        return True
+    except Exception as e:
+        logger.warning(f"sb_soft_delete_profile: {e}")
+        return False
+
+
+def sb_delete_auth_user(profile_id: str) -> bool:
+    try:
+        _sb().auth.admin.delete_user(str(profile_id))
+        return True
+    except Exception as e:
+        logger.warning(f"sb_delete_auth_user: {e}")
         return False
 
 

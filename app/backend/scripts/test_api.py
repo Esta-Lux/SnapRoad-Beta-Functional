@@ -1,11 +1,12 @@
 """Quick API test script"""
+import os
 import requests
 
 BASE = "http://localhost:8001"
 
 def test_admin_login():
     print("=== Test 1: Admin Login ===")
-    r = requests.post(f"{BASE}/api/auth/login", json={"email": "Riyan@snaproad.co", "password": "Riyanm909@"})
+    r = requests.post(f"{BASE}/api/auth/login", json={"email": "Riyan@snaproad.co", "password": os.getenv("SNAPROAD_TEST_PASSWORD", "")})
     d = r.json()
     print(f"Status: {r.status_code}")
     success = d.get("success")

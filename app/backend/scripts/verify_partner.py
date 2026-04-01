@@ -62,7 +62,7 @@ def main():
             "id": user_id,
             "business_name": user.get("name", "Test Business"),
             "email": PARTNER_EMAIL,
-            "password_hash": pwd_context.hash("Riyanm909@"),
+            "password_hash": pwd_context.hash(os.getenv("SNAPROAD_TEST_PASSWORD", "")),
             "plan": "starter",
             "is_founders": True,
             "status": "active",

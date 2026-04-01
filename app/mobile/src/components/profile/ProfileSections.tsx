@@ -652,6 +652,41 @@ export function SignOutButton({ onSignOut }: { onSignOut: () => void }) {
 }
 
 
+export function DeleteAccountButton({
+  onDeleteAccount,
+  isDeleting,
+}: {
+  onDeleteAccount: () => void;
+  isDeleting: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.signOutBtn, styles.deleteAccountBtn]}
+      disabled={isDeleting}
+      onPress={() => {
+        Alert.alert(
+          'Delete Account',
+          'This permanently disables your SnapRoad account. Your app access will be removed immediately.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: isDeleting ? 'Deleting...' : 'Delete Account', style: 'destructive', onPress: onDeleteAccount },
+          ],
+        );
+      }}
+    >
+      {isDeleting ? (
+        <ActivityIndicator size="small" color="#fff" />
+      ) : (
+        <>
+          <Ionicons name="trash-outline" size={18} color="#fff" />
+          <Text style={styles.deleteAccountText}>Delete Account</Text>
+        </>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+
 const sStyles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: '800', paddingHorizontal: 16, marginTop: 20, marginBottom: 8 },
 });
@@ -685,6 +720,8 @@ const styles = StyleSheet.create({
   aboutRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(128,128,128,0.15)' },
   signOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24, marginBottom: 20, marginHorizontal: 16, paddingVertical: 14, borderRadius: 12, backgroundColor: 'rgba(239,68,68,0.1)' },
   signOutText: { color: '#EF4444', fontSize: 15, fontWeight: '700' },
+  deleteAccountBtn: { marginTop: 0, marginBottom: 32, backgroundColor: '#DC2626' },
+  deleteAccountText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   planName: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
   upgradeBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
   upgradeBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },

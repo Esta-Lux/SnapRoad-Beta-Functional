@@ -11,7 +11,7 @@ from services.supabase_service import sb_create_user, sb_create_partner, sb_get_
 
 # Test data
 email = "john.dan@estaluxtest.com"
-password = "Riyanm909@"
+password = os.getenv("SNAPROAD_TEST_PASSWORD", "")
 first_name = "John"
 last_name = "Dan"
 business_name = "EstaLLC"
