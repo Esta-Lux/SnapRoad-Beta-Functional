@@ -150,7 +150,7 @@ export default function PartnerSignup() {
               Already a partner?{' '}
               <button
                 type="button"
-                onClick={() => navigate('/auth?tab=partner')}
+                onClick={() => navigate('/portal/partner/sign-in')}
                 className="text-blue-400 hover:text-blue-300 font-medium"
               >
                 Log in

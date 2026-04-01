@@ -346,7 +346,7 @@ export default function PartnerDashboard() {
         </nav>
 
         <div className="p-4 border-t border-white/5">
-          <button onClick={() => { partnerApi.logout(); navigate('/auth?tab=partner') }} data-testid="logout-btn" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10">
+          <button onClick={() => { partnerApi.logout(); navigate('/portal/partner/welcome') }} data-testid="logout-btn" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10">
             <LogOut size={20} /><span className="font-medium">Sign Out</span>
           </button>
         </div>
@@ -354,7 +354,7 @@ export default function PartnerDashboard() {
 
       {/* Modals */}
       <NotificationCenter isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
-      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} onLogout={() => { partnerApi.logout(); navigate('/auth?tab=partner') }} />
+      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} onLogout={() => { partnerApi.logout(); navigate('/portal/partner/welcome') }} />
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} appType="partner" />
 
       {/* Main Content */}

@@ -22,24 +22,24 @@ test.describe('routing and auth guards', () => {
     await expect(page).toHaveURL(/\/driver\/auth/)
   })
 
-  test('/partner redirects to partner portal then guard sends to auth', async ({ page }) => {
+  test('/partner redirects to partner portal then guard sends to partner welcome', async ({ page }) => {
     await gotoReady(page, '/partner')
-    await expect(page).toHaveURL(/\/auth\?tab=partner/)
+    await expect(page).toHaveURL(/\/portal\/partner\/welcome/)
   })
 
-  test('/admin redirects to admin portal path then guard sends to auth', async ({ page }) => {
+  test('/admin redirects to admin portal path then guard sends to admin sign-in', async ({ page }) => {
     await gotoReady(page, '/admin')
-    await expect(page).toHaveURL(/\/auth\?tab=admin/)
+    await expect(page).toHaveURL(/\/portal\/admin-sr2025secure\/sign-in/)
   })
 
-  test('/portal/partner without session redirects to partner auth', async ({ page }) => {
+  test('/portal/partner without session redirects to partner welcome', async ({ page }) => {
     await gotoReady(page, '/portal/partner')
-    await expect(page).toHaveURL(/\/auth\?tab=partner/)
+    await expect(page).toHaveURL(/\/portal\/partner\/welcome/)
   })
 
-  test('/portal/admin-sr2025secure without session redirects to admin auth', async ({ page }) => {
+  test('/portal/admin-sr2025secure without session redirects to admin sign-in', async ({ page }) => {
     await gotoReady(page, '/portal/admin-sr2025secure')
-    await expect(page).toHaveURL(/\/auth\?tab=admin/)
+    await expect(page).toHaveURL(/\/portal\/admin-sr2025secure\/sign-in/)
   })
 
   test('/driver without session redirects to driver auth', async ({ page }) => {

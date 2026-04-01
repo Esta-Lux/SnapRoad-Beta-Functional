@@ -409,18 +409,11 @@ export default function WelcomePage() {
                   App Preview
                 </Link>
                 <span className="text-slate-700">|</span>
-                <Link 
-                  to="/auth?tab=partner" 
+                <Link
+                  to="/portal/partner/welcome"
                   className="text-slate-400 hover:text-emerald-400 transition-colors"
                 >
-                  Partner Login
-                </Link>
-                <span className="text-slate-700">|</span>
-                <Link 
-                  to="/auth?tab=admin" 
-                  className="text-slate-400 hover:text-slate-300 transition-colors"
-                >
-                  Admin Login
+                  Partner portal
                 </Link>
                 <span className="text-slate-700">|</span>
                 <a 

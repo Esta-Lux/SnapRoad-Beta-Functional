@@ -5,7 +5,7 @@ export default function PartnerGuard({ children }: { children: React.ReactNode }
   const hasSession = partnerApi.restoreSession()
 
   if (!hasSession) {
-    return <Navigate to="/auth?tab=partner" replace />
+    return <Navigate to="/portal/partner/welcome" replace />
   }
 
   return <>{children}</>

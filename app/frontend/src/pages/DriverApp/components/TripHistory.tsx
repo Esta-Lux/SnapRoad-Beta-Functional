@@ -30,6 +30,11 @@ function statsFromPayload(d: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
+function statToNumber(v: unknown): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
 function applyHistoryPayload(
   raw: { success?: boolean; data?: unknown; stats?: unknown },
   setTrips: (t: Trip[]) => void,
@@ -131,7 +136,7 @@ export default function TripHistory({ isOpen, onClose }: TripHistoryProps) {
           {safeStats && (
             <div className="grid grid-cols-4 gap-2">
               <div className="bg-white/10 rounded-lg p-2 text-center">
-                <p className="text-white font-bold">{safeStats.total_trips}</p>
+                <p className="text-white font-bold">{statToNumber(safeStats.total_trips)}</p>
                 <p className="text-white/80 text-[10px]">Trips</p>
               </div>
               <div className="bg-white/10 rounded-lg p-2 text-center">
@@ -139,7 +144,7 @@ export default function TripHistory({ isOpen, onClose }: TripHistoryProps) {
                 <p className="text-white/80 text-[10px]">Miles</p>
               </div>
               <div className="bg-white/10 rounded-lg p-2 text-center">
-                <p className="text-white font-bold">{safeStats.avg_safety_score ?? 0}</p>
+                <p className="text-white font-bold">{statToNumber(safeStats.avg_safety_score)}</p>
                 <p className="text-white/80 text-[10px]">Avg Score</p>
               </div>
               <div className="bg-white/10 rounded-lg p-2 text-center">

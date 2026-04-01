@@ -4,14 +4,10 @@ import { gotoReady } from './utils/nav'
 const goWelcome = (page: Page) => gotoReady(page, '/driver/auth')
 
 test.describe('driver welcome landing', () => {
-  test('footer portal links reach auth screens', async ({ page }) => {
+  test('footer partner link reaches partner welcome', async ({ page }) => {
     await goWelcome(page)
-    await page.getByRole('link', { name: 'Partner Login' }).click()
-    await expect(page).toHaveURL(/\/auth\?tab=partner/)
-
-    await goWelcome(page)
-    await page.getByRole('link', { name: 'Admin Login' }).click()
-    await expect(page).toHaveURL(/\/auth\?tab=admin/)
+    await page.getByRole('link', { name: 'Partner portal' }).click()
+    await expect(page).toHaveURL(/\/portal\/partner\/welcome/)
   })
 
   test('Sign In opens auth modal', async ({ page }) => {
