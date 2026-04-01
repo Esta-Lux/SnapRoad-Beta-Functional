@@ -8,7 +8,7 @@ import math
 from middleware.auth import get_current_user, require_admin
 from limiter import limiter
 from database import get_supabase
-from config import ENVIRONMENT
+from config import ENVIRONMENT, EXPOSE_INCIDENT_BACKEND_ERRORS
 
 logger = logging.getLogger(__name__)
 
@@ -115,14 +115,71 @@ def _row_to_incident(row: dict, uid: str) -> dict:
     }
 
 
+def _maybe_raise_incident_503(exc: Exception, context: str) -> None:
+    """Log full traceback; in production raise 503 (optional str(exc) in detail for debugging)."""
+    logger.exception("%s: %s", context, exc)
+    if ENVIRONMENT != "production":
+        return
+    detail = (
+        f"{MSG_INCIDENT_SERVICE_UNAVAILABLE}: {exc!s}"
+        if EXPOSE_INCIDENT_BACKEND_ERRORS
+        else MSG_INCIDENT_SERVICE_UNAVAILABLE
+    )
+    raise HTTPException(status_code=503, detail=detail)
+
+
+def _road_report_rows_after_insert(sb, p: dict, created) -> list:
+    """Insert response rows, or fetch the row (supabase-py may not support insert().select())."""
+    rows = (created.data or []) if created is not None else []
+    if rows:
+        return rows
+    if p.get("user_id"):
+        fetched = (
+            sb.table("road_reports")
+            .select("*")
+            .eq("user_id", p["user_id"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return fetched.data or []
+    fetched = (
+        sb.table("road_reports")
+        .select("*")
+        .eq("type", p.get("type") or "")
+        .eq("lat", float(p["lat"]))
+        .eq("lng", float(p["lng"]))
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return fetched.data or []
+
+
+def _insert_road_report_row(sb, p: dict, response_uid: str) -> Optional[dict]:
+    created = sb.table("road_reports").insert(p).execute()
+    rows = _road_report_rows_after_insert(sb, p, created)
+    if not rows:
+        return None
+    return {"success": True, "data": _row_to_incident(rows[0], response_uid), "gems_earned": 15}
+
+
 def _try_supabase_report(report: IncidentReportCompat, uid: str, now: datetime) -> Optional[dict]:
     sb = get_supabase()
     payload = _to_road_report_payload(report, uid, now)
-    created = sb.table("road_reports").insert(payload).select("*").execute()
-    rows = created.data or []
-    if not rows:
-        return None
-    return {"success": True, "data": _row_to_incident(rows[0], uid), "gems_earned": 15}
+    try:
+        return _insert_road_report_row(sb, payload, uid)
+    except Exception as e:
+        err = str(e).lower()
+        if payload.get("user_id") and (
+            "foreign key" in err or "23503" in err or "violates foreign key constraint" in err
+        ):
+            logger.warning(
+                "road_reports insert failed (likely user_id not in auth.users); retrying with user_id=null: %s",
+                e,
+            )
+            return _insert_road_report_row(sb, {**payload, "user_id": None}, uid)
+        raise
 
 
 def _memory_report_fallback(
@@ -186,9 +243,8 @@ def report_incident(request: Request, report: IncidentReportCompat, user: Curren
         out = _try_supabase_report(report, uid, now)
         if out is not None:
             return out
-    except Exception:
-        if ENVIRONMENT == "production":
-            raise HTTPException(status_code=503, detail=MSG_INCIDENT_SERVICE_UNAVAILABLE)
+    except Exception as e:
+        _maybe_raise_incident_503(e, "report_incident supabase")
 
     return _memory_report_fallback(report, r_type, uid, now, exp)
 
@@ -270,9 +326,8 @@ def get_nearby_incidents(
     try:
         data = _nearby_from_db(lat, lng, radius_miles, now, limit)
         return {"success": True, "data": data}
-    except Exception:
-        if ENVIRONMENT == "production":
-            raise HTTPException(status_code=503, detail=MSG_INCIDENT_SERVICE_UNAVAILABLE)
+    except Exception as e:
+        _maybe_raise_incident_503(e, "get_nearby_incidents supabase")
     data = _nearby_from_memory(lat, lng, radius_miles, now, limit)
     return {"success": True, "data": data}
 
@@ -369,9 +424,8 @@ def upvote_incident(request: Request, incident_id: str, user: CurrentUser):
             return _upvote_db(sb, incident_id, voter, report)
     except HTTPException:
         raise
-    except Exception:
-        if ENVIRONMENT == "production":
-            raise HTTPException(status_code=503, detail=MSG_INCIDENT_SERVICE_UNAVAILABLE)
+    except Exception as e:
+        _maybe_raise_incident_503(e, "upvote_incident supabase")
 
     return _upvote_memory(incident_id, voter)
 
@@ -440,9 +494,8 @@ def confirm_incident(request: Request, body: ConfirmBody, _user: CurrentUser):
             return _confirm_db(sb, row, voter, body)
     except HTTPException:
         raise
-    except Exception:
-        if ENVIRONMENT == "production":
-            raise HTTPException(status_code=503, detail=MSG_INCIDENT_SERVICE_UNAVAILABLE)
+    except Exception as e:
+        _maybe_raise_incident_503(e, "confirm_incident supabase")
 
     return _confirm_memory(body)
 
@@ -492,9 +545,8 @@ def downvote_incident(request: Request, incident_id: str, _user: CurrentUser):
             return _downvote_db(sb, row, voter)
     except HTTPException:
         raise
-    except Exception:
-        if ENVIRONMENT == "production":
-            raise HTTPException(status_code=503, detail=MSG_INCIDENT_SERVICE_UNAVAILABLE)
+    except Exception as e:
+        _maybe_raise_incident_503(e, "downvote_incident supabase")
 
     return _downvote_memory(incident_id)
 
