@@ -453,14 +453,14 @@ def add_partner_credits(credits_req: BoostCreditsRequest, partner_id: str = "def
 # ==================== PARTNER V2 ENDPOINTS ====================
 @router.post("/partner/v2/login")
 @limiter.limit("10/minute")
-def partner_login_v2(http_request: Request, request: PartnerLoginRequest):
-    user, _login_err = sb_login_user(request.email, request.password)
+def partner_login_v2(request: Request, body: PartnerLoginRequest):
+    user, _login_err = sb_login_user(body.email, body.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
     # Get all partners and find matching partner record
     partners = sb_get_partners(limit=200)
-    match = next((p for p in partners if p.get("email") == request.email), None)
+    match = next((p for p in partners if p.get("email") == body.email), None)
     
     # Check if user has partner role or if partner record exists
     role = user.get("role", "driver")
@@ -471,26 +471,26 @@ def partner_login_v2(http_request: Request, request: PartnerLoginRequest):
     partner_id = match["id"] if match else str(user.get("id", ""))
     business_name = match.get("business_name", "") if match else ""
     
-    token = create_access_token({"sub": str(user["id"]), "email": request.email, "role": "partner", "partner_id": partner_id})
+    token = create_access_token({"sub": str(user["id"]), "email": body.email, "role": "partner", "partner_id": partner_id})
     return {"success": True, "token": token, "partner_id": partner_id, "business_name": business_name}
 
 
 @router.post("/partner/v2/register")
 @limiter.limit("5/minute")
-def partner_register_v2(http_request: Request, request: PartnerRegisterRequest):
-    existing = sb_get_user_by_email(request.email)
+def partner_register_v2(request: Request, body: PartnerRegisterRequest):
+    existing = sb_get_user_by_email(body.email)
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    full_name = f"{request.first_name} {request.last_name}"
+    full_name = f"{body.first_name} {body.last_name}"
     try:
-        user = sb_create_user(request.email, request.password, full_name, "partner")
+        user = sb_create_user(body.email, body.password, full_name, "partner")
         # Match public.partners columns (see app/backend/sql/supabase_migration.sql).
         # Omit is_founders here so inserts work before optional migration 019; founders can be set in admin.
         partner_data = {
             "id": str(user["id"]),
-            "business_name": request.business_name,
+            "business_name": body.business_name,
             "business_type": "retail",
-            "email": request.email,
+            "email": body.email,
             "plan": "starter",
             "status": "active",
             "is_approved": True,
@@ -499,7 +499,7 @@ def partner_register_v2(http_request: Request, request: PartnerRegisterRequest):
         if not created:
             logger.error(
                 "partner_register_v2: sb_create_partner returned no row for email=%s id=%s",
-                request.email,
+                body.email,
                 user.get("id"),
             )
             raise HTTPException(
@@ -507,9 +507,9 @@ def partner_register_v2(http_request: Request, request: PartnerRegisterRequest):
                 detail="Could not create partner record. Please try again or contact support.",
             )
         token = create_access_token(
-            {"sub": str(user["id"]), "email": request.email, "role": "partner", "partner_id": str(user["id"])}
+            {"sub": str(user["id"]), "email": body.email, "role": "partner", "partner_id": str(user["id"])}
         )
-        return {"success": True, "token": token, "partner_id": str(user["id"]), "business_name": request.business_name}
+        return {"success": True, "token": token, "partner_id": str(user["id"]), "business_name": body.business_name}
     except HTTPException:
         raise
     except Exception as e:
