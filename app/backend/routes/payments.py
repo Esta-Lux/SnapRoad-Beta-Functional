@@ -380,7 +380,7 @@ async def get_checkout_status(
 @router.get("/transactions")
 async def get_payment_transactions(
     _admin: CurrentAdmin,
-    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """Get all payment transactions (admin use)"""
     return {

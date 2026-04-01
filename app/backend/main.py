@@ -93,18 +93,14 @@ def _supabase_env_health_hint() -> dict:
     }
 
 
-def create_app() -> FastAPI:
-    _env = os.getenv("ENVIRONMENT", "development")
-    validate_production_env()
-    app = FastAPI(title="SnapRoad API")
-    class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request: Request, call_next):
-            response = await call_next(request)
-            response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["X-Frame-Options"] = "DENY"
-            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-            response.headers["X-XSS-Protection"] = "1; mode=block"
-            return response
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        return response
 
 
 def _register_exception_handlers(app: FastAPI) -> None:

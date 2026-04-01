@@ -262,8 +262,8 @@ def _nearby_from_memory(lat: float, lng: float, radius_miles: float, now: dateti
 def get_nearby_incidents(
     lat: Annotated[float, Query(...)],
     lng: Annotated[float, Query(...)],
-    radius_miles: Annotated[float, Query(default=10, ge=0.1, le=200)] = 10,
-    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
+    radius_miles: Annotated[float, Query(ge=0.1, le=200)] = 10,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """Get all active incidents within radius miles of lat/lng."""
     now = _utc_now()
@@ -280,8 +280,8 @@ def get_nearby_incidents(
 @router.post("/dev/seed", responses=OPENAPI_ERROR_RESPONSES)
 def dev_seed_incidents(
     _admin: AdminUser,
-    lat: Annotated[float, Query(default=39.9612)] = 39.9612,
-    lng: Annotated[float, Query(default=-82.9988)] = -82.9988,
+    lat: Annotated[float, Query()] = 39.9612,
+    lng: Annotated[float, Query()] = -82.9988,
 ):
     """Dev helper: seed a few incidents near a coordinate so the map always shows something."""
     if ENVIRONMENT == "production":

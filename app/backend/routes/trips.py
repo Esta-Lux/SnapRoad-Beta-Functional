@@ -53,8 +53,8 @@ def _legacy_trips_guard() -> None:
 
 @router.get("/trips", responses=_LEGACY_503_RESPONSES)
 def get_trips(
-    page: Annotated[int, Query(default=1, ge=1)] = 1,
-    limit: Annotated[int, Query(default=20, ge=1, le=100)] = 20,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     _legacy_trips_guard()
     start = (page - 1) * limit
@@ -126,7 +126,7 @@ def start_trip(body: StartTripBody):
 
 
 @router.get("/trips/history", responses=_LEGACY_503_RESPONSES)
-def get_trip_history(limit: Annotated[int, Query(default=10, ge=1, le=100)] = 10):
+def get_trip_history(limit: Annotated[int, Query(ge=1, le=100)] = 10):
     _legacy_trips_guard()
     user = users_db.get(current_user_id, {})
     return {
@@ -182,7 +182,7 @@ def get_trip_analytics(user: CurrentUser):
 @router.get("/trips/history/recent")
 def get_recent_trips_mobile(
     user: CurrentUser,
-    limit: Annotated[int, Query(default=50, ge=1, le=100)] = 50,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ):
     """Flat trip list for Route History modal (matches mobile `Trip` shape)."""
     user_id = str(user.get("id") or "")
@@ -446,8 +446,8 @@ def complete_trip_with_safety(trip: TripResult):
 
 @router.get("/trips/history/detailed", responses=_LEGACY_503_RESPONSES)
 def get_detailed_trip_history(
-    days: Annotated[int, Query(default=30, ge=1, le=365)] = 30,
-    limit: Annotated[int, Query(default=50, ge=1, le=100)] = 50,
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
     sort_by: str = "date",
 ):
     _legacy_trips_guard()
@@ -628,8 +628,8 @@ def _fuel_query(user: dict, sb=None):
 @router.get("/fuel/history")
 def get_fuel_history(
     user: CurrentUser,
-    page: Annotated[int, Query(default=1, ge=1)] = 1,
-    limit: Annotated[int, Query(default=20, ge=1, le=100)] = 20,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     try:
         sb = get_supabase()
@@ -680,8 +680,8 @@ def log_fuel(entry: FuelLogCreate, user: CurrentUser):
 @router.get("/fuel/logs")
 def get_fuel_logs(
     user: CurrentUser,
-    page: Annotated[int, Query(default=1, ge=1)] = 1,
-    limit: Annotated[int, Query(default=20, ge=1, le=100)] = 20,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     try:
         sb = get_supabase()
@@ -751,7 +751,7 @@ def get_fuel_stats(user: CurrentUser):
 
 
 @router.get("/fuel/analytics")
-def get_fuel_analytics(user: CurrentUser, months: Annotated[int, Query(default=3, ge=1, le=24)] = 3):
+def get_fuel_analytics(user: CurrentUser, months: Annotated[int, Query(ge=1, le=24)] = 3):
     # Loop bound must not be user input directly (Sonar): cap with constant, iterate at most MAX_FUEL_ANALYTICS_MONTHS.
     month_span = min(months, MAX_FUEL_ANALYTICS_MONTHS)
     try:
@@ -800,8 +800,8 @@ def report_incident_legacy(incident: dict):
 # ==================== 3D ROUTE HISTORY ====================
 @router.get("/routes/history-3d", responses=_LEGACY_503_RESPONSES)
 def get_route_history_3d(
-    days: Annotated[int, Query(default=90, ge=1, le=365)] = 90,
-    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
+    days: Annotated[int, Query(ge=1, le=365)] = 90,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
