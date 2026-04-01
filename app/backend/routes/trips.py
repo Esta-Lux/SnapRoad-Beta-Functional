@@ -507,9 +507,8 @@ def get_weekly_insights():
                 summary = ai_summary.strip()
             if isinstance(ai_tip, str) and ai_tip.strip():
                 tip = ai_tip.strip()
-        except Exception:
-            # Keep deterministic fallback response shape for reliability.
-            pass
+        except Exception as e:
+            _trips_log.warning("failed to get AI weekly insights: %s", e)
 
     return {
         "summary": summary,

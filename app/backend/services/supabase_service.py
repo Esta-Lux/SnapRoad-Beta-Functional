@@ -134,8 +134,8 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
         if auth_user_id:
             try:
                 sb.auth.admin.delete_user(auth_user_id)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("failed to clean up auth user after profile upsert failure: %s", e)
         raise HTTPException(status_code=500, detail="Failed to create user account. Please try again.")
 
     return profile
@@ -398,8 +398,8 @@ def sb_get_partner_locations_for_admin_map(limit: int = 500) -> list:
             pr = _sb().table("partners").select("id,business_name").in_("id", pids).execute()
             for p in pr.data or []:
                 name_map[str(p.get("id"))] = p.get("business_name") or ""
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("failed to fetch partner names for admin map: %s", e)
     out = []
     for l in locs:
         pid = str(l.get("partner_id") or "")
@@ -1134,8 +1134,8 @@ def sb_get_concerns(
             try:
                 profiles = _sb().table("profiles").select("id,name").in_("id", user_ids).execute()
                 profile_map = {str(p["id"]): p.get("name") or "Unknown" for p in (profiles.data or [])}
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("failed to fetch concern user profiles: %s", e)
         out = []
         for r in rows:
             rec = dict(r)
@@ -1286,8 +1286,8 @@ def sb_update_app_config(key: str, value, updated_by: Optional[str] = None) -> b
             from services.runtime_config import invalidate_runtime_config_cache
 
             invalidate_runtime_config_cache()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("failed to invalidate runtime config cache: %s", e)
         return True
     except Exception as e:
         logger.warning(f"sb_update_app_config: {e}")
@@ -1345,8 +1345,8 @@ def test_connection() -> dict:
             try:
                 sb.table(tbl).select("*").limit(1).execute()
                 tables.append(tbl)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("table %s not available: %s", tbl, e)
 
         profile_count = _safe_count("profiles")
         return {

@@ -326,8 +326,8 @@ def update_admin_config(body: dict, user: AdminUser):
         from services.runtime_config import invalidate_runtime_config_cache
 
         invalidate_runtime_config_cache()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to invalidate runtime config cache: %s", e)
 
     keys_sorted = sorted(patch.keys())
     audit_obj = {
@@ -608,6 +608,20 @@ def create_offer(offer_data: dict):
         return {"success": True, "message": "Offer created successfully", "data": result}
     return {"success": False, "message": "Failed to create offer"}
 
+def _optional_fields(obj, keys_map: dict) -> dict:
+    """Return a dict of non-None optional fields from *obj*."""
+    return {k: getattr(obj, v) for k, v in keys_map.items() if getattr(obj, v) is not None}
+
+
+_OFFER_OPTIONAL_KEYS = {
+    "offer_url": "offer_url",
+    "original_price": "original_price",
+    "affiliate_tracking_url": "affiliate_tracking_url",
+    "external_id": "external_id",
+    "image_url": "image_id",
+}
+
+
 @router.post("/admin/offers/create")
 def admin_create_offer(offer: AdminOfferCreate):
     auto_gems = offer.base_gems if offer.base_gems is not None else calculate_auto_gems(offer.discount_percent, offer.is_free_item)
@@ -630,17 +644,8 @@ def admin_create_offer(offer: AdminOfferCreate):
         "status": "active",
         "title": offer.description[:60] if offer.description else "Admin Offer",
         "offer_source": offer.offer_source,
+        **_optional_fields(offer, _OFFER_OPTIONAL_KEYS),
     }
-    if offer.offer_url:
-        data["offer_url"] = offer.offer_url
-    if offer.original_price is not None:
-        data["original_price"] = offer.original_price
-    if offer.affiliate_tracking_url:
-        data["affiliate_tracking_url"] = offer.affiliate_tracking_url
-    if offer.external_id:
-        data["external_id"] = offer.external_id
-    if offer.image_id:
-        data["image_url"] = offer.image_id
     if offer.expires_hours:
         data["expires_at"] = (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat()
 
@@ -651,44 +656,128 @@ def admin_create_offer(offer: AdminOfferCreate):
     return {"success": False, "message": "Failed to create offer"}
 
 
+_BULK_OPTIONAL_KEYS = {
+    "original_price": "original_price",
+    "affiliate_tracking_url": "affiliate_tracking_url",
+    "external_id": "external_id",
+}
+
+
+def _build_bulk_offer(item) -> dict:
+    """Build a single offer dict from a BulkOfferUpload item."""
+    auto_gems = item.base_gems if item.base_gems is not None else calculate_auto_gems(item.discount_percent, item.is_free_item)
+    premium_discount = item.discount_percent
+    return {
+        "business_name": item.business_name,
+        "business_type": item.business_type,
+        "description": item.description,
+        "discount_percent": premium_discount,
+        "premium_discount_percent": premium_discount,
+        "free_discount_percent": calculate_free_discount(premium_discount),
+        "is_free_item": item.is_free_item,
+        "base_gems": auto_gems,
+        "address": item.address,
+        "lat": item.lat or 39.9612,
+        "lng": item.lng or -82.9988,
+        "offer_url": item.offer_url,
+        "is_admin_offer": True,
+        "created_by": "admin",
+        "status": "active",
+        "title": item.description[:60] if item.description else "Bulk Offer",
+        "expires_at": (datetime.now() + timedelta(days=item.expires_days)).isoformat() if item.expires_days else None,
+        "offer_source": item.offer_source,
+        **_optional_fields(item, _BULK_OPTIONAL_KEYS),
+    }
+
+
 @router.post("/admin/offers/bulk")
 def admin_bulk_offers(data: BulkOfferUpload):
     created = []
     for item in data.offers:
-        auto_gems = item.base_gems if item.base_gems is not None else calculate_auto_gems(item.discount_percent, item.is_free_item)
-        premium_discount = item.discount_percent
-        free_discount = calculate_free_discount(premium_discount)
-
-        offer_data = {
-            "business_name": item.business_name,
-            "business_type": item.business_type,
-            "description": item.description,
-            "discount_percent": premium_discount,
-            "premium_discount_percent": premium_discount,
-            "free_discount_percent": free_discount,
-            "is_free_item": item.is_free_item,
-            "base_gems": auto_gems,
-            "address": item.address,
-            "lat": item.lat or 39.9612,
-            "lng": item.lng or -82.9988,
-            "offer_url": item.offer_url,
-            "is_admin_offer": True,
-            "created_by": "admin",
-            "status": "active",
-            "title": item.description[:60] if item.description else "Bulk Offer",
-            "expires_at": (datetime.now() + timedelta(days=item.expires_days)).isoformat() if item.expires_days else None,
-            "offer_source": item.offer_source,
-        }
-        if item.original_price is not None:
-            offer_data["original_price"] = item.original_price
-        if item.affiliate_tracking_url:
-            offer_data["affiliate_tracking_url"] = item.affiliate_tracking_url
-        if item.external_id:
-            offer_data["external_id"] = item.external_id
-        result = sb_create_offer(offer_data)
+        result = sb_create_offer(_build_bulk_offer(item))
         if result:
             created.append(result)
     return {"success": True, "message": f"Created {len(created)} offers", "data": {"created_count": len(created), "offers": created}}
+
+
+def _excel_cell(row: tuple, col_map: dict, col: str, default=""):
+    """Get a cell value from an Excel row by column name."""
+    idx = col_map.get(col)
+    if idx is None or idx >= len(row) or row[idx] is None:
+        return default
+    return row[idx]
+
+
+_VALID_SOURCES = {"direct", "groupon", "affiliate", "yelp", "manual"}
+
+
+def _parse_excel_offer_row(row: tuple, col_map: dict) -> dict:
+    """Build an offer dict from a single Excel row. Returns the offer dict or raises on error."""
+    get = lambda col, default="": _excel_cell(row, col_map, col, default)
+
+    biz_name = str(get("business_name", "")).strip()
+    if not biz_name:
+        raise ValueError("missing business_name")
+
+    disc = int(float(get("discount_percent", 0)))
+    is_free = str(get("is_free_item", "")).lower() in ("true", "yes", "1")
+
+    source = str(get("source", get("offer_source", "direct"))).strip().lower() or "direct"
+    if source not in _VALID_SOURCES:
+        source = "direct"
+
+    offer_data = {
+        "business_name": biz_name,
+        "business_type": str(get("business_type", "retail")),
+        "description": str(get("description", "")),
+        "title": str(get("title", ""))[:60] or str(get("description", ""))[:60] or "Uploaded Offer",
+        "discount_percent": disc,
+        "premium_discount_percent": disc,
+        "free_discount_percent": calculate_free_discount(disc),
+        "is_free_item": is_free,
+        "base_gems": calculate_auto_gems(disc, is_free),
+        "address": str(get("address", "")),
+        "offer_url": str(get("offer_url", "")) or None,
+        "lat": float(get("lat", 39.9612)),
+        "lng": float(get("lng", -82.9988)),
+        "is_admin_offer": True,
+        "created_by": "admin_excel",
+        "status": "active",
+        "expires_at": (datetime.now() + timedelta(days=int(float(get("expires_days", 30))))).isoformat(),
+        "offer_source": source,
+    }
+
+    orig_price = get("original_price", "")
+    if orig_price:
+        try:
+            offer_data["original_price"] = float(orig_price)
+        except (ValueError, TypeError):
+            pass
+    aff_url = str(get("affiliate_tracking_url", "")).strip()
+    if aff_url:
+        offer_data["affiliate_tracking_url"] = aff_url
+    ext_id = str(get("external_id", "")).strip()
+    if ext_id:
+        offer_data["external_id"] = ext_id
+
+    return offer_data
+
+
+def _process_excel_rows(rows: list, col_map: dict) -> tuple[list, list]:
+    """Process all data rows from an Excel upload, returning (created, errors)."""
+    created = []
+    errors = []
+    for row_idx, row in enumerate(rows[1:], start=2):
+        try:
+            offer_data = _parse_excel_offer_row(row, col_map)
+            result = sb_create_offer(offer_data)
+            if result:
+                created.append(result)
+            else:
+                errors.append(f"Row {row_idx}: DB insert failed")
+        except Exception as e:
+            errors.append(f"Row {row_idx}: {str(e)}")
+    return created, errors
 
 
 @router.post("/admin/offers/upload-excel")
@@ -718,69 +807,7 @@ async def upload_excel_offers(file: Annotated[UploadFile, File()]):
         if req not in col_map:
             return {"success": False, "message": f"Missing required column: {req}. Found: {', '.join(header)}"}
 
-    created = []
-    errors = []
-    for row_idx, row in enumerate(rows[1:], start=2):
-        try:
-            def get(col: str, default=""):
-                idx = col_map.get(col)
-                if idx is None or idx >= len(row) or row[idx] is None:
-                    return default
-                return row[idx]
-
-            biz_name = str(get("business_name", "")).strip()
-            if not biz_name:
-                errors.append(f"Row {row_idx}: missing business_name")
-                continue
-
-            disc = int(float(get("discount_percent", 0)))
-            is_free = str(get("is_free_item", "")).lower() in ("true", "yes", "1")
-            auto_gems = calculate_auto_gems(disc, is_free)
-            free_disc = calculate_free_discount(disc)
-
-            source = str(get("source", get("offer_source", "direct"))).strip().lower() or "direct"
-            if source not in ("direct", "groupon", "affiliate", "yelp", "manual"):
-                source = "direct"
-
-            offer_data = {
-                "business_name": biz_name,
-                "business_type": str(get("business_type", "retail")),
-                "description": str(get("description", "")),
-                "title": str(get("title", ""))[:60] or str(get("description", ""))[:60] or "Uploaded Offer",
-                "discount_percent": disc,
-                "premium_discount_percent": disc,
-                "free_discount_percent": free_disc,
-                "is_free_item": is_free,
-                "base_gems": auto_gems,
-                "address": str(get("address", "")),
-                "offer_url": str(get("offer_url", "")) or None,
-                "lat": float(get("lat", 39.9612)),
-                "lng": float(get("lng", -82.9988)),
-                "is_admin_offer": True,
-                "created_by": "admin_excel",
-                "status": "active",
-                "expires_at": (datetime.now() + timedelta(days=int(float(get("expires_days", 30))))).isoformat(),
-                "offer_source": source,
-            }
-            orig_price = get("original_price", "")
-            if orig_price:
-                try:
-                    offer_data["original_price"] = float(orig_price)
-                except (ValueError, TypeError):
-                    pass
-            aff_url = str(get("affiliate_tracking_url", "")).strip()
-            if aff_url:
-                offer_data["affiliate_tracking_url"] = aff_url
-            ext_id = str(get("external_id", "")).strip()
-            if ext_id:
-                offer_data["external_id"] = ext_id
-            result = sb_create_offer(offer_data)
-            if result:
-                created.append(result)
-            else:
-                errors.append(f"Row {row_idx}: DB insert failed")
-        except Exception as e:
-            errors.append(f"Row {row_idx}: {str(e)}")
+    created, errors = _process_excel_rows(rows, col_map)
 
     sb_create_audit_log("BULK_EXCEL_UPLOAD", "admin", "", f"Uploaded {len(created)} offers from {file.filename}")
 

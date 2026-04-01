@@ -227,6 +227,69 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(legal_router)
 
 
+def _build_health_response() -> dict:
+    checks = {"database": "ok", "cache": "unknown"}
+    try:
+        sb = get_supabase()
+        sb.table("profiles").select("id").limit(1).execute()
+    except Exception:
+        checks["database"] = "error"
+
+    try:
+        import redis
+
+        redis_url = (os.environ.get("REDIS_URL") or "").strip()
+        if redis_url:
+            client = redis.from_url(redis_url)
+            client.ping()
+            checks["cache"] = "ok"
+        else:
+            checks["cache"] = "disabled"
+    except Exception:
+        checks["cache"] = "degraded"
+
+    status = "ok" if checks["database"] == "ok" else "degraded"
+    return {"status": status, "checks": checks}
+
+
+def _build_env_check_response() -> dict:
+    """Verify .env is loaded and key vars are set (no secrets returned)."""
+    if IS_PRODUCTION:
+        return {"ok": False, "message": "Not available in production"}
+
+    key_path = os.environ.get("MAPKIT_PRIVATE_KEY_PATH", "")
+    key_path_abs = (
+        key_path
+        if (key_path and os.path.isabs(key_path))
+        else str(Path(__file__).resolve().parent / (key_path or ""))
+    )
+
+    mapkit_key_id = (os.environ.get("MAPKIT_KEY_ID") or "").strip()
+    mapkit_team_id = (os.environ.get("MAPKIT_TEAM_ID") or "").strip()
+    google_key = (
+        os.environ.get("GOOGLE_PLACES_API_KEY")
+        or os.environ.get("GOOGLE_MAPS_API_KEY")
+        or ""
+    ).strip()
+
+    return {
+        "env_file_path": str(Path(__file__).resolve().parent / ".env"),
+        "env_file_exists": (Path(__file__).resolve().parent / ".env").is_file(),
+        "jwt_configured": bool(JWT_SECRET),
+        "supabase_configured": bool(
+            (SUPABASE_URL or "").strip() and (SUPABASE_SERVICE_ROLE_KEY or "").strip()
+        ),
+        "mapkit_configured": bool(
+            mapkit_key_id and mapkit_team_id and key_path and os.path.isfile(key_path_abs)
+        ),
+        "google_maps_configured": bool(google_key),
+        "orion_llm_configured": is_llm_configured(),
+        "nvidia_configured": bool(NVIDIA_API_KEY),
+        "openai_configured": bool((OPENAI_API_KEY or "").strip()),
+        "ohgo_cameras_configured": bool((OHGO_API_KEY or "").strip()),
+    }
+
+
 def create_app() -> FastAPI:
     env = os.getenv("ENVIRONMENT", "development")
     validate_production_env()
@@ -246,65 +309,11 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health():
-        checks = {"database": "ok", "cache": "unknown"}
-        try:
-            sb = get_supabase()
-            sb.table("profiles").select("id").limit(1).execute()
-        except Exception:
-            checks["database"] = "error"
-
-        try:
-            import redis
-
-            redis_url = (os.environ.get("REDIS_URL") or "").strip()
-            if redis_url:
-                client = redis.from_url(redis_url)
-                client.ping()
-                checks["cache"] = "ok"
-            else:
-                checks["cache"] = "disabled"
-        except Exception:
-            checks["cache"] = "degraded"
-
-        status = "ok" if checks["database"] == "ok" else "degraded"
-        return {"status": status, "checks": checks}
+        return _build_health_response()
 
     @app.get("/api/env-check")
     def env_check():
-        """Verify .env is loaded and key vars are set (no secrets returned)."""
-        if IS_PRODUCTION:
-            return {"ok": False, "message": "Not available in production"}
-        key_path = os.environ.get("MAPKIT_PRIVATE_KEY_PATH", "")
-        key_path_abs = (
-            key_path
-            if (key_path and os.path.isabs(key_path))
-            else str(Path(__file__).resolve().parent / (key_path or ""))
-        )
-        return {
-            "env_file_path": str(Path(__file__).resolve().parent / ".env"),
-            "env_file_exists": (Path(__file__).resolve().parent / ".env").is_file(),
-            "jwt_configured": bool(JWT_SECRET),
-            "supabase_configured": bool(
-                (SUPABASE_URL or "").strip() and (SUPABASE_SERVICE_ROLE_KEY or "").strip()
-            ),
-            "mapkit_configured": bool(
-                (os.environ.get("MAPKIT_KEY_ID") or "").strip()
-                and (os.environ.get("MAPKIT_TEAM_ID") or "").strip()
-                and key_path
-                and os.path.isfile(key_path_abs)
-            ),
-            "google_maps_configured": bool(
-                (
-                    os.environ.get("GOOGLE_PLACES_API_KEY")
-                    or os.environ.get("GOOGLE_MAPS_API_KEY")
-                    or ""
-                ).strip()
-            ),
-            "orion_llm_configured": is_llm_configured(),
-            "nvidia_configured": bool(NVIDIA_API_KEY),
-            "openai_configured": bool((OPENAI_API_KEY or "").strip()),
-            "ohgo_cameras_configured": bool((OHGO_API_KEY or "").strip()),
-        }
+        return _build_env_check_response()
 
     origins, origin_regex, cors_headers = _cors_settings(env)
     app.add_middleware(

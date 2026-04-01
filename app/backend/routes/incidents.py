@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Annotated
@@ -7,6 +9,8 @@ from middleware.auth import get_current_user, require_admin
 from limiter import limiter
 from database import get_supabase
 from config import ENVIRONMENT
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
@@ -242,7 +246,8 @@ def _nearby_from_memory(lat: float, lng: float, radius_miles: float, now: dateti
     for inc in incidents_db:
         try:
             expires = datetime.fromisoformat(inc["expires_at"])
-        except Exception:
+        except Exception as e:
+            logger.warning("failed to parse incident expires_at: %s", e)
             continue
         if expires < now:
             continue

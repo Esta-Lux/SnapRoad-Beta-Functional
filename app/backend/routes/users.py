@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Any, Dict, Optional
 
@@ -12,6 +13,8 @@ from services.mock_data import (
 from middleware.auth import get_current_user
 from services.supabase_service import sb_get_profile, sb_update_profile
 from services.snap_road_score import compute_snap_road_fields
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Users"])
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -79,8 +82,8 @@ def get_user_profile(auth_user: dict = Depends(get_current_user)):
                 ):
                     if row.get(k) is not None:
                         user[k] = row[k]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("failed to fetch user profile from Supabase: %s", e)
     payload = {**user, **compute_snap_road_fields(user)}
     return {"success": True, "data": payload}
 

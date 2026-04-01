@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import datetime, timedelta
 import random
@@ -17,6 +19,8 @@ from services.supabase_service import (
 )
 from config import ENVIRONMENT
 import uuid
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Gamification"])
 processed_xp_events: set[str] = set()
@@ -231,8 +235,8 @@ def get_leaderboard(
                     "states": [],
                 },
             }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to fetch leaderboard from Supabase: %s", e)
 
     # Fallback to mock data in dev
     all_users = list(users_db.values())
@@ -322,8 +326,8 @@ def accept_challenge(challenge_id: str, auth_user: dict = Depends(get_current_us
             _persist_user_fields(user_id, {"gems": user.get("gems", 0) - stake})
             try:
                 get_supabase().table("challenges").update({"status": "active"}).eq("id", c.get("id")).execute()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("failed to update challenge status to active: %s", e)
             c["status"] = "active"
             return {"success": True, "message": "Challenge accepted!", "data": c}
     except HTTPException:

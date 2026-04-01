@@ -372,8 +372,8 @@ def get_active_boosts(
                 ends_dt = datetime.fromisoformat(str(ends))
                 is_active = ends_dt > now
                 hours_remaining = max(0, (ends_dt - now).total_seconds() / 3600)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("failed to parse boost ends_at: %s", e)
         active.append({**b, "is_active": is_active, "hours_remaining": round(hours_remaining, 1)})
     return {
         "success": True,

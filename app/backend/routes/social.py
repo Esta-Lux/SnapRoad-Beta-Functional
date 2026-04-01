@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from datetime import datetime, timedelta
@@ -15,6 +17,8 @@ from routes.gamification import add_xp_to_user, check_community_badges
 from middleware.auth import get_current_user
 from database import get_supabase
 from config import ENVIRONMENT
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Social"])
 
@@ -301,8 +305,8 @@ def update_my_location(body: LocationUpdateBody, current_user: dict = Depends(ge
                 "last_updated": datetime.utcnow().isoformat() + "Z",
                 "is_sharing": True,
             }).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to upsert live location: %s", e)
     return {"success": True}
 
 
@@ -321,8 +325,8 @@ def set_location_sharing(body: LocationSharingBody, current_user: dict = Depends
                 "is_sharing": body.is_sharing,
                 "last_updated": datetime.utcnow().isoformat() + "Z",
             }).eq("user_id", uid).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to update location sharing setting: %s", e)
     return {"success": True}
 
 
@@ -344,8 +348,8 @@ def send_location_tag(body: LocationTagBody, current_user: dict = Depends(get_cu
                 "lng": body.lng,
                 "message": body.message or "Check out where I am!",
             }).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to insert location tag: %s", e)
     return {"success": True, "message": "Location tag sent"}
 
 

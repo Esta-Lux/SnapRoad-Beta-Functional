@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Depends
 from starlette.requests import Request
 from fastapi.responses import StreamingResponse
@@ -7,6 +9,8 @@ from middleware.auth import get_current_user
 from limiter import limiter
 import uuid
 import json
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["AI"])
 
@@ -77,8 +81,8 @@ async def orion_completions(
                                 "lat": float(det["lat"]),
                                 "lng": float(det["lng"]),
                             })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("failed to resolve navigation destination: %s", e)
 
     if not actions:
         if ("add a stop" in last_msg or "stop at" in last_msg) and nearby_offers:

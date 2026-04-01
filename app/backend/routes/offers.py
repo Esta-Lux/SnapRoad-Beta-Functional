@@ -188,8 +188,8 @@ def redeem_offer(request: Request, offer_id: str, auth_user: dict = Depends(get_
                 try:
                     if datetime.fromisoformat(str(odata["expires_at"]).replace("Z", "+00:00")) < datetime.now():
                         return {"success": False, "message": "Offer has expired"}
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("failed to parse offer expiry: %s", e)
 
             # Idempotency guard: same user cannot redeem same offer twice.
             existing_redemption = (

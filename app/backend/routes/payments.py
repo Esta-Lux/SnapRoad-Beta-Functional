@@ -2,6 +2,7 @@
 # Handles subscription plans: Basic (free), Premium ($10.99/mo), Family ($14.99/mo)
 # Uses standard Stripe SDK - no platform-specific dependencies
 
+import logging
 import os
 import anyio
 from fastapi import APIRouter, Request, HTTPException, Depends, Query
@@ -14,6 +15,8 @@ from limiter import limiter
 from database import get_supabase
 from services.supabase_service import sb_get_profile, sb_update_profile
 from config import ENVIRONMENT
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -156,9 +159,8 @@ async def create_checkout_session(
     stripe_max_retries = int(os.environ.get("STRIPE_MAX_NETWORK_RETRIES", "0"))
     try:
         stripe.max_network_retries = stripe_max_retries
-    except Exception:
-        # Not all stripe-python versions expose this.
-        pass
+    except Exception as e:
+        logger.warning("failed to set stripe max_network_retries: %s", e)
     for mod_path in ("stripe.http_client", "stripe._http_client"):
         try:
             http_client_mod = __import__(mod_path, fromlist=["RequestsClient"])
@@ -166,7 +168,8 @@ async def create_checkout_session(
             if RequestsClient:
                 stripe.default_http_client = RequestsClient(timeout=stripe_http_timeout_sec)
                 break
-        except Exception:
+        except Exception as e:
+            logger.warning("failed to set stripe http client from %s: %s", mod_path, e)
             continue
     
     # Build success and cancel URLs from server allowlisted origin only
@@ -300,8 +303,8 @@ async def get_checkout_status(
                     existing = sb.table("profiles").select("is_premium").eq("id", uid).limit(1).execute()
                     if not (existing.data and existing.data[0].get("is_premium")):
                         sb_update_profile(uid, {"plan": plan_id, "is_premium": True})
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("failed to upgrade user profile to premium: %s", e)
         
         return {
             "success": True,
@@ -405,8 +408,8 @@ def _stripe_customer_id_for_user(user_id: str, user_email: Optional[str]) -> Opt
             cust = sess.get("customer")
             if cust and str(cust).startswith("cus_"):
                 return str(cust)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to look up stripe customer from transactions: %s", e)
     return None
 
 
@@ -429,8 +432,8 @@ def _ensure_stripe_customer_id(user_id: str, user_email: str) -> Optional[str]:
         if cid.startswith("cus_"):
             sb_update_profile(user_id, {"stripe_customer_id": cid})
             return cid
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to create stripe customer: %s", e)
     return None
 
 
