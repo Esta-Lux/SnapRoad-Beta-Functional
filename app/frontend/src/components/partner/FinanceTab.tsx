@@ -37,31 +37,59 @@ export default function FinanceTab() {
   const [totalSpent, setTotalSpent] = useState(0)
   const [feeInfo, setFeeInfo] = useState<FeeInfo | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [showAddCreditsModal, setShowAddCreditsModal] = useState(false)
   const [creditAmount, setCreditAmount] = useState('50')
 
   useEffect(() => {
     const fetchAll = async () => {
+      setLoadError(null)
       try {
-        const [creditsRes, historyRes] = await Promise.all([
+        const [creditsOutcome, historyOutcome] = await Promise.allSettled([
           partnerApi.getCredits(),
           partnerApi.getCreditHistory(),
         ])
-        if (creditsRes.success) setCreditBalance(creditsRes.data?.balance || 0)
-        if (historyRes.success && historyRes.data) {
-          setCreditHistory(historyRes.data.history || [])
-          setTotalEarned(historyRes.data.total_earned || 0)
-          setTotalSpent(historyRes.data.total_spent || 0)
+
+        if (creditsOutcome.status === 'fulfilled') {
+          const creditsRes = creditsOutcome.value as { success?: boolean; data?: { balance?: number | string } }
+          if (creditsRes.success && creditsRes.data != null) {
+            const raw = creditsRes.data.balance
+            const n = typeof raw === 'number' ? raw : Number(raw)
+            setCreditBalance(Number.isFinite(n) ? n : 0)
+          }
+        } else {
+          console.error('[FinanceTab] credits', creditsOutcome.reason)
+          setLoadError('Could not load credit balance. Try refreshing.')
         }
-        // Fetch fee info
+
+        if (historyOutcome.status === 'fulfilled') {
+          const historyRes = historyOutcome.value as {
+            success?: boolean
+            data?: { history?: CreditEntry[]; total_earned?: number; total_spent?: number }
+          }
+          if (historyRes.success && historyRes.data) {
+            setCreditHistory(Array.isArray(historyRes.data.history) ? historyRes.data.history : [])
+            setTotalEarned(Number(historyRes.data.total_earned) || 0)
+            setTotalSpent(Number(historyRes.data.total_spent) || 0)
+          }
+        } else {
+          console.error('[FinanceTab] history', historyOutcome.reason)
+          setLoadError((prev) => prev || 'Could not load transaction history.')
+        }
+
         try {
           const feeRes = await partnerApi.getFees()
-          if (feeRes.success && feeRes.data) setFeeInfo(feeRes.data as any)
-        } catch {}
-      } catch (e) { console.error(e) }
+          if (feeRes.success && feeRes.data) setFeeInfo(feeRes.data as FeeInfo)
+        } catch {
+          /* fees optional */
+        }
+      } catch (e) {
+        console.error(e)
+        setLoadError('Failed to load finance data.')
+      }
       setLoading(false)
     }
-    fetchAll()
+    void fetchAll()
   }, [])
 
   const handleAddCredits = () => {
@@ -118,6 +146,11 @@ export default function FinanceTab() {
 
   return (
     <div className="space-y-6">
+      {loadError && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
+          {loadError}
+        </div>
+      )}
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2 bg-gradient-to-br from-[#0084FF]/20 to-[#00DFA2]/10 rounded-2xl border border-[#0084FF]/20 p-6">
           <div className="flex items-start justify-between">

@@ -81,6 +81,21 @@ export default function PartnerDashboard() {
     return () => stopNotifications()
   }, [])
 
+  // Stripe return URLs land with ?payment=success or ?credits=success — refresh profile (plan / balance).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('payment') !== 'success' && params.get('credits') !== 'success') return
+    void (async () => {
+      try {
+        const data = await partnerApi.getProfile()
+        if (data.success && data.data) setPartnerProfile(data.data as PartnerProfile)
+      } catch {
+        /* ignore */
+      }
+      window.history.replaceState({}, '', '/portal/partner')
+    })()
+  }, [])
+
   const handlePartnerAuthError = (error: unknown) => {
     const message = error instanceof Error ? error.message : ''
     if (message.includes('Session expired')) {
@@ -271,6 +286,10 @@ export default function PartnerDashboard() {
     return undefined
   }
 
+  const needsPlanCheckout =
+    partnerProfile?.subscription_status === 'pending' ||
+    partnerProfile?.subscription_status === 'incomplete'
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {showOnboarding && <OnboardingWalkthrough onComplete={handleOnboardingComplete} onSkip={handleOnboardingComplete} />}
@@ -377,6 +396,26 @@ export default function PartnerDashboard() {
 
       {/* Main Content */}
       <main className="ml-72 p-8">
+        {needsPlanCheckout && (
+          <div
+            className="mb-6 flex flex-col gap-3 rounded-2xl border border-emerald-500/35 bg-emerald-500/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+            role="status"
+          >
+            <div>
+              <p className="font-semibold text-white">Choose a subscription plan</p>
+              <p className="text-sm text-slate-400">
+                Your account is active; complete checkout to finish onboarding and unlock billing-backed features.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('pricing')}
+              className="shrink-0 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:from-emerald-400 hover:to-teal-500"
+            >
+              View plans
+            </button>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-white mb-1">{TAB_META[activeTab].title}</h1>

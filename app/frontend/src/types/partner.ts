@@ -31,6 +31,8 @@ export interface PartnerProfile {
   id: string
   business_name: string
   plan: string
+  /** From Supabase partners.subscription_status — pending until Stripe checkout completes */
+  subscription_status?: string
   plan_info: {
     name: string
     max_locations: number
