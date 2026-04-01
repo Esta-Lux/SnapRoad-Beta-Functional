@@ -999,6 +999,7 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Prop
                 onClick={async () => {
                   setLoading(true)
                   try {
+                    // One-time high-accuracy fix after explicit consent checkboxes (live family map / sharing).
                     if (locationConsent && shareLocation && navigator.geolocation) {
                       await new Promise<void>((resolve, reject) => {
                         navigator.geolocation.getCurrentPosition(

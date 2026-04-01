@@ -5,7 +5,7 @@ All endpoints use the Supabase DAO layer (supabase_service.py).
 from pydantic import BaseModel
 from fastapi import APIRouter, Body, Depends, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
-from typing import Optional
+from typing import Annotated, Optional
 from datetime import datetime, timedelta, timezone
 import json
 import logging
@@ -54,6 +54,8 @@ from services.supabase_service import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Admin"], dependencies=[Depends(require_admin)])
 
+AdminUser = Annotated[dict, Depends(require_admin)]
+
 class AdminPhotoRejectBody(BaseModel):
     review_notes: Optional[str] = None
 
@@ -95,16 +97,16 @@ def get_admin_stats():
 
 @router.get("/admin/concerns")
 def get_admin_concerns(
-    limit: int = Query(default=50, ge=1, le=200),
-    severity: Optional[str] = None,
-    status: Optional[str] = None,
+    limit: Annotated[int, Query(default=50, ge=1, le=200)] = 50,
+    severity: Annotated[Optional[str], Query()] = None,
+    status: Annotated[Optional[str], Query()] = None,
 ):
     concerns = sb_get_concerns(limit=limit, severity=severity, status=status)
     return {"success": True, "data": {"concerns": concerns, "total": len(concerns)}}
 
 
 @router.post("/admin/concerns/{concern_id}/status")
-def update_concern_status(concern_id: str, body: dict = Body(..., embed=True)):
+def update_concern_status(concern_id: str, body: Annotated[dict, Body(..., embed=True)]):
     status = body.get("status")
     if status not in ("open", "in_progress", "resolved", "closed"):
         return {"success": False, "message": "Invalid status"}
@@ -135,7 +137,7 @@ _SKIP_USAGE_PREFIXES = (
 
 
 @router.get("/admin/telemetry/app-usage")
-def get_admin_app_usage_telemetry(limit: int = Query(default=500, ge=50, le=500)):
+def get_admin_app_usage_telemetry(limit: Annotated[int, Query(default=500, ge=50, le=500)]):
     """
     Summarize recent HTTP telemetry into API area counts (driver/partner flows proxy).
 
@@ -179,17 +181,11 @@ def get_admin_app_usage_telemetry(limit: int = Query(default=500, ge=50, le=500)
 
 # ==================== HEALTH ====================
 
-@router.get("/admin/health")
-async def get_admin_health():
+async def _admin_health_supabase(results: dict) -> None:
     import time
-    import httpx
+
     from database import get_supabase
-    import os
 
-    results = {}
-    results["api"] = "healthy"
-
-    # Supabase DB
     try:
         start = time.time()
         supabase = get_supabase()
@@ -200,70 +196,102 @@ async def get_admin_health():
         results["database"] = "down"
         results["db_error"] = str(e)
 
-    # Google Maps
-    GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY")
+
+async def _admin_health_google_maps(results: dict) -> None:
+    import os
+    import time
+
+    import httpx
+
+    key = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY")
     try:
         start = time.time()
         async with httpx.AsyncClient(timeout=5) as client:
             r = await client.get(
                 "https://maps.googleapis.com/maps/api/geocode/json",
-                params={"address": "Columbus OH", "key": GOOGLE_MAPS_API_KEY or ""},
+                params={"address": "Columbus OH", "key": key or ""},
             )
         results["google_maps"] = "healthy" if r.status_code == 200 else "degraded"
         results["maps_latency"] = round((time.time() - start) * 1000)
     except Exception:
         results["google_maps"] = "down"
 
-    # OHGO
-    OHGO_API_KEY = os.environ.get("VITE_OHGO_API_KEY") or os.environ.get("OHGO_API_KEY")
+
+async def _admin_health_ohgo(results: dict) -> None:
+    import os
+    import time
+
+    import httpx
+
+    ohgo_key = os.environ.get("VITE_OHGO_API_KEY") or os.environ.get("OHGO_API_KEY")
     try:
         start = time.time()
         async with httpx.AsyncClient(timeout=5) as client:
             r = await client.get(
                 "https://publicapi.ohgo.com/api/v1/cameras",
-                params={"api-key": OHGO_API_KEY or "", "page-size": "1"},
+                params={"api-key": ohgo_key or "", "page-size": "1"},
             )
         results["ohgo"] = "healthy" if r.status_code == 200 else "degraded"
         results["ohgo_latency"] = round((time.time() - start) * 1000)
     except Exception:
         results["ohgo"] = "down"
 
-    # Orion LLM: NVIDIA (OpenAI-compatible) preferred, else OpenAI
-    NVIDIA_API_KEY = (os.environ.get("NVIDIA_API_KEY") or "").strip()
-    NVIDIA_API_BASE = (os.environ.get("NVIDIA_API_BASE") or "https://integrate.api.nvidia.com/v1").strip().rstrip("/")
-    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+
+async def _admin_health_llm(results: dict) -> None:
+    import os
+    import time
+
+    import httpx
+
+    nvidia_key = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+    nvidia_base = (os.environ.get("NVIDIA_API_BASE") or "https://integrate.api.nvidia.com/v1").strip().rstrip("/")
+    openai_key = os.environ.get("OPENAI_API_KEY")
     try:
         start = time.time()
         async with httpx.AsyncClient(timeout=5) as client:
-            if NVIDIA_API_KEY:
+            if nvidia_key:
                 r = await client.get(
-                    f"{NVIDIA_API_BASE}/models",
-                    headers={"Authorization": f"Bearer {NVIDIA_API_KEY}"},
+                    f"{nvidia_base}/models",
+                    headers={"Authorization": f"Bearer {nvidia_key}"},
                 )
                 results["llm_provider"] = "nvidia"
             else:
                 r = await client.get(
                     "https://api.openai.com/v1/models",
-                    headers={"Authorization": f"Bearer {OPENAI_API_KEY or ''}"},
+                    headers={"Authorization": f"Bearer {openai_key or ''}"},
                 )
                 results["llm_provider"] = "openai"
         results["llm"] = "healthy" if r.status_code == 200 else "degraded"
         results["llm_latency"] = round((time.time() - start) * 1000)
     except Exception:
         results["llm"] = "down"
-        results["llm_provider"] = "nvidia" if NVIDIA_API_KEY else "openai"
+        results["llm_provider"] = "nvidia" if nvidia_key else "openai"
     results["openai"] = results.get("llm", "down")
     results["openai_latency"] = results.get("llm_latency")
 
-    # Supabase Realtime
-    SUPABASE_URL = os.environ.get("SUPABASE_URL")
+
+async def _admin_health_realtime(results: dict) -> None:
+    import os
+
+    import httpx
+
+    supabase_url = os.environ.get("SUPABASE_URL")
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.get(f"{SUPABASE_URL or ''}/rest/v1/")
+            r = await client.get(f"{supabase_url or ''}/rest/v1/")
         results["realtime"] = "healthy" if r.status_code < 500 else "degraded"
     except Exception:
         results["realtime"] = "down"
 
+
+@router.get("/admin/health")
+async def get_admin_health():
+    results: dict = {"api": "healthy"}
+    await _admin_health_supabase(results)
+    await _admin_health_google_maps(results)
+    await _admin_health_ohgo(results)
+    await _admin_health_llm(results)
+    await _admin_health_realtime(results)
     return {"success": True, "data": results}
 
 
@@ -276,7 +304,7 @@ def get_admin_config():
 
 
 @router.post("/admin/config")
-def update_admin_config(body: dict, user: dict = Depends(require_admin)):
+def update_admin_config(body: dict, user: AdminUser):
     """Apply key/value pairs to app_config. Reserved keys: _reason, reason (ops runbook text for audit)."""
     updated_by = user.get("user_id") if user else None
     payload = dict(body) if isinstance(body, dict) else {}
@@ -326,13 +354,13 @@ def get_admin_config_detailed():
 
 
 @router.get("/admin/map/road-reports")
-def get_admin_map_road_reports(limit: int = Query(default=400, ge=1, le=800)):
+def get_admin_map_road_reports(limit: Annotated[int, Query(default=400, ge=1, le=800)]):
     reports = sb_get_road_reports_for_admin_map(limit=limit)
     return {"success": True, "data": {"reports": reports}}
 
 
 @router.get("/admin/map/partner-locations")
-def get_admin_map_partner_locations(limit: int = Query(default=500, ge=1, le=1000)):
+def get_admin_map_partner_locations(limit: Annotated[int, Query(default=500, ge=1, le=1000)]):
     locations = sb_get_partner_locations_for_admin_map(limit=limit)
     return {"success": True, "data": {"locations": locations}}
 
@@ -347,7 +375,6 @@ def get_admin_analytics():
     finance = sb_get_finance_summary()
 
     incidents_pending = len(sb_get_incidents(status="pending", limit=200))
-    incidents_approved = len(sb_get_incidents(status="approved", limit=200))
 
     return {
         "success": True,
@@ -391,7 +418,7 @@ def get_finance_data():
 # ==================== NOTIFICATIONS ====================
 
 @router.get("/admin/notifications")
-def get_notifications(limit: int = Query(default=50, ge=1, le=100)):
+def get_notifications(limit: Annotated[int, Query(default=50, ge=1, le=100)]):
     data = sb_get_admin_notifications(limit=limit)
     return {"success": True, "data": data}
 
@@ -449,7 +476,7 @@ def update_legal_document(doc_id: str, doc_data: dict):
     body["last_updated"] = datetime.now(timezone.utc).isoformat()
     success = sb_update_legal_document(doc_id, body)
     if success:
-        sb_create_audit_log("LEGAL_DOC_UPDATED", "admin", doc_id, f"Updated legal document")
+        sb_create_audit_log("LEGAL_DOC_UPDATED", "admin", doc_id, "Updated legal document")
         return {"success": True, "message": "Document updated"}
     return {"success": False, "message": "Failed to update document"}
 
@@ -473,17 +500,25 @@ def update_settings(settings_data: dict):
 # ==================== AUDIT LOG ====================
 
 @router.get("/admin/audit-log")
-def get_audit_log(limit: int = Query(default=50, ge=1, le=100)):
+def get_audit_log(limit: Annotated[int, Query(default=50, ge=1, le=100)]):
     data = sb_get_audit_logs(limit=limit)
     return {"success": True, "data": data}
 
 
 # ==================== INCIDENTS ====================
 
+def _road_report_severity(report_type: str) -> str:
+    if report_type in ("accident", "crash", "closure"):
+        return "high"
+    if report_type in ("pothole",):
+        return "low"
+    return "medium"
+
+
 def _road_report_row_to_admin_item(row: dict) -> dict:
     """Align driver map reports (road_reports) with admin Incidents tab shape."""
     t = str(row.get("type") or "report")
-    sev = "high" if t in ("accident", "crash", "closure") else ("low" if t in ("pothole",) else "medium")
+    sev = _road_report_severity(t)
     lat, lng = row.get("lat"), row.get("lng")
     loc = ""
     try:
@@ -507,8 +542,8 @@ def _road_report_row_to_admin_item(row: dict) -> dict:
 
 @router.get("/admin/incidents")
 def get_incidents(
-    status: Optional[str] = None,
-    limit: int = Query(default=100, ge=1, le=200),
+    limit: Annotated[int, Query(default=100, ge=1, le=200)] = 100,
+    status: Annotated[Optional[str], Query()] = None,
 ):
     legacy = sb_get_incidents(status=status, limit=limit)
     road_rows = sb_get_road_reports_admin_list(min(limit, 120))
@@ -523,7 +558,7 @@ def get_incidents(
 
 
 @router.post("/admin/incidents/{incident_id}/moderate")
-async def moderate_incident(incident_id: str, outcome: str = Body(..., embed=True)):
+async def moderate_incident(incident_id: str, outcome: Annotated[str, Body(..., embed=True)]):
     if outcome not in ["approved", "rejected"]:
         return {"success": False, "message": "Invalid outcome. Must be 'approved' or 'rejected'"}
 
@@ -545,7 +580,7 @@ async def moderate_incident(incident_id: str, outcome: str = Body(..., embed=Tru
 
 
 @router.get("/admin/incidents/moderated")
-def get_moderated_incidents(limit: int = Query(default=100, ge=1, le=100)):
+def get_moderated_incidents(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
     approved = sb_get_incidents(status="approved", limit=limit)
     rejected = sb_get_incidents(status="rejected", limit=limit)
     return {"success": True, "data": approved + rejected, "total": len(approved) + len(rejected)}
@@ -555,8 +590,8 @@ def get_moderated_incidents(limit: int = Query(default=100, ge=1, le=100)):
 
 @router.get("/admin/offers")
 def get_offers(
-    status: str = "all",
-    limit: int = Query(default=100, ge=1, le=100),
+    status: Annotated[str, Query()] = "all",
+    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
 ):
     data = sb_get_offers(status=status, limit=limit)
     return {"success": True, "data": data}
@@ -657,7 +692,7 @@ def admin_bulk_offers(data: BulkOfferUpload):
 
 
 @router.post("/admin/offers/upload-excel")
-async def upload_excel_offers(file: UploadFile = File(...)):
+async def upload_excel_offers(file: Annotated[UploadFile, File()]):
     """Parse an Excel (.xlsx) file and create offers. Auto-calculates gems and discounts."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         return {"success": False, "message": "Please upload an .xlsx file"}
@@ -879,9 +914,9 @@ def import_offers(import_data: OfferImport):
 
 @router.post("/admin/offers/import-groupon")
 async def import_groupon_deals(
-    area: str = "Columbus, OH",
-    category: Optional[str] = None,
-    limit: int = Query(default=20, ge=1, le=100),
+    area: Annotated[str, Query()] = "Columbus, OH",
+    category: Annotated[Optional[str], Query()] = None,
+    limit: Annotated[int, Query(default=20, ge=1, le=100)] = 20,
 ):
     """Fetch deals from Groupon via CJ Affiliate API and return a preview list."""
     from services.groupon_service import fetch_groupon_deals, import_deals_to_offers
@@ -964,7 +999,7 @@ async def enrich_offer_with_yelp(offer_id: str):
 # ==================== PARTNERS CRUD ====================
 
 @router.get("/admin/partners")
-def get_partners(limit: int = Query(default=100, ge=1, le=100)):
+def get_partners(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
     data = sb_get_partners(limit=limit)
     return {"success": True, "data": data}
 
@@ -1018,7 +1053,7 @@ def suspend_partner(partner_id: str):
 # ==================== CAMPAIGNS CRUD ====================
 
 @router.get("/admin/campaigns")
-def get_campaigns(limit: int = Query(default=100, ge=1, le=100)):
+def get_campaigns(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
     data = sb_get_campaigns(limit=limit)
     return {"success": True, "data": data}
 
@@ -1059,7 +1094,7 @@ def activate_campaign(campaign_id: str):
 # ==================== REWARDS CRUD ====================
 
 @router.get("/admin/rewards")
-def get_rewards(limit: int = Query(default=100, ge=1, le=100)):
+def get_rewards(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
     data = sb_get_rewards(limit=limit)
     return {"success": True, "data": data}
 
@@ -1104,7 +1139,7 @@ def claim_reward(reward_id: str, user_data: dict):
 # ==================== USERS CRUD ====================
 
 @router.get("/admin/users")
-def get_users(limit: int = Query(default=100, ge=1, le=100)):
+def get_users(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
     data = sb_list_profiles(limit=limit)
     return {"success": True, "source": "supabase", "data": data, "total": len(data)}
 
@@ -1205,8 +1240,8 @@ def create_boost(boost: BoostCreate):
 
 @router.get("/boosts")
 def get_boosts(
-    partner_id: Optional[str] = None,
-    limit: int = Query(default=100, ge=1, le=100),
+    partner_id: Annotated[Optional[str], Query()] = None,
+    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
 ):
     data = sb_get_boosts(partner_id=partner_id)[:limit]
     return {"success": True, "data": data}
@@ -1237,8 +1272,10 @@ def track_analytics_event(event: AnalyticsEvent):
 
 
 @router.get("/analytics/dashboard")
-def get_analytics_dashboard(business_id: str = "default_business", days: int = 7):
-    stats = sb_get_platform_stats()
+def get_analytics_dashboard(
+    business_id: Annotated[str, Query()] = "default_business",
+    days: Annotated[int, Query(ge=1, le=366)] = 7,
+):
     redemption_stats = sb_get_redemption_stats()
     return {
         "success": True,
@@ -1249,6 +1286,7 @@ def get_analytics_dashboard(business_id: str = "default_business", days: int = 7
                 "total_redemptions": redemption_stats.get("total", 0),
                 "total_revenue": 0,
             },
+            "window": {"business_id": business_id, "days": days},
         },
     }
 
@@ -1262,7 +1300,7 @@ def get_supabase_status():
 
 
 @router.get("/admin/events")
-def get_admin_events(limit: int = Query(default=100, ge=1, le=100)):
+def get_admin_events(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
     challenges = sb_get_challenges()[:limit]
     return {"success": True, "data": challenges}
 
@@ -1285,7 +1323,7 @@ def _photo_original_signed_url(supabase, storage_path: str) -> Optional[str]:
 
 
 @router.get("/admin/photo-reports/pending")
-def admin_photo_reports_pending(limit: int = Query(default=50, ge=1, le=200)):
+def admin_photo_reports_pending(limit: Annotated[int, Query(default=50, ge=1, le=200)]):
     from database import get_supabase
 
     supabase = get_supabase()
@@ -1398,7 +1436,7 @@ async def admin_photo_report_approve(report_id: str):
 @router.post("/admin/photo-reports/{report_id}/reject")
 def admin_photo_report_reject(
     report_id: str,
-    body: AdminPhotoRejectBody = Body(default_factory=AdminPhotoRejectBody),
+    body: Annotated[AdminPhotoRejectBody, Body(default_factory=AdminPhotoRejectBody)],
 ):
     from database import get_supabase
 

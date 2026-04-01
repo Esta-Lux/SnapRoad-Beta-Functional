@@ -172,6 +172,8 @@ export default function FamilyCommandCenter({
     loadDashboard().catch(() => {})
   }, [loadDashboard])
 
+  // Geolocation is required for the family feature: push the signed-in user’s position while this screen is open
+  // so the live map and server-side geofence logic stay accurate (browser permission prompt applies).
   useEffect(() => {
     let watchId: number | null = null
     if (typeof navigator === 'undefined' || !navigator.geolocation || !currentUserId) return
