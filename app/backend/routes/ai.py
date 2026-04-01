@@ -128,7 +128,10 @@ async def orion_completions_stream(
     )
 
 
-@router.post("/orion/chat")
+@router.post(
+    "/orion/chat",
+    responses={500: {"description": "AI service error"}},
+)
 @limiter.limit("20/minute")
 async def orion_chat(request: Request, body: OrionMessageRequest, user: CurrentUser):
     from services.orion_coach import orion_service

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query, HTTPException, Depends, Request
 from typing import Annotated, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 from models.schemas import TripResult, FuelLogCreate
@@ -39,6 +39,8 @@ _503_RESPONSES = {
 MAX_FUEL_ANALYTICS_MONTHS = 24
 
 MAX_BATCH_SIZE = 100
+
+MSG_TRIP_NOT_FOUND = "Trip not found"
 
 
 def _legacy_trips_guard() -> None:
@@ -82,7 +84,7 @@ def get_trip_by_id(trip_id: str):
     if not trip:
         return {
             "success": False,
-            "message": "Trip not found"
+            "message": MSG_TRIP_NOT_FOUND
         }
 
     return {
@@ -219,11 +221,9 @@ def get_recent_trips_mobile(
 @router.post("/trips/{trip_id}/end", responses=_LEGACY_503_RESPONSES)
 def end_trip(trip_id: str, body: EndTripBody):
     _legacy_trips_guard()
-    user = users_db.get(current_user_id, {})
-
     trip = next((t for t in trips_db if t["id"] == trip_id), None)
     if not trip:
-        return {"success": False, "message": "Trip not found"}
+        return {"success": False, "message": MSG_TRIP_NOT_FOUND}
     trip["active"] = False
     trip["destination"] = body.endLocation or trip.get("destination") or "End"
 
@@ -248,15 +248,67 @@ class TripCompleteBody(BaseModel):
     speeding_events: int = 0
     incidents_reported: int = 0
 
+_MIN_TRIP_MILES = 0.15
+_MIN_TRIP_SECONDS = 45
+
+
+def _compute_trip_rewards(
+    distance: float, safety: float, user: dict,
+) -> tuple[int, int]:
+    """Return (gems_earned, xp_earned) for a qualifying trip."""
+    is_premium = user.get("is_premium") or user.get("plan", "basic") not in ("basic", "free", "")
+    safety_bonus = 5 if safety > 90 else 0
+    base_gems = max(1, int(distance * 2)) + safety_bonus
+    gems = base_gems * 2 if is_premium else base_gems
+    xp = max(10, int(distance * 100)) + (100 if safety > 90 else 0)
+    return gems, xp
+
+
+def _build_trip_row(
+    trip_id: str, user_id: str, body: "TripCompleteBody",
+    distance: float, safety: float, gems: int, xp: int,
+) -> dict:
+    now_iso = datetime.now(timezone.utc).isoformat()
+    return {
+        "id": trip_id,
+        "user_id": user_id,
+        "profile_id": user_id,
+        "distance_miles": round(distance, 2),
+        "duration_seconds": body.duration_seconds,
+        "safety_score": round(safety, 1),
+        "gems_earned": gems,
+        "xp_earned": xp,
+        "started_at": body.started_at or now_iso,
+        "ended_at": body.ended_at or now_iso,
+        "hard_braking_events": body.hard_braking_events,
+        "speeding_events": body.speeding_events,
+        "incidents_reported": body.incidents_reported,
+        "created_at": now_iso,
+    }
+
+
+def _persist_trip_and_update_profile(
+    trip_row: dict, user_id: str, gems: int, xp: int, distance: float,
+) -> None:
+    sb = get_supabase()
+    sb.table("trips").insert(trip_row).execute()
+    profile = sb.table("profiles").select("gems, xp, total_trips, total_miles").eq("id", user_id).limit(1).execute()
+    if profile.data:
+        p = profile.data[0]
+        sb.table("profiles").update({
+            "gems": (p.get("gems") or 0) + gems,
+            "xp": (p.get("xp") or 0) + xp,
+            "total_trips": (p.get("total_trips") or 0) + 1,
+            "total_miles": round((p.get("total_miles") or 0) + distance, 2),
+        }).eq("id", user_id).execute()
+
+
 @router.post("/trips/complete", responses=_503_RESPONSES)
 def complete_trip(body: TripCompleteBody, user: CurrentUser):
     """Persist a completed trip to Supabase and update profile stats."""
     user_id = user.get("id", "")
     distance = max(0, body.distance_miles)
-    # Keep in sync with mobile MIN_QUALIFYING_MI — no DB write or rewards for GPS-only / instant cancels
-    min_trip_miles = 0.15
-    min_trip_seconds = 45
-    if body.duration_seconds < min_trip_seconds or distance < min_trip_miles:
+    if body.duration_seconds < _MIN_TRIP_SECONDS or distance < _MIN_TRIP_MILES:
         return {
             "success": True,
             "data": {
@@ -266,46 +318,16 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
                 "xp_earned": 0,
                 "safety_score": max(0, min(100, body.safety_score)),
                 "distance_miles": round(distance, 2),
-                "message": f"Trips need at least ~{min_trip_miles} mi and {min_trip_seconds}s of driving.",
+                "message": f"Trips need at least ~{_MIN_TRIP_MILES} mi and {_MIN_TRIP_SECONDS}s of driving.",
             },
         }
-    penalty = body.hard_braking_events * 5 + body.speeding_events * 10
     safety = max(0, min(100, body.safety_score))
-    is_premium = user.get("is_premium") or user.get("plan", "basic") not in ("basic", "free", "")
-    base_gems = max(1, int(distance * 2)) + (5 if safety > 90 else 0)
-    gems_earned = base_gems * 2 if is_premium else base_gems
-    xp_earned = max(10, int(distance * 100)) + (100 if safety > 90 else 0)
-
+    gems_earned, xp_earned = _compute_trip_rewards(distance, safety, user)
     trip_id = str(uuid4())
-    trip_row = {
-        "id": trip_id,
-        "user_id": user_id,
-        "profile_id": user_id,
-        "distance_miles": round(distance, 2),
-        "duration_seconds": body.duration_seconds,
-        "safety_score": round(safety, 1),
-        "gems_earned": gems_earned,
-        "xp_earned": xp_earned,
-        "started_at": body.started_at or datetime.utcnow().isoformat(),
-        "ended_at": body.ended_at or datetime.utcnow().isoformat(),
-        "hard_braking_events": body.hard_braking_events,
-        "speeding_events": body.speeding_events,
-        "incidents_reported": body.incidents_reported,
-        "created_at": datetime.utcnow().isoformat(),
-    }
+    trip_row = _build_trip_row(trip_id, user_id, body, distance, safety, gems_earned, xp_earned)
 
     try:
-        sb = get_supabase()
-        sb.table("trips").insert(trip_row).execute()
-        profile = sb.table("profiles").select("gems, xp, total_trips, total_miles").eq("id", user_id).limit(1).execute()
-        if profile.data:
-            p = profile.data[0]
-            sb.table("profiles").update({
-                "gems": (p.get("gems") or 0) + gems_earned,
-                "xp": (p.get("xp") or 0) + xp_earned,
-                "total_trips": (p.get("total_trips") or 0) + 1,
-                "total_miles": round((p.get("total_miles") or 0) + distance, 2),
-            }).eq("id", user_id).execute()
+        _persist_trip_and_update_profile(trip_row, user_id, gems_earned, xp_earned, distance)
     except Exception as exc:
         _trips_log.error("Supabase trip write failed: %s", exc)
         if ENVIRONMENT == "production":
@@ -323,6 +345,48 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
     }
 
 
+def _compute_safety_score(
+    metrics: dict, old_score: float, is_safe: bool, override: Optional[float],
+) -> float:
+    """Compute new safety score from trip metrics."""
+    if is_safe:
+        score = min(100, old_score + 1)
+    else:
+        penalties = metrics.get("hard_brakes", 0) * 2 + metrics.get("speeding_incidents", 0) * 3 + metrics.get("phone_usage", 0) * 5
+        score = max(0, old_score - penalties)
+    if override is not None:
+        score = round(float(override), 1)
+    return score
+
+
+def _compute_xp_changes(
+    is_safe: bool, user: dict, new_score: float, old_score: float,
+) -> tuple[int, list, dict]:
+    """Compute XP changes, update streak on user, return (total_xp, xp_changes, user)."""
+    total_xp = 0
+    xp_changes: list[dict] = []
+    if is_safe:
+        total_xp += XP_CONFIG["safe_drive"]
+        xp_changes.append({"type": "safe_drive", "xp": XP_CONFIG["safe_drive"]})
+        new_streak = user.get("safe_drive_streak", 0) + 1
+        user["safe_drive_streak"] = new_streak
+        if new_streak % 3 == 0:
+            total_xp += XP_CONFIG["consistent_driving"]
+            xp_changes.append({"type": "consistent_bonus", "xp": XP_CONFIG["consistent_driving"]})
+    else:
+        user["safe_drive_streak"] = 0
+        if new_score < old_score:
+            total_xp += XP_CONFIG["safety_score_penalty"]
+            xp_changes.append({"type": "safety_penalty", "xp": XP_CONFIG["safety_score_penalty"]})
+    return total_xp, xp_changes, user
+
+
+def _normalize_route_coords(raw) -> list:
+    if raw and isinstance(raw[0], dict):
+        return [{"lat": float(c.get("lat", 0)), "lng": float(c.get("lng", 0))} for c in raw]
+    return []
+
+
 @router.post("/trips/complete-with-safety", responses=_LEGACY_503_RESPONSES)
 def complete_trip_with_safety(trip: TripResult):
     _legacy_trips_guard()
@@ -332,44 +396,20 @@ def complete_trip_with_safety(trip: TripResult):
     metrics = trip.safety_metrics or {}
     is_safe_drive = metrics.get("hard_brakes", 0) == 0 and metrics.get("speeding_incidents", 0) == 0 and metrics.get("phone_usage", 0) == 0
     old_safety_score = user.get("safety_score", 85)
-    penalties = metrics.get("hard_brakes", 0) * 2 + metrics.get("speeding_incidents", 0) * 3 + metrics.get("phone_usage", 0) * 5
-    new_safety_score = min(100, old_safety_score + 1) if is_safe_drive else max(0, old_safety_score - penalties)
-    if trip.safety_score is not None:
-        new_safety_score = round(float(trip.safety_score), 1)
+    new_safety_score = _compute_safety_score(metrics, old_safety_score, is_safe_drive, trip.safety_score)
 
     user["safety_score"] = new_safety_score
     user["total_trips"] = user.get("total_trips", 0) + 1
     user["total_miles"] = user.get("total_miles", 0) + trip.distance
 
-    total_xp = 0
-    xp_changes = []
-    if is_safe_drive:
-        total_xp += XP_CONFIG["safe_drive"]
-        xp_changes.append({"type": "safe_drive", "xp": XP_CONFIG["safe_drive"]})
-        old_streak = user.get("safe_drive_streak", 0)
-        new_streak = old_streak + 1
-        user["safe_drive_streak"] = new_streak
-        if new_streak % 3 == 0:
-            total_xp += XP_CONFIG["consistent_driving"]
-            xp_changes.append({"type": "consistent_bonus", "xp": XP_CONFIG["consistent_driving"]})
-    else:
-        user["safe_drive_streak"] = 0
-        if new_safety_score < old_safety_score:
-            total_xp += XP_CONFIG["safety_score_penalty"]
-            xp_changes.append({"type": "safety_penalty", "xp": XP_CONFIG["safety_score_penalty"]})
-
+    total_xp, xp_changes, user = _compute_xp_changes(is_safe_drive, user, new_safety_score, old_safety_score)
     xp_result = add_xp_to_user(current_user_id, total_xp) if total_xp != 0 else {}
     gem_multiplier = user.get("gem_multiplier", 1)
     gems_earned = 5 * gem_multiplier
     user["gems"] = user.get("gems", 0) + gems_earned
 
-    # Record trip for real-time history and analytics (single source of truth for map, route history, trip analytics)
     now = datetime.now()
-    route_coords = trip.route_coordinates
-    if route_coords and isinstance(route_coords[0], dict):
-        route_coords = [{"lat": float(c.get("lat", 0)), "lng": float(c.get("lng", 0))} for c in route_coords]
-    else:
-        route_coords = []
+    route_coords = _normalize_route_coords(trip.route_coordinates)
     duration_min = max(1, trip.duration)
     fuel_used = trip.distance / 30.0 if trip.distance else 0.1
     new_id = str(uuid4())
@@ -437,30 +477,17 @@ def get_detailed_trip_history(
     }
 
 
-@router.get("/trips/weekly-insights", responses=_LEGACY_503_RESPONSES)
-def get_weekly_insights():
-    _legacy_trips_guard()
-    cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-    week_trips = [t for t in trips_db if t.get("date", "") >= cutoff_date]
-
-    if not week_trips:
-        return {
-            "summary": "No trips this week yet. Start driving to get your weekly recap!",
-            "fuel_saved": 0,
-            "incidents_avoided": 0,
-            "best_day": "N/A",
-            "safety_trend": "steady",
-            "gems_earned_week": 0,
-            "miles_this_week": 0,
-            "trips_this_week": 0,
-            "ai_tip": "Complete your first trip this week to get personalized Orion tips.",
-        }
-
+def _weekly_trip_stats(week_trips: list) -> tuple[float, int, float]:
+    """Return (total_miles, total_gems, avg_safety) for the week's trips."""
     total_miles = sum(float(t.get("distance_miles", 0) or 0) for t in week_trips)
     total_gems = sum(int(t.get("gems_earned", 0) or 0) for t in week_trips)
     avg_safety = sum(float(t.get("safety_score", 0) or 0) for t in week_trips) / max(len(week_trips), 1)
+    return total_miles, total_gems, avg_safety
 
-    day_scores = {}
+
+def _best_safety_day(week_trips: list) -> str:
+    """Find the day of the week with the highest average safety score."""
+    day_scores: dict[str, list[float]] = {}
     for trip in week_trips:
         day_str = trip.get("date")
         try:
@@ -470,9 +497,15 @@ def get_weekly_insights():
             day_name = "N/A"
         day_scores.setdefault(day_name, [])
         day_scores[day_name].append(float(trip.get("safety_score", 0) or 0))
-    best_day = max(day_scores, key=lambda d: sum(day_scores[d]) / max(len(day_scores[d]), 1)) if day_scores else "N/A"
+    if not day_scores:
+        return "N/A"
+    return max(day_scores, key=lambda d: sum(day_scores[d]) / max(len(day_scores[d]), 1))
 
-    # Deterministic fallback used by default and for any AI failure.
+
+def _ai_weekly_summary(
+    week_trips: list, total_miles: float, avg_safety: float, best_day: str,
+) -> tuple[str, str]:
+    """Ask Orion for a weekly summary and tip; returns (summary, tip) with deterministic fallbacks."""
     summary = (
         f"You completed {len(week_trips)} trips and drove {round(total_miles, 1)} miles this week "
         f"with an average safety score of {round(avg_safety)}."
@@ -481,49 +514,85 @@ def get_weekly_insights():
         "Your safest drives happen when you keep a steady pace. "
         "Try smoother braking on busy interchanges to keep improving."
     )
-
     client = get_sync_openai_client() if OpenAI is not None else None
-    if client is not None:
-        try:
-            payload = {
-                "trips_this_week": len(week_trips),
-                "miles_this_week": round(total_miles, 1),
-                "avg_safety_score": round(avg_safety, 1),
-                "best_day": best_day,
-            }
-            response = client.chat.completions.create(
-                model=chat_completion_model(),
-                temperature=0.3,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are Orion, an in-car driving coach. "
-                            "Return strict JSON with keys: summary, ai_tip. "
-                            "summary max 1 sentence. ai_tip max 1 sentence."
-                        ),
-                    },
-                    {"role": "user", "content": json.dumps(payload)},
-                ],
-                response_format={"type": "json_object"},
-            )
-            content = (response.choices[0].message.content or "").strip()
-            parsed = json.loads(content) if content else {}
-            ai_summary = parsed.get("summary")
-            ai_tip = parsed.get("ai_tip")
-            if isinstance(ai_summary, str) and ai_summary.strip():
-                summary = ai_summary.strip()
-            if isinstance(ai_tip, str) and ai_tip.strip():
-                tip = ai_tip.strip()
-        except Exception as e:
-            _trips_log.warning("failed to get AI weekly insights: %s", e)
+    if client is None:
+        return summary, tip
+    try:
+        payload = {
+            "trips_this_week": len(week_trips),
+            "miles_this_week": round(total_miles, 1),
+            "avg_safety_score": round(avg_safety, 1),
+            "best_day": best_day,
+        }
+        response = client.chat.completions.create(
+            model=chat_completion_model(),
+            temperature=0.3,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Orion, an in-car driving coach. "
+                        "Return strict JSON with keys: summary, ai_tip. "
+                        "summary max 1 sentence. ai_tip max 1 sentence."
+                    ),
+                },
+                {"role": "user", "content": json.dumps(payload)},
+            ],
+            response_format={"type": "json_object"},
+        )
+        content = (response.choices[0].message.content or "").strip()
+        parsed = json.loads(content) if content else {}
+        ai_summary = parsed.get("summary")
+        ai_tip = parsed.get("ai_tip")
+        if isinstance(ai_summary, str) and ai_summary.strip():
+            summary = ai_summary.strip()
+        if isinstance(ai_tip, str) and ai_tip.strip():
+            tip = ai_tip.strip()
+    except Exception as e:
+        _trips_log.warning("failed to get AI weekly insights: %s", e)
+    return summary, tip
+
+
+def _safety_trend(avg_safety: float) -> str:
+    if avg_safety >= 80:
+        return "improving"
+    if avg_safety >= 60:
+        return "steady"
+    return "declining"
+
+
+_EMPTY_WEEK_RESPONSE = {
+    "summary": "No trips this week yet. Start driving to get your weekly recap!",
+    "fuel_saved": 0,
+    "incidents_avoided": 0,
+    "best_day": "N/A",
+    "safety_trend": "steady",
+    "gems_earned_week": 0,
+    "miles_this_week": 0,
+    "trips_this_week": 0,
+    "ai_tip": "Complete your first trip this week to get personalized Orion tips.",
+}
+
+
+@router.get("/trips/weekly-insights", responses=_LEGACY_503_RESPONSES)
+def get_weekly_insights():
+    _legacy_trips_guard()
+    cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    week_trips = [t for t in trips_db if t.get("date", "") >= cutoff_date]
+
+    if not week_trips:
+        return _EMPTY_WEEK_RESPONSE
+
+    total_miles, total_gems, avg_safety = _weekly_trip_stats(week_trips)
+    best_day = _best_safety_day(week_trips)
+    summary, tip = _ai_weekly_summary(week_trips, total_miles, avg_safety, best_day)
 
     return {
         "summary": summary,
         "fuel_saved": round(total_miles * 0.03, 1),
         "incidents_avoided": len(week_trips),
         "best_day": best_day,
-        "safety_trend": "improving" if avg_safety >= 80 else "steady" if avg_safety >= 60 else "declining",
+        "safety_trend": _safety_trend(avg_safety),
         "gems_earned_week": total_gems,
         "miles_this_week": round(total_miles, 1),
         "trips_this_week": len(week_trips),
@@ -536,7 +605,7 @@ def share_trip(trip_id: str):
     _legacy_trips_guard()
     trip = next((t for t in trips_db if str(t.get("id")) == str(trip_id)), None)
     if not trip:
-        return {"success": False, "message": "Trip not found"}
+        return {"success": False, "message": MSG_TRIP_NOT_FOUND}
     share_url = f"https://snaproad.app/trip/{trip_id}"
     return {"success": True, "data": {"share_url": share_url, "trip_summary": f"I drove {trip['distance_miles']} miles with a {trip['safety_score']} safety score!"}}
 
@@ -603,7 +672,7 @@ def log_fuel(entry: FuelLogCreate, user: CurrentUser):
     except Exception:
         if ENVIRONMENT == "production":
             raise
-        new_entry = {**payload, "id": str(uuid4()), "date": datetime.utcnow().date().isoformat(), "total": total_cost}
+        new_entry = {**payload, "id": str(uuid4()), "date": datetime.now(timezone.utc).date().isoformat(), "total": total_cost}
         fuel_logs.insert(0, new_entry)
         return {"success": True, "message": "Fuel log entry added (dev/memory)", "data": new_entry}
 

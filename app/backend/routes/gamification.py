@@ -107,7 +107,7 @@ def check_community_badges(user_id: str) -> list:
 
 
 # ==================== XP ====================
-@router.post("/xp/add")
+@router.post("/xp/add", responses={503: {"description": "Gamification persistence unavailable"}})
 def add_xp(event: XPEvent, user: CurrentUser):
     user_id = str(user.get("id") or current_user_id)
     if event.event_id:
@@ -179,6 +179,70 @@ def get_community_badges(user: CurrentUser):
 # ==================== LEADERBOARD ====================
 # Top 10 by state; weekly default. Ranked by safety_score (primary), then gems (secondary).
 # Each entry includes challenges_participated and badges_count (show on click).
+
+_LIFETIME_FILTERS = ("all_time", "alltime", "lifetime")
+_MONTHLY_FILTERS = ("month", "monthly")
+
+
+def _apply_leaderboard_order(query, tf: str):
+    """Apply the correct ORDER BY to a Supabase leaderboard query."""
+    if tf in _LIFETIME_FILTERS:
+        return query.order("total_miles", desc=True).order("gems", desc=True)
+    if tf in _MONTHLY_FILTERS:
+        return query.order("level", desc=True).order("gems", desc=True)
+    if tf == "all":
+        return query.order("gems", desc=True).order("safety_score", desc=True)
+    return query.order("safety_score", desc=True).order("gems", desc=True)
+
+
+def _leaderboard_sort_key(tf: str):
+    """Return a sort-key function for in-memory leaderboard fallback."""
+    if tf in _LIFETIME_FILTERS:
+        return lambda x: (x.get("total_miles", 0), x.get("gems", 0))
+    if tf in _MONTHLY_FILTERS:
+        return lambda x: (x.get("level", 0), x.get("gems", 0))
+    if tf == "all":
+        return lambda x: (x.get("gems", 0), x.get("safety_score", 0))
+    return lambda x: (x.get("safety_score", 0), x.get("gems", 0))
+
+
+def _build_leaderboard_entry(rank: int, u: dict) -> dict:
+    return {
+        "rank": rank,
+        "id": str(u.get("id", "")),
+        "name": u.get("name") or "Driver",
+        "safety_score": u.get("safety_score") or 0,
+        "level": u.get("level") or 1,
+        "gems": u.get("gems") or 0,
+        "total_miles": u.get("total_miles") or 0,
+        "state": u.get("state") or "",
+        "is_premium": bool(u.get("is_premium")),
+    }
+
+
+def _leaderboard_response(
+    leaderboard: list, my_data: dict, user_id: str, total_drivers: int,
+) -> dict:
+    my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == user_id), len(leaderboard) + 1)
+    return {
+        "success": True,
+        "data": {
+            "leaderboard": leaderboard,
+            "my_rank": my_rank,
+            "my_score": my_data.get("safety_score", 0),
+            "total_drivers": total_drivers,
+            "my_data": {
+                "name": my_data.get("name", "Driver"),
+                "safety_score": my_data.get("safety_score", 0),
+                "gems": my_data.get("gems", 0),
+                "level": my_data.get("level", 1),
+                "state": my_data.get("state", ""),
+            },
+            "states": [],
+        },
+    }
+
+
 @router.get("/leaderboard")
 def get_leaderboard(
     user: CurrentUser,
@@ -189,105 +253,28 @@ def get_leaderboard(
     user_id = str(user.get("id") or current_user_id)
     tf = (time_filter or "weekly").lower()
 
-    # Try Supabase first for real user data
     try:
         sb = get_supabase()
         query = sb.table("profiles").select("id,name,safety_score,level,gems,total_miles,is_premium,state")
         if state and state.lower() != "all":
             query = query.eq("state", state.upper())
-        if tf in ("all_time", "alltime", "lifetime"):
-            query = query.order("total_miles", desc=True).order("gems", desc=True)
-        elif tf in ("month", "monthly"):
-            query = query.order("level", desc=True).order("gems", desc=True)
-        elif tf == "all":
-            query = query.order("gems", desc=True).order("safety_score", desc=True)
-        else:
-            # weekly (default): safety-first board
-            query = query.order("safety_score", desc=True).order("gems", desc=True)
+        query = _apply_leaderboard_order(query, tf)
         res = query.limit(limit).execute()
-        if res.data and len(res.data) > 0:
-            leaderboard = []
-            for i, u in enumerate(res.data):
-                leaderboard.append({
-                    "rank": i + 1,
-                    "id": str(u.get("id", "")),
-                    "name": u.get("name") or "Driver",
-                    "safety_score": u.get("safety_score") or 0,
-                    "level": u.get("level") or 1,
-                    "gems": u.get("gems") or 0,
-                    "total_miles": u.get("total_miles") or 0,
-                    "state": u.get("state") or "",
-                    "is_premium": bool(u.get("is_premium")),
-                })
-            my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == user_id), len(leaderboard) + 1)
+        if res.data:
+            leaderboard = [_build_leaderboard_entry(i + 1, u) for i, u in enumerate(res.data)]
             my_profile = sb.table("profiles").select("name,safety_score,gems,level,state").eq("id", user_id).limit(1).execute()
             my_data = my_profile.data[0] if my_profile.data else {}
-            return {
-                "success": True,
-                "data": {
-                    "leaderboard": leaderboard,
-                    "my_rank": my_rank,
-                    "my_score": my_data.get("safety_score", 0),
-                    "total_drivers": len(leaderboard),
-                    "my_data": {
-                        "name": my_data.get("name", "Driver"),
-                        "safety_score": my_data.get("safety_score", 0),
-                        "gems": my_data.get("gems", 0),
-                        "level": my_data.get("level", 1),
-                        "state": my_data.get("state", ""),
-                    },
-                    "states": [],
-                },
-            }
+            return _leaderboard_response(leaderboard, my_data, user_id, len(leaderboard))
     except Exception as e:
         logger.warning("failed to fetch leaderboard from Supabase: %s", e)
 
-    # Fallback to mock data in dev
     all_users = list(users_db.values())
     if state and state.lower() != "all":
         all_users = [u for u in all_users if (u.get("state") or "").upper() == state.upper()]
-    if tf in ("all_time", "alltime", "lifetime"):
-        sort_key = lambda x: (x.get("total_miles", 0), x.get("gems", 0))
-    elif tf in ("month", "monthly"):
-        sort_key = lambda x: (x.get("level", 0), x.get("gems", 0))
-    elif tf == "all":
-        sort_key = lambda x: (x.get("gems", 0), x.get("safety_score", 0))
-    else:
-        sort_key = lambda x: (x.get("safety_score", 0), x.get("gems", 0))
-    sorted_users = sorted(all_users, key=sort_key, reverse=True)[:limit]
-    leaderboard = []
-    for i, u in enumerate(sorted_users):
-        uid = str(u["id"])
-        leaderboard.append({
-            "rank": i + 1,
-            "id": uid,
-            "name": u.get("name", "Driver"),
-            "safety_score": u.get("safety_score", 0),
-            "level": u.get("level", 1),
-            "gems": u.get("gems", 0),
-            "total_miles": u.get("total_miles", 0),
-            "state": u.get("state", ""),
-            "is_premium": u.get("is_premium", False),
-        })
+    sorted_users = sorted(all_users, key=_leaderboard_sort_key(tf), reverse=True)[:limit]
+    leaderboard = [_build_leaderboard_entry(i + 1, u) for i, u in enumerate(sorted_users)]
     current_user = _user_state(user_id)
-    my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == user_id), len(leaderboard) + 1)
-    return {
-        "success": True,
-        "data": {
-            "leaderboard": leaderboard,
-            "my_rank": my_rank,
-            "my_score": current_user.get("safety_score", 0),
-            "total_drivers": len(all_users),
-            "my_data": {
-                "name": current_user.get("name", "Driver"),
-                "safety_score": current_user.get("safety_score", 0),
-                "gems": current_user.get("gems", 0),
-                "level": current_user.get("level", 1),
-                "state": current_user.get("state", ""),
-            },
-            "states": [],
-        },
-    }
+    return _leaderboard_response(leaderboard, current_user, user_id, len(all_users))
 
 
 # ==================== CHALLENGES ====================
@@ -316,6 +303,17 @@ def create_challenge(challenge: ChallengeCreate, auth_user: CurrentUser):
     return {"success": True, "message": f"Challenge sent to {opponent.get('name')}!", "data": new_challenge}
 
 
+def _deduct_stake_and_activate(user_id: str, challenge: dict) -> dict:
+    """Deduct the stake from the user's gems, mark the challenge active, and return the response."""
+    user = _user_state(user_id)
+    stake = int(challenge.get("stake") or 0)
+    if user.get("gems", 0) < stake:
+        raise HTTPException(status_code=400, detail=MSG_NOT_ENOUGH_GEMS)
+    _persist_user_fields(user_id, {"gems": user.get("gems", 0) - stake})
+    challenge["status"] = "active"
+    return {"success": True, "message": "Challenge accepted!", "data": challenge}
+
+
 @router.post("/challenges/{challenge_id}/accept", responses={400: {"description": MSG_NOT_ENOUGH_GEMS}, 404: {"description": "Challenge not found"}, 503: {"description": "Challenge service unavailable"}})
 def accept_challenge(challenge_id: str, auth_user: CurrentUser):
     user_id = str(auth_user.get("id") or current_user_id)
@@ -323,17 +321,12 @@ def accept_challenge(challenge_id: str, auth_user: CurrentUser):
         db_challenges = sb_get_challenges(limit=200)
         c = next((x for x in db_challenges if str(x.get("id")) == str(challenge_id) and str(x.get("opponent_id")) == user_id), None)
         if c:
-            user = _user_state(user_id)
-            stake = int(c.get("stake") or 0)
-            if user.get("gems", 0) < stake:
-                raise HTTPException(status_code=400, detail=MSG_NOT_ENOUGH_GEMS)
-            _persist_user_fields(user_id, {"gems": user.get("gems", 0) - stake})
+            result = _deduct_stake_and_activate(user_id, c)
             try:
                 get_supabase().table("challenges").update({"status": "active"}).eq("id", c.get("id")).execute()
             except Exception as e:
                 logger.warning("failed to update challenge status to active: %s", e)
-            c["status"] = "active"
-            return {"success": True, "message": "Challenge accepted!", "data": c}
+            return result
     except HTTPException:
         raise
     except Exception:
@@ -341,16 +334,11 @@ def accept_challenge(challenge_id: str, auth_user: CurrentUser):
             raise HTTPException(status_code=503, detail="Challenge service unavailable")
     for c in challenges_db:
         if c["id"] == challenge_id and c["opponent_id"] == user_id:
-            user = _user_state(user_id)
-            if user.get("gems", 0) < c["stake"]:
-                raise HTTPException(status_code=400, detail=MSG_NOT_ENOUGH_GEMS)
-            _persist_user_fields(user_id, {"gems": user.get("gems", 0) - c["stake"]})
-            c["status"] = "active"
-            return {"success": True, "message": "Challenge accepted!", "data": c}
+            return _deduct_stake_and_activate(user_id, c)
     raise HTTPException(status_code=404, detail="Challenge not found")
 
 
-@router.post("/challenges/{challenge_id}/claim")
+@router.post("/challenges/{challenge_id}/claim", responses={503: {"description": "Challenge claim unavailable in production path"}})
 def claim_challenge(challenge_id: int, auth_user: CurrentUser):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Challenge claim unavailable in production path")
@@ -388,7 +376,7 @@ def get_challenge_history(
 
 
 # ==================== GEMS ====================
-@router.post("/gems/generate-route")
+@router.post("/gems/generate-route", responses={503: {"description": "Gem generation unavailable in production path"}})
 def generate_route_gems(req: GemGenerateRequest):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Gem generation unavailable in production path")
@@ -404,7 +392,7 @@ def generate_route_gems(req: GemGenerateRequest):
     return {"success": True, "data": {"trip_id": req.trip_id, "gems": gems, "total_possible": sum(g["value"] for g in gems)}}
 
 
-@router.post("/gems/collect")
+@router.post("/gems/collect", responses={503: {"description": "Gem collection unavailable in production path"}})
 def collect_gem(req: GemCollectRequest, user: CurrentUser):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Gem collection unavailable in production path")
@@ -425,7 +413,7 @@ def collect_gem(req: GemCollectRequest, user: CurrentUser):
     return {"success": True, "data": {"gem_id": req.gem_id, "value": earned, "multiplier": multiplier, "new_total": new_total}}
 
 
-@router.get("/gems/trip-summary/{trip_id}")
+@router.get("/gems/trip-summary/{trip_id}", responses={503: {"description": "Gem trip summary unavailable in production path"}})
 def get_trip_gem_summary(trip_id: str):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Gem trip summary unavailable in production path")

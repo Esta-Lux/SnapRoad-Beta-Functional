@@ -921,7 +921,7 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Read
 
     return () => {
       cancelled = true
-      void sb.removeChannel(channel).catch(() => {})
+      sb.removeChannel(channel).catch(() => {})
     }
   }, [isOpen, groupId, members])
 

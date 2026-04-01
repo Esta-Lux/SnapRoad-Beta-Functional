@@ -200,7 +200,7 @@ export default function FamilyCommandCenter({
   useEffect(() => {
     const me = members.find((m) => String(m.user_id) === String(currentUserId))
     const live = me?.live
-    if (!live || !live.is_sharing || typeof live.lat !== 'number' || typeof live.lng !== 'number') return
+    if (!live?.is_sharing || typeof live.lat !== 'number' || typeof live.lng !== 'number') return
     for (const place of places) {
       if (typeof place.lat !== 'number' || typeof place.lng !== 'number') continue
       const key = `${currentUserId}:${place.id ?? place.name}`

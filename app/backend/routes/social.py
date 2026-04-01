@@ -24,6 +24,8 @@ MSG_AUTH_REQUIRED = "Authentication required"
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 
+_PROFILE_SEARCH_COLS = "id, name, full_name, email, friend_code"
+
 router = APIRouter(prefix="/api", tags=["Social"])
 
 
@@ -31,7 +33,7 @@ router = APIRouter(prefix="/api", tags=["Social"])
 @router.get("/friends", responses={401: {"description": MSG_AUTH_REQUIRED}})
 def get_friends(
     current_user: CurrentUser,
-    limit: int = Query(default=100, ge=1, le=100),
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """Redirects to Supabase-backed friends list (was previously in-memory mock)."""
     if not current_user:
@@ -51,14 +53,14 @@ def search_friends(current_user: CurrentUser, q: str = "", user_id: str = ""):
 
     # Search by friend_code (exact match, case-insensitive), email, or name
     code_res = supabase.table("profiles").select(
-        "id, name, full_name, email, friend_code"
+        _PROFILE_SEARCH_COLS
     ).neq("id", uid).ilike("friend_code", query).limit(5).execute()
 
     safe_q = query[:100].replace("%", "").replace(",", "").replace("(", "").replace(")", "").replace(".", "").strip()
     if not safe_q:
         return {"success": True, "data": []}
     name_res = supabase.table("profiles").select(
-        "id, name, full_name, email, friend_code"
+        _PROFILE_SEARCH_COLS
     ).neq("id", uid).or_(
         f"full_name.ilike.%{safe_q}%,name.ilike.%{safe_q}%,email.ilike.%{safe_q}%"
     ).limit(10).execute()
@@ -131,15 +133,15 @@ def remove_friend(friend_id: str, current_user: CurrentUser):
     uid = current_user["id"]
     supabase = get_supabase()
     # Delete row where (user_id_1=uid, user_id_2=friend_id) or (user_id_1=friend_id, user_id_2=uid)
-    r1 = supabase.table("friendships").delete().eq("user_id_1", uid).eq("user_id_2", friend_id).execute()
-    r2 = supabase.table("friendships").delete().eq("user_id_1", friend_id).eq("user_id_2", uid).execute()
+    supabase.table("friendships").delete().eq("user_id_1", uid).eq("user_id_2", friend_id).execute()
+    supabase.table("friendships").delete().eq("user_id_1", friend_id).eq("user_id_2", uid).execute()
     return {"success": True, "message": "Friend removed"}
 
 
 @router.get("/friends/list", responses={401: {"description": MSG_AUTH_REQUIRED}})
 def get_friends_list(
     current_user: CurrentUser,
-    limit: int = Query(default=100, ge=1, le=100),
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """List friends with friend_id and status for location sharing."""
     if not current_user:
@@ -179,7 +181,7 @@ def get_friends_list(
 @router.get("/friends/requests", responses={401: {"description": MSG_AUTH_REQUIRED}})
 def get_friend_requests(
     current_user: CurrentUser,
-    limit: int = Query(default=100, ge=1, le=100),
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """Pending friend requests (incoming)."""
     if not current_user:
@@ -216,7 +218,7 @@ def get_friend_requests(
 @router.get("/friends/requests/sent", responses={401: {"description": MSG_AUTH_REQUIRED}})
 def get_outgoing_friend_requests(
     current_user: CurrentUser,
-    limit: int = Query(default=100, ge=1, le=100),
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """Pending friend requests you sent (waiting on the other person)."""
     if not current_user:
@@ -230,7 +232,7 @@ def get_outgoing_friend_requests(
     profile_map = {}
     if to_ids:
         prof = supabase.table("profiles").select(
-            "id, name, full_name, email, friend_code"
+            _PROFILE_SEARCH_COLS
         ).in_("id", to_ids).execute()
         for p in (prof.data or []):
             profile_map[str(p["id"])] = p
@@ -248,7 +250,7 @@ def get_outgoing_friend_requests(
     return {"success": True, "data": out}
 
 
-@router.post("/friends/reject", responses={401: {"description": MSG_AUTH_REQUIRED}})
+@router.post("/friends/reject", responses={400: {"description": "Missing friendship_id"}, 401: {"description": MSG_AUTH_REQUIRED}})
 def reject_friend_request(body: dict, current_user: CurrentUser):
     """Decline an incoming request (body.friendship_id = row id)."""
     if not current_user:
@@ -264,7 +266,7 @@ def reject_friend_request(body: dict, current_user: CurrentUser):
     return {"success": True, "message": "Request declined"}
 
 
-@router.post("/friends/accept", responses={401: {"description": MSG_AUTH_REQUIRED}})
+@router.post("/friends/accept", responses={400: {"description": "Missing friendship_id"}, 401: {"description": MSG_AUTH_REQUIRED}})
 def accept_friend_request(body: dict, current_user: CurrentUser):
     """Accept a friend request (body.friendship_id = row id)."""
     if not current_user:
@@ -357,12 +359,12 @@ def send_location_tag(body: LocationTagBody, current_user: CurrentUser):
 
 
 # ==================== ROAD REPORTS ====================
-@router.get("/reports")
+@router.get("/reports", responses={503: {"description": "Legacy route unavailable in production"}})
 def get_road_reports(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
-    radius: float = Query(default=10, ge=0.1, le=200),
-    limit: int = Query(default=100, ge=1, le=100),
+    radius: Annotated[float, Query(ge=0.1, le=200)] = 10,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Use /api/incidents and /api/photo-reports in production")
@@ -378,13 +380,14 @@ def get_road_reports(
     return {"success": True, "data": capped, "total": len(capped)}
 
 
-@router.post("/reports")
+@router.post("/reports", responses={503: {"description": "Legacy route unavailable in production"}})
 def create_road_report(report: RoadReport):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Use /api/photo-reports/upload in production")
     user = users_db.get(current_user_id, {})
     new_id = max([r["id"] for r in road_reports_db], default=0) + 1
-    new_report = {"id": new_id, "user_id": current_user_id, "type": report.type, "title": report.title, "description": report.description, "lat": report.lat, "lng": report.lng, "photo_url": report.photo_url, "upvotes": 0, "upvoters": [], "created_at": datetime.now().isoformat(), "expires_at": (datetime.now() + timedelta(hours=12)).isoformat(), "verified": False}
+    now = datetime.now(timezone.utc)
+    new_report = {"id": new_id, "user_id": current_user_id, "type": report.type, "title": report.title, "description": report.description, "lat": report.lat, "lng": report.lng, "photo_url": report.photo_url, "upvotes": 0, "upvoters": [], "created_at": now.isoformat(), "expires_at": (now + timedelta(hours=12)).isoformat(), "verified": False}
     road_reports_db.append(new_report)
     xp_result = add_xp_to_user(current_user_id, XP_CONFIG["photo_report"])
     if current_user_id in users_db:
@@ -393,7 +396,7 @@ def create_road_report(report: RoadReport):
     return {"success": True, "message": f"Report posted! +{XP_CONFIG['photo_report']} XP", "data": {"report": new_report, "xp_result": xp_result, "badges_earned": badges_earned}}
 
 
-@router.post("/reports/{report_id}/upvote")
+@router.post("/reports/{report_id}/upvote", responses={503: {"description": "Legacy route unavailable in production"}})
 def upvote_report(report_id: int):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Use /api/photo-reports/{report_id}/upvote in production")
@@ -414,7 +417,7 @@ def upvote_report(report_id: int):
     return {"success": True, "message": "Upvoted! Reporter earned 10 gems", "data": {"report_id": report_id, "new_upvote_count": report["upvotes"]}}
 
 
-@router.delete("/reports/{report_id}")
+@router.delete("/reports/{report_id}", responses={503: {"description": "Legacy route unavailable in production"}})
 def delete_report(report_id: int):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Legacy report delete unavailable in production")
@@ -428,8 +431,8 @@ def delete_report(report_id: int):
     return {"success": True, "message": "Report deleted"}
 
 
-@router.get("/reports/my")
-def get_my_reports(limit: int = Query(default=100, ge=1, le=100)):
+@router.get("/reports/my", responses={503: {"description": "Legacy route unavailable in production"}})
+def get_my_reports(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Legacy report listing unavailable in production")
     my_reports = [r for r in road_reports_db if r["user_id"] == current_user_id]
@@ -450,12 +453,12 @@ def family_message(member_id: str):
 
 
 # ==================== INCIDENTS (consumer-facing) ====================
-@router.get("/incidents")
+@router.get("/incidents", responses={503: {"description": "Legacy route unavailable in production"}})
 def get_incidents(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
-    radius: float = Query(default=15, ge=0.1, le=200),
-    limit: int = Query(default=100, ge=1, le=100),
+    radius: Annotated[float, Query(ge=0.1, le=200)] = 15,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Use /api/incidents/nearby in production")

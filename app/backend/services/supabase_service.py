@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 MSG_EMAIL_ALREADY_REGISTERED = "This email is already registered. Use Sign in instead."
+MSG_INVALID_CREDENTIALS = "Invalid email or password"
 
 
 def _sb():
@@ -146,7 +147,7 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
     raw_email = (email or "").strip()
     email = (email or "").strip().lower()
     if not email:
-        return None, "Invalid email or password"
+        return None, MSG_INVALID_CREDENTIALS
 
     # Keep login latency bounded; frontend/mobile otherwise hit client-side timeouts.
     max_retries = 2
@@ -158,7 +159,7 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
             profile_result = sb.table("profiles").select("*").ilike("email", email).limit(1).execute()
             if not profile_result or not profile_result.data or len(profile_result.data) == 0:
                 logger.warning(f"Profile not found for {email}")
-                return None, "Invalid email or password"
+                return None, MSG_INVALID_CREDENTIALS
             
             profile_data = profile_result.data[0]
             logger.info(f"Profile fetch SUCCESS for {email}, role={profile_data.get('role')}")
@@ -183,7 +184,7 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
 
             if not password_ok:
                 logger.warning(f"Password mismatch for {email}")
-                return None, "Invalid email or password"
+                return None, MSG_INVALID_CREDENTIALS
 
             logger.info("Password verified for %s", raw_email or email)
             return profile_data, None
@@ -217,7 +218,7 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
             logger.warning("sb_login_user error for %s: %s", raw_email or email, e)
             return None, str(e)
 
-    return None, "Invalid email or password"
+    return None, MSG_INVALID_CREDENTIALS
 
 
 def sb_get_auth_user_from_access_token(access_token: str) -> Optional[dict]:

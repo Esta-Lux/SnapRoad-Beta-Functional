@@ -59,7 +59,13 @@ def _persist_user(user_id: str, updates: dict) -> None:
             raise HTTPException(status_code=503, detail="User persistence unavailable")
 
 
-@router.get("/user/profile")
+@router.get(
+    "/user/profile",
+    responses={
+        401: {"description": "Authentication required or invalid auth context"},
+        503: {"description": "User profile unavailable (production only)"},
+    },
+)
 def get_user_profile(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     uid = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
@@ -398,7 +404,13 @@ def add_vehicle(vehicle: dict, auth_user: CurrentUser):
 
 
 # ==================== FAMILY GROUP ====================
-@router.get("/family/group")
+@router.get(
+    "/family/group",
+    responses={
+        401: {"description": "Authentication required or invalid auth context"},
+        503: {"description": "Family group service unavailable (production)"},
+    },
+)
 def get_family_group(_auth_user: CurrentUser):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Family group service unavailable")

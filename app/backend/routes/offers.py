@@ -98,8 +98,7 @@ def get_offers(request: Request, limit: Annotated[int, Query(default=100, ge=1, 
                     "premium_discount": OFFER_CONFIG["premium_discount_percent"]
                 }
             }
-    except Exception as e:
-        # Fallback to mock data on error
+    except Exception:
         if ENVIRONMENT == "production":
             return {"success": False, "message": "Offer service unavailable"}
         return {

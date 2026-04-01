@@ -205,7 +205,13 @@ def _build_pending_tx(session_id: str, checkout_data: CreateCheckoutRequest, pla
 @router.post(
     "/checkout/session",
     response_model=CheckoutResponse,
-    responses={401: {"description": MSG_AUTH_REQUIRED}, 400: {"description": "Invalid or free plan"}},
+    responses={
+        400: {"description": "Invalid or free plan"},
+        401: {"description": MSG_AUTH_REQUIRED},
+        500: {"description": "Failed to create checkout session"},
+        502: {"description": "Payment provider error"},
+        503: {"description": "Payment transaction storage unavailable"},
+    },
 )
 @limiter.limit("10/minute")
 async def create_checkout_session(
@@ -325,7 +331,13 @@ def _maybe_upgrade_profile(tx: dict, session_user_id: str) -> None:
 
 @router.get(
     "/checkout/status/{session_id}",
-    responses={401: {"description": MSG_AUTH_REQUIRED}},
+    responses={
+        401: {"description": MSG_AUTH_REQUIRED},
+        403: {"description": "Access denied"},
+        500: {"description": "Failed to get checkout status"},
+        502: {"description": "Payment provider error"},
+        503: {"description": "Payment transaction storage unavailable"},
+    },
 )
 @limiter.limit("30/minute")
 async def get_checkout_status(
@@ -368,7 +380,7 @@ async def get_checkout_status(
 @router.get("/transactions")
 async def get_payment_transactions(
     _admin: CurrentAdmin,
-    limit: int = Query(default=100, ge=1, le=100),
+    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
 ):
     """Get all payment transactions (admin use)"""
     return {
@@ -377,7 +389,7 @@ async def get_payment_transactions(
     }
 
 
-@router.get("/transaction/{session_id}")
+@router.get("/transaction/{session_id}", responses={404: {"description": "Transaction not found"}})
 async def get_payment_transaction(session_id: str, _admin: CurrentAdmin):
     """Get a specific payment transaction"""
     tx = _get_tx(session_id)
@@ -486,7 +498,13 @@ def _ensure_stripe_customer_id(user_id: str, user_email: str) -> Optional[str]:
 
 @router.post(
     "/billing-portal",
-    responses={401: {"description": MSG_AUTH_REQUIRED}},
+    responses={
+        400: {"description": "User email not found"},
+        401: {"description": MSG_AUTH_REQUIRED},
+        422: {"description": "Could not open billing portal"},
+        500: {"description": "Stripe not configured or failed to create billing portal session"},
+        503: {"description": "Checkout origins not configured"},
+    },
 )
 @limiter.limit("10/minute")
 async def create_billing_portal_session(

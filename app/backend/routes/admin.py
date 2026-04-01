@@ -181,7 +181,7 @@ def get_admin_app_usage_telemetry(limit: Annotated[int, Query(default=500, ge=50
 
 # ==================== HEALTH ====================
 
-async def _admin_health_supabase(results: dict) -> None:
+def _admin_health_supabase(results: dict) -> None:
     import time
 
     from database import get_supabase
@@ -237,35 +237,33 @@ async def _admin_health_ohgo(results: dict) -> None:
         results["ohgo"] = "down"
 
 
-async def _admin_health_llm(results: dict) -> None:
+def _llm_provider_config() -> tuple[str, str, str]:
+    """Return (provider_name, url, api_key) for the configured LLM provider."""
     import os
+
+    nvidia_key = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+    if nvidia_key:
+        base = (os.environ.get("NVIDIA_API_BASE") or "https://integrate.api.nvidia.com/v1").strip().rstrip("/")
+        return "nvidia", f"{base}/models", nvidia_key
+    openai_key = os.environ.get("OPENAI_API_KEY") or ""
+    return "openai", "https://api.openai.com/v1/models", openai_key
+
+
+async def _admin_health_llm(results: dict) -> None:
     import time
 
     import httpx
 
-    nvidia_key = (os.environ.get("NVIDIA_API_KEY") or "").strip()
-    nvidia_base = (os.environ.get("NVIDIA_API_BASE") or "https://integrate.api.nvidia.com/v1").strip().rstrip("/")
-    openai_key = os.environ.get("OPENAI_API_KEY")
+    provider, url, key = _llm_provider_config()
+    results["llm_provider"] = provider
     try:
         start = time.time()
         async with httpx.AsyncClient(timeout=5) as client:
-            if nvidia_key:
-                r = await client.get(
-                    f"{nvidia_base}/models",
-                    headers={"Authorization": f"Bearer {nvidia_key}"},
-                )
-                results["llm_provider"] = "nvidia"
-            else:
-                r = await client.get(
-                    "https://api.openai.com/v1/models",
-                    headers={"Authorization": f"Bearer {openai_key or ''}"},
-                )
-                results["llm_provider"] = "openai"
+            r = await client.get(url, headers={"Authorization": f"Bearer {key}"})
         results["llm"] = "healthy" if r.status_code == 200 else "degraded"
         results["llm_latency"] = round((time.time() - start) * 1000)
     except Exception:
         results["llm"] = "down"
-        results["llm_provider"] = "nvidia" if nvidia_key else "openai"
     results["openai"] = results.get("llm", "down")
     results["openai_latency"] = results.get("llm_latency")
 
@@ -287,7 +285,7 @@ async def _admin_health_realtime(results: dict) -> None:
 @router.get("/admin/health")
 async def get_admin_health():
     results: dict = {"api": "healthy"}
-    await _admin_health_supabase(results)
+    _admin_health_supabase(results)
     await _admin_health_google_maps(results)
     await _admin_health_ohgo(results)
     await _admin_health_llm(results)
