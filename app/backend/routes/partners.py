@@ -133,6 +133,7 @@ def get_partner_profile(user: CurrentPartner, partner_id: str = "default_partner
             "plan": plan_key,
             "plan_info": plan,
             "is_founders": partner.get("is_founders", False),
+            "subscription_status": partner.get("subscription_status") or "active",
             "locations": locations,
             "location_count": len(locations),
             "max_locations": max_locs,
@@ -501,6 +502,7 @@ def partner_register_v2(request: Request, body: PartnerRegisterRequest):
             "plan": "starter",
             "status": "active",
             "is_approved": True,
+            "subscription_status": "pending",
         }
         created = sb_create_partner(partner_data)
         if not created:
@@ -513,10 +515,22 @@ def partner_register_v2(request: Request, body: PartnerRegisterRequest):
                 status_code=503,
                 detail="Could not create partner record. Please try again or contact support.",
             )
+        new_partner_id = str(user["id"])
+        ref_code = (body.referral_code or "").strip()
+        if ref_code and ref_code != new_partner_id:
+            referrer = sb_get_partner(ref_code)
+            if referrer:
+                sb_create_partner_referral(
+                    {
+                        "referrer_partner_id": ref_code,
+                        "referred_partner_id": new_partner_id,
+                        "credits_awarded": 0.0,
+                    }
+                )
         token = create_access_token(
-            {"sub": str(user["id"]), "email": body.email, "role": "partner", "partner_id": str(user["id"])}
+            {"sub": str(user["id"]), "email": body.email, "role": "partner", "partner_id": new_partner_id}
         )
-        return {"success": True, "token": token, "partner_id": str(user["id"]), "business_name": body.business_name}
+        return {"success": True, "token": token, "partner_id": new_partner_id, "business_name": body.business_name}
     except HTTPException:
         raise
     except Exception as e:

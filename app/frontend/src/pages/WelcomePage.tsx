@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type SubmitEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { 
   Shield, Gem, Trophy, Zap, ArrowRight, X, Eye, EyeOff, Star
@@ -9,13 +9,15 @@ import { useAuth } from '@/contexts/AuthContext'
 import snaproadLogo from '../assets/images/f1ce41940925932061ca7e2e293db7cdf37e4b87.png'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 
-// Auth Modal - Driver Only (Partners/Admin use direct portal links)
-function AuthModal({ isOpen, onClose, mode, onModeChange }: {
+type AuthModalProps = Readonly<{
   isOpen: boolean
   onClose: () => void
   mode: 'signin' | 'signup'
   onModeChange: (mode: 'signin' | 'signup') => void
-}) {
+}>
+
+// Auth Modal - Driver Only (Partners/Admin use direct portal links)
+function AuthModal({ isOpen, onClose, mode, onModeChange }: AuthModalProps) {
   const navigate = useNavigate()
   const { setUserFromApi } = useAuth()
   const [email, setEmail] = useState('')
@@ -25,25 +27,7 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  const exchangeSupabaseSession = async () => {
-    const sb = getSupabaseClient()
-    if (!sb) throw new Error('Supabase is not configured')
-    const { data } = await sb.auth.getSession()
-    const accessToken = data.session?.access_token
-    if (!accessToken) throw new Error('No Supabase session found')
-    let res: Awaited<ReturnType<typeof api.oauthSupabase>>
-    try {
-      res = await api.oauthSupabase(accessToken)
-    } catch {
-      throw new Error('Unable to reach the server. Please check your connection and try again.')
-    }
-    if (!res.success || !res.data?.token || !res.data?.user) {
-      throw new Error(res.error || 'OAuth exchange failed')
-    }
-    setUserFromApi(res.data.user as any)
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     setLoading(true)
     try {
@@ -106,7 +90,7 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
     try {
       const sb = getSupabaseClient()
       if (!sb) throw new Error('Supabase is not configured')
-      const redirectTo = `${window.location.origin}/driver/auth`
+      const redirectTo = `${globalThis.location.origin}/driver/auth`
       const { error } = await sb.auth.signInWithOAuth({ provider, options: { redirectTo } })
       if (error) throw new Error(error.message)
     } catch (e: any) {
@@ -122,18 +106,23 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <button
+        type="button"
+        aria-label="Close sign in dialog"
+        className="absolute inset-0 z-0 cursor-default border-0 bg-black/60 p-0 backdrop-blur-sm"
+        onClick={onClose}
+      />
       
       {/* Modal */}
-      <div className="relative w-full max-w-md animate-scale-in">
+      <div className="relative z-10 w-full max-w-md animate-scale-in">
         {/* Glassmorphism Card */}
         <div className="relative bg-slate-900/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl overflow-hidden">
           {/* Gradient Border Effect */}
           <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-blue-500/20 via-transparent to-purple-500/20 pointer-events-none" />
           
           {/* Close Button */}
-          <button 
+          <button
+            type="button"
             onClick={onClose}
             className="absolute top-4 right-4 w-8 h-8 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors z-10"
           >
@@ -158,8 +147,11 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
             <form onSubmit={handleSubmit} className="space-y-4">
               {mode === 'signup' && (
                 <div>
-                  <label className="text-slate-400 text-xs font-medium mb-1 block">Full Name</label>
+                  <label htmlFor="driver-welcome-name" className="text-slate-400 text-xs font-medium mb-1 block">
+                    Full Name
+                  </label>
                   <input
+                    id="driver-welcome-name"
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
@@ -170,8 +162,11 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
               )}
               {mode === 'signup' && (
                 <div>
-                  <label className="text-slate-400 text-xs font-medium mb-1 block">Date of Birth</label>
+                  <label htmlFor="driver-welcome-dob" className="text-slate-400 text-xs font-medium mb-1 block">
+                    Date of Birth
+                  </label>
                   <input
+                    id="driver-welcome-dob"
                     type="date"
                     value={dateOfBirth}
                     onChange={(e) => setDateOfBirth(e.target.value)}
@@ -179,10 +174,13 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
                   />
                 </div>
               )}
-              
+
               <div>
-                <label className="text-slate-400 text-xs font-medium mb-1 block">Email</label>
+                <label htmlFor="driver-welcome-email" className="text-slate-400 text-xs font-medium mb-1 block">
+                  Email
+                </label>
                 <input
+                  id="driver-welcome-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -190,11 +188,14 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
                   className="w-full bg-slate-800/50 backdrop-blur border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
-              
+
               <div>
-                <label className="text-slate-400 text-xs font-medium mb-1 block">Password</label>
+                <label htmlFor="driver-welcome-password" className="text-slate-400 text-xs font-medium mb-1 block">
+                  Password
+                </label>
                 <div className="relative">
                   <input
+                    id="driver-welcome-password"
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -253,7 +254,8 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
               {mode === 'signin' ? (
                 <>
                   Don't have an account?{' '}
-                  <button 
+                  <button
+                    type="button"
                     onClick={() => onModeChange('signup')}
                     className="text-emerald-400 font-medium hover:text-emerald-300"
                   >
@@ -263,7 +265,8 @@ function AuthModal({ isOpen, onClose, mode, onModeChange }: {
               ) : (
                 <>
                   Already have an account?{' '}
-                  <button 
+                  <button
+                    type="button"
                     onClick={() => onModeChange('signin')}
                     className="text-emerald-400 font-medium hover:text-emerald-300"
                   >
@@ -341,7 +344,8 @@ export default function WelcomePage() {
             />
             <span className="text-white font-bold text-xl">SnapRoad</span>
           </div>
-          <button 
+          <button
+            type="button"
             onClick={handleLogin}
             className="text-white/80 hover:text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-white/10 transition-colors"
           >
@@ -374,6 +378,7 @@ export default function WelcomePage() {
 
           {/* CTA Button - Driver Only */}
           <button
+            type="button"
             onClick={handleGetStarted}
             className="bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold py-4 px-12 rounded-2xl hover:from-blue-400 hover:to-blue-500 transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2"
             data-testid="get-started-btn"
@@ -385,7 +390,8 @@ export default function WelcomePage() {
           {/* Login Link */}
           <p className="text-slate-400 text-sm mt-6">
             Already have an account?{' '}
-            <button 
+            <button
+              type="button"
               onClick={handleLogin}
               className="text-emerald-400 font-medium hover:text-emerald-300"
             >
@@ -403,8 +409,8 @@ export default function WelcomePage() {
                 { icon: Gem, label: 'Earn Gems', desc: 'Redeem rewards' },
                 { icon: Trophy, label: 'Leaderboards', desc: 'Compete locally' },
                 { icon: Zap, label: 'Premium Perks', desc: '2x gem multiplier' },
-              ].map((feature, i) => (
-                <div key={i} className="text-center">
+              ].map((feature) => (
+                <div key={feature.label} className="text-center">
                   <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center mx-auto mb-3">
                     <feature.icon className="text-blue-400" size={24} />
                   </div>
@@ -431,26 +437,21 @@ export default function WelcomePage() {
                   App Preview
                 </Link>
                 <span className="text-slate-700">|</span>
-                <Link
-                  to="/portal/partner/welcome"
-                  className="text-slate-400 hover:text-emerald-400 transition-colors"
-                >
-                  Partner portal
-                </Link>
-                <span className="text-slate-700">|</span>
-                <a 
-                  href="#" 
-                  className="text-slate-400 hover:text-white transition-colors"
+                <button
+                  type="button"
+                  className="text-slate-400 hover:text-white transition-colors bg-transparent border-0 p-0 text-sm cursor-pointer font-inherit"
+                  onClick={() => toast('Privacy policy coming soon.', { icon: 'ℹ️' })}
                 >
                   Privacy Policy
-                </a>
+                </button>
                 <span className="text-slate-700">|</span>
-                <a 
-                  href="#" 
-                  className="text-slate-400 hover:text-white transition-colors"
+                <button
+                  type="button"
+                  className="text-slate-400 hover:text-white transition-colors bg-transparent border-0 p-0 text-sm cursor-pointer font-inherit"
+                  onClick={() => toast('Terms of service coming soon.', { icon: 'ℹ️' })}
                 >
                   Terms of Service
-                </a>
+                </button>
               </div>
             </div>
           </div>
