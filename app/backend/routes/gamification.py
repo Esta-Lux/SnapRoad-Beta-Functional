@@ -1,4 +1,5 @@
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import datetime, timedelta
@@ -21,6 +22,9 @@ from config import ENVIRONMENT
 import uuid
 
 logger = logging.getLogger(__name__)
+
+MSG_NOT_ENOUGH_GEMS = "Not enough gems"
+CurrentUser = Annotated[dict, Depends(get_current_user)]
 
 router = APIRouter(prefix="/api", tags=["Gamification"])
 processed_xp_events: set[str] = set()
@@ -104,7 +108,7 @@ def check_community_badges(user_id: str) -> list:
 
 # ==================== XP ====================
 @router.post("/xp/add")
-def add_xp(event: XPEvent, user: dict = Depends(get_current_user)):
+def add_xp(event: XPEvent, user: CurrentUser):
     user_id = str(user.get("id") or current_user_id)
     if event.event_id:
         key = f"{user_id}:{event.event_id}"
@@ -124,7 +128,7 @@ def add_xp(event: XPEvent, user: dict = Depends(get_current_user)):
 
 
 @router.get("/xp/status")
-def get_xp_status(user: dict = Depends(get_current_user)):
+def get_xp_status(user: CurrentUser):
     user_id = str(user.get("id") or current_user_id)
     user = _user_state(user_id)
     level = user.get("level", 1)
@@ -143,7 +147,7 @@ def get_xp_config():
 
 # ==================== BADGES ====================
 @router.get("/badges")
-def get_badges(user: dict = Depends(get_current_user)):
+def get_badges(user: CurrentUser):
     user_id = str(user.get("id") or current_user_id)
     user = _user_state(user_id)
     earned = set(user.get("badges_earned", []))
@@ -164,7 +168,7 @@ def get_badge_categories():
 
 
 @router.get("/badges/community")
-def get_community_badges(user: dict = Depends(get_current_user)):
+def get_community_badges(user: CurrentUser):
     user_id = str(user.get("id") or current_user_id)
     user = _user_state(user_id)
     earned_ids = set(user.get("community_badges", []))
@@ -177,10 +181,10 @@ def get_community_badges(user: dict = Depends(get_current_user)):
 # Each entry includes challenges_participated and badges_count (show on click).
 @router.get("/leaderboard")
 def get_leaderboard(
+    user: CurrentUser,
     state: str = "all",
-    limit: int = Query(default=10, ge=1, le=100),
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
     time_filter: str = "weekly",
-    user: dict = Depends(get_current_user),
 ):
     user_id = str(user.get("id") or current_user_id)
     tf = (time_filter or "weekly").lower()
@@ -288,19 +292,19 @@ def get_leaderboard(
 
 # ==================== CHALLENGES ====================
 @router.get("/challenges")
-def get_challenges(limit: int = Query(default=50, ge=1, le=100)):
+def get_challenges(limit: Annotated[int, Query(ge=1, le=100)] = 50):
     return {"success": True, "data": challenges_data[:limit], "count": len(challenges_data[:limit])}
 
 
-@router.post("/challenges")
-def create_challenge(challenge: ChallengeCreate, auth_user: dict = Depends(get_current_user)):
+@router.post("/challenges", responses={400: {"description": MSG_NOT_ENOUGH_GEMS}, 404: {"description": "Opponent not found"}, 503: {"description": "Challenge service unavailable"}})
+def create_challenge(challenge: ChallengeCreate, auth_user: CurrentUser):
     user_id = str(auth_user.get("id") or current_user_id)
     user = _user_state(user_id)
     opponent = _user_state(str(challenge.opponent_id))
     if not opponent:
         raise HTTPException(status_code=404, detail="Opponent not found")
     if user.get("gems", 0) < challenge.stake:
-        raise HTTPException(status_code=400, detail="Not enough gems")
+        raise HTTPException(status_code=400, detail=MSG_NOT_ENOUGH_GEMS)
     _persist_user_fields(user_id, {"gems": user.get("gems", 0) - challenge.stake})
     new_challenge = {"id": str(len(challenges_db) + 1), "challenger_id": user_id, "opponent_id": challenge.opponent_id, "challenger_name": user.get("name", "Unknown"), "opponent_name": opponent.get("name", "Unknown"), "stake": challenge.stake, "duration_hours": challenge.duration_hours, "status": "pending", "your_score": user.get("safety_score", 85), "opponent_score": opponent.get("safety_score", 85), "created_at": datetime.now().isoformat(), "ends_at": (datetime.now() + timedelta(hours=challenge.duration_hours)).isoformat()}
     created = sb_create_challenge(new_challenge)
@@ -312,8 +316,8 @@ def create_challenge(challenge: ChallengeCreate, auth_user: dict = Depends(get_c
     return {"success": True, "message": f"Challenge sent to {opponent.get('name')}!", "data": new_challenge}
 
 
-@router.post("/challenges/{challenge_id}/accept")
-def accept_challenge(challenge_id: str, auth_user: dict = Depends(get_current_user)):
+@router.post("/challenges/{challenge_id}/accept", responses={400: {"description": MSG_NOT_ENOUGH_GEMS}, 404: {"description": "Challenge not found"}, 503: {"description": "Challenge service unavailable"}})
+def accept_challenge(challenge_id: str, auth_user: CurrentUser):
     user_id = str(auth_user.get("id") or current_user_id)
     try:
         db_challenges = sb_get_challenges(limit=200)
@@ -322,7 +326,7 @@ def accept_challenge(challenge_id: str, auth_user: dict = Depends(get_current_us
             user = _user_state(user_id)
             stake = int(c.get("stake") or 0)
             if user.get("gems", 0) < stake:
-                raise HTTPException(status_code=400, detail="Not enough gems")
+                raise HTTPException(status_code=400, detail=MSG_NOT_ENOUGH_GEMS)
             _persist_user_fields(user_id, {"gems": user.get("gems", 0) - stake})
             try:
                 get_supabase().table("challenges").update({"status": "active"}).eq("id", c.get("id")).execute()
@@ -339,7 +343,7 @@ def accept_challenge(challenge_id: str, auth_user: dict = Depends(get_current_us
         if c["id"] == challenge_id and c["opponent_id"] == user_id:
             user = _user_state(user_id)
             if user.get("gems", 0) < c["stake"]:
-                raise HTTPException(status_code=400, detail="Not enough gems")
+                raise HTTPException(status_code=400, detail=MSG_NOT_ENOUGH_GEMS)
             _persist_user_fields(user_id, {"gems": user.get("gems", 0) - c["stake"]})
             c["status"] = "active"
             return {"success": True, "message": "Challenge accepted!", "data": c}
@@ -347,7 +351,7 @@ def accept_challenge(challenge_id: str, auth_user: dict = Depends(get_current_us
 
 
 @router.post("/challenges/{challenge_id}/claim")
-def claim_challenge(challenge_id: int, auth_user: dict = Depends(get_current_user)):
+def claim_challenge(challenge_id: int, auth_user: CurrentUser):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Challenge claim unavailable in production path")
     user_id = str(auth_user.get("id") or current_user_id)
@@ -363,8 +367,8 @@ def claim_challenge(challenge_id: int, auth_user: dict = Depends(get_current_use
 
 @router.get("/challenges/history")
 def get_challenge_history(
-    limit: int = Query(default=100, ge=1, le=100),
-    user: dict = Depends(get_current_user),
+    user: CurrentUser,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     user_id = str(user.get("id") or current_user_id)
     db_challenges = sb_get_challenges(limit=200)
@@ -401,7 +405,7 @@ def generate_route_gems(req: GemGenerateRequest):
 
 
 @router.post("/gems/collect")
-def collect_gem(req: GemCollectRequest, user: dict = Depends(get_current_user)):
+def collect_gem(req: GemCollectRequest, user: CurrentUser):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Gem collection unavailable in production path")
     user_id = str(user.get("id") or current_user_id)
@@ -431,7 +435,7 @@ def get_trip_gem_summary(trip_id: str):
 
 
 @router.get("/gems/history")
-def get_gem_history(user: dict = Depends(get_current_user)):
+def get_gem_history(user: CurrentUser):
     user_id = str(user.get("id") or current_user_id)
     try:
         sb = get_supabase()
@@ -460,7 +464,7 @@ def get_gem_history(user: dict = Depends(get_current_user)):
 
 # ==================== DRIVING SCORE ====================
 @router.get("/driving-score")
-def get_driving_score(user: dict = Depends(get_current_user)):
+def get_driving_score(user: CurrentUser):
     user_id = str(user.get("id") or current_user_id)
     tip_templates = {"speed": "Try cruise control on highways.", "braking": "Start braking earlier for smoother stops.", "acceleration": "Ease into the gas pedal.", "following": "The 3-second rule is your friend!", "turns": "Keep signaling even when no one's around.", "focus": "Mount your phone for hands-free navigation!"}
     try:
@@ -511,7 +515,7 @@ def get_driving_score(user: dict = Depends(get_current_user)):
 
 # ==================== WEEKLY RECAP ====================
 @router.get("/weekly-recap")
-def get_weekly_recap(user: dict = Depends(get_current_user)):
+def get_weekly_recap(user: CurrentUser):
     user_id = str(user.get("id") or current_user_id)
     try:
         sb = get_supabase()

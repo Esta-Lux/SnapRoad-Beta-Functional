@@ -1,5 +1,3 @@
 [allowlist]
 description = "Known false positives"
-
-[[allowlist.commits]]
-hash = "af14b51fb15e7d8da5fee02666b4a44b5ef278b3"
+commits = ["af14b51fb15e7d8da5fee02666b4a44b5ef278b3"]

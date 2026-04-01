@@ -1,5 +1,7 @@
 import logging
 
+from typing import Annotated
+
 from fastapi import APIRouter, HTTPException, Depends
 from starlette.requests import Request
 from fastapi.responses import StreamingResponse
@@ -14,13 +16,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["AI"])
 
+CurrentUser = Annotated[dict, Depends(get_current_user)]
+
 
 @router.post("/orion/completions")
 @limiter.limit("20/minute")
 async def orion_completions(
     request: Request,
     body: OrionCompletionRequest,
-    user: dict = Depends(get_current_user),
+    user: CurrentUser,
 ):
     """Orion chat completions via backend NVIDIA_API_KEY or OPENAI_API_KEY (never in the frontend)."""
     from services.orion_coach import orion_service
@@ -106,7 +110,7 @@ async def orion_completions(
 async def orion_completions_stream(
     request: Request,
     body: OrionCompletionRequest,
-    user: dict = Depends(get_current_user),
+    user: CurrentUser,
 ):
     """Orion streaming completions; returns SSE in OpenAI-compatible format."""
     from services.orion_coach import orion_service
@@ -126,7 +130,7 @@ async def orion_completions_stream(
 
 @router.post("/orion/chat")
 @limiter.limit("20/minute")
-async def orion_chat(request: Request, body: OrionMessageRequest, user: dict = Depends(get_current_user)):
+async def orion_chat(request: Request, body: OrionMessageRequest, user: CurrentUser):
     from services.orion_coach import orion_service
     session_id = body.session_id or f"session_{user.get('id', 'anon')}_{uuid.uuid4().hex[:8]}"
     result = await orion_service.send_message(
@@ -140,28 +144,28 @@ async def orion_chat(request: Request, body: OrionMessageRequest, user: dict = D
 
 
 @router.get("/orion/history/{session_id}")
-async def get_orion_history(session_id: str, user: dict = Depends(get_current_user)):
+async def get_orion_history(session_id: str, user: CurrentUser):
     from services.orion_coach import orion_service
     history = orion_service.get_history(session_id)
     return {"success": True, "history": history, "count": len(history)}
 
 
 @router.delete("/orion/session/{session_id}")
-async def clear_orion_session(session_id: str, user: dict = Depends(get_current_user)):
+async def clear_orion_session(session_id: str, _user: CurrentUser):
     from services.orion_coach import orion_service
     success = orion_service.clear_session(session_id)
     return {"success": success}
 
 
 @router.get("/orion/tips")
-async def get_quick_tips(user: dict = Depends(get_current_user)):
+async def get_quick_tips(_user: CurrentUser):
     from services.orion_coach import orion_service
     return {"success": True, "tips": orion_service.get_quick_tips()}
 
 
 @router.post("/photo/analyze")
 @limiter.limit("10/minute")
-async def analyze_photo(request: Request, body: PhotoAnalysisRequest, user: dict = Depends(get_current_user)):
+async def analyze_photo(request: Request, body: PhotoAnalysisRequest, _user: CurrentUser):
     from services.runtime_config import require_enabled
 
     require_enabled(

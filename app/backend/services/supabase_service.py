@@ -14,10 +14,8 @@ from passlib.context import CryptContext
 logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+MSG_EMAIL_ALREADY_REGISTERED = "This email is already registered. Use Sign in instead."
 
-# ─────────────────────────────────────────────
-# HELPERS
-# ─────────────────────────────────────────────
 
 def _sb():
     return get_supabase()
@@ -81,7 +79,7 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
         if _is_duplicate_error(admin_str):
             raise HTTPException(
                 status_code=409,
-                detail="This email is already registered. Use Sign in instead.",
+                detail=MSG_EMAIL_ALREADY_REGISTERED,
             )
         logger.warning("admin.create_user failed for %s: %s — trying client sign_up", email, admin_err)
 
@@ -101,7 +99,7 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
             if _is_duplicate_error(signup_str):
                 raise HTTPException(
                     status_code=409,
-                    detail="This email is already registered. Use Sign in instead.",
+                    detail=MSG_EMAIL_ALREADY_REGISTERED,
                 )
             logger.warning("client sign_up also failed for %s: %s — creating profile-only account", email, signup_err)
 
@@ -128,7 +126,7 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
         if "duplicate" in profile_str or "unique" in profile_str or "already exists" in profile_str:
             raise HTTPException(
                 status_code=409,
-                detail="This email is already registered. Use Sign in instead.",
+                detail=MSG_EMAIL_ALREADY_REGISTERED,
             )
         logger.error("Profile upsert failed for %s: %s", email, profile_err, exc_info=True)
         if auth_user_id:
@@ -1027,7 +1025,6 @@ def sb_get_finance_summary() -> dict:
         sb = _sb()
         profiles = sb.table("profiles").select("plan,is_premium").execute().data or []
         premium_count = sum(1 for p in profiles if p.get("is_premium"))
-        basic_count = len(profiles) - premium_count
 
         user_mrr = premium_count * 9.99
         partner_mrr_est = _safe_count("partners", {"status": "active"}) * 49.0

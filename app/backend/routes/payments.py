@@ -7,8 +7,8 @@ import os
 import anyio
 from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from pydantic import BaseModel
-from typing import List, Optional, Dict
-from datetime import datetime
+from typing import Annotated, List, Optional, Dict
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from middleware.auth import get_current_user, require_admin
 from limiter import limiter
@@ -19,6 +19,11 @@ from config import ENVIRONMENT
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+MSG_AUTH_REQUIRED = "Authentication required"
+
+CurrentUser = Annotated[dict, Depends(get_current_user)]
+CurrentAdmin = Annotated[dict, Depends(require_admin)]
 
 router = APIRouter(prefix="/api/payments", tags=["Payments"])
 
@@ -120,12 +125,93 @@ async def get_subscription_plans():
     }
 
 
-@router.post("/checkout/session", response_model=CheckoutResponse)
+def _get_stripe_module():
+    """Load and configure the Stripe module with API key. Raises HTTPException if unconfigured."""
+    api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Stripe not configured. Set STRIPE_SECRET_KEY in environment.")
+    import stripe
+    stripe.api_key = api_key
+    return stripe
+
+
+def _configure_stripe_http(stripe_mod) -> None:
+    """Apply timeout and retry settings to the Stripe SDK."""
+    timeout_sec = float(os.environ.get("STRIPE_HTTP_TIMEOUT_SEC", "8"))
+    max_retries = int(os.environ.get("STRIPE_MAX_NETWORK_RETRIES", "0"))
+    try:
+        stripe_mod.max_network_retries = max_retries
+    except Exception as e:
+        logger.warning("failed to set stripe max_network_retries: %s", e)
+    for mod_path in ("stripe.http_client", "stripe._http_client"):
+        try:
+            http_client_mod = __import__(mod_path, fromlist=["RequestsClient"])
+            requests_client_cls = getattr(http_client_mod, "RequestsClient", None)
+            if requests_client_cls:
+                stripe_mod.default_http_client = requests_client_cls(timeout=timeout_sec)
+                return
+        except Exception as e:
+            logger.warning("failed to set stripe http client from %s: %s", mod_path, e)
+
+
+def _resolve_price_id(plan_id: str) -> Optional[str]:
+    """Look up a Stripe Catalog price ID from env vars for the given plan."""
+    env_keys: Dict[str, tuple] = {
+        "premium": ("STRIPE_PREMIUM_BETA_PRICE_ID", "STRIPE_PREMIUM_PRICE_ID"),
+        "family": ("STRIPE_FAMILY_FOUNDERS_PRICE_ID", "STRIPE_FAMILY_PRICE_ID"),
+    }
+    for key in env_keys.get(plan_id, ()):
+        val = (os.environ.get(key) or "").strip()
+        if val:
+            return val
+    return None
+
+
+def _build_line_items(plan: dict, plan_id: str) -> list:
+    """Build Stripe line_items using a catalog price ID or inline price_data."""
+    price_id = _resolve_price_id(plan_id)
+    if price_id:
+        return [{"price": price_id, "quantity": 1}]
+    return [{
+        "price_data": {
+            "currency": "usd",
+            "product_data": {
+                "name": f"SnapRoad {plan['name']} Plan",
+                "description": ", ".join(plan["features"][:3]),
+            },
+            "unit_amount": int(plan["price"] * 100),
+            "recurring": {"interval": "month"} if plan["period"] == "month" else None,
+        },
+        "quantity": 1,
+    }]
+
+
+def _build_pending_tx(session_id: str, checkout_data: CreateCheckoutRequest, plan: dict, current_user: dict) -> dict:
+    now_iso = datetime.now(timezone.utc).isoformat()
+    return {
+        "session_id": session_id,
+        "plan_id": checkout_data.plan_id,
+        "plan_name": plan["name"],
+        "amount": plan["price"],
+        "currency": "usd",
+        "user_id": str(current_user.get("user_id") or current_user.get("id") or ""),
+        "user_email": checkout_data.user_email or current_user.get("email"),
+        "payment_status": "pending",
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+
+
+@router.post(
+    "/checkout/session",
+    response_model=CheckoutResponse,
+    responses={401: {"description": MSG_AUTH_REQUIRED}, 400: {"description": "Invalid or free plan"}},
+)
 @limiter.limit("10/minute")
 async def create_checkout_session(
     request: Request,
     checkout_data: CreateCheckoutRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     """Create a Stripe checkout session for subscription upgrade"""
     from services.runtime_config import require_enabled
@@ -135,75 +221,24 @@ async def create_checkout_session(
         "Premium purchases are temporarily disabled.",
     )
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    
-    # Validate plan exists and is not free
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+
     if checkout_data.plan_id not in SUBSCRIPTION_PLANS:
         raise HTTPException(status_code=400, detail="Invalid plan ID")
-    
+
     plan = SUBSCRIPTION_PLANS[checkout_data.plan_id]
-    
     if plan["price"] == 0:
         raise HTTPException(status_code=400, detail="Basic plan is free, no payment required")
-    
-    # Get Stripe API key from environment
-    api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Stripe not configured. Set STRIPE_SECRET_KEY in environment.")
-    import stripe
-    stripe.api_key = api_key
 
-    # Prevent long/hanging Stripe network calls from blocking requests past the mobile client's timeout.
-    # Note: stripe-python performs blocking HTTP requests under the hood.
-    stripe_http_timeout_sec = float(os.environ.get("STRIPE_HTTP_TIMEOUT_SEC", "8"))
-    stripe_max_retries = int(os.environ.get("STRIPE_MAX_NETWORK_RETRIES", "0"))
-    try:
-        stripe.max_network_retries = stripe_max_retries
-    except Exception as e:
-        logger.warning("failed to set stripe max_network_retries: %s", e)
-    for mod_path in ("stripe.http_client", "stripe._http_client"):
-        try:
-            http_client_mod = __import__(mod_path, fromlist=["RequestsClient"])
-            RequestsClient = getattr(http_client_mod, "RequestsClient", None)
-            if RequestsClient:
-                stripe.default_http_client = RequestsClient(timeout=stripe_http_timeout_sec)
-                break
-        except Exception as e:
-            logger.warning("failed to set stripe http client from %s: %s", mod_path, e)
-            continue
-    
-    # Build success and cancel URLs from server allowlisted origin only
+    stripe = _get_stripe_module()
+    _configure_stripe_http(stripe)
+
     origin = _resolve_allowed_origin(checkout_data.origin_url)
     success_url = f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin}/payment/cancel"
-    
+    line_items = _build_line_items(plan, checkout_data.plan_id)
+
     try:
-        # Prefer Stripe Catalog price IDs (if configured) so pricing is controlled in Stripe.
-        price_id = None
-        if checkout_data.plan_id == "premium":
-            price_id = (os.environ.get("STRIPE_PREMIUM_BETA_PRICE_ID") or os.environ.get("STRIPE_PREMIUM_PRICE_ID") or "").strip() or None
-        elif checkout_data.plan_id == "family":
-            price_id = (os.environ.get("STRIPE_FAMILY_FOUNDERS_PRICE_ID") or os.environ.get("STRIPE_FAMILY_PRICE_ID") or "").strip() or None
-
-        line_items = None
-        if price_id:
-            line_items = [{"price": price_id, "quantity": 1}]
-        else:
-            line_items = [{
-                "price_data": {
-                    "currency": "usd",
-                    "product_data": {
-                        "name": f"SnapRoad {plan['name']} Plan",
-                        "description": ", ".join(plan["features"][:3]),
-                    },
-                    "unit_amount": int(plan["price"] * 100),  # Stripe uses cents
-                    "recurring": {"interval": "month"} if plan["period"] == "month" else None,
-                },
-                "quantity": 1,
-            }]
-
-        # Create Stripe checkout session using standard SDK.
-        # Run in a worker thread to avoid blocking the FastAPI event loop.
         def _create_session_sync() -> object:
             return stripe.checkout.Session.create(
                 payment_method_types=["card"],
@@ -211,7 +246,7 @@ async def create_checkout_session(
                 mode="subscription" if plan["period"] == "month" else "payment",
                 success_url=success_url,
                 cancel_url=cancel_url,
-                customer_email=checkout_data.user_email if checkout_data.user_email else None,
+                customer_email=checkout_data.user_email or None,
                 metadata={
                     "plan_id": checkout_data.plan_id,
                     "plan_name": plan["name"],
@@ -223,27 +258,15 @@ async def create_checkout_session(
             )
 
         session = await anyio.to_thread.run_sync(_create_session_sync)
-        
-        # Store transaction record BEFORE redirect
-        tx = {
-            "session_id": session.id,
-            "plan_id": checkout_data.plan_id,
-            "plan_name": plan["name"],
-            "amount": plan["price"],
-            "currency": "usd",
-            "user_id": str(current_user.get("user_id") or current_user.get("id") or ""),
-            "user_email": checkout_data.user_email or current_user.get("email"),
-            "payment_status": "pending",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat()
-        }
+
+        tx = _build_pending_tx(session.id, checkout_data, plan, current_user)
         try:
             _persist_tx(tx)
         except RuntimeError:
             raise HTTPException(status_code=503, detail="Payment transaction storage unavailable")
-        
+
         return CheckoutResponse(url=session.url, session_id=session.id)
-        
+
     except stripe.error.StripeError:
         raise HTTPException(status_code=502, detail="Payment provider error")
     except HTTPException:
@@ -252,60 +275,76 @@ async def create_checkout_session(
         raise HTTPException(status_code=500, detail="Failed to create checkout session")
 
 
-@router.get("/checkout/status/{session_id}")
+def _map_stripe_payment_status(session) -> str:
+    if session.payment_status == "paid":
+        return "paid"
+    if session.status in ("expired",):
+        return "expired"
+    if session.status == "complete":
+        return "paid"
+    return "pending"
+
+
+def _verify_session_access(session, current_user: dict) -> str:
+    """Check caller is allowed to view this session. Returns session_user_id."""
+    is_admin = current_user.get("role") in ("admin", "super_admin")
+    session_user_id = str((session.metadata or {}).get("user_id") or "")
+    caller_user_id = str(current_user.get("id") or current_user.get("user_id") or "")
+    if not is_admin and session_user_id and session_user_id != caller_user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return session_user_id
+
+
+def _finalize_paid_tx(session_id: str, payment_status: str, session_user_id: str) -> None:
+    """If the transaction just became paid, persist and upgrade the user profile."""
+    tx = _get_tx(session_id)
+    if not tx or tx.get("payment_status") == "paid" or payment_status != "paid":
+        return
+    tx["payment_status"] = "paid"
+    tx["updated_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        _persist_tx(tx)
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Payment transaction storage unavailable")
+    _maybe_upgrade_profile(tx, session_user_id)
+
+
+def _maybe_upgrade_profile(tx: dict, session_user_id: str) -> None:
+    uid = tx.get("user_id") or session_user_id
+    plan_id = tx.get("plan_id") or "premium"
+    if not uid or uid == "anonymous" or plan_id not in ("premium", "family"):
+        return
+    try:
+        sb = get_supabase()
+        existing = sb.table("profiles").select("is_premium").eq("id", uid).limit(1).execute()
+        if not (existing.data and existing.data[0].get("is_premium")):
+            sb_update_profile(uid, {"plan": plan_id, "is_premium": True})
+    except Exception as e:
+        logger.warning("failed to upgrade user profile to premium: %s", e)
+
+
+@router.get(
+    "/checkout/status/{session_id}",
+    responses={401: {"description": MSG_AUTH_REQUIRED}},
+)
 @limiter.limit("30/minute")
 async def get_checkout_status(
     request: Request,
     session_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     """Get the status of a checkout session"""
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
 
-    api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Stripe not configured")
-    import stripe
-    stripe.api_key = api_key
+    stripe = _get_stripe_module()
+
     try:
-        user_id = str(current_user.get("user_id") or current_user.get("id") or "")
         session = await anyio.to_thread.run_sync(lambda: stripe.checkout.Session.retrieve(session_id))
-        is_admin = current_user.get("role") in ("admin", "super_admin")
-        session_user_id = str((session.metadata or {}).get("user_id") or "")
-        caller_user_id = str(current_user.get("id") or current_user.get("user_id") or "")
-        if not is_admin and session_user_id and session_user_id != caller_user_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        # Map Stripe status to our format
-        payment_status = "pending"
-        if session.payment_status == "paid":
-            payment_status = "paid"
-        elif session.status == "expired":
-            payment_status = "expired"
-        elif session.status == "complete":
-            payment_status = "paid"
-        
-        # Update transaction record if exists
-        tx = _get_tx(session_id)
-        if tx and tx.get("payment_status") != "paid" and payment_status == "paid":
-            tx["payment_status"] = "paid"
-            tx["updated_at"] = datetime.utcnow().isoformat()
-            try:
-                _persist_tx(tx)
-            except RuntimeError:
-                raise HTTPException(status_code=503, detail="Payment transaction storage unavailable")
-            uid = tx.get("user_id") or session_user_id
-            plan_id = tx.get("plan_id") or (session.metadata or {}).get("plan_id") or "premium"
-            if uid and uid != "anonymous" and plan_id in ("premium", "family"):
-                try:
-                    sb = get_supabase()
-                    existing = sb.table("profiles").select("is_premium").eq("id", uid).limit(1).execute()
-                    if not (existing.data and existing.data[0].get("is_premium")):
-                        sb_update_profile(uid, {"plan": plan_id, "is_premium": True})
-                except Exception as e:
-                    logger.warning("failed to upgrade user profile to premium: %s", e)
-        
+        session_user_id = _verify_session_access(session, current_user)
+        payment_status = _map_stripe_payment_status(session)
+        _finalize_paid_tx(session_id, payment_status, session_user_id)
+
         return {
             "success": True,
             "data": {
@@ -314,10 +353,10 @@ async def get_checkout_status(
                 "payment_status": payment_status,
                 "amount_total": session.amount_total,
                 "currency": session.currency,
-                "metadata": dict(session.metadata) if session.metadata else {}
-            }
+                "metadata": dict(session.metadata) if session.metadata else {},
+            },
         }
-        
+
     except stripe.error.StripeError:
         raise HTTPException(status_code=502, detail="Payment provider error")
     except HTTPException:
@@ -328,8 +367,8 @@ async def get_checkout_status(
 
 @router.get("/transactions")
 async def get_payment_transactions(
+    _admin: CurrentAdmin,
     limit: int = Query(default=100, ge=1, le=100),
-    _admin: dict = Depends(require_admin),
 ):
     """Get all payment transactions (admin use)"""
     return {
@@ -339,7 +378,7 @@ async def get_payment_transactions(
 
 
 @router.get("/transaction/{session_id}")
-async def get_payment_transaction(session_id: str, _admin: dict = Depends(require_admin)):
+async def get_payment_transaction(session_id: str, _admin: CurrentAdmin):
     """Get a specific payment transaction"""
     tx = _get_tx(session_id)
     if not tx:
@@ -354,27 +393,35 @@ class BillingPortalRequest(BaseModel):
     return_url: Optional[str] = None
 
 
+def _resolve_http_return_url(raw: str, requested: Optional[str]) -> Optional[str]:
+    """Validate an http(s) return URL against the allowlist. Returns URL or None."""
+    from urllib.parse import urlparse
+
+    try:
+        u = urlparse(raw)
+        origin = f"{u.scheme}://{u.netloc}".rstrip("/")
+    except ValueError:
+        origin = ""
+    configured = (os.environ.get("CHECKOUT_ALLOWED_ORIGINS") or "").strip()
+    allowed = [o.strip().rstrip("/") for o in configured.split(",") if o.strip()]
+    if ENVIRONMENT != "production" and origin:
+        return raw.split("#", 1)[0]
+    if origin and allowed and origin in allowed:
+        return raw.split("#", 1)[0]
+    if ENVIRONMENT != "production":
+        return _resolve_allowed_origin(requested).rstrip("/") + "/driver"
+    return None
+
+
 def _billing_portal_return_url(requested: Optional[str]) -> str:
     """Mobile sends snaproad://…; web sends an allowed https origin (no path required)."""
     raw = (requested or "").strip()
     if raw.startswith("snaproad://") or raw.startswith("exp://"):
         return raw
     if raw.startswith("https://") or raw.startswith("http://"):
-        try:
-            from urllib.parse import urlparse
-
-            u = urlparse(raw)
-            origin = f"{u.scheme}://{u.netloc}".rstrip("/")
-        except ValueError:
-            origin = ""
-        configured = (os.environ.get("CHECKOUT_ALLOWED_ORIGINS") or "").strip()
-        allowed = [o.strip().rstrip("/") for o in configured.split(",") if o.strip()]
-        if ENVIRONMENT != "production":
-            if origin:
-                return raw.split("#", 1)[0]
-            return _resolve_allowed_origin(requested).rstrip("/") + "/driver"
-        if origin and allowed and origin in allowed:
-            return raw.split("#", 1)[0]
+        result = _resolve_http_return_url(raw, requested)
+        if result is not None:
+            return result
     return _resolve_allowed_origin(requested).rstrip("/") + "/driver"
 
 
@@ -437,16 +484,19 @@ def _ensure_stripe_customer_id(user_id: str, user_email: str) -> Optional[str]:
     return None
 
 
-@router.post("/billing-portal")
+@router.post(
+    "/billing-portal",
+    responses={401: {"description": MSG_AUTH_REQUIRED}},
+)
 @limiter.limit("10/minute")
 async def create_billing_portal_session(
     request: Request,
     body: BillingPortalRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     """Create a Stripe Customer Portal session for managing subscriptions."""
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
 
     api_key = os.environ.get("STRIPE_API_KEY") or os.environ.get("STRIPE_SECRET_KEY")
     if not api_key:

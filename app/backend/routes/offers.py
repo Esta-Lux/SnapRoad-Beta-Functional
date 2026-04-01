@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends
 from starlette.requests import Request
-from typing import Optional
+from typing import Annotated, Optional
 from datetime import datetime, timedelta
 import random
 from models.schemas import OfferCreate, BulkOfferUpload
@@ -19,6 +19,8 @@ import uuid
 
 router = APIRouter(prefix="/api", tags=["Offers"])
 
+CurrentUser = Annotated[dict, Depends(get_current_user)]
+
 
 def _active_offers_source(limit: int = 500) -> list[dict]:
     try:
@@ -32,7 +34,7 @@ def _active_offers_source(limit: int = 500) -> list[dict]:
 
 @router.get("/offers")
 @limiter.limit("60/minute")
-def get_offers(request: Request, limit: int = Query(default=100, ge=1, le=100)):
+def get_offers(request: Request, limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100):
     """Get all active offers from database (both admin and partner offers)"""
     try:
         sb = _sb()
@@ -111,11 +113,10 @@ def get_offers(request: Request, limit: int = Query(default=100, ge=1, le=100)):
 
 
 @router.post("/offers")
-def create_offer(offer: OfferCreate, user: dict = Depends(get_current_user)):
+def create_offer(offer: OfferCreate, user: CurrentUser):
     user_role = (user.get("role") or "").lower()
     if user_role not in ("admin", "partner"):
-        from fastapi import HTTPException as _H
-        raise _H(status_code=403, detail="Only admins or partners can create offers")
+        raise HTTPException(status_code=403, detail="Only admins or partners can create offers")
     if ENVIRONMENT == "production":
         sb = _sb()
         payload = {
@@ -161,7 +162,7 @@ def create_offer(offer: OfferCreate, user: dict = Depends(get_current_user)):
 
 @router.post("/offers/{offer_id}/redeem")
 @limiter.limit("30/minute")
-def redeem_offer(request: Request, offer_id: str, auth_user: dict = Depends(get_current_user)):
+def redeem_offer(request: Request, offer_id: str, auth_user: CurrentUser):
     import logging
     from services.runtime_config import require_enabled
 
@@ -294,8 +295,8 @@ def redeem_offer(request: Request, offer_id: str, auth_user: dict = Depends(get_
 def get_nearby_offers(
     lat: float = 39.9612,
     lng: float = -82.9988,
-    radius: float = Query(default=10.0, ge=0.1, le=200),
-    limit: int = Query(default=100, ge=1, le=100),
+    radius: Annotated[float, Query(default=10.0, ge=0.1, le=200)] = 10.0,
+    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
 ):
     cache_lat = round(lat, 2)
     cache_lng = round(lng, 2)
@@ -336,7 +337,7 @@ def get_offers_on_route(origin_lat: float = 39.9612, origin_lng: float = -82.998
 def get_personalized_offers(
     lat: float = 39.9612,
     lng: float = -82.9988,
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: Annotated[int, Query(default=20, ge=1, le=100)] = 20,
 ):
     user = users_db.get(current_user_id, {})
     history = driver_location_history.get(current_user_id, [])

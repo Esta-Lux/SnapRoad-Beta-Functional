@@ -260,10 +260,10 @@ def _nearby_from_memory(lat: float, lng: float, radius_miles: float, now: dateti
 
 @router.get("/nearby", responses=OPENAPI_ERROR_RESPONSES)
 def get_nearby_incidents(
-    lat: float = Query(...),
-    lng: float = Query(...),
-    radius_miles: float = Query(10, ge=0.1, le=200),
-    limit: int = Query(100, ge=1, le=100),
+    lat: Annotated[float, Query(...)],
+    lng: Annotated[float, Query(...)],
+    radius_miles: Annotated[float, Query(default=10, ge=0.1, le=200)] = 10,
+    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
 ):
     """Get all active incidents within radius miles of lat/lng."""
     now = _utc_now()
@@ -280,8 +280,8 @@ def get_nearby_incidents(
 @router.post("/dev/seed", responses=OPENAPI_ERROR_RESPONSES)
 def dev_seed_incidents(
     _admin: AdminUser,
-    lat: float = Query(39.9612),
-    lng: float = Query(-82.9988),
+    lat: Annotated[float, Query(default=39.9612)] = 39.9612,
+    lng: Annotated[float, Query(default=-82.9988)] = -82.9988,
 ):
     """Dev helper: seed a few incidents near a coordinate so the map always shows something."""
     if ENVIRONMENT == "production":
@@ -318,7 +318,7 @@ def _is_vote_duplicate_error(e: Exception) -> bool:
     return "duplicate" in s or "unique" in s
 
 
-def _upvote_db(sb, incident_id: str, voter: str, report: dict) -> dict:
+def _upvote_db(sb, _incident_id: str, voter: str, report: dict) -> dict:
     owner = str(report.get("user_id") or "")
     if owner and owner == voter:
         raise HTTPException(status_code=400, detail=MSG_CANNOT_UPVOTE_OWN)

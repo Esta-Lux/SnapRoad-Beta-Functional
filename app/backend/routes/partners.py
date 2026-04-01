@@ -2,7 +2,7 @@ import logging
 import os
 import re
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, Header
-from typing import Optional
+from typing import Annotated, Optional
 from datetime import datetime, timedelta
 from models.schemas import (
     PartnerLocation, PartnerPlanUpdate, PartnerOfferCreate,
@@ -27,6 +27,8 @@ from middleware.auth import create_access_token, require_partner
 from config import PARTNER_PORTAL_ORIGIN
 
 logger = logging.getLogger(__name__)
+
+CurrentPartner = Annotated[dict, Depends(require_partner)]
 
 # Allow browser to pass ?portal_origin= so dev works on any local port; production uses PARTNER_PORTAL_ORIGIN.
 _DEV_PORTAL_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?/?$")
@@ -81,8 +83,8 @@ def get_partner_plans():
 
 
 # ==================== PARTNER PROFILE ====================
-@router.get("/partner/profile")
-def get_partner_profile(partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+@router.get("/partner/profile", responses={403: {"description": "Partner access denied"}, 404: {"description": "Partner not found"}})
+def get_partner_profile(user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
     if not partner:
@@ -111,10 +113,10 @@ def get_partner_profile(partner_id: str = "default_partner", user: dict = Depend
 
 @router.put("/partner/profile")
 def update_partner_profile(
+    user: CurrentPartner,
     business_name: Optional[str] = None,
     email: Optional[str] = None,
     partner_id: str = "default_partner",
-    user: dict = Depends(require_partner),
 ):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     updates = {}
@@ -129,7 +131,7 @@ def update_partner_profile(
 
 
 @router.post("/partner/plan")
-def update_partner_plan(plan_update: PartnerPlanUpdate, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def update_partner_plan(plan_update: PartnerPlanUpdate, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     if plan_update.plan not in PARTNER_PLANS:
         return {"success": False, "message": "Invalid plan"}
@@ -149,9 +151,9 @@ def update_partner_plan(plan_update: PartnerPlanUpdate, partner_id: str = "defau
 # ==================== LOCATIONS ====================
 @router.get("/partner/locations")
 def get_partner_locations(
+    user: CurrentPartner,
     partner_id: str = "default_partner",
-    limit: int = Query(default=100, ge=1, le=100),
-    user: dict = Depends(require_partner),
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
@@ -168,7 +170,7 @@ def get_partner_locations(
 
 
 @router.post("/partner/locations")
-def add_partner_location(location: PartnerLocation, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def add_partner_location(location: PartnerLocation, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
     plan_key = partner.get("plan", "starter") if partner else "starter"
@@ -195,7 +197,7 @@ def add_partner_location(location: PartnerLocation, partner_id: str = "default_p
 
 
 @router.put("/partner/locations/{location_id}")
-def update_partner_location(location_id: str, location: PartnerLocation, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def update_partner_location(location_id: str, location: PartnerLocation, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     updates = {
         "name": location.name,
@@ -210,7 +212,7 @@ def update_partner_location(location_id: str, location: PartnerLocation, partner
 
 
 @router.delete("/partner/locations/{location_id}")
-def delete_partner_location(location_id: str, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def delete_partner_location(location_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     sb_delete_partner_location(location_id)
     remaining = sb_get_partner_locations(owned_partner_id)
@@ -220,7 +222,7 @@ def delete_partner_location(location_id: str, partner_id: str = "default_partner
 
 
 @router.post("/partner/locations/{location_id}/set-primary")
-def set_primary_location(location_id: str, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def set_primary_location(location_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     sb_set_primary_location(owned_partner_id, location_id)
     return {"success": True, "message": "Primary location updated"}
@@ -228,7 +230,7 @@ def set_primary_location(location_id: str, partner_id: str = "default_partner", 
 
 # ==================== PARTNER OFFERS ====================
 @router.post("/partner/offers")
-def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
     if not partner:
@@ -266,9 +268,9 @@ def create_partner_offer(offer: PartnerOfferCreate, partner_id: str = "default_p
 
 @router.get("/partner/offers")
 def get_partner_offers(
+    user: CurrentPartner,
     partner_id: str = "default_partner",
-    limit: int = Query(default=100, ge=1, le=100),
-    user: dict = Depends(require_partner),
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     offers = sb_get_offers_by_partner(owned_partner_id)[:limit]
@@ -276,7 +278,7 @@ def get_partner_offers(
 
 
 @router.put("/partner/offers/{offer_id}")
-def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
     if not partner:
@@ -307,7 +309,7 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, partner_id: s
 
 
 @router.delete("/partner/offers/{offer_id}")
-def delete_partner_offer(offer_id: str, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def delete_partner_offer(offer_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     from services.supabase_service import _sb
     try:
@@ -325,7 +327,7 @@ def get_boost_pricing():
 
 
 @router.post("/partner/boosts/create")
-def create_offer_boost(boost_req: BoostRequest, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def create_offer_boost(boost_req: BoostRequest, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     if boost_req.boost_type not in BOOST_PRICING:
         return {"success": False, "message": "Invalid boost type"}
@@ -355,9 +357,9 @@ def create_offer_boost(boost_req: BoostRequest, partner_id: str = "default_partn
 
 @router.get("/partner/boosts/active")
 def get_active_boosts(
+    user: CurrentPartner,
     partner_id: str = "default_partner",
-    limit: int = Query(default=100, ge=1, le=100),
-    user: dict = Depends(require_partner),
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     boosts = sb_get_boosts(owned_partner_id)
@@ -383,7 +385,7 @@ def get_active_boosts(
 
 
 @router.delete("/partner/boosts/{boost_id}")
-def cancel_boost(boost_id: str, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def cancel_boost(boost_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
     _require_owned_partner_id(user, partner_id)
     sb_cancel_boost(boost_id)
     return {"success": True, "message": "Boost cancelled"}
@@ -391,7 +393,7 @@ def cancel_boost(boost_id: str, partner_id: str = "default_partner", user: dict 
 
 # ==================== CREDITS ====================
 @router.get("/partner/credits")
-def get_partner_credits(partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def get_partner_credits(user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
     credits_val = 0
@@ -401,7 +403,7 @@ def get_partner_credits(partner_id: str = "default_partner", user: dict = Depend
 
 
 @router.post("/partner/credits/add")
-def add_partner_credits(credits_req: BoostCreditsRequest, partner_id: str = "default_partner", user: dict = Depends(require_partner)):
+def add_partner_credits(credits_req: BoostCreditsRequest, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
     if not partner:
@@ -419,7 +421,7 @@ def add_partner_credits(credits_req: BoostCreditsRequest, partner_id: str = "def
 
 
 # ==================== PARTNER V2 ENDPOINTS ====================
-@router.post("/partner/v2/login")
+@router.post("/partner/v2/login", responses={401: {"description": "Invalid email or password"}, 403: {"description": "No partner account linked"}})
 def partner_login_v2(request: PartnerLoginRequest):
     user, _login_err = sb_login_user(request.email, request.password)
     if not user:
@@ -442,7 +444,7 @@ def partner_login_v2(request: PartnerLoginRequest):
     return {"success": True, "token": token, "partner_id": partner_id, "business_name": business_name}
 
 
-@router.post("/partner/v2/register")
+@router.post("/partner/v2/register", responses={400: {"description": "Email already registered"}})
 def partner_register_v2(request: PartnerRegisterRequest):
     existing = sb_get_user_by_email(request.email)
     if existing:
@@ -463,8 +465,8 @@ def partner_register_v2(request: PartnerRegisterRequest):
     return {"success": True, "token": token, "partner_id": str(user["id"]), "business_name": request.business_name}
 
 
-@router.get("/partner/v2/profile/{partner_id}")
-def get_partner_profile_v2(partner_id: str, user: dict = Depends(require_partner)):
+@router.get("/partner/v2/profile/{partner_id}", responses={403: {"description": "Partner access denied"}, 404: {"description": "Partner not found"}})
+def get_partner_profile_v2(partner_id: str, user: CurrentPartner):
     _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
     if not partner:
@@ -487,8 +489,8 @@ def get_partner_profile_v2(partner_id: str, user: dict = Depends(require_partner
 @router.get("/partner/v2/team/{partner_id}")
 def get_team_members(
     partner_id: str,
-    limit: int = Query(default=100, ge=1, le=100),
-    user: dict = Depends(require_partner),
+    user: CurrentPartner,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     _require_owned_partner_id(user, partner_id)
     from services.partner_service import partner_service
@@ -497,7 +499,7 @@ def get_team_members(
 
 
 @router.post("/partner/v2/team/{partner_id}/invite")
-def invite_team_member(partner_id: str, request: TeamInviteRequest, user: dict = Depends(require_partner)):
+def invite_team_member(partner_id: str, request: TeamInviteRequest, user: CurrentPartner):
     _require_owned_partner_id(user, partner_id)
     from services.partner_service import partner_service
     result = partner_service.invite_team_member(
@@ -507,7 +509,7 @@ def invite_team_member(partner_id: str, request: TeamInviteRequest, user: dict =
 
 
 @router.put("/partner/v2/team/{member_id}/role")
-def update_member_role(member_id: str, role: str, user: dict = Depends(require_partner)):
+def update_member_role(member_id: str, role: str, user: CurrentPartner):
     from services.partner_service import partner_service
     member = partner_service.get_team_member(member_id)
     if not member:
@@ -520,7 +522,7 @@ def update_member_role(member_id: str, role: str, user: dict = Depends(require_p
 
 
 @router.delete("/partner/v2/team/{member_id}")
-def revoke_team_access(member_id: str, user: dict = Depends(require_partner)):
+def revoke_team_access(member_id: str, user: CurrentPartner):
     from services.partner_service import partner_service
     member = partner_service.get_team_member(member_id)
     if not member:
@@ -535,8 +537,8 @@ def revoke_team_access(member_id: str, user: dict = Depends(require_partner)):
 @router.get("/partner/v2/referrals/{partner_id}")
 def get_referrals(
     partner_id: str,
-    limit: int = Query(default=100, ge=1, le=100),
-    user: dict = Depends(require_partner),
+    user: CurrentPartner,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     _require_owned_partner_id(user, partner_id)
     referrals = sb_get_partner_referrals(partner_id)[:limit]
@@ -555,7 +557,7 @@ def get_referrals(
 
 
 @router.post("/partner/v2/referrals/{partner_id}")
-def send_referral(partner_id: str, request: ReferralRequest, user: dict = Depends(require_partner)):
+def send_referral(partner_id: str, request: ReferralRequest, user: CurrentPartner):
     from services.runtime_config import require_enabled
 
     require_enabled(
@@ -573,7 +575,7 @@ def send_referral(partner_id: str, request: ReferralRequest, user: dict = Depend
 
 
 @router.post("/partner/v2/credits/{partner_id}/use")
-def use_credits(partner_id: str, request: CreditUseRequest, user: dict = Depends(require_partner)):
+def use_credits(partner_id: str, request: CreditUseRequest, user: CurrentPartner):
     _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
     if not partner:
@@ -594,7 +596,7 @@ def use_credits(partner_id: str, request: CreditUseRequest, user: dict = Depends
 def redeem_offer(
     request: QRRedemptionRequest,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(require_partner),
+    user: CurrentPartner,
 ):
     from services.partner_service import partner_service
     from services.websocket_manager import ws_manager
@@ -609,8 +611,8 @@ def redeem_offer(
 
 
 # ==================== TEAM LINKS ====================
-@router.post("/partner/v2/team-link/generate")
-def generate_team_link(partner_id: str, label: str = "Team Link", user: dict = Depends(require_partner)):
+@router.post("/partner/v2/team-link/generate", responses={403: {"description": "Partner access denied"}, 404: {"description": "Partner not found"}})
+def generate_team_link(partner_id: str, user: CurrentPartner, label: str = "Team Link"):
     """Generate a shareable QR scan link for partner team members."""
     _require_owned_partner_id(user, partner_id)
     import secrets
@@ -648,8 +650,8 @@ def generate_team_link(partner_id: str, label: str = "Team Link", user: dict = D
 @router.get("/partner/v2/team-links/{partner_id}")
 def list_team_links(
     partner_id: str,
-    limit: int = Query(default=100, ge=1, le=100),
-    user: dict = Depends(require_partner),
+    user: CurrentPartner,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     _require_owned_partner_id(user, partner_id)
     from services.supabase_service import _sb
@@ -662,7 +664,7 @@ def list_team_links(
 
 
 @router.delete("/partner/v2/team-link/{link_id}")
-def revoke_team_link(link_id: str, user: dict = Depends(require_partner)):
+def revoke_team_link(link_id: str, user: CurrentPartner):
     from services.supabase_service import _sb
     _require_owned_partner_id(user)
     try:
@@ -681,7 +683,7 @@ def revoke_team_link(link_id: str, user: dict = Depends(require_partner)):
 
 
 @router.post("/partner/v2/scan/validate")
-def validate_scan(payload: dict, authorization: Optional[str] = Header(default=None)):
+def validate_scan(payload: dict, authorization: Annotated[Optional[str], Header()] = None):
     """Validate a QR code scanned via a team link. Token auth instead of partner login."""
     from services.supabase_service import _sb
     import json
@@ -743,8 +745,8 @@ def validate_scan(payload: dict, authorization: Optional[str] = Header(default=N
 @router.get("/partner/v2/redemptions/{partner_id}")
 def get_recent_redemptions(
     partner_id: str,
-    limit: int = Query(default=10, ge=1, le=100),
-    user: dict = Depends(require_partner),
+    user: CurrentPartner,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
 ):
     _require_owned_partner_id(user, partner_id)
     redemptions = sb_get_redemptions_by_partner(partner_id, limit)
@@ -752,7 +754,7 @@ def get_recent_redemptions(
 
 
 @router.get("/partner/v2/fees/{partner_id}")
-def get_partner_fees(partner_id: str, user: dict = Depends(require_partner)):
+def get_partner_fees(partner_id: str, user: CurrentPartner):
     _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
     if not partner:
@@ -773,7 +775,7 @@ def get_partner_fees(partner_id: str, user: dict = Depends(require_partner)):
 
 
 @router.get("/partner/v2/analytics/{partner_id}")
-def get_partner_analytics(partner_id: str, user: dict = Depends(require_partner)):
+def get_partner_analytics(partner_id: str, user: CurrentPartner):
     _require_owned_partner_id(user, partner_id)
     offers = sb_get_offers_by_partner(partner_id)
     total_redemptions = sum(o.get("redemption_count", 0) or 0 for o in offers)
@@ -797,8 +799,8 @@ def get_partner_analytics(partner_id: str, user: dict = Depends(require_partner)
 @router.get("/partner/v2/credits/history/{partner_id}")
 def get_credit_history(
     partner_id: str,
-    limit: int = Query(default=100, ge=1, le=100),
-    user: dict = Depends(require_partner),
+    user: CurrentPartner,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """Credit transaction history from boosts, referrals, and bonuses."""
     _require_owned_partner_id(user, partner_id)
@@ -839,7 +841,7 @@ def get_credit_history(
 
 
 @router.get("/partner/v2/referrals/leaderboard")
-def get_referral_leaderboard(limit: int = Query(default=10, ge=1, le=100)):
+def get_referral_leaderboard(limit: Annotated[int, Query(ge=1, le=100)] = 10):
     """Top referrers across all partners."""
     partners = sb_get_partners(limit=100)
     leaderboard = []
@@ -867,10 +869,10 @@ def get_referral_leaderboard(limit: int = Query(default=10, ge=1, le=100)):
 # ==================== STRIPE PAYMENT ENDPOINTS ====================
 @router.post("/partner/v2/subscribe")
 def stripe_subscribe(
+    user: CurrentPartner,
     partner_id: str = "default_partner",
     plan: str = "starter",
-    portal_origin: Optional[str] = Query(None, description="Partner app origin for Stripe return URLs"),
-    user: dict = Depends(require_partner),
+    portal_origin: Annotated[Optional[str], Query(description="Partner app origin for Stripe return URLs")] = None,
 ):
     """Create a Stripe Checkout session for plan subscription."""
     from services.runtime_config import require_enabled
@@ -933,11 +935,11 @@ def stripe_subscribe(
 
 @router.post("/partner/v2/boosts/purchase")
 def stripe_boost_purchase(
+    user: CurrentPartner,
     partner_id: str = "default_partner",
     offer_id: str = "",
     boost_type: str = "basic",
-    portal_origin: Optional[str] = Query(None),
-    user: dict = Depends(require_partner),
+    portal_origin: Annotated[Optional[str], Query()] = None,
 ):
     """Create a Stripe payment intent for a boost purchase."""
     from services.runtime_config import require_enabled
@@ -983,10 +985,10 @@ def stripe_boost_purchase(
 
 @router.post("/partner/v2/credits/purchase")
 def stripe_credits_purchase(
+    user: CurrentPartner,
     partner_id: str = "default_partner",
     amount: float = 50.0,
-    portal_origin: Optional[str] = Query(None),
-    user: dict = Depends(require_partner),
+    portal_origin: Annotated[Optional[str], Query()] = None,
 ):
     """Create a Stripe Checkout session to buy credits."""
     from services.runtime_config import require_enabled

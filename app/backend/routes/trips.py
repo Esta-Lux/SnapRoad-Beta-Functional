@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException, Depends, Request
-from typing import Optional
+from typing import Annotated, Optional
 from datetime import datetime, timedelta
 import json
 import logging
@@ -26,18 +26,33 @@ except Exception:  # pragma: no cover
 
 router = APIRouter(prefix="/api", tags=["Trips"])
 
+CurrentUser = Annotated[dict, Depends(get_current_user)]
+
+_LEGACY_503_RESPONSES = {
+    503: {"description": "Legacy endpoint unavailable in production"},
+}
+
+_503_RESPONSES = {
+    503: {"description": "Service temporarily unavailable"},
+}
+
+MAX_FUEL_ANALYTICS_MONTHS = 24
+
+MAX_BATCH_SIZE = 100
+
 
 def _legacy_trips_guard() -> None:
+    """Raise 503 for legacy endpoints disabled in production."""
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Legacy trips endpoints unavailable in production")
 
 
 # ==================== TRIP HISTORY ====================
 
-@router.get("/trips")
+@router.get("/trips", responses=_LEGACY_503_RESPONSES)
 def get_trips(
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    page: Annotated[int, Query(default=1, ge=1)] = 1,
+    limit: Annotated[int, Query(default=20, ge=1, le=100)] = 20,
 ):
     _legacy_trips_guard()
     start = (page - 1) * limit
@@ -59,7 +74,7 @@ def get_trips(
         }
     }
 
-@router.get("/trips/{trip_id}")
+@router.get("/trips/{trip_id}", responses=_LEGACY_503_RESPONSES)
 def get_trip_by_id(trip_id: str):
     _legacy_trips_guard()
     trip = next((t for t in trips_db if str(t.get("id")) == str(trip_id)), None)
@@ -84,7 +99,7 @@ class EndTripBody(BaseModel):
     endLocation: str
 
 
-@router.post("/trips/start")
+@router.post("/trips/start", responses=_LEGACY_503_RESPONSES)
 def start_trip(body: StartTripBody):
     _legacy_trips_guard()
     new_id = str(uuid4())
@@ -108,8 +123,8 @@ def start_trip(body: StartTripBody):
     }
 
 
-@router.get("/trips/history")
-def get_trip_history(limit: int = Query(default=10, ge=1, le=100)):
+@router.get("/trips/history", responses=_LEGACY_503_RESPONSES)
+def get_trip_history(limit: Annotated[int, Query(default=10, ge=1, le=100)] = 10):
     _legacy_trips_guard()
     user = users_db.get(current_user_id, {})
     return {
@@ -123,7 +138,7 @@ def get_trip_history(limit: int = Query(default=10, ge=1, le=100)):
 
 
 @router.get("/trips/analytics")
-def get_trip_analytics(user: dict = Depends(get_current_user)):
+def get_trip_analytics(user: CurrentUser):
     """Aggregate stats for the Rewards / Trip Analytics modal."""
     user_id = str(user.get("id") or "")
     try:
@@ -164,8 +179,8 @@ def get_trip_analytics(user: dict = Depends(get_current_user)):
 
 @router.get("/trips/history/recent")
 def get_recent_trips_mobile(
-    user: dict = Depends(get_current_user),
-    limit: int = Query(default=50, ge=1, le=100),
+    user: CurrentUser,
+    limit: Annotated[int, Query(default=50, ge=1, le=100)] = 50,
 ):
     """Flat trip list for Route History modal (matches mobile `Trip` shape)."""
     user_id = str(user.get("id") or "")
@@ -201,18 +216,11 @@ def get_recent_trips_mobile(
 
     return {"success": True, "data": []}
 
-@router.post("/trips/{trip_id}/end")
+@router.post("/trips/{trip_id}/end", responses=_LEGACY_503_RESPONSES)
 def end_trip(trip_id: str, body: EndTripBody):
     _legacy_trips_guard()
     user = users_db.get(current_user_id, {})
 
-    #TODO: Calculate distance / implement
-    #gems_earned = int(distance * 2)
-    #xp_earned = int(distance * 100)
-    #if current_user_id in users_db:
-        #users_db[current_user_id]["total_trips"] = user.get("total_trips", 0) + 1
-        #users_db[current_user_id]["total_miles"] = user.get("total_miles", 0) + distance
-        #users_db[current_user_id]["gems"] = user.get("gems", 0) + gems_earned
     trip = next((t for t in trips_db if t["id"] == trip_id), None)
     if not trip:
         return {"success": False, "message": "Trip not found"}
@@ -240,8 +248,8 @@ class TripCompleteBody(BaseModel):
     speeding_events: int = 0
     incidents_reported: int = 0
 
-@router.post("/trips/complete")
-def complete_trip(body: TripCompleteBody, user: dict = Depends(get_current_user)):
+@router.post("/trips/complete", responses=_503_RESPONSES)
+def complete_trip(body: TripCompleteBody, user: CurrentUser):
     """Persist a completed trip to Supabase and update profile stats."""
     user_id = user.get("id", "")
     distance = max(0, body.distance_miles)
@@ -315,7 +323,7 @@ def complete_trip(body: TripCompleteBody, user: dict = Depends(get_current_user)
     }
 
 
-@router.post("/trips/complete-with-safety")
+@router.post("/trips/complete-with-safety", responses=_LEGACY_503_RESPONSES)
 def complete_trip_with_safety(trip: TripResult):
     _legacy_trips_guard()
     if current_user_id not in users_db:
@@ -396,10 +404,10 @@ def complete_trip_with_safety(trip: TripResult):
     }
 
 
-@router.get("/trips/history/detailed")
+@router.get("/trips/history/detailed", responses=_LEGACY_503_RESPONSES)
 def get_detailed_trip_history(
-    days: int = Query(default=30, ge=1, le=365),
-    limit: int = Query(default=50, ge=1, le=100),
+    days: Annotated[int, Query(default=30, ge=1, le=365)] = 30,
+    limit: Annotated[int, Query(default=50, ge=1, le=100)] = 50,
     sort_by: str = "date",
 ):
     _legacy_trips_guard()
@@ -429,7 +437,7 @@ def get_detailed_trip_history(
     }
 
 
-@router.get("/trips/weekly-insights")
+@router.get("/trips/weekly-insights", responses=_LEGACY_503_RESPONSES)
 def get_weekly_insights():
     _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -523,7 +531,7 @@ def get_weekly_insights():
     }
 
 
-@router.post("/trips/{trip_id}/share")
+@router.post("/trips/{trip_id}/share", responses=_LEGACY_503_RESPONSES)
 def share_trip(trip_id: str):
     _legacy_trips_guard()
     trip = next((t for t in trips_db if str(t.get("id")) == str(trip_id)), None)
@@ -550,9 +558,9 @@ def _fuel_query(user: dict, sb=None):
 
 @router.get("/fuel/history")
 def get_fuel_history(
-    user: dict = Depends(get_current_user),
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    user: CurrentUser,
+    page: Annotated[int, Query(default=1, ge=1)] = 1,
+    limit: Annotated[int, Query(default=20, ge=1, le=100)] = 20,
 ):
     try:
         sb = get_supabase()
@@ -576,7 +584,7 @@ def get_fuel_history(
 
 @router.post("/fuel/logs")
 @router.post("/fuel/log")
-def log_fuel(entry: FuelLogCreate, user: dict = Depends(get_current_user)):
+def log_fuel(entry: FuelLogCreate, user: CurrentUser):
     uid = _fuel_uid(user)
     total_cost = round(float(entry.gallons) * float(entry.price_per_gallon), 2)
     payload = {
@@ -602,9 +610,9 @@ def log_fuel(entry: FuelLogCreate, user: dict = Depends(get_current_user)):
 
 @router.get("/fuel/logs")
 def get_fuel_logs(
-    user: dict = Depends(get_current_user),
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    user: CurrentUser,
+    page: Annotated[int, Query(default=1, ge=1)] = 1,
+    limit: Annotated[int, Query(default=20, ge=1, le=100)] = 20,
 ):
     try:
         sb = get_supabase()
@@ -621,7 +629,7 @@ def get_fuel_logs(
 
 
 @router.get("/fuel/trends")
-def get_fuel_trends(user: dict = Depends(get_current_user)):
+def get_fuel_trends(user: CurrentUser):
     try:
         sb = get_supabase()
         uid = _fuel_uid(user)
@@ -641,7 +649,7 @@ def get_fuel_trends(user: dict = Depends(get_current_user)):
 
 
 @router.get("/fuel/prices")
-def get_fuel_prices(user: dict = Depends(get_current_user), lat: float = 39.9612, lng: float = -82.9988):
+def get_fuel_prices(user: CurrentUser, lat: float = 39.9612, lng: float = -82.9988):
     return {
         "success": True,
         "data": {
@@ -652,7 +660,7 @@ def get_fuel_prices(user: dict = Depends(get_current_user), lat: float = 39.9612
 
 
 @router.get("/fuel/stats")
-def get_fuel_stats(user: dict = Depends(get_current_user)):
+def get_fuel_stats(user: CurrentUser):
     try:
         sb = get_supabase()
         uid = _fuel_uid(user)
@@ -674,15 +682,16 @@ def get_fuel_stats(user: dict = Depends(get_current_user)):
 
 
 @router.get("/fuel/analytics")
-def get_fuel_analytics(user: dict = Depends(get_current_user), months: int = Query(default=3, ge=1, le=24)):
+def get_fuel_analytics(user: CurrentUser, months: Annotated[int, Query(default=3, ge=1, le=24)] = 3):
+    safe_months = min(months, MAX_FUEL_ANALYTICS_MONTHS)
     try:
         sb = get_supabase()
         uid = _fuel_uid(user)
-        since = (datetime.now() - timedelta(days=30 * months)).isoformat()
+        since = (datetime.now() - timedelta(days=30 * safe_months)).isoformat()
         fuel_rows = sb.table("fuel_history").select("gallons, total_cost, created_at").eq("user_id", uid).gte("created_at", since).execute()
         trip_rows = sb.table("trips").select("distance_miles, created_at").eq("profile_id", uid).gte("created_at", since).execute()
         monthly_data = []
-        for i in range(months):
+        for i in range(safe_months):
             month_date = datetime.now() - timedelta(days=30 * i)
             prefix = month_date.strftime("%Y-%m")
             m_fuel = [f for f in (fuel_rows.data or []) if (f.get("created_at") or "").startswith(prefix)]
@@ -696,7 +705,7 @@ def get_fuel_analytics(user: dict = Depends(get_current_user), months: int = Que
         if ENVIRONMENT == "production":
             raise
         monthly_data = []
-        for i in range(months):
+        for i in range(safe_months):
             month_date = datetime.now() - timedelta(days=30 * i)
             month_trips = [t for t in trips_db if t["date"].startswith(month_date.strftime("%Y-%m"))]
             distance = sum(t["distance_miles"] for t in month_trips)
@@ -707,7 +716,7 @@ def get_fuel_analytics(user: dict = Depends(get_current_user), months: int = Que
 
 # ==================== INCIDENTS (legacy shim) ====================
 # Keep a non-conflicting legacy endpoint to avoid shadowing the dedicated incidents router.
-@router.post("/incidents/report-legacy")
+@router.post("/incidents/report-legacy", responses=_LEGACY_503_RESPONSES)
 def report_incident_legacy(incident: dict):
     _legacy_trips_guard()
     incident_type = str(incident.get("incident_type") or incident.get("type") or "unknown")
@@ -715,10 +724,10 @@ def report_incident_legacy(incident: dict):
 
 
 # ==================== 3D ROUTE HISTORY ====================
-@router.get("/routes/history-3d")
+@router.get("/routes/history-3d", responses=_LEGACY_503_RESPONSES)
 def get_route_history_3d(
-    days: int = Query(default=90, ge=1, le=365),
-    limit: int = Query(default=100, ge=1, le=100),
+    days: Annotated[int, Query(default=90, ge=1, le=365)] = 90,
+    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
 ):
     _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")

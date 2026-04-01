@@ -178,23 +178,29 @@ function FamilyMemberCard({
   }
 
   return (
-    <div
-      role="button"
+    <button
+      type="button"
       tabIndex={0}
       onClick={handleClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter') handleClick()
       }}
       style={{
-        borderRadius: 16,
-        padding: '14px 14px',
-        background: isLight ? '#ffffff' : cardBg,
+        appearance: 'none',
         border: `1px solid ${isLight ? 'rgba(2,6,23,0.08)' : 'rgba(255,255,255,0.10)'}`,
+        background: isLight ? '#ffffff' : cardBg,
+        padding: '14px 14px',
+        margin: 0,
+        font: 'inherit',
+        color: 'inherit',
+        textAlign: 'inherit',
+        borderRadius: 16,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: 12,
+        width: '100%',
         boxShadow: isLight ? '0 1px 3px rgba(15,23,42,0.06)' : 'none',
       }}
     >
@@ -281,7 +287,7 @@ function FamilyMemberCard({
         </button>
         <ChevronRight size={20} style={{ opacity: 0.55, color: '#94a3b8' }} />
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -463,19 +469,25 @@ function CheckInDialog({ isLight, onClose }: Readonly<{ isLight: boolean; onClos
   const dialogBorder = isLight ? '1px solid #e2e8f0' : '1px solid #334155'
 
   return (
-    <div
-      role="button"
+    <button
+      type="button"
       tabIndex={0}
       aria-label="Close check-in"
       style={{
+        appearance: 'none',
+        border: 'none',
+        background: 'rgba(0,0,0,0.5)',
+        padding: 24,
+        margin: 0,
+        font: 'inherit',
+        color: 'inherit',
+        cursor: 'default',
         position: 'fixed',
         inset: 0,
         zIndex: 100,
-        background: 'rgba(0,0,0,0.5)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 24,
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
@@ -519,7 +531,7 @@ function CheckInDialog({ isLight, onClose }: Readonly<{ isLight: boolean; onClos
           OK
         </button>
       </dialog>
-    </div>
+    </button>
   )
 }
 
@@ -1133,8 +1145,8 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Read
 
   return (
     <>
-      <div
-        role="button"
+      <button
+        type="button"
         tabIndex={0}
         aria-label="Close family dashboard"
         onClick={(e) => {
@@ -1147,9 +1159,14 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Read
           }
         }}
         style={{
+          appearance: 'none',
+          border: 'none',
+          background: 'rgba(0,0,0,0.7)',
+          padding: 0,
+          margin: 0,
+          cursor: 'default',
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0,0,0,0.7)',
           zIndex: 2000,
           backdropFilter: 'blur(4px)',
         }}
