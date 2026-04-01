@@ -128,19 +128,47 @@ def _maybe_raise_incident_503(exc: Exception, context: str) -> None:
     raise HTTPException(status_code=503, detail=detail)
 
 
+def _road_report_rows_after_insert(sb, p: dict, created) -> list:
+    """Insert response rows, or fetch the row (supabase-py may not support insert().select())."""
+    rows = (created.data or []) if created is not None else []
+    if rows:
+        return rows
+    if p.get("user_id"):
+        fetched = (
+            sb.table("road_reports")
+            .select("*")
+            .eq("user_id", p["user_id"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return fetched.data or []
+    fetched = (
+        sb.table("road_reports")
+        .select("*")
+        .eq("type", p.get("type") or "")
+        .eq("lat", float(p["lat"]))
+        .eq("lng", float(p["lng"]))
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return fetched.data or []
+
+
+def _insert_road_report_row(sb, p: dict, response_uid: str) -> Optional[dict]:
+    created = sb.table("road_reports").insert(p).execute()
+    rows = _road_report_rows_after_insert(sb, p, created)
+    if not rows:
+        return None
+    return {"success": True, "data": _row_to_incident(rows[0], response_uid), "gems_earned": 15}
+
+
 def _try_supabase_report(report: IncidentReportCompat, uid: str, now: datetime) -> Optional[dict]:
     sb = get_supabase()
     payload = _to_road_report_payload(report, uid, now)
-
-    def _insert_row(p: dict) -> Optional[dict]:
-        created = sb.table("road_reports").insert(p).select("*").execute()
-        rows = created.data or []
-        if not rows:
-            return None
-        return {"success": True, "data": _row_to_incident(rows[0], uid), "gems_earned": 15}
-
     try:
-        return _insert_row(payload)
+        return _insert_road_report_row(sb, payload, uid)
     except Exception as e:
         err = str(e).lower()
         if payload.get("user_id") and (
@@ -150,8 +178,7 @@ def _try_supabase_report(report: IncidentReportCompat, uid: str, now: datetime) 
                 "road_reports insert failed (likely user_id not in auth.users); retrying with user_id=null: %s",
                 e,
             )
-            retry = {**payload, "user_id": None}
-            return _insert_row(retry)
+            return _insert_road_report_row(sb, {**payload, "user_id": None}, uid)
         raise
 
 
