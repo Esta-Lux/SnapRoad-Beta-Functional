@@ -4,16 +4,17 @@
 -- Run in Supabase SQL Editor
 -- ============================================================
 
-ALTER TABLE public.partners
+ALTER TABLE IF EXISTS public.partners
   ADD COLUMN IF NOT EXISTS total_fees_owed FLOAT DEFAULT 0,
   ADD COLUMN IF NOT EXISTS total_fees_paid FLOAT DEFAULT 0;
 
-ALTER TABLE public.offers
+ALTER TABLE IF EXISTS public.offers
   ADD COLUMN IF NOT EXISTS premium_discount_percent INTEGER,
   ADD COLUMN IF NOT EXISTS free_discount_percent INTEGER,
   ADD COLUMN IF NOT EXISTS is_free_item BOOLEAN DEFAULT FALSE;
 
-ALTER TABLE public.redemptions
+-- 014_align_schemas.sql creates public.redemptions; skip silently if not present yet.
+ALTER TABLE IF EXISTS public.redemptions
   ADD COLUMN IF NOT EXISTS fee_amount FLOAT DEFAULT 0,
   ADD COLUMN IF NOT EXISTS redemption_number INTEGER DEFAULT 0;
 

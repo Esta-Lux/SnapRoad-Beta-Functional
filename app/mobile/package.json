@@ -14,6 +14,9 @@
     "eas:build:dev:ios": "eas build --profile development --platform ios",
     "eas:build:dev:android": "eas build --profile development --platform android",
     "eas:build:dev:ios-sim": "eas build --profile development-simulator --platform ios",
+    "eas:build:prod:ios": "eas build --profile production --platform ios",
+    "eas:build:prod:android": "eas build --profile production --platform android",
+    "eas:submit:ios": "eas submit --platform ios --latest",
     "android:sha1": "bash scripts/print-android-sha1.sh",
     "postinstall": "node scripts/restore-expo-vector-fonts.cjs"
   },

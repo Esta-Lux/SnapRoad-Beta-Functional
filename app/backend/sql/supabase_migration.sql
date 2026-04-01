@@ -1,9 +1,24 @@
 -- SnapRoad Supabase Migration
--- Run this in the Supabase SQL Editor: https://cuseezsdaqlbwlxnjsyr.supabase.co
--- Execute once to create all required tables
+-- Run in Supabase SQL Editor (Auth enabled so auth.users exists).
+--
+-- RECOMMENDED ORDER (greenfield):
+--   1) supabase_migration.sql (this file)
+--   2) 017_profiles_boosts_badges.sql
+--   3) 014_align_schemas.sql
+--   4) 016_profiles_stripe_customer.sql
+--   5) 018_admin_runtime_tables.sql  → incidents, campaigns, rewards, audit_log, platform_settings,
+--                                       legal_documents + notification columns (admin API / test_connection)
+--   6) 002_redemption_fees.sql   → fee columns, partner_team_links (redemptions fees if not in 014)
+--   7) 003_tiered_offers.sql
+--   8) 004_friend_locations.sql → 005 → 006_family_mode.sql → 006_operational_runtime_flags.sql
+--   9) 007 → 008 → 009 → 010 → 011 → 012 → 015_incident_photos_moderation.sql
+--   (013 is deprecated; 014 replaces it. admin_dashboard_migration.sql is optional: skip if you ran 018;
+--    it overlaps trips/referrals/notifications and can confuse schema—prefer supabase + 017 + 014 + 018.)
+--
+-- User FKs reference auth.users(id), not public.users (that table is not created here).
 
 -- ============================================================
--- USERS TABLE (extends existing public.users table)
+-- LEGACY public.users (optional — only if you still have this table from an old template)
 -- ============================================================
 ALTER TABLE IF EXISTS public.users
   ADD COLUMN IF NOT EXISTS name TEXT,
@@ -103,7 +118,7 @@ CREATE TABLE IF NOT EXISTS public.offers (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.trips (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   start_lat FLOAT,
   start_lng FLOAT,
   end_lat FLOAT,
@@ -120,7 +135,8 @@ CREATE TABLE IF NOT EXISTS public.trips (
   phone_usage_events INTEGER DEFAULT 0,
   status TEXT DEFAULT 'completed',
   started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  ended_at TIMESTAMP WITH TIME ZONE
+  ended_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- ============================================================
@@ -128,7 +144,7 @@ CREATE TABLE IF NOT EXISTS public.trips (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.road_reports (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   type TEXT NOT NULL,
   description TEXT,
   lat FLOAT NOT NULL,
@@ -181,7 +197,7 @@ CREATE TABLE IF NOT EXISTS public.challenges (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.user_challenges (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   challenge_id UUID REFERENCES public.challenges(id) ON DELETE CASCADE,
   progress INTEGER DEFAULT 0,
   completed BOOLEAN DEFAULT FALSE,
@@ -195,13 +211,14 @@ CREATE TABLE IF NOT EXISTS public.user_challenges (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.fuel_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   gallons FLOAT NOT NULL,
   price_per_gallon FLOAT NOT NULL,
   total_cost FLOAT NOT NULL,
   station_name TEXT,
   lat FLOAT,
   lng FLOAT,
+  odometer DOUBLE PRECISION,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -210,7 +227,7 @@ CREATE TABLE IF NOT EXISTS public.fuel_history (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   type TEXT DEFAULT 'info',
   title TEXT NOT NULL,
   message TEXT,
@@ -225,7 +242,7 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 CREATE TABLE IF NOT EXISTS public.offer_redemptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   offer_id INTEGER REFERENCES public.offers(id) ON DELETE SET NULL,
-  user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   partner_id UUID REFERENCES public.partners(id) ON DELETE SET NULL,
   gems_awarded INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -236,8 +253,8 @@ CREATE TABLE IF NOT EXISTS public.offer_redemptions (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.referrals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  referrer_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
-  referred_user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  referrer_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  referred_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   referrer_email TEXT,
   referred_email TEXT,
   status TEXT DEFAULT 'pending',
