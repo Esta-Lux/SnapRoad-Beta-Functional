@@ -72,22 +72,39 @@ from services.telemetry_service import telemetry_service
 from database import get_supabase
 
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        return response
+def _supabase_env_health_hint() -> dict:
+    """
+    Non-secret hints for operators. Backend uses SUPABASE_SECRET_KEY / SUPABASE_SERVICE_ROLE_KEY
+    (service_role from Dashboard), not SUPABASE_ANON_KEY — that env name is ignored here.
+    """
+    has_url = bool((SUPABASE_URL or "").strip())
+    has_service = bool((SUPABASE_SERVICE_ROLE_KEY or "").strip())
+    has_anon_var = bool(os.environ.get("SUPABASE_ANON_KEY", "").strip())
+    return {
+        "supabase_url_configured": has_url,
+        "service_role_key_configured": has_service,
+        "railway_has_supabase_anon_key": has_anon_var,
+        "misconfiguration": (
+            "Railway has SUPABASE_ANON_KEY but the API requires SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY) "
+            "with the service_role secret from Supabase → Settings → API. Copy anon to Vercel as VITE_SUPABASE_ANON_KEY only."
+        )
+        if has_anon_var and not has_service
+        else "",
+    }
 
 
-def _telemetry_severity(status_code: int, error: Optional[object]) -> str:
-    if status_code >= 500 or error:
-        return "error"
-    if status_code >= 400:
-        return "warn"
-    return "info"
+def create_app() -> FastAPI:
+    _env = os.getenv("ENVIRONMENT", "development")
+    validate_production_env()
+    app = FastAPI(title="SnapRoad API")
+    class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            response = await call_next(request)
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+            return response
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
@@ -168,6 +185,37 @@ def _add_telemetry_middleware(app: FastAPI) -> None:
             }
             telemetry_service.publish_fire_and_forget(event)
 
+    @app.get("/")
+    def root():
+        return {"message": "SnapRoad API", "docs": "/docs", "redoc": "/redoc"}
+
+    @app.get("/health")
+    def health():
+        checks = {
+            "database": "ok",
+            "cache": "unknown",
+            "supabase_env": _supabase_env_health_hint(),
+        }
+        try:
+            sb = get_supabase()
+            sb.table("profiles").select("id").limit(1).execute()
+        except Exception:
+            checks["database"] = "error"
+
+        try:
+            import redis
+            redis_url = (os.environ.get("REDIS_URL") or "").strip()
+            if redis_url:
+                client = redis.from_url(redis_url)
+                client.ping()
+                checks["cache"] = "ok"
+            else:
+                checks["cache"] = "disabled"
+        except Exception:
+            checks["cache"] = "degraded"
+
+        status = "ok" if checks["database"] == "ok" else "degraded"
+        return {"status": status, "checks": checks}
 
 def _cors_settings(env: str) -> tuple[list[str], Optional[str], list[str]]:
     raw = os.getenv("CORS_ORIGINS", "")

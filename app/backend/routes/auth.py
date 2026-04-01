@@ -1,11 +1,15 @@
+import base64
+import json
 import logging
 import os
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException
 from starlette.requests import Request
 from models.schemas import SignupRequest, LoginRequest, ForgotPasswordRequest, ResendVerificationRequest
 from middleware.auth import create_access_token
+from config import SUPABASE_URL
 from database import get_supabase
 from services.supabase_service import (
     sb_create_user,
@@ -22,6 +26,25 @@ ALLOW_MOCK_AUTH = (
     not IS_PRODUCTION
     and os.getenv("ALLOW_MOCK_AUTH", "false").strip().lower() in ("1", "true", "yes")
 )
+
+
+def _jwt_payload_unverified(token: str) -> dict:
+    """Decode JWT payload without verification (read iss only)."""
+    parts = (token or "").strip().split(".")
+    if len(parts) < 2:
+        return {}
+    pad = "=" * (-len(parts[1]) % 4)
+    try:
+        return json.loads(base64.urlsafe_b64decode(parts[1] + pad))
+    except Exception:
+        return {}
+
+
+def _host_from_http_url(url: str) -> str:
+    try:
+        return (urlparse(url or "").hostname or "").lower()
+    except Exception:
+        return ""
 
 
 def _build_token(user_dict: dict) -> str:
@@ -130,7 +153,31 @@ def oauth_supabase(request: Request, payload: dict):
         logger.warning("oauth_supabase token validation error: %s", e)
         auth_user = None
     if not auth_user or not auth_user.get("email"):
-        raise HTTPException(status_code=401, detail="Invalid Supabase session")
+        pl = _jwt_payload_unverified(access_token)
+        iss = str(pl.get("iss") or "")
+        api_host = _host_from_http_url(SUPABASE_URL or "")
+        iss_host = _host_from_http_url(iss) if iss.startswith("http") else ""
+        if api_host and iss_host and api_host != iss_host:
+            logger.warning(
+                "oauth_supabase project mismatch: jwt_host=%s api_host=%s",
+                iss_host,
+                api_host,
+            )
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Invalid Supabase session: the browser signed in to a different Supabase project than this API. "
+                    "Set Vercel VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to the same project as Railway SUPABASE_URL "
+                    "(compare project ref with GET /api/config/supabase)."
+                ),
+            )
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Invalid Supabase session (expired or invalid token). "
+                "Retry sign-in; if OAuth keeps failing while email login works, align Supabase env vars across Vercel and Railway."
+            ),
+        )
 
     email = str(auth_user["email"])
     uid = str(auth_user.get("id") or "")

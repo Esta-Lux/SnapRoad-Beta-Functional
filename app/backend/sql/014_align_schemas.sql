@@ -86,6 +86,8 @@ BEGIN
       partner_id UUID,
       gems_earned INT DEFAULT 0,
       discount_applied FLOAT DEFAULT 0,
+      fee_amount FLOAT DEFAULT 0,
+      redemption_number INT DEFAULT 0,
       status TEXT DEFAULT 'verified',
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -101,6 +103,8 @@ BEGIN
       partner_id UUID,
       gems_earned INT DEFAULT 0,
       discount_applied FLOAT DEFAULT 0,
+      fee_amount FLOAT DEFAULT 0,
+      redemption_number INT DEFAULT 0,
       status TEXT DEFAULT 'verified',
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -112,10 +116,14 @@ END $$;
 -- TRIPS: add profile_id column if missing (backend writes profile_id)
 -- ============================================================
 ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS profile_id UUID;
+ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS duration_seconds INT DEFAULT 0;
 ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS hard_braking_events INT DEFAULT 0;
 ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS speeding_events INT DEFAULT 0;
 ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS incidents_reported INT DEFAULT 0;
+
+-- fuel_history: odometer for /fuel/logs and /fuel/stats (backend)
+ALTER TABLE public.fuel_history ADD COLUMN IF NOT EXISTS odometer DOUBLE PRECISION;
 
 -- Backfill profile_id from user_id for existing rows
 DO $$
