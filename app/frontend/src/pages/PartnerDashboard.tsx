@@ -81,11 +81,23 @@ export default function PartnerDashboard() {
     return () => stopNotifications()
   }, [])
 
+  const handlePartnerAuthError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : ''
+    if (message.includes('Session expired')) {
+      navigate('/portal/partner/sign-in')
+      return true
+    }
+    return false
+  }
+
   const loadPartnerProfile = async () => {
     try {
       const data = await partnerApi.getProfile()
       if (data.success) setPartnerProfile(data.data)
-    } catch (e) { console.error('Error loading partner profile:', e) }
+    } catch (e) {
+      if (handlePartnerAuthError(e)) return
+      console.error('Error loading partner profile:', e)
+    }
   }
 
   const loadData = async () => {
@@ -93,7 +105,10 @@ export default function PartnerDashboard() {
     try {
       const analyticsRes = await partnerApi.getAnalytics()
       if (analyticsRes.success) setAnalytics(analyticsRes.data)
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      if (handlePartnerAuthError(e)) return
+      console.error(e)
+    }
     try {
       const offersRes = await partnerApi.getOffers()
       if (offersRes.success && offersRes.data) {
@@ -113,7 +128,10 @@ export default function PartnerDashboard() {
           location_name: o.location_name,
         })))
       }
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      if (handlePartnerAuthError(e)) return
+      console.error(e)
+    }
     setLoading(false)
   }
 
