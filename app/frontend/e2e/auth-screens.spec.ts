@@ -1,17 +1,17 @@
 import { test, expect } from '@playwright/test'
+import { gotoReady } from './utils/nav'
 
 test.describe('partner and admin auth screens', () => {
-  test('default auth page is partner tab with sign-in form', async ({ page }) => {
-    await page.goto('/auth')
-    await expect(page.getByRole('heading', { name: /welcome to snaproad/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Partner$/ })).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Sign in as Partner$/ })).toBeVisible()
+  test('/auth redirects to partner welcome', async ({ page }) => {
+    await gotoReady(page, '/auth')
+    await expect(page).toHaveURL(/\/portal\/partner\/welcome/)
+    await expect(page.getByRole('heading', { name: /your storefront/i })).toBeVisible()
   })
 
-  test('admin tab shows admin sign-in', async ({ page }) => {
-    await page.goto('/auth?tab=admin')
-    await page.getByRole('button', { name: /^Admin$/ }).click()
-    await expect(page.getByRole('button', { name: /^Sign in as Admin$/ })).toBeVisible()
+  test('/auth?tab=admin redirects to admin sign-in', async ({ page }) => {
+    await gotoReady(page, '/auth?tab=admin')
+    await expect(page).toHaveURL(/\/portal\/admin-sr2025secure\/sign-in/)
+    await expect(page.getByRole('heading', { name: /admin sign in/i })).toBeVisible()
   })
 
   test('partner signup page renders', async ({ page }) => {
@@ -20,9 +20,9 @@ test.describe('partner and admin auth screens', () => {
     await expect(page.getByPlaceholder('John')).toBeVisible()
   })
 
-  test('auth page link navigates to partner signup', async ({ page }) => {
-    await page.goto('/auth')
-    await page.getByRole('button', { name: /create a partner account/i }).click()
+  test('partner sign-in links to partner signup', async ({ page }) => {
+    await gotoReady(page, '/portal/partner/sign-in')
+    await page.getByRole('link', { name: /create a partner account/i }).click()
     await expect(page).toHaveURL(/\/auth\/partner-signup/)
   })
 })

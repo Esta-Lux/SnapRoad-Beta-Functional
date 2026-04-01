@@ -1038,25 +1038,25 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Read
       return
     }
 
-    const nextMembers = (data?.members ?? []).filter(Boolean)
+      const nextMembers = (data?.members ?? []).filter(Boolean)
     if (nextMembers.length === 0 || !data?.group_id) {
       resetToHome()
       return
     }
 
-    setMembers(nextMembers)
-    setGroupId(String(data.group_id))
+        setMembers(nextMembers)
+        setGroupId(String(data.group_id))
     if (typeof data.group_name === 'string' && data.group_name.trim()) setGroupName(data.group_name.trim())
-    try {
-      const details = await api.get<{ group?: { name?: string; invite_code?: string } }>(`/api/family/group/${String(data.group_id)}/members`)
+        try {
+          const details = await api.get<{ group?: { name?: string; invite_code?: string } }>(`/api/family/group/${String(data.group_id)}/members`)
       const g = (details.data as Record<string, unknown> | undefined)?.group as { name?: string; invite_code?: string } | undefined
-      if (g?.name) setGroupName(String(g.name))
-      if (g?.invite_code) setInviteCode(String(g.invite_code))
-    } catch {
+          if (g?.name) setGroupName(String(g.name))
+          if (g?.invite_code) setInviteCode(String(g.invite_code))
+        } catch {
       // ignore
-    }
+        }
     if (typeof data.invite_code === 'string' && data.invite_code.trim()) setInviteCode(data.invite_code.trim())
-    setScreen('members')
+        setScreen('members')
   }
 
   const createGroup = async () => {
@@ -1230,12 +1230,12 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Read
               onSetShowFamilyLeaderboard={setShowFamilyLeaderboard}
               onSetShowPrivacy={setShowPrivacy}
               onOpenReportCard={(m) => {
-                setReportCardMember(m)
-                setShowReportCard(true)
+                            setReportCardMember(m)
+                            setShowReportCard(true)
               }}
               onOpenSettings={(m) => {
-                setSelectedMember(m)
-                setScreen('settings')
+                              setSelectedMember(m)
+                              setScreen('settings')
               }}
             />
           )}

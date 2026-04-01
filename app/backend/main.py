@@ -71,6 +71,8 @@ from services.llm_client import is_llm_configured
 from services.telemetry_service import telemetry_service
 from database import get_supabase
 
+API_TITLE = "SnapRoad API"
+
 
 def _supabase_env_health_hint() -> dict:
     """
@@ -317,7 +319,7 @@ def _build_env_check_response() -> dict:
 def create_app() -> FastAPI:
     env = os.getenv("ENVIRONMENT", "development")
     validate_production_env()
-    app = FastAPI(title="SnapRoad API")
+    app = FastAPI(title=API_TITLE)
 
     app.add_middleware(SecurityHeadersMiddleware)
     _maybe_add_https_redirect(app, env)
@@ -329,7 +331,7 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     def root():
-        return {"message": "SnapRoad API", "docs": "/docs", "redoc": "/redoc"}
+        return {"message": API_TITLE, "docs": "/docs", "redoc": "/redoc"}
 
     @app.get("/health")
     def health():

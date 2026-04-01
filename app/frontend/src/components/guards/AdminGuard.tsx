@@ -6,7 +6,7 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
 
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
   if (!isAuthenticated || !user || !isAdmin) {
-    return <Navigate to="/auth?tab=admin" replace />
+    return <Navigate to="/portal/admin-sr2025secure/sign-in" replace />
   }
 
   return <>{children}</>

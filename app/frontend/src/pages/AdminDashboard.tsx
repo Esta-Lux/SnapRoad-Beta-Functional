@@ -224,7 +224,7 @@ export default function AdminDashboard() {
               </button>
             </div>
             <button
-              onClick={() => { logout(); adminApi.setToken(null); navigate('/auth?tab=admin'); }}
+              onClick={() => { logout(); adminApi.setToken(null); navigate('/portal/admin-sr2025secure/sign-in'); }}
               className={`w-full mt-3 flex items-center gap-2 px-4 py-3 rounded-xl transition-colors duration-200 ${
                 darkMode 
                   ? 'text-red-400 hover:bg-red-500/10' 
