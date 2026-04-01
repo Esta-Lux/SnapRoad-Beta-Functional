@@ -77,7 +77,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "android.permission.ACCESS_COARSE_LOCATION",
       "android.permission.ACCESS_FINE_LOCATION",
     ],
-    ...(!_prod ? { usesCleartextTraffic: true } : {}),
   } as ExpoConfig["android"],
   web: {
     favicon: "./assets/favicon.png",

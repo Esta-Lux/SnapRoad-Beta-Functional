@@ -12,7 +12,8 @@ from services.mock_data import (
     create_new_user,
 )
 from routes.gamification import add_xp_to_user
-from config import OPENAI_API_KEY, ENVIRONMENT
+from config import ENVIRONMENT
+from services.llm_client import chat_completion_model, get_sync_openai_client
 from database import get_supabase
 from services.supabase_service import sb_update_profile
 
@@ -473,9 +474,9 @@ def get_weekly_insights():
         "Try smoother braking on busy interchanges to keep improving."
     )
 
-    if (OPENAI_API_KEY or "").strip() and OpenAI is not None:
+    client = get_sync_openai_client() if OpenAI is not None else None
+    if client is not None:
         try:
-            client = OpenAI(api_key=OPENAI_API_KEY)
             payload = {
                 "trips_this_week": len(week_trips),
                 "miles_this_week": round(total_miles, 1),
@@ -483,7 +484,7 @@ def get_weekly_insights():
                 "best_day": best_day,
             }
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model=chat_completion_model(),
                 temperature=0.3,
                 messages=[
                     {

@@ -1,0 +1,37 @@
+# Git & tooling
+.git
+.github
+.cursor
+.windsurf
+.emergent
+**/.DS_Store
+
+# Node / mobile (not in API image)
+node_modules
+app/frontend/node_modules
+app/mobile/node_modules
+**/dist
+**/.vite
+
+# Python local
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+htmlcov
+
+# Secrets & env (inject via platform)
+.env
+.env.*
+!.env.example
+
+# Large / irrelevant
+coverage.xml
+**/coverage
+playwright-report
+test-results
+memory
+test_reports
+loadtests
