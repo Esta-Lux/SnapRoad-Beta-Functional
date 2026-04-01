@@ -69,6 +69,27 @@ from services.telemetry_service import telemetry_service
 from database import get_supabase
 
 
+def _supabase_env_health_hint() -> dict:
+    """
+    Non-secret hints for operators. Backend uses SUPABASE_SECRET_KEY / SUPABASE_SERVICE_ROLE_KEY
+    (service_role from Dashboard), not SUPABASE_ANON_KEY — that env name is ignored here.
+    """
+    has_url = bool((SUPABASE_URL or "").strip())
+    has_service = bool((SUPABASE_SERVICE_ROLE_KEY or "").strip())
+    has_anon_var = bool(os.environ.get("SUPABASE_ANON_KEY", "").strip())
+    return {
+        "supabase_url_configured": has_url,
+        "service_role_key_configured": has_service,
+        "railway_has_supabase_anon_key": has_anon_var,
+        "misconfiguration": (
+            "Railway has SUPABASE_ANON_KEY but the API requires SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY) "
+            "with the service_role secret from Supabase → Settings → API. Copy anon to Vercel as VITE_SUPABASE_ANON_KEY only."
+        )
+        if has_anon_var and not has_service
+        else "",
+    }
+
+
 def create_app() -> FastAPI:
     _env = os.getenv("ENVIRONMENT", "development")
     validate_production_env()
@@ -180,7 +201,11 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health():
-        checks = {"database": "ok", "cache": "unknown"}
+        checks = {
+            "database": "ok",
+            "cache": "unknown",
+            "supabase_env": _supabase_env_health_hint(),
+        }
         try:
             sb = get_supabase()
             sb.table("profiles").select("id").limit(1).execute()
