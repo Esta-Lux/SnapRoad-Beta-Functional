@@ -97,7 +97,7 @@ def get_admin_stats():
 
 @router.get("/admin/concerns")
 def get_admin_concerns(
-    limit: Annotated[int, Query(default=50, ge=1, le=200)] = 50,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
     severity: Annotated[Optional[str], Query()] = None,
     status: Annotated[Optional[str], Query()] = None,
 ):
@@ -137,7 +137,7 @@ _SKIP_USAGE_PREFIXES = (
 
 
 @router.get("/admin/telemetry/app-usage")
-def get_admin_app_usage_telemetry(limit: Annotated[int, Query(default=500, ge=50, le=500)]):
+def get_admin_app_usage_telemetry(limit: Annotated[int, Query(ge=50, le=500)] = 500):
     """
     Summarize recent HTTP telemetry into API area counts (driver/partner flows proxy).
 
@@ -352,13 +352,13 @@ def get_admin_config_detailed():
 
 
 @router.get("/admin/map/road-reports")
-def get_admin_map_road_reports(limit: Annotated[int, Query(default=400, ge=1, le=800)]):
+def get_admin_map_road_reports(limit: Annotated[int, Query(ge=1, le=800)] = 400):
     reports = sb_get_road_reports_for_admin_map(limit=limit)
     return {"success": True, "data": {"reports": reports}}
 
 
 @router.get("/admin/map/partner-locations")
-def get_admin_map_partner_locations(limit: Annotated[int, Query(default=500, ge=1, le=1000)]):
+def get_admin_map_partner_locations(limit: Annotated[int, Query(ge=1, le=1000)] = 500):
     locations = sb_get_partner_locations_for_admin_map(limit=limit)
     return {"success": True, "data": {"locations": locations}}
 
@@ -416,7 +416,7 @@ def get_finance_data():
 # ==================== NOTIFICATIONS ====================
 
 @router.get("/admin/notifications")
-def get_notifications(limit: Annotated[int, Query(default=50, ge=1, le=100)]):
+def get_notifications(limit: Annotated[int, Query(ge=1, le=100)] = 50):
     data = sb_get_admin_notifications(limit=limit)
     return {"success": True, "data": data}
 
@@ -498,7 +498,7 @@ def update_settings(settings_data: dict):
 # ==================== AUDIT LOG ====================
 
 @router.get("/admin/audit-log")
-def get_audit_log(limit: Annotated[int, Query(default=50, ge=1, le=100)]):
+def get_audit_log(limit: Annotated[int, Query(ge=1, le=100)] = 50):
     data = sb_get_audit_logs(limit=limit)
     return {"success": True, "data": data}
 
@@ -540,7 +540,7 @@ def _road_report_row_to_admin_item(row: dict) -> dict:
 
 @router.get("/admin/incidents")
 def get_incidents(
-    limit: Annotated[int, Query(default=100, ge=1, le=200)] = 100,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
     status: Annotated[Optional[str], Query()] = None,
 ):
     legacy = sb_get_incidents(status=status, limit=limit)
@@ -578,7 +578,7 @@ async def moderate_incident(incident_id: str, outcome: Annotated[str, Body(..., 
 
 
 @router.get("/admin/incidents/moderated")
-def get_moderated_incidents(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
+def get_moderated_incidents(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     approved = sb_get_incidents(status="approved", limit=limit)
     rejected = sb_get_incidents(status="rejected", limit=limit)
     return {"success": True, "data": approved + rejected, "total": len(approved) + len(rejected)}
@@ -589,7 +589,7 @@ def get_moderated_incidents(limit: Annotated[int, Query(default=100, ge=1, le=10
 @router.get("/admin/offers")
 def get_offers(
     status: Annotated[str, Query()] = "all",
-    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     data = sb_get_offers(status=status, limit=limit)
     return {"success": True, "data": data}
@@ -941,7 +941,7 @@ def import_offers(import_data: OfferImport):
 async def import_groupon_deals(
     area: Annotated[str, Query()] = "Columbus, OH",
     category: Annotated[Optional[str], Query()] = None,
-    limit: Annotated[int, Query(default=20, ge=1, le=100)] = 20,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """Fetch deals from Groupon via CJ Affiliate API and return a preview list."""
     from services.groupon_service import fetch_groupon_deals, import_deals_to_offers
@@ -1024,7 +1024,7 @@ async def enrich_offer_with_yelp(offer_id: str):
 # ==================== PARTNERS CRUD ====================
 
 @router.get("/admin/partners")
-def get_partners(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
+def get_partners(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     data = sb_get_partners(limit=limit)
     return {"success": True, "data": data}
 
@@ -1078,7 +1078,7 @@ def suspend_partner(partner_id: str):
 # ==================== CAMPAIGNS CRUD ====================
 
 @router.get("/admin/campaigns")
-def get_campaigns(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
+def get_campaigns(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     data = sb_get_campaigns(limit=limit)
     return {"success": True, "data": data}
 
@@ -1119,7 +1119,7 @@ def activate_campaign(campaign_id: str):
 # ==================== REWARDS CRUD ====================
 
 @router.get("/admin/rewards")
-def get_rewards(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
+def get_rewards(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     data = sb_get_rewards(limit=limit)
     return {"success": True, "data": data}
 
@@ -1164,7 +1164,7 @@ def claim_reward(reward_id: str, user_data: dict):
 # ==================== USERS CRUD ====================
 
 @router.get("/admin/users")
-def get_users(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
+def get_users(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     data = sb_list_profiles(limit=limit)
     return {"success": True, "source": "supabase", "data": data, "total": len(data)}
 
@@ -1266,7 +1266,7 @@ def create_boost(boost: BoostCreate):
 @router.get("/boosts")
 def get_boosts(
     partner_id: Annotated[Optional[str], Query()] = None,
-    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     data = sb_get_boosts(partner_id=partner_id)[:limit]
     return {"success": True, "data": data}
@@ -1325,7 +1325,7 @@ def get_supabase_status():
 
 
 @router.get("/admin/events")
-def get_admin_events(limit: Annotated[int, Query(default=100, ge=1, le=100)]):
+def get_admin_events(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     challenges = sb_get_challenges()[:limit]
     return {"success": True, "data": challenges}
 
@@ -1348,7 +1348,7 @@ def _photo_original_signed_url(supabase, storage_path: str) -> Optional[str]:
 
 
 @router.get("/admin/photo-reports/pending")
-def admin_photo_reports_pending(limit: Annotated[int, Query(default=50, ge=1, le=200)]):
+def admin_photo_reports_pending(limit: Annotated[int, Query(ge=1, le=200)] = 50):
     from database import get_supabase
 
     supabase = get_supabase()

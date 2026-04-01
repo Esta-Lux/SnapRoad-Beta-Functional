@@ -33,7 +33,7 @@ def _active_offers_source(limit: int = 500) -> list[dict]:
 
 @router.get("/offers")
 @limiter.limit("60/minute")
-def get_offers(request: Request, limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100):
+def get_offers(request: Request, limit: Annotated[int, Query(ge=1, le=100)] = 100):
     """Get all active offers from database (both admin and partner offers)"""
     try:
         sb = _sb()
@@ -293,8 +293,8 @@ def redeem_offer(request: Request, offer_id: str, auth_user: CurrentUser):
 def get_nearby_offers(
     lat: float = 39.9612,
     lng: float = -82.9988,
-    radius: Annotated[float, Query(default=10.0, ge=0.1, le=200)] = 10.0,
-    limit: Annotated[int, Query(default=100, ge=1, le=100)] = 100,
+    radius: Annotated[float, Query(ge=0.1, le=200)] = 10.0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     cache_lat = round(lat, 2)
     cache_lng = round(lng, 2)
@@ -335,7 +335,7 @@ def get_offers_on_route(origin_lat: float = 39.9612, origin_lng: float = -82.998
 def get_personalized_offers(
     lat: float = 39.9612,
     lng: float = -82.9988,
-    limit: Annotated[int, Query(default=20, ge=1, le=100)] = 20,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     user = users_db.get(current_user_id, {})
     history = driver_location_history.get(current_user_id, [])

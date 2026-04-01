@@ -93,18 +93,14 @@ def _supabase_env_health_hint() -> dict:
     }
 
 
-def create_app() -> FastAPI:
-    _env = os.getenv("ENVIRONMENT", "development")
-    validate_production_env()
-    app = FastAPI(title="SnapRoad API")
-    class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request: Request, call_next):
-            response = await call_next(request)
-            response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["X-Frame-Options"] = "DENY"
-            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-            response.headers["X-XSS-Protection"] = "1; mode=block"
-            return response
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        return response
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
@@ -152,6 +148,17 @@ def _maybe_add_https_redirect(app: FastAPI, env: str) -> None:
         app.add_middleware(HTTPSRedirectMiddleware)
 
 
+def _telemetry_severity(status_code: int, error: Optional[str]) -> str:
+    """Classify request outcome for fire-and-forget telemetry (not security-sensitive)."""
+    if error is not None:
+        return "error"
+    if status_code >= 500:
+        return "error"
+    if status_code >= 400:
+        return "warning"
+    return "info"
+
+
 def _add_telemetry_middleware(app: FastAPI) -> None:
     @app.middleware("http")
     async def telemetry_middleware(request: Request, call_next):
@@ -185,37 +192,6 @@ def _add_telemetry_middleware(app: FastAPI) -> None:
             }
             telemetry_service.publish_fire_and_forget(event)
 
-    @app.get("/")
-    def root():
-        return {"message": "SnapRoad API", "docs": "/docs", "redoc": "/redoc"}
-
-    @app.get("/health")
-    def health():
-        checks = {
-            "database": "ok",
-            "cache": "unknown",
-            "supabase_env": _supabase_env_health_hint(),
-        }
-        try:
-            sb = get_supabase()
-            sb.table("profiles").select("id").limit(1).execute()
-        except Exception:
-            checks["database"] = "error"
-
-        try:
-            import redis
-            redis_url = (os.environ.get("REDIS_URL") or "").strip()
-            if redis_url:
-                client = redis.from_url(redis_url)
-                client.ping()
-                checks["cache"] = "ok"
-            else:
-                checks["cache"] = "disabled"
-        except Exception:
-            checks["cache"] = "degraded"
-
-        status = "ok" if checks["database"] == "ok" else "degraded"
-        return {"status": status, "checks": checks}
 
 def _cors_settings(env: str) -> tuple[list[str], Optional[str], list[str]]:
     raw = os.getenv("CORS_ORIGINS", "")
@@ -276,7 +252,7 @@ def _register_routes(app: FastAPI) -> None:
 
 
 def _build_health_response() -> dict:
-    checks = {"database": "ok", "cache": "unknown"}
+    checks = {"database": "ok", "cache": "unknown", "supabase_env": _supabase_env_health_hint()}
     try:
         sb = get_supabase()
         sb.table("profiles").select("id").limit(1).execute()
