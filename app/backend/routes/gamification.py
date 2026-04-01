@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import datetime, timedelta
-import random
+from services.demo_random import choice, uniform
 from models.schemas import XPEvent, ChallengeCreate, GemGenerateRequest, GemCollectRequest
 from services.mock_data import (
     users_db, current_user_id, ALL_BADGES, COMMUNITY_BADGES,
@@ -383,9 +383,9 @@ def generate_route_gems(req: GemGenerateRequest):
     gems = []
     for i, point in enumerate(req.route_points):
         gem_id = f"gem_{req.trip_id}_{i}_{uuid.uuid4().hex[:4]}"
-        offset_lat = random.uniform(-0.002, 0.002)
-        offset_lng = random.uniform(-0.002, 0.002)
-        gem_type = random.choice(["standard", "standard", "standard", "bonus", "rare"])
+        offset_lat = uniform(-0.002, 0.002)
+        offset_lng = uniform(-0.002, 0.002)
+        gem_type = choice(["standard", "standard", "standard", "bonus", "rare"])
         gem_values = {"standard": 5, "bonus": 15, "rare": 50}
         gems.append({"id": gem_id, "lat": point["lat"] + offset_lat, "lng": point["lng"] + offset_lng, "type": gem_type, "value": gem_values[gem_type], "collected": False})
     route_gems_db[req.trip_id] = gems

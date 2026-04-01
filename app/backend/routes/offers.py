@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from starlette.requests import Request
 from typing import Annotated, Optional
 from datetime import datetime, timedelta
-import random
 from models.schemas import OfferCreate, BulkOfferUpload
 from services.mock_data import (
     offers_db, users_db, current_user_id, OFFER_CONFIG,

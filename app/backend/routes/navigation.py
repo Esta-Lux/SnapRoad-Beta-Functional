@@ -4,7 +4,9 @@ from pydantic import BaseModel
 from typing import Optional, List, Any, Dict, Tuple
 from datetime import datetime, timedelta
 import logging
-import random, math
+import math
+
+from services.demo_random import choice, randint
 import httpx
 from limiter import limiter
 from models.schemas import NavigationRequest, Location, Route, Widget
@@ -454,18 +456,18 @@ def get_mock_directions(origin_lat: float, origin_lng: float, dest_lat: float, d
     dlng = abs(dest_lng - origin_lng)
     distance_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
     distance_miles = distance_km * 0.621371
-    eta_minutes = int((distance_miles / 30) * 60) + random.randint(2, 8)
+    eta_minutes = int((distance_miles / 30) * 60) + randint(2, 8)
     lat_diff = dest_lat - origin_lat
     lng_diff = dest_lng - origin_lng
     direction = ("north" if lat_diff > 0 else "south") if abs(lat_diff) > abs(lng_diff) else ("east" if lng_diff > 0 else "west")
     streets = ["High St", "Broad St", "Main St", "3rd Ave", "Lane Ave"]
     steps = [
         {"instruction": f"Head {direction}", "distance": f"{round(distance_miles * 0.15, 1)} mi", "duration": f"{int(eta_minutes * 0.15)} min", "maneuver": "straight"},
-        {"instruction": f"Turn right onto {random.choice(streets)}", "distance": f"{round(distance_miles * 0.35, 1)} mi", "duration": f"{int(eta_minutes * 0.35)} min", "maneuver": "turn-right"},
-        {"instruction": f"Turn left onto {random.choice(streets)}", "distance": f"{round(distance_miles * 0.35, 1)} mi", "duration": f"{int(eta_minutes * 0.35)} min", "maneuver": "turn-left"},
+        {"instruction": f"Turn right onto {choice(streets)}", "distance": f"{round(distance_miles * 0.35, 1)} mi", "duration": f"{int(eta_minutes * 0.35)} min", "maneuver": "turn-right"},
+        {"instruction": f"Turn left onto {choice(streets)}", "distance": f"{round(distance_miles * 0.35, 1)} mi", "duration": f"{int(eta_minutes * 0.35)} min", "maneuver": "turn-left"},
         {"instruction": f"Arrive at {dest_name}", "distance": f"{round(distance_miles * 0.15, 1)} mi", "duration": f"{int(eta_minutes * 0.15)} min", "maneuver": "arrive"},
     ]
-    return {"success": True, "data": {"origin": {"lat": origin_lat, "lng": origin_lng}, "destination": {"lat": dest_lat, "lng": dest_lng, "name": dest_name}, "distance": {"km": round(distance_km, 2), "miles": round(distance_miles, 2), "text": f"{round(distance_miles, 1)} mi"}, "duration": {"minutes": eta_minutes, "text": f"{eta_minutes} min"}, "steps": steps, "route_type": "fastest", "traffic": random.choice(["light", "moderate", "heavy"])}}
+    return {"success": True, "data": {"origin": {"lat": origin_lat, "lng": origin_lng}, "destination": {"lat": dest_lat, "lng": dest_lng, "name": dest_name}, "distance": {"km": round(distance_km, 2), "miles": round(distance_miles, 2), "text": f"{round(distance_miles, 1)} mi"}, "duration": {"minutes": eta_minutes, "text": f"{eta_minutes} min"}, "steps": steps, "route_type": "fastest", "traffic": choice(["light", "moderate", "heavy"])}}
 
 
 # ==================== WIDGETS ====================

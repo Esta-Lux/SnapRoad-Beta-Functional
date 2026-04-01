@@ -3,7 +3,7 @@ from fastapi.responses import Response, JSONResponse
 from datetime import datetime, timedelta, timezone
 import json
 import logging
-import random
+from services.demo_random import choice, randint
 from middleware.auth import decode_token, require_admin
 from services.telemetry_service import telemetry_service
 
@@ -261,15 +261,15 @@ INCIDENT_LOCATIONS = [
 def _make_incident() -> dict:
     global _next_incident_id
     _next_incident_id += 1
-    itype, confidence = random.choice(INCIDENT_TYPES)
-    confidence += random.randint(-5, 5)
+    itype, confidence = choice(INCIDENT_TYPES)
+    confidence += randint(-5, 5)
     return {
         "id": _next_incident_id,
         "type": itype,
         "confidence": min(99, max(70, confidence)),
         "status": "new",
-        "blurred": random.choice([True, False]),
-        "location": random.choice(INCIDENT_LOCATIONS),
+        "blurred": choice([True, False]),
+        "location": choice(INCIDENT_LOCATIONS),
         "reportedAt": "just now",
         "timestamp": datetime.now().isoformat(),
     }

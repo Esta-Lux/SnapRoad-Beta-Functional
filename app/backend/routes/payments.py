@@ -405,6 +405,22 @@ class BillingPortalRequest(BaseModel):
     return_url: Optional[str] = None
 
 
+def _is_dev_loopback_http(url: str) -> bool:
+    """True only for http://localhost / 127.0.0.1 / ::1 in non-production (Stripe return URL dev)."""
+    if ENVIRONMENT == "production":
+        return False
+    try:
+        from urllib.parse import urlparse
+
+        u = urlparse(url)
+        if u.scheme != "http":
+            return False
+        host = (u.hostname or "").lower()
+        return host in ("localhost", "127.0.0.1", "::1")
+    except ValueError:
+        return False
+
+
 def _resolve_http_return_url(raw: str, requested: Optional[str]) -> Optional[str]:
     """Validate an http(s) return URL against the allowlist. Returns URL or None."""
     from urllib.parse import urlparse
@@ -430,7 +446,11 @@ def _billing_portal_return_url(requested: Optional[str]) -> str:
     raw = (requested or "").strip()
     if raw.startswith("snaproad://") or raw.startswith("exp://"):
         return raw
-    if raw.startswith("https://") or raw.startswith("http://"):
+    if raw.startswith("https://"):
+        result = _resolve_http_return_url(raw, requested)
+        if result is not None:
+            return result
+    if _is_dev_loopback_http(raw):
         result = _resolve_http_return_url(raw, requested)
         if result is not None:
             return result

@@ -3,8 +3,9 @@ Mock data store – keeps all in-memory data that was previously in server.py.
 This will be progressively replaced by Supabase queries.
 """
 from datetime import datetime, timedelta
-import random
 import os
+
+from services.demo_random import choice, randint, sample
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
 
@@ -60,26 +61,26 @@ LAST_NAMES = ["Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Da
 
 for i in range(100):
     uid = str(123457 + i)
-    is_premium = random.choice([True, False])
-    level = random.randint(5, 99)
+    is_premium = choice([True, False])
+    level = randint(5, 99)
     users_db[uid] = {
-        "id": uid, "name": f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
-        "gems": random.randint(500, 50000), "level": level,
-        "xp": calculate_xp_for_level(level) + random.randint(0, calculate_xp_to_next_level(level) // 2),
+        "id": uid, "name": f"{choice(FIRST_NAMES)} {choice(LAST_NAMES)}",
+        "gems": randint(500, 50000), "level": level,
+        "xp": calculate_xp_for_level(level) + randint(0, calculate_xp_to_next_level(level) // 2),
         "xp_to_next_level": calculate_xp_to_next_level(level),
-        "safety_score": random.randint(60, 100), "streak": random.randint(0, 100),
-        "safe_drive_streak": random.randint(0, 10),
-        "total_miles": random.randint(100, 10000), "total_trips": random.randint(10, 500),
-        "badges_earned": random.sample(range(1, 161), random.randint(3, 30)),
-        "community_badges": random.sample(range(1, 21), random.randint(0, 5)),
-        "rank": i + 1, "state": random.choice(STATES),
+        "safety_score": randint(60, 100), "streak": randint(0, 100),
+        "safe_drive_streak": randint(0, 10),
+        "total_miles": randint(100, 10000), "total_trips": randint(10, 500),
+        "badges_earned": sample(range(1, 161), randint(3, 30)),
+        "community_badges": sample(range(1, 21), randint(0, 5)),
+        "rank": i + 1, "state": choice(STATES),
         "is_premium": is_premium, "plan": "premium" if is_premium else "basic",
         "gem_multiplier": 2 if is_premium else 1, "member_since": "2025",
         "friends": [], "friend_requests": [],
         "owned_cars": [1], "equipped_car": 1,
         "owned_skins": [1, 2], "equipped_skin": 1,
-        "onboarding_complete": True, "reports_posted": random.randint(0, 50),
-        "reports_upvotes_received": random.randint(0, 200),
+        "onboarding_complete": True, "reports_posted": randint(0, 50),
+        "reports_upvotes_received": randint(0, 200),
     }
 
 current_user_id = "123456"
