@@ -625,30 +625,59 @@ def _fuel_query(user: dict, sb=None):
     return sb.table("fuel_history").select("*").eq("user_id", _fuel_uid(user)).order("created_at", desc=True)
 
 
-@router.get("/fuel/history")
-def get_fuel_history(
-    user: CurrentUser,
-    page: Annotated[int, Query(ge=1)] = 1,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+def _fuel_history_paginated_response(user: dict, page: int, limit: int) -> dict:
+    """Shared by GET /fuel/history and GET /fuel/logs (Supabase + in-memory dev fallback)."""
     try:
         sb = get_supabase()
         uid = _fuel_uid(user)
         offset = (page - 1) * limit
-        rows = sb.table("fuel_history").select("*", count="exact").eq("user_id", uid).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+        rows = (
+            sb.table("fuel_history")
+            .select("*", count="exact")
+            .eq("user_id", uid)
+            .order("created_at", desc=True)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
         total = rows.count if rows.count is not None else len(rows.data or [])
         return {
             "success": True,
             "data": {
                 "items": rows.data or [],
-                "pagination": {"page": page, "limit": limit, "total": total, "total_pages": max(1, (total + limit - 1) // limit)},
+                "pagination": {
+                    "page": page,
+                    "limit": limit,
+                    "total": total,
+                    "total_pages": max(1, (total + limit - 1) // limit),
+                },
             },
         }
     except Exception:
         if ENVIRONMENT == "production":
             raise
         start = (page - 1) * limit
-        return {"success": True, "data": {"items": fuel_logs[start:start + limit], "pagination": {"page": page, "limit": limit, "total": len(fuel_logs), "total_pages": max(1, (len(fuel_logs) + limit - 1) // limit)}}}
+        n = len(fuel_logs)
+        return {
+            "success": True,
+            "data": {
+                "items": fuel_logs[start : start + limit],
+                "pagination": {
+                    "page": page,
+                    "limit": limit,
+                    "total": n,
+                    "total_pages": max(1, (n + limit - 1) // limit),
+                },
+            },
+        }
+
+
+@router.get("/fuel/history")
+def get_fuel_history(
+    user: CurrentUser,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+):
+    return _fuel_history_paginated_response(user, page, limit)
 
 
 @router.post("/fuel/logs")
@@ -683,18 +712,7 @@ def get_fuel_logs(
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
-    try:
-        sb = get_supabase()
-        uid = _fuel_uid(user)
-        offset = (page - 1) * limit
-        rows = sb.table("fuel_history").select("*", count="exact").eq("user_id", uid).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
-        total = rows.count if rows.count is not None else len(rows.data or [])
-        return {"success": True, "data": {"items": rows.data or [], "pagination": {"page": page, "limit": limit, "total": total, "total_pages": max(1, (total + limit - 1) // limit)}}}
-    except Exception:
-        if ENVIRONMENT == "production":
-            raise
-        start = (page - 1) * limit
-        return {"success": True, "data": {"items": fuel_logs[start:start + limit], "pagination": {"page": page, "limit": limit, "total": len(fuel_logs), "total_pages": max(1, (len(fuel_logs) + limit - 1) // limit)}}}
+    return _fuel_history_paginated_response(user, page, limit)
 
 
 @router.get("/fuel/trends")
@@ -750,41 +768,79 @@ def get_fuel_stats(user: CurrentUser):
         return {"success": True, "data": fuel_stats}
 
 
+def _fuel_analytics_monthly_supabase(uid: str, month_span: int) -> list:
+    sb = get_supabase()
+    since = (datetime.now() - timedelta(days=30 * month_span)).isoformat()
+    fuel_rows = (
+        sb.table("fuel_history")
+        .select("gallons, total_cost, created_at")
+        .eq("user_id", uid)
+        .gte("created_at", since)
+        .execute()
+    )
+    trip_rows = (
+        sb.table("trips")
+        .select("distance_miles, created_at")
+        .eq("profile_id", uid)
+        .gte("created_at", since)
+        .execute()
+    )
+    fuel_data = fuel_rows.data or []
+    trip_data = trip_rows.data or []
+    monthly_data = []
+    for i in range(MAX_FUEL_ANALYTICS_MONTHS):
+        if i >= month_span:
+            break
+        month_date = datetime.now() - timedelta(days=30 * i)
+        prefix = month_date.strftime("%Y-%m")
+        m_fuel = [f for f in fuel_data if (f.get("created_at") or "").startswith(prefix)]
+        m_trips = [t for t in trip_data if (t.get("created_at") or "").startswith(prefix)]
+        distance = sum(float(t.get("distance_miles", 0)) for t in m_trips)
+        fuel = sum(float(f.get("gallons", 0)) for f in m_fuel)
+        cost = sum(float(f.get("total_cost", 0)) for f in m_fuel)
+        monthly_data.append({
+            "month": month_date.strftime("%B %Y"),
+            "trips": len(m_trips),
+            "distance_miles": round(distance, 1),
+            "fuel_gallons": round(fuel, 2),
+            "avg_mpg": round(distance / max(fuel, 0.1), 1),
+            "cost_estimate": round(cost, 2),
+        })
+    return monthly_data
+
+
+def _fuel_analytics_monthly_memory(month_span: int) -> list:
+    monthly_data = []
+    for i in range(MAX_FUEL_ANALYTICS_MONTHS):
+        if i >= month_span:
+            break
+        month_date = datetime.now() - timedelta(days=30 * i)
+        ym = month_date.strftime("%Y-%m")
+        month_trips = [t for t in trips_db if t["date"].startswith(ym)]
+        distance = sum(t["distance_miles"] for t in month_trips)
+        fuel = sum(t["fuel_used_gallons"] for t in month_trips)
+        monthly_data.append({
+            "month": month_date.strftime("%B %Y"),
+            "trips": len(month_trips),
+            "distance_miles": round(distance, 1),
+            "fuel_gallons": round(fuel, 2),
+            "avg_mpg": round(distance / max(fuel, 0.1), 1),
+            "cost_estimate": round(fuel * FUEL_PRICES["regular"], 2),
+        })
+    return monthly_data
+
+
 @router.get("/fuel/analytics")
 def get_fuel_analytics(user: CurrentUser, months: Annotated[int, Query(ge=1, le=24)] = 3):
     # Loop bound must not be user input directly (Sonar): cap with constant, iterate at most MAX_FUEL_ANALYTICS_MONTHS.
     month_span = min(months, MAX_FUEL_ANALYTICS_MONTHS)
     try:
-        sb = get_supabase()
-        uid = _fuel_uid(user)
-        since = (datetime.now() - timedelta(days=30 * month_span)).isoformat()
-        fuel_rows = sb.table("fuel_history").select("gallons, total_cost, created_at").eq("user_id", uid).gte("created_at", since).execute()
-        trip_rows = sb.table("trips").select("distance_miles, created_at").eq("profile_id", uid).gte("created_at", since).execute()
-        monthly_data = []
-        for i in range(MAX_FUEL_ANALYTICS_MONTHS):
-            if i >= month_span:
-                break
-            month_date = datetime.now() - timedelta(days=30 * i)
-            prefix = month_date.strftime("%Y-%m")
-            m_fuel = [f for f in (fuel_rows.data or []) if (f.get("created_at") or "").startswith(prefix)]
-            m_trips = [t for t in (trip_rows.data or []) if (t.get("created_at") or "").startswith(prefix)]
-            distance = sum(float(t.get("distance_miles", 0)) for t in m_trips)
-            fuel = sum(float(f.get("gallons", 0)) for f in m_fuel)
-            cost = sum(float(f.get("total_cost", 0)) for f in m_fuel)
-            monthly_data.append({"month": month_date.strftime("%B %Y"), "trips": len(m_trips), "distance_miles": round(distance, 1), "fuel_gallons": round(fuel, 2), "avg_mpg": round(distance / max(fuel, 0.1), 1), "cost_estimate": round(cost, 2)})
+        monthly_data = _fuel_analytics_monthly_supabase(_fuel_uid(user), month_span)
         return {"success": True, "data": {"monthly_breakdown": monthly_data}}
     except Exception:
         if ENVIRONMENT == "production":
             raise
-        monthly_data = []
-        for i in range(MAX_FUEL_ANALYTICS_MONTHS):
-            if i >= month_span:
-                break
-            month_date = datetime.now() - timedelta(days=30 * i)
-            month_trips = [t for t in trips_db if t["date"].startswith(month_date.strftime("%Y-%m"))]
-            distance = sum(t["distance_miles"] for t in month_trips)
-            fuel = sum(t["fuel_used_gallons"] for t in month_trips)
-            monthly_data.append({"month": month_date.strftime("%B %Y"), "trips": len(month_trips), "distance_miles": round(distance, 1), "fuel_gallons": round(fuel, 2), "avg_mpg": round(distance / max(fuel, 0.1), 1), "cost_estimate": round(fuel * FUEL_PRICES["regular"], 2)})
+        monthly_data = _fuel_analytics_monthly_memory(month_span)
         return {"success": True, "data": {"monthly_breakdown": monthly_data}}
 
 

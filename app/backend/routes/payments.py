@@ -108,7 +108,8 @@ def _resolve_allowed_origin(request_origin: Optional[str]) -> str:
     if not allowed:
         if ENVIRONMENT == "production":
             raise HTTPException(status_code=503, detail="Checkout origins not configured")
-        fallback = (os.environ.get("FRONTEND_URL") or "http://localhost:5173").strip().rstrip("/")
+        # Dev-only when CHECKOUT_ALLOWED_ORIGINS unset; production raises above.
+        fallback = (os.environ.get("FRONTEND_URL") or "http://localhost:5173").strip().rstrip("/")  # NOSONAR
         allowed = [fallback]
     requested = (request_origin or "").strip().rstrip("/")
     if requested and requested in allowed:
