@@ -21,7 +21,7 @@ print("ADMIN LOGIN FLOW TEST")
 print("=" * 60)
 
 email = "Riyan@snaproad.co"
-password = "Riyanm909@"
+password = os.getenv("SNAPROAD_TEST_PASSWORD", "")
 
 print(f"\n1. Calling sb_login_user...")
 sb_user, sb_error = sb_login_user(email, password)
@@ -45,7 +45,7 @@ print("PARTNER LOGIN FLOW TEST")
 print("=" * 60)
 
 email = "john.don@estaluxtest.com"
-password = "Riyanm909@"
+password = os.getenv("SNAPROAD_TEST_PASSWORD", "")
 
 print(f"\n1. Calling sb_login_user...")
 sb_user, sb_error = sb_login_user(email, password)
@@ -70,7 +70,7 @@ print("=" * 60)
 
 from services.supabase_service import sb_get_partners
 
-user, err = sb_login_user("john.don@estaluxtest.com", "Riyanm909@")
+user, err = sb_login_user("john.don@estaluxtest.com", os.getenv("SNAPROAD_TEST_PASSWORD", ""))
 if user:
     role = user.get("role", "driver")
     print(f"User role: {role}")

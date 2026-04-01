@@ -44,6 +44,25 @@ export default function expoConfig({ config }: ConfigContext): ExpoConfig {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.snaproad.app",
+      privacyManifests: {
+        NSPrivacyTracking: false,
+        NSPrivacyAccessedAPITypes: [
+          {
+            NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults",
+            NSPrivacyAccessedAPITypeReasons: ["CA92.1"],
+          },
+        ],
+        NSPrivacyCollectedDataTypes: [
+          {
+            NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypePreciseLocation",
+            NSPrivacyCollectedDataTypeLinked: true,
+            NSPrivacyCollectedDataTypeTracking: false,
+            NSPrivacyCollectedDataTypePurposes: [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+            ],
+          },
+        ],
+      },
       infoPlist: {
         NSLocationWhenInUseUsageDescription:
           "SnapRoad needs your location to show your position on the map and provide turn-by-turn navigation.",

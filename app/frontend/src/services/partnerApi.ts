@@ -45,7 +45,20 @@ class PartnerApiService {
     }
     try {
       const response = await fetch(url, config)
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+      if (!response.ok) {
+        let detail = ''
+        try {
+          const payload = await response.clone().json() as { detail?: string; message?: string }
+          detail = payload.detail || payload.message || ''
+        } catch {
+          detail = ''
+        }
+        if (response.status === 401 && token) {
+          this.logout()
+          throw new Error('Session expired. Please sign in again.')
+        }
+        throw new Error(detail || `HTTP error! status: ${response.status}`)
+      }
       return await response.json()
     } catch (error) {
       console.error('Partner API request failed:', error)

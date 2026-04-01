@@ -90,7 +90,6 @@ curl $API_URL/api/payments/plans
 | API Guide | `/app/memory/API_INTEGRATION_GUIDE.md` |
 | PM Guide | `/app/memory/PM_COORDINATION_GUIDE.md` |
 | Mobile Guide | `/app/memory/KATHIR_MOBILE_GUIDE.md` |
-| Backend Guide | `/app/memory/ANDREW_BACKEND_GUIDE.md` |
 | Web Guide | `/app/memory/BRIAN_WEB_GUIDE.md` |
 
 ---

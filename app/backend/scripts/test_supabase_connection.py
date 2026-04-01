@@ -49,7 +49,7 @@ except Exception as e:
 print(f"\n5. Test authentication (admin):")
 try:
     from services.supabase_service import sb_login_user
-    user, err = sb_login_user("Riyan@snaproad.co", "Riyanm909@")
+    user, err = sb_login_user("Riyan@snaproad.co", os.getenv("SNAPROAD_TEST_PASSWORD", ""))
     if user:
         print(f"   [OK] Admin login successful, role: {user.get('role')}")
     else:
@@ -60,7 +60,7 @@ except Exception as e:
 print(f"\n6. Test authentication (partner):")
 try:
     from services.supabase_service import sb_login_user
-    user, err = sb_login_user("john.don@estaluxtest.com", "Riyanm909@")
+    user, err = sb_login_user("john.don@estaluxtest.com", os.getenv("SNAPROAD_TEST_PASSWORD", ""))
     if user:
         print(f"   [OK] Partner login successful, role: {user.get('role')}")
     else:

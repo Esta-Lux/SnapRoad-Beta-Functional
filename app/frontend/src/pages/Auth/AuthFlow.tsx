@@ -22,6 +22,7 @@ export default function AuthFlow() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+  const [dateOfBirth, setDateOfBirth] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [acceptTerms, setAcceptTerms] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
@@ -69,6 +70,10 @@ export default function AuthFlow() {
   }
 
   const startOAuth = async (provider: 'google' | 'apple') => {
+    if (screen === 'signup') {
+      toast.error('Use email signup to complete age verification before using social sign-in.')
+      return
+    }
     const sb = getSupabaseClient()
     if (!sb) {
       toast.error('Supabase is not configured')
@@ -105,7 +110,7 @@ export default function AuthFlow() {
   }
 
   const handleSignup = async () => {
-    if (!name || !email || !password || !confirmPassword) {
+    if (!name || !dateOfBirth || !email || !password || !confirmPassword) {
       toast.error('Please fill in all fields')
       return
     }
@@ -118,7 +123,7 @@ export default function AuthFlow() {
       return
     }
     setIsLoading(true)
-    const success = await signup(name, email, password)
+    const success = await signup(name, email, password, dateOfBirth)
     setIsLoading(false)
     if (success) {
       toast.success('Account created!')
@@ -276,6 +281,16 @@ export default function AuthFlow() {
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none text-sm"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="text-slate-400 text-xs mb-1.5 block">Date of Birth</label>
+            <input
+              type="date"
+              value={dateOfBirth}
+              onChange={(e) => setDateOfBirth(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-emerald-500 focus:outline-none text-sm"
+            />
           </div>
 
           <div>

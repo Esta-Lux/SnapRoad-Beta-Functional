@@ -18,7 +18,7 @@ print("TEST 1: Partner Login")
 print("=" * 60)
 partner_data = {
     "email": "john.don@estaluxtest.com",
-    "password": "Riyanm909@"
+    "password": os.getenv("SNAPROAD_TEST_PASSWORD", "")
 }
 try:
     response = requests.post(f"{BASE_URL}/api/partner/v2/login", json=partner_data)
@@ -35,7 +35,7 @@ print("TEST 2: Admin Login")
 print("=" * 60)
 admin_data = {
     "email": "Riyan@snaproad.co",
-    "password": "Riyanm909@"
+    "password": os.getenv("SNAPROAD_TEST_PASSWORD", "")
 }
 try:
     response = requests.post(f"{BASE_URL}/api/auth/login", json=admin_data)

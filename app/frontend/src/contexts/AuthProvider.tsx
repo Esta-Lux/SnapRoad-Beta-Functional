@@ -115,9 +115,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return true
   }
 
-  const signup = async (name: string, email: string, password: string): Promise<boolean> => {
+  const signup = async (name: string, email: string, password: string, dateOfBirth: string): Promise<boolean> => {
     setAuthError(null)
-    const result = await api.signup({ name: name.trim(), email: email.trim(), password: password.trim() })
+    const result = await api.signup({
+      name: name.trim(),
+      email: email.trim(),
+      password: password.trim(),
+      date_of_birth: dateOfBirth.trim(),
+    })
     if (!result.success || !result.data) {
       setAuthError(result.error || 'Signup failed')
       return false
