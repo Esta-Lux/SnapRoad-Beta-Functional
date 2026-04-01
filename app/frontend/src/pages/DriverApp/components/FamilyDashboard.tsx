@@ -5,6 +5,7 @@ import api from '@/services/api'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 import { updateMyLocation } from '@/lib/friendLocation'
+import { getCurrentPositionForFamilySharing } from '@/lib/familyGeolocation'
 import FamilyPrivacyControls from './FamilyPrivacyControls'
 import TeenReportCard from './TeenReportCard'
 import FamilyLeaderboard from './FamilyLeaderboard'
@@ -570,9 +571,10 @@ function ConsentScreen({
   const handleFinish = async () => {
     onSetLoading(true)
     try {
-      if (locationConsent && shareLocation && navigator.geolocation) {
+      // One-time position after explicit consent; see getCurrentPositionForFamilySharing (required for live family map).
+      if (locationConsent && shareLocation && typeof navigator !== 'undefined' && navigator.geolocation) {
         await new Promise<void>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
+          getCurrentPositionForFamilySharing(
             async (pos) => {
               await updateMyLocation(currentUserId, pos.coords.latitude, pos.coords.longitude, 0, typeof pos.coords.speed === 'number' ? pos.coords.speed * 2.237 : 0, false)
               resolve()

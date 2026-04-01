@@ -4,6 +4,7 @@ import api from '@/services/api'
 import { Settings, Battery, Car, Home, Building2, MapPin } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { updateMyLocation } from '@/lib/friendLocation'
+import { watchPositionForFamilySharing } from '@/lib/familyGeolocation'
 
 type FamilyLive = {
   lat?: number
@@ -172,12 +173,11 @@ export default function FamilyCommandCenter({
     loadDashboard().catch(() => {})
   }, [loadDashboard])
 
-  // Geolocation is required for the family feature: push the signed-in user’s position while this screen is open
-  // so the live map and server-side geofence logic stay accurate (browser permission prompt applies).
+  // Live position sync for Family Command Center: documented in watchPositionForFamilySharing (Geolocation API).
   useEffect(() => {
     let watchId: number | null = null
     if (typeof navigator === 'undefined' || !navigator.geolocation || !currentUserId) return
-    watchId = navigator.geolocation.watchPosition(
+    watchId = watchPositionForFamilySharing(
       (pos) => {
         void updateMyLocation(
           currentUserId,
