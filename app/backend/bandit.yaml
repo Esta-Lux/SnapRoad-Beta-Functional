@@ -1,0 +1,4 @@
+# Bandit config for CI (`bandit -c bandit.yaml ...`).
+# B311: stdlib random is used only for mock data, demo directions, and game variance — not cryptography.
+skips:
+  - B311

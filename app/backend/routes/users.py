@@ -1,5 +1,6 @@
+import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from models.schemas import PlanUpdate, CarCustomization
@@ -12,6 +13,10 @@ from services.mock_data import (
 from middleware.auth import get_current_user
 from services.supabase_service import sb_get_profile, sb_update_profile
 from services.snap_road_score import compute_snap_road_fields
+
+logger = logging.getLogger(__name__)
+
+CurrentUser = Annotated[dict, Depends(get_current_user)]
 
 router = APIRouter(prefix="/api", tags=["Users"])
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -54,8 +59,14 @@ def _persist_user(user_id: str, updates: dict) -> None:
             raise HTTPException(status_code=503, detail="User persistence unavailable")
 
 
-@router.get("/user/profile")
-def get_user_profile(auth_user: dict = Depends(get_current_user)):
+@router.get(
+    "/user/profile",
+    responses={
+        401: {"description": "Authentication required or invalid auth context"},
+        503: {"description": "User profile unavailable (production only)"},
+    },
+)
+def get_user_profile(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     uid = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
     if uid:
@@ -79,14 +90,14 @@ def get_user_profile(auth_user: dict = Depends(get_current_user)):
                 ):
                     if row.get(k) is not None:
                         user[k] = row[k]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("failed to fetch user profile from Supabase: %s", e)
     payload = {**user, **compute_snap_road_fields(user)}
     return {"success": True, "data": payload}
 
 
 @router.get("/user/stats")
-def get_user_stats(auth_user: dict = Depends(get_current_user)):
+def get_user_stats(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     base = {
         "total_miles": user.get("total_miles", 0),
@@ -101,7 +112,7 @@ def get_user_stats(auth_user: dict = Depends(get_current_user)):
 
 
 @router.post("/user/plan")
-def update_user_plan(plan: PlanUpdate, auth_user: dict = Depends(get_current_user)):
+def update_user_plan(plan: PlanUpdate, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     user_id = str(user.get("id"))
     requested = str(plan.plan or "").strip().lower()
@@ -129,7 +140,7 @@ def update_user_plan(plan: PlanUpdate, auth_user: dict = Depends(get_current_use
 
 
 @router.post("/user/car")
-def update_user_car(car: CarCustomization, auth_user: dict = Depends(get_current_user)):
+def update_user_car(car: CarCustomization, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     user_id = str(user.get("id"))
     _persist_user(user_id, {
@@ -142,7 +153,7 @@ def update_user_car(car: CarCustomization, auth_user: dict = Depends(get_current
 
 
 @router.get("/user/car")
-def get_user_car(auth_user: dict = Depends(get_current_user)):
+def get_user_car(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     return {
         "success": True,
@@ -156,7 +167,7 @@ def get_user_car(auth_user: dict = Depends(get_current_user)):
 
 
 @router.get("/user/car/colors")
-def get_car_colors(auth_user: dict = Depends(get_current_user)):
+def get_car_colors(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     is_premium = user.get("is_premium", False)
     gems = user.get("gems", 0)
@@ -174,7 +185,7 @@ def get_car_colors(auth_user: dict = Depends(get_current_user)):
 
 
 @router.post("/user/car/color/{color_key}/purchase")
-def purchase_car_color(color_key: str, auth_user: dict = Depends(get_current_user)):
+def purchase_car_color(color_key: str, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     user_id = str(user.get("id"))
     cost = PREMIUM_COLORS.get(color_key, 0)
@@ -187,7 +198,7 @@ def purchase_car_color(color_key: str, auth_user: dict = Depends(get_current_use
 
 
 @router.get("/user/onboarding-status")
-def get_onboarding_status(auth_user: dict = Depends(get_current_user)):
+def get_onboarding_status(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     return {
         "success": True,
@@ -201,7 +212,7 @@ def get_onboarding_status(auth_user: dict = Depends(get_current_user)):
 
 
 @router.get("/session/reset")
-def reset_session(auth_user: dict = Depends(get_current_user)):
+def reset_session(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     user_id = str(user.get("id"))
     _persist_user(user_id, {
@@ -213,7 +224,7 @@ def reset_session(auth_user: dict = Depends(get_current_user)):
 
 
 @router.get("/cars")
-def get_cars(auth_user: dict = Depends(get_current_user)):
+def get_cars(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     owned = user.get("owned_cars", [1])
     equipped = user.get("equipped_car", 1)
@@ -227,7 +238,7 @@ def get_cars(auth_user: dict = Depends(get_current_user)):
 
 
 @router.post("/cars/{car_id}/purchase")
-def purchase_car(car_id: int, auth_user: dict = Depends(get_current_user)):
+def purchase_car(car_id: int, auth_user: CurrentUser):
     car = next((c for c in CAR_MODELS if c["id"] == car_id), None)
     if not car:
         return {"success": False, "message": "Car not found"}
@@ -243,14 +254,14 @@ def purchase_car(car_id: int, auth_user: dict = Depends(get_current_user)):
 
 
 @router.post("/cars/{car_id}/equip")
-def equip_car(car_id: int, auth_user: dict = Depends(get_current_user)):
+def equip_car(car_id: int, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     _persist_user(str(user.get("id")), {"equipped_car": car_id})
     return {"success": True, "message": "Car equipped!"}
 
 
 @router.get("/skins")
-def get_skins(auth_user: dict = Depends(get_current_user)):
+def get_skins(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     owned = user.get("owned_skins", [1])
     equipped = user.get("equipped_skin", 1)
@@ -264,7 +275,7 @@ def get_skins(auth_user: dict = Depends(get_current_user)):
 
 
 @router.post("/skins/{skin_id}/purchase")
-def purchase_skin(skin_id: int, auth_user: dict = Depends(get_current_user)):
+def purchase_skin(skin_id: int, auth_user: CurrentUser):
     skin = next((s for s in CAR_SKINS if s["id"] == skin_id), None)
     if not skin:
         return {"success": False, "message": "Skin not found"}
@@ -280,7 +291,7 @@ def purchase_skin(skin_id: int, auth_user: dict = Depends(get_current_user)):
 
 
 @router.post("/skins/{skin_id}/equip")
-def equip_skin(skin_id: int, auth_user: dict = Depends(get_current_user)):
+def equip_skin(skin_id: int, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     _persist_user(str(user.get("id")), {"equipped_skin": skin_id})
     return {"success": True, "message": "Skin equipped!"}
@@ -292,7 +303,7 @@ def get_pricing():
 
 
 @router.get("/settings/notifications")
-def get_notification_settings(auth_user: dict = Depends(get_current_user)):
+def get_notification_settings(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     settings = user.get("notification_settings")
     if not isinstance(settings, dict):
@@ -302,7 +313,7 @@ def get_notification_settings(auth_user: dict = Depends(get_current_user)):
 
 
 @router.post("/settings/notifications")
-def update_notification_settings(settings: dict, auth_user: dict = Depends(get_current_user)):
+def update_notification_settings(settings: dict, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     user_id = str(user.get("id"))
     current = user.get("notification_settings")
@@ -339,8 +350,8 @@ _notifications = [
 
 @router.get("/notifications")
 def get_notifications(
-    limit: int = Query(default=100, ge=1, le=100),
-    _auth_user: dict = Depends(get_current_user),
+    _auth_user: CurrentUser,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     user = _get_user_store(_auth_user)
     notes = user.get("notifications")
@@ -352,7 +363,7 @@ def get_notifications(
 
 
 @router.put("/notifications/{notification_id}/read")
-def mark_notification_read(notification_id: int, _auth_user: dict = Depends(get_current_user)):
+def mark_notification_read(notification_id: int, _auth_user: CurrentUser):
     user = _get_user_store(_auth_user)
     notes = user.get("notifications")
     if not isinstance(notes, list):
@@ -366,7 +377,7 @@ def mark_notification_read(notification_id: int, _auth_user: dict = Depends(get_
 
 
 @router.put("/notifications/read-all")
-def mark_all_read(_auth_user: dict = Depends(get_current_user)):
+def mark_all_read(_auth_user: CurrentUser):
     user = _get_user_store(_auth_user)
     notes = user.get("notifications")
     if not isinstance(notes, list):
@@ -379,22 +390,28 @@ def mark_all_read(_auth_user: dict = Depends(get_current_user)):
 
 # ==================== VEHICLES ====================
 @router.get("/user/vehicles")
-def get_vehicles(auth_user: dict = Depends(get_current_user)):
+def get_vehicles(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     car = user.get("car", {})
     return {"success": True, "data": [car] if car else []}
 
 
 @router.post("/user/vehicles")
-def add_vehicle(vehicle: dict, auth_user: dict = Depends(get_current_user)):
+def add_vehicle(vehicle: dict, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     _persist_user(str(user.get("id")), {"car": vehicle})
     return {"success": True, "data": vehicle}
 
 
 # ==================== FAMILY GROUP ====================
-@router.get("/family/group")
-def get_family_group(_auth_user: dict = Depends(get_current_user)):
+@router.get(
+    "/family/group",
+    responses={
+        401: {"description": "Authentication required or invalid auth context"},
+        503: {"description": "Family group service unavailable (production)"},
+    },
+)
+def get_family_group(_auth_user: CurrentUser):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Family group service unavailable")
     return {
@@ -412,10 +429,10 @@ def get_family_group(_auth_user: dict = Depends(get_current_user)):
 # ==================== SETTINGS (PUT support) ====================
 @router.put("/settings/notifications")
 def update_notification_settings_put(
-    auth_user: dict = Depends(get_current_user),
-    category: str = Query(default=""),
-    setting: str = Query(default=""),
-    enabled: bool = Query(default=True),
+    auth_user: CurrentUser,
+    category: Annotated[str, Query()] = "",
+    setting: Annotated[str, Query()] = "",
+    enabled: Annotated[bool, Query()] = True,
 ):
     user = _get_user_store(auth_user)
     settings = user.get("notification_settings")
@@ -429,8 +446,8 @@ def update_notification_settings_put(
     return {"success": True, "message": "Settings updated", "data": users_db[str(user.get("id"))].get("notification_settings", settings)}
 
 
-@router.put("/user/profile")
-def update_profile(body: dict, auth_user: dict = Depends(get_current_user)):
+@router.put("/user/profile", responses={400: {"description": "Invalid vehicle_height_meters value"}})
+def update_profile(body: dict, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     updates = {k: v for k, v in body.items() if k not in ("id", "email")}
     if "vehicle_height_meters" in updates:

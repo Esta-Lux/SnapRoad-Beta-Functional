@@ -6,7 +6,10 @@ Mock data is used as fallback; Supabase is the target database.
 import os
 import traceback
 from pathlib import Path
+from typing import Optional
+
 from dotenv import load_dotenv
+
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 import sentry_sdk
@@ -103,17 +106,8 @@ def create_app() -> FastAPI:
             response.headers["X-XSS-Protection"] = "1; mode=block"
             return response
 
-    app.add_middleware(SecurityHeadersMiddleware)
-    # TLS terminates at Railway / most PaaS edges; traffic to this process is HTTP.
-    # HTTPSRedirectMiddleware breaks internal health checks and proxy → container routing (502 / connection refused).
-    _railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
-    _skip_https_redirect = (os.getenv("SKIP_HTTPS_REDIRECT") or "").strip().lower() in ("1", "true", "yes")
-    if _env == "production" and not (_railway or _skip_https_redirect):
-        app.add_middleware(HTTPSRedirectMiddleware)
 
-    # Starlette matches handlers by walking the exception MRO. FastAPI's HTTPException subclasses
-    # starlette.exceptions.HTTPException; registering only fastapi.HTTPException can miss cases where
-    # the base Starlette type wins and falls through to Exception → generic 500.
+def _register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         return JSONResponse(
@@ -128,7 +122,6 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
-        # Fallback if anything still reaches the broad handler (MRO edge cases).
         if isinstance(exc, StarletteHTTPException):
             return JSONResponse(
                 status_code=exc.status_code,
@@ -139,7 +132,6 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=422, content={"detail": exc.errors()})
         if isinstance(exc, RateLimitExceeded):
             return await _rate_limit_exceeded_handler(request, exc)
-        # Never leak stack traces to clients.
         telemetry_service.publish_fire_and_forget(
             {
                 "id": f"err_{telemetry_service.now_iso()}_{request.method}_{request.url.path}",
@@ -152,9 +144,15 @@ def create_app() -> FastAPI:
         )
         return JSONResponse(status_code=500, content={"detail": "An internal error occurred"})
 
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+def _maybe_add_https_redirect(app: FastAPI, env: str) -> None:
+    _railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
+    _skip_https_redirect = (os.getenv("SKIP_HTTPS_REDIRECT") or "").strip().lower() in ("1", "true", "yes")
+    if env == "production" and not (_railway or _skip_https_redirect):
+        app.add_middleware(HTTPSRedirectMiddleware)
+
+
+def _add_telemetry_middleware(app: FastAPI) -> None:
     @app.middleware("http")
     async def telemetry_middleware(request: Request, call_next):
         start = telemetry_service.start_timer()
@@ -173,13 +171,7 @@ def create_app() -> FastAPI:
             raise
         finally:
             duration_ms = telemetry_service.elapsed_ms(start)
-            severity = (
-                "error"
-                if status_code >= 500 or error
-                else "warn"
-                if status_code >= 400
-                else "info"
-            )
+            severity = _telemetry_severity(status_code, error)
             event = {
                 "id": f"evt_{telemetry_service.now_iso()}_{method}_{path}",
                 "timestamp": telemetry_service.now_iso(),
@@ -191,8 +183,6 @@ def create_app() -> FastAPI:
                 "error": error,
                 "error_stack": error_stack,
             }
-            # Never block request completion on runtime-config DB reads.
-            # Telemetry publish already runs fire-and-forget.
             telemetry_service.publish_fire_and_forget(event)
 
     @app.get("/")
@@ -227,52 +217,14 @@ def create_app() -> FastAPI:
         status = "ok" if checks["database"] == "ok" else "degraded"
         return {"status": status, "checks": checks}
 
-    @app.get("/api/env-check")
-    def env_check():
-        """Verify .env is loaded and key vars are set (no secrets returned)."""
-        if IS_PRODUCTION:
-            return {"ok": False, "message": "Not available in production"}
-        key_path = os.environ.get("MAPKIT_PRIVATE_KEY_PATH", "")
-        key_path_abs = (
-            key_path
-            if (key_path and os.path.isabs(key_path))
-            else str(Path(__file__).resolve().parent / (key_path or ""))
-        )
-        return {
-            "env_file_path": str(Path(__file__).resolve().parent / ".env"),
-            "env_file_exists": (Path(__file__).resolve().parent / ".env").is_file(),
-            "jwt_configured": bool(JWT_SECRET),
-            "supabase_configured": bool(
-                (SUPABASE_URL or "").strip() and (SUPABASE_SERVICE_ROLE_KEY or "").strip()
-            ),
-            "mapkit_configured": bool(
-                (os.environ.get("MAPKIT_KEY_ID") or "").strip()
-                and (os.environ.get("MAPKIT_TEAM_ID") or "").strip()
-                and key_path
-                and os.path.isfile(key_path_abs)
-            ),
-            "google_maps_configured": bool(
-                (
-                    os.environ.get("GOOGLE_PLACES_API_KEY")
-                    or os.environ.get("GOOGLE_MAPS_API_KEY")
-                    or ""
-                ).strip()
-            ),
-            "orion_llm_configured": is_llm_configured(),
-            "nvidia_configured": bool(NVIDIA_API_KEY),
-            "openai_configured": bool((OPENAI_API_KEY or "").strip()),
-            "ohgo_cameras_configured": bool((OHGO_API_KEY or "").strip()),
-        }
-
-    # Parse CORS origins from env (comma-separated)
-    _cors_origins_raw = os.getenv("CORS_ORIGINS", "")
-
-    if _cors_origins_raw:
-        cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
-    elif _env == "production":
-        cors_origins = []  # Force explicit configuration in production
+def _cors_settings(env: str) -> tuple[list[str], Optional[str], list[str]]:
+    raw = os.getenv("CORS_ORIGINS", "")
+    if raw:
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+    elif env == "production":
+        origins = []
     else:
-        cors_origins = [
+        origins = [
             "http://localhost:5173",
             "http://localhost:3000",
             "http://127.0.0.1:5173",
@@ -280,31 +232,23 @@ def create_app() -> FastAPI:
             "http://localhost:8001",
             "http://127.0.0.1:8001",
         ]
-
-    # Keep regex support for dev tunnels; gate it off by default in production.
-    _origin_regex = (
+    origin_regex = (
         None
-        if _env == "production"
+        if env == "production"
         else os.environ.get(
             "CORS_ORIGIN_REGEX",
             r"^https?://.*\.(tunnelmole\.net|trycloudflare\.com|loca\.lt)$",
         )
     )
-    _cors_headers = (
+    headers = (
         ["*"]
-        if _env != "production"
+        if env != "production"
         else ["Authorization", "Content-Type", "Bypass-Tunnel-Reminder", "X-Requested-With", "Accept"]
     )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_origin_regex=_origin_regex,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=_cors_headers,
-    )
+    return origins, origin_regex, headers
 
-    # Register all route modules
+
+def _register_routes(app: FastAPI) -> None:
     app.include_router(auth_router)
     app.include_router(users_router)
     app.include_router(offers_router)
@@ -330,6 +274,106 @@ def create_app() -> FastAPI:
     app.include_router(place_alerts_router)
     app.include_router(legal_router)
 
+
+def _build_health_response() -> dict:
+    checks = {"database": "ok", "cache": "unknown"}
+    try:
+        sb = get_supabase()
+        sb.table("profiles").select("id").limit(1).execute()
+    except Exception:
+        checks["database"] = "error"
+
+    try:
+        import redis
+
+        redis_url = (os.environ.get("REDIS_URL") or "").strip()
+        if redis_url:
+            client = redis.from_url(redis_url)
+            client.ping()
+            checks["cache"] = "ok"
+        else:
+            checks["cache"] = "disabled"
+    except Exception:
+        checks["cache"] = "degraded"
+
+    status = "ok" if checks["database"] == "ok" else "degraded"
+    return {"status": status, "checks": checks}
+
+
+def _build_env_check_response() -> dict:
+    """Verify .env is loaded and key vars are set (no secrets returned)."""
+    if IS_PRODUCTION:
+        return {"ok": False, "message": "Not available in production"}
+
+    key_path = os.environ.get("MAPKIT_PRIVATE_KEY_PATH", "")
+    key_path_abs = (
+        key_path
+        if (key_path and os.path.isabs(key_path))
+        else str(Path(__file__).resolve().parent / (key_path or ""))
+    )
+
+    mapkit_key_id = (os.environ.get("MAPKIT_KEY_ID") or "").strip()
+    mapkit_team_id = (os.environ.get("MAPKIT_TEAM_ID") or "").strip()
+    google_key = (
+        os.environ.get("GOOGLE_PLACES_API_KEY")
+        or os.environ.get("GOOGLE_MAPS_API_KEY")
+        or ""
+    ).strip()
+
+    return {
+        "env_file_path": str(Path(__file__).resolve().parent / ".env"),
+        "env_file_exists": (Path(__file__).resolve().parent / ".env").is_file(),
+        "jwt_configured": bool(JWT_SECRET),
+        "supabase_configured": bool(
+            (SUPABASE_URL or "").strip() and (SUPABASE_SERVICE_ROLE_KEY or "").strip()
+        ),
+        "mapkit_configured": bool(
+            mapkit_key_id and mapkit_team_id and key_path and os.path.isfile(key_path_abs)
+        ),
+        "google_maps_configured": bool(google_key),
+        "orion_llm_configured": is_llm_configured(),
+        "nvidia_configured": bool(NVIDIA_API_KEY),
+        "openai_configured": bool((OPENAI_API_KEY or "").strip()),
+        "ohgo_cameras_configured": bool((OHGO_API_KEY or "").strip()),
+    }
+
+
+def create_app() -> FastAPI:
+    env = os.getenv("ENVIRONMENT", "development")
+    validate_production_env()
+    app = FastAPI(title="SnapRoad API")
+
+    app.add_middleware(SecurityHeadersMiddleware)
+    _maybe_add_https_redirect(app, env)
+    _register_exception_handlers(app)
+
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    _add_telemetry_middleware(app)
+
+    @app.get("/")
+    def root():
+        return {"message": "SnapRoad API", "docs": "/docs", "redoc": "/redoc"}
+
+    @app.get("/health")
+    def health():
+        return _build_health_response()
+
+    @app.get("/api/env-check")
+    def env_check():
+        return _build_env_check_response()
+
+    origins, origin_regex, cors_headers = _cors_settings(env)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_origin_regex=origin_regex,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=cors_headers,
+    )
+
+    _register_routes(app)
     return app
 
 
@@ -339,4 +383,6 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
+    # Bind loopback by default (Sonar/security). Containers use docker-entrypoint / explicit --host 0.0.0.0.
+    _host = (os.environ.get("UVICORN_HOST") or "127.0.0.1").strip()
+    uvicorn.run("main:app", host=_host, port=8001, reload=True)

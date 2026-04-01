@@ -1,6 +1,7 @@
 # SnapRoad - Partner Portal Service
 # Backend service for partner operations: team management, referrals, redemptions
 
+import logging
 import os
 import uuid
 from datetime import datetime, timedelta
@@ -8,6 +9,8 @@ from typing import Optional, List, Dict
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_logger = logging.getLogger(__name__)
 
 # In-memory storage (replace with MongoDB in production)
 partner_db = {
@@ -19,13 +22,14 @@ partner_db = {
     "invite_codes": {}
 }
 
-# Initialize with sample partner
+# Initialize with sample partner (plaintext password is dev fixture only; prod must use hashes).
 SAMPLE_PARTNER_ID = "partner_001"
+_SAMPLE_PARTNER_PASS = "password"  # nosec B105
 partner_db["partners"][SAMPLE_PARTNER_ID] = {
     "id": SAMPLE_PARTNER_ID,
     "business_name": "FuelStation Pro",
     "email": "partner@snaproad.com",
-    "password": "password",  # In production, use hashed passwords
+    "password": _SAMPLE_PARTNER_PASS,
     "credits": 15.00,
     "subscription_plan": "pro",
     "created_at": "2024-12-01",
@@ -328,8 +332,11 @@ class PartnerService:
                 "is_repeat": qr_data.get("isRepeatPurchase", False)
             }
             
-        except Exception as e:
+        except (TypeError, ValueError, KeyError) as e:
             return {"success": False, "error": str(e)}
+        except Exception:
+            _logger.exception("validate_redemption failed")
+            return {"success": False, "error": "Redemption processing failed"}
     
     def get_recent_redemptions(self, partner_id: str, limit: int = 10) -> List[dict]:
         """Get recent redemptions for a partner"""

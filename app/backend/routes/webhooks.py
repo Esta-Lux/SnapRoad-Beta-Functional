@@ -1,9 +1,9 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, Depends, Query
 from fastapi.responses import Response, JSONResponse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import logging
-import random
+from services.demo_random import choice, randint
 from middleware.auth import decode_token, require_admin
 from services.telemetry_service import telemetry_service
 
@@ -82,7 +82,7 @@ def _handle_checkout_session_completed(session: dict) -> None:
         boost_type = meta.get("boost_type")
         if offer_id and boost_type in BOOST_PRICING:
             cfg = BOOST_PRICING[boost_type]
-            ends_at = datetime.utcnow() + timedelta(hours=cfg["duration_hours"])
+            ends_at = datetime.now(timezone.utc) + timedelta(hours=cfg["duration_hours"])
             new_boost = sb_create_boost({
                 "offer_id": offer_id,
                 "partner_id": partner_id,
@@ -261,15 +261,15 @@ INCIDENT_LOCATIONS = [
 def _make_incident() -> dict:
     global _next_incident_id
     _next_incident_id += 1
-    itype, confidence = random.choice(INCIDENT_TYPES)
-    confidence += random.randint(-5, 5)
+    itype, confidence = choice(INCIDENT_TYPES)
+    confidence += randint(-5, 5)
     return {
         "id": _next_incident_id,
         "type": itype,
         "confidence": min(99, max(70, confidence)),
         "status": "new",
-        "blurred": random.choice([True, False]),
-        "location": random.choice(INCIDENT_LOCATIONS),
+        "blurred": choice([True, False]),
+        "location": choice(INCIDENT_LOCATIONS),
         "reportedAt": "just now",
         "timestamp": datetime.now().isoformat(),
     }

@@ -1,6 +1,8 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional
-from datetime import datetime, timedelta
+from typing import Annotated, Optional
+from datetime import datetime, timedelta, timezone
 from models.schemas import (
     FriendRequest,
     RoadReport,
@@ -16,25 +18,33 @@ from middleware.auth import get_current_user
 from database import get_supabase
 from config import ENVIRONMENT
 
+logger = logging.getLogger(__name__)
+
+MSG_AUTH_REQUIRED = "Authentication required"
+
+CurrentUser = Annotated[dict, Depends(get_current_user)]
+
+_PROFILE_SEARCH_COLS = "id, name, full_name, email, friend_code"
+
 router = APIRouter(prefix="/api", tags=["Social"])
 
 
 # ==================== FRIENDS ====================
-@router.get("/friends")
+@router.get("/friends", responses={401: {"description": MSG_AUTH_REQUIRED}})
 def get_friends(
-    limit: int = Query(default=100, ge=1, le=100),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """Redirects to Supabase-backed friends list (was previously in-memory mock)."""
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     return get_friends_list(limit=limit, current_user=current_user)
 
 
-@router.get("/friends/search")
-def search_friends(q: str = "", user_id: str = "", current_user: dict = Depends(get_current_user)):
+@router.get("/friends/search", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def search_friends(current_user: CurrentUser, q: str = "", user_id: str = ""):
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     query = (q or user_id).strip()
     if not query:
@@ -43,14 +53,14 @@ def search_friends(q: str = "", user_id: str = "", current_user: dict = Depends(
 
     # Search by friend_code (exact match, case-insensitive), email, or name
     code_res = supabase.table("profiles").select(
-        "id, name, full_name, email, friend_code"
+        _PROFILE_SEARCH_COLS
     ).neq("id", uid).ilike("friend_code", query).limit(5).execute()
 
     safe_q = query[:100].replace("%", "").replace(",", "").replace("(", "").replace(")", "").replace(".", "").strip()
     if not safe_q:
         return {"success": True, "data": []}
     name_res = supabase.table("profiles").select(
-        "id, name, full_name, email, friend_code"
+        _PROFILE_SEARCH_COLS
     ).neq("id", uid).or_(
         f"full_name.ilike.%{safe_q}%,name.ilike.%{safe_q}%,email.ilike.%{safe_q}%"
     ).limit(10).execute()
@@ -83,11 +93,11 @@ def search_friends(q: str = "", user_id: str = "", current_user: dict = Depends(
     return {"success": True, "data": results[:20]}
 
 
-@router.get("/friends/my-code")
-def get_my_friend_code(current_user: dict = Depends(get_current_user)):
+@router.get("/friends/my-code", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def get_my_friend_code(current_user: CurrentUser):
     """Return the current user's 6-character friend code for sharing."""
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     supabase = get_supabase()
     res = supabase.table("profiles").select("friend_code").eq("id", uid).limit(1).execute()
@@ -95,16 +105,15 @@ def get_my_friend_code(current_user: dict = Depends(get_current_user)):
     return {"success": True, "data": {"friend_code": code}}
 
 
-@router.post("/friends/add")
-def add_friend(request: FriendRequest, current_user: dict = Depends(get_current_user)):
+@router.post("/friends/add", responses={401: {"description": MSG_AUTH_REQUIRED}, 400: {"description": "Invalid request or already friends"}})
+def add_friend(request: FriendRequest, current_user: CurrentUser):
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     friend_id = request.user_id
     if not friend_id or friend_id == uid:
         raise HTTPException(status_code=400, detail="Invalid friend_id")
     supabase = get_supabase()
-    # Check not already friends or pending
     r1 = supabase.table("friendships").select("id").eq("user_id_1", uid).eq("user_id_2", friend_id).execute()
     r2 = supabase.table("friendships").select("id").eq("user_id_1", friend_id).eq("user_id_2", uid).execute()
     if (r1.data and len(r1.data) > 0) or (r2.data and len(r2.data) > 0):
@@ -117,26 +126,26 @@ def add_friend(request: FriendRequest, current_user: dict = Depends(get_current_
     return {"success": True, "message": "Friend request sent"}
 
 
-@router.delete("/friends/{friend_id}")
-def remove_friend(friend_id: str, current_user: dict = Depends(get_current_user)):
+@router.delete("/friends/{friend_id}", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def remove_friend(friend_id: str, current_user: CurrentUser):
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     supabase = get_supabase()
     # Delete row where (user_id_1=uid, user_id_2=friend_id) or (user_id_1=friend_id, user_id_2=uid)
-    r1 = supabase.table("friendships").delete().eq("user_id_1", uid).eq("user_id_2", friend_id).execute()
-    r2 = supabase.table("friendships").delete().eq("user_id_1", friend_id).eq("user_id_2", uid).execute()
+    supabase.table("friendships").delete().eq("user_id_1", uid).eq("user_id_2", friend_id).execute()
+    supabase.table("friendships").delete().eq("user_id_1", friend_id).eq("user_id_2", uid).execute()
     return {"success": True, "message": "Friend removed"}
 
 
-@router.get("/friends/list")
+@router.get("/friends/list", responses={401: {"description": MSG_AUTH_REQUIRED}})
 def get_friends_list(
-    limit: int = Query(default=100, ge=1, le=100),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """List friends with friend_id and status for location sharing."""
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     supabase = get_supabase()
     res = supabase.table("friendships").select(
@@ -169,14 +178,14 @@ def get_friends_list(
     return {"success": True, "data": out}
 
 
-@router.get("/friends/requests")
+@router.get("/friends/requests", responses={401: {"description": MSG_AUTH_REQUIRED}})
 def get_friend_requests(
-    limit: int = Query(default=100, ge=1, le=100),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """Pending friend requests (incoming)."""
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     supabase = get_supabase()
     res = supabase.table("friendships").select(
@@ -206,14 +215,14 @@ def get_friend_requests(
     return {"success": True, "data": requests}
 
 
-@router.get("/friends/requests/sent")
+@router.get("/friends/requests/sent", responses={401: {"description": MSG_AUTH_REQUIRED}})
 def get_outgoing_friend_requests(
-    limit: int = Query(default=100, ge=1, le=100),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """Pending friend requests you sent (waiting on the other person)."""
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     supabase = get_supabase()
     res = supabase.table("friendships").select(
@@ -223,7 +232,7 @@ def get_outgoing_friend_requests(
     profile_map = {}
     if to_ids:
         prof = supabase.table("profiles").select(
-            "id, name, full_name, email, friend_code"
+            _PROFILE_SEARCH_COLS
         ).in_("id", to_ids).execute()
         for p in (prof.data or []):
             profile_map[str(p["id"])] = p
@@ -241,11 +250,11 @@ def get_outgoing_friend_requests(
     return {"success": True, "data": out}
 
 
-@router.post("/friends/reject")
-def reject_friend_request(body: dict, current_user: dict = Depends(get_current_user)):
+@router.post("/friends/reject", responses={400: {"description": "Missing friendship_id"}, 401: {"description": MSG_AUTH_REQUIRED}})
+def reject_friend_request(body: dict, current_user: CurrentUser):
     """Decline an incoming request (body.friendship_id = row id)."""
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     friendship_id = body.get("friendship_id")
     if not friendship_id:
@@ -257,11 +266,11 @@ def reject_friend_request(body: dict, current_user: dict = Depends(get_current_u
     return {"success": True, "message": "Request declined"}
 
 
-@router.post("/friends/accept")
-def accept_friend_request(body: dict, current_user: dict = Depends(get_current_user)):
+@router.post("/friends/accept", responses={400: {"description": "Missing friendship_id"}, 401: {"description": MSG_AUTH_REQUIRED}})
+def accept_friend_request(body: dict, current_user: CurrentUser):
     """Accept a friend request (body.friendship_id = row id)."""
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     friendship_id = body.get("friendship_id")
     if not friendship_id:
@@ -273,8 +282,8 @@ def accept_friend_request(body: dict, current_user: dict = Depends(get_current_u
     return {"success": True, "message": "Friend request accepted"}
 
 
-@router.post("/friends/location/update")
-def update_my_location(body: LocationUpdateBody, current_user: dict = Depends(get_current_user)):
+@router.post("/friends/location/update", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
     """Update current user's live location (Supabase: live_locations upsert; mock: no-op)."""
     from services.runtime_config import require_enabled
 
@@ -283,7 +292,7 @@ def update_my_location(body: LocationUpdateBody, current_user: dict = Depends(ge
         "Live location publishing is temporarily paused.",
     )
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     try:
         from database import get_supabase
@@ -298,19 +307,19 @@ def update_my_location(body: LocationUpdateBody, current_user: dict = Depends(ge
                 "speed_mph": body.speed_mph,
                 "is_navigating": body.is_navigating,
                 "destination_name": body.destination_name or None,
-                "last_updated": datetime.utcnow().isoformat() + "Z",
+                "last_updated": datetime.now(timezone.utc).isoformat() + "Z",
                 "is_sharing": True,
             }).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to upsert live location: %s", e)
     return {"success": True}
 
 
-@router.put("/friends/location/sharing")
-def set_location_sharing(body: LocationSharingBody, current_user: dict = Depends(get_current_user)):
+@router.put("/friends/location/sharing", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
     """Turn location sharing on or off."""
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     try:
         from database import get_supabase
@@ -319,18 +328,18 @@ def set_location_sharing(body: LocationSharingBody, current_user: dict = Depends
             sb = get_supabase()
             sb.table("live_locations").update({
                 "is_sharing": body.is_sharing,
-                "last_updated": datetime.utcnow().isoformat() + "Z",
+                "last_updated": datetime.now(timezone.utc).isoformat() + "Z",
             }).eq("user_id", uid).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to update location sharing setting: %s", e)
     return {"success": True}
 
 
-@router.post("/friends/tag")
-def send_location_tag(body: LocationTagBody, current_user: dict = Depends(get_current_user)):
+@router.post("/friends/tag", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def send_location_tag(body: LocationTagBody, current_user: CurrentUser):
     """Send a location tag to a friend."""
     if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     try:
         from database import get_supabase
@@ -344,18 +353,18 @@ def send_location_tag(body: LocationTagBody, current_user: dict = Depends(get_cu
                 "lng": body.lng,
                 "message": body.message or "Check out where I am!",
             }).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to insert location tag: %s", e)
     return {"success": True, "message": "Location tag sent"}
 
 
 # ==================== ROAD REPORTS ====================
-@router.get("/reports")
+@router.get("/reports", responses={503: {"description": "Legacy route unavailable in production"}})
 def get_road_reports(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
-    radius: float = Query(default=10, ge=0.1, le=200),
-    limit: int = Query(default=100, ge=1, le=100),
+    radius: Annotated[float, Query(ge=0.1, le=200)] = 10,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Use /api/incidents and /api/photo-reports in production")
@@ -371,13 +380,14 @@ def get_road_reports(
     return {"success": True, "data": capped, "total": len(capped)}
 
 
-@router.post("/reports")
+@router.post("/reports", responses={503: {"description": "Legacy route unavailable in production"}})
 def create_road_report(report: RoadReport):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Use /api/photo-reports/upload in production")
     user = users_db.get(current_user_id, {})
     new_id = max([r["id"] for r in road_reports_db], default=0) + 1
-    new_report = {"id": new_id, "user_id": current_user_id, "type": report.type, "title": report.title, "description": report.description, "lat": report.lat, "lng": report.lng, "photo_url": report.photo_url, "upvotes": 0, "upvoters": [], "created_at": datetime.now().isoformat(), "expires_at": (datetime.now() + timedelta(hours=12)).isoformat(), "verified": False}
+    now = datetime.now(timezone.utc)
+    new_report = {"id": new_id, "user_id": current_user_id, "type": report.type, "title": report.title, "description": report.description, "lat": report.lat, "lng": report.lng, "photo_url": report.photo_url, "upvotes": 0, "upvoters": [], "created_at": now.isoformat(), "expires_at": (now + timedelta(hours=12)).isoformat(), "verified": False}
     road_reports_db.append(new_report)
     xp_result = add_xp_to_user(current_user_id, XP_CONFIG["photo_report"])
     if current_user_id in users_db:
@@ -386,7 +396,7 @@ def create_road_report(report: RoadReport):
     return {"success": True, "message": f"Report posted! +{XP_CONFIG['photo_report']} XP", "data": {"report": new_report, "xp_result": xp_result, "badges_earned": badges_earned}}
 
 
-@router.post("/reports/{report_id}/upvote")
+@router.post("/reports/{report_id}/upvote", responses={503: {"description": "Legacy route unavailable in production"}})
 def upvote_report(report_id: int):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Use /api/photo-reports/{report_id}/upvote in production")
@@ -407,7 +417,7 @@ def upvote_report(report_id: int):
     return {"success": True, "message": "Upvoted! Reporter earned 10 gems", "data": {"report_id": report_id, "new_upvote_count": report["upvotes"]}}
 
 
-@router.delete("/reports/{report_id}")
+@router.delete("/reports/{report_id}", responses={503: {"description": "Legacy route unavailable in production"}})
 def delete_report(report_id: int):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Legacy report delete unavailable in production")
@@ -421,8 +431,8 @@ def delete_report(report_id: int):
     return {"success": True, "message": "Report deleted"}
 
 
-@router.get("/reports/my")
-def get_my_reports(limit: int = Query(default=100, ge=1, le=100)):
+@router.get("/reports/my", responses={503: {"description": "Legacy route unavailable in production"}})
+def get_my_reports(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Legacy report listing unavailable in production")
     my_reports = [r for r in road_reports_db if r["user_id"] == current_user_id]
@@ -443,12 +453,12 @@ def family_message(member_id: str):
 
 
 # ==================== INCIDENTS (consumer-facing) ====================
-@router.get("/incidents")
+@router.get("/incidents", responses={503: {"description": "Legacy route unavailable in production"}})
 def get_incidents(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
-    radius: float = Query(default=15, ge=0.1, le=200),
-    limit: int = Query(default=100, ge=1, le=100),
+    radius: Annotated[float, Query(ge=0.1, le=200)] = 15,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Use /api/incidents/nearby in production")

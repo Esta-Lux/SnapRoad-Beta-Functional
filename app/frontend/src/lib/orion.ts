@@ -190,11 +190,9 @@ export async function chatWithOrionWithTools(
       if (!response.ok) throw new Error(`Backend error: ${response.status}`)
       const data = await response.json()
       return { content: data?.content ?? 'Sorry, I had trouble with that.' }
-    } catch {
-      return {
-        content:
-          "I'm not configured yet — add NVIDIA_API_KEY or OPENAI_API_KEY to the backend .env and ensure the API is running.",
-      }
+    } catch (err: unknown) {
+      console.warn('[Orion] chatWithOrionWithTools failed', err)
+      return { content: ORION_CONFIG_MSG }
     }
   }
   return { content: "I'm not configured yet — set VITE_BACKEND_URL / VITE_API_URL and run backend Orion." }
@@ -226,8 +224,9 @@ export async function chatWithOrion(
     }
     const data = await response.json()
     return data?.content ?? 'Sorry, I had trouble with that.'
-  } catch (e) {
-    return "I'm not configured yet — add NVIDIA_API_KEY or OPENAI_API_KEY to the backend .env and ensure the backend is running."
+  } catch (err: unknown) {
+    console.warn('[Orion] chatWithOrion failed', err)
+    return ORION_CONFIG_MSG
   }
 }
 

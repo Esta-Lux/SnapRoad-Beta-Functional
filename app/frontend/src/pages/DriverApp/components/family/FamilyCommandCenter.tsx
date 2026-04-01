@@ -4,6 +4,7 @@ import api from '@/services/api'
 import { Settings, Battery, Car, Home, Building2, MapPin } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { updateMyLocation } from '@/lib/friendLocation'
+import { watchPositionForFamilySharing } from '@/lib/familyGeolocation'
 
 type FamilyLive = {
   lat?: number
@@ -172,10 +173,11 @@ export default function FamilyCommandCenter({
     loadDashboard().catch(() => {})
   }, [loadDashboard])
 
+  // Live position sync for Family Command Center: documented in watchPositionForFamilySharing (Geolocation API).
   useEffect(() => {
     let watchId: number | null = null
     if (typeof navigator === 'undefined' || !navigator.geolocation || !currentUserId) return
-    watchId = navigator.geolocation.watchPosition(
+    watchId = watchPositionForFamilySharing(
       (pos) => {
         void updateMyLocation(
           currentUserId,
@@ -198,7 +200,7 @@ export default function FamilyCommandCenter({
   useEffect(() => {
     const me = members.find((m) => String(m.user_id) === String(currentUserId))
     const live = me?.live
-    if (!live || !live.is_sharing || typeof live.lat !== 'number' || typeof live.lng !== 'number') return
+    if (!live?.is_sharing || typeof live.lat !== 'number' || typeof live.lng !== 'number') return
     for (const place of places) {
       if (typeof place.lat !== 'number' || typeof place.lng !== 'number') continue
       const key = `${currentUserId}:${place.id ?? place.name}`
@@ -282,43 +284,43 @@ export default function FamilyCommandCenter({
   useEffect(() => {
     const envToken = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
     const runtimeToken = (globalThis as any)?.mapboxgl?.accessToken as string | undefined
-    const token = (envToken && envToken.trim()) || (runtimeToken && runtimeToken.trim()) || ''
-    if (!token || !miniMapEl.current) {
-      setMiniMapAvailable(false)
-      return
-    }
-    setMiniMapAvailable(true)
-    let cancelled = false
-    const init = async () => {
-      const mapbox = mapboxRef.current ?? await import('mapbox-gl')
-      if (cancelled) return
-      mapboxRef.current = mapbox
-      mapbox.default.accessToken = token
-      if (!miniMapRef.current) {
-        miniMapRef.current = new mapbox.default.Map({
-          container: miniMapEl.current!,
-          style: isLight ? 'mapbox://styles/mapbox/light-v11' : 'mapbox://styles/mapbox/dark-v11',
-          center: [-82.9988, 39.9612],
-          zoom: 11,
-          attributionControl: false,
-          logoPosition: 'bottom-right',
-          interactive: true,
-        })
-        miniMapRef.current.addControl(new mapbox.default.AttributionControl({ compact: true }), 'bottom-right')
-        miniMapRef.current.addControl(new mapbox.default.NavigationControl({ showCompass: false }), 'top-right')
-        miniMapRef.current.on('load', refreshMiniMap)
-      } else {
-        try {
-          miniMapRef.current.setStyle(isLight ? 'mapbox://styles/mapbox/light-v11' : 'mapbox://styles/mapbox/dark-v11')
-          miniMapRef.current.once('style.load', refreshMiniMap)
-        } catch {
-          refreshMiniMap()
+    const token = envToken?.trim() || runtimeToken?.trim() || ''
+    if (token && miniMapEl.current) {
+      setMiniMapAvailable(true)
+      let cancelled = false
+      const init = async () => {
+        const mapbox = mapboxRef.current ?? await import('mapbox-gl')
+        if (cancelled) return
+        mapboxRef.current = mapbox
+        mapbox.default.accessToken = token
+        if (miniMapRef.current) {
+          try {
+            miniMapRef.current.setStyle(isLight ? 'mapbox://styles/mapbox/light-v11' : 'mapbox://styles/mapbox/dark-v11')
+            miniMapRef.current.once('style.load', refreshMiniMap)
+          } catch {
+            refreshMiniMap()
+          }
+        } else {
+          miniMapRef.current = new mapbox.default.Map({
+            container: miniMapEl.current!,
+            style: isLight ? 'mapbox://styles/mapbox/light-v11' : 'mapbox://styles/mapbox/dark-v11',
+            center: [-82.9988, 39.9612],
+            zoom: 11,
+            attributionControl: false,
+            logoPosition: 'bottom-right',
+            interactive: true,
+          })
+          miniMapRef.current.addControl(new mapbox.default.AttributionControl({ compact: true }), 'bottom-right')
+          miniMapRef.current.addControl(new mapbox.default.NavigationControl({ showCompass: false }), 'top-right')
+          miniMapRef.current.on('load', refreshMiniMap)
         }
       }
-    }
-    init().catch(() => {})
-    return () => {
-      cancelled = true
+      init().catch(() => {})
+      return () => {
+        cancelled = true
+      }
+    } else {
+      setMiniMapAvailable(false)
     }
   }, [refreshMiniMap, isLight])
 
@@ -398,6 +400,18 @@ export default function FamilyCommandCenter({
     [groupId, loadDashboard]
   )
 
+  const updatePlaceName = (idx: number, name: string) => {
+    setPlaceDrafts((old) => old.map((v, i) => (i === idx ? { ...v, name } : v)))
+  }
+
+  const updatePlaceRadius = (idx: number, radius: string) => {
+    setPlaceDrafts((old) => old.map((v, i) => (i === idx ? { ...v, radius_meters: Number(radius) } : v)))
+  }
+
+  const removePlace = (idx: number) => {
+    setPlaceDrafts((old) => old.filter((_, i) => i !== idx))
+  }
+
   const savePlaces = async () => {
     await api.put(`/api/family/group/${groupId}/places`, { places: placeDrafts })
     await loadDashboard()
@@ -441,7 +455,7 @@ export default function FamilyCommandCenter({
             </div>
             <div style={{ fontSize: 12, color: isLight ? '#64748b' : 'rgba(255,255,255,0.65)', marginTop: 2 }}>{memberCountLabel}</div>
             <div style={{ fontSize: 11, color: isLight ? '#64748b' : 'rgba(255,255,255,0.6)', marginTop: 4 }}>
-              Group ID: <b>{groupId}</b> · Invite: <b>{inviteCode || '—'}</b>
+              {'Group ID: '}<b>{groupId}</b>{' · Invite: '}<b>{inviteCode || '—'}</b>
             </div>
             <div style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 700, marginTop: 4 }}>{memberRoleLabel(myRole)}</div>
           </div>
@@ -471,6 +485,8 @@ export default function FamilyCommandCenter({
         {essentialMembers.map((m) => {
           const name = m.profiles?.full_name ?? m.profiles?.name ?? 'Member'
           const status = statusFor(m)
+          const sharingLabel = m.live?.is_sharing ? 'Location sharing on' : 'Location sharing off'
+          const headingSuffix = typeof m.live?.heading === 'number' ? ` · Heading ${Math.round(m.live.heading)}°` : ''
           return (
             <button type="button" key={m.user_id} onClick={() => handleMemberSelect(m).catch(() => {})} style={{ minWidth: 190, textAlign: 'left', border: '1px solid rgba(15,23,42,0.08)', borderRadius: 14, padding: 12, background: '#fff', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -482,15 +498,14 @@ export default function FamilyCommandCenter({
                 </div>
                 {typeof m.live?.battery_level === 'number' && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#64748b', fontSize: 11 }}>
-                    <Battery size={13} /> {Math.round(m.live.battery_level)}%
+                    <Battery size={13} />{' '}{Math.round(m.live.battery_level)}%
                   </div>
                 )}
               </div>
               <div style={{ marginTop: 8, fontSize: 12, color: status.color, fontWeight: 700 }}>{status.label}</div>
-              <div style={{ marginTop: 6, fontSize: 11, color: '#64748b' }}>{name.split(' ')[0]} · {relTime(m.live?.last_updated)}</div>
+              <div style={{ marginTop: 6, fontSize: 11, color: '#64748b' }}>{name.split(' ')[0]}{' · '}{relTime(m.live?.last_updated)}</div>
               <div style={{ marginTop: 6, fontSize: 11, color: '#64748b' }}>
-                {m.live?.is_sharing ? 'Location sharing on' : 'Location sharing off'}
-                {typeof m.live?.heading === 'number' ? ` · Heading ${Math.round(m.live.heading)}°` : ''}
+                {sharingLabel}{headingSuffix}
               </div>
             </button>
           )
@@ -541,36 +556,34 @@ export default function FamilyCommandCenter({
 
       {selectedMember && (
         <>
-          <div
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
             aria-label="Close member details"
             onClick={() => setSelectedMember(null)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                setSelectedMember(null)
-              }
-            }}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 2600 }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 2600, appearance: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer' }}
           />
           <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 2601, borderRadius: '22px 22px 0 0', background: '#fff', padding: '14px 16px 20px', maxHeight: '82vh', overflow: 'auto' }}>
             <div style={{ fontSize: 18, fontWeight: 800 }}>
-              {selectedMember.profiles?.full_name ?? selectedMember.profiles?.name ?? 'Member'} · {memberRoleLabel(selectedMember.role)}
+              {selectedMember.profiles?.full_name ?? selectedMember.profiles?.name ?? 'Member'}{' · '}{memberRoleLabel(selectedMember.role)}
             </div>
             <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>
               {memberSheetLiveSubtitle(selectedMember, statusFor(selectedMember).label)}
             </div>
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Today's Trips</div>
             <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-              {memberTrips.slice(0, 8).map((t, idx) => (
-                <button key={t.id ?? idx} onClick={() => onOpenFullMap?.(selectedMember.user_id)} style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, textAlign: 'left', background: 'white', cursor: 'pointer' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700 }}>{t.start_location ?? 'Start'} → {t.end_location ?? 'End'}</div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
-                    {t.started_at ? new Date(t.started_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '--'} - {t.ended_at ? new Date(t.ended_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '--'} · {Math.round((Number(t.distance_meters ?? t.distance ?? 0) / 1609.34) * 10) / 10} mi
-                  </div>
-                </button>
-              ))}
+              {memberTrips.slice(0, 8).map((t, idx) => {
+                const startTime = t.started_at ? new Date(t.started_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '--'
+                const endTime = t.ended_at ? new Date(t.ended_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '--'
+                const distMi = Math.round((Number(t.distance_meters ?? t.distance ?? 0) / 1609.34) * 10) / 10
+                return (
+                  <button key={t.id ?? idx} onClick={() => onOpenFullMap?.(selectedMember.user_id)} style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, textAlign: 'left', background: 'white', cursor: 'pointer' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>{t.start_location ?? 'Start'}{' → '}{t.end_location ?? 'End'}</div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+                      {startTime}{' - '}{endTime}{' · '}{distMi}{' mi'}
+                    </div>
+                  </button>
+                )
+              })}
               {memberTrips.length === 0 && <div style={{ fontSize: 12, color: '#64748b' }}>No trips today.</div>}
             </div>
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Favorite Places</div>
@@ -578,16 +591,16 @@ export default function FamilyCommandCenter({
               {places.slice(0, 6).map((p, idx) => (
                 <div key={`${p.name}-${idx}`} style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10 }}>
                   <div style={{ fontSize: 12, fontWeight: 700 }}>{p.name}</div>
-                  <div style={{ fontSize: 11, color: '#64748b' }}>Geofence: {p.radius_meters ?? 200}m</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>{'Geofence: '}{p.radius_meters ?? 200}{'m'}</div>
                 </div>
               ))}
             </div>
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Driving Stats (7 days)</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Miles: <b>{memberStats?.total_miles ?? 0}</b></div>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Trips: <b>{memberStats?.total_trips ?? 0}</b></div>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Avg speed: <b>{memberStats?.average_speed_mph ?? 0} mph</b></div>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Score: <b>{memberStats?.driving_score ?? 0}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Miles: '}<b>{memberStats?.total_miles ?? 0}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Trips: '}<b>{memberStats?.total_trips ?? 0}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Avg speed: '}<b>{memberStats?.average_speed_mph ?? 0}{' mph'}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Score: '}<b>{memberStats?.driving_score ?? 0}</b></div>
             </div>
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Notifications for this member</div>
             <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
@@ -625,22 +638,15 @@ export default function FamilyCommandCenter({
 
       {showAdmin && (
         <>
-          <div
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
             aria-label="Close admin controls"
             onClick={() => setShowAdmin(false)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                setShowAdmin(false)
-              }
-            }}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 2600 }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 2600, appearance: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer' }}
           />
           <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 2601, borderRadius: '22px 22px 0 0', background: '#fff', padding: '14px 16px 22px', maxHeight: '82vh', overflow: 'auto' }}>
             <div style={{ fontSize: 18, fontWeight: 800 }}>Admin Controls</div>
-            <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>Invite code: <b>{inviteCode}</b></div>
+            <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>{'Invite code: '}<b>{inviteCode}</b></div>
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Group Safety Notification Policy</div>
             <div style={{ marginTop: 8, border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10 }}>
               <div style={{ fontSize: 12, color: '#334155', marginBottom: 8 }}>
@@ -715,17 +721,17 @@ export default function FamilyCommandCenter({
 
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Group Stats</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Family miles: <b>{memberStats?.total_miles ?? 0}</b></div>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Avg score: <b>{memberStats?.driving_score ?? 0}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Family miles: '}<b>{memberStats?.total_miles ?? 0}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Avg score: '}<b>{memberStats?.driving_score ?? 0}</b></div>
             </div>
 
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Place Management</div>
             <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
               {placeDrafts.map((p, idx) => (
                 <div key={`${p.name}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 40px', gap: 8 }}>
-                  <input value={p.name} onChange={(e) => setPlaceDrafts((old) => old.map((v, i) => (i === idx ? { ...v, name: e.target.value } : v)))} style={{ borderRadius: 8, border: '1px solid rgba(15,23,42,0.2)', padding: '6px 8px' }} />
-                  <input type="number" value={p.radius_meters ?? 200} onChange={(e) => setPlaceDrafts((old) => old.map((v, i) => (i === idx ? { ...v, radius_meters: Number(e.target.value) } : v)))} style={{ borderRadius: 8, border: '1px solid rgba(15,23,42,0.2)', padding: '6px 8px' }} />
-                  <button onClick={() => setPlaceDrafts((old) => old.filter((_, i) => i !== idx))} style={{ border: 'none', borderRadius: 8, background: '#fee2e2', cursor: 'pointer' }}>✕</button>
+                  <input value={p.name} onChange={(e) => updatePlaceName(idx, e.target.value)} style={{ borderRadius: 8, border: '1px solid rgba(15,23,42,0.2)', padding: '6px 8px' }} />
+                  <input type="number" value={p.radius_meters ?? 200} onChange={(e) => updatePlaceRadius(idx, e.target.value)} style={{ borderRadius: 8, border: '1px solid rgba(15,23,42,0.2)', padding: '6px 8px' }} />
+                  <button onClick={() => removePlace(idx)} style={{ border: 'none', borderRadius: 8, background: '#fee2e2', cursor: 'pointer' }}>✕</button>
                 </div>
               ))}
               <button onClick={() => setPlaceDrafts((old) => [...old, { name: 'New Place', lat: 39.9612, lng: -82.9988, radius_meters: 200, alert_on: 'both' }])} style={{ border: '1px dashed rgba(15,23,42,0.3)', borderRadius: 10, background: 'white', height: 36, cursor: 'pointer' }}>
