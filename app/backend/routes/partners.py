@@ -689,11 +689,15 @@ def revoke_team_link(link_id: str, user: CurrentPartner):
 
 def _extract_team_token(authorization: Optional[str], payload: dict) -> str:
     """Extract team token from Authorization header or payload, raise 403 if missing."""
-    token = ""
+    token: Optional[str] = None
     if authorization and authorization.lower().startswith("bearer "):
-        token = authorization.split(" ", 1)[1].strip()
+        candidate = authorization.split(" ", 1)[1].strip()
+        if candidate:
+            token = candidate
     if not token:
-        token = str(payload.get("team_token") or "").strip()
+        candidate = str(payload.get("team_token") or "").strip()
+        if candidate:
+            token = candidate
     if not token:
         raise HTTPException(status_code=403, detail="Missing team token")
     return token

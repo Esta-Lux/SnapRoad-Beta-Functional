@@ -85,10 +85,12 @@ for i in range(100):
 current_user_id = "123456"
 
 # ==================== CREDENTIALS ====================
+# Dev-only demo logins (module clears these in production).
+_DEMO_LOGIN_PASS = "password123"  # nosec B105
 user_credentials = {
-    "driver@snaproad.com": {"password": "password123", "user_id": DEFAULT_DRIVER_ID},
-    "partner@snaproad.com": {"password": "password123", "user_id": DEFAULT_PARTNER_ID},
-    "admin@snaproad.com": {"password": "password123", "user_id": DEFAULT_ADMIN_ID},
+    "driver@snaproad.com": {"password": _DEMO_LOGIN_PASS, "user_id": DEFAULT_DRIVER_ID},
+    "partner@snaproad.com": {"password": _DEMO_LOGIN_PASS, "user_id": DEFAULT_PARTNER_ID},
+    "admin@snaproad.com": {"password": _DEMO_LOGIN_PASS, "user_id": DEFAULT_ADMIN_ID},
 }
 
 if IS_PRODUCTION:

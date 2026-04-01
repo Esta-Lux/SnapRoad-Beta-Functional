@@ -1,6 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, Depends, Query
 from fastapi.responses import Response, JSONResponse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 import random
@@ -82,7 +82,7 @@ def _handle_checkout_session_completed(session: dict) -> None:
         boost_type = meta.get("boost_type")
         if offer_id and boost_type in BOOST_PRICING:
             cfg = BOOST_PRICING[boost_type]
-            ends_at = datetime.utcnow() + timedelta(hours=cfg["duration_hours"])
+            ends_at = datetime.now(timezone.utc) + timedelta(hours=cfg["duration_hours"])
             new_boost = sb_create_boost({
                 "offer_id": offer_id,
                 "partner_id": partner_id,

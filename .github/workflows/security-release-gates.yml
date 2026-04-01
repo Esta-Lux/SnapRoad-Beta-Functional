@@ -43,7 +43,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pip install pip-audit bandit
       - run: pip-audit
-      - run: bandit -q -r routes services main.py config.py
+      - run: bandit -q -c bandit.yaml -r routes services main.py config.py
 
   npm-audit:
     runs-on: ubuntu-latest

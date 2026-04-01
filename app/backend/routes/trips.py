@@ -752,15 +752,18 @@ def get_fuel_stats(user: CurrentUser):
 
 @router.get("/fuel/analytics")
 def get_fuel_analytics(user: CurrentUser, months: Annotated[int, Query(default=3, ge=1, le=24)] = 3):
-    safe_months = min(months, MAX_FUEL_ANALYTICS_MONTHS)
+    # Loop bound must not be user input directly (Sonar): cap with constant, iterate at most MAX_FUEL_ANALYTICS_MONTHS.
+    month_span = min(months, MAX_FUEL_ANALYTICS_MONTHS)
     try:
         sb = get_supabase()
         uid = _fuel_uid(user)
-        since = (datetime.now() - timedelta(days=30 * safe_months)).isoformat()
+        since = (datetime.now() - timedelta(days=30 * month_span)).isoformat()
         fuel_rows = sb.table("fuel_history").select("gallons, total_cost, created_at").eq("user_id", uid).gte("created_at", since).execute()
         trip_rows = sb.table("trips").select("distance_miles, created_at").eq("profile_id", uid).gte("created_at", since).execute()
         monthly_data = []
-        for i in range(safe_months):
+        for i in range(MAX_FUEL_ANALYTICS_MONTHS):
+            if i >= month_span:
+                break
             month_date = datetime.now() - timedelta(days=30 * i)
             prefix = month_date.strftime("%Y-%m")
             m_fuel = [f for f in (fuel_rows.data or []) if (f.get("created_at") or "").startswith(prefix)]
@@ -774,7 +777,9 @@ def get_fuel_analytics(user: CurrentUser, months: Annotated[int, Query(default=3
         if ENVIRONMENT == "production":
             raise
         monthly_data = []
-        for i in range(safe_months):
+        for i in range(MAX_FUEL_ANALYTICS_MONTHS):
+            if i >= month_span:
+                break
             month_date = datetime.now() - timedelta(days=30 * i)
             month_trips = [t for t in trips_db if t["date"].startswith(month_date.strftime("%Y-%m"))]
             distance = sum(t["distance_miles"] for t in month_trips)
