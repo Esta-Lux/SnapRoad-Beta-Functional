@@ -59,10 +59,12 @@ from config import (
     SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY,
     OPENAI_API_KEY,
+    NVIDIA_API_KEY,
     IS_PRODUCTION,
     OHGO_API_KEY,
     validate_production_env,
 )
+from services.llm_client import is_llm_configured
 from services.telemetry_service import telemetry_service
 from database import get_supabase
 
@@ -81,7 +83,11 @@ def create_app() -> FastAPI:
             return response
 
     app.add_middleware(SecurityHeadersMiddleware)
-    if _env == "production":
+    # TLS terminates at Railway / most PaaS edges; traffic to this process is HTTP.
+    # HTTPSRedirectMiddleware breaks internal health checks and proxy → container routing (502 / connection refused).
+    _railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
+    _skip_https_redirect = (os.getenv("SKIP_HTTPS_REDIRECT") or "").strip().lower() in ("1", "true", "yes")
+    if _env == "production" and not (_railway or _skip_https_redirect):
         app.add_middleware(HTTPSRedirectMiddleware)
 
     # Starlette matches handlers by walking the exception MRO. FastAPI's HTTPException subclasses
@@ -227,6 +233,8 @@ def create_app() -> FastAPI:
                     or ""
                 ).strip()
             ),
+            "orion_llm_configured": is_llm_configured(),
+            "nvidia_configured": bool(NVIDIA_API_KEY),
             "openai_configured": bool((OPENAI_API_KEY or "").strip()),
             "ohgo_cameras_configured": bool((OHGO_API_KEY or "").strip()),
         }

@@ -2,16 +2,15 @@
 # AI-powered face and license plate detection for privacy protection
 # Uses OpenAI Vision API directly - no platform-specific dependencies
 
-import os
 import base64
 import json
 import re
 from datetime import datetime
 from typing import Optional, List
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
-
 load_dotenv()
+
+from services.llm_client import get_async_openai_client, vision_completion_model
 
 # System prompt for privacy detection
 PRIVACY_DETECTION_PROMPT = """You are a privacy detection AI. Analyze the provided image and identify any elements that should be blurred for privacy protection.
@@ -45,25 +44,16 @@ Always include all three fields: faces, license_plates, description.
 """
 
 class PhotoAnalysisService:
-    """Service for analyzing photos and detecting faces/license plates for privacy blur"""
-    
+    """Privacy blur detection via vision LLM (NVIDIA or OpenAI)."""
+
     def __init__(self):
-        # Support multiple env var names for API key
-        self.api_key = (
-            os.environ.get('OPENAI_API_KEY') or 
-            os.environ.get('OPENAI_KEY') or
-            os.environ.get('LLM_API_KEY')
-        )
-        self.model = os.environ.get('OPENAI_VISION_MODEL', 'gpt-4o-mini')  # Vision-capable model
-        self._client = None
-    
-    def _get_client(self) -> AsyncOpenAI:
-        """Get or create OpenAI client"""
-        if self._client is None:
-            if not self.api_key:
-                raise ValueError("OpenAI API key not configured. Set OPENAI_API_KEY in environment.")
-            self._client = AsyncOpenAI(api_key=self.api_key)
-        return self._client
+        pass
+
+    def _get_client(self):
+        client = get_async_openai_client()
+        if client is None:
+            raise ValueError("LLM API key not configured. Set NVIDIA_API_KEY or OPENAI_API_KEY in environment.")
+        return client
     
     async def analyze_image(self, image_base64: str, image_type: str = "image/jpeg") -> dict:
         """
@@ -87,7 +77,7 @@ class PhotoAnalysisService:
             
             # Call OpenAI Vision API
             response = await client.chat.completions.create(
-                model=self.model,
+                model=vision_completion_model(),
                 messages=[
                     {
                         "role": "system",

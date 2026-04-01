@@ -18,7 +18,7 @@ async def orion_completions(
     body: OrionCompletionRequest,
     user: dict = Depends(get_current_user),
 ):
-    """Orion chat completions using backend OPENAI_API_KEY (no key in frontend)."""
+    """Orion chat completions via backend NVIDIA_API_KEY or OPENAI_API_KEY (never in the frontend)."""
     from services.orion_coach import orion_service
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
     content = await orion_service.completion(messages, body.context)

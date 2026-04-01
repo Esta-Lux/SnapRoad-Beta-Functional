@@ -228,19 +228,32 @@ async def get_admin_health():
     except Exception:
         results["ohgo"] = "down"
 
-    # OpenAI
+    # Orion LLM: NVIDIA (OpenAI-compatible) preferred, else OpenAI
+    NVIDIA_API_KEY = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+    NVIDIA_API_BASE = (os.environ.get("NVIDIA_API_BASE") or "https://integrate.api.nvidia.com/v1").strip().rstrip("/")
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     try:
         start = time.time()
         async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.get(
-                "https://api.openai.com/v1/models",
-                headers={"Authorization": f"Bearer {OPENAI_API_KEY or ''}"},
-            )
-        results["openai"] = "healthy" if r.status_code == 200 else "degraded"
-        results["openai_latency"] = round((time.time() - start) * 1000)
+            if NVIDIA_API_KEY:
+                r = await client.get(
+                    f"{NVIDIA_API_BASE}/models",
+                    headers={"Authorization": f"Bearer {NVIDIA_API_KEY}"},
+                )
+                results["llm_provider"] = "nvidia"
+            else:
+                r = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {OPENAI_API_KEY or ''}"},
+                )
+                results["llm_provider"] = "openai"
+        results["llm"] = "healthy" if r.status_code == 200 else "degraded"
+        results["llm_latency"] = round((time.time() - start) * 1000)
     except Exception:
-        results["openai"] = "down"
+        results["llm"] = "down"
+        results["llm_provider"] = "nvidia" if NVIDIA_API_KEY else "openai"
+    results["openai"] = results.get("llm", "down")
+    results["openai_latency"] = results.get("llm_latency")
 
     # Supabase Realtime
     SUPABASE_URL = os.environ.get("SUPABASE_URL")

@@ -1257,7 +1257,10 @@ const HEALTH_IMPACT: Record<string, { affects: string; action: string }> = {
   'Supabase Realtime': { affects: 'Live updates, friend presence streams', action: 'If degraded: app works; live features may lag.' },
   'Google Maps API': { affects: 'Routing, geocoding, map tiles in apps', action: 'If down: navigation degraded; consider banner.' },
   'OHGO API': { affects: 'Traffic camera layer on driver map', action: 'If down: turn off OHGO cameras in kill switches.' },
-  'OpenAI API': { affects: 'Orion coach, AI photo moderation', action: 'If down: disable Orion / AI moderation toggles.' },
+  'Orion LLM': {
+    affects: 'Orion coach, AI photo moderation',
+    action: 'If down: disable Orion / AI moderation toggles. Backend uses NVIDIA or OpenAI.',
+  },
 }
 
 function HealthTab({
@@ -1273,13 +1276,18 @@ function HealthTab({
   checkedAt: Date | null
   onRefresh: () => void
 }) {
-  const checks = [
+  const checks: Array<{ name: string; status: string; latency: unknown; provider?: string }> = [
     { name: 'API server', status: String(health?.api ?? 'unknown'), latency: health?.api_latency },
     { name: 'Supabase DB', status: String(health?.database ?? 'unknown'), latency: health?.db_latency },
     { name: 'Supabase Realtime', status: String(health?.realtime ?? 'unknown'), latency: '—' },
     { name: 'Google Maps API', status: String(health?.google_maps ?? 'unknown'), latency: health?.maps_latency },
     { name: 'OHGO API', status: String(health?.ohgo ?? 'unknown'), latency: '—' },
-    { name: 'OpenAI API', status: String(health?.openai ?? 'unknown'), latency: health?.openai_latency },
+    {
+      name: 'Orion LLM',
+      status: String(health?.llm ?? health?.openai ?? 'unknown'),
+      latency: health?.llm_latency ?? health?.openai_latency,
+      provider: typeof health?.llm_provider === 'string' ? health.llm_provider : undefined,
+    },
   ]
   const dot = (s: string) =>
     s === 'healthy'
@@ -1330,6 +1338,11 @@ function HealthTab({
               <div className={`text-xs mt-1 ${isDark ? 'text-slate-500' : 'text-gray-500'}`}>
                 Latency: {typeof c.latency === 'number' ? `${c.latency}ms` : String(c.latency ?? '—')}
               </div>
+              {c.provider && (
+                <div className={`text-xs mt-1 ${isDark ? 'text-slate-500' : 'text-gray-500'}`}>
+                  Provider: {c.provider}
+                </div>
+              )}
               {hint && (
                 <div className={`mt-3 pt-3 border-t space-y-1 ${isDark ? 'border-white/10 text-slate-400' : 'border-gray-100 text-gray-600'}`}>
                   <div className="text-[11px] font-semibold uppercase tracking-wide opacity-80">User impact</div>
