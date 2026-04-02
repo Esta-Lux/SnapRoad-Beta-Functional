@@ -360,10 +360,14 @@ def get_navigation_nearby_offers(
         if offer_type == "partner":
             score += 5
         score += max(0, 1.2 - miles) * 10
+        score += max(0, float(offer.get("boost_multiplier") or 1.0) - 1.0) * 6
 
         business_name = str(offer.get("business_name") or "").lower()
+        business_type = str(offer.get("business_type") or "").lower()
         if any(business_name and business_name in str(loc.get("name") or "").lower() for loc in prior_visits):
             score += 3
+        if any(business_type and business_type in str(loc.get("category") or "").lower() for loc in prior_visits):
+            score += 2
         if any(business_name and business_name in str(route.get("destination") or "").lower() for route in history):
             score += 2
 

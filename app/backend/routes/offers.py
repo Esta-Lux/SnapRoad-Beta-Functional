@@ -66,6 +66,49 @@ def _get_profile_like(user_id: str) -> dict:
     return users_db.get(user_id, {})
 
 
+def _user_offer_affinity(user_id: str, offer: dict) -> tuple[float, bool]:
+    score = 0.0
+    business_name = str(offer.get("business_name") or "").strip().lower()
+    business_type = str(offer.get("business_type") or "").strip().lower()
+
+    history = driver_location_history.get(user_id, [])
+    visits_here = 0
+    same_type_visits = 0
+    for visit in history:
+      visit_name = str(visit.get("business_name") or "").strip().lower()
+      visit_type = str(visit.get("business_type") or "").strip().lower()
+      if business_name and visit_name and business_name in visit_name:
+          visits_here += 1
+      if business_type and visit_type and business_type == visit_type:
+          same_type_visits += 1
+
+    if visits_here:
+        score += 18 + visits_here * 6
+    if same_type_visits:
+        score += min(14, same_type_visits * 3)
+
+    user = users_db.get(user_id, {})
+    routes = user.get("saved_routes", []) or []
+    for route in routes:
+        destination = str(route.get("destination") or "").strip().lower()
+        if business_name and destination and business_name in destination:
+            score += 8
+            break
+
+    boosted = False
+    boost_multiplier = float(offer.get("boost_multiplier") or 1.0)
+    boost_expiry = str(offer.get("boost_expiry") or "")
+    if boost_multiplier > 1:
+        try:
+            boosted = not boost_expiry or datetime.fromisoformat(boost_expiry.replace("Z", "+00:00")) > datetime.now(timezone.utc)
+        except Exception:
+            boosted = True
+    if boosted:
+        score += (boost_multiplier - 1) * 5
+
+    return score, boosted
+
+
 def _next_gem_total(user_id: str, gem_reward: int) -> int:
     try:
         result = _sb().table("profiles").select("gems").eq("id", user_id).limit(1).execute()
@@ -268,6 +311,10 @@ def get_offers(request: Request, limit: Annotated[int, Query(ge=1, le=100)] = 10
                     "views": offer.get("views", 0),
                     "redeemed": False,
                     "offer_source": offer.get("offer_source", "direct"),
+                    "offer_type": offer.get("offer_type", "admin" if offer.get("is_admin_offer") else "partner"),
+                    "boost_multiplier": offer.get("boost_multiplier", 1.0),
+                    "boost_expiry": offer.get("boost_expiry"),
+                    "allocated_locations": offer.get("allocated_locations", []),
                     "original_price": offer.get("original_price"),
                     "affiliate_tracking_url": offer.get("affiliate_tracking_url"),
                     "external_id": offer.get("external_id"),
@@ -553,6 +600,7 @@ def get_nearby_offers(
     lng: float = -82.9988,
     radius: Annotated[float, Query(ge=0.1, le=200)] = 10.0,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    auth_user: CurrentUser = Depends(get_current_user),
 ):
     cache_lat = round(lat, 2)
     cache_lng = round(lng, 2)
@@ -561,14 +609,25 @@ def get_nearby_offers(
     if cached:
         return cached
     nearby = []
+    user_id = str(auth_user.get("user_id") or auth_user.get("id") or current_user_id)
     source = _active_offers_source(limit=500)
     for offer in source:
         dlat = abs(offer["lat"] - lat)
         dlng = abs(offer["lng"] - lng)
         dist_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
         if dist_km <= radius:
-            nearby.append({**offer, "distance_km": round(dist_km, 2)})
-    nearby.sort(key=lambda x: x["distance_km"])
+            affinity_score, boosted = _user_offer_affinity(user_id, offer)
+            nearby.append({
+                **offer,
+                "distance_km": round(dist_km, 2),
+                "offer_type": _offer_type(offer),
+                "boost_multiplier": offer.get("boost_multiplier", 1.0),
+                "boost_expiry": offer.get("boost_expiry"),
+                "allocated_locations": offer.get("allocated_locations", []),
+                "relevance_score": round(affinity_score - dist_km * 2.5, 2),
+                "is_boosted_active": boosted,
+            })
+    nearby.sort(key=lambda x: (x.get("relevance_score", 0), -(x["distance_km"])), reverse=True)
     result = {"success": True, "data": nearby[:limit], "count": len(nearby[:limit])}
     cache_set(key, result, ttl=300)
     return result

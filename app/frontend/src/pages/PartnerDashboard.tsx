@@ -345,15 +345,15 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
       {showOnboarding && <OnboardingWalkthrough onComplete={handleOnboardingComplete} onSkip={handleOnboardingComplete} />}
       {showBoostModal && <BoostModal offer={showBoostModal} onClose={() => setShowBoostModal(null)} onBoost={async (boostType) => {
         try {
-          const result = await partnerApi.purchaseBoost(String(showBoostModal.id), boostType)
-          if (result.success && result.checkout_url) {
-            window.location.href = result.checkout_url
+          const result = await partnerApi.createBoost({ offer_id: Number(showBoostModal.id), boost_type: boostType, use_credits: true })
+          if (result.success) {
+            sendNotification('system', 'Boost', result.message || 'Boost applied successfully')
           } else {
-            sendNotification('system', 'Boost', result.message || 'Stripe not configured yet')
-            setShowBoostModal(null)
-            await loadData()
+            sendNotification('system', 'Boost', result.message || 'Could not apply boost')
           }
-        } catch { sendNotification('system', 'Error', 'Failed to start checkout'); setShowBoostModal(null) }
+          setShowBoostModal(null)
+          await loadData()
+        } catch { sendNotification('system', 'Error', 'Failed to apply boost'); setShowBoostModal(null) }
       }} />}
       {showImageGenerator && <ImageGeneratorModal onClose={() => setShowImageGenerator(false)} onGenerate={(url) => setNewOfferImage(url)} />}
       {showCreateModal && (

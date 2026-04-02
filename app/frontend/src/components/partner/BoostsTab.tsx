@@ -49,12 +49,13 @@ export default function BoostsTab({ offers, onBoost }: Props) {
           <div className="flex items-center justify-center gap-8 text-sm">
             {pricingList.map((p, i) => (
               <div key={p.name} className="text-center">
-                <p className={`font-bold text-xl ${colorMap[i] || 'text-white'}`}>${p.price.toFixed(2)}</p>
+                <p className={`font-bold text-xl ${colorMap[i] || 'text-white'}`}>{p.price.toFixed(0)} cr</p>
                 <p className="text-slate-500">{p.name} ({p.duration_hours}h)</p>
               </div>
             ))}
           </div>
         )}
+        <p className="text-slate-500 text-xs mt-4">1 credit equals $1. Load credits once, then spend them directly on boosts.</p>
       </div>
 
       <div>

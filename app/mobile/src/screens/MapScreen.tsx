@@ -1164,7 +1164,7 @@ export default function MapScreen() {
             );
           })()}
 
-          <OfferMarkers offers={nearbyOffers} onOfferTap={setSelectedOffer} />
+          {!nav.isNavigating && <OfferMarkers offers={nearbyOffers} onOfferTap={setSelectedOffer} />}
           {showIncidents && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
             if (inc.type === 'construction') return showConstruction;
             return true;

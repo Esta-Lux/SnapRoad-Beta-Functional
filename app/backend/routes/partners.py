@@ -372,11 +372,25 @@ def create_offer_boost(boost_req: BoostRequest, user: CurrentPartner, partner_id
     if boost_req.boost_type not in BOOST_PRICING:
         return {"success": False, "message": "Invalid boost type"}
     config = BOOST_PRICING[boost_req.boost_type]
+    partner = sb_get_partner(owned_partner_id)
+    if not partner:
+        return {"success": False, "message": MSG_PARTNER_NOT_FOUND}
+    current_credits = float(partner.get("credits", 0) or 0)
+    required_credits = float(config["price"])
+    if current_credits < required_credits:
+        return {
+            "success": False,
+            "message": f"Insufficient credits. {config['name']} requires {required_credits:.2f} credits.",
+            "data": {
+                "required_credits": required_credits,
+                "current_credits": current_credits,
+            },
+        }
     ends_at = datetime.now() + timedelta(hours=config["duration_hours"])
     new_boost = sb_create_boost({
         "offer_id": str(boost_req.offer_id),
         "partner_id": owned_partner_id,
-        "budget": config["price"],
+        "budget": required_credits,
         "duration_days": config["duration_hours"] // 24,
         "target_radius_miles": 10,
         "status": "active",
@@ -384,14 +398,23 @@ def create_offer_boost(boost_req: BoostRequest, user: CurrentPartner, partner_id
     })
     if not new_boost:
         return {"success": False, "message": "Failed to create boost"}
+    sb_update_partner(owned_partner_id, {
+        "credits": round(current_credits - required_credits, 2),
+        "credit_balance_updated_at": datetime.now(timezone.utc).isoformat(),
+    })
     sb_update_offer(str(boost_req.offer_id), {
         "boost_multiplier": config["multiplier"],
         "boost_expiry": ends_at.isoformat(),
+        "boost_budget_credits": required_credits,
     })
     return {
         "success": True,
-        "message": f"{config['name']} applied!",
-        "data": new_boost,
+        "message": f"{config['name']} applied using {required_credits:.2f} credits.",
+        "data": {
+            **new_boost,
+            "credits_spent": required_credits,
+            "remaining_credits": round(current_credits - required_credits, 2),
+        },
     }
 
 

@@ -137,6 +137,9 @@ export interface Offer {
   offer_type?: 'partner' | 'admin';
   view_count?: number;
   visit_count?: number;
+  redemption_count?: number;
+  boost_multiplier?: number;
+  allocated_locations?: string[];
 }
 
 export interface Challenge {
