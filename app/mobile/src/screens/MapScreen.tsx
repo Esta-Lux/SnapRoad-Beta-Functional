@@ -86,7 +86,7 @@ const MAP_STYLES = [
 const ATMOSPHERE: Record<DrivingMode, { color: string; highColor: string; horizonBlend: number; spaceColor: string; starIntensity: number }> = {
   calm: { color: 'rgb(255, 228, 196)', highColor: 'rgb(255, 200, 150)', horizonBlend: 0.08, spaceColor: 'rgb(220, 235, 250)', starIntensity: 0 },
   adaptive: { color: 'rgb(186, 210, 235)', highColor: 'rgb(36, 92, 223)', horizonBlend: 0.04, spaceColor: 'rgb(187, 214, 237)', starIntensity: 0 },
-  sport: { color: 'rgb(22, 30, 60)', highColor: 'rgb(45, 55, 120)', horizonBlend: 0.06, spaceColor: 'rgb(12, 18, 45)', starIntensity: 0.35 },
+  sport: { color: 'rgb(60, 50, 70)', highColor: 'rgb(40, 35, 55)', horizonBlend: 0.08, spaceColor: 'rgb(25, 20, 40)', starIntensity: 0.3 },
 };
 
 /** Android RNMBXCameraManager.setFollowPadding calls asMap() — undefined breaks Fabric (ClassCastException). */
@@ -107,9 +107,9 @@ const REPORT_TYPES = [
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getTurnIcon(maneuver?: string) {
+function getTurnIcon(maneuver?: string, iconColor = '#fff') {
   const sz = 32;
-  const c = '#fff';
+  const c = iconColor;
   if (!maneuver) return <Ionicons name="arrow-up" size={sz} color={c} />;
   if (maneuver === 'arrive') return <Ionicons name="flag" size={sz} color={c} />;
   if (maneuver === 'depart') return <Ionicons name="navigate" size={sz} color={c} />;
@@ -294,11 +294,7 @@ export default function MapScreen() {
   const activeStyleURL = (() => {
     if (styleOverride !== 0) return MAP_STYLES[styleOverride]?.url ?? MAP_STYLES[0].url;
     if (drivingMode === 'calm') return 'mapbox://styles/mapbox/streets-v12';
-    if (drivingMode === 'sport') {
-      return nav.isNavigating
-        ? 'mapbox://styles/mapbox/navigation-night-v1'
-        : 'mapbox://styles/mapbox/streets-v12';
-    }
+    if (drivingMode === 'sport') return 'mapbox://styles/mapbox/streets-v12';
     return MAP_STYLES[0].url;
   })();
   /** streets-v12 and navigation-night-v1 support heading indicator; Standard omits it. */
@@ -1048,12 +1044,12 @@ export default function MapScreen() {
             ref={cameraRef}
             defaultSettings={{
               centerCoordinate: stableCenter,
-              zoomLevel: isCalm ? 14 : isSport ? 15.5 : 15,
-              pitch: isCalm ? 35 : isSport ? 50 : 45,
+              zoomLevel: modeConfig.exploreZoom,
+              pitch: modeConfig.explorePitch,
             }}
             centerCoordinate={nav.isNavigating || isExploring || compassMode ? undefined : stableCenter}
-            zoomLevel={nav.isNavigating || compassMode ? undefined : (isCalm ? 14 : isSport ? 15.5 : 15)}
-            pitch={nav.isNavigating || compassMode ? undefined : (isCalm ? 35 : isSport ? 50 : 45)}
+            zoomLevel={nav.isNavigating || compassMode ? undefined : modeConfig.exploreZoom}
+            pitch={nav.isNavigating || compassMode ? undefined : modeConfig.explorePitch}
             animationMode="easeTo"
             animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
             followUserLocation={(nav.isNavigating && cameraLocked) || compassMode}
@@ -1101,63 +1097,72 @@ export default function MapScreen() {
               polyline={nav.navigationData.polyline}
               userLocation={location}
               isNavigating={nav.isNavigating}
-              routeColor="#3B82F6"
-              casingColor="#1E40AF"
-              passedColor="#9CA3AF"
+              routeColor={modeConfig.routeColor}
+              casingColor={modeConfig.routeCasing}
+              passedColor={modeConfig.passedColor}
               routeWidth={modeConfig.routeWidth}
-              useGradient={false}
+              glowColor={modeConfig.routeGlowColor}
+              glowOpacity={modeConfig.routeGlowOpacity}
               congestion={nav.navigationData.congestion}
-              showCongestion={nav.isNavigating}
-              isCalm={isCalm}
+              showCongestion={modeConfig.showCongestion && nav.isNavigating}
               isRerouting={nav.isRerouting}
             />
           )}
 
-          {/* ── Turn-point dots: white circles at upcoming turn locations ── */}
+          {/* Turn markers: ASCII arrows in SymbolLayer (reliable on native Mapbox vs emoji). */}
           {nav.isNavigating && nav.navigationData?.steps && (() => {
             const upcomingSteps = nav.navigationData!.steps
-              .slice(nav.currentStepIndex + 1, nav.currentStepIndex + 4)
-              .filter((st) => isFinite(st.lat) && isFinite(st.lng) && st.maneuver !== 'arrive');
+              .slice(nav.currentStepIndex + 1, nav.currentStepIndex + 5)
+              .filter((st) => isFinite(st.lat) && isFinite(st.lng) && st.maneuver !== 'arrive' && st.maneuver !== 'depart');
             if (!upcomingSteps.length || !MapboxGL) return null;
-            const turnDots: GeoJSON.FeatureCollection = {
+
+            const getArrowChar = (maneuver?: string): string => {
+              if (!maneuver) return '^';
+              if (maneuver.includes('left') && maneuver.includes('sharp')) return 'L';
+              if (maneuver.includes('right') && maneuver.includes('sharp')) return 'R';
+              if (maneuver.includes('left')) return '<';
+              if (maneuver.includes('right')) return '>';
+              if (maneuver === 'u-turn') return 'U';
+              if (maneuver === 'roundabout') return '@';
+              if (maneuver === 'merge') return '>';
+              return '^';
+            };
+
+            const turnSignals: GeoJSON.FeatureCollection = {
               type: 'FeatureCollection',
               features: upcomingSteps.map((st) => ({
                 type: 'Feature' as const,
-                properties: {},
+                properties: {
+                  arrow: getArrowChar(st.maneuver),
+                  maneuver: st.maneuver ?? 'straight',
+                },
                 geometry: { type: 'Point' as const, coordinates: [st.lng, st.lat] },
               })),
             };
             return (
-              <MapboxGL.ShapeSource id="sr-turn-dots" shape={turnDots}>
-                {/* Shadow/blur ring for depth */}
+              <MapboxGL.ShapeSource id="sr-turn-signals" shape={turnSignals}>
                 <MapboxGL.CircleLayer
-                  id="sr-turn-dots-shadow"
+                  id="sr-turn-signal-bg"
                   style={{
-                    circleRadius: 11,
-                    circleColor: '#000000',
-                    circleOpacity: 0.18,
-                    circleBlur: 1.2,
+                    circleRadius: ['interpolate', ['linear'], ['zoom'], 13, 8, 16, 12, 19, 16],
+                    circleColor: modeConfig.turnArrowBg ?? modeConfig.routeColor,
+                    circleOpacity: 0.9,
+                    circleStrokeWidth: 2,
+                    circleStrokeColor: '#FFFFFF',
                     circlePitchAlignment: 'map',
                   }}
                 />
-                {/* White fill — clean junction marker like the reference image */}
-                <MapboxGL.CircleLayer
-                  id="sr-turn-dots-white"
+                <MapboxGL.SymbolLayer
+                  id="sr-turn-signal-arrow"
                   style={{
-                    circleRadius: 8,
-                    circleColor: '#ffffff',
-                    circleOpacity: 0.95,
-                    circlePitchAlignment: 'map',
-                  }}
-                />
-                {/* Mode-color inner dot for identity */}
-                <MapboxGL.CircleLayer
-                  id="sr-turn-dots-color"
-                  style={{
-                    circleRadius: 4,
-                    circleColor: modeConfig.routeColor,
-                    circleOpacity: 1,
-                    circlePitchAlignment: 'map',
+                    textField: ['get', 'arrow'],
+                    textSize: ['interpolate', ['linear'], ['zoom'], 13, 10, 16, 14, 19, 18],
+                    textColor: '#FFFFFF',
+                    textFont: ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+                    textAnchor: 'center',
+                    textAllowOverlap: true,
+                    textIgnorePlacement: true,
+                    symbolPlacement: 'point',
                   }}
                 />
               </MapboxGL.ShapeSource>
@@ -1426,20 +1431,19 @@ export default function MapScreen() {
       {/* ═══ TURN CARD — unified premium HUD, mode-specific gradient ════════ */}
       {nav.isNavigating && currentStep && (() => {
         // Each mode keeps its exact gradient colors — only the layout is unified
-        const tcGrad: [string, string] = isCalm
-          ? ['#5B9FD8', '#3E7DC4']
-          : isAdaptive
-            ? ['#3B82F6', '#1E40AF']
-            : isSport
-              ? ['#DC2626', '#991B1B']
-              : [colors.gradientStart as string, colors.gradientEnd as string];
-
-        const tcRadius = isCalm ? 26 : isSport ? 16 : 20;
-        const tcShadowColor = isCalm ? '#3E7DC4' : isAdaptive ? '#1D4ED8' : isSport ? '#DC2626' : '#000';
-        const stepDm = currentStep.distanceMeters;
-        const distParts = typeof stepDm === 'number' && stepDm > 0
-          ? (stepDm < 160 ? [`${Math.round(stepDm * 3.281)}`, 'ft'] : [`${(stepDm / 1609.34).toFixed(1)}`, 'mi'])
-          : (currentStep.distance ?? '').split(' ');
+        const tcGrad: [string, string] = modeConfig.turnCardGradient;
+        const tcRadius = modeConfig.turnCardRadius;
+        const tcShadowColor = modeConfig.turnCardShadowColor;
+        const tcTextColor = modeConfig.turnCardTextColor;
+        const nextManeuverCoord = nav.navigationData?.steps?.[nav.currentStepIndex + 1];
+        const liveDistMeters = nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
+          ? haversineMeters(location.lat, location.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
+          : (currentStep.distanceMeters ?? 0);
+        const distParts = liveDistMeters > 0
+          ? (liveDistMeters < 160
+            ? [`${Math.round(liveDistMeters * 3.281 / 10) * 10}`, 'FT']
+            : [`${(liveDistMeters / 1609.34).toFixed(1)}`, 'MI'])
+          : ['0', 'FT'];
         // Road we're currently on = next step's name (Mapbox gives the name of the road you're on next)
         const currentRoad = currentStep.name ?? null;
 
@@ -1459,25 +1463,25 @@ export default function MapScreen() {
                 },
               ]}
             >
-              <LinearGradient colors={tcGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.tcPremGrad, { borderRadius: tcRadius }]}>
+              <LinearGradient colors={tcGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.tcPremGrad, { borderRadius: tcRadius }, isSport && { borderWidth: 1, borderColor: modeConfig.turnCardBorderColor }]}>
                 {/* ── Row 1: dist | icon | instruction | mute ── */}
                 <View style={s.tcPremRow}>
                   {/* Distance — large, left */}
                   <View style={s.tcPremDistBlock}>
-                    <Text style={s.tcPremDistVal} numberOfLines={1}>{distParts[0] ?? ''}</Text>
-                    <Text style={s.tcPremDistUnit}>{distParts[1] ?? ''}</Text>
+                    <Text style={[s.tcPremDistVal, { color: tcTextColor, fontSize: modeConfig.distanceFontSize }]} numberOfLines={1}>{distParts[0] ?? ''}</Text>
+                    <Text style={[s.tcPremDistUnit, { color: tcTextColor }]}>{distParts[1] ?? ''}</Text>
                   </View>
                   {/* Turn icon */}
-                  <View style={s.tcPremIconBox}>
-                    {getTurnIcon(currentStep.maneuver)}
+                  <View style={[s.tcPremIconBox, { backgroundColor: modeConfig.turnCardIconBg }]}>
+                    {getTurnIcon(currentStep.maneuver, tcTextColor)}
                   </View>
                   {/* Instruction + next step */}
                   <View style={s.tcPremInstrBlock}>
-                    <Text style={s.tcPremInstr} numberOfLines={3}>{currentStep.instruction}</Text>
+                    <Text style={[s.tcPremInstr, { color: tcTextColor }]} numberOfLines={3}>{currentStep.instruction}</Text>
                     {nextStep && (
                       <View style={s.tcPremThenRow}>
-                        <Ionicons name="return-down-forward-outline" size={12} color="rgba(255,255,255,0.65)" />
-                        <Text style={s.tcPremThen} numberOfLines={1}> {nextStep.instruction}</Text>
+                        <Ionicons name="return-down-forward-outline" size={12} color={tcTextColor} />
+                        <Text style={[s.tcPremThen, { color: tcTextColor }]} numberOfLines={1}> {nextStep.instruction}</Text>
                       </View>
                     )}
                   </View>
@@ -1487,7 +1491,7 @@ export default function MapScreen() {
                     onPress={() => { setIsMuted((m) => !m); if (!isMuted) stopSpeaking(); }}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
-                    <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={17} color="rgba(255,255,255,0.7)" />
+                    <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={17} color={tcTextColor} />
                   </TouchableOpacity>
                 </View>
 
@@ -1504,11 +1508,11 @@ export default function MapScreen() {
                 {currentRoad && (
                   <View style={s.tcPremRoadStrip}>
                     <View style={s.tcRoadShield}>
-                      <Text style={s.tcRoadShieldTxt} numberOfLines={1}>
+                      <Text style={[s.tcRoadShieldTxt, { color: tcTextColor }]} numberOfLines={1}>
                         {currentRoad.replace(/\s+/g, ' ').substring(0, 8)}
                       </Text>
                     </View>
-                    <Text style={s.tcPremRoadTxt} numberOfLines={1}> {currentRoad}</Text>
+                    <Text style={[s.tcPremRoadTxt, { color: tcTextColor }]} numberOfLines={1}> {currentRoad}</Text>
                   </View>
                 )}
               </LinearGradient>
@@ -1613,7 +1617,7 @@ export default function MapScreen() {
       )}
 
       {/* ═══ TRAFFIC CONGESTION BANNER (during navigation) ══════════════ */}
-      {nav.isNavigating && !nav.isRerouting && !trafficBannerDismissed && (() => {
+      {modeConfig.showTrafficBar && nav.isNavigating && !nav.isRerouting && !trafficBannerDismissed && (() => {
         const traffic = analyzeCongestion(nav.navigationData?.congestion);
         if (!traffic || traffic.level === 'low') return null;
         const isHeavy = traffic.level === 'heavy';
@@ -1671,14 +1675,12 @@ export default function MapScreen() {
 
       {/* ═══ ETA BAR — stats row + End button row below ════════════════════ */}
       {nav.isNavigating && nav.liveEta && (() => {
-        const etaAccent = isCalm ? '#5B9FD8' : isAdaptive ? '#3B82F6' : isSport ? '#EF4444' : colors.primary;
-        const etaBg = isSport
-          ? 'rgba(12,12,30,0.97)'
-          : isLight ? 'rgba(255,255,255,0.97)' : 'rgba(10,14,35,0.97)';
+        const etaAccent = modeConfig.etaAccentColor;
+        const etaBg = isLight ? modeConfig.etaBarBg : modeConfig.etaBarBgDark;
         const arrivalTime = new Date(Date.now() + nav.liveEta.etaMinutes * 60000)
           .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        const textPrimary = isSport ? '#f1f5f9' : colors.text;
-        const textSec = isSport ? 'rgba(241,245,249,0.5)' : colors.textTertiary;
+        const textPrimary = modeConfig.etaValueColor;
+        const textSec = modeConfig.etaLabelColor;
         const distLabel = formatDistance(nav.liveEta.distanceMiles);
 
         return (
@@ -1696,10 +1698,10 @@ export default function MapScreen() {
             ]}
           >
             <View style={s.etaStatsRow}>
-              {isSport && (
+              {modeConfig.showPerfData && (
                 <>
                   <View style={s.etaUniSpeedBlock}>
-                    <Text style={[s.etaUniSpeedVal, { color: etaAccent }]}>{Math.round(speed)}</Text>
+                    <Text style={[s.etaUniSpeedVal, { color: etaAccent, fontSize: modeConfig.speedFontSize }]}>{Math.round(speed)}</Text>
                     <Text style={[s.etaUniSpeedUnit, { color: etaAccent + '99' }]}>mph</Text>
                   </View>
                   <View style={[s.etaUniDiv, { backgroundColor: etaAccent + '33' }]} />
@@ -1717,11 +1719,25 @@ export default function MapScreen() {
               <View style={[s.etaUniDiv, { backgroundColor: etaAccent + '33' }]} />
               <View style={s.etaUniCol}>
                 <Text style={[s.etaUniLbl, { color: textSec }]}>ARRIVE</Text>
-                <Text style={[s.etaUniVal, { color: '#22C55E' }]}>{arrivalTime}</Text>
+                <Text style={[s.etaUniVal, { color: modeConfig.etaArriveColor }]}>{arrivalTime}</Text>
               </View>
             </View>
             <TouchableOpacity
-              style={[s.etaEndRowBtn, { marginTop: 10, marginHorizontal: 4 }]}
+              style={[s.etaEndRowBtn, {
+                marginTop: 10,
+                marginHorizontal: 4,
+                backgroundColor: modeConfig.endButtonColor,
+                borderRadius: modeConfig.endButtonRadius,
+                ...(modeConfig.endButtonGlow ? {
+                  shadowColor: modeConfig.endButtonGlowColor,
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                } : {}),
+                ...(modeConfig.endButtonBorder ? {
+                  borderWidth: 1,
+                  borderColor: modeConfig.endButtonBorder,
+                } : {}),
+              }]}
               onPress={nav.stopNavigation}
               activeOpacity={0.85}
             >
@@ -1771,7 +1787,7 @@ export default function MapScreen() {
                 </View>
                 <Text style={[s.routeCardDuration, { color: colors.text }]}>{fastestRoute.durationText}</Text>
                 <Text style={[s.routeCardDist, { color: colors.textSecondary }]}>{fastestRoute.distanceText}</Text>
-                {fastestTraffic && fastestTraffic.level !== 'low' && (
+                {modeConfig.showTrafficBadge && fastestTraffic && fastestTraffic.level !== 'low' && (
                   <View style={[s.routeTrafficBadge, { backgroundColor: fastestTraffic.level === 'heavy' ? '#FEF2F2' : '#FFFBEB' }]}>
                     <Ionicons name="warning" size={10} color={fastestTraffic.level === 'heavy' ? '#DC2626' : '#D97706'} />
                     <Text style={[s.routeTrafficTxt, { color: fastestTraffic.level === 'heavy' ? '#DC2626' : '#D97706' }]}>
@@ -1780,7 +1796,7 @@ export default function MapScreen() {
                     </Text>
                   </View>
                 )}
-                {(!fastestTraffic || fastestTraffic.level === 'low') && (
+                {modeConfig.showTrafficBadge && (!fastestTraffic || fastestTraffic.level === 'low') && (
                   <View style={[s.routeTrafficBadge, { backgroundColor: '#F0FDF4' }]}>
                     <Ionicons name="checkmark-circle" size={10} color="#16A34A" />
                     <Text style={[s.routeTrafficTxt, { color: '#16A34A' }]}>Clear roads</Text>
@@ -1811,7 +1827,7 @@ export default function MapScreen() {
                     Saves fuel{timeSaving > 0 ? ` · ${timeSaving} min longer` : ''}
                   </Text>
                 </View>
-                {ecoTraffic && ecoTraffic.level !== 'low' && (
+                {modeConfig.showTrafficBadge && ecoTraffic && ecoTraffic.level !== 'low' && (
                   <View style={[s.routeTrafficBadge, { backgroundColor: '#FFFBEB', marginTop: 3 }]}>
                     <Ionicons name="warning" size={10} color="#D97706" />
                     <Text style={[s.routeTrafficTxt, { color: '#D97706' }]}>{ecoTraffic.level === 'heavy' ? 'Heavy' : 'Moderate'} traffic</Text>
@@ -1977,7 +1993,7 @@ export default function MapScreen() {
         <View style={[s.modeRow, { bottom: insets.bottom + 16 }]}>
           {(Object.entries(DRIVING_MODES) as [DrivingMode, typeof modeConfig][]).map(([mode, cfg]) => {
             const sel = drivingMode === mode;
-            const modeIcon = mode === 'calm' ? 'leaf-outline' : mode === 'sport' ? 'flash-outline' : 'pulse-outline';
+            const modeIcon = cfg.icon ?? 'pulse-outline';
             return (
               <TouchableOpacity
                 key={mode}
@@ -2004,14 +2020,14 @@ export default function MapScreen() {
         const isOverSpeed = typeof currentSpeedLimit === 'number' && speed > currentSpeedLimit;
         return (
           <View style={{ position: 'absolute', left: 14, bottom: (nav.isNavigating ? 100 : 40) + insets.bottom, alignItems: 'center', gap: 6 }}>
-            {currentSpeedLimit !== null && currentSpeedLimit !== undefined && nav.isNavigating && (
+            {modeConfig.showSpeedLimit && currentSpeedLimit !== null && currentSpeedLimit !== undefined && nav.isNavigating && (
               <View style={[s.speedLimitSign, isOverSpeed && { borderColor: '#FF3B30' }]}>
                 <Text style={s.speedLimitNum}>{currentSpeedLimit}</Text>
                 <Text style={s.speedLimitUnit}>LIMIT</Text>
               </View>
             )}
-            <View style={[s.speedBadge, { borderColor: isOverSpeed ? '#FF3B30' : drivingMode === 'calm' ? '#60a5fa' : drivingMode === 'sport' ? '#ef4444' : colors.border, backgroundColor: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.92)' }]}>
-              <Text style={[s.speedVal, { color: isOverSpeed ? '#FF3B30' : drivingMode === 'sport' ? '#ef4444' : drivingMode === 'calm' ? '#3b82f6' : colors.text }]}>{Math.round(speed)}</Text>
+            <View style={[s.speedBadge, { borderColor: isOverSpeed ? '#FF3B30' : modeConfig.etaAccentColor, backgroundColor: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.92)' }]}>
+              <Text style={[s.speedVal, { color: isOverSpeed ? '#FF3B30' : modeConfig.speedColor }]}>{Math.round(speed)}</Text>
               <Text style={[s.speedUnit, { color: colors.textTertiary }]}>mph</Text>
             </View>
           </View>

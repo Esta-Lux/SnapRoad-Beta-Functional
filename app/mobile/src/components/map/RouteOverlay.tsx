@@ -8,16 +8,15 @@ interface Props {
   polyline: Coordinate[];
   userLocation: Coordinate;
   isNavigating: boolean;
+  /** From `DRIVING_MODES[drivingMode]` */
   routeColor: string;
   casingColor: string;
   passedColor: string;
   routeWidth?: number;
-  useGradient?: boolean;
+  glowColor?: string;
+  glowOpacity?: number;
   congestion?: CongestionLevel[];
   showCongestion?: boolean;
-  /** Calm mode: softer glow. */
-  isCalm?: boolean;
-  /** Dim the line during rerouting so the user knows a new route is loading. */
   isRerouting?: boolean;
 }
 
@@ -37,10 +36,10 @@ export default React.memo(function RouteOverlay({
   casingColor,
   passedColor,
   routeWidth = 6,
-  useGradient = false,
+  glowColor,
+  glowOpacity = 0.15,
   congestion,
   showCongestion = false,
-  isCalm = false,
   isRerouting = false,
 }: Props) {
   const hasCongestion = showCongestion && congestion && congestion.length > 0;
@@ -70,12 +69,14 @@ export default React.memo(function RouteOverlay({
 
     const { passed, ahead } = splitRouteByNearestPoint(polyline, userLocation);
     const features: GeoJSON.Feature[] = [];
-    if (passed.length >= 2)
+
+    if (passed.length >= 2) {
       features.push({
         type: 'Feature',
         properties: { segment: 'passed', congestion: 'passed' },
         geometry: { type: 'LineString', coordinates: passed },
       });
+    }
 
     if (ahead.length >= 2) {
       if (hasCongestion) {
@@ -94,6 +95,7 @@ export default React.memo(function RouteOverlay({
         });
       }
     }
+
     return { type: 'FeatureCollection' as const, features };
   }, [polyline, userLocation.lat, userLocation.lng, isNavigating, hasCongestion, congestion]);
 
@@ -103,7 +105,8 @@ export default React.memo(function RouteOverlay({
 
   const aheadLineColor: any = useCongestionColor
     ? [
-        'match', ['get', 'congestion'],
+        'match',
+        ['get', 'congestion'],
         'low', CONGESTION_COLORS.low,
         'moderate', CONGESTION_COLORS.moderate,
         'heavy', CONGESTION_COLORS.heavy,
@@ -112,80 +115,85 @@ export default React.memo(function RouteOverlay({
       ]
     : routeColor;
 
-  // Rerouting: reduce opacity so the user sees the "calculating…" state
-  const lineOpacity = isRerouting ? 0.35 : 0.92;
-
-  const aheadStyle: Record<string, unknown> = useGradient && !useCongestionColor
-    ? {
-        lineGradient: [
-          'interpolate', ['linear'], ['line-progress'],
-          0, '#3B82F6',
-          1, '#22C55E',
-        ],
-        lineWidth: routeWidth,
-        lineOpacity,
-        lineCap: 'round' as const,
-        lineJoin: 'round' as const,
-      }
-    : {
-        lineColor: aheadLineColor,
-        lineWidth: routeWidth,
-        lineOpacity,
-        lineCap: 'round' as const,
-        lineJoin: 'round' as const,
-      };
-
-  const glowWidth = routeWidth * 2.8;
-  const casingWidth = routeWidth + 4;
-  const glowOpacity = isCalm ? 0.10 : 0.15;
+  const lineOpacity = isRerouting ? 0.35 : 1.0;
+  const effectiveGlowColor = glowColor || routeColor;
 
   return (
     <MapboxGL.ShapeSource
       id="sr-route"
       shape={geoJSON as GeoJSON.FeatureCollection}
-      lineMetrics={useGradient && !useCongestionColor}
+      lineMetrics={false}
     >
-      {/* Glow */}
       <MapboxGL.LineLayer
         id="sr-route-glow"
         filter={['==', ['get', 'segment'], 'ahead']}
         style={{
-          lineColor: useCongestionColor ? aheadLineColor : routeColor,
-          lineWidth: glowWidth,
-          lineOpacity: glowOpacity,
-          lineBlur: isCalm ? 5 : 4,
+          lineColor: useCongestionColor ? aheadLineColor : effectiveGlowColor,
+          lineWidth: routeWidth * 2.8,
+          lineOpacity: glowOpacity * (isRerouting ? 0.3 : 1),
+          lineBlur: 6,
           lineCap: 'round',
           lineJoin: 'round',
         }}
       />
-      {/* Casing */}
+
       <MapboxGL.LineLayer
         id="sr-route-casing"
         filter={['==', ['get', 'segment'], 'ahead']}
         style={{
           lineColor: casingColor,
-          lineWidth: casingWidth,
-          lineOpacity: isCalm ? 0.55 : 0.5,
+          lineWidth: routeWidth + 3,
+          lineOpacity: 0.7 * (isRerouting ? 0.5 : 1),
           lineCap: 'round',
           lineJoin: 'round',
         }}
         aboveLayerID="sr-route-glow"
       />
-      {/* Main route line — clean, no direction chevrons on ANY mode */}
+
       <MapboxGL.LineLayer
         id="sr-route-ahead"
         filter={['==', ['get', 'segment'], 'ahead']}
-        style={aheadStyle}
+        style={{
+          lineColor: aheadLineColor,
+          lineWidth: routeWidth,
+          lineOpacity,
+          lineCap: 'round',
+          lineJoin: 'round',
+        }}
         aboveLayerID="sr-route-casing"
       />
-      {/* Passed segment */}
+
+      {/* ASCII chevron — more reliable on native Mapbox text than emoji / exotic Unicode */}
+      <MapboxGL.SymbolLayer
+        id="sr-route-chevrons"
+        filter={['==', ['get', 'segment'], 'ahead']}
+        style={{
+          symbolPlacement: 'line',
+          symbolSpacing: 55,
+          textField: '>',
+          textSize: [
+            'interpolate', ['linear'], ['zoom'],
+            13, 12,
+            16, 16,
+            20, 20,
+          ],
+          textColor: '#FFFFFF',
+          textOpacity: isRerouting ? 0.2 : 0.65,
+          textRotationAlignment: 'map',
+          textAllowOverlap: true,
+          textIgnorePlacement: true,
+          textFont: ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+        }}
+        aboveLayerID="sr-route-ahead"
+      />
+
       <MapboxGL.LineLayer
         id="sr-route-passed"
         filter={['==', ['get', 'segment'], 'passed']}
         style={{
           lineColor: passedColor,
-          lineWidth: Math.max(3, routeWidth - 3),
-          lineOpacity: 0.3,
+          lineWidth: Math.max(4, routeWidth - 1),
+          lineOpacity: 0.5,
           lineCap: 'round',
           lineJoin: 'round',
         }}
