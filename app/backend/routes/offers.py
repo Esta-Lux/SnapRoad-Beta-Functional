@@ -596,11 +596,11 @@ def track_offer_visit(offer_id: str, body: dict, auth_user: CurrentUser):
 
 @router.get("/offers/nearby")
 def get_nearby_offers(
+    auth_user: CurrentUser,
     lat: float = 39.9612,
     lng: float = -82.9988,
     radius: Annotated[float, Query(ge=0.1, le=200)] = 10.0,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
-    auth_user: CurrentUser = Depends(get_current_user),
 ):
     cache_lat = round(lat, 2)
     cache_lng = round(lng, 2)
