@@ -275,7 +275,8 @@ def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partne
         return {"success": False, "message": MSG_PARTNER_NOT_FOUND}
 
     locations = sb_get_partner_locations(owned_partner_id)
-    location = next((l for l in locations if l["id"] == offer.location_id), None)
+    offer_location_id = str(offer.location_id).strip()
+    location = next((l for l in locations if str(l.get("id")) == offer_location_id), None)
     if not location:
         return {"success": False, "message": "Location not found"}
 

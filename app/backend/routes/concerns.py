@@ -52,10 +52,6 @@ def submit_concern(body: SubmitConcernBody, user: dict = Depends(get_current_use
     if not row:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Could not save concern. Ensure table public.concerns exists "
-                "(run app/backend/sql/005_concerns_app_config.sql) and "
-                "SUPABASE_SERVICE_ROLE_KEY is set on the API."
-            ),
+            detail="We could not submit your feedback right now. Please try again later.",
         )
     return {"success": True, "data": {"id": str(row.get("id", ""))}}

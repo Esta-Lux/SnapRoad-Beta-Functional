@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { X, Sparkles, RefreshCw, Check } from 'lucide-react'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+import { getApiBaseUrl } from '@/services/api'
 
 interface Props {
   onClose: () => void
@@ -20,22 +19,27 @@ export default function ImageGeneratorModal({ onClose, onGenerate }: Props) {
   const [style, setStyle] = useState('photo')
   const [generating, setGenerating] = useState(false)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
+  const [errorHint, setErrorHint] = useState<string | null>(null)
 
   const handleGenerate = async () => {
     if (!prompt) return
     setGenerating(true)
+    setErrorHint(null)
     try {
-      const res = await fetch(`${API_URL}/api/ai/generate-image`, {
+      const base = getApiBaseUrl().replace(/\/$/, '')
+      const res = await fetch(`${base}/api/images/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: `${prompt}, ${style} style, professional business promotional image`, size: '512x512' }),
+        body: JSON.stringify({ prompt: `${prompt}, ${style} style, professional business promotional image`, offer_type: style }),
       })
-      const data = await res.json()
-      if (data.success && data.image_url) {
-        setGeneratedImage(data.image_url)
+      const data = await res.json().catch(() => ({}))
+      if (data?.success && data?.image_url) {
+        setGeneratedImage(data.image_url as string)
+      } else {
+        setErrorHint(typeof data?.message === 'string' ? data.message : 'Could not generate an image. Try again or upload your own.')
       }
-    } catch (e) {
-      console.error('Image generation error:', e)
+    } catch {
+      setErrorHint('Could not generate an image. Check your connection and try again.')
     }
     setGenerating(false)
   }
@@ -75,6 +79,10 @@ export default function ImageGeneratorModal({ onClose, onGenerate }: Props) {
                   ))}
                 </div>
               </div>
+
+              {errorHint && (
+                <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">{errorHint}</p>
+              )}
 
               {generatedImage && (
                 <div className="relative">

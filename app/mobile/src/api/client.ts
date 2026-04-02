@@ -322,11 +322,8 @@ class ApiService {
         else if (response.status === 422) normalized = detail || 'Invalid input. Please check your data and try again.';
         else if (response.status === 429) normalized = 'Too many requests. Please wait a moment and try again.';
         else if (response.status >= 500) {
-          // Prefer API detail (e.g. concerns table missing, Stripe misconfig) over a generic message.
-          normalized =
-            typeof detail === 'string' && detail.trim().length > 0
-              ? detail
-              : 'Server error. Please try again later.';
+          // Never surface internal server messages to end users.
+          normalized = 'Something went wrong on our side. Please try again later.';
         }
         return { success: false, error: normalized };
       }

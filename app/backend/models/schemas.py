@@ -208,7 +208,8 @@ class PartnerOfferCreate(BaseModel):
     discount_percent: int
     gems_reward: Optional[int] = None
     is_free_item: bool = False
-    location_id: str
+    # Some clients send numeric IDs; coerce to string in routes.
+    location_id: str | int
     expires_hours: int = 168
     image_url: Optional[str] = None
 
