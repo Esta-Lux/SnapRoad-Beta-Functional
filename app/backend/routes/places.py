@@ -51,6 +51,24 @@ _CACHE_MAX = 256         # entries
 _autocomplete_cache: OrderedDict[str, tuple[float, list]] = OrderedDict()
 _details_cache: OrderedDict[str, tuple[float, dict]] = OrderedDict()
 
+# Bust in-memory details cache when expanding Google `fields` (see place_details).
+_DETAILS_CACHE_KEY_VER = "pd4"
+
+# Google Places Details (legacy) — try comprehensive fields first; retry with basic set on INVALID_REQUEST.
+_PLACE_DETAILS_FIELDS_BASIC = (
+    "name,formatted_address,formatted_phone_number,geometry,rating,"
+    "user_ratings_total,price_level,opening_hours,website,photos,reviews,"
+    "types,business_status,url"
+)
+_PLACE_DETAILS_FIELDS_EXTENDED = (
+    _PLACE_DETAILS_FIELDS_BASIC
+    + ",editorial_summary,"
+    "dine_in,delivery,takeout,curbside_pickup,reservable,"
+    "serves_beer,serves_wine,serves_breakfast,serves_lunch,serves_dinner,"
+    "wheelchair_accessible_entrance,outdoor_seating,live_music,"
+    "good_for_children,good_for_groups,payment_options,parking_options"
+)
+
 
 def _cache_get(cache: OrderedDict, key: str):
     entry = cache.get(key)
@@ -135,7 +153,8 @@ async def fetch_place_coords_for_orion(place_id: str) -> Optional[dict]:
     if not key or not place_id:
         return None
 
-    cached = _cache_get(_details_cache, place_id)
+    cache_key = f"{place_id}\x1f{_DETAILS_CACHE_KEY_VER}"
+    cached = _cache_get(_details_cache, cache_key)
     if cached is not None:
         la, ln = cached.get("lat"), cached.get("lng")
         if la is not None and ln is not None:
@@ -173,28 +192,9 @@ async def autocomplete(
     return {"success": True, "data": predictions}
 
 
-@router.get("/details/{place_id}")
-async def place_details(place_id: str):
-    key = _KEY()
-    if not key:
-        return {"success": False, "error": MSG_GOOGLE_PLACES_KEY_NOT_CONFIGURED}
-
-    cached = _cache_get(_details_cache, place_id)
-    if cached is not None:
-        return {"success": True, "data": cached}
-
-    fields = (
-        "name,formatted_address,formatted_phone_number,geometry,rating,"
-        "user_ratings_total,price_level,opening_hours,website,photos,reviews,"
-        "types,business_status,url"
-    )
-    params = {"place_id": place_id, "fields": fields, "key": key, "language": "en"}
-
-    r = await _get_http().get(f"{_BASE}/details/json", params=params)
-    data = r.json()
-
-    result = data.get("result", {})
+def _build_place_detail(place_id: str, result: dict) -> dict:
     geo = result.get("geometry", {}).get("location", {})
+    hours = result.get("opening_hours") or {}
 
     photos = []
     for ph in result.get("photos", [])[:10]:
@@ -209,15 +209,47 @@ async def place_details(place_id: str):
     for rv in result.get("reviews", [])[:5]:
         reviews.append({
             "author": rv.get("author_name", ""),
+            "author_name": rv.get("author_name", ""),
             "rating": rv.get("rating"),
             "text": rv.get("text", ""),
             "time": rv.get("relative_time_description", ""),
+            "relative_time_description": rv.get("relative_time_description", ""),
             "profile_photo": rv.get("profile_photo_url", ""),
         })
 
-    hours = result.get("opening_hours", {})
+    es = result.get("editorial_summary")
+    if isinstance(es, dict):
+        editorial = es.get("overview") or ""
+    else:
+        editorial = es if isinstance(es, str) else ""
 
-    detail = {
+    pay = result.get("payment_options") if isinstance(result.get("payment_options"), dict) else {}
+    park = result.get("parking_options") if isinstance(result.get("parking_options"), dict) else {}
+
+    attributes = {
+        "dine_in": result.get("dine_in"),
+        "delivery": result.get("delivery"),
+        "takeout": result.get("takeout"),
+        "curbside_pickup": result.get("curbside_pickup"),
+        "reservable": result.get("reservable"),
+        "serves_beer": result.get("serves_beer"),
+        "serves_wine": result.get("serves_wine"),
+        "serves_breakfast": result.get("serves_breakfast"),
+        "serves_lunch": result.get("serves_lunch"),
+        "serves_dinner": result.get("serves_dinner"),
+        "wheelchair_accessible": result.get("wheelchair_accessible_entrance"),
+        "good_for_groups": result.get("good_for_groups"),
+        "good_for_children": result.get("good_for_children"),
+        "outdoor_seating": result.get("outdoor_seating"),
+        "live_music": result.get("live_music"),
+        "accepts_credit_cards": pay.get("acceptsCreditCards"),
+        "accepts_apple_pay": pay.get("acceptsApplePay"),
+        "accepts_contactless": pay.get("acceptsNfc"),
+        "parking_lot": bool(park.get("paidParkingLot") or park.get("freeParkingLot")),
+        "free_parking": bool(park.get("freeParkingLot") or park.get("freeStreetParking")),
+    }
+
+    return {
         "place_id": place_id,
         "name": result.get("name", ""),
         "address": result.get("formatted_address", ""),
@@ -233,10 +265,45 @@ async def place_details(place_id: str):
         "business_status": result.get("business_status", ""),
         "open_now": hours.get("open_now"),
         "hours": hours.get("weekday_text", []),
+        "opening_hours": hours,
         "photos": photos,
         "reviews": reviews,
+        "editorial_summary": editorial,
+        "attributes": attributes,
+        "payment_options": pay or None,
+        "parking_options": park or None,
     }
-    _cache_set(_details_cache, place_id, detail)
+
+
+@router.get("/details/{place_id}")
+async def place_details(place_id: str):
+    key = _KEY()
+    if not key:
+        return {"success": False, "error": MSG_GOOGLE_PLACES_KEY_NOT_CONFIGURED}
+
+    cache_key = f"{place_id}\x1f{_DETAILS_CACHE_KEY_VER}"
+    cached = _cache_get(_details_cache, cache_key)
+    if cached is not None:
+        return {"success": True, "data": cached}
+
+    async def _fetch(fields: str) -> dict:
+        params = {"place_id": place_id, "fields": fields, "key": key, "language": "en"}
+        r = await _get_http().get(f"{_BASE}/details/json", params=params)
+        return r.json()
+
+    data = await _fetch(_PLACE_DETAILS_FIELDS_EXTENDED)
+    status = data.get("status")
+    if status == "INVALID_REQUEST":
+        data = await _fetch(_PLACE_DETAILS_FIELDS_BASIC)
+        status = data.get("status")
+
+    if status != "OK":
+        err = data.get("error_message") or status or "Place details failed"
+        return {"success": False, "error": err}
+
+    result = data.get("result") or {}
+    detail = _build_place_detail(place_id, result)
+    _cache_set(_details_cache, cache_key, detail)
     return {"success": True, "data": detail}
 
 

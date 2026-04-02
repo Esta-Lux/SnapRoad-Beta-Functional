@@ -7,7 +7,8 @@
     "production": {
       "ios": {
         "appleTeamId": "F9JGAWBHPZ",
-        "appleId": "riyan@snaproad.co"
+        "appleId": "riyan@snaproad.co",
+        "ascAppId": "6761516426"
       }
     }
   },

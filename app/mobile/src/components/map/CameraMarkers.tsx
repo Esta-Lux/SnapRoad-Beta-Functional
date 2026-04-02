@@ -1,4 +1,6 @@
-import React, { useMemo } from 'react';
+import React from 'react';
+import { View, Pressable, StyleSheet, Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 
 /** OHGO still frame (same fields as backend `camera_views`). */
@@ -25,107 +27,70 @@ interface Props {
 }
 
 /**
- * Renders OHGO traffic cameras as a CircleLayer stack that looks like a camera lens icon.
- * Three layers: outer glow → white iris ring → dark lens center.
- * Works on all map styles (streets-v12, standard, navigation-night-v1, dark-v11).
+ * Traffic cameras as MarkerView + Ionicons (no CircleLayer dots).
+ * Keeps markers readable on every base style (Standard, Streets, Dark, Satellite).
  */
 export default React.memo(function CameraMarkers({ cameras, onCameraTap }: Props) {
-  const geojson = useMemo<GeoJSON.FeatureCollection>(() => ({
-    type: 'FeatureCollection',
-    features: cameras
-      .filter((c) => isFinite(c.lat) && isFinite(c.lng))
-      .map((c) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
-        properties: {
-          id: String(c.id),
-          name: c.name || 'Traffic camera',
-          description: c.description || '',
-          lat: c.lat,
-          lng: c.lng,
-          camera_views_json: JSON.stringify(c.camera_views ?? []),
-        },
-      })),
-  }), [cameras]);
-
-  if (!isMapAvailable() || !MapboxGL || cameras.length === 0) return null;
+  const list = cameras.filter((c) => isFinite(c.lat) && isFinite(c.lng));
+  if (!isMapAvailable() || !MapboxGL || list.length === 0) return null;
   const MB = MapboxGL;
 
-  const handlePress = (e: any) => {
-    if (!onCameraTap) return;
-    const feat = e?.features?.[0];
-    if (!feat?.properties) return;
-    const p = feat.properties;
-
-    let views: CameraViewFeed[] | undefined;
-    try {
-      const raw = typeof p.camera_views_json === 'string'
-        ? JSON.parse(p.camera_views_json)
-        : p.camera_views_json;
-      if (Array.isArray(raw) && raw.length > 0) views = raw;
-    } catch {}
-
-    onCameraTap({
-      id: p.id ?? '',
-      name: typeof p.name === 'string' ? p.name : 'Traffic camera',
-      description: typeof p.description === 'string' ? p.description : undefined,
-      lat: Number(p.lat),
-      lng: Number(p.lng),
-      camera_views: views,
-    });
-  };
-
   return (
-    <MB.ShapeSource
-      id="sr-cameras-src"
-      shape={geojson}
-      onPress={handlePress}
-      hitbox={{ width: 28, height: 28 }}
-    >
-      <MB.CircleLayer
-        id="sr-cameras-glow"
-        style={{
-          circleRadius: ['interpolate', ['linear'], ['zoom'], 10, 10, 14, 16, 18, 24],
-          circleColor: '#2563EB',
-          circleOpacity: 0.18,
-          circleBlur: 1.0,
-        }}
-      />
-      <MB.CircleLayer
-        id="sr-cameras-iris"
-        style={{
-          circleRadius: ['interpolate', ['linear'], ['zoom'], 10, 6, 14, 10, 18, 15],
-          circleColor: '#ffffff',
-          circleOpacity: 0.95,
-          circlePitchAlignment: 'map',
-        }}
-      />
-      <MB.CircleLayer
-        id="sr-cameras-lens"
-        style={{
-          circleRadius: ['interpolate', ['linear'], ['zoom'], 10, 3.5, 14, 6, 18, 9],
-          circleColor: '#1E3A8A',
-          circleOpacity: 1,
-          circlePitchAlignment: 'map',
-        }}
-      />
-      <MB.SymbolLayer
-        id="sr-cameras-label"
-        style={{
-          textField: 'CAM',
-          textSize: ['interpolate', ['linear'], ['zoom'], 12, 0, 14, 7, 18, 10],
-          textColor: '#ffffff',
-          textHaloColor: '#1E3A8A',
-          textHaloWidth: 1.2,
-          textFont: ['DIN Pro Bold', 'Arial Unicode MS Bold'],
-          textAnchor: 'center',
-          textAllowOverlap: true,
-          textIgnorePlacement: true,
-          textLetterSpacing: 0.02,
-          symbolPlacement: 'point',
-          visibility: 'visible',
-        }}
-      />
-    </MB.ShapeSource>
+    <>
+      {list.map((c) => (
+        <MB.MarkerView
+          key={String(c.id)}
+          id={`sr-cam-mv-${c.id}`}
+          coordinate={[c.lng, c.lat]}
+          anchor={{ x: 0.5, y: 0.5 }}
+          allowOverlap
+        >
+          <Pressable
+            onPress={() => onCameraTap?.(c)}
+            style={({ pressed }) => [styles.hit, pressed && styles.hitPressed]}
+            hitSlop={8}
+          >
+            <View style={styles.puck}>
+              <View style={styles.puckInner}>
+                <Ionicons name="videocam" size={16} color="#FFFFFF" />
+              </View>
+            </View>
+          </Pressable>
+        </MB.MarkerView>
+      ))}
+    </>
   );
+});
+
+const styles = StyleSheet.create({
+  hit: { alignItems: 'center', justifyContent: 'center' },
+  hitPressed: { opacity: 0.85, transform: [{ scale: 0.96 }] },
+  puck: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: 'rgba(37, 99, 235, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.85)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1e3a8a',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.45,
+        shadowRadius: 5,
+      },
+      android: { elevation: 6 },
+      default: {},
+    }),
+  },
+  puckInner: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

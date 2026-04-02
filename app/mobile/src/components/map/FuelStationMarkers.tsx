@@ -1,4 +1,6 @@
 import React, { useMemo } from 'react';
+import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 
 export interface FuelStation {
@@ -15,81 +17,86 @@ interface Props {
   onStationTap?: (s: FuelStation) => void;
 }
 
+const FILL = '#16A34A';
+const FILL_DARK = '#15803D';
+
+/**
+ * Gas stations as MarkerView + fuel icon (no CircleLayer / emoji SymbolLayer).
+ */
 export default React.memo(function FuelStationMarkers({ stations, visible, onStationTap }: Props) {
-  const geoJSON = useMemo(
-    () => ({
-      type: 'FeatureCollection' as const,
-      features: stations
-        .filter((s) => s.lat != null && s.lng != null && isFinite(s.lat) && isFinite(s.lng))
-        .map((s) => ({
-          type: 'Feature' as const,
-          properties: {
-            id: s.id,
-            name: s.name ?? 'Gas Station',
-            priceLabel: s.price != null ? `$${s.price.toFixed(2)}` : '',
-          },
-          geometry: { type: 'Point' as const, coordinates: [s.lng, s.lat] },
-        })),
-    }),
+  const list = useMemo(
+    () => stations.filter((s) => s.lat != null && s.lng != null && isFinite(s.lat) && isFinite(s.lng)),
     [stations],
   );
 
-  if (!isMapAvailable() || !MapboxGL || !visible || !stations.length) return null;
+  if (!isMapAvailable() || !MapboxGL || !visible || !list.length) return null;
+  const MB = MapboxGL;
 
   return (
-    <MapboxGL.ShapeSource
-      id="sr-fuel-stations"
-      shape={geoJSON as GeoJSON.FeatureCollection}
-      onPress={(e: any) => {
-        const id = e.features?.[0]?.properties?.id;
-        const s = stations.find((x) => String(x.id) === String(id));
-        if (s && onStationTap) onStationTap(s);
-      }}
-    >
-      <MapboxGL.CircleLayer
-        id="sr-fuel-glow"
-        style={{
-          circleColor: '#22C55E',
-          circleRadius: ['interpolate', ['linear'], ['zoom'], 11, 10, 14, 16, 18, 22],
-          circleOpacity: 0.15,
-          circleBlur: 0.6,
-        }}
-        minZoomLevel={11}
-      />
-      <MapboxGL.CircleLayer
-        id="sr-fuel-dot"
-        style={{
-          circleColor: '#22C55E',
-          circleRadius: ['interpolate', ['linear'], ['zoom'], 11, 5, 14, 7, 18, 10],
-          circleStrokeWidth: 2,
-          circleStrokeColor: '#ffffff',
-          circleOpacity: 0.9,
-        }}
-        minZoomLevel={11}
-      />
-      <MapboxGL.SymbolLayer
-        id="sr-fuel-icon"
-        style={{
-          textField: '⛽',
-          textSize: ['interpolate', ['linear'], ['zoom'], 13, 8, 16, 12, 18, 16],
-          textAllowOverlap: true,
-        }}
-        minZoomLevel={14}
-      />
-      <MapboxGL.SymbolLayer
-        id="sr-fuel-price"
-        style={{
-          textField: ['get', 'priceLabel'],
-          textSize: 11,
-          textFont: ['DIN Pro Medium', 'Arial Unicode MS Regular'],
-          textColor: '#ffffff',
-          textHaloColor: '#000000',
-          textHaloWidth: 1,
-          textOffset: [0, 1.4],
-          textAllowOverlap: false,
-        }}
-        minZoomLevel={14}
-      />
-    </MapboxGL.ShapeSource>
+    <>
+      {list.map((s) => (
+        <MB.MarkerView
+          key={String(s.id)}
+          id={`sr-fuel-mv-${s.id}`}
+          coordinate={[s.lng, s.lat]}
+          anchor={{ x: 0.5, y: 0.5 }}
+          allowOverlap
+        >
+          <Pressable
+            onPress={() => onStationTap?.(s)}
+            style={({ pressed }) => [styles.hit, pressed && styles.hitPressed]}
+            hitSlop={8}
+          >
+            <View style={styles.puckOuter}>
+              <View style={styles.puckInner}>
+                <Ionicons name="flash" size={17} color="#FFFFFF" />
+              </View>
+              {s.price != null && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeTxt}>${s.price.toFixed(2)}</Text>
+                </View>
+              )}
+            </View>
+          </Pressable>
+        </MB.MarkerView>
+      ))}
+    </>
   );
+});
+
+const styles = StyleSheet.create({
+  hit: { alignItems: 'center', justifyContent: 'center' },
+  hitPressed: { opacity: 0.9, transform: [{ scale: 0.96 }] },
+  puckOuter: {
+    alignItems: 'center',
+    minWidth: 44,
+  },
+  puckInner: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: FILL,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: FILL_DARK,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.35,
+        shadowRadius: 4,
+      },
+      android: { elevation: 6 },
+      default: {},
+    }),
+  },
+  badge: {
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+  },
+  badgeTxt: { color: '#fff', fontSize: 9, fontWeight: '800' },
 });

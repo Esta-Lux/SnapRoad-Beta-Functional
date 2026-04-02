@@ -40,6 +40,7 @@ import PhotoReportDetailModal from '../components/map/PhotoReportDetailModal';
 import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config/restrictedRegions';
 import FuelStationMarkers from '../components/map/FuelStationMarkers';
 import PhotoReportSheet from '../components/map/PhotoReportSheet';
+import TurnSignalMarkers from '../components/map/TurnSignalMarkers';
 import LaneGuide from '../components/navigation/LaneGuide';
 import GemOverlay from '../components/gamification/GemOverlay';
 import TripShare from '../components/gamification/TripShare';
@@ -258,6 +259,8 @@ export default function MapScreen() {
   // ── New layer data ──
   const [photoReports, setPhotoReports] = useState<PhotoReport[]>([]);
   const [trafficSafetyZones, setTrafficSafetyZones] = useState<TrafficSafetyZone[]>([]);
+  /** User-visible status when speed-camera layer is on but empty / limited */
+  const [trafficSafetyHint, setTrafficSafetyHint] = useState<string | null>(null);
   const [selectedPhotoReport, setSelectedPhotoReport] = useState<PhotoReport | null>(null);
   const [fuelStations, setFuelStations] = useState<{id: string; name?: string; lat: number; lng: number; price?: number}[]>([]);
   const [isMuted, setIsMuted] = useState(false);
@@ -297,6 +300,18 @@ export default function MapScreen() {
     if (drivingMode === 'sport') return 'mapbox://styles/mapbox/streets-v12';
     return MAP_STYLES[0].url;
   })();
+
+  const streetsStyleIndex = useMemo(
+    () => Math.max(0, MAP_STYLES.findIndex((ms) => ms.url.includes('streets-v12'))),
+    [],
+  );
+  /** Highlight the tile that matches the *effective* basemap (mode default ≠ index 0 for calm/sport). */
+  const mapStylePickerHighlightIndex = useMemo(() => {
+    if (styleOverride !== 0) return styleOverride;
+    if (drivingMode === 'calm' || drivingMode === 'sport') return streetsStyleIndex;
+    return 0;
+  }, [styleOverride, drivingMode, streetsStyleIndex]);
+
   /** streets-v12 and navigation-night-v1 support heading indicator; Standard omits it. */
   const userLocationHeadingOk = true;
   const atmosphereStyle = ATMOSPHERE[drivingMode];
@@ -458,7 +473,15 @@ export default function MapScreen() {
   }, [Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
   useEffect(() => {
-    if (!showCameras) return;
+    if (!user?.isPremium) {
+      if (showCameras) setShowCameras(false);
+      setCameraLocations([]);
+      return;
+    }
+    if (!showCameras) {
+      setCameraLocations([]);
+      return;
+    }
     const rLat = Math.round(location.lat * 100);
     const rLng = Math.round(location.lng * 100);
     if (rLat === 0 && rLng === 0) return;
@@ -480,7 +503,7 @@ export default function MapScreen() {
         setCameraLocations(cams);
       }
     }).catch(() => {});
-  }, [showCameras, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
+  }, [showCameras, user?.isPremium, setShowCameras, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
   // Fetch photo reports when layer enabled (API returns only active, public blurred URLs)
   useEffect(() => {
@@ -506,45 +529,83 @@ export default function MapScreen() {
     }).catch(() => {});
   }, [showPhotoReports, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
+  useEffect(() => {
+    if (!showTrafficSafety) {
+      setTrafficSafetyHint(null);
+    }
+  }, [showTrafficSafety]);
+
   // Traffic safety POIs (Overpass via API; hidden in restricted regions)
   useEffect(() => {
     const rLat = Math.round(location.lat * 100);
     const rLng = Math.round(location.lng * 100);
     if (rLat === 0 && rLng === 0) {
       setTrafficSafetyZones([]);
+      setTrafficSafetyHint(null);
       return;
     }
     if (!showTrafficSafety || !isTrafficSafetyLayerEnabled(location.lat, location.lng)) {
       setTrafficSafetyZones([]);
+      setTrafficSafetyHint(null);
       return;
     }
     const region = trafficSafetyRegionQuery(location.lat, location.lng);
     api
-      .get<{ zones?: unknown[]; disabled?: boolean }>(
-        `/api/traffic-safety/zones?lat=${location.lat}&lng=${location.lng}&radius_km=8&region=${encodeURIComponent(region)}`,
+      .get<Record<string, unknown>>(
+        `/api/traffic-safety/zones?lat=${location.lat}&lng=${location.lng}&radius_km=12&region=${encodeURIComponent(region)}`,
       )
       .then((r) => {
-        if (!r.success) return;
-        const payload = r.data as { zones?: unknown[]; disabled?: boolean };
+        if (!r.success || r.data == null) {
+          setTrafficSafetyZones([]);
+          setTrafficSafetyHint('Could not load speed camera data. Try again later.');
+          return;
+        }
+        const raw = r.data as Record<string, unknown>;
+        const payload =
+          raw && typeof raw === 'object' && 'zones' in raw
+            ? raw
+            : (raw.data as Record<string, unknown> | undefined) ?? raw;
         if (payload?.disabled) {
           setTrafficSafetyZones([]);
+          setTrafficSafetyHint(null);
           return;
         }
         const zl = payload?.zones;
-        if (!Array.isArray(zl)) return;
-        setTrafficSafetyZones(
-          zl
-            .map((z: any) => ({
-              id: String(z?.id ?? ''),
-              lat: Number(z?.lat),
-              lng: Number(z?.lng),
-              kind: typeof z?.kind === 'string' ? z.kind : 'speed_camera',
-              maxspeed: z?.maxspeed ?? null,
-            }))
-            .filter((z: TrafficSafetyZone) => z.id && isFinite(z.lat) && isFinite(z.lng)),
-        );
+        if (!Array.isArray(zl)) {
+          setTrafficSafetyZones([]);
+          setTrafficSafetyHint('Unexpected response from traffic safety service.');
+          return;
+        }
+        const mapped = zl
+          .map((z: any) => ({
+            id: String(z?.id ?? ''),
+            lat: Number(z?.lat),
+            lng: Number(z?.lng),
+            kind: typeof z?.kind === 'string' ? z.kind : 'speed_camera',
+            maxspeed: z?.maxspeed ?? null,
+          }))
+          .filter((z: TrafficSafetyZone) => z.id && isFinite(z.lat) && isFinite(z.lng));
+        setTrafficSafetyZones(mapped);
+
+        if (mapped.length > 0) {
+          setTrafficSafetyHint(null);
+          return;
+        }
+        if (payload?.reason === 'rate_limited') {
+          const sec = typeof payload.retry_after_seconds === 'number' ? payload.retry_after_seconds : 60;
+          setTrafficSafetyHint(`Rate limited — try again in ~${sec}s.`);
+          return;
+        }
+        if (payload?.limited) {
+          setTrafficSafetyHint('No mapped speed cameras in this area (OpenStreetMap). Zoom out or move to try again.');
+          return;
+        }
+        setTrafficSafetyHint('No speed camera POIs returned in this area yet.');
       })
-      .catch(() => {});
+      .catch(() => {
+        setTrafficSafetyZones([]);
+        setTrafficSafetyHint('Network error loading speed cameras.');
+      });
   }, [showTrafficSafety, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
   useEffect(() => {
@@ -1109,72 +1170,34 @@ export default function MapScreen() {
             />
           )}
 
-          {/* Turn markers: ASCII arrows in SymbolLayer (reliable on native Mapbox vs emoji). */}
-          {nav.isNavigating && nav.navigationData?.steps && (() => {
-            const upcomingSteps = nav.navigationData!.steps
-              .slice(nav.currentStepIndex + 1, nav.currentStepIndex + 5)
-              .filter((st) => isFinite(st.lat) && isFinite(st.lng) && st.maneuver !== 'arrive' && st.maneuver !== 'depart');
-            if (!upcomingSteps.length || !MapboxGL) return null;
-
-            const getArrowChar = (maneuver?: string): string => {
-              if (!maneuver) return '^';
-              if (maneuver.includes('left') && maneuver.includes('sharp')) return 'L';
-              if (maneuver.includes('right') && maneuver.includes('sharp')) return 'R';
-              if (maneuver.includes('left')) return '<';
-              if (maneuver.includes('right')) return '>';
-              if (maneuver === 'u-turn') return 'U';
-              if (maneuver === 'roundabout') return '@';
-              if (maneuver === 'merge') return '>';
-              return '^';
-            };
-
-            const turnSignals: GeoJSON.FeatureCollection = {
-              type: 'FeatureCollection',
-              features: upcomingSteps.map((st) => ({
-                type: 'Feature' as const,
-                properties: {
-                  arrow: getArrowChar(st.maneuver),
-                  maneuver: st.maneuver ?? 'straight',
-                },
-                geometry: { type: 'Point' as const, coordinates: [st.lng, st.lat] },
-              })),
-            };
-            return (
-              <MapboxGL.ShapeSource id="sr-turn-signals" shape={turnSignals}>
-                <MapboxGL.CircleLayer
-                  id="sr-turn-signal-bg"
-                  style={{
-                    circleRadius: ['interpolate', ['linear'], ['zoom'], 13, 8, 16, 12, 19, 16],
-                    circleColor: modeConfig.turnArrowBg ?? modeConfig.routeColor,
-                    circleOpacity: 0.9,
-                    circleStrokeWidth: 2,
-                    circleStrokeColor: '#FFFFFF',
-                    circlePitchAlignment: 'map',
-                  }}
+          {nav.isNavigating &&
+            nav.navigationData?.steps &&
+            (() => {
+              const upcoming = nav
+                .navigationData!.steps.slice(nav.currentStepIndex + 1, nav.currentStepIndex + 5)
+                .filter(
+                  (st) =>
+                    isFinite(st.lat) &&
+                    isFinite(st.lng) &&
+                    st.maneuver !== 'arrive' &&
+                    st.maneuver !== 'depart',
+                )
+                .map((st) => ({ lat: st.lat, lng: st.lng, maneuver: st.maneuver }));
+              if (!upcoming.length) return null;
+              return (
+                <TurnSignalMarkers
+                  steps={upcoming}
+                  puckColor={modeConfig.turnArrowBg ?? modeConfig.routeColor}
                 />
-                <MapboxGL.SymbolLayer
-                  id="sr-turn-signal-arrow"
-                  style={{
-                    textField: ['get', 'arrow'],
-                    textSize: ['interpolate', ['linear'], ['zoom'], 13, 10, 16, 14, 19, 18],
-                    textColor: '#FFFFFF',
-                    textFont: ['DIN Pro Bold', 'Arial Unicode MS Bold'],
-                    textAnchor: 'center',
-                    textAllowOverlap: true,
-                    textIgnorePlacement: true,
-                    symbolPlacement: 'point',
-                  }}
-                />
-              </MapboxGL.ShapeSource>
-            );
-          })()}
+              );
+            })()}
 
           {!nav.isNavigating && <OfferMarkers offers={nearbyOffers} onOfferTap={setSelectedOffer} />}
           {showIncidents && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
             if (inc.type === 'construction') return showConstruction;
             return true;
           })} onIncidentTap={setActiveReportCard} />}
-          {showCameras && !nav.isNavigating && (
+          {user?.isPremium && showCameras && !nav.isNavigating && (
             <CameraMarkers cameras={cameraLocations} onCameraTap={(cam) => setSelectedTrafficCamera(cam)} />
           )}
           <FriendMarkers friends={friendLocations} onFriendTap={(f) => Alert.alert(f.name, 'What would you like to do?', [
@@ -1244,12 +1267,31 @@ export default function MapScreen() {
         <PlaceDetailSheet
           placeId={selectedPlaceId}
           summary={selectedPlace ? { name: selectedPlace.name, lat: selectedPlace.lat, lng: selectedPlace.lng } : undefined}
+          userLocation={
+            Math.abs(location.lat) > 1e-5 || Math.abs(location.lng) > 1e-5
+              ? { lat: location.lat, lng: location.lng }
+              : undefined
+          }
           isLight={isLight}
           onClose={() => { setSelectedPlaceId(null); setSelectedPlace(null); }}
           onDirections={(place) => {
             setSelectedPlaceId(null);
             setSelectedPlace(null);
             handleStartDirections(place);
+          }}
+          onSave={async (p) => {
+            const res = await api.post('/api/locations', {
+              name: p.name,
+              address: p.address ?? '',
+              category: 'favorite',
+              lat: p.lat,
+              lng: p.lng,
+            });
+            if (!res.success) {
+              Alert.alert('Could not save', res.error ?? 'Try again later.');
+              throw new Error(res.error ?? 'Save failed');
+            }
+            Alert.alert('Saved', `${p.name} added to your places.`);
           }}
         />
       )}
@@ -1266,7 +1308,7 @@ export default function MapScreen() {
       )}
 
       <TrafficCameraSheet
-        visible={selectedTrafficCamera != null}
+        visible={Boolean(user?.isPremium && selectedTrafficCamera)}
         camera={selectedTrafficCamera}
         onClose={() => setSelectedTrafficCamera(null)}
       />
@@ -2059,6 +2101,25 @@ export default function MapScreen() {
 
       {isLocating && <View style={[s.locBanner, { top: insets.top + 84 }]}><Text style={s.locT}>Finding your location...</Text></View>}
 
+      {showTrafficSafety &&
+        isTrafficSafetyLayerEnabled(location.lat, location.lng) &&
+        trafficSafetyHint &&
+        !nav.isNavigating && (
+          <View
+            style={[
+              s.mapLayerHint,
+              {
+                bottom: 96 + insets.bottom,
+                backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,30,46,0.94)',
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Ionicons name="information-circle-outline" size={18} color={colors.primary} style={{ marginRight: 8 }} />
+            <Text style={[s.mapLayerHintT, { color: colors.textSecondary }]}>{trafficSafetyHint}</Text>
+          </View>
+        )}
+
       {/* ═══ SHEETS / OVERLAYS ════════════════════════════════════════════ */}
 
       {showReportPicker && (
@@ -2107,26 +2168,44 @@ export default function MapScreen() {
         </View>
       )}
 
-      {showStylePicker && (
+          {showStylePicker && (
         <View style={s.overlay}>
           <TouchableOpacity style={s.overlayBg} onPress={() => setShowStylePicker(false)} activeOpacity={1} />
           <View style={[s.sheet, { backgroundColor: colors.surface }]}>
             <Text style={[s.sheetTitle, { color: colors.text }]}>Map Style</Text>
             <View style={s.sheetGrid}>
-              {MAP_STYLES.map((ms, i) => (
-                <TouchableOpacity key={ms.key} style={s.sheetItem} onPress={() => { setStyleOverride(i); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}>
-                  <View style={[s.sheetIcon, styleOverride === i && { borderWidth: 2, borderColor: colors.primary }]}>
-                    <Ionicons name={ms.icon} size={22} color={styleOverride === i ? colors.primary : colors.textSecondary} />
-                  </View>
-                  <Text style={[s.sheetLbl, { color: styleOverride === i ? colors.primary : colors.textSecondary }]}>{ms.label}</Text>
-                </TouchableOpacity>
-              ))}
+              {MAP_STYLES.map((ms, i) => {
+                const sel = mapStylePickerHighlightIndex === i;
+                return (
+                  <TouchableOpacity
+                    key={ms.key}
+                    style={s.sheetItem}
+                    onPress={() => {
+                      setStyleOverride(i);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setShowStylePicker(false);
+                    }}
+                  >
+                    <View style={[s.sheetIcon, sel && { borderWidth: 2, borderColor: colors.primary }]}>
+                      <Ionicons name={ms.icon} size={22} color={sel ? colors.primary : colors.textSecondary} />
+                    </View>
+                    <Text style={[s.sheetLbl, { color: sel ? colors.primary : colors.textSecondary }]}>{ms.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
             <Text style={[s.layerSectionT, { color: colors.text }]}>Layers</Text>
             {[
               { k: 'traffic', l: 'Traffic', ic: 'car-outline' as const, v: showTraffic, t: setShowTraffic },
               { k: 'incidents', l: 'Incidents', ic: 'warning-outline' as const, v: showIncidents, t: setShowIncidents },
-              { k: 'cameras', l: 'Cameras', ic: 'videocam-outline' as const, v: showCameras, t: setShowCameras },
+              {
+                k: 'cameras',
+                l: 'Cameras',
+                ic: 'videocam-outline' as const,
+                v: showCameras,
+                t: setShowCameras,
+                sub: user?.isPremium ? undefined : 'Premium — tap to upgrade and enable',
+              },
               { k: 'construction', l: 'Construction', ic: 'construct-outline' as const, v: showConstruction, t: setShowConstruction },
               { k: 'fuel', l: 'Gas Stations', ic: 'flash-outline' as const, v: showFuel, t: setShowFuel },
               {
@@ -2149,9 +2228,27 @@ export default function MapScreen() {
                   ) : null}
                 </View>
                 <Switch
-                  value={ly.v}
+                  value={ly.k === 'cameras' ? Boolean(user?.isPremium && ly.v) : ly.v}
                   disabled={'disabled' in ly && ly.disabled}
-                  onValueChange={ly.t}
+                  onValueChange={(v) => {
+                    if (ly.k === 'cameras') {
+                      if (!user?.isPremium) {
+                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                        Alert.alert(
+                          'Premium feature',
+                          'Traffic cameras on the map are included with SnapRoad Premium. Upgrade to enable this layer.',
+                          [
+                            { text: 'Not now', style: 'cancel' },
+                            { text: 'Upgrade', onPress: () => rnNav.navigate('Profile' as never) },
+                          ],
+                        );
+                        return;
+                      }
+                      setShowCameras(v);
+                      return;
+                    }
+                    ly.t(v);
+                  }}
                   trackColor={{ false: colors.border, true: colors.primary }}
                   thumbColor="#fff"
                 />
@@ -2735,6 +2832,20 @@ const s = StyleSheet.create({
   speedUnit: { fontSize: 9, fontWeight: '600', marginTop: -1 },
   layerBtn: { position: 'absolute', right: 16, width: 46, height: 46, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, ...shadow(8, 0.15), zIndex: 12 },
   locBanner: { position: 'absolute', alignSelf: 'center', backgroundColor: 'rgba(59,130,246,0.92)', paddingHorizontal: 18, paddingVertical: 9, borderRadius: 22 },
+  mapLayerHint: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    zIndex: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    ...shadow(10, 0.12),
+  },
+  mapLayerHintT: { flex: 1, fontSize: 12, lineHeight: 16, fontWeight: '600' },
   locT: { color: '#fff', fontSize: 13, fontWeight: '700' },
   destPinWrap: { alignItems: 'center' },
   destPin: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#DC2626', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff', ...shadow(12, 0.5) },

@@ -52,25 +52,26 @@ const pan = Gesture.Pan()
 
 `expo-blur` was removed from this project. Do NOT import `BlurView` from `expo-blur`. Use semi-transparent `View` backgrounds instead.
 
-### Mapbox Markers
+### Mapbox Markers & POI icons
 
-Use `MapboxGL.MarkerView` for custom markers (renders as live React Native view).
-Do NOT use `MapboxGL.PointAnnotation` for custom views -- it rasterizes children into a bitmap, making icons look blurry.
+**User-facing POIs** (traffic cameras, speed cameras, offers, destinations, etc.) must read as **real icons**, not anonymous colored dots:
+- Prefer `MapboxGL.MarkerView` with **Ionicons / custom `View` stacks** (rounded tile, border, shadow) so the marker is clearly a camera, speedometer, diamond, etc.
+- Do **not** ship POIs that are only `CircleLayer` filled disks with no iconography — that fails the product bar for “readable 3D-style” map UI.
+
+`MapboxGL.PointAnnotation` is still avoided for custom views — it rasterizes children and looks soft; use `MarkerView` instead.
 
 ### Mapbox SymbolLayer -- VERY LIMITED on native
 
 On native Mapbox, SymbolLayer has severe limitations:
 - Emoji in `textField` does NOT render (native text engine doesn't support system emoji)
 - `nativeAssetImages` sprite icons (`marker-15`, `circle-15`) render tiny and `iconColor` tinting does NOT work (sprites are not SDF)
-- Plain ASCII text in `textField` DOES work but is small and hard to see
+- Plain **ASCII** text in `textField` CAN work for small route chevrons / turn hints when MarkerView is too heavy — never rely on emoji
 
-**Use CircleLayer for ALL map markers.** This is the only approach proven to render reliably on native:
-- Glow halo: `CircleLayer` with low opacity + blur
-- Main dot: `CircleLayer` with solid color + white stroke border
-- Per-feature color: `circleColor: ['get', 'color']`
-- Zoom scaling: `circleRadius: ['interpolate', ['linear'], ['zoom'], 10, 6, 14, 10, 18, 14]`
+**Line-on-map geometry** (route halo, heatmaps, less important backdrops) may still use `LineLayer` / `CircleLayer` as needed — this rule targets **discrete POI markers**, not the route polyline.
 
-Do NOT use `iconImage`, `nativeAssetImages`, or emoji `textField` for map markers.
+**Incident heatmap (`IncidentHeatmap`)** — Do not replace it with clustered icon `MarkerView`s unless the product explicitly asks for that pass. Heatmaps vs clustered markers trade off density legibility, GPU cost, tap targets, and data/API patterns; treat a switch as its own scoped task.
+
+Do NOT use `iconImage`, `nativeAssetImages`, or emoji `textField` for POI markers.
 
 ### Safe Area
 
