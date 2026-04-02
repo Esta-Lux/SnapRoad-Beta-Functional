@@ -1262,7 +1262,9 @@ def sb_get_road_reports_admin_list(limit: int = 100) -> list:
         r = (
             _sb()
             .table("road_reports")
-            .select("id,user_id,type,lat,lng,description,upvotes,status,created_at,expires_at")
+            .select(
+                "id,user_id,type,lat,lng,description,upvotes,status,moderation_status,created_at,expires_at"
+            )
             .order("created_at", desc=True)
             .limit(limit)
             .execute()
@@ -1283,7 +1285,9 @@ def sb_get_road_reports_for_admin_map(limit: int = 400) -> list:
         r = (
             _sb()
             .table("road_reports")
-            .select("id,type,lat,lng,upvotes,status,created_at,expires_at,description")
+            .select(
+                "id,type,lat,lng,upvotes,status,moderation_status,created_at,expires_at,description"
+            )
             .eq("status", "active")
             .gt("expires_at", now)
             .order("created_at", desc=True)
@@ -1295,6 +1299,32 @@ def sb_get_road_reports_for_admin_map(limit: int = 400) -> list:
         if not _table_missing(e):
             logger.warning(f"sb_get_road_reports_for_admin_map: {e}")
         return []
+
+
+def sb_update_road_report_moderation(incident_id: str, outcome: str) -> bool:
+    """
+    Moderate a driver road_reports row by UUID. outcome: approved | rejected
+    Returns True if a road_reports row was updated.
+    """
+    if outcome not in ("approved", "rejected"):
+        return False
+    iid = (incident_id or "").strip()
+    if not iid:
+        return False
+    try:
+        exist = _sb().table("road_reports").select("id").eq("id", iid).limit(1).execute()
+        if not exist.data:
+            return False
+        updates: dict = {"moderation_status": outcome}
+        if outcome == "approved":
+            updates["status"] = "active"
+        else:
+            updates["status"] = "inactive"
+        _sb().table("road_reports").update(updates).eq("id", iid).execute()
+        return True
+    except Exception as e:
+        logger.warning(f"sb_update_road_report_moderation: {e}")
+        return False
 
 
 def sb_update_app_config(key: str, value, updated_by: Optional[str] = None) -> bool:

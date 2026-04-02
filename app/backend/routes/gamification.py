@@ -431,13 +431,15 @@ def get_gem_history(user: CurrentUser):
         balance = int((profile or {}).get("gems", 0))
 
         earned_rows = sb.table("trips").select("gems_earned, created_at").eq("profile_id", user_id).gt("gems_earned", 0).order("created_at", desc=True).limit(20).execute()
-        spent_rows = sb.table("redemptions").select("gems_cost, created_at, offer_id").eq("user_id", user_id).order("created_at", desc=True).limit(20).execute()
+        # NOTE: production schema uses `redemptions.gems_earned` (legacy) rather than `gems_cost`.
+        # Selecting a non-existent column causes PostgREST to throw; keep this query compatible.
+        spent_rows = sb.table("redemptions").select("gems_earned, created_at, offer_id").eq("user_id", user_id).order("created_at", desc=True).limit(20).execute()
 
         transactions = []
         for r in (earned_rows.data or []):
             transactions.append({"type": "earned", "amount": int(r.get("gems_earned", 0)), "source": "Trip completion", "date": r.get("created_at", "")})
         for r in (spent_rows.data or []):
-            transactions.append({"type": "spent", "amount": int(r.get("gems_cost", 0)), "source": "Offer redemption", "date": r.get("created_at", "")})
+            transactions.append({"type": "spent", "amount": int(r.get("gems_earned", 0)), "source": "Offer redemption", "date": r.get("created_at", "")})
         transactions.sort(key=lambda x: x.get("date", ""), reverse=True)
 
         total_earned = sum(t["amount"] for t in transactions if t["type"] == "earned")

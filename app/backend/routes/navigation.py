@@ -861,7 +861,24 @@ def get_map_traffic(
     reports = []
     try:
         sb = get_supabase()
-        rr = sb.table("road_reports").select("id,type,lat,lng,description,upvotes,created_at,expires_at").eq("status", "active").limit(300).execute()
+        try:
+            rr = (
+                sb.table("road_reports")
+                .select("id,type,lat,lng,description,upvotes,created_at,expires_at")
+                .eq("status", "active")
+                .or_("moderation_status.eq.approved,moderation_status.is.null")
+                .limit(300)
+                .execute()
+            )
+        except Exception as mod_err:
+            logger.warning("map/traffic road_reports moderation filter skipped: %s", mod_err)
+            rr = (
+                sb.table("road_reports")
+                .select("id,type,lat,lng,description,upvotes,created_at,expires_at")
+                .eq("status", "active")
+                .limit(300)
+                .execute()
+            )
         reports = rr.data or []
     except Exception:
         if ENVIRONMENT == "production":

@@ -407,7 +407,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
           </div>
         </div>
 
-        <nav className="flex-1 p-4">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-4">
           <div className="space-y-2">
             {NAV_ITEMS.map(item => (
               <button key={item.id} onClick={() => setActiveTab(item.id)} data-testid={`nav-${item.id}`}
@@ -432,7 +432,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
           </div>
         </nav>
 
-        <div className="p-4 border-t border-white/5">
+        <div className="shrink-0 p-4 border-t border-white/5 bg-slate-900/80">
           <button onClick={() => { partnerApi.logout(); navigate('/portal/partner/welcome') }} data-testid="logout-btn" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10">
             <LogOut size={20} /><span className="font-medium">Sign Out</span>
           </button>

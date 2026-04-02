@@ -56,6 +56,7 @@ from services.supabase_service import (
     sb_get_app_config_with_meta,
     sb_get_road_reports_for_admin_map,
     sb_get_road_reports_admin_list,
+    sb_update_road_report_moderation,
     sb_get_live_users,
 )
 
@@ -539,6 +540,7 @@ def _road_report_row_to_admin_item(row: dict) -> dict:
         "location": loc,
         "severity": sev,
         "status": str(row.get("status") or "active"),
+        "moderation_status": str(row.get("moderation_status") or "approved"),
         "created_at": row.get("created_at"),
         "reported_by": str(row.get("user_id") or ""),
         "source": "road_reports",
@@ -568,6 +570,15 @@ async def moderate_incident(incident_id: str, outcome: Annotated[str, Body(..., 
     if outcome not in ["approved", "rejected"]:
         return {"success": False, "message": "Invalid outcome. Must be 'approved' or 'rejected'"}
 
+    if sb_update_road_report_moderation(incident_id, outcome):
+        sb_create_audit_log("INCIDENT_MODERATED", "admin", incident_id, f"Road report {outcome}")
+        try:
+            from services.websocket_manager import ws_manager
+            await ws_manager.broadcast_moderation_update(incident_id, outcome)
+        except Exception as e:
+            logger.warning(f"Could not broadcast moderation update: {e}")
+        return {"success": True, "message": "Update saved"}
+
     success = sb_update_incident(incident_id, {
         "status": outcome,
         "moderated_by": "admin",
@@ -581,8 +592,8 @@ async def moderate_incident(incident_id: str, outcome: Annotated[str, Body(..., 
             await ws_manager.broadcast_moderation_update(incident_id, outcome)
         except Exception as e:
             logger.warning(f"Could not broadcast moderation update: {e}")
-        return {"success": True, "message": f"Incident {incident_id} marked as {outcome}"}
-    return {"success": False, "message": "Failed to moderate incident"}
+        return {"success": True, "message": "Update saved"}
+    return {"success": False, "message": "Could not update that report. Try refreshing the list."}
 
 
 @router.get("/admin/incidents/moderated")
