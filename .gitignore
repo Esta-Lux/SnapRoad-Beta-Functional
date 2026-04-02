@@ -53,3 +53,7 @@ htmlcov/
 *.bak
 *.tmp
 .vercel
+
+# Sentry mcp config
+.cursor/mcp.json
+
