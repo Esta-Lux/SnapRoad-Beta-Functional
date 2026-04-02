@@ -43,7 +43,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pip install pip-audit bandit
       - run: pip-audit
-      - run: bandit -q -r routes services main.py config.py
+      - run: bandit -q -c bandit.yaml -r routes services main.py config.py
 
   npm-audit:
     runs-on: ubuntu-latest
@@ -64,9 +64,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: gitleaks/gitleaks-action@v2
+        with:
+          # Full history so gitleaks can resolve PR/base commit ranges (avoids "unknown revision").
+          fetch-depth: 0
+      # Ensure other branch tips exist locally so `event.before` and its parent resolve on push.
+      - name: Fetch remote branches for gitleaks
+        run: |
+          git fetch --no-tags --prune origin "+refs/heads/*:refs/remotes/origin/*" || true
+      # Push events compare `before^..after`; fetch `before` when it is not on the current branch tip (force-push / multi-branch).
+      - name: Fetch push base SHA for gitleaks
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: |
+          git fetch --no-tags --depth=500 origin "${{ github.event.before }}" || true
+          git cat-file -e "${{ github.event.before }}^{commit}" 2>/dev/null || git fetch --no-tags origin "${{ github.sha }}" "${{ github.event.before }}" || true
+      # Pinned to v2.3.9 commit (supply-chain policy: full SHA, not floating @v2).
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Required for gitleaks-action on GitHub org-owned repos (see gitleaks-action README)
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
   predeploy-smoke:
     runs-on: ubuntu-latest

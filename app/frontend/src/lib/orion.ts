@@ -27,11 +27,16 @@ export interface OrionContext {
   timeOfDay?: string
 }
 
+function greetingForHour(hour: number): string {
+  if (hour < 12) return 'morning'
+  if (hour < 17) return 'afternoon'
+  return 'evening'
+}
+
 /** Exported for tooling / future client-side Orion; backend may mirror this prompt. */
 export function buildSystemPrompt(ctx: OrionContext | undefined): string {
   const c = ctx ?? {}
-  const time = new Date().getHours()
-  const greeting = time < 12 ? 'morning' : time < 17 ? 'afternoon' : 'evening'
+  const greeting = greetingForHour(new Date().getHours())
 
   return `You are Orion, the AI navigator and personal assistant for SnapRoad — a privacy-first navigation app that rewards drivers for safe driving.
 
@@ -163,6 +168,9 @@ export interface OrionChatResult {
   toolCalls?: OrionToolCall[]
 }
 
+const ORION_CONFIG_MSG =
+  "I'm not configured yet — add OPENAI_API_KEY to the backend .env and ensure the backend is running."
+
 export async function chatWithOrionWithTools(
   messages: OrionMessage[],
   context: OrionContext | undefined
@@ -182,11 +190,9 @@ export async function chatWithOrionWithTools(
       if (!response.ok) throw new Error(`Backend error: ${response.status}`)
       const data = await response.json()
       return { content: data?.content ?? 'Sorry, I had trouble with that.' }
-    } catch {
-      return {
-        content:
-          "I'm not configured yet — add NVIDIA_API_KEY or OPENAI_API_KEY to the backend .env and ensure the API is running.",
-      }
+    } catch (err: unknown) {
+      console.warn('[Orion] chatWithOrionWithTools failed', err)
+      return { content: ORION_CONFIG_MSG }
     }
   }
   return { content: "I'm not configured yet — set VITE_BACKEND_URL / VITE_API_URL and run backend Orion." }
@@ -198,7 +204,6 @@ export async function chatWithOrion(
 ): Promise<string> {
   const safeContext = context ?? {}
 
-  // Otherwise use backend
   if (!API_BASE) {
     return "I'm not configured yet — set VITE_BACKEND_URL / VITE_API_URL so Orion can run."
   }
@@ -219,9 +224,26 @@ export async function chatWithOrion(
     }
     const data = await response.json()
     return data?.content ?? 'Sorry, I had trouble with that.'
-  } catch (e) {
-    return "I'm not configured yet — add NVIDIA_API_KEY or OPENAI_API_KEY to the backend .env and ensure the backend is running."
+  } catch (err: unknown) {
+    console.warn('[Orion] chatWithOrion failed', err)
+    return ORION_CONFIG_MSG
   }
+}
+
+type StreamLineResult = 'done' | { chunk: string }
+
+function parseOrionSseLine(line: string): StreamLineResult | null {
+  if (!line.startsWith('data: ')) return null
+  const data = line.slice(6).trim()
+  if (data === '[DONE]') return 'done'
+  try {
+    const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> }
+    const content = parsed.choices?.[0]?.delta?.content
+    if (content) return { chunk: content }
+  } catch {
+    /* ignore malformed SSE JSON */
+  }
+  return null
 }
 
 export async function* streamOrion(
@@ -230,7 +252,6 @@ export async function* streamOrion(
 ): AsyncGenerator<string> {
   const safeContext = context ?? {}
 
-  // Otherwise use backend
   if (!API_BASE) {
     yield "I'm not configured — set VITE_BACKEND_URL / VITE_API_URL."
     return
@@ -251,23 +272,17 @@ export async function* streamOrion(
   if (!reader || !response.ok) return
 
   let buffer = ''
-  while (true) {
+  for (;;) {
     const { done, value } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })
     const lines = buffer.split('\n')
     buffer = lines.pop() ?? ''
     for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6).trim()
-        if (data === '[DONE]') return
-        try {
-          const parsed = JSON.parse(data)
-          const content = parsed.choices?.[0]?.delta?.content
-          if (content) yield content
-        } catch {
-          /* ignore parse errors */
-        }
+      const parsed = parseOrionSseLine(line)
+      if (parsed === 'done') return
+      if (parsed && typeof parsed === 'object' && 'chunk' in parsed) {
+        yield parsed.chunk
       }
     }
   }
@@ -275,13 +290,14 @@ export async function* streamOrion(
 
 // Ensure voices are loaded (Chrome often returns [] until after first interaction / voiceschanged)
 function getVoicesList(): SpeechSynthesisVoice[] {
-  let list = window.speechSynthesis.getVoices()
+  const synth = globalThis.speechSynthesis
+  if (!synth) return []
+  const list = synth.getVoices()
   if (list.length > 0) return list
-  // Trigger load on Chrome; next call may have voices
-  if (typeof window.speechSynthesis.onvoiceschanged !== 'undefined') {
-    window.speechSynthesis.getVoices()
+  if (synth.onvoiceschanged !== undefined) {
+    synth.getVoices()
   }
-  return window.speechSynthesis.getVoices()
+  return synth.getVoices()
 }
 
 // Prefer voices that sound most natural/human (platform-specific)
@@ -289,23 +305,21 @@ function getNaturalVoice(): SpeechSynthesisVoice | undefined {
   const voices = getVoicesList()
   if (!voices.length) return undefined
   const enUs = voices.filter((v) => v.lang === 'en-US' || v.lang.startsWith('en-US'))
-  // Priority: high-quality, conversational voices (order matters)
   const preferredNames = [
-    'Samantha',           // macOS/iOS – very natural
-    'Alex',               // macOS
-    'Karen',              // macOS (AU)
-    'Google US English',  // Chrome – natural
-    'Microsoft Aria',     // Edge – natural
-    'Microsoft Zira',     // Windows
-    'Daniel',             // macOS UK, often natural
-    'Moira',              // macOS
+    'Samantha',
+    'Alex',
+    'Karen',
+    'Google US English',
+    'Microsoft Aria',
+    'Microsoft Zira',
+    'Daniel',
+    'Moira',
     'Samantha (Enhanced)', 'Alex (Enhanced)',
   ]
   for (const name of preferredNames) {
     const found = enUs.find((v) => v.name.includes(name))
     if (found) return found
   }
-  // Fallback: first en-US female (often more natural for assistant), then any en-US
   return enUs.find((v) => !v.name.includes('Male')) ?? enUs[0]
 }
 
@@ -315,24 +329,24 @@ export function orionSpeak(
   isMuted: boolean = false
 ) {
   if (isMuted) return
-  if (!window.speechSynthesis) return
+  const synth = globalThis.speechSynthesis
+  if (!synth) return
 
   const trimmed = text.trim().replace(/\s+/g, ' ')
   if (!trimmed) return
 
-  window.speechSynthesis.cancel()
+  synth.cancel()
 
   const utterance = new SpeechSynthesisUtterance(trimmed)
 
   const voice = getNaturalVoice()
   if (voice) utterance.voice = voice
 
-  // Natural human pace: slightly slower than 1.0, clear for driving
   utterance.rate = priority === 'high' ? 0.92 : 0.9
   utterance.pitch = 1.02
-  utterance.volume = 1.0
+  utterance.volume = 1
 
-  window.speechSynthesis.speak(utterance)
+  synth.speak(utterance)
 }
 
 export function startListening(
@@ -350,9 +364,11 @@ export function startListening(
     stop: () => void
   }
   type SpeechRecognitionCtor = new () => SimpleRecognition
-  const SpeechRecognition =
-    (window as Window & { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor }).SpeechRecognition ||
-    (window as Window & { webkitSpeechRecognition?: SpeechRecognitionCtor }).webkitSpeechRecognition
+  const g = globalThis as typeof globalThis & {
+    SpeechRecognition?: SpeechRecognitionCtor
+    webkitSpeechRecognition?: SpeechRecognitionCtor
+  }
+  const SpeechRecognition = g.SpeechRecognition ?? g.webkitSpeechRecognition
 
   if (!SpeechRecognition) return null
 

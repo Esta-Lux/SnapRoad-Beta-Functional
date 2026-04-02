@@ -45,10 +45,10 @@ const NAV_BASE = [
   { id: 'audit', label: 'Audit Log', icon: FileText, badgeKey: '' },
 ]
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ initialTab = 'dashboard', initialOffersBulkOpen = false }: { initialTab?: string; initialOffersBulkOpen?: boolean }) {
   const navigate = useNavigate()
   const { logout } = useAuthStore()
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [darkMode, setDarkMode] = useState(true)
   const [navBadges, setNavBadges] = useState<Record<string, string>>({})
   const [isConnected, setIsConnected] = useState(false)
@@ -75,6 +75,10 @@ export default function AdminDashboard() {
     const t = window.setInterval(loadBadges, 45000)
     return () => window.clearInterval(t)
   }, [])
+
+  useEffect(() => {
+    setActiveTab(initialTab)
+  }, [initialTab])
 
   const NAV_ITEMS = NAV_BASE.map(item => ({
     ...item,
@@ -112,7 +116,7 @@ export default function AdminDashboard() {
       case 'partners':
         return <PartnersTab theme={darkMode ? 'dark' : 'light'} onNavigate={(tabId) => setActiveTab(tabId)} />
       case 'offers':
-        return <AdminOfferManagement onNavigate={(page) => setActiveTab(page)} theme={darkMode ? 'dark' : 'light'} />
+        return <AdminOfferManagement onNavigate={(page) => setActiveTab(page)} theme={darkMode ? 'dark' : 'light'} initialBulkOpen={initialOffersBulkOpen} />
       case 'referrals':
         return <ReferralAnalyticsTab theme={darkMode ? 'dark' : 'light'} />
       case 'notifications':
@@ -224,7 +228,7 @@ export default function AdminDashboard() {
               </button>
             </div>
             <button
-              onClick={() => { logout(); adminApi.setToken(null); navigate('/auth?tab=admin'); }}
+              onClick={() => { logout(); adminApi.setToken(null); navigate('/portal/admin-sr2025secure/sign-in'); }}
               className={`w-full mt-3 flex items-center gap-2 px-4 py-3 rounded-xl transition-colors duration-200 ${
                 darkMode 
                   ? 'text-red-400 hover:bg-red-500/10' 

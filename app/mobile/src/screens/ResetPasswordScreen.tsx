@@ -1,32 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
+import { parseParamsFromUrl } from '../utils/deepLinks';
 
 type Props = {
   navigation: { navigate: (name: string, params?: object) => void };
 };
-
-function parseParamsFromUrl(url: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  const [basePart, hashPart] = url.split('#');
-  const queryIndex = basePart.indexOf('?');
-  const queryPart = queryIndex >= 0 ? basePart.slice(queryIndex + 1) : '';
-
-  const ingest = (part: string) => {
-    if (!part) return;
-    for (const pair of part.split('&')) {
-      const [k, v] = pair.split('=');
-      if (!k) continue;
-      out[decodeURIComponent(k)] = decodeURIComponent(v || '');
-    }
-  };
-
-  ingest(queryPart);
-  ingest(hashPart || '');
-  return out;
-}
 
 export default function ResetPasswordScreen({ navigation }: Props) {
   const { colors } = useTheme();
@@ -99,6 +81,7 @@ export default function ResetPasswordScreen({ navigation }: Props) {
     () => ready && password.length >= 6 && confirm.length >= 6 && !loading,
     [ready, password, confirm, loading],
   );
+  const passwordsMatch = password.length >= 6 && confirm.length >= 6 && password === confirm;
 
   const onSave = async () => {
     if (password !== confirm) {
@@ -121,61 +104,142 @@ export default function ResetPasswordScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
-      <View style={[styles.card, { backgroundColor: card }]}>
-        <Text style={[styles.title, { color: text }]}>Reset Password</Text>
-        <Text style={[styles.subtitle, { color: sub }]}>Set a new password for your SnapRoad account.</Text>
+      <View style={styles.inner}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate('ForgotPassword')} activeOpacity={0.85}>
+          <Ionicons name="chevron-back" size={18} color="#374151" />
+        </TouchableOpacity>
 
-        {linkError ? (
-          <>
-            <Text style={styles.error}>{linkError}</Text>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.navigate('ForgotPassword')}>
-              <Text style={styles.secondaryBtnText}>Request a new reset link</Text>
-            </TouchableOpacity>
-          </>
-        ) : !ready ? (
-          <View style={styles.center}>
-            <ActivityIndicator color="#3B82F6" />
-            <Text style={[styles.loadingText, { color: sub }]}>Verifying reset link...</Text>
+        <View style={styles.brandRow}>
+          <View style={styles.brandMark}>
+            <Ionicons name="navigate" size={18} color="#fff" />
           </View>
-        ) : (
-          <>
-            <TextInput
-              style={[styles.input, { borderColor: colors.border, color: text, backgroundColor: colors.surface }]}
-              placeholder="New password"
-              placeholderTextColor={colors.textTertiary}
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-            />
-            <TextInput
-              style={[styles.input, { borderColor: colors.border, color: text, backgroundColor: colors.surface }]}
-              placeholder="Confirm new password"
-              placeholderTextColor={colors.textTertiary}
-              secureTextEntry
-              value={confirm}
-              onChangeText={setConfirm}
-            />
-            <TouchableOpacity style={[styles.saveBtn, !canSubmit && { opacity: 0.6 }]} disabled={!canSubmit} onPress={onSave}>
-              <Text style={styles.saveBtnText}>{loading ? 'Saving...' : 'Save New Password'}</Text>
-            </TouchableOpacity>
-          </>
-        )}
+          <Text style={styles.brandText}>SnapRoad</Text>
+        </View>
+
+        <Text style={[styles.title, { color: text }]}>Set a new{'\n'}password.</Text>
+        <Text style={[styles.subtitle, { color: sub }]}>Choose something strong and memorable.</Text>
+
+        <View style={[styles.card, { backgroundColor: card }]}>
+          {linkError ? (
+            <>
+              <Text style={styles.error}>{linkError}</Text>
+              <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.navigate('ForgotPassword')}>
+                <Text style={styles.secondaryBtnText}>Request a new reset link</Text>
+              </TouchableOpacity>
+            </>
+          ) : !ready ? (
+            <View style={styles.center}>
+              <ActivityIndicator color="#3B82F6" />
+              <Text style={[styles.loadingText, { color: sub }]}>Verifying reset link...</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.label}>New password</Text>
+              <TextInput
+                style={[styles.input, { borderColor: colors.border, color: text, backgroundColor: colors.surface }]}
+                placeholder="Create a new password"
+                placeholderTextColor={colors.textTertiary}
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+              <View style={styles.strengthBar}>
+                {[0, 1, 2, 3].map((segment) => (
+                  <View
+                    key={segment}
+                    style={[
+                      styles.strengthSegment,
+                      segment < Math.min(4, Math.max(1, Math.floor(password.length / 3))) && password.length > 0 && styles.strengthSegmentFilled,
+                    ]}
+                  />
+                ))}
+              </View>
+
+              <Text style={[styles.label, { marginTop: 14 }]}>Confirm new password</Text>
+              <TextInput
+                style={[styles.input, { borderColor: colors.border, color: text, backgroundColor: colors.surface }]}
+                placeholder="Confirm your password"
+                placeholderTextColor={colors.textTertiary}
+                secureTextEntry
+                value={confirm}
+                onChangeText={setConfirm}
+              />
+
+              {passwordsMatch && (
+                <View style={styles.successBox}>
+                  <View style={styles.successIcon}>
+                    <Ionicons name="checkmark" size={12} color="#fff" />
+                  </View>
+                  <Text style={styles.successText}>Passwords match. You&apos;re good to go.</Text>
+                </View>
+              )}
+
+              <TouchableOpacity style={[styles.saveBtn, !canSubmit && { opacity: 0.6 }]} disabled={!canSubmit} onPress={onSave}>
+                <Text style={styles.saveBtnText}>{loading ? 'Saving...' : 'Update Password'}</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', paddingHorizontal: 20 },
-  card: { borderRadius: 16, padding: 18 },
-  title: { fontSize: 26, fontWeight: '800' },
-  subtitle: { fontSize: 13, marginTop: 6, marginBottom: 14 },
-  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, marginBottom: 10 },
-  saveBtn: { backgroundColor: '#007AFF', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  container: { flex: 1 },
+  inner: { flex: 1, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 28, justifyContent: 'center' },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 28 },
+  brandMark: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#1A6FD4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  brandText: { color: '#0D1117', fontSize: 22, fontWeight: '700' },
+  card: {
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  title: { fontSize: 30, lineHeight: 33, fontWeight: '600', letterSpacing: -0.8 },
+  subtitle: { fontSize: 15, marginTop: 8, marginBottom: 28, lineHeight: 23, fontWeight: '300' },
+  label: {
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  input: { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, marginBottom: 10 },
+  strengthBar: { flexDirection: 'row', gap: 4, marginTop: 2 },
+  strengthSegment: { flex: 1, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB' },
+  strengthSegmentFilled: { backgroundColor: '#43A047' },
+  saveBtn: { backgroundColor: '#43A047', borderRadius: 999, paddingVertical: 16, alignItems: 'center', marginTop: 16 },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   center: { alignItems: 'center', paddingVertical: 10 },
   loadingText: { fontSize: 12, marginTop: 8 },
-  error: { color: '#EF4444', fontSize: 13, marginBottom: 6 },
+  error: { color: '#EF4444', fontSize: 13, marginBottom: 6, lineHeight: 19 },
   secondaryBtn: {
     marginTop: 12,
     paddingVertical: 12,
@@ -185,5 +249,24 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(59,130,246,0.5)',
   },
   secondaryBtnText: { color: '#3B82F6', fontSize: 15, fontWeight: '600' },
+  successBox: {
+    marginTop: 8,
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+    borderRadius: 14,
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  successIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 999,
+    backgroundColor: '#43A047',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successText: { flex: 1, color: '#1B5E20', fontSize: 13, lineHeight: 19 },
 });
 

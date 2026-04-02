@@ -198,6 +198,27 @@ class ApiService {
     return this.cachedToken;
   }
 
+  async exchangeSupabaseAccessToken(accessToken: string): Promise<ApiResponse<AuthResponse>> {
+    const token = accessToken.trim();
+    if (!token) {
+      return { success: false, error: 'Missing Supabase access token.' };
+    }
+    const result = await this.request<{ success?: boolean; data?: { user?: unknown; token?: string } }>(
+      '/api/auth/oauth/supabase',
+      {
+        method: 'POST',
+        body: JSON.stringify({ access_token: token }),
+      },
+    );
+    if (!result.success) return { success: false, error: result.error };
+    const payload = (result.data as { data?: { user?: unknown; token?: string } })?.data ?? result.data;
+    const authData = payload as { user?: unknown; token?: string } | undefined;
+    if (authData?.token) {
+      await this.setToken(authData.token);
+    }
+    return { success: true, data: authData as AuthResponse };
+  }
+
   private async refreshTokenFromSupabase(): Promise<string | null> {
     if (this.refreshInFlight) return this.refreshInFlight;
     this.refreshInFlight = (async () => {
@@ -205,16 +226,10 @@ class ApiService {
         const refreshed = await supabase.auth.refreshSession();
         const accessToken = refreshed.data.session?.access_token;
         if (!accessToken) return null;
-        const exchange = await fetch(`${apiBaseUrl}/api/auth/oauth/supabase`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ access_token: accessToken }),
-        });
-        if (!exchange.ok) return null;
-        const payload = await exchange.json();
-        const appToken = payload?.data?.token ?? payload?.token;
+        const exchange = await this.exchangeSupabaseAccessToken(accessToken);
+        if (!exchange.success || !exchange.data?.token) return null;
+        const appToken = exchange.data.token;
         if (typeof appToken === 'string' && appToken.length > 10) {
-          await this.setToken(appToken);
           return appToken;
         }
         return null;

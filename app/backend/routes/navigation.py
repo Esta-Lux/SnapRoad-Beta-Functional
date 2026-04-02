@@ -4,7 +4,9 @@ from pydantic import BaseModel
 from typing import Optional, List, Any, Dict, Tuple
 from datetime import datetime, timedelta
 import logging
-import random, math
+import math
+
+from services.demo_random import choice, randint
 import httpx
 from limiter import limiter
 from models.schemas import NavigationRequest, Location, Route, Widget
@@ -22,6 +24,7 @@ from config import (
 )
 from middleware.auth import get_current_user
 from database import get_supabase
+from services.cache import cache_get, cache_set
 
 
 class VoiceCommandBody(BaseModel):
@@ -51,6 +54,18 @@ def _resolve_user_scoped_data(auth_user: dict) -> tuple[str, list, list]:
             return user_id, list(user.get("saved_locations", saved_locations)), list(saved_routes)
         user["saved_routes"] = list(saved_routes)
     return user_id, user["saved_locations"], user["saved_routes"]
+
+
+def _nav_offer_distance_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    import math
+
+    r = 3958.8
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lng2 - lng1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 # ==================== SAVED LOCATIONS ====================
@@ -314,6 +329,60 @@ def get_route_notifications(
     return {"success": True, "data": notifications, "total": len(notifications), "push_eligible": push_eligible}
 
 
+@router.get("/navigation/nearby-offers")
+def get_navigation_nearby_offers(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    trip_id: str = Query(...),
+    auth_user: dict = Depends(get_current_user),
+):
+    from routes.offers import _active_offers_source
+
+    user_id, user_locations, user_routes = _resolve_user_scoped_data(auth_user)
+    prior_visits = users_db.get(user_id, {}).get("saved_locations", user_locations) or user_locations
+    history = users_db.get(user_id, {}).get("saved_routes", user_routes) or user_routes
+    alerted_key = f"nearby-offers-alerted:{trip_id}"
+    alerted_ids = {str(item) for item in (cache_get(alerted_key) or [])}
+
+    ranked = []
+    for offer in _active_offers_source(limit=500):
+        offer_id = str(offer.get("id") or "")
+        if not offer_id or offer_id in alerted_ids:
+            continue
+        offer_lat = float(offer.get("lat") or 0)
+        offer_lng = float(offer.get("lng") or 0)
+        miles = _nav_offer_distance_miles(lat, lng, offer_lat, offer_lng)
+        if miles > 1.0:
+            continue
+
+        score = 0.0
+        offer_type = str(offer.get("offer_type") or ("admin" if offer.get("is_admin_offer") else "partner")).lower()
+        if offer_type == "partner":
+            score += 5
+        score += max(0, 1.2 - miles) * 10
+        score += max(0, float(offer.get("boost_multiplier") or 1.0) - 1.0) * 6
+
+        business_name = str(offer.get("business_name") or "").lower()
+        business_type = str(offer.get("business_type") or "").lower()
+        if any(business_name and business_name in str(loc.get("name") or "").lower() for loc in prior_visits):
+            score += 3
+        if any(business_type and business_type in str(loc.get("category") or "").lower() for loc in prior_visits):
+            score += 2
+        if any(business_name and business_name in str(route.get("destination") or "").lower() for route in history):
+            score += 2
+
+        ranked.append({
+            **offer,
+            "distance_miles": round(miles, 2),
+            "score": round(score, 2),
+        })
+
+    ranked.sort(key=lambda item: item.get("score", 0), reverse=True)
+    selected = ranked[:2]
+    cache_set(alerted_key, list(alerted_ids) + [str(item.get("id")) for item in selected], ttl=24 * 60 * 60)
+    return {"success": True, "data": selected, "count": len(selected)}
+
+
 class LeaveEarlyBody(BaseModel):
     origin_lat: Optional[float] = None
     origin_lng: Optional[float] = None
@@ -454,18 +523,18 @@ def get_mock_directions(origin_lat: float, origin_lng: float, dest_lat: float, d
     dlng = abs(dest_lng - origin_lng)
     distance_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
     distance_miles = distance_km * 0.621371
-    eta_minutes = int((distance_miles / 30) * 60) + random.randint(2, 8)
+    eta_minutes = int((distance_miles / 30) * 60) + randint(2, 8)
     lat_diff = dest_lat - origin_lat
     lng_diff = dest_lng - origin_lng
     direction = ("north" if lat_diff > 0 else "south") if abs(lat_diff) > abs(lng_diff) else ("east" if lng_diff > 0 else "west")
     streets = ["High St", "Broad St", "Main St", "3rd Ave", "Lane Ave"]
     steps = [
         {"instruction": f"Head {direction}", "distance": f"{round(distance_miles * 0.15, 1)} mi", "duration": f"{int(eta_minutes * 0.15)} min", "maneuver": "straight"},
-        {"instruction": f"Turn right onto {random.choice(streets)}", "distance": f"{round(distance_miles * 0.35, 1)} mi", "duration": f"{int(eta_minutes * 0.35)} min", "maneuver": "turn-right"},
-        {"instruction": f"Turn left onto {random.choice(streets)}", "distance": f"{round(distance_miles * 0.35, 1)} mi", "duration": f"{int(eta_minutes * 0.35)} min", "maneuver": "turn-left"},
+        {"instruction": f"Turn right onto {choice(streets)}", "distance": f"{round(distance_miles * 0.35, 1)} mi", "duration": f"{int(eta_minutes * 0.35)} min", "maneuver": "turn-right"},
+        {"instruction": f"Turn left onto {choice(streets)}", "distance": f"{round(distance_miles * 0.35, 1)} mi", "duration": f"{int(eta_minutes * 0.35)} min", "maneuver": "turn-left"},
         {"instruction": f"Arrive at {dest_name}", "distance": f"{round(distance_miles * 0.15, 1)} mi", "duration": f"{int(eta_minutes * 0.15)} min", "maneuver": "arrive"},
     ]
-    return {"success": True, "data": {"origin": {"lat": origin_lat, "lng": origin_lng}, "destination": {"lat": dest_lat, "lng": dest_lng, "name": dest_name}, "distance": {"km": round(distance_km, 2), "miles": round(distance_miles, 2), "text": f"{round(distance_miles, 1)} mi"}, "duration": {"minutes": eta_minutes, "text": f"{eta_minutes} min"}, "steps": steps, "route_type": "fastest", "traffic": random.choice(["light", "moderate", "heavy"])}}
+    return {"success": True, "data": {"origin": {"lat": origin_lat, "lng": origin_lng}, "destination": {"lat": dest_lat, "lng": dest_lng, "name": dest_name}, "distance": {"km": round(distance_km, 2), "miles": round(distance_miles, 2), "text": f"{round(distance_miles, 1)} mi"}, "duration": {"minutes": eta_minutes, "text": f"{eta_minutes} min"}, "steps": steps, "route_type": "fastest", "traffic": choice(["light", "moderate", "heavy"])}}
 
 
 # ==================== WIDGETS ====================

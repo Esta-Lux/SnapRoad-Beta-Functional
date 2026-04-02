@@ -5,7 +5,7 @@ All endpoints use the Supabase DAO layer (supabase_service.py).
 from pydantic import BaseModel
 from fastapi import APIRouter, Body, Depends, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
-from typing import Optional
+from typing import Annotated, Optional
 from datetime import datetime, timedelta, timezone
 import json
 import logging
@@ -18,6 +18,14 @@ from models.schemas import (
 )
 from services.offer_utils import calculate_auto_gems, calculate_free_discount
 from services.cache import cache_delete
+from services.fee_calculator import list_monthly_fee_summaries, get_partner_fee_history
+from services.offer_analytics import (
+    summarize_offer_analytics,
+    recent_offer_feed,
+    map_data_for_day,
+    today_realtime_summary,
+    record_offer_event,
+)
 from services.telemetry_service import telemetry_service
 from services.supabase_service import (
     sb_list_profiles, sb_get_profile, sb_update_profile,
@@ -53,6 +61,8 @@ from services.supabase_service import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Admin"], dependencies=[Depends(require_admin)])
+
+AdminUser = Annotated[dict, Depends(require_admin)]
 
 class AdminPhotoRejectBody(BaseModel):
     review_notes: Optional[str] = None
@@ -95,16 +105,16 @@ def get_admin_stats():
 
 @router.get("/admin/concerns")
 def get_admin_concerns(
-    limit: int = Query(default=50, ge=1, le=200),
-    severity: Optional[str] = None,
-    status: Optional[str] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    severity: Annotated[Optional[str], Query()] = None,
+    status: Annotated[Optional[str], Query()] = None,
 ):
     concerns = sb_get_concerns(limit=limit, severity=severity, status=status)
     return {"success": True, "data": {"concerns": concerns, "total": len(concerns)}}
 
 
 @router.post("/admin/concerns/{concern_id}/status")
-def update_concern_status(concern_id: str, body: dict = Body(..., embed=True)):
+def update_concern_status(concern_id: str, body: Annotated[dict, Body(..., embed=True)]):
     status = body.get("status")
     if status not in ("open", "in_progress", "resolved", "closed"):
         return {"success": False, "message": "Invalid status"}
@@ -135,7 +145,7 @@ _SKIP_USAGE_PREFIXES = (
 
 
 @router.get("/admin/telemetry/app-usage")
-def get_admin_app_usage_telemetry(limit: int = Query(default=500, ge=50, le=500)):
+def get_admin_app_usage_telemetry(limit: Annotated[int, Query(ge=50, le=500)] = 500):
     """
     Summarize recent HTTP telemetry into API area counts (driver/partner flows proxy).
 
@@ -179,17 +189,11 @@ def get_admin_app_usage_telemetry(limit: int = Query(default=500, ge=50, le=500)
 
 # ==================== HEALTH ====================
 
-@router.get("/admin/health")
-async def get_admin_health():
+def _admin_health_supabase(results: dict) -> None:
     import time
-    import httpx
+
     from database import get_supabase
-    import os
 
-    results = {}
-    results["api"] = "healthy"
-
-    # Supabase DB
     try:
         start = time.time()
         supabase = get_supabase()
@@ -200,70 +204,100 @@ async def get_admin_health():
         results["database"] = "down"
         results["db_error"] = str(e)
 
-    # Google Maps
-    GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY")
+
+async def _admin_health_google_maps(results: dict) -> None:
+    import os
+    import time
+
+    import httpx
+
+    key = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY")
     try:
         start = time.time()
         async with httpx.AsyncClient(timeout=5) as client:
             r = await client.get(
                 "https://maps.googleapis.com/maps/api/geocode/json",
-                params={"address": "Columbus OH", "key": GOOGLE_MAPS_API_KEY or ""},
+                params={"address": "Columbus OH", "key": key or ""},
             )
         results["google_maps"] = "healthy" if r.status_code == 200 else "degraded"
         results["maps_latency"] = round((time.time() - start) * 1000)
     except Exception:
         results["google_maps"] = "down"
 
-    # OHGO
-    OHGO_API_KEY = os.environ.get("VITE_OHGO_API_KEY") or os.environ.get("OHGO_API_KEY")
+
+async def _admin_health_ohgo(results: dict) -> None:
+    import os
+    import time
+
+    import httpx
+
+    ohgo_key = os.environ.get("VITE_OHGO_API_KEY") or os.environ.get("OHGO_API_KEY")
     try:
         start = time.time()
         async with httpx.AsyncClient(timeout=5) as client:
             r = await client.get(
                 "https://publicapi.ohgo.com/api/v1/cameras",
-                params={"api-key": OHGO_API_KEY or "", "page-size": "1"},
+                params={"api-key": ohgo_key or "", "page-size": "1"},
             )
         results["ohgo"] = "healthy" if r.status_code == 200 else "degraded"
         results["ohgo_latency"] = round((time.time() - start) * 1000)
     except Exception:
         results["ohgo"] = "down"
 
-    # Orion LLM: NVIDIA (OpenAI-compatible) preferred, else OpenAI
-    NVIDIA_API_KEY = (os.environ.get("NVIDIA_API_KEY") or "").strip()
-    NVIDIA_API_BASE = (os.environ.get("NVIDIA_API_BASE") or "https://integrate.api.nvidia.com/v1").strip().rstrip("/")
-    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+
+def _llm_provider_config() -> tuple[str, str, str]:
+    """Return (provider_name, url, api_key) for the configured LLM provider."""
+    import os
+
+    nvidia_key = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+    if nvidia_key:
+        base = (os.environ.get("NVIDIA_API_BASE") or "https://integrate.api.nvidia.com/v1").strip().rstrip("/")
+        return "nvidia", f"{base}/models", nvidia_key
+    openai_key = os.environ.get("OPENAI_API_KEY") or ""
+    return "openai", "https://api.openai.com/v1/models", openai_key
+
+
+async def _admin_health_llm(results: dict) -> None:
+    import time
+
+    import httpx
+
+    provider, url, key = _llm_provider_config()
+    results["llm_provider"] = provider
     try:
         start = time.time()
         async with httpx.AsyncClient(timeout=5) as client:
-            if NVIDIA_API_KEY:
-                r = await client.get(
-                    f"{NVIDIA_API_BASE}/models",
-                    headers={"Authorization": f"Bearer {NVIDIA_API_KEY}"},
-                )
-                results["llm_provider"] = "nvidia"
-            else:
-                r = await client.get(
-                    "https://api.openai.com/v1/models",
-                    headers={"Authorization": f"Bearer {OPENAI_API_KEY or ''}"},
-                )
-                results["llm_provider"] = "openai"
+            r = await client.get(url, headers={"Authorization": f"Bearer {key}"})
         results["llm"] = "healthy" if r.status_code == 200 else "degraded"
         results["llm_latency"] = round((time.time() - start) * 1000)
     except Exception:
         results["llm"] = "down"
-        results["llm_provider"] = "nvidia" if NVIDIA_API_KEY else "openai"
     results["openai"] = results.get("llm", "down")
     results["openai_latency"] = results.get("llm_latency")
 
-    # Supabase Realtime
-    SUPABASE_URL = os.environ.get("SUPABASE_URL")
+
+async def _admin_health_realtime(results: dict) -> None:
+    import os
+
+    import httpx
+
+    supabase_url = os.environ.get("SUPABASE_URL")
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.get(f"{SUPABASE_URL or ''}/rest/v1/")
+            r = await client.get(f"{supabase_url or ''}/rest/v1/")
         results["realtime"] = "healthy" if r.status_code < 500 else "degraded"
     except Exception:
         results["realtime"] = "down"
 
+
+@router.get("/admin/health")
+async def get_admin_health():
+    results: dict = {"api": "healthy"}
+    _admin_health_supabase(results)
+    await _admin_health_google_maps(results)
+    await _admin_health_ohgo(results)
+    await _admin_health_llm(results)
+    await _admin_health_realtime(results)
     return {"success": True, "data": results}
 
 
@@ -276,7 +310,7 @@ def get_admin_config():
 
 
 @router.post("/admin/config")
-def update_admin_config(body: dict, user: dict = Depends(require_admin)):
+def update_admin_config(body: dict, user: AdminUser):
     """Apply key/value pairs to app_config. Reserved keys: _reason, reason (ops runbook text for audit)."""
     updated_by = user.get("user_id") if user else None
     payload = dict(body) if isinstance(body, dict) else {}
@@ -298,8 +332,8 @@ def update_admin_config(body: dict, user: dict = Depends(require_admin)):
         from services.runtime_config import invalidate_runtime_config_cache
 
         invalidate_runtime_config_cache()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to invalidate runtime config cache: %s", e)
 
     keys_sorted = sorted(patch.keys())
     audit_obj = {
@@ -326,13 +360,13 @@ def get_admin_config_detailed():
 
 
 @router.get("/admin/map/road-reports")
-def get_admin_map_road_reports(limit: int = Query(default=400, ge=1, le=800)):
+def get_admin_map_road_reports(limit: Annotated[int, Query(ge=1, le=800)] = 400):
     reports = sb_get_road_reports_for_admin_map(limit=limit)
     return {"success": True, "data": {"reports": reports}}
 
 
 @router.get("/admin/map/partner-locations")
-def get_admin_map_partner_locations(limit: int = Query(default=500, ge=1, le=1000)):
+def get_admin_map_partner_locations(limit: Annotated[int, Query(ge=1, le=1000)] = 500):
     locations = sb_get_partner_locations_for_admin_map(limit=limit)
     return {"success": True, "data": {"locations": locations}}
 
@@ -347,7 +381,6 @@ def get_admin_analytics():
     finance = sb_get_finance_summary()
 
     incidents_pending = len(sb_get_incidents(status="pending", limit=200))
-    incidents_approved = len(sb_get_incidents(status="approved", limit=200))
 
     return {
         "success": True,
@@ -391,7 +424,7 @@ def get_finance_data():
 # ==================== NOTIFICATIONS ====================
 
 @router.get("/admin/notifications")
-def get_notifications(limit: int = Query(default=50, ge=1, le=100)):
+def get_notifications(limit: Annotated[int, Query(ge=1, le=100)] = 50):
     data = sb_get_admin_notifications(limit=limit)
     return {"success": True, "data": data}
 
@@ -449,7 +482,7 @@ def update_legal_document(doc_id: str, doc_data: dict):
     body["last_updated"] = datetime.now(timezone.utc).isoformat()
     success = sb_update_legal_document(doc_id, body)
     if success:
-        sb_create_audit_log("LEGAL_DOC_UPDATED", "admin", doc_id, f"Updated legal document")
+        sb_create_audit_log("LEGAL_DOC_UPDATED", "admin", doc_id, "Updated legal document")
         return {"success": True, "message": "Document updated"}
     return {"success": False, "message": "Failed to update document"}
 
@@ -473,17 +506,25 @@ def update_settings(settings_data: dict):
 # ==================== AUDIT LOG ====================
 
 @router.get("/admin/audit-log")
-def get_audit_log(limit: int = Query(default=50, ge=1, le=100)):
+def get_audit_log(limit: Annotated[int, Query(ge=1, le=100)] = 50):
     data = sb_get_audit_logs(limit=limit)
     return {"success": True, "data": data}
 
 
 # ==================== INCIDENTS ====================
 
+def _road_report_severity(report_type: str) -> str:
+    if report_type in ("accident", "crash", "closure"):
+        return "high"
+    if report_type in ("pothole",):
+        return "low"
+    return "medium"
+
+
 def _road_report_row_to_admin_item(row: dict) -> dict:
     """Align driver map reports (road_reports) with admin Incidents tab shape."""
     t = str(row.get("type") or "report")
-    sev = "high" if t in ("accident", "crash", "closure") else ("low" if t in ("pothole",) else "medium")
+    sev = _road_report_severity(t)
     lat, lng = row.get("lat"), row.get("lng")
     loc = ""
     try:
@@ -507,8 +548,8 @@ def _road_report_row_to_admin_item(row: dict) -> dict:
 
 @router.get("/admin/incidents")
 def get_incidents(
-    status: Optional[str] = None,
-    limit: int = Query(default=100, ge=1, le=200),
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    status: Annotated[Optional[str], Query()] = None,
 ):
     legacy = sb_get_incidents(status=status, limit=limit)
     road_rows = sb_get_road_reports_admin_list(min(limit, 120))
@@ -523,7 +564,7 @@ def get_incidents(
 
 
 @router.post("/admin/incidents/{incident_id}/moderate")
-async def moderate_incident(incident_id: str, outcome: str = Body(..., embed=True)):
+async def moderate_incident(incident_id: str, outcome: Annotated[str, Body(..., embed=True)]):
     if outcome not in ["approved", "rejected"]:
         return {"success": False, "message": "Invalid outcome. Must be 'approved' or 'rejected'"}
 
@@ -545,7 +586,7 @@ async def moderate_incident(incident_id: str, outcome: str = Body(..., embed=Tru
 
 
 @router.get("/admin/incidents/moderated")
-def get_moderated_incidents(limit: int = Query(default=100, ge=1, le=100)):
+def get_moderated_incidents(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     approved = sb_get_incidents(status="approved", limit=limit)
     rejected = sb_get_incidents(status="rejected", limit=limit)
     return {"success": True, "data": approved + rejected, "total": len(approved) + len(rejected)}
@@ -555,8 +596,8 @@ def get_moderated_incidents(limit: int = Query(default=100, ge=1, le=100)):
 
 @router.get("/admin/offers")
 def get_offers(
-    status: str = "all",
-    limit: int = Query(default=100, ge=1, le=100),
+    status: Annotated[str, Query()] = "all",
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     data = sb_get_offers(status=status, limit=limit)
     return {"success": True, "data": data}
@@ -572,6 +613,20 @@ def create_offer(offer_data: dict):
         sb_create_audit_log("OFFER_CREATED", "admin", result.get("id", ""), f"Created offer: {offer_data.get('title', '')}")
         return {"success": True, "message": "Offer created successfully", "data": result}
     return {"success": False, "message": "Failed to create offer"}
+
+def _optional_fields(obj, keys_map: dict) -> dict:
+    """Return a dict of non-None optional fields from *obj*."""
+    return {k: getattr(obj, v) for k, v in keys_map.items() if getattr(obj, v) is not None}
+
+
+_OFFER_OPTIONAL_KEYS = {
+    "offer_url": "offer_url",
+    "original_price": "original_price",
+    "affiliate_tracking_url": "affiliate_tracking_url",
+    "external_id": "external_id",
+    "image_url": "image_id",
+}
+
 
 @router.post("/admin/offers/create")
 def admin_create_offer(offer: AdminOfferCreate):
@@ -595,17 +650,8 @@ def admin_create_offer(offer: AdminOfferCreate):
         "status": "active",
         "title": offer.description[:60] if offer.description else "Admin Offer",
         "offer_source": offer.offer_source,
+        **_optional_fields(offer, _OFFER_OPTIONAL_KEYS),
     }
-    if offer.offer_url:
-        data["offer_url"] = offer.offer_url
-    if offer.original_price is not None:
-        data["original_price"] = offer.original_price
-    if offer.affiliate_tracking_url:
-        data["affiliate_tracking_url"] = offer.affiliate_tracking_url
-    if offer.external_id:
-        data["external_id"] = offer.external_id
-    if offer.image_id:
-        data["image_url"] = offer.image_id
     if offer.expires_hours:
         data["expires_at"] = (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat()
 
@@ -616,48 +662,132 @@ def admin_create_offer(offer: AdminOfferCreate):
     return {"success": False, "message": "Failed to create offer"}
 
 
+_BULK_OPTIONAL_KEYS = {
+    "original_price": "original_price",
+    "affiliate_tracking_url": "affiliate_tracking_url",
+    "external_id": "external_id",
+}
+
+
+def _build_bulk_offer(item) -> dict:
+    """Build a single offer dict from a BulkOfferUpload item."""
+    auto_gems = item.base_gems if item.base_gems is not None else calculate_auto_gems(item.discount_percent, item.is_free_item)
+    premium_discount = item.discount_percent
+    return {
+        "business_name": item.business_name,
+        "business_type": item.business_type,
+        "description": item.description,
+        "discount_percent": premium_discount,
+        "premium_discount_percent": premium_discount,
+        "free_discount_percent": calculate_free_discount(premium_discount),
+        "is_free_item": item.is_free_item,
+        "base_gems": auto_gems,
+        "address": item.address,
+        "lat": item.lat or 39.9612,
+        "lng": item.lng or -82.9988,
+        "offer_url": item.offer_url,
+        "is_admin_offer": True,
+        "created_by": "admin",
+        "status": "active",
+        "title": item.description[:60] if item.description else "Bulk Offer",
+        "expires_at": (datetime.now() + timedelta(days=item.expires_days)).isoformat() if item.expires_days else None,
+        "offer_source": item.offer_source,
+        **_optional_fields(item, _BULK_OPTIONAL_KEYS),
+    }
+
+
 @router.post("/admin/offers/bulk")
 def admin_bulk_offers(data: BulkOfferUpload):
     created = []
     for item in data.offers:
-        auto_gems = item.base_gems if item.base_gems is not None else calculate_auto_gems(item.discount_percent, item.is_free_item)
-        premium_discount = item.discount_percent
-        free_discount = calculate_free_discount(premium_discount)
-
-        offer_data = {
-            "business_name": item.business_name,
-            "business_type": item.business_type,
-            "description": item.description,
-            "discount_percent": premium_discount,
-            "premium_discount_percent": premium_discount,
-            "free_discount_percent": free_discount,
-            "is_free_item": item.is_free_item,
-            "base_gems": auto_gems,
-            "address": item.address,
-            "lat": item.lat or 39.9612,
-            "lng": item.lng or -82.9988,
-            "offer_url": item.offer_url,
-            "is_admin_offer": True,
-            "created_by": "admin",
-            "status": "active",
-            "title": item.description[:60] if item.description else "Bulk Offer",
-            "expires_at": (datetime.now() + timedelta(days=item.expires_days)).isoformat() if item.expires_days else None,
-            "offer_source": item.offer_source,
-        }
-        if item.original_price is not None:
-            offer_data["original_price"] = item.original_price
-        if item.affiliate_tracking_url:
-            offer_data["affiliate_tracking_url"] = item.affiliate_tracking_url
-        if item.external_id:
-            offer_data["external_id"] = item.external_id
-        result = sb_create_offer(offer_data)
+        result = sb_create_offer(_build_bulk_offer(item))
         if result:
             created.append(result)
     return {"success": True, "message": f"Created {len(created)} offers", "data": {"created_count": len(created), "offers": created}}
 
 
+def _excel_cell(row: tuple, col_map: dict, col: str, default=""):
+    """Get a cell value from an Excel row by column name."""
+    idx = col_map.get(col)
+    if idx is None or idx >= len(row) or row[idx] is None:
+        return default
+    return row[idx]
+
+
+_VALID_SOURCES = {"direct", "groupon", "affiliate", "yelp", "manual"}
+
+
+def _parse_excel_offer_row(row: tuple, col_map: dict) -> dict:
+    """Build an offer dict from a single Excel row. Returns the offer dict or raises on error."""
+    get = lambda col, default="": _excel_cell(row, col_map, col, default)
+
+    biz_name = str(get("business_name", "")).strip()
+    if not biz_name:
+        raise ValueError("missing business_name")
+
+    disc = int(float(get("discount_percent", 0)))
+    is_free = str(get("is_free_item", "")).lower() in ("true", "yes", "1")
+
+    source = str(get("source", get("offer_source", "direct"))).strip().lower() or "direct"
+    if source not in _VALID_SOURCES:
+        source = "direct"
+
+    offer_data = {
+        "business_name": biz_name,
+        "business_type": str(get("business_type", "retail")),
+        "description": str(get("description", "")),
+        "title": str(get("title", ""))[:60] or str(get("description", ""))[:60] or "Uploaded Offer",
+        "discount_percent": disc,
+        "premium_discount_percent": disc,
+        "free_discount_percent": calculate_free_discount(disc),
+        "is_free_item": is_free,
+        "base_gems": calculate_auto_gems(disc, is_free),
+        "address": str(get("address", "")),
+        "offer_url": str(get("offer_url", "")) or None,
+        "lat": float(get("lat", 39.9612)),
+        "lng": float(get("lng", -82.9988)),
+        "is_admin_offer": True,
+        "created_by": "admin_excel",
+        "status": "active",
+        "expires_at": (datetime.now() + timedelta(days=int(float(get("expires_days", 30))))).isoformat(),
+        "offer_source": source,
+    }
+
+    orig_price = get("original_price", "")
+    if orig_price:
+        try:
+            offer_data["original_price"] = float(orig_price)
+        except (ValueError, TypeError):
+            pass
+    aff_url = str(get("affiliate_tracking_url", "")).strip()
+    if aff_url:
+        offer_data["affiliate_tracking_url"] = aff_url
+    ext_id = str(get("external_id", "")).strip()
+    if ext_id:
+        offer_data["external_id"] = ext_id
+
+    return offer_data
+
+
+def _process_excel_rows(rows: list, col_map: dict) -> tuple[list, list]:
+    """Process all data rows from an Excel upload, returning (created, errors)."""
+    created = []
+    errors = []
+    for row_idx, row in enumerate(rows[1:], start=2):
+        try:
+            offer_data = _parse_excel_offer_row(row, col_map)
+            result = sb_create_offer(offer_data)
+            if result:
+                created.append(result)
+            else:
+                errors.append(f"Row {row_idx}: DB insert failed")
+        except Exception as e:
+            errors.append(f"Row {row_idx}: {str(e)}")
+    return created, errors
+
+
 @router.post("/admin/offers/upload-excel")
-async def upload_excel_offers(file: UploadFile = File(...)):
+async def upload_excel_offers(file: Annotated[UploadFile, File()]):
     """Parse an Excel (.xlsx) file and create offers. Auto-calculates gems and discounts."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         return {"success": False, "message": "Please upload an .xlsx file"}
@@ -683,69 +813,7 @@ async def upload_excel_offers(file: UploadFile = File(...)):
         if req not in col_map:
             return {"success": False, "message": f"Missing required column: {req}. Found: {', '.join(header)}"}
 
-    created = []
-    errors = []
-    for row_idx, row in enumerate(rows[1:], start=2):
-        try:
-            def get(col: str, default=""):
-                idx = col_map.get(col)
-                if idx is None or idx >= len(row) or row[idx] is None:
-                    return default
-                return row[idx]
-
-            biz_name = str(get("business_name", "")).strip()
-            if not biz_name:
-                errors.append(f"Row {row_idx}: missing business_name")
-                continue
-
-            disc = int(float(get("discount_percent", 0)))
-            is_free = str(get("is_free_item", "")).lower() in ("true", "yes", "1")
-            auto_gems = calculate_auto_gems(disc, is_free)
-            free_disc = calculate_free_discount(disc)
-
-            source = str(get("source", get("offer_source", "direct"))).strip().lower() or "direct"
-            if source not in ("direct", "groupon", "affiliate", "yelp", "manual"):
-                source = "direct"
-
-            offer_data = {
-                "business_name": biz_name,
-                "business_type": str(get("business_type", "retail")),
-                "description": str(get("description", "")),
-                "title": str(get("title", ""))[:60] or str(get("description", ""))[:60] or "Uploaded Offer",
-                "discount_percent": disc,
-                "premium_discount_percent": disc,
-                "free_discount_percent": free_disc,
-                "is_free_item": is_free,
-                "base_gems": auto_gems,
-                "address": str(get("address", "")),
-                "offer_url": str(get("offer_url", "")) or None,
-                "lat": float(get("lat", 39.9612)),
-                "lng": float(get("lng", -82.9988)),
-                "is_admin_offer": True,
-                "created_by": "admin_excel",
-                "status": "active",
-                "expires_at": (datetime.now() + timedelta(days=int(float(get("expires_days", 30))))).isoformat(),
-                "offer_source": source,
-            }
-            orig_price = get("original_price", "")
-            if orig_price:
-                try:
-                    offer_data["original_price"] = float(orig_price)
-                except (ValueError, TypeError):
-                    pass
-            aff_url = str(get("affiliate_tracking_url", "")).strip()
-            if aff_url:
-                offer_data["affiliate_tracking_url"] = aff_url
-            ext_id = str(get("external_id", "")).strip()
-            if ext_id:
-                offer_data["external_id"] = ext_id
-            result = sb_create_offer(offer_data)
-            if result:
-                created.append(result)
-            else:
-                errors.append(f"Row {row_idx}: DB insert failed")
-        except Exception as e:
-            errors.append(f"Row {row_idx}: {str(e)}")
+    created, errors = _process_excel_rows(rows, col_map)
 
     sb_create_audit_log("BULK_EXCEL_UPLOAD", "admin", "", f"Uploaded {len(created)} offers from {file.filename}")
 
@@ -879,9 +947,9 @@ def import_offers(import_data: OfferImport):
 
 @router.post("/admin/offers/import-groupon")
 async def import_groupon_deals(
-    area: str = "Columbus, OH",
-    category: Optional[str] = None,
-    limit: int = Query(default=20, ge=1, le=100),
+    area: Annotated[str, Query()] = "Columbus, OH",
+    category: Annotated[Optional[str], Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """Fetch deals from Groupon via CJ Affiliate API and return a preview list."""
     from services.groupon_service import fetch_groupon_deals, import_deals_to_offers
@@ -964,7 +1032,7 @@ async def enrich_offer_with_yelp(offer_id: str):
 # ==================== PARTNERS CRUD ====================
 
 @router.get("/admin/partners")
-def get_partners(limit: int = Query(default=100, ge=1, le=100)):
+def get_partners(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     data = sb_get_partners(limit=limit)
     return {"success": True, "data": data}
 
@@ -1018,7 +1086,7 @@ def suspend_partner(partner_id: str):
 # ==================== CAMPAIGNS CRUD ====================
 
 @router.get("/admin/campaigns")
-def get_campaigns(limit: int = Query(default=100, ge=1, le=100)):
+def get_campaigns(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     data = sb_get_campaigns(limit=limit)
     return {"success": True, "data": data}
 
@@ -1059,7 +1127,7 @@ def activate_campaign(campaign_id: str):
 # ==================== REWARDS CRUD ====================
 
 @router.get("/admin/rewards")
-def get_rewards(limit: int = Query(default=100, ge=1, le=100)):
+def get_rewards(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     data = sb_get_rewards(limit=limit)
     return {"success": True, "data": data}
 
@@ -1104,7 +1172,7 @@ def claim_reward(reward_id: str, user_data: dict):
 # ==================== USERS CRUD ====================
 
 @router.get("/admin/users")
-def get_users(limit: int = Query(default=100, ge=1, le=100)):
+def get_users(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     data = sb_list_profiles(limit=limit)
     return {"success": True, "source": "supabase", "data": data, "total": len(data)}
 
@@ -1205,8 +1273,8 @@ def create_boost(boost: BoostCreate):
 
 @router.get("/boosts")
 def get_boosts(
-    partner_id: Optional[str] = None,
-    limit: int = Query(default=100, ge=1, le=100),
+    partner_id: Annotated[Optional[str], Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     data = sb_get_boosts(partner_id=partner_id)[:limit]
     return {"success": True, "data": data}
@@ -1233,24 +1301,71 @@ def cancel_boost(boost_id: str):
 
 @router.post("/analytics/track")
 def track_analytics_event(event: AnalyticsEvent):
-    return {"success": True, "message": "Event tracked"}
+    offers = sb_get_offers(limit=500)
+    offer = next((o for o in offers if str(o.get("id")) == str(event.offer_id)), None)
+    if not offer:
+        return {"success": False, "message": "Offer not found"}
+    tracked = record_offer_event(
+        offer=offer,
+        event_type=event.event_type,
+        partner_id=offer.get("partner_id"),
+        user_id=None,
+        lat=(event.user_location or {}).get("lat") if isinstance(event.user_location, dict) else None,
+        lng=(event.user_location or {}).get("lng") if isinstance(event.user_location, dict) else None,
+    )
+    return {"success": True, "message": "Event tracked", "data": tracked}
 
 
 @router.get("/analytics/dashboard")
-def get_analytics_dashboard(business_id: str = "default_business", days: int = 7):
-    stats = sb_get_platform_stats()
+def get_analytics_dashboard(
+    business_id: Annotated[str, Query()] = "default_business",
+    days: Annotated[int, Query(ge=1, le=366)] = 7,
+):
     redemption_stats = sb_get_redemption_stats()
+    offer_summary = summarize_offer_analytics(limit=200)
     return {
         "success": True,
         "data": {
             "summary": {
-                "total_views": 0,
-                "total_clicks": 0,
+                "total_views": sum(int(row.get("views") or 0) for row in offer_summary),
+                "total_clicks": sum(int(row.get("visits") or 0) for row in offer_summary),
                 "total_redemptions": redemption_stats.get("total", 0),
-                "total_revenue": 0,
+                "total_revenue": sum(int(row.get("redemptions") or 0) for row in offer_summary),
             },
+            "offers": offer_summary[:50],
+            "window": {"business_id": business_id, "days": days},
         },
     }
+
+
+@router.get("/admin/fees/summary")
+def get_admin_fees_summary(month_year: Optional[str] = None):
+    return {"success": True, "data": list_monthly_fee_summaries(month_year)}
+
+
+@router.get("/admin/fees/partner/{partner_id}")
+def get_admin_partner_fee_history(partner_id: str, limit: Annotated[int, Query(ge=1, le=36)] = 12):
+    return {"success": True, "data": get_partner_fee_history(partner_id, limit)}
+
+
+@router.get("/admin/offers/analytics")
+def get_admin_offer_analytics(limit: Annotated[int, Query(ge=1, le=500)] = 200):
+    return {"success": True, "data": summarize_offer_analytics(limit)}
+
+
+@router.get("/admin/realtime/summary")
+def get_admin_realtime_summary():
+    return {"success": True, "data": today_realtime_summary()}
+
+
+@router.get("/admin/realtime/feed")
+def get_admin_realtime_feed(limit: Annotated[int, Query(ge=1, le=200)] = 50):
+    return {"success": True, "data": recent_offer_feed(limit)}
+
+
+@router.get("/admin/realtime/map-data")
+def get_admin_realtime_map_data():
+    return {"success": True, "data": map_data_for_day()}
 
 
 # ==================== SUPABASE STATUS ====================
@@ -1262,7 +1377,7 @@ def get_supabase_status():
 
 
 @router.get("/admin/events")
-def get_admin_events(limit: int = Query(default=100, ge=1, le=100)):
+def get_admin_events(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     challenges = sb_get_challenges()[:limit]
     return {"success": True, "data": challenges}
 
@@ -1285,7 +1400,7 @@ def _photo_original_signed_url(supabase, storage_path: str) -> Optional[str]:
 
 
 @router.get("/admin/photo-reports/pending")
-def admin_photo_reports_pending(limit: int = Query(default=50, ge=1, le=200)):
+def admin_photo_reports_pending(limit: Annotated[int, Query(ge=1, le=200)] = 50):
     from database import get_supabase
 
     supabase = get_supabase()
@@ -1398,7 +1513,7 @@ async def admin_photo_report_approve(report_id: str):
 @router.post("/admin/photo-reports/{report_id}/reject")
 def admin_photo_report_reject(
     report_id: str,
-    body: AdminPhotoRejectBody = Body(default_factory=AdminPhotoRejectBody),
+    body: Annotated[AdminPhotoRejectBody, Body(default_factory=AdminPhotoRejectBody)],
 ):
     from database import get_supabase
 

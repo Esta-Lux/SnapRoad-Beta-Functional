@@ -1,8 +1,11 @@
 import json
+import logging
 import os
 from typing import Any, Optional
 
 import redis
+
+logger = logging.getLogger(__name__)
 
 _client = None
 
@@ -33,8 +36,8 @@ def cache_set(key: str, value: Any, ttl: int = 300):
         return
     try:
         r.setex(key, ttl, json.dumps(value, default=str))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to set cache key %s: %s", key, e)
 
 
 def cache_delete(key: str):
@@ -43,5 +46,5 @@ def cache_delete(key: str):
         return
     try:
         r.delete(key)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("failed to delete cache key %s: %s", key, e)

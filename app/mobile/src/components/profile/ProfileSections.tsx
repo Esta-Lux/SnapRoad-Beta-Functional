@@ -544,7 +544,7 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
       'Rate SnapRoad',
       iosStoreId
         ? 'Open the App Store listing from your device.'
-        : 'Set iosAppStoreId in app.json extra after your App Store listing is live.',
+        : 'Set iosAppStoreId in app.config.ts extra after your App Store listing is live.',
     );
   };
 

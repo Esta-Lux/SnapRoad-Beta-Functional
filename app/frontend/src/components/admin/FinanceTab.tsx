@@ -1,10 +1,11 @@
 // Finance & Revenue Tab
 // =============================================
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { DollarSign, Building2, CreditCard, TrendingUp, FileText, Receipt, BarChart3 } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
-import type { FinanceData } from '@/types/admin'
+import type { FinanceData, AdminFeeSummaryItem } from '@/types/admin'
+import { useSupabaseRealtimeRefresh } from '@/hooks/useSupabaseRealtimeRefresh'
 
 interface FinanceTabProps {
   theme: 'dark' | 'light'
@@ -32,6 +33,7 @@ function downloadCsv(filename: string, rows: (string | number)[][]): void {
 
 export default function FinanceTab({ theme }: FinanceTabProps) {
   const [finance, setFinance] = useState<FinanceData | null>(null)
+  const [feeSummary, setFeeSummary] = useState<AdminFeeSummaryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,15 +41,21 @@ export default function FinanceTab({ theme }: FinanceTabProps) {
     loadFinanceData()
   }, [])
 
-  const loadFinanceData = async () => {
+  const loadFinanceData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await adminApi.getFinance()
+      const [res, feeRes] = await Promise.all([
+        adminApi.getFinance(),
+        adminApi.getFeeSummary(),
+      ])
       if (res.success && res.data) {
         setFinance(res.data)
       } else {
         setError(res.message || 'Failed to load finance data')
+      }
+      if (feeRes.success && feeRes.data) {
+        setFeeSummary(feeRes.data)
       }
     } catch (err) {
       console.error('Failed to load finance data:', err)
@@ -55,7 +63,19 @@ export default function FinanceTab({ theme }: FinanceTabProps) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useSupabaseRealtimeRefresh(
+    'admin-finance-realtime',
+    [
+      { table: 'redemption_fees' },
+      { table: 'redemptions' },
+      { table: 'partners' },
+    ],
+    () => {
+      loadFinanceData()
+    },
+  )
 
   const isDark = theme === 'dark'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
@@ -225,6 +245,40 @@ export default function FinanceTab({ theme }: FinanceTabProps) {
           </button>
         </div>
       </div>
+
+      {feeSummary.length > 0 && (
+        <div className={`p-5 rounded-xl border ${card}`}>
+          <h3 className={`text-lg font-semibold ${textPrimary} mb-4`}>Partner Redemption Fee Summary</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className={textSecondary}>
+                <tr>
+                  <th className="text-left py-3">Partner</th>
+                  <th className="text-left py-3">Month</th>
+                  <th className="text-left py-3">Redemptions</th>
+                  <th className="text-left py-3">Current Fee</th>
+                  <th className="text-left py-3">Tier</th>
+                  <th className="text-left py-3">Total Fees</th>
+                  <th className="text-left py-3">Next Threshold</th>
+                </tr>
+              </thead>
+              <tbody>
+                {feeSummary.slice(0, 20).map((row) => (
+                  <tr key={`${row.partner_id}-${row.month_year}`} className="border-t border-white/5">
+                    <td className={`py-3 ${textPrimary}`}>{row.partner_id}</td>
+                    <td className={`py-3 ${textSecondary}`}>{row.month_year}</td>
+                    <td className={`py-3 ${textPrimary}`}>{row.redemption_count}</td>
+                    <td className="py-3 text-amber-400 font-medium">{formatCurrency(row.current_fee)}</td>
+                    <td className={`py-3 ${textPrimary}`}>Tier {row.current_tier}</td>
+                    <td className="py-3 text-red-400 font-medium">{formatCurrency(row.total_fees)}</td>
+                    <td className={`py-3 ${textSecondary}`}>{row.redemptions_until_next_tier} to {row.next_threshold}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

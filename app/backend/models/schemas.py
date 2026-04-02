@@ -239,8 +239,8 @@ class CreditUseRequest(BaseModel):
     purpose: str
 
 class QRRedemptionRequest(BaseModel):
-    qr_data: Dict[str, Any]
-    staff_id: str
+    qr_data: Any
+    staff_id: str = "team_link"
 
 class BoostRequest(BaseModel):
     offer_id: int

@@ -14,10 +14,9 @@ from passlib.context import CryptContext
 logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+MSG_EMAIL_ALREADY_REGISTERED = "This email is already registered. Use Sign in instead."
+MSG_INVALID_CREDENTIALS = "Invalid email or password"
 
-# ─────────────────────────────────────────────
-# HELPERS
-# ─────────────────────────────────────────────
 
 def _sb():
     return get_supabase()
@@ -81,7 +80,7 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
         if _is_duplicate_error(admin_str):
             raise HTTPException(
                 status_code=409,
-                detail="This email is already registered. Use Sign in instead.",
+                detail=MSG_EMAIL_ALREADY_REGISTERED,
             )
         logger.warning("admin.create_user failed for %s: %s — trying client sign_up", email, admin_err)
 
@@ -101,7 +100,7 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
             if _is_duplicate_error(signup_str):
                 raise HTTPException(
                     status_code=409,
-                    detail="This email is already registered. Use Sign in instead.",
+                    detail=MSG_EMAIL_ALREADY_REGISTERED,
                 )
             logger.warning("client sign_up also failed for %s: %s — creating profile-only account", email, signup_err)
 
@@ -128,14 +127,14 @@ def sb_create_user(email: str, password: str, name: str, role: str = "driver") -
         if "duplicate" in profile_str or "unique" in profile_str or "already exists" in profile_str:
             raise HTTPException(
                 status_code=409,
-                detail="This email is already registered. Use Sign in instead.",
+                detail=MSG_EMAIL_ALREADY_REGISTERED,
             )
         logger.error("Profile upsert failed for %s: %s", email, profile_err, exc_info=True)
         if auth_user_id:
             try:
                 sb.auth.admin.delete_user(auth_user_id)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("failed to clean up auth user after profile upsert failure: %s", e)
         raise HTTPException(status_code=500, detail="Failed to create user account. Please try again.")
 
     return profile
@@ -148,7 +147,7 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
     raw_email = (email or "").strip()
     email = (email or "").strip().lower()
     if not email:
-        return None, "Invalid email or password"
+        return None, MSG_INVALID_CREDENTIALS
 
     # Keep login latency bounded; frontend/mobile otherwise hit client-side timeouts.
     max_retries = 2
@@ -160,7 +159,7 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
             profile_result = sb.table("profiles").select("*").ilike("email", email).limit(1).execute()
             if not profile_result or not profile_result.data or len(profile_result.data) == 0:
                 logger.warning(f"Profile not found for {email}")
-                return None, "Invalid email or password"
+                return None, MSG_INVALID_CREDENTIALS
             
             profile_data = profile_result.data[0]
             logger.info(f"Profile fetch SUCCESS for {email}, role={profile_data.get('role')}")
@@ -192,7 +191,7 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
 
             if not password_ok:
                 logger.warning(f"Password mismatch for {email}")
-                return None, "Invalid email or password"
+                return None, MSG_INVALID_CREDENTIALS
 
             logger.info("Password verified for %s", raw_email or email)
             return profile_data, None
@@ -226,7 +225,7 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
             logger.warning("sb_login_user error for %s: %s", raw_email or email, e)
             return None, str(e)
 
-    return None, "Invalid email or password"
+    return None, MSG_INVALID_CREDENTIALS
 
 
 def sb_get_auth_user_from_access_token(access_token: str) -> Optional[dict]:
@@ -423,8 +422,8 @@ def sb_get_partner_locations_for_admin_map(limit: int = 500) -> list:
             pr = _sb().table("partners").select("id,business_name").in_("id", pids).execute()
             for p in pr.data or []:
                 name_map[str(p.get("id"))] = p.get("business_name") or ""
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("failed to fetch partner names for admin map: %s", e)
     out = []
     for l in locs:
         pid = str(l.get("partner_id") or "")
@@ -1052,7 +1051,6 @@ def sb_get_finance_summary() -> dict:
         sb = _sb()
         profiles = sb.table("profiles").select("plan,is_premium").execute().data or []
         premium_count = sum(1 for p in profiles if p.get("is_premium"))
-        basic_count = len(profiles) - premium_count
 
         user_mrr = premium_count * 9.99
         partner_mrr_est = _safe_count("partners", {"status": "active"}) * 49.0
@@ -1159,8 +1157,8 @@ def sb_get_concerns(
             try:
                 profiles = _sb().table("profiles").select("id,name").in_("id", user_ids).execute()
                 profile_map = {str(p["id"]): p.get("name") or "Unknown" for p in (profiles.data or [])}
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("failed to fetch concern user profiles: %s", e)
         out = []
         for r in rows:
             rec = dict(r)
@@ -1311,8 +1309,8 @@ def sb_update_app_config(key: str, value, updated_by: Optional[str] = None) -> b
             from services.runtime_config import invalidate_runtime_config_cache
 
             invalidate_runtime_config_cache()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("failed to invalidate runtime config cache: %s", e)
         return True
     except Exception as e:
         logger.warning(f"sb_update_app_config: {e}")
@@ -1370,8 +1368,8 @@ def test_connection() -> dict:
             try:
                 sb.table(tbl).select("*").limit(1).execute()
                 tables.append(tbl)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("table %s not available: %s", tbl, e)
 
         profile_count = _safe_count("profiles")
         return {

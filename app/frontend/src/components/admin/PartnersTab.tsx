@@ -96,6 +96,37 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
     }
   }
 
+  const handleSetPartnerPlan = async (partnerId: string, plan: string) => {
+    try {
+      const res = await adminApi.updatePartner(partnerId, { plan, status: 'active' })
+      if (res.success) {
+        showFeedback('success', `Partner plan updated to ${plan}`)
+        loadPartners()
+      } else {
+        showFeedback('error', 'Failed to update partner plan')
+      }
+    } catch {
+      showFeedback('error', 'Network error while updating partner plan')
+    }
+  }
+
+  const handleGiveCredits = async (partner: Partner, amount: number) => {
+    try {
+      const currentCredits = Number((partner as any).credits || 0)
+      const res = await adminApi.updatePartner(partner.id, {
+        credits: currentCredits + amount,
+      })
+      if (res.success) {
+        showFeedback('success', `Added ${amount} credits to ${partner.business_name}`)
+        loadPartners()
+      } else {
+        showFeedback('error', 'Failed to add partner credits')
+      }
+    } catch {
+      showFeedback('error', 'Network error while adding partner credits')
+    }
+  }
+
   const handleCreatePartner = async () => {
     if (!newPartner.business_name || !newPartner.email) {
       showFeedback('error', 'Business name and email are required')
@@ -290,6 +321,10 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
                 <span className={textSecondary}>Total Redemptions</span>
                 <span className={textPrimary}>{partner.total_redemptions || 0}</span>
               </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className={textSecondary}>Credits</span>
+                <span className={textPrimary}>{Number((partner as any).credits || 0).toFixed(2)}</span>
+              </div>
             </div>
 
             <div className="flex gap-2 mt-4 pt-4 border-t border-slate-700/50">
@@ -306,6 +341,20 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
               >
                 <Gift size={14} />
                 Offers
+              </button>
+              <button
+                onClick={() => handleGiveCredits(partner, 25)}
+                className="flex items-center justify-center gap-1 px-3 py-2 bg-cyan-500/20 text-cyan-300 rounded-lg hover:bg-cyan-500/30 text-sm"
+                title="Give 25 credits"
+              >
+                +25cr
+              </button>
+              <button
+                onClick={() => handleSetPartnerPlan(partner.id, partner.plan === 'growth' ? 'starter' : 'growth')}
+                className="flex items-center justify-center gap-1 px-3 py-2 bg-purple-500/20 text-purple-300 rounded-lg hover:bg-purple-500/30 text-sm"
+                title="Toggle business plan"
+              >
+                {partner.plan === 'growth' ? 'Starter' : 'Growth'}
               </button>
               {partner.status === 'active' && (
                 <button

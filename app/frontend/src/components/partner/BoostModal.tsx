@@ -9,15 +9,15 @@ interface Props {
 }
 
 const BOOST_PACKAGES = [
-  { id: 'basic', name: 'Basic Boost', duration: '24 hours', reach: '500 drivers', price: '$9.99', icon: Zap, color: 'from-blue-500 to-cyan-500', multiplier: '2x' },
-  { id: 'standard', name: 'Standard Boost', duration: '3 days', reach: '2,000 drivers', price: '$19.99', icon: TrendingUp, color: 'from-orange-500 to-amber-500', multiplier: '5x', popular: true },
-  { id: 'premium', name: 'Premium Boost', duration: '7 days', reach: '5,000+ drivers', price: '$39.99', icon: Rocket, color: 'from-purple-500 to-pink-500', multiplier: '10x' },
+  { id: 'basic', name: 'Basic Boost', duration: '24 hours', reach: '500 drivers', price: '10 credits', icon: Zap, color: 'from-blue-500 to-cyan-500', multiplier: '2x' },
+  { id: 'standard', name: 'Standard Boost', duration: '3 days', reach: '2,000 drivers', price: '20 credits', icon: TrendingUp, color: 'from-orange-500 to-amber-500', multiplier: '5x', popular: true },
+  { id: 'premium', name: 'Premium Boost', duration: '7 days', reach: '5,000+ drivers', price: '40 credits', icon: Rocket, color: 'from-purple-500 to-pink-500', multiplier: '10x' },
 ]
 
 export default function BoostModal({ offer, onClose, onBoost }: Props) {
   const [selectedBoost, setSelectedBoost] = useState<string | null>(null)
   const [boosting, setBoosting] = useState(false)
-  const [boostConfig, setBoostConfig] = useState<BoostConfig>({ duration_days: 3, reach_target: 2000, total_cost: 19.99 })
+  const [boostConfig, setBoostConfig] = useState<BoostConfig>({ duration_days: 3, reach_target: 2000, total_cost: 20 })
 
   const handleBoost = async () => {
     if (!selectedBoost) return
@@ -43,7 +43,7 @@ export default function BoostModal({ offer, onClose, onBoost }: Props) {
 
             <div className="grid grid-cols-3 gap-4 mb-6">
               {BOOST_PACKAGES.map(pkg => (
-                <button key={pkg.id} onClick={() => { setSelectedBoost(pkg.id); setBoostConfig({ duration_days: pkg.id === 'basic' ? 1 : pkg.id === 'standard' ? 3 : 7, reach_target: pkg.id === 'basic' ? 500 : pkg.id === 'standard' ? 2000 : 5000, total_cost: parseFloat(pkg.price.replace('$', '')) }) }}
+                <button key={pkg.id} onClick={() => { setSelectedBoost(pkg.id); setBoostConfig({ duration_days: pkg.id === 'basic' ? 1 : pkg.id === 'standard' ? 3 : 7, reach_target: pkg.id === 'basic' ? 500 : pkg.id === 'standard' ? 2000 : 5000, total_cost: parseFloat(pkg.price) }) }}
                   className={`relative p-5 rounded-xl border text-left transition-all ${selectedBoost === pkg.id ? 'border-orange-500/50 bg-orange-500/10 ring-2 ring-orange-500/20' : 'border-white/10 hover:border-white/20 bg-white/[0.02]'}`}>
                   {pkg.popular && (<div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-orange-500 text-white text-[10px] font-bold">BEST VALUE</div>)}
                   <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${pkg.color} flex items-center justify-center mb-3`}>
@@ -75,8 +75,8 @@ export default function BoostModal({ offer, onClose, onBoost }: Props) {
                   </div>
                   <div>
                     <TrendingUp size={16} className="text-slate-400 mx-auto mb-1" />
-                    <p className="text-white font-bold">${boostConfig.total_cost}</p>
-                    <p className="text-slate-500 text-xs">Total Cost</p>
+                    <p className="text-white font-bold">{boostConfig.total_cost} cr</p>
+                    <p className="text-slate-500 text-xs">Credits Used</p>
                   </div>
                 </div>
               </div>

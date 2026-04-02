@@ -1,14 +1,15 @@
 // Platform Analytics Tab
 // =============================================
 
-import { useState, useEffect } from 'react'
-import { Users, Building2, Gift, Activity, Download, Calendar } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Users, Building2, Gift, Activity, Download, Calendar, RadioTower, MapPinned } from 'lucide-react'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts'
 import { adminApi } from '@/services/adminApi'
-import type { AdminStats } from '@/types/admin'
+import type { AdminStats, AdminOfferAnalyticsRow, AdminRealtimeFeedItem, AdminRealtimeSummary } from '@/types/admin'
+import { useSupabaseRealtimeRefresh } from '@/hooks/useSupabaseRealtimeRefresh'
 
 interface AnalyticsTabProps {
   theme: 'dark' | 'light'
@@ -17,25 +18,50 @@ interface AnalyticsTabProps {
 export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
   const [dateRange, setDateRange] = useState('7d')
   const [stats, setStats] = useState<AdminStats | null>(null)
+  const [offerAnalytics, setOfferAnalytics] = useState<AdminOfferAnalyticsRow[]>([])
+  const [realtimeSummary, setRealtimeSummary] = useState<AdminRealtimeSummary | null>(null)
+  const [realtimeFeed, setRealtimeFeed] = useState<AdminRealtimeFeedItem[]>([])
+  const [mapPoints, setMapPoints] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadStats()
   }, [])
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await adminApi.getStats()
-      if (res.success && res.data) {
-        setStats(res.data)
-      }
+      const [statsRes, analyticsRes, realtimeRes, feedRes, mapRes] = await Promise.all([
+        adminApi.getStats(),
+        adminApi.getOfferAnalytics(),
+        adminApi.getRealtimeSummary(),
+        adminApi.getRealtimeFeed(),
+        adminApi.getRealtimeMapData(),
+      ])
+      if (statsRes.success && statsRes.data) setStats(statsRes.data)
+      if (analyticsRes.success && analyticsRes.data) setOfferAnalytics(analyticsRes.data)
+      if (realtimeRes.success && realtimeRes.data) setRealtimeSummary(realtimeRes.data)
+      if (feedRes.success && feedRes.data) setRealtimeFeed(feedRes.data)
+      if (mapRes.success && mapRes.data) setMapPoints(mapRes.data)
     } catch (error) {
       console.error('Failed to load analytics:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useSupabaseRealtimeRefresh(
+    'admin-analytics-realtime',
+    [
+      { table: 'offer_analytics' },
+      { table: 'redemption_fees' },
+      { table: 'redemptions' },
+      { table: 'partners' },
+    ],
+    () => {
+      loadStats()
+    },
+  )
 
   const userGrowthData = [
     { date: 'W1', users: stats ? Math.round((stats.total_users || 0) * 0.85) : 0, newUsers: 120, activeUsers: stats ? Math.round((stats.total_users || 0) * 0.65) : 0 },
@@ -48,10 +74,11 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
   ]
 
   const revenueData = [
-    { month: 'Jan', revenue: 45000, redemptions: Math.round((stats?.total_redemptions || 0) * 0.7) },
-    { month: 'Feb', revenue: 52000, redemptions: Math.round((stats?.total_redemptions || 0) * 0.8) },
-    { month: 'Mar', revenue: 58000, redemptions: Math.round((stats?.total_redemptions || 0) * 0.9) },
-    { month: 'Apr', revenue: 64000, redemptions: stats?.total_redemptions || 0 },
+    ...offerAnalytics.slice(0, 6).map((row, idx) => ({
+      month: `Offer ${idx + 1}`,
+      revenue: row.redemptions,
+      redemptions: row.redemptions,
+    })),
   ]
 
   const partnerDistribution = [
@@ -123,13 +150,64 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
               <Activity className="text-amber-400" size={20} />
             </div>
             <div>
-              <div className={`text-2xl font-bold ${textPrimary}`}>{(stats?.total_redemptions || 0).toLocaleString()}</div>
-              <div className={`text-xs ${textSecondary}`}>Total Redemptions</div>
+              <div className={`text-2xl font-bold ${textPrimary}`}>{(realtimeSummary?.today_redemptions ?? stats?.total_redemptions ?? 0).toLocaleString()}</div>
+              <div className={`text-xs ${textSecondary}`}>Redemptions</div>
             </div>
           </div>
-          <div className={`mt-2 text-xs ${textSecondary}`}>{(stats?.total_trips || 0).toLocaleString()} trips</div>
+          <div className={`mt-2 text-xs ${textSecondary}`}>today {realtimeSummary?.today_redemptions ?? 0} · total {(stats?.total_redemptions || 0).toLocaleString()}</div>
         </div>
       </div>
+
+      {realtimeSummary && (
+        <div className="grid grid-cols-3 gap-6">
+          <div className={`p-5 rounded-xl border ${card}`}>
+            <h3 className={`text-lg font-semibold ${textPrimary} mb-3 flex items-center gap-2`}>
+              <RadioTower size={18} className="text-cyan-400" /> Live Feed
+            </h3>
+            <div className="space-y-3 max-h-72 overflow-auto">
+              {realtimeFeed.slice(0, 8).map((item, idx) => (
+                <div key={`${item.event_type}-${item.created_at || idx}`} className="rounded-xl bg-white/[0.03] px-4 py-3">
+                  <p className="text-white text-sm font-medium capitalize">{item.event_type}</p>
+                  <p className="text-slate-400 text-xs mt-1">Offer #{item.offer_id || '—'} · Partner {item.partner_id || '—'}</p>
+                  <p className="text-slate-500 text-xs mt-1">{item.created_at ? new Date(item.created_at).toLocaleString() : 'Just now'}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className={`p-5 rounded-xl border ${card}`}>
+            <h3 className={`text-lg font-semibold ${textPrimary} mb-3`}>Top Offers Today</h3>
+            <div className="space-y-3">
+              {realtimeSummary.top_offers_today.slice(0, 6).map((row) => (
+                <div key={row.offer_id} className="flex items-center justify-between rounded-xl bg-white/[0.03] px-4 py-3">
+                  <span className="text-slate-300 text-sm">Offer #{row.offer_id}</span>
+                  <span className="text-emerald-300 font-semibold">{row.redemptions}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className={`p-5 rounded-xl border ${card}`}>
+            <h3 className={`text-lg font-semibold ${textPrimary} mb-3 flex items-center gap-2`}>
+              <MapPinned size={18} className="text-amber-400" /> Redemption Heat
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl bg-white/[0.03] px-4 py-4">
+                <p className="text-slate-400 text-xs">Map points today</p>
+                <p className="text-white text-2xl font-bold mt-2">{mapPoints.length}</p>
+              </div>
+              <div className="rounded-xl bg-white/[0.03] px-4 py-4">
+                <p className="text-slate-400 text-xs">Offer views today</p>
+                <p className="text-white text-2xl font-bold mt-2">{realtimeSummary.today_views}</p>
+              </div>
+              <div className="rounded-xl bg-white/[0.03] px-4 py-4 col-span-2">
+                <p className="text-slate-400 text-xs">Offer visits today</p>
+                <p className="text-white text-2xl font-bold mt-2">{realtimeSummary.today_visits}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Date Range Selector */}
       <div className={`p-4 rounded-xl border ${card}`}>
@@ -254,6 +332,38 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
           </div>
         </div>
       </div>
+
+      {offerAnalytics.length > 0 && (
+        <div className={`p-5 rounded-xl border ${card}`}>
+          <h3 className={`text-lg font-semibold ${textPrimary} mb-4`}>Offer Analytics Table</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className={textSecondary}>
+                <tr>
+                  <th className="text-left py-3">Offer</th>
+                  <th className="text-left py-3">Partner</th>
+                  <th className="text-left py-3">Views</th>
+                  <th className="text-left py-3">Visits</th>
+                  <th className="text-left py-3">Redemptions</th>
+                  <th className="text-left py-3">Latest Event</th>
+                </tr>
+              </thead>
+              <tbody>
+                {offerAnalytics.slice(0, 20).map((row) => (
+                  <tr key={`${row.offer_id}-${row.partner_id || 'none'}`} className="border-t border-white/5">
+                    <td className={`py-3 ${textPrimary}`}>#{row.offer_id}</td>
+                    <td className={`py-3 ${textSecondary}`}>{row.partner_id || 'admin-offer'}</td>
+                    <td className={`py-3 ${textPrimary}`}>{row.views}</td>
+                    <td className={`py-3 ${textPrimary}`}>{row.visits}</td>
+                    <td className="py-3 text-emerald-400 font-medium">{row.redemptions}</td>
+                    <td className={`py-3 ${textSecondary}`}>{row.latest_at ? new Date(row.latest_at).toLocaleString() : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

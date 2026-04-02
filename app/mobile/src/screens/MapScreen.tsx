@@ -55,7 +55,7 @@ import OrionChat from '../components/orion/OrionChat';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigatingState } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
-import { useNavigation as useRNNavigation } from '@react-navigation/native';
+import { useNavigation as useRNNavigation, useRoute } from '@react-navigation/native';
 import { storage } from '../utils/storage';
 import { supabase } from '../lib/supabase';
 import type { DrivingMode, Incident, SavedLocation, Offer, FriendLocation } from '../types';
@@ -176,7 +176,8 @@ export default function MapScreen() {
   const [isNavActive, setIsNavActive] = useState(false);
   const { location, heading, speed, isLocating, permissionDenied } = useLocation(isNavActive);
   const { isLight, colors } = useTheme();
-  const { user } = useAuth();
+  const route = useRoute<any>();
+  const { user, updateUser } = useAuth();
 
   // ── Driving mode ──
   const [drivingMode, setDrivingMode] = useState<DrivingMode>('adaptive');
@@ -221,9 +222,12 @@ export default function MapScreen() {
   const [showCommunitySheet, setShowCommunitySheet] = useState(false);
   const reportPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const announcedRef = useRef<Set<string>>(new Set());
+  const trackedOfferViewsRef = useRef<Set<string>>(new Set());
+  const trackedOfferVisitsRef = useRef<Set<string>>(new Set());
   const confirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reportCardTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startNavTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigationTripIdRef = useRef<string>('');
 
   // ── Map style ──
   const [styleOverride, setStyleOverride] = useState(0);
@@ -238,6 +242,7 @@ export default function MapScreen() {
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<{ name: string; address?: string; category?: string; maki?: string; lat: number; lng: number } | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
+  const handledRedeemRouteRef = useRef<string | null>(null);
   const [showOrion, setShowOrion] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showSnapRace, setShowSnapRace] = useState(false);
@@ -376,6 +381,74 @@ export default function MapScreen() {
       if (Array.isArray(d)) setNearbyOffers(d);
     }).catch(() => {});
   }, [Math.round(location.lat * 100), Math.round(location.lng * 100)]);
+
+  useEffect(() => {
+    if (!nearbyOffers.length) return;
+    for (const offer of nearbyOffers) {
+      const key = String(offer.id);
+      if (trackedOfferViewsRef.current.has(key)) continue;
+      trackedOfferViewsRef.current.add(key);
+      api.post(`/api/offers/${offer.id}/view`, {
+        lat: location.lat,
+        lng: location.lng,
+      }).catch(() => {});
+    }
+  }, [nearbyOffers, location.lat, location.lng]);
+
+  useEffect(() => {
+    if (!nearbyOffers.length) return;
+    for (const offer of nearbyOffers) {
+      const key = String(offer.id);
+      if (trackedOfferVisitsRef.current.has(key)) continue;
+      const distance = haversineMeters(location.lat, location.lng, offer.lat ?? 0, offer.lng ?? 0);
+      if (distance > 500) continue;
+      trackedOfferVisitsRef.current.add(key);
+      api.post(`/api/offers/${offer.id}/visit`, {
+        lat: location.lat,
+        lng: location.lng,
+        trip_id: navigationTripIdRef.current || undefined,
+      }).catch(() => {});
+      api.post('/api/driver/location-visit', {
+        lat: location.lat,
+        lng: location.lng,
+        business_name: offer.business_name,
+        business_type: offer.business_type,
+      }).catch(() => {});
+    }
+  }, [location.lat, location.lng, nearbyOffers]);
+
+  useEffect(() => {
+    const rawOfferId = route.params?.offerId;
+    const offerId = Number(rawOfferId);
+    if (!Number.isFinite(offerId) || offerId <= 0 || nearbyOffers.length === 0) return;
+    const routeKey = String(rawOfferId);
+    if (handledRedeemRouteRef.current === routeKey) return;
+
+    const match = nearbyOffers.find((offer) => offer.id === offerId);
+    if (!match) return;
+
+    handledRedeemRouteRef.current = routeKey;
+    setSelectedOffer(match);
+  }, [nearbyOffers, route.params?.offerId]);
+
+  const handleRedeemOffer = useCallback(async (offer: Offer) => {
+    try {
+      const res = await api.post<any>(`/api/offers/${offer.id}/redeem`);
+      if (!res.success) {
+        Alert.alert('Redeem Offer', res.error || 'Could not redeem this offer right now.');
+        return;
+      }
+
+      const gemsEarned = Number((res.data as any)?.data?.gems_earned ?? 0);
+      setNearbyOffers((prev) => prev.map((item) => (item.id === offer.id ? { ...item, redeemed: true } : item)));
+      setSelectedOffer((prev) => (prev?.id === offer.id ? { ...offer, redeemed: true } : prev));
+      if (user) updateUser({ gems: user.gems + gemsEarned });
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Offer Redeemed', 'Your offer has been redeemed successfully.');
+    } catch {
+      Alert.alert('Redeem Offer', 'Could not redeem this offer right now.');
+    }
+  }, [updateUser, user]);
 
   // Reverse geocode for Orion context (throttled to ~1km moves)
   useEffect(() => {
@@ -630,24 +703,31 @@ export default function MapScreen() {
     if (!nav.isNavigating) {
       offerAnnouncementCount.current = 0;
       announcedOfferIds.current.clear();
+      navigationTripIdRef.current = '';
       return;
+    }
+    if (!navigationTripIdRef.current) {
+      navigationTripIdRef.current = `trip-${Date.now()}`;
     }
   }, [nav.isNavigating]);
   useEffect(() => {
-    if (!nav.isNavigating || !nearbyOffers.length || offerAnnouncementCount.current >= 2) return;
-    for (const offer of nearbyOffers) {
-      const oid = String(offer.id);
-      if (announcedOfferIds.current.has(oid)) continue;
-      const d = haversineMeters(location.lat, location.lng, offer.lat ?? 0, offer.lng ?? 0) / 1609.34;
-      if (d >= 0.5 && d <= 2.0) {
+    if (!nav.isNavigating || offerAnnouncementCount.current >= 2 || !navigationTripIdRef.current) return;
+    api.get<any>(`/api/navigation/nearby-offers?lat=${location.lat}&lng=${location.lng}&trip_id=${encodeURIComponent(navigationTripIdRef.current)}`)
+      .then((res) => {
+        if (!res.success) return;
+        const items = (res.data as any)?.data ?? res.data ?? [];
+        if (!Array.isArray(items) || items.length === 0) return;
+        const offer = items[0] as Offer & { distance_miles?: number };
+        const oid = String(offer.id);
+        if (announcedOfferIds.current.has(oid)) return;
         announcedOfferIds.current.add(oid);
         offerAnnouncementCount.current += 1;
         const name = offer.business_name || 'a nearby store';
-        speak(`Hey, there's a deal at ${name} about ${d.toFixed(1)} miles ahead. Say take me there to add a stop.`, 'normal', drivingMode);
-        break;
-      }
-    }
-  }, [nav.isNavigating, nearbyOffers, location.lat, location.lng, drivingMode]);
+        const distance = typeof offer.distance_miles === 'number' ? offer.distance_miles : 0.5;
+        speak(`There's a ${offer.discount_percent}% off offer at ${name}, about ${distance.toFixed(1)} miles ahead. Would you like me to add a stop?`, 'normal', drivingMode);
+      })
+      .catch(() => {});
+  }, [nav.isNavigating, location.lat, location.lng, drivingMode]);
 
   // Fix 13: Ambient mode with direction-based filtering
   useEffect(() => {
@@ -1084,7 +1164,7 @@ export default function MapScreen() {
             );
           })()}
 
-          <OfferMarkers offers={nearbyOffers} onOfferTap={setSelectedOffer} />
+          {!nav.isNavigating && <OfferMarkers offers={nearbyOffers} onOfferTap={setSelectedOffer} />}
           {showIncidents && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
             if (inc.type === 'construction') return showConstruction;
             return true;
@@ -1174,7 +1254,8 @@ export default function MapScreen() {
         <OfferRedemptionSheet
           offer={selectedOffer}
           onDismiss={() => setSelectedOffer(null)}
-          onRedeem={() => {}}
+          onRedeem={handleRedeemOffer}
+          userLocation={location}
           onNavigate={(o) => { setSelectedOffer(null); if (o.lat && o.lng) handleSelectResult({ name: o.business_name, address: '', lat: o.lat, lng: o.lng }); }}
         />
       )}

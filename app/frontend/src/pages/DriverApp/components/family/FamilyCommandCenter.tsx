@@ -4,6 +4,7 @@ import api from '@/services/api'
 import { Settings, Battery, Car, Home, Building2, MapPin } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { updateMyLocation } from '@/lib/friendLocation'
+import { watchPositionForFamilySharing } from '@/lib/familyGeolocation'
 
 type FamilyLive = {
   lat?: number
@@ -19,7 +20,7 @@ type FamilyLive = {
 type FamilyMember = {
   id: string
   user_id: string
-  role: 'admin' | 'member' | 'teen' | string
+  role: 'admin' | 'member' | 'teen'
   max_speed_mph?: number
   curfew_time?: string | null
   focus_mode?: boolean
@@ -48,14 +49,14 @@ type FamilyEvent = {
 }
 
 interface Props {
-  groupId: string
-  groupName: string
-  inviteCode: string
-  currentUserId: string
-  isAdmin: boolean
-  onRenameGroup: (name: string) => Promise<void>
-  onSendSOS: () => Promise<void>
-  onOpenFullMap?: (memberId?: string) => void
+  readonly groupId: string
+  readonly groupName: string
+  readonly inviteCode: string
+  readonly currentUserId: string
+  readonly isAdmin: boolean
+  readonly onRenameGroup: (name: string) => Promise<void>
+  readonly onSendSOS: () => Promise<void>
+  readonly onOpenFullMap?: (memberId?: string) => void
 }
 
 const STATUS_COLORS = ['#2563eb', '#16a34a', '#7c3aed', '#f59e0b', '#e11d48', '#0ea5e9', '#9333ea']
@@ -69,13 +70,43 @@ function relTime(iso?: string): string {
   return `${Math.floor(delta / 86400)} d ago`
 }
 
+function dashboardTitleForRole(myRole: string): string {
+  if (myRole === 'admin') return 'Admin Dashboard'
+  if (myRole === 'teen') return 'Teen Safety Dashboard'
+  return 'Member Dashboard'
+}
+
+function dashboardBlurbForRole(myRole: string): string {
+  if (myRole === 'admin') return 'Manage roles, places, and family-wide safety notifications.'
+  if (myRole === 'teen') return 'View your trips, alerts, and shared location safety settings.'
+  return 'Track family activity and keep your location sharing preferences updated.'
+}
+
+function formatFamilyEventMessage(e: FamilyEvent): string {
+  const place = e.place_name ? ` · ${e.place_name}` : ''
+  return e.message ?? `${e.type}${place}`
+}
+
+function memberRoleLabel(role: string): string {
+  if (role === 'admin') return 'Admin'
+  if (role === 'teen') return 'Teen'
+  return 'Member'
+}
+
+function memberSheetLiveSubtitle(m: FamilyMember, statusLabel: string): string {
+  if (!m.live?.is_sharing) return 'Location off'
+  const mph = m.live?.speed_mph
+  if (typeof mph === 'number' && mph > 5) return `Driving · ${Math.round(mph)} mph`
+  return statusLabel
+}
+
 function distMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6371000
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180
+  const delta_lat = ((b.lat - a.lat) * Math.PI) / 180
+  const delta_lng = ((b.lng - a.lng) * Math.PI) / 180
   const la = (a.lat * Math.PI) / 180
   const lb = (b.lat * Math.PI) / 180
-  const x = Math.sin(dLat / 2) ** 2 + Math.cos(la) * Math.cos(lb) * Math.sin(dLng / 2) ** 2
+  const x = Math.sin(delta_lat / 2) ** 2 + Math.cos(la) * Math.cos(lb) * Math.sin(delta_lng / 2) ** 2
   return 2 * R * Math.asin(Math.sqrt(x))
 }
 
@@ -139,13 +170,14 @@ export default function FamilyCommandCenter({
   }, [groupName])
 
   useEffect(() => {
-    void loadDashboard()
+    loadDashboard().catch(() => {})
   }, [loadDashboard])
 
+  // Live position sync for Family Command Center: documented in watchPositionForFamilySharing (Geolocation API).
   useEffect(() => {
     let watchId: number | null = null
     if (typeof navigator === 'undefined' || !navigator.geolocation || !currentUserId) return
-    watchId = navigator.geolocation.watchPosition(
+    watchId = watchPositionForFamilySharing(
       (pos) => {
         void updateMyLocation(
           currentUserId,
@@ -168,7 +200,7 @@ export default function FamilyCommandCenter({
   useEffect(() => {
     const me = members.find((m) => String(m.user_id) === String(currentUserId))
     const live = me?.live
-    if (!live || !live.is_sharing || typeof live.lat !== 'number' || typeof live.lng !== 'number') return
+    if (!live?.is_sharing || typeof live.lat !== 'number' || typeof live.lng !== 'number') return
     for (const place of places) {
       if (typeof place.lat !== 'number' || typeof place.lng !== 'number') continue
       const key = `${currentUserId}:${place.id ?? place.name}`
@@ -194,7 +226,10 @@ export default function FamilyCommandCenter({
 
   const memberColor = useCallback((id: string) => {
     let h = 0
-    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
+    for (const ch of id) {
+      const cp = ch.codePointAt(0) ?? 0
+      h = (h * 31 + cp) >>> 0
+    }
     return STATUS_COLORS[h % STATUS_COLORS.length]
   }, [])
 
@@ -249,43 +284,43 @@ export default function FamilyCommandCenter({
   useEffect(() => {
     const envToken = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
     const runtimeToken = (globalThis as any)?.mapboxgl?.accessToken as string | undefined
-    const token = (envToken && envToken.trim()) || (runtimeToken && runtimeToken.trim()) || ''
-    if (!token || !miniMapEl.current) {
-      setMiniMapAvailable(false)
-      return
-    }
-    setMiniMapAvailable(true)
-    let cancelled = false
-    const init = async () => {
-      const mapbox = mapboxRef.current ?? await import('mapbox-gl')
-      if (cancelled) return
-      mapboxRef.current = mapbox
-      mapbox.default.accessToken = token
-      if (!miniMapRef.current) {
-        miniMapRef.current = new mapbox.default.Map({
-          container: miniMapEl.current!,
-          style: isLight ? 'mapbox://styles/mapbox/light-v11' : 'mapbox://styles/mapbox/dark-v11',
-          center: [-82.9988, 39.9612],
-          zoom: 11,
-          attributionControl: false,
-          logoPosition: 'bottom-right',
-          interactive: true,
-        })
-        miniMapRef.current.addControl(new mapbox.default.AttributionControl({ compact: true }), 'bottom-right')
-        miniMapRef.current.addControl(new mapbox.default.NavigationControl({ showCompass: false }), 'top-right')
-        miniMapRef.current.on('load', refreshMiniMap)
-      } else {
-        try {
-          miniMapRef.current.setStyle(isLight ? 'mapbox://styles/mapbox/light-v11' : 'mapbox://styles/mapbox/dark-v11')
-          miniMapRef.current.once('style.load', refreshMiniMap)
-        } catch {
-          refreshMiniMap()
+    const token = envToken?.trim() || runtimeToken?.trim() || ''
+    if (token && miniMapEl.current) {
+      setMiniMapAvailable(true)
+      let cancelled = false
+      const init = async () => {
+        const mapbox = mapboxRef.current ?? await import('mapbox-gl')
+        if (cancelled) return
+        mapboxRef.current = mapbox
+        mapbox.default.accessToken = token
+        if (miniMapRef.current) {
+          try {
+            miniMapRef.current.setStyle(isLight ? 'mapbox://styles/mapbox/light-v11' : 'mapbox://styles/mapbox/dark-v11')
+            miniMapRef.current.once('style.load', refreshMiniMap)
+          } catch {
+            refreshMiniMap()
+          }
+        } else {
+          miniMapRef.current = new mapbox.default.Map({
+            container: miniMapEl.current!,
+            style: isLight ? 'mapbox://styles/mapbox/light-v11' : 'mapbox://styles/mapbox/dark-v11',
+            center: [-82.9988, 39.9612],
+            zoom: 11,
+            attributionControl: false,
+            logoPosition: 'bottom-right',
+            interactive: true,
+          })
+          miniMapRef.current.addControl(new mapbox.default.AttributionControl({ compact: true }), 'bottom-right')
+          miniMapRef.current.addControl(new mapbox.default.NavigationControl({ showCompass: false }), 'top-right')
+          miniMapRef.current.on('load', refreshMiniMap)
         }
       }
-    }
-    void init()
-    return () => {
-      cancelled = true
+      init().catch(() => {})
+      return () => {
+        cancelled = true
+      }
+    } else {
+      setMiniMapAvailable(false)
     }
   }, [refreshMiniMap, isLight])
 
@@ -298,7 +333,6 @@ export default function FamilyCommandCenter({
     const me = members.find((m) => String(m.user_id) === String(currentUserId))
     return (me?.role || (isAdmin ? 'admin' : 'member')).toLowerCase()
   }, [members, currentUserId, isAdmin])
-  const roleTitle = myRole === 'admin' ? 'Admin Dashboard' : myRole === 'teen' ? 'Teen Safety Dashboard' : 'Member Dashboard'
   const essentialMembers = useMemo(() => {
     if (members.length > 0) return members
     // Keep layout informative while backend membership rows are recovering.
@@ -320,7 +354,7 @@ export default function FamilyCommandCenter({
     return <MapPin size={14} />
   }
 
-  const handleMemberSelect = async (m: FamilyMember) => {
+  const handleMemberSelect = useCallback(async (m: FamilyMember) => {
     setSelectedMember(m)
     const [tripsRes, statsRes] = await Promise.all([
       api.get<{ trips?: any[] }>(`/api/family/member/${m.user_id}/trips`),
@@ -328,7 +362,16 @@ export default function FamilyCommandCenter({
     ])
     setMemberTrips((tripsRes.data as any)?.trips ?? [])
     setMemberStats((statsRes.data as any)?.stats ?? null)
-  }
+  }, [])
+
+  const openGearMenu = useCallback(() => {
+    if (myRole === 'admin') {
+      setShowAdmin(true)
+      return
+    }
+    const self = essentialMembers.find((x) => String(x.user_id) === String(currentUserId)) ?? essentialMembers[0]
+    handleMemberSelect(self).catch(() => {})
+  }, [myRole, essentialMembers, currentUserId, handleMemberSelect])
 
   const saveNotificationPrefs = async () => {
     if (!selectedMember) return
@@ -349,6 +392,26 @@ export default function FamilyCommandCenter({
     await loadDashboard()
   }
 
+  const toggleMemberLocationSharing = useCallback(
+    async (m: FamilyMember) => {
+      await api.put(`/api/family/group/${groupId}/member/${m.user_id}/sharing`, { is_sharing: !m.live?.is_sharing })
+      await loadDashboard()
+    },
+    [groupId, loadDashboard]
+  )
+
+  const updatePlaceName = (idx: number, name: string) => {
+    setPlaceDrafts((old) => old.map((v, i) => (i === idx ? { ...v, name } : v)))
+  }
+
+  const updatePlaceRadius = (idx: number, radius: string) => {
+    setPlaceDrafts((old) => old.map((v, i) => (i === idx ? { ...v, radius_meters: Number(radius) } : v)))
+  }
+
+  const removePlace = (idx: number) => {
+    setPlaceDrafts((old) => old.filter((_, i) => i !== idx))
+  }
+
   const savePlaces = async () => {
     await api.put(`/api/family/group/${groupId}/places`, { places: placeDrafts })
     await loadDashboard()
@@ -367,13 +430,9 @@ export default function FamilyCommandCenter({
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ borderRadius: 12, padding: '10px 12px', border: '1px solid rgba(37,99,235,0.25)', background: isLight ? 'rgba(239,246,255,0.9)' : 'rgba(29,78,216,0.18)' }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: isLight ? '#1d4ed8' : '#bfdbfe' }}>{roleTitle}</div>
+        <div style={{ fontSize: 12, fontWeight: 800, color: isLight ? '#1d4ed8' : '#bfdbfe' }}>{dashboardTitleForRole(myRole)}</div>
         <div style={{ fontSize: 11, color: isLight ? '#475569' : 'rgba(255,255,255,0.72)', marginTop: 4 }}>
-          {myRole === 'admin'
-            ? 'Manage roles, places, and family-wide safety notifications.'
-            : myRole === 'teen'
-              ? 'View your trips, alerts, and shared location safety settings.'
-              : 'Track family activity and keep your location sharing preferences updated.'}
+          {dashboardBlurbForRole(myRole)}
         </div>
       </div>
 
@@ -396,11 +455,11 @@ export default function FamilyCommandCenter({
             </div>
             <div style={{ fontSize: 12, color: isLight ? '#64748b' : 'rgba(255,255,255,0.65)', marginTop: 2 }}>{memberCountLabel}</div>
             <div style={{ fontSize: 11, color: isLight ? '#64748b' : 'rgba(255,255,255,0.6)', marginTop: 4 }}>
-              Group ID: <b>{groupId}</b> · Invite: <b>{inviteCode || '—'}</b>
+              {'Group ID: '}<b>{groupId}</b>{' · Invite: '}<b>{inviteCode || '—'}</b>
             </div>
-            <div style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 700, marginTop: 4 }}>{myRole === 'admin' ? 'Admin' : myRole === 'teen' ? 'Teen' : 'Member'}</div>
+            <div style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 700, marginTop: 4 }}>{memberRoleLabel(myRole)}</div>
           </div>
-          <button onClick={() => (myRole === 'admin' ? setShowAdmin(true) : void handleMemberSelect(essentialMembers.find((m) => String(m.user_id) === String(currentUserId)) || essentialMembers[0]))} style={{ border: 'none', width: 36, height: 36, borderRadius: 12, background: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.14)', color: isLight ? '#0f172a' : '#fff', cursor: 'pointer' }}><Settings size={16} /></button>
+          <button type="button" onClick={openGearMenu} style={{ border: 'none', width: 36, height: 36, borderRadius: 12, background: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.14)', color: isLight ? '#0f172a' : '#fff', cursor: 'pointer' }}><Settings size={16} /></button>
         </div>
       </div>
 
@@ -426,8 +485,10 @@ export default function FamilyCommandCenter({
         {essentialMembers.map((m) => {
           const name = m.profiles?.full_name ?? m.profiles?.name ?? 'Member'
           const status = statusFor(m)
+          const sharingLabel = m.live?.is_sharing ? 'Location sharing on' : 'Location sharing off'
+          const headingSuffix = typeof m.live?.heading === 'number' ? ` · Heading ${Math.round(m.live.heading)}°` : ''
           return (
-            <button key={m.user_id} onClick={() => void handleMemberSelect(m)} style={{ minWidth: 190, textAlign: 'left', border: '1px solid rgba(15,23,42,0.08)', borderRadius: 14, padding: 12, background: '#fff', cursor: 'pointer' }}>
+            <button type="button" key={m.user_id} onClick={() => handleMemberSelect(m).catch(() => {})} style={{ minWidth: 190, textAlign: 'left', border: '1px solid rgba(15,23,42,0.08)', borderRadius: 14, padding: 12, background: '#fff', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 36, height: 36, borderRadius: 18, display: 'grid', placeItems: 'center', color: 'white', fontWeight: 800, background: memberColor(m.user_id) }}>
@@ -437,15 +498,14 @@ export default function FamilyCommandCenter({
                 </div>
                 {typeof m.live?.battery_level === 'number' && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#64748b', fontSize: 11 }}>
-                    <Battery size={13} /> {Math.round(m.live.battery_level)}%
+                    <Battery size={13} />{' '}{Math.round(m.live.battery_level)}%
                   </div>
                 )}
               </div>
               <div style={{ marginTop: 8, fontSize: 12, color: status.color, fontWeight: 700 }}>{status.label}</div>
-              <div style={{ marginTop: 6, fontSize: 11, color: '#64748b' }}>{name.split(' ')[0]} · {relTime(m.live?.last_updated)}</div>
+              <div style={{ marginTop: 6, fontSize: 11, color: '#64748b' }}>{name.split(' ')[0]}{' · '}{relTime(m.live?.last_updated)}</div>
               <div style={{ marginTop: 6, fontSize: 11, color: '#64748b' }}>
-                {m.live?.is_sharing ? 'Location sharing on' : 'Location sharing off'}
-                {typeof m.live?.heading === 'number' ? ` · Heading ${Math.round(m.live.heading)}°` : ''}
+                {sharingLabel}{headingSuffix}
               </div>
             </button>
           )
@@ -455,14 +515,14 @@ export default function FamilyCommandCenter({
       <div style={{ borderRadius: 16, padding: 12, border: '1px solid rgba(15,23,42,0.08)', background: '#fff', boxShadow: '0 4px 18px rgba(15,23,42,0.08)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <div style={{ fontWeight: 800 }}>Recent Activity</div>
-          <button onClick={() => void refreshNow()} style={{ border: 'none', borderRadius: 10, padding: '6px 10px', background: '#f1f5f9', cursor: 'pointer', fontWeight: 700 }}>{isRefreshing ? 'Refreshing...' : 'Refresh'}</button>
+          <button type="button" onClick={() => refreshNow().catch(() => {})} style={{ border: 'none', borderRadius: 10, padding: '6px 10px', background: '#f1f5f9', cursor: 'pointer', fontWeight: 700 }}>{isRefreshing ? 'Refreshing...' : 'Refresh'}</button>
         </div>
         <div style={{ display: 'grid', gap: 8 }}>
           {events.slice(0, 20).map((e) => (
             <button key={e.id} onClick={() => onOpenFullMap?.(e.member_id)} style={{ border: '1px solid rgba(15,23,42,0.06)', borderRadius: 12, padding: 10, background: 'white', cursor: 'pointer', textAlign: 'left' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: '#475569' }}>{activityIcon(e.type)}</span>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{e.message || `${e.type} ${e.place_name ? `· ${e.place_name}` : ''}`}</span>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{formatFamilyEventMessage(e)}</span>
               </div>
               <div style={{ marginTop: 4, fontSize: 11, color: '#64748b' }}>{relTime(e.created_at)}</div>
             </button>
@@ -472,11 +532,16 @@ export default function FamilyCommandCenter({
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <button onClick={() => void onSendSOS()} style={{ height: 44, border: 'none', borderRadius: 12, background: '#dc2626', color: 'white', fontWeight: 800, cursor: 'pointer' }}>
+        <button type="button" onClick={() => onSendSOS().catch(() => {})} style={{ height: 44, border: 'none', borderRadius: 12, background: '#dc2626', color: 'white', fontWeight: 800, cursor: 'pointer' }}>
           Send SOS
         </button>
         <button
-          onClick={() => void api.post('/api/family/event', { group_id: groupId, member_id: currentUserId, type: 'request_location', message: 'Location requested' })}
+          type="button"
+          onClick={() =>
+            api
+              .post('/api/family/event', { group_id: groupId, member_id: currentUserId, type: 'request_location', message: 'Location requested' })
+              .catch(() => {})
+          }
           style={{ height: 44, border: '1px solid rgba(15,23,42,0.15)', borderRadius: 12, background: '#fff', color: '#0f172a', fontWeight: 700, cursor: 'pointer' }}
         >
           Request Location
@@ -491,24 +556,34 @@ export default function FamilyCommandCenter({
 
       {selectedMember && (
         <>
-          <div onClick={() => setSelectedMember(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 2600 }} />
+          <button
+            type="button"
+            aria-label="Close member details"
+            onClick={() => setSelectedMember(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 2600, appearance: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer' }}
+          />
           <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 2601, borderRadius: '22px 22px 0 0', background: '#fff', padding: '14px 16px 20px', maxHeight: '82vh', overflow: 'auto' }}>
             <div style={{ fontSize: 18, fontWeight: 800 }}>
-              {selectedMember.profiles?.full_name ?? selectedMember.profiles?.name ?? 'Member'} · {selectedMember.role === 'admin' ? 'Admin' : selectedMember.role === 'teen' ? 'Teen' : 'Member'}
+              {selectedMember.profiles?.full_name ?? selectedMember.profiles?.name ?? 'Member'}{' · '}{memberRoleLabel(selectedMember.role)}
             </div>
             <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>
-              {selectedMember.live?.is_sharing ? (selectedMember.live?.speed_mph && selectedMember.live.speed_mph > 5 ? `Driving · ${Math.round(selectedMember.live.speed_mph)} mph` : statusFor(selectedMember).label) : 'Location off'}
+              {memberSheetLiveSubtitle(selectedMember, statusFor(selectedMember).label)}
             </div>
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Today's Trips</div>
             <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-              {memberTrips.slice(0, 8).map((t, idx) => (
-                <button key={t.id ?? idx} onClick={() => onOpenFullMap?.(selectedMember.user_id)} style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, textAlign: 'left', background: 'white', cursor: 'pointer' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700 }}>{t.start_location ?? 'Start'} → {t.end_location ?? 'End'}</div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
-                    {t.started_at ? new Date(t.started_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '--'} - {t.ended_at ? new Date(t.ended_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '--'} · {Math.round((Number(t.distance_meters ?? t.distance ?? 0) / 1609.34) * 10) / 10} mi
-                  </div>
-                </button>
-              ))}
+              {memberTrips.slice(0, 8).map((t, idx) => {
+                const startTime = t.started_at ? new Date(t.started_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '--'
+                const endTime = t.ended_at ? new Date(t.ended_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '--'
+                const distMi = Math.round((Number(t.distance_meters ?? t.distance ?? 0) / 1609.34) * 10) / 10
+                return (
+                  <button key={t.id ?? idx} onClick={() => onOpenFullMap?.(selectedMember.user_id)} style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, textAlign: 'left', background: 'white', cursor: 'pointer' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>{t.start_location ?? 'Start'}{' → '}{t.end_location ?? 'End'}</div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+                      {startTime}{' - '}{endTime}{' · '}{distMi}{' mi'}
+                    </div>
+                  </button>
+                )
+              })}
               {memberTrips.length === 0 && <div style={{ fontSize: 12, color: '#64748b' }}>No trips today.</div>}
             </div>
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Favorite Places</div>
@@ -516,16 +591,16 @@ export default function FamilyCommandCenter({
               {places.slice(0, 6).map((p, idx) => (
                 <div key={`${p.name}-${idx}`} style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10 }}>
                   <div style={{ fontSize: 12, fontWeight: 700 }}>{p.name}</div>
-                  <div style={{ fontSize: 11, color: '#64748b' }}>Geofence: {p.radius_meters ?? 200}m</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>{'Geofence: '}{p.radius_meters ?? 200}{'m'}</div>
                 </div>
               ))}
             </div>
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Driving Stats (7 days)</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Miles: <b>{memberStats?.total_miles ?? 0}</b></div>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Trips: <b>{memberStats?.total_trips ?? 0}</b></div>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Avg speed: <b>{memberStats?.average_speed_mph ?? 0} mph</b></div>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Score: <b>{memberStats?.driving_score ?? 0}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Miles: '}<b>{memberStats?.total_miles ?? 0}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Trips: '}<b>{memberStats?.total_trips ?? 0}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Avg speed: '}<b>{memberStats?.average_speed_mph ?? 0}{' mph'}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Score: '}<b>{memberStats?.driving_score ?? 0}</b></div>
             </div>
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Notifications for this member</div>
             <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
@@ -540,12 +615,20 @@ export default function FamilyCommandCenter({
                   {label}
                 </label>
               ))}
-              <label style={{ fontSize: 12 }}>
-                Speed threshold
-                <input type="number" value={Number(notifPrefs.speed_threshold_mph)} min={40} max={120} onChange={(e) => setNotifPrefs((p) => ({ ...p, speed_threshold_mph: Number(e.target.value) }))} style={{ width: 90, marginLeft: 8 }} />
-                mph
+              <label htmlFor="fcc-speed-threshold-member" style={{ fontSize: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                <span>Speed threshold</span>
+                <input
+                  id="fcc-speed-threshold-member"
+                  type="number"
+                  value={Number(notifPrefs.speed_threshold_mph)}
+                  min={40}
+                  max={120}
+                  onChange={(e) => setNotifPrefs((p) => ({ ...p, speed_threshold_mph: Number(e.target.value) }))}
+                  style={{ width: 90 }}
+                />
+                <span>mph</span>
               </label>
-              <button onClick={() => void saveNotificationPrefs()} style={{ border: 'none', borderRadius: 10, padding: '8px 10px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700, cursor: 'pointer' }}>
+              <button type="button" onClick={() => saveNotificationPrefs().catch(() => {})} style={{ border: 'none', borderRadius: 10, padding: '8px 10px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700, cursor: 'pointer' }}>
                 Save member notifications
               </button>
             </div>
@@ -555,10 +638,15 @@ export default function FamilyCommandCenter({
 
       {showAdmin && (
         <>
-          <div onClick={() => setShowAdmin(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 2600 }} />
+          <button
+            type="button"
+            aria-label="Close admin controls"
+            onClick={() => setShowAdmin(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 2600, appearance: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer' }}
+          />
           <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 2601, borderRadius: '22px 22px 0 0', background: '#fff', padding: '14px 16px 22px', maxHeight: '82vh', overflow: 'auto' }}>
             <div style={{ fontSize: 18, fontWeight: 800 }}>Admin Controls</div>
-            <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>Invite code: <b>{inviteCode}</b></div>
+            <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>{'Invite code: '}<b>{inviteCode}</b></div>
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Group Safety Notification Policy</div>
             <div style={{ marginTop: 8, border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10 }}>
               <div style={{ fontSize: 12, color: '#334155', marginBottom: 8 }}>
@@ -576,20 +664,22 @@ export default function FamilyCommandCenter({
                     {label}
                   </label>
                 ))}
-                <label style={{ fontSize: 12 }}>
-                  Teen speed threshold
+                <label htmlFor="fcc-speed-threshold-admin" style={{ fontSize: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                  <span>Teen speed threshold</span>
                   <input
+                    id="fcc-speed-threshold-admin"
                     type="number"
                     value={Number(notifPrefs.speed_threshold_mph)}
                     min={40}
                     max={120}
                     onChange={(e) => setNotifPrefs((p) => ({ ...p, speed_threshold_mph: Number(e.target.value) }))}
-                    style={{ width: 90, marginLeft: 8 }}
+                    style={{ width: 90 }}
                   />
-                  mph
+                  <span>mph</span>
                 </label>
                 <button
-                  onClick={() => void api.put(`/api/family/member/${currentUserId}/notifications`, notifPrefs)}
+                  type="button"
+                  onClick={() => api.put(`/api/family/member/${currentUserId}/notifications`, notifPrefs).catch(() => {})}
                   style={{ border: 'none', borderRadius: 10, padding: '8px 10px', background: '#e0f2fe', color: '#075985', fontWeight: 700, cursor: 'pointer', marginTop: 6 }}
                 >
                   Save Admin Notification Settings
@@ -607,21 +697,19 @@ export default function FamilyCommandCenter({
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <select
                       value={m.role}
-                      onChange={(e) => void api.put('/api/family/settings', { user_id: m.user_id, role: e.target.value })}
+                      onChange={(e) => api.put('/api/family/settings', { user_id: m.user_id, role: e.target.value }).catch(() => {})}
                       style={{ borderRadius: 8, border: '1px solid rgba(15,23,42,0.2)', padding: '4px 8px' }}
                     >
                       <option value="admin">Admin</option>
                       <option value="member">Member</option>
                       <option value="teen">Teen</option>
                     </select>
-                    <button onClick={() => void removeMember(m.user_id)} style={{ border: 'none', borderRadius: 8, padding: '6px 8px', background: '#fee2e2', color: '#b91c1c', cursor: 'pointer', fontWeight: 700 }}>
+                    <button type="button" onClick={() => removeMember(m.user_id).catch(() => {})} style={{ border: 'none', borderRadius: 8, padding: '6px 8px', background: '#fee2e2', color: '#b91c1c', cursor: 'pointer', fontWeight: 700 }}>
                       Remove
                     </button>
                     <button
-                      onClick={async () => {
-                        await api.put(`/api/family/group/${groupId}/member/${m.user_id}/sharing`, { is_sharing: !Boolean(m.live?.is_sharing) })
-                        await loadDashboard()
-                      }}
+                      type="button"
+                      onClick={() => toggleMemberLocationSharing(m).catch(() => {})}
                       style={{ border: 'none', borderRadius: 8, padding: '6px 8px', background: m.live?.is_sharing ? '#e2e8f0' : '#dcfce7', color: '#0f172a', cursor: 'pointer', fontWeight: 700 }}
                     >
                       {m.live?.is_sharing ? 'Disable location' : 'Enable location'}
@@ -633,17 +721,17 @@ export default function FamilyCommandCenter({
 
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Group Stats</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Family miles: <b>{memberStats?.total_miles ?? 0}</b></div>
-              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>Avg score: <b>{memberStats?.driving_score ?? 0}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Family miles: '}<b>{memberStats?.total_miles ?? 0}</b></div>
+              <div style={{ border: '1px solid rgba(15,23,42,0.1)', borderRadius: 10, padding: 10, fontSize: 12 }}>{'Avg score: '}<b>{memberStats?.driving_score ?? 0}</b></div>
             </div>
 
             <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>Place Management</div>
             <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
               {placeDrafts.map((p, idx) => (
                 <div key={`${p.name}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 40px', gap: 8 }}>
-                  <input value={p.name} onChange={(e) => setPlaceDrafts((old) => old.map((v, i) => (i === idx ? { ...v, name: e.target.value } : v)))} style={{ borderRadius: 8, border: '1px solid rgba(15,23,42,0.2)', padding: '6px 8px' }} />
-                  <input type="number" value={p.radius_meters ?? 200} onChange={(e) => setPlaceDrafts((old) => old.map((v, i) => (i === idx ? { ...v, radius_meters: Number(e.target.value) } : v)))} style={{ borderRadius: 8, border: '1px solid rgba(15,23,42,0.2)', padding: '6px 8px' }} />
-                  <button onClick={() => setPlaceDrafts((old) => old.filter((_, i) => i !== idx))} style={{ border: 'none', borderRadius: 8, background: '#fee2e2', cursor: 'pointer' }}>✕</button>
+                  <input value={p.name} onChange={(e) => updatePlaceName(idx, e.target.value)} style={{ borderRadius: 8, border: '1px solid rgba(15,23,42,0.2)', padding: '6px 8px' }} />
+                  <input type="number" value={p.radius_meters ?? 200} onChange={(e) => updatePlaceRadius(idx, e.target.value)} style={{ borderRadius: 8, border: '1px solid rgba(15,23,42,0.2)', padding: '6px 8px' }} />
+                  <button onClick={() => removePlace(idx)} style={{ border: 'none', borderRadius: 8, background: '#fee2e2', cursor: 'pointer' }}>✕</button>
                 </div>
               ))}
               <button onClick={() => setPlaceDrafts((old) => [...old, { name: 'New Place', lat: 39.9612, lng: -82.9988, radius_meters: 200, alert_on: 'both' }])} style={{ border: '1px dashed rgba(15,23,42,0.3)', borderRadius: 10, background: 'white', height: 36, cursor: 'pointer' }}>

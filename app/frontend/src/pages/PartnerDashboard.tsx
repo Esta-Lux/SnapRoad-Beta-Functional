@@ -1,15 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2, Plus, Gift, TrendingUp, BarChart3,
   Bell, Settings, LogOut, HelpCircle,
-  Rocket, Store, CreditCard, Share2, BadgeCheck, QrCode,
+  Rocket, Store, CreditCard, Share2, BadgeCheck, QrCode, Receipt,
 } from 'lucide-react'
 import { NotificationCenter, useNotifications, notificationService } from '@/components/NotificationSystem'
 import SettingsModal from '@/components/SettingsModal'
 import HelpModal from '@/components/HelpModal'
 import { partnerApi } from '@/services/partnerApi'
-import type { Offer, PartnerProfile, Analytics } from '@/types/partner'
+import type { Offer, PartnerProfile, Analytics, PartnerFeeSummary, PartnerRedemption } from '@/types/partner'
 
 import OnboardingWalkthrough from '@/components/partner/OnboardingWalkthrough'
 import ImageGeneratorModal from '@/components/partner/ImageGeneratorModal'
@@ -26,8 +26,10 @@ import FinanceTab from '@/components/partner/FinanceTab'
 import ReferralsTab from '@/components/partner/ReferralsTab'
 import TeamLinksTab from '@/components/partner/TeamLinksTab'
 import PricingTab from '@/components/partner/PricingTab'
+import RedemptionsTab from '@/components/partner/RedemptionsTab'
+import { useSupabaseRealtimeRefresh } from '@/hooks/useSupabaseRealtimeRefresh'
 
-type TabId = 'overview' | 'offers' | 'locations' | 'analytics' | 'boosts' | 'finance' | 'referrals' | 'pricing' | 'team-links'
+type TabId = 'overview' | 'offers' | 'locations' | 'analytics' | 'boosts' | 'finance' | 'redemptions' | 'referrals' | 'pricing' | 'team-links'
 
 const TAB_META: Record<TabId, { title: string; subtitle: string }> = {
   overview:      { title: 'Dashboard Overview',  subtitle: 'Manage your SnapRoad offers and track performance' },
@@ -36,6 +38,7 @@ const TAB_META: Record<TabId, { title: string; subtitle: string }> = {
   analytics:     { title: 'Real-Time Analytics', subtitle: 'Track your offer performance in real-time' },
   boosts:        { title: 'Boost Center',        subtitle: 'Amplify your offer reach with paid boosts' },
   finance:       { title: 'Credits & Earnings',  subtitle: 'Manage your SnapRoad partner credits and earnings' },
+  redemptions:   { title: 'Redemptions Ledger',  subtitle: 'Review scans, fee tiers, and monthly redemption activity' },
   referrals:     { title: 'Referral Analytics',  subtitle: 'Earn credits by referring new partners to SnapRoad' },
   pricing:       { title: 'Plans & Pricing',     subtitle: 'Upgrade your plan to unlock more features' },
   'team-links':  { title: 'Team Scan Links',     subtitle: 'Create shareable QR scan links for your team members' },
@@ -48,17 +51,20 @@ const NAV_ITEMS: { id: TabId; icon: typeof BarChart3; label: string; badgeKey?: 
   { id: 'analytics',   icon: TrendingUp, label: 'Analytics' },
   { id: 'boosts',      icon: Rocket,     label: 'Boosts' },
   { id: 'finance',     icon: CreditCard, label: 'Credits & Finance' },
+  { id: 'redemptions', icon: Receipt,    label: 'Redemptions' },
   { id: 'referrals',   icon: Share2,     label: 'Referrals' },
   { id: 'team-links',  icon: QrCode,     label: 'Team Scan Links' },
   { id: 'pricing',     icon: BadgeCheck, label: 'Plan & Pricing' },
 ]
 
-export default function PartnerDashboard() {
+export default function PartnerDashboard({ initialTab = 'overview' }: { initialTab?: TabId }) {
   const navigate = useNavigate()
   const [offers, setOffers] = useState<Offer[]>([])
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
+  const [redemptions, setRedemptions] = useState<PartnerRedemption[]>([])
+  const [feeInfo, setFeeInfo] = useState<PartnerFeeSummary | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<TabId>('overview')
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showBoostModal, setShowBoostModal] = useState<Offer | null>(null)
@@ -81,6 +87,24 @@ export default function PartnerDashboard() {
     return () => stopNotifications()
   }, [])
 
+  // Stripe return URLs land with ?payment=success or ?credits=success — refresh profile (plan / balance).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('payment') !== 'success' && params.get('credits') !== 'success') return
+    void (async () => {
+      try {
+        const data = await partnerApi.getProfile()
+        if (data.success && data.data) setPartnerProfile(data.data as PartnerProfile)
+      } catch {
+        /* ignore */
+      }
+      window.history.replaceState({}, '', '/portal/partner')
+    })()
+  }, [])
+  useEffect(() => {
+    setActiveTab(initialTab)
+  }, [initialTab])
+
   const handlePartnerAuthError = (error: unknown) => {
     const message = error instanceof Error ? error.message : ''
     if (message.includes('Session expired')) {
@@ -90,7 +114,7 @@ export default function PartnerDashboard() {
     return false
   }
 
-  const loadPartnerProfile = async () => {
+  const loadPartnerProfile = useCallback(async () => {
     try {
       const data = await partnerApi.getProfile()
       if (data.success) setPartnerProfile(data.data)
@@ -98,13 +122,19 @@ export default function PartnerDashboard() {
       if (handlePartnerAuthError(e)) return
       console.error('Error loading partner profile:', e)
     }
-  }
+  }, [navigate])
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const analyticsRes = await partnerApi.getAnalytics()
+      const [analyticsRes, redemptionsRes, feeRes] = await Promise.all([
+        partnerApi.getAnalytics(),
+        partnerApi.getRedemptions(50),
+        partnerApi.getFees(),
+      ])
       if (analyticsRes.success) setAnalytics(analyticsRes.data)
+      if (redemptionsRes.success) setRedemptions(redemptionsRes.data || [])
+      if (feeRes.success) setFeeInfo(feeRes.data || null)
     } catch (e) {
       if (handlePartnerAuthError(e)) return
       console.error(e)
@@ -133,7 +163,21 @@ export default function PartnerDashboard() {
       console.error(e)
     }
     setLoading(false)
-  }
+  }, [navigate])
+
+  useSupabaseRealtimeRefresh(
+    `partner-portal-${partnerProfile?.id || 'anon'}`,
+    [
+      { table: 'offer_analytics', ...(partnerProfile?.id ? { filter: `partner_id=eq.${partnerProfile.id}` } : {}) },
+      { table: 'redemptions', ...(partnerProfile?.id ? { filter: `partner_id=eq.${partnerProfile.id}` } : {}) },
+      { table: 'redemption_fees', ...(partnerProfile?.id ? { filter: `partner_id=eq.${partnerProfile.id}` } : {}) },
+      { table: 'offers', ...(partnerProfile?.id ? { filter: `partner_id=eq.${partnerProfile.id}` } : {}) },
+    ],
+    () => {
+      loadData()
+      loadPartnerProfile()
+    },
+  )
 
   const handleOnboardingComplete = () => {
     localStorage.setItem('partner_onboarding_complete', 'true')
@@ -271,20 +315,45 @@ export default function PartnerDashboard() {
     return undefined
   }
 
+  const needsPlanCheckout =
+    partnerProfile?.subscription_status === 'pending' ||
+    partnerProfile?.subscription_status === 'incomplete'
+  const exportRedemptionsCsv = () => {
+    const rows = [
+      ['Redeemed At', 'Offer', 'Customer', 'Discount', 'Fee', 'Tier'],
+      ...redemptions.map((item) => [
+        item.redeemed_at || item.created_at || '',
+        item.offer_name || item.business_name || String(item.offer_id),
+        item.user_name || item.customer_id || 'Driver',
+        item.discount_applied ?? '',
+        item.fee_amount ?? (typeof item.fee_cents === 'number' ? item.fee_cents / 100 : 0),
+        item.fee_tier ?? '',
+      ]),
+    ]
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `snaproad-redemptions-${new Date().toISOString().slice(0, 10)}.csv`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {showOnboarding && <OnboardingWalkthrough onComplete={handleOnboardingComplete} onSkip={handleOnboardingComplete} />}
       {showBoostModal && <BoostModal offer={showBoostModal} onClose={() => setShowBoostModal(null)} onBoost={async (boostType) => {
         try {
-          const result = await partnerApi.purchaseBoost(String(showBoostModal.id), boostType)
-          if (result.success && result.checkout_url) {
-            window.location.href = result.checkout_url
+          const result = await partnerApi.createBoost({ offer_id: Number(showBoostModal.id), boost_type: boostType, use_credits: true })
+          if (result.success) {
+            sendNotification('system', 'Boost', result.message || 'Boost applied successfully')
           } else {
-            sendNotification('system', 'Boost', result.message || 'Stripe not configured yet')
-            setShowBoostModal(null)
-            await loadData()
+            sendNotification('system', 'Boost', result.message || 'Could not apply boost')
           }
-        } catch { sendNotification('system', 'Error', 'Failed to start checkout'); setShowBoostModal(null) }
+          setShowBoostModal(null)
+          await loadData()
+        } catch { sendNotification('system', 'Error', 'Failed to apply boost'); setShowBoostModal(null) }
       }} />}
       {showImageGenerator && <ImageGeneratorModal onClose={() => setShowImageGenerator(false)} onGenerate={(url) => setNewOfferImage(url)} />}
       {showCreateModal && (
@@ -364,7 +433,7 @@ export default function PartnerDashboard() {
         </nav>
 
         <div className="p-4 border-t border-white/5">
-          <button onClick={() => { partnerApi.logout(); navigate('/auth?tab=partner') }} data-testid="logout-btn" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10">
+          <button onClick={() => { partnerApi.logout(); navigate('/portal/partner/welcome') }} data-testid="logout-btn" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10">
             <LogOut size={20} /><span className="font-medium">Sign Out</span>
           </button>
         </div>
@@ -372,11 +441,31 @@ export default function PartnerDashboard() {
 
       {/* Modals */}
       <NotificationCenter isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
-      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} onLogout={() => { partnerApi.logout(); navigate('/auth?tab=partner') }} />
+      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} onLogout={() => { partnerApi.logout(); navigate('/portal/partner/welcome') }} />
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} appType="partner" />
 
       {/* Main Content */}
       <main className="ml-72 p-8">
+        {needsPlanCheckout && (
+          <div
+            className="mb-6 flex flex-col gap-3 rounded-2xl border border-emerald-500/35 bg-emerald-500/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+            role="status"
+          >
+            <div>
+              <p className="font-semibold text-white">Choose a subscription plan</p>
+              <p className="text-sm text-slate-400">
+                Your account is active; complete checkout to finish onboarding and unlock billing-backed features.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('pricing')}
+              className="shrink-0 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:from-emerald-400 hover:to-teal-500"
+            >
+              View plans
+            </button>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-white mb-1">{TAB_META[activeTab].title}</h1>
@@ -410,6 +499,14 @@ export default function PartnerDashboard() {
             )}
             {activeTab === 'boosts' && <BoostsTab offers={offers} onBoost={setShowBoostModal} />}
             {activeTab === 'finance' && <FinanceTab />}
+            {activeTab === 'redemptions' && (
+              <RedemptionsTab
+                redemptions={redemptions}
+                feeInfo={feeInfo}
+                onExportCsv={exportRedemptionsCsv}
+                onOpenScanner={() => setActiveTab('team-links')}
+              />
+            )}
             {activeTab === 'referrals' && <ReferralsTab partnerId={partnerProfile?.id} />}
             {activeTab === 'team-links' && <TeamLinksTab partnerId={partnerProfile?.id || ''} />}
             {activeTab === 'pricing' && <PricingTab currentPlan={partnerProfile?.plan || 'starter'} onUpgrade={(planId) => handlePlanUpgrade(planId)} />}

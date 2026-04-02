@@ -13,8 +13,17 @@ function tierFill(d: number): string {
   return '#166534';
 }
 
-const DISC = 32;
-const ICON = 16;
+function markerSize(offer: Offer): { disc: number; glow: number; icon: number } {
+  const boost = Math.max(1, Number(offer.boost_multiplier || 1))
+  const locationScale = Array.isArray(offer.allocated_locations) ? Math.min(3, offer.allocated_locations.length) : 1
+  const redemptionScale = offer.redemption_count ? Math.min(4, Math.floor(offer.redemption_count / 25)) : 0
+  const disc = Math.min(46, 28 + (boost - 1) * 3 + locationScale * 2 + redemptionScale)
+  return {
+    disc,
+    glow: disc + 10,
+    icon: Math.max(14, Math.round(disc * 0.5)),
+  }
+}
 
 export default React.memo(function OfferMarkers({ offers, onOfferTap }: Props) {
   const markers = useMemo(
@@ -31,6 +40,7 @@ export default React.memo(function OfferMarkers({ offers, onOfferTap }: Props) {
     <>
       {markers.map((offer) => {
         const fill = tierFill(offer.discount_percent);
+        const size = markerSize(offer);
         return (
           <MB.MarkerView
             key={String(offer.id)}
@@ -41,12 +51,12 @@ export default React.memo(function OfferMarkers({ offers, onOfferTap }: Props) {
             <TouchableOpacity
               activeOpacity={0.88}
               onPress={() => onOfferTap?.(offer)}
-              style={styles.hit}
+              style={[styles.hit, { width: size.disc + 16, height: size.disc + 16 }]}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <View style={[styles.glow, { backgroundColor: fill, opacity: 0.22 }]} />
-              <View style={[styles.disc, { backgroundColor: fill }]}>
-                <MaterialCommunityIcons name="diamond-stone" size={ICON} color="#fff" />
+              <View style={[styles.glow, { width: size.glow, height: size.glow, borderRadius: size.glow / 2, backgroundColor: fill, opacity: 0.22 }]} />
+              <View style={[styles.disc, { width: size.disc, height: size.disc, borderRadius: size.disc / 2, backgroundColor: fill }]}>
+                <MaterialCommunityIcons name="diamond-stone" size={size.icon} color="#fff" />
               </View>
             </TouchableOpacity>
           </MB.MarkerView>
@@ -60,19 +70,11 @@ const styles = StyleSheet.create({
   hit: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: DISC + 14,
-    height: DISC + 14,
   },
   glow: {
     position: 'absolute',
-    width: DISC + 8,
-    height: DISC + 8,
-    borderRadius: (DISC + 8) / 2,
   },
   disc: {
-    width: DISC,
-    height: DISC,
-    borderRadius: DISC / 2,
     borderWidth: 2.5,
     borderColor: '#ffffff',
     alignItems: 'center',

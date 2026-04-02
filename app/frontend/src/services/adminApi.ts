@@ -20,6 +20,10 @@ import type {
   ReferralAnalyticsData,
   Boost,
   PlatformSettings,
+  AdminFeeSummaryItem,
+  AdminOfferAnalyticsRow,
+  AdminRealtimeSummary,
+  AdminRealtimeFeedItem,
 } from '@/types/admin'
 import { getApiBaseUrl } from '@/services/api'
 
@@ -319,6 +323,31 @@ class AdminApiService {
 
   async getFinance(): Promise<AdminApiResponse<FinanceData>> {
     return this.request('/api/admin/finance')
+  }
+
+  async getFeeSummary(monthYear?: string): Promise<AdminApiResponse<AdminFeeSummaryItem[]>> {
+    const qs = monthYear ? `?month_year=${encodeURIComponent(monthYear)}` : ''
+    return this.request(`/api/admin/fees/summary${qs}`)
+  }
+
+  async getPartnerFeeHistory(partnerId: string, limit: number = 12): Promise<AdminApiResponse<any[]>> {
+    return this.request(`/api/admin/fees/partner/${partnerId}?limit=${limit}`)
+  }
+
+  async getOfferAnalytics(limit: number = 200): Promise<AdminApiResponse<AdminOfferAnalyticsRow[]>> {
+    return this.request(`/api/admin/offers/analytics?limit=${limit}`)
+  }
+
+  async getRealtimeSummary(): Promise<AdminApiResponse<AdminRealtimeSummary>> {
+    return this.request('/api/admin/realtime/summary')
+  }
+
+  async getRealtimeFeed(limit: number = 50): Promise<AdminApiResponse<AdminRealtimeFeedItem[]>> {
+    return this.request(`/api/admin/realtime/feed?limit=${limit}`)
+  }
+
+  async getRealtimeMapData(): Promise<AdminApiResponse<any[]>> {
+    return this.request('/api/admin/realtime/map-data')
   }
 
   // ==================== REFERRAL ANALYTICS ====================

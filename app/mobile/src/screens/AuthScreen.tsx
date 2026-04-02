@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,27 +10,24 @@ import {
   ActivityIndicator,
   ScrollView,
   Image,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
-import { api } from '../api/client';
 
-function getPasswordStrength(pw: string): { label: string; color: string; width: string } {
-  if (pw.length < 6) return { label: 'Weak', color: '#FF3B30', width: '33%' };
+function getPasswordStrength(pw: string): { label: string; color: string; level: number } {
+  if (pw.length < 6) return { label: 'Weak password', color: '#EF4444', level: 1 };
   const hasUpper = /[A-Z]/.test(pw);
   const hasNumber = /\d/.test(pw);
   const hasSpecial = /[^A-Za-z0-9]/.test(pw);
   const score = [pw.length >= 8, hasUpper, hasNumber, hasSpecial].filter(Boolean).length;
-  if (score >= 3) return { label: 'Strong', color: '#34C759', width: '100%' };
-  if (score >= 2) return { label: 'Medium', color: '#FF9500', width: '66%' };
-  return { label: 'Weak', color: '#FF3B30', width: '33%' };
+  if (score >= 4) return { label: 'Very strong', color: '#2E7D32', level: 4 };
+  if (score >= 3) return { label: 'Strong password', color: '#43A047', level: 3 };
+  if (score >= 2) return { label: 'Medium strength', color: '#F59E0B', level: 2 };
+  return { label: 'Weak password', color: '#EF4444', level: 1 };
 }
 
 type Props = {
@@ -38,13 +35,30 @@ type Props = {
   route?: { params?: { mode?: 'signin' | 'signup' } };
 };
 
+const PALETTE = {
+  bg: '#F8FAFB',
+  card: '#FFFFFF',
+  text: '#0D1117',
+  muted: '#6B7280',
+  placeholder: '#C4C9D4',
+  border: 'rgba(0,0,0,0.08)',
+  inputBorder: '#E5E7EB',
+  inputBg: '#FAFAFA',
+  blue: '#1A6FD4',
+  blueDark: '#0D4A9A',
+  blueLight: '#E8F1FB',
+  green: '#2E7D32',
+  greenMid: '#43A047',
+  greenLight: '#E8F5E9',
+} as const;
+
 export default function AuthScreen({ navigation, route }: Props) {
   const initialMode = route?.params?.mode === 'signup' ? 'signup' : 'signin';
-  const { login, signup, authError, clearAuthError, isLoading, isAuthSubmitting, setUserFromApi } = useAuth();
-  const { colors } = useTheme();
+  const { login, signup, authError, clearAuthError, isLoading, isAuthSubmitting } = useAuth();
 
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -52,14 +66,23 @@ export default function AuthScreen({ navigation, route }: Props) {
   const [showPw, setShowPw] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const firstNameRef = useRef<TextInput>(null);
+  const lastNameRef = useRef<TextInput>(null);
+  const dobRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
   const pwRef = useRef<TextInput>(null);
   const confirmRef = useRef<TextInput>(null);
   const error = localError || authError;
   const strength = getPasswordStrength(password);
 
+  useEffect(() => {
+    const routeMode = route?.params?.mode === 'signup' ? 'signup' : 'signin';
+    setMode(routeMode);
+  }, [route?.params?.mode]);
+
   const resetForm = useCallback(() => {
-    setName('');
+    setFirstName('');
+    setLastName('');
     setDateOfBirth('');
     setEmail('');
     setPassword('');
@@ -85,12 +108,13 @@ export default function AuthScreen({ navigation, route }: Props) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setLocalError(null);
     if (mode === 'signup') {
-      if (!name.trim()) { setLocalError('Name is required'); return; }
+      if (!firstName.trim()) { setLocalError('First name is required'); return; }
+      if (!lastName.trim()) { setLocalError('Last name is required'); return; }
       if (!dateOfBirth.trim()) { setLocalError('Date of birth is required'); return; }
       if (!email.trim()) { setLocalError('Email is required'); return; }
       if (password.length < 6) { setLocalError('Password must be at least 6 characters'); return; }
       if (password !== confirmPw) { setLocalError('Passwords do not match'); return; }
-      await signup(name, email, password, dateOfBirth);
+      await signup(`${firstName.trim()} ${lastName.trim()}`, email, password, dateOfBirth);
     } else {
       if (!email.trim() || !password) { setLocalError('Email and password required'); return; }
       await login(email, password);
@@ -124,169 +148,230 @@ export default function AuthScreen({ navigation, route }: Props) {
   };
 
   return (
-    <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+    <SafeAreaView style={s.container} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           <TouchableOpacity
-            style={s.backRow}
+            style={s.backButton}
             onPress={() => navigation.navigate('Welcome')}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Ionicons name="chevron-back" size={22} color={colors.primary} style={s.backIcon} />
-            <Text style={[s.backText, { color: colors.primary }]}>Home</Text>
-          </TouchableOpacity>
-
-          <Image source={require('../../assets/brand-logo.png')} style={s.logoImage} resizeMode="contain" />
-          <Text style={[s.logo, { color: colors.primary }]}>SnapRoad</Text>
-          <Text style={[s.subline, { color: colors.textSecondary }]}>Start your journey</Text>
-
-          {/* Mode toggle */}
-          <View style={[s.toggleRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <TouchableOpacity
-              style={[s.toggleBtn, mode === 'signin' && { backgroundColor: colors.primary }]}
-              onPress={() => switchMode('signin')}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.toggleText, { color: mode === 'signin' ? '#fff' : colors.textSecondary }]}>Sign In</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.toggleBtn, mode === 'signup' && { backgroundColor: colors.primary }]}
-              onPress={() => switchMode('signup')}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.toggleText, { color: mode === 'signup' ? '#fff' : colors.textSecondary }]}>Create Account</Text>
-            </TouchableOpacity>
-          </View>
-
-          {mode === 'signup' && (
-            <TextInput
-              testID="e2e-auth-name"
-              style={[s.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-              placeholder="Full Name"
-              placeholderTextColor={colors.textTertiary}
-              value={name}
-              onChangeText={setName}
-              autoCapitalize="words"
-              returnKeyType="next"
-              onSubmitEditing={() => emailRef.current?.focus()}
-            />
-          )}
-          {mode === 'signup' && (
-            <TextInput
-              style={[s.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-              placeholder="Date of Birth (YYYY-MM-DD)"
-              placeholderTextColor={colors.textTertiary}
-              value={dateOfBirth}
-              onChangeText={setDateOfBirth}
-              autoCapitalize="none"
-              keyboardType="numbers-and-punctuation"
-              returnKeyType="next"
-              onSubmitEditing={() => emailRef.current?.focus()}
-            />
-          )}
-          <TextInput
-            ref={emailRef}
-            testID="e2e-auth-email"
-            style={[s.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-            placeholder="Email"
-            placeholderTextColor={colors.textTertiary}
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="next"
-            onSubmitEditing={() => pwRef.current?.focus()}
-          />
-          <View style={s.pwRow}>
-            <TextInput
-              ref={pwRef}
-              testID="e2e-auth-password"
-              style={[s.input, { flex: 1, marginBottom: 0, backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-              placeholder="Password"
-              placeholderTextColor={colors.textTertiary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPw}
-              returnKeyType={mode === 'signup' ? 'next' : 'done'}
-              onSubmitEditing={mode === 'signup' ? () => confirmRef.current?.focus() : handleSubmit}
-            />
-            <TouchableOpacity style={s.eyeBtn} onPress={() => setShowPw(!showPw)}>
-              <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textTertiary} />
-            </TouchableOpacity>
-          </View>
-
-          {mode === 'signup' && password.length > 0 && (
-            <View style={s.strengthRow}>
-              <View style={[s.strengthTrack, { backgroundColor: colors.border }]}>
-                <View style={[s.strengthBar, { width: strength.width as any, backgroundColor: strength.color }]} />
-              </View>
-              <Text style={[s.strengthLabel, { color: strength.color }]}>{strength.label}</Text>
-            </View>
-          )}
-
-          {mode === 'signup' && (
-            <TextInput
-              ref={confirmRef}
-              style={[s.input, { marginTop: 12, backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-              placeholder="Confirm Password"
-              placeholderTextColor={colors.textTertiary}
-              value={confirmPw}
-              onChangeText={setConfirmPw}
-              secureTextEntry={!showPw}
-              returnKeyType="done"
-              onSubmitEditing={handleSubmit}
-            />
-          )}
-
-          {error ? <Text style={[s.error, { color: colors.danger }]}>{error}</Text> : null}
-
-          <TouchableOpacity
-            testID="e2e-auth-submit"
-            onPress={handleSubmit}
-            disabled={isLoading || isAuthSubmitting}
             activeOpacity={0.85}
           >
-            <LinearGradient
-              colors={[colors.ctaGradientStart, colors.ctaGradientEnd]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={s.ctaBtn}
+            <Ionicons name="chevron-back" size={18} color="#374151" />
+          </TouchableOpacity>
+
+          <View style={s.brandRow}>
+            <View style={s.brandMarkWrap}>
+              <Image source={require('../../assets/brand-logo.png')} style={s.brandLogo} resizeMode="contain" />
+            </View>
+            <Text style={s.brandText}>SnapRoad</Text>
+          </View>
+
+          <Text style={s.title}>{mode === 'signup' ? 'Join\nSnapRoad.' : 'Welcome\nback.'}</Text>
+          <Text style={s.subtitle}>
+            {mode === 'signup'
+              ? 'Create your free account today'
+              : 'Sign in to continue your journey'}
+          </Text>
+
+          <View style={s.card}>
+            <View style={s.socialRow}>
+              <TouchableOpacity
+                style={s.socialBtn}
+                activeOpacity={0.85}
+                onPress={handleGoogleSignIn}
+                disabled={googleLoading}
+              >
+                {googleLoading ? (
+                  <ActivityIndicator color={PALETTE.text} size="small" />
+                ) : (
+                  <>
+                    <Text style={s.googleGlyph}>G</Text>
+                    <Text style={s.socialBtnText}>
+                      {mode === 'signup' ? 'Google sign-in' : 'Continue with Google'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <View style={s.divider}>
+              <View style={s.dividerLine} />
+              <Text style={s.dividerText}>or email</Text>
+              <View style={s.dividerLine} />
+            </View>
+
+            {mode === 'signup' && (
+              <View style={s.row}>
+                <View style={s.rowField}>
+                  <Text style={s.label}>First name</Text>
+                  <TextInput
+                    ref={firstNameRef}
+                    testID="e2e-auth-name"
+                    style={s.input}
+                    placeholder="Jane"
+                    placeholderTextColor={PALETTE.placeholder}
+                    value={firstName}
+                    onChangeText={setFirstName}
+                    autoCapitalize="words"
+                    returnKeyType="next"
+                    onSubmitEditing={() => lastNameRef.current?.focus()}
+                  />
+                </View>
+                <View style={s.rowField}>
+                  <Text style={s.label}>Last name</Text>
+                  <TextInput
+                    ref={lastNameRef}
+                    style={s.input}
+                    placeholder="Smith"
+                    placeholderTextColor={PALETTE.placeholder}
+                    value={lastName}
+                    onChangeText={setLastName}
+                    autoCapitalize="words"
+                    returnKeyType="next"
+                    onSubmitEditing={() => emailRef.current?.focus()}
+                  />
+                </View>
+              </View>
+            )}
+
+            <Text style={s.label}>Email address</Text>
+            <TextInput
+              ref={emailRef}
+              testID="e2e-auth-email"
+              style={s.input}
+              placeholder="you@example.com"
+              placeholderTextColor={PALETTE.placeholder}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="next"
+              onSubmitEditing={() => mode === 'signup' ? dobRef.current?.focus() : pwRef.current?.focus()}
+            />
+
+            {mode === 'signup' && (
+              <>
+                <Text style={s.label}>Date of birth</Text>
+                <TextInput
+                  ref={dobRef}
+                  style={s.input}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={PALETTE.placeholder}
+                  value={dateOfBirth}
+                  onChangeText={setDateOfBirth}
+                  autoCapitalize="none"
+                  keyboardType="numbers-and-punctuation"
+                  returnKeyType="next"
+                  onSubmitEditing={() => pwRef.current?.focus()}
+                />
+              </>
+            )}
+
+            <Text style={s.label}>Password</Text>
+            <View style={s.inputWithIcon}>
+              <TextInput
+                ref={pwRef}
+                testID="e2e-auth-password"
+                style={[s.input, s.inputPassword]}
+                placeholder={mode === 'signup' ? 'Create a strong password' : 'Enter your password'}
+                placeholderTextColor={PALETTE.placeholder}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPw}
+                returnKeyType={mode === 'signup' ? 'next' : 'done'}
+                onSubmitEditing={mode === 'signup' ? () => confirmRef.current?.focus() : handleSubmit}
+              />
+              <TouchableOpacity style={s.eyeBtn} onPress={() => setShowPw((prev) => !prev)} activeOpacity={0.8}>
+                <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={18} color={PALETTE.muted} />
+              </TouchableOpacity>
+            </View>
+
+            {mode === 'signin' && (
+              <TouchableOpacity style={s.forgotLink} onPress={() => navigation.navigate('ForgotPassword')} activeOpacity={0.85}>
+                <Text style={s.forgotLinkText}>Forgot password?</Text>
+              </TouchableOpacity>
+            )}
+
+            {mode === 'signup' && password.length > 0 && (
+              <>
+                <View style={s.strengthBar}>
+                  {[0, 1, 2, 3].map((segment) => (
+                    <View
+                      key={segment}
+                      style={[
+                        s.strengthSegment,
+                        segment < strength.level && { backgroundColor: strength.color },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Text style={[s.strengthText, { color: strength.color }]}>{strength.label}</Text>
+              </>
+            )}
+
+            {mode === 'signup' && (
+              <>
+                <Text style={s.label}>Confirm password</Text>
+                <View style={s.inputWithIcon}>
+                  <TextInput
+                    ref={confirmRef}
+                    style={[s.input, s.inputPassword]}
+                    placeholder="Confirm your password"
+                    placeholderTextColor={PALETTE.placeholder}
+                    value={confirmPw}
+                    onChangeText={setConfirmPw}
+                    secureTextEntry={!showPw}
+                    returnKeyType="done"
+                    onSubmitEditing={handleSubmit}
+                  />
+                </View>
+              </>
+            )}
+
+            {mode === 'signup' && (
+              <View style={s.infoBox}>
+                <View style={s.infoIcon}>
+                  <Ionicons name="information-outline" size={12} color="#fff" />
+                </View>
+                <Text style={s.infoText}>
+                  Use email to create a new driver account so SnapRoad can complete age verification. Google is available for existing accounts.
+                </Text>
+              </View>
+            )}
+
+            {error ? <Text style={s.error}>{error}</Text> : null}
+
+            <TouchableOpacity
+              testID="e2e-auth-submit"
+              style={[s.submitBtn, mode === 'signup' && s.submitBtnSignup]}
+              onPress={handleSubmit}
+              disabled={isLoading || isAuthSubmitting}
+              activeOpacity={0.9}
             >
               {isLoading || isAuthSubmitting ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={s.ctaText}>{mode === 'signup' ? 'Create Account' : 'Sign In'}</Text>
+                <Text style={s.submitText}>{mode === 'signup' ? 'Create Account' : 'Sign In'}</Text>
               )}
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {mode === 'signin' && (
-            <TouchableOpacity style={s.linkBtn} onPress={() => navigation.navigate('ForgotPassword')}>
-              <Text style={{ color: colors.textTertiary, fontSize: 14 }}>Forgot password?</Text>
             </TouchableOpacity>
-          )}
 
-          <View style={s.dividerRow}>
-            <View style={[s.dividerLine, { backgroundColor: colors.border }]} />
-            <Text style={{ color: colors.textTertiary, fontSize: 12, marginHorizontal: 12 }}>or continue with</Text>
-            <View style={[s.dividerLine, { backgroundColor: colors.border }]} />
-          </View>
-
-          <TouchableOpacity
-            style={[s.googleBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            activeOpacity={0.8}
-            onPress={handleGoogleSignIn}
-            disabled={googleLoading}
-          >
-            {googleLoading ? (
-              <ActivityIndicator color={colors.text} size="small" />
-            ) : (
-              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '600' }}>
-                {mode === 'signup' ? 'Google sign-in (existing accounts only)' : 'Sign in with Google'}
+            {mode === 'signup' && (
+              <Text style={s.termsText}>
+                By creating an account you agree to our Terms of Service and Privacy Policy. You must be 16 or older to use SnapRoad.
               </Text>
             )}
-          </TouchableOpacity>
+          </View>
+
+          <View style={s.footer}>
+            <Text style={s.footerText}>
+              {mode === 'signup' ? 'Already have an account? ' : 'New to SnapRoad? '}
+              <Text style={s.footerLink} onPress={() => switchMode(mode === 'signup' ? 'signin' : 'signup')}>
+                {mode === 'signup' ? 'Sign in' : 'Create account'}
+              </Text>
+            </Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -294,52 +379,184 @@ export default function AuthScreen({ navigation, route }: Props) {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1 },
-  scroll: { flexGrow: 1, paddingHorizontal: 28, paddingBottom: 40, paddingTop: 4 },
-  backRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginBottom: 12 },
-  backIcon: { marginRight: 4 },
-  backText: { fontSize: 16, fontWeight: '600' },
-  logo: { fontSize: 36, fontWeight: '900', textAlign: 'center', marginBottom: 4 },
-  logoImage: { width: 72, height: 72, alignSelf: 'center', marginBottom: 6 },
-  subline: { fontSize: 15, textAlign: 'center', marginBottom: 20, marginTop: 2 },
-  toggleRow: {
-    flexDirection: 'row',
-    borderRadius: 14,
+  container: { flex: 1, backgroundColor: PALETTE.bg },
+  scroll: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 28, paddingTop: 8 },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#fff',
     borderWidth: 1,
-    padding: 3,
-    marginBottom: 20,
-  },
-  toggleBtn: {
-    flex: 1,
-    borderRadius: 11,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  toggleText: { fontSize: 14, fontWeight: '700' },
-  input: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 12, borderWidth: 1 },
-  pwRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  eyeBtn: { position: 'absolute', right: 12, padding: 4 },
-  strengthRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  strengthTrack: { flex: 1, height: 4, borderRadius: 2 },
-  strengthBar: { height: 4, borderRadius: 2 },
-  strengthLabel: { fontSize: 11, fontWeight: '600', marginLeft: 8 },
-  error: { fontSize: 13, textAlign: 'center', marginBottom: 12 },
-  ctaBtn: {
-    borderRadius: 16,
-    paddingVertical: 16,
-    height: 52,
+    borderColor: PALETTE.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 6,
+    marginBottom: 24,
   },
-  ctaText: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  linkBtn: { marginTop: 16, alignItems: 'center' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
-  dividerLine: { flex: 1, height: 1 },
-  googleBtn: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', borderWidth: 1 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 28 },
+  brandMarkWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: PALETTE.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    marginRight: 10,
+  },
+  brandLogo: { width: 24, height: 24 },
+  brandText: { color: PALETTE.text, fontSize: 22, fontWeight: '700', letterSpacing: -0.4 },
+  title: {
+    color: PALETTE.text,
+    fontSize: 30,
+    lineHeight: 33,
+    fontWeight: '600',
+    letterSpacing: -0.8,
+    marginBottom: 8,
+  },
+  subtitle: {
+    color: PALETTE.muted,
+    fontSize: 15,
+    lineHeight: 23,
+    marginBottom: 28,
+    fontWeight: '300',
+  },
+  card: {
+    backgroundColor: PALETTE.card,
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: PALETTE.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  socialRow: { marginBottom: 20 },
+  socialBtn: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: PALETTE.inputBorder,
+    backgroundColor: '#fff',
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  googleGlyph: {
+    color: PALETTE.blue,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  socialBtnText: {
+    color: PALETTE.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: PALETTE.inputBorder },
+  dividerText: { color: PALETTE.muted, fontSize: 12, fontWeight: '600' },
+  row: { flexDirection: 'row', gap: 10 },
+  rowField: { flex: 1 },
+  label: {
+    color: PALETTE.muted,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  input: {
+    width: '100%',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: PALETTE.inputBorder,
+    backgroundColor: PALETTE.inputBg,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: PALETTE.text,
+    marginBottom: 16,
+  },
+  inputWithIcon: { position: 'relative' },
+  inputPassword: { paddingRight: 48 },
+  eyeBtn: {
+    position: 'absolute',
+    right: 14,
+    top: 12,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  forgotLink: { alignSelf: 'flex-end', marginTop: -6, marginBottom: 16 },
+  forgotLinkText: { color: PALETTE.blue, fontSize: 13, fontWeight: '600' },
+  strengthBar: { flexDirection: 'row', gap: 4, marginTop: -6, marginBottom: 6 },
+  strengthSegment: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E5E7EB',
+  },
+  strengthText: { fontSize: 11, fontWeight: '600', marginBottom: 14 },
+  infoBox: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+    borderRadius: 14,
+    backgroundColor: PALETTE.blueLight,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 16,
+  },
+  infoIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 999,
+    backgroundColor: PALETTE.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  infoText: {
+    flex: 1,
+    color: PALETTE.blueDark,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  error: {
+    color: '#DC2626',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  submitBtn: {
+    borderRadius: 999,
+    backgroundColor: PALETTE.blue,
+    minHeight: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: PALETTE.blue,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    elevation: 6,
+    marginTop: 4,
+  },
+  submitBtnSignup: {
+    backgroundColor: PALETTE.greenMid,
+    shadowColor: PALETTE.green,
+  },
+  submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  termsText: {
+    color: PALETTE.muted,
+    fontSize: 11,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 16,
+  },
+  footer: { paddingVertical: 20, alignItems: 'center' },
+  footerText: { color: PALETTE.muted, fontSize: 14 },
+  footerLink: { color: PALETTE.blue, fontWeight: '700' },
 });

@@ -78,6 +78,21 @@ export default function UsersTab({ theme }: UsersTabProps) {
     }
   }
 
+  const handleSetPlan = async (userId: string, plan: 'basic' | 'premium' | 'family') => {
+    try {
+      const res = await adminApi.updateUser(userId, {
+        plan,
+        is_premium: plan !== 'basic',
+      })
+      if (res.success) {
+        showFeedback('success', `User plan updated to ${plan}`)
+        loadUsers()
+      }
+    } catch {
+      showFeedback('error', 'Failed to update user plan')
+    }
+  }
+
   const handleExport = async () => {
     try {
       const res = await adminApi.exportUsers('csv')
@@ -288,6 +303,24 @@ export default function UsersTab({ theme }: UsersTabProps) {
                       >
                         <Trash2 size={16} />
                       </button>
+                      {user.plan !== 'premium' && (
+                        <button
+                          onClick={() => handleSetPlan(user.id, 'premium')}
+                          className="px-2 py-1 rounded hover:bg-white/10 text-xs text-purple-300"
+                          title="Make premium"
+                        >
+                          Premium
+                        </button>
+                      )}
+                      {user.plan !== 'basic' && (
+                        <button
+                          onClick={() => handleSetPlan(user.id, 'basic')}
+                          className="px-2 py-1 rounded hover:bg-white/10 text-xs text-slate-300"
+                          title="Set basic"
+                        >
+                          Basic
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
