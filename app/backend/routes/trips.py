@@ -76,22 +76,6 @@ def get_trips(
         }
     }
 
-@router.get("/trips/{trip_id}", responses=_LEGACY_503_RESPONSES)
-def get_trip_by_id(trip_id: str):
-    _legacy_trips_guard()
-    trip = next((t for t in trips_db if str(t.get("id")) == str(trip_id)), None)
-
-    if not trip:
-        return {
-            "success": False,
-            "message": MSG_TRIP_NOT_FOUND
-        }
-
-    return {
-        "success": True,
-        "data": trip
-    }
-
 class StartTripBody(BaseModel):
     startLocation: str
     destination: Optional[str] = None
@@ -217,6 +201,24 @@ def get_recent_trips_mobile(
         _trips_log.warning("trips/history/recent: %s", exc)
 
     return {"success": True, "data": []}
+
+
+@router.get("/trips/{trip_id}", responses=_LEGACY_503_RESPONSES)
+def get_trip_by_id(trip_id: str):
+    _legacy_trips_guard()
+    trip = next((t for t in trips_db if str(t.get("id")) == str(trip_id)), None)
+
+    if not trip:
+        return {
+            "success": False,
+            "message": MSG_TRIP_NOT_FOUND
+        }
+
+    return {
+        "success": True,
+        "data": trip
+    }
+
 
 @router.post("/trips/{trip_id}/end", responses=_LEGACY_503_RESPONSES)
 def end_trip(trip_id: str, body: EndTripBody):
@@ -887,18 +889,19 @@ def get_route_history_3d(
 
 if ENVIRONMENT == "production":
     # Remove legacy/dev-only endpoints from the production API surface.
+    # Route objects store paths relative to the router (without the /api prefix).
     _LEGACY_PROD_DISABLED = {
-        "/api/trips",
-        "/api/trips/${id}",
-        "/api/trips/start",
-        "/api/trips/history",
-        "/api/trips/${tripId}/end",
-        "/api/trips/complete",
-        "/api/trips/complete-with-safety",
-        "/api/trips/history/detailed",
-        "/api/trips/weekly-insights",
-        "/api/trips/{trip_id}/share",
-        "/api/incidents/report-legacy",
-        "/api/routes/history-3d",
+        "/trips",
+        "/trips/{trip_id}",
+        "/trips/start",
+        "/trips/history",
+        "/trips/{trip_id}/end",
+        "/trips/complete",
+        "/trips/complete-with-safety",
+        "/trips/history/detailed",
+        "/trips/weekly-insights",
+        "/trips/{trip_id}/share",
+        "/incidents/report-legacy",
+        "/routes/history-3d",
     }
     router.routes = [r for r in router.routes if getattr(r, "path", "") not in _LEGACY_PROD_DISABLED]
