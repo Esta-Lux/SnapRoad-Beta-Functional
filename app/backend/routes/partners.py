@@ -37,6 +37,17 @@ MSG_PARTNER_NOT_FOUND = "Partner not found"
 MSG_MEMBER_NOT_FOUND = "Member not found"
 MSG_STRIPE_NOT_CONFIGURED = "Stripe not configured. Set STRIPE_SECRET_KEY in .env"
 MSG_STRIPE_NOT_INSTALLED = "stripe package not installed. Run: pip install stripe"
+MSG_NOT_YOUR_LOCATION = "Not your location"
+
+# OpenAPI: routes using _assert_partner_resource_owner may return 503 if Supabase ownership check fails.
+RESP_PARTNER_ACCESS_503 = {
+    403: {"description": "Partner access denied"},
+    503: {"description": "Unable to verify resource ownership"},
+}
+RESP_PARTNER_REGISTER_503 = {
+    400: {"description": "Email already registered"},
+    503: {"description": "Registration temporarily unavailable"},
+}
 
 CurrentPartner = Annotated[dict, Depends(require_partner)]
 
@@ -231,10 +242,10 @@ def add_partner_location(location: PartnerLocation, user: CurrentPartner, partne
     return {"success": True, "message": f"Location '{location.name}' added successfully", "data": new_loc}
 
 
-@router.put("/partner/locations/{location_id}", responses={403: {"description": "Partner access denied"}})
+@router.put("/partner/locations/{location_id}", responses=RESP_PARTNER_ACCESS_503)
 def update_partner_location(location_id: str, location: PartnerLocation, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
-    _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, "Not your location")
+    _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, MSG_NOT_YOUR_LOCATION)
     updates = {
         "name": location.name,
         "address": location.address,
@@ -247,10 +258,10 @@ def update_partner_location(location_id: str, location: PartnerLocation, user: C
     return {"success": True, "message": "Location updated"}
 
 
-@router.delete("/partner/locations/{location_id}", responses={403: {"description": "Partner access denied"}})
+@router.delete("/partner/locations/{location_id}", responses=RESP_PARTNER_ACCESS_503)
 def delete_partner_location(location_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
-    _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, "Not your location")
+    _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, MSG_NOT_YOUR_LOCATION)
     sb_delete_partner_location(location_id)
     remaining = sb_get_partner_locations(owned_partner_id)
     if remaining and not any(l.get("is_primary") for l in remaining):
@@ -258,10 +269,10 @@ def delete_partner_location(location_id: str, user: CurrentPartner, partner_id: 
     return {"success": True, "message": "Location deleted"}
 
 
-@router.post("/partner/locations/{location_id}/set-primary", responses={403: {"description": "Partner access denied"}})
+@router.post("/partner/locations/{location_id}/set-primary", responses=RESP_PARTNER_ACCESS_503)
 def set_primary_location(location_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
-    _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, "Not your location")
+    _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, MSG_NOT_YOUR_LOCATION)
     sb_set_primary_location(owned_partner_id, location_id)
     return {"success": True, "message": "Primary location updated"}
 
@@ -316,7 +327,7 @@ def get_partner_offers(
     return {"success": True, "data": offers, "count": len(offers)}
 
 
-@router.put("/partner/offers/{offer_id}", responses={403: {"description": "Partner access denied"}})
+@router.put("/partner/offers/{offer_id}", responses=RESP_PARTNER_ACCESS_503)
 def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     _assert_partner_resource_owner("offers", offer_id, owned_partner_id, "Not your offer")
@@ -366,7 +377,7 @@ def get_boost_pricing():
     return {"success": True, "data": {"packages": BOOST_PRICING, "currency": "USD"}}
 
 
-@router.post("/partner/boosts/create", responses={403: {"description": "Partner access denied"}})
+@router.post("/partner/boosts/create", responses=RESP_PARTNER_ACCESS_503)
 def create_offer_boost(boost_req: BoostRequest, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     _assert_partner_resource_owner("offers", str(boost_req.offer_id), owned_partner_id, "Not your offer")
@@ -448,7 +459,7 @@ def get_active_boosts(
     }
 
 
-@router.delete("/partner/boosts/{boost_id}", responses={403: {"description": "Partner access denied"}})
+@router.delete("/partner/boosts/{boost_id}", responses=RESP_PARTNER_ACCESS_503)
 def cancel_boost(boost_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     _assert_partner_resource_owner("boosts", boost_id, owned_partner_id, "Not your boost")
@@ -510,7 +521,7 @@ def partner_login_v2(request: Request, body: PartnerLoginRequest):
     return {"success": True, "token": token, "partner_id": partner_id, "business_name": business_name}
 
 
-@router.post("/partner/v2/register", responses={400: {"description": "Email already registered"}})
+@router.post("/partner/v2/register", responses=RESP_PARTNER_REGISTER_503)
 @limiter.limit("5/minute")
 def partner_register_v2(request: Request, body: PartnerRegisterRequest):
     existing = sb_get_user_by_email(body.email)
