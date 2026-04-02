@@ -51,7 +51,7 @@ def llm_base_url() -> Optional[str]:
 
 def chat_completion_model() -> str:
     if llm_provider() == "nvidia":
-        return _strip(os.environ.get("NVIDIA_CHAT_MODEL")) or _strip(os.environ.get("OPENAI_MODEL")) or "meta/llama-3.1-8b-instruct"
+        return _strip(os.environ.get("NVIDIA_CHAT_MODEL")) or "meta/llama-3.1-8b-instruct"
     return _strip(os.environ.get("OPENAI_MODEL")) or "gpt-4o-mini"
 
 
