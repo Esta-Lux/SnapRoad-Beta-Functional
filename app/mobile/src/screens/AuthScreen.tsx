@@ -141,7 +141,13 @@ export default function AuthScreen({ navigation, route }: Props) {
       const { Linking } = require('react-native');
       await Linking.openURL(data.url);
     } catch (e: any) {
-      setLocalError(e?.message || 'Google sign-in failed');
+      const raw = String(e?.message || e || '');
+      let friendly = 'Google sign-in is not available right now. Please sign in with email or try again later.';
+      if (/provider is not enabled|unsupported provider/i.test(raw)) {
+        friendly =
+          'Google sign-in is not available right now. Please use email sign-in, or contact support if this keeps happening.';
+      }
+      setLocalError(friendly);
     } finally {
       setGoogleLoading(false);
     }

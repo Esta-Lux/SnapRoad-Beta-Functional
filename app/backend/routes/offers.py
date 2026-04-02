@@ -1,5 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Depends
-from starlette.requests import Request
+from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from typing import Annotated, Optional
 from datetime import datetime, timedelta, timezone
 from models.schemas import OfferCreate, BulkOfferUpload
@@ -16,6 +15,7 @@ from services.offer_analytics import record_offer_event
 from middleware.auth import get_current_user
 from limiter import limiter
 from config import ENVIRONMENT
+import asyncio
 import uuid
 import json
 import logging
@@ -734,10 +734,15 @@ def record_location_visit(visit: LocationVisit, auth_user: CurrentUser):
 
 
 @router.post("/images/generate")
-async def generate_offer_image(request: ImageGenerateRequest):
-    image_id = str(uuid.uuid4())[:8]
-    generated_images_db[image_id] = {"id": image_id, "data": None, "placeholder": True, "prompt": request.prompt, "created_at": datetime.now().isoformat()}
-    return {"success": True, "data": {"image_id": image_id, "placeholder": True, "message": "Image generation endpoint ready."}}
+@limiter.limit("10/minute")
+async def generate_offer_image(request: Request, body: ImageGenerateRequest):
+    from services.image_generation import generate_promo_image_url
+
+    _ = request
+    result = await asyncio.to_thread(generate_promo_image_url, body.prompt, body.offer_type)
+    if not result.get("success"):
+        return {"success": False, "message": result.get("message", "Image generation failed.")}
+    return {"success": True, "image_url": result["image_url"]}
 
 
 if ENVIRONMENT == "production":

@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Depends
 from starlette.requests import Request
 from fastapi.responses import StreamingResponse
-from models.schemas import OrionMessageRequest, OrionCompletionRequest, PhotoAnalysisRequest
+from models.schemas import OrionMessageRequest, OrionCompletionRequest, PhotoAnalysisRequest, ImageGenerateRequest
 from middleware.auth import get_current_user
 
 from limiter import limiter
@@ -17,6 +17,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["AI"])
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+
+
+@router.post("/ai/generate-image")
+@limiter.limit("10/minute")
+async def generate_image_compat(request: Request, body: ImageGenerateRequest, _user: CurrentUser):
+    """Authenticated alias for `/api/images/generate` (partner tools)."""
+    import asyncio
+    from services.image_generation import generate_promo_image_url
+
+    _ = request
+    result = await asyncio.to_thread(generate_promo_image_url, body.prompt, body.offer_type)
+    if not result.get("success"):
+        return {"success": False, "message": result.get("message", "Image generation failed.")}
+    return {"success": True, "image_url": result["image_url"]}
 
 
 @router.post("/orion/completions")

@@ -94,6 +94,7 @@ def _to_road_report_payload(report: IncidentReportCompat, user_id: str, now: dat
         "lng": float(report.lng or 0),
         "upvotes": 0,
         "status": "active",
+        "moderation_status": "pending",
         "expires_at": (now + timedelta(hours=_expiry_hours_for(r_type))).isoformat(),
         "created_at": now.isoformat(),
     }
@@ -157,7 +158,16 @@ def _road_report_rows_after_insert(sb, p: dict, created) -> list:
 
 
 def _insert_road_report_row(sb, p: dict, response_uid: str) -> Optional[dict]:
-    created = sb.table("road_reports").insert(p).execute()
+    try:
+        created = sb.table("road_reports").insert(p).execute()
+    except Exception as e:
+        err = str(e).lower()
+        if "moderation_status" in p and ("column" in err or "schema" in err or "pgrst" in err):
+            logger.warning("road_reports insert retry without moderation_status: %s", e)
+            p2 = {k: v for k, v in p.items() if k != "moderation_status"}
+            created = sb.table("road_reports").insert(p2).execute()
+        else:
+            raise
     rows = _road_report_rows_after_insert(sb, p, created)
     if not rows:
         return None
@@ -260,17 +270,27 @@ def _nearby_from_db(lat: float, lng: float, radius_miles: float, now: datetime, 
     sb = get_supabase()
     lat_delta = radius_miles / 69.0
     lng_delta = radius_miles / (69.0 * 0.7)
-    res = (
-        sb.table("road_reports")
-        .select("id,type,description,lat,lng,upvotes,created_at,expires_at")
-        .eq("status", "active")
-        .gte("lat", lat - lat_delta)
-        .lte("lat", lat + lat_delta)
-        .gte("lng", lng - lng_delta)
-        .lte("lng", lng + lng_delta)
-        .gt("expires_at", now.isoformat())
-        .execute()
-    )
+
+    def _query(with_moderation: bool):
+        q = (
+            sb.table("road_reports")
+            .select("id,type,description,lat,lng,upvotes,created_at,expires_at")
+            .eq("status", "active")
+            .gte("lat", lat - lat_delta)
+            .lte("lat", lat + lat_delta)
+            .gte("lng", lng - lng_delta)
+            .lte("lng", lng + lng_delta)
+            .gt("expires_at", now.isoformat())
+        )
+        if with_moderation:
+            q = q.or_("moderation_status.eq.approved,moderation_status.is.null")
+        return q.execute()
+
+    try:
+        res = _query(True)
+    except Exception as e:
+        logger.warning("road_reports nearby moderation filter unavailable, retrying without it: %s", e)
+        res = _query(False)
     db_rows = res.data or []
     out: List[Dict[str, Any]] = []
     for row in db_rows:
