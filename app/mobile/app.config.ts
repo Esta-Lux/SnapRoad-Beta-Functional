@@ -170,6 +170,11 @@ export default function expoConfig({ config }: ConfigContext): ExpoConfig {
         "STRIPE_PUBLISHABLE_KEY",
       ]),
       sentryDsn: envAny(["EXPO_PUBLIC_SENTRY_DSN", "SENTRY_DSN"]),
+      /** Expo dashboard / project page (overridable via EXPO_PUBLIC_EXPO_PROJECT_URL in eas.json). */
+      expoProjectUrl: envAny(
+        ["EXPO_PUBLIC_EXPO_PROJECT_URL"],
+        "https://expo.dev/accounts/snaproad/projects/snaproad",
+      ),
       supportEmail: "support@snaproad.co",
       iosAppStoreId: "",
       androidPackage: "com.snaproad.app",
