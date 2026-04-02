@@ -4,24 +4,47 @@ import { useState, useEffect, useRef } from 'react'
 import { Gift, Search, Trash2, Upload, FileSpreadsheet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/services/adminApi'
+import { useSupabaseRealtimeRefresh } from '@/hooks/useSupabaseRealtimeRefresh'
+import OfferLocationPicker from '@/components/admin/OfferLocationPicker'
 
 interface AdminOfferManagementProps {
   theme: 'dark' | 'light'
   onNavigate?: (page: string) => void
+  initialBulkOpen?: boolean
 }
 
-export function AdminOfferManagement({ theme, onNavigate }: AdminOfferManagementProps) {
+export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = false }: AdminOfferManagementProps) {
   const [offers, setOffers] = useState<any[]>([])
+  const [partners, setPartners] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(initialBulkOpen)
   const [bulkUploading, setBulkUploading] = useState(false)
+  const [editingAllocation, setEditingAllocation] = useState<any | null>(null)
+  const [savingAllocation, setSavingAllocation] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     loadOffers()
   }, [statusFilter])
+
+  useEffect(() => {
+    loadPartners()
+  }, [])
+
+  useSupabaseRealtimeRefresh(
+    'admin-offer-management-realtime',
+    [
+      { table: 'offers' },
+      { table: 'partner_locations' },
+      { table: 'offer_analytics' },
+    ],
+    () => {
+      loadOffers()
+      loadPartners()
+    },
+  )
 
   const loadOffers = async () => {
     setLoading(true)
@@ -33,6 +56,15 @@ export function AdminOfferManagement({ theme, onNavigate }: AdminOfferManagement
       setOffers([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadPartners = async () => {
+    try {
+      const res = await adminApi.getPartners()
+      if (res.success && res.data) setPartners(res.data)
+    } catch {
+      setPartners([])
     }
   }
 
@@ -80,6 +112,38 @@ export function AdminOfferManagement({ theme, onNavigate }: AdminOfferManagement
       loadOffers()
     } catch (e) {
       console.error(e)
+    }
+  }
+
+  const handleSaveAllocation = async () => {
+    if (!editingAllocation) return
+    setSavingAllocation(true)
+    try {
+      const allocated_locations = String(editingAllocation.allocated_locations || '')
+        .split(',')
+        .map((v: string) => v.trim())
+        .filter(Boolean)
+      const payload = {
+        offer_type: editingAllocation.offer_type || 'partner',
+        partner_id: editingAllocation.offer_type === 'partner' ? editingAllocation.partner_id || null : null,
+        allocated_locations,
+        address: editingAllocation.address || null,
+        lat: editingAllocation.lat ? Number(editingAllocation.lat) : null,
+        lng: editingAllocation.lng ? Number(editingAllocation.lng) : null,
+      }
+      const res = await adminApi.updateOffer(String(editingAllocation.id), payload)
+      if (res.success) {
+        toast.success('Offer allocation updated')
+        setEditingAllocation(null)
+        loadOffers()
+      } else {
+        toast.error(res.message || 'Could not update allocation')
+      }
+    } catch (e) {
+      console.error(e)
+      toast.error('Could not update allocation')
+    } finally {
+      setSavingAllocation(false)
     }
   }
 
@@ -206,6 +270,114 @@ export function AdminOfferManagement({ theme, onNavigate }: AdminOfferManagement
         </div>
       )}
 
+      {editingAllocation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !savingAllocation && setEditingAllocation(null)}>
+          <div
+            className={`max-w-2xl w-full rounded-2xl border p-6 shadow-xl ${
+              isDark ? 'bg-slate-900 border-white/10 text-gray-100' : 'bg-white border-gray-200 text-gray-900'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold mb-1">Offer Allocation Studio</h2>
+            <p className={`text-sm mb-5 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+              Assign uploaded offers to a partner, set admin trial status, and manage location placement without leaving the main offers surface.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium mb-2">Offer Type</label>
+                <select
+                  value={editingAllocation.offer_type || (editingAllocation.is_admin_offer ? 'admin' : 'partner')}
+                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, offer_type: e.target.value }))}
+                  className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
+                >
+                  <option value="partner">Partner Offer</option>
+                  <option value="admin">Admin Trial Offer</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-2">Assigned Partner</label>
+                <select
+                  value={editingAllocation.partner_id || ''}
+                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, partner_id: e.target.value }))}
+                  className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
+                >
+                  <option value="">Unassigned / Admin Trial</option>
+                  {partners.map((partner) => (
+                    <option key={partner.id} value={partner.id}>{partner.business_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium mb-2">Allocated Location IDs</label>
+                <input
+                  type="text"
+                  value={editingAllocation.allocated_locations || ''}
+                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, allocated_locations: e.target.value }))}
+                  placeholder="Comma-separated location IDs"
+                  className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium mb-2">Address</label>
+                <input
+                  type="text"
+                  value={editingAllocation.address || ''}
+                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, address: e.target.value }))}
+                  placeholder="123 Main St, City, State ZIP"
+                  className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-2">Latitude</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={editingAllocation.lat ?? ''}
+                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, lat: e.target.value }))}
+                  className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-2">Longitude</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={editingAllocation.lng ?? ''}
+                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, lng: e.target.value }))}
+                  className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium mb-2">Map Allocation</label>
+                <OfferLocationPicker
+                  lat={editingAllocation.lat ? Number(editingAllocation.lat) : null}
+                  lng={editingAllocation.lng ? Number(editingAllocation.lng) : null}
+                  onChange={(lat, lng) => setEditingAllocation((prev: any) => ({ ...prev, lat, lng }))}
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={handleSaveAllocation}
+                disabled={savingAllocation}
+                className={`px-4 py-2.5 rounded-xl text-sm font-medium ${isDark ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} disabled:opacity-50`}
+              >
+                {savingAllocation ? 'Saving…' : 'Save Allocation'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingAllocation(null)}
+                disabled={savingAllocation}
+                className={`px-4 py-2.5 rounded-xl text-sm ${isDark ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'}`}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Loading offers...</p>
       ) : filtered.length === 0 ? (
@@ -232,6 +404,18 @@ export function AdminOfferManagement({ theme, onNavigate }: AdminOfferManagement
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setEditingAllocation({
+                    ...offer,
+                    offer_type: offer.offer_type || (offer.is_admin_offer ? 'admin' : 'partner'),
+                    partner_id: offer.partner_id || '',
+                    allocated_locations: Array.isArray(offer.allocated_locations) ? offer.allocated_locations.join(', ') : '',
+                  })}
+                  className={`px-3 py-2 rounded-lg text-sm ${isDark ? 'hover:bg-cyan-500/20 text-cyan-300' : 'hover:bg-cyan-50 text-cyan-700'}`}
+                  title="Manage allocation"
+                >
+                  Manage
+                </button>
                 <button
                   onClick={() => handleDelete(String(offer.id ?? offer.offer_id))}
                   className={`p-2 rounded-lg ${isDark ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-50 text-red-500'}`}

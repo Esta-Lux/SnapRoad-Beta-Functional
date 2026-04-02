@@ -95,6 +95,7 @@ class CreateCheckoutRequest(BaseModel):
     plan_id: str  # "premium" or "family"
     origin_url: Optional[str] = None  # Optional hint; server allowlist decides final origin
     user_email: Optional[str] = None
+    return_url: Optional[str] = None
 
 
 class CheckoutResponse(BaseModel):
@@ -115,6 +116,20 @@ def _resolve_allowed_origin(request_origin: Optional[str]) -> str:
     if requested and requested in allowed:
         return requested
     return allowed[0]
+
+
+def _checkout_return_urls(origin_hint: Optional[str], return_url: Optional[str]) -> tuple[str, str]:
+    raw = (return_url or "").strip().rstrip("/")
+    if raw.startswith("snaproad://") or raw.startswith("exp://"):
+        return (
+            f"{raw}/success?session_id={{CHECKOUT_SESSION_ID}}",
+            f"{raw}/cancel",
+        )
+    origin = _resolve_allowed_origin(origin_hint)
+    return (
+        f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
+        f"{origin}/payment/cancel",
+    )
 
 
 @router.get("/plans")
@@ -240,9 +255,10 @@ async def create_checkout_session(
     stripe = _get_stripe_module()
     _configure_stripe_http(stripe)
 
-    origin = _resolve_allowed_origin(checkout_data.origin_url)
-    success_url = f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"{origin}/payment/cancel"
+    success_url, cancel_url = _checkout_return_urls(
+        checkout_data.origin_url,
+        checkout_data.return_url,
+    )
     line_items = _build_line_items(plan, checkout_data.plan_id)
 
     try:

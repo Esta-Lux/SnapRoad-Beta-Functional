@@ -1,15 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2, Plus, Gift, TrendingUp, BarChart3,
   Bell, Settings, LogOut, HelpCircle,
-  Rocket, Store, CreditCard, Share2, BadgeCheck, QrCode,
+  Rocket, Store, CreditCard, Share2, BadgeCheck, QrCode, Receipt,
 } from 'lucide-react'
 import { NotificationCenter, useNotifications, notificationService } from '@/components/NotificationSystem'
 import SettingsModal from '@/components/SettingsModal'
 import HelpModal from '@/components/HelpModal'
 import { partnerApi } from '@/services/partnerApi'
-import type { Offer, PartnerProfile, Analytics } from '@/types/partner'
+import type { Offer, PartnerProfile, Analytics, PartnerFeeSummary, PartnerRedemption } from '@/types/partner'
 
 import OnboardingWalkthrough from '@/components/partner/OnboardingWalkthrough'
 import ImageGeneratorModal from '@/components/partner/ImageGeneratorModal'
@@ -26,8 +26,10 @@ import FinanceTab from '@/components/partner/FinanceTab'
 import ReferralsTab from '@/components/partner/ReferralsTab'
 import TeamLinksTab from '@/components/partner/TeamLinksTab'
 import PricingTab from '@/components/partner/PricingTab'
+import RedemptionsTab from '@/components/partner/RedemptionsTab'
+import { useSupabaseRealtimeRefresh } from '@/hooks/useSupabaseRealtimeRefresh'
 
-type TabId = 'overview' | 'offers' | 'locations' | 'analytics' | 'boosts' | 'finance' | 'referrals' | 'pricing' | 'team-links'
+type TabId = 'overview' | 'offers' | 'locations' | 'analytics' | 'boosts' | 'finance' | 'redemptions' | 'referrals' | 'pricing' | 'team-links'
 
 const TAB_META: Record<TabId, { title: string; subtitle: string }> = {
   overview:      { title: 'Dashboard Overview',  subtitle: 'Manage your SnapRoad offers and track performance' },
@@ -36,6 +38,7 @@ const TAB_META: Record<TabId, { title: string; subtitle: string }> = {
   analytics:     { title: 'Real-Time Analytics', subtitle: 'Track your offer performance in real-time' },
   boosts:        { title: 'Boost Center',        subtitle: 'Amplify your offer reach with paid boosts' },
   finance:       { title: 'Credits & Earnings',  subtitle: 'Manage your SnapRoad partner credits and earnings' },
+  redemptions:   { title: 'Redemptions Ledger',  subtitle: 'Review scans, fee tiers, and monthly redemption activity' },
   referrals:     { title: 'Referral Analytics',  subtitle: 'Earn credits by referring new partners to SnapRoad' },
   pricing:       { title: 'Plans & Pricing',     subtitle: 'Upgrade your plan to unlock more features' },
   'team-links':  { title: 'Team Scan Links',     subtitle: 'Create shareable QR scan links for your team members' },
@@ -48,17 +51,20 @@ const NAV_ITEMS: { id: TabId; icon: typeof BarChart3; label: string; badgeKey?: 
   { id: 'analytics',   icon: TrendingUp, label: 'Analytics' },
   { id: 'boosts',      icon: Rocket,     label: 'Boosts' },
   { id: 'finance',     icon: CreditCard, label: 'Credits & Finance' },
+  { id: 'redemptions', icon: Receipt,    label: 'Redemptions' },
   { id: 'referrals',   icon: Share2,     label: 'Referrals' },
   { id: 'team-links',  icon: QrCode,     label: 'Team Scan Links' },
   { id: 'pricing',     icon: BadgeCheck, label: 'Plan & Pricing' },
 ]
 
-export default function PartnerDashboard() {
+export default function PartnerDashboard({ initialTab = 'overview' }: { initialTab?: TabId }) {
   const navigate = useNavigate()
   const [offers, setOffers] = useState<Offer[]>([])
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
+  const [redemptions, setRedemptions] = useState<PartnerRedemption[]>([])
+  const [feeInfo, setFeeInfo] = useState<PartnerFeeSummary | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<TabId>('overview')
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showBoostModal, setShowBoostModal] = useState<Offer | null>(null)
@@ -95,6 +101,9 @@ export default function PartnerDashboard() {
       window.history.replaceState({}, '', '/portal/partner')
     })()
   }, [])
+  useEffect(() => {
+    setActiveTab(initialTab)
+  }, [initialTab])
 
   const handlePartnerAuthError = (error: unknown) => {
     const message = error instanceof Error ? error.message : ''
@@ -105,7 +114,7 @@ export default function PartnerDashboard() {
     return false
   }
 
-  const loadPartnerProfile = async () => {
+  const loadPartnerProfile = useCallback(async () => {
     try {
       const data = await partnerApi.getProfile()
       if (data.success) setPartnerProfile(data.data)
@@ -113,13 +122,19 @@ export default function PartnerDashboard() {
       if (handlePartnerAuthError(e)) return
       console.error('Error loading partner profile:', e)
     }
-  }
+  }, [navigate])
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const analyticsRes = await partnerApi.getAnalytics()
+      const [analyticsRes, redemptionsRes, feeRes] = await Promise.all([
+        partnerApi.getAnalytics(),
+        partnerApi.getRedemptions(50),
+        partnerApi.getFees(),
+      ])
       if (analyticsRes.success) setAnalytics(analyticsRes.data)
+      if (redemptionsRes.success) setRedemptions(redemptionsRes.data || [])
+      if (feeRes.success) setFeeInfo(feeRes.data || null)
     } catch (e) {
       if (handlePartnerAuthError(e)) return
       console.error(e)
@@ -148,7 +163,21 @@ export default function PartnerDashboard() {
       console.error(e)
     }
     setLoading(false)
-  }
+  }, [navigate])
+
+  useSupabaseRealtimeRefresh(
+    `partner-portal-${partnerProfile?.id || 'anon'}`,
+    [
+      { table: 'offer_analytics', ...(partnerProfile?.id ? { filter: `partner_id=eq.${partnerProfile.id}` } : {}) },
+      { table: 'redemptions', ...(partnerProfile?.id ? { filter: `partner_id=eq.${partnerProfile.id}` } : {}) },
+      { table: 'redemption_fees', ...(partnerProfile?.id ? { filter: `partner_id=eq.${partnerProfile.id}` } : {}) },
+      { table: 'offers', ...(partnerProfile?.id ? { filter: `partner_id=eq.${partnerProfile.id}` } : {}) },
+    ],
+    () => {
+      loadData()
+      loadPartnerProfile()
+    },
+  )
 
   const handleOnboardingComplete = () => {
     localStorage.setItem('partner_onboarding_complete', 'true')
@@ -289,6 +318,27 @@ export default function PartnerDashboard() {
   const needsPlanCheckout =
     partnerProfile?.subscription_status === 'pending' ||
     partnerProfile?.subscription_status === 'incomplete'
+  const exportRedemptionsCsv = () => {
+    const rows = [
+      ['Redeemed At', 'Offer', 'Customer', 'Discount', 'Fee', 'Tier'],
+      ...redemptions.map((item) => [
+        item.redeemed_at || item.created_at || '',
+        item.offer_name || item.business_name || String(item.offer_id),
+        item.user_name || item.customer_id || 'Driver',
+        item.discount_applied ?? '',
+        item.fee_amount ?? (typeof item.fee_cents === 'number' ? item.fee_cents / 100 : 0),
+        item.fee_tier ?? '',
+      ]),
+    ]
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `snaproad-redemptions-${new Date().toISOString().slice(0, 10)}.csv`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -449,6 +499,14 @@ export default function PartnerDashboard() {
             )}
             {activeTab === 'boosts' && <BoostsTab offers={offers} onBoost={setShowBoostModal} />}
             {activeTab === 'finance' && <FinanceTab />}
+            {activeTab === 'redemptions' && (
+              <RedemptionsTab
+                redemptions={redemptions}
+                feeInfo={feeInfo}
+                onExportCsv={exportRedemptionsCsv}
+                onOpenScanner={() => setActiveTab('team-links')}
+              />
+            )}
             {activeTab === 'referrals' && <ReferralsTab partnerId={partnerProfile?.id} />}
             {activeTab === 'team-links' && <TeamLinksTab partnerId={partnerProfile?.id || ''} />}
             {activeTab === 'pricing' && <PricingTab currentPlan={partnerProfile?.plan || 'starter'} onUpgrade={(planId) => handlePlanUpgrade(planId)} />}

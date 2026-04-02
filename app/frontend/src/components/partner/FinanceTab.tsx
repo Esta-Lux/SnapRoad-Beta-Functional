@@ -20,6 +20,17 @@ interface CreditEntry {
   date: string
 }
 
+interface InvoiceEntry {
+  id: string
+  invoice_number: string
+  month_year: string
+  amount_cents: number
+  status: string
+  due_date?: string
+  generated_at?: string
+  line_items?: Array<{ description: string; amount_cents: number; redemption_count?: number }>
+}
+
 interface FeeInfo {
   current_fee: number
   current_tier: number
@@ -28,6 +39,14 @@ interface FeeInfo {
   total_owed: number
   total_paid: number
   balance_due: number
+  redemptions_until_next_tier?: number
+  next_threshold?: number
+  history?: Array<{
+    month_year: string
+    redemption_count: number
+    total_fees: number
+    last_redemption_at?: string
+  }>
 }
 
 export default function FinanceTab() {
@@ -36,6 +55,7 @@ export default function FinanceTab() {
   const [totalEarned, setTotalEarned] = useState(0)
   const [totalSpent, setTotalSpent] = useState(0)
   const [feeInfo, setFeeInfo] = useState<FeeInfo | null>(null)
+  const [invoices, setInvoices] = useState<InvoiceEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [showAddCreditsModal, setShowAddCreditsModal] = useState(false)
@@ -82,6 +102,12 @@ export default function FinanceTab() {
           if (feeRes.success && feeRes.data) setFeeInfo(feeRes.data as FeeInfo)
         } catch {
           /* fees optional */
+        }
+        try {
+          const invoiceRes = await partnerApi.getInvoices()
+          if (invoiceRes.success && invoiceRes.data) setInvoices(invoiceRes.data as InvoiceEntry[])
+        } catch {
+          /* invoices optional */
         }
       } catch (e) {
         console.error(e)
@@ -144,6 +170,49 @@ export default function FinanceTab() {
     document.body.removeChild(link)
   }
 
+  const handleGenerateInvoiceRecord = async () => {
+    try {
+      const result = await partnerApi.generateInvoice()
+      if (result.success && result.data) {
+        const next = result.data as InvoiceEntry
+        setInvoices((prev) => [next, ...prev.filter((item) => item.month_year !== next.month_year)])
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const downloadInvoiceCsv = (invoice: InvoiceEntry) => {
+    const rows = [
+      ['Invoice Number', invoice.invoice_number],
+      ['Month', invoice.month_year],
+      ['Status', invoice.status],
+      ['Due Date', invoice.due_date || ''],
+      ['Generated At', invoice.generated_at || ''],
+      [''],
+      ['Description', 'Amount (USD)', 'Redemptions'],
+      ...(invoice.line_items || []).map((item) => [
+        item.description,
+        (item.amount_cents / 100).toFixed(2),
+        String(item.redemption_count || ''),
+      ]),
+      [''],
+      ['Total', (invoice.amount_cents / 100).toFixed(2), ''],
+    ]
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `snaproad-invoice-${invoice.invoice_number}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const feeProgress = feeInfo?.next_threshold
+    ? Math.min(100, Math.max(0, ((feeInfo.total_redemptions % 500) / 500) * 100))
+    : 0
+
   return (
     <div className="space-y-6">
       {loadError && (
@@ -169,6 +238,9 @@ export default function FinanceTab() {
             </button>
             <button onClick={handleDownloadStatement} className="px-5 py-2.5 rounded-xl bg-white/10 text-white font-semibold text-sm hover:bg-white/15 flex items-center gap-2">
               <Download size={16} />Statement
+            </button>
+            <button onClick={handleGenerateInvoiceRecord} className="px-5 py-2.5 rounded-xl bg-cyan-500/20 text-cyan-200 font-semibold text-sm hover:bg-cyan-500/30 flex items-center gap-2">
+              <Receipt size={16} />Persist Invoice
             </button>
           </div>
         </div>
@@ -224,6 +296,59 @@ export default function FinanceTab() {
                 </div>
               ))}
             </div>
+          </div>
+          <div className="mt-4 bg-white/[0.02] rounded-xl p-4">
+            <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
+              <span>Progress to next tier</span>
+              <span>{feeInfo.redemptions_until_next_tier ?? 0} redemptions to go</span>
+            </div>
+            <div className="w-full h-2 rounded-full bg-slate-700 overflow-hidden">
+              <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500" style={{ width: `${feeProgress}%` }} />
+            </div>
+          </div>
+          {feeInfo.history && feeInfo.history.length > 0 && (
+            <div className="mt-4">
+              <p className="text-slate-400 text-xs font-medium mb-2">Monthly History</p>
+              <div className="space-y-2">
+                {feeInfo.history.slice(0, 6).map((row) => (
+                  <div key={row.month_year} className="flex items-center justify-between rounded-xl bg-white/[0.02] px-4 py-3 text-sm">
+                    <div>
+                      <p className="text-white font-medium">{row.month_year}</p>
+                      <p className="text-slate-500 text-xs">{row.redemption_count} redemptions</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-amber-300 font-semibold">${row.total_fees.toFixed(2)}</p>
+                      <p className="text-slate-500 text-xs">{row.last_redemption_at ? new Date(row.last_redemption_at).toLocaleDateString() : '—'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {invoices.length > 0 && (
+        <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
+          <h3 className="text-white font-semibold mb-4">Stored Invoices</h3>
+          <div className="space-y-3">
+            {invoices.map((invoice) => (
+              <div key={invoice.id || invoice.invoice_number} className="flex items-center justify-between rounded-xl bg-white/[0.03] px-4 py-3">
+                <div>
+                  <p className="text-white font-medium">{invoice.invoice_number}</p>
+                  <p className="text-slate-500 text-xs">{invoice.month_year} · due {invoice.due_date || '—'}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-amber-300 font-semibold">${(invoice.amount_cents / 100).toFixed(2)}</span>
+                  <button
+                    onClick={() => downloadInvoiceCsv(invoice)}
+                    className="px-3 py-2 rounded-lg bg-white/10 text-slate-200 hover:bg-white/15 text-sm"
+                  >
+                    Download
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

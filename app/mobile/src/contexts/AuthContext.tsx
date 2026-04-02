@@ -20,6 +20,7 @@ interface AuthContextType {
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
   setUserFromApi: (apiUser: ApiUser | null) => void;
+  completeOAuthSignIn: (accessToken: string, refreshToken: string) => Promise<{ ok: boolean; message?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -210,6 +211,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { ok: true, message };
   };
 
+  const completeOAuthSignIn = async (
+    accessToken: string,
+    refreshToken: string,
+  ): Promise<{ ok: boolean; message?: string }> => {
+    setAuthError(null);
+    setIsAuthSubmitting(true);
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (sessionError) {
+        const message = sessionError.message || 'Could not restore your Google session.';
+        setAuthError(message);
+        return { ok: false, message };
+      }
+
+      const result = await api.exchangeSupabaseAccessToken(accessToken);
+      if (!result.success || !result.data) {
+        const message = result.error || 'Could not finish Google sign-in.';
+        setAuthError(message);
+        return { ok: false, message };
+      }
+
+      const apiUser = (result.data as unknown as { user?: Record<string, unknown> }).user;
+      if (!apiUser) {
+        const message = 'Google sign-in completed but no user profile was returned.';
+        setAuthError(message);
+        return { ok: false, message };
+      }
+
+      const role = (apiUser as { role?: string }).role;
+      if (isStaffRole(role) && !allowStaffInDriverApp()) {
+        await api.setToken(null);
+        setAuthError(DRIVER_APP_STAFF_BLOCK_MESSAGE);
+        return { ok: false, message: DRIVER_APP_STAFF_BLOCK_MESSAGE };
+      }
+
+      setUser(mapApiUserToContext(apiUser));
+      return { ok: true };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Could not finish Google sign-in.';
+      setAuthError(message);
+      return { ok: false, message };
+    } finally {
+      setIsAuthSubmitting(false);
+      setIsLoading(false);
+    }
+  };
+
   const logout = async () => {
     await api.logout();
     try {
@@ -257,6 +309,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         updateUser,
         setUserFromApi,
+        completeOAuthSignIn,
       }}
     >
       {children}

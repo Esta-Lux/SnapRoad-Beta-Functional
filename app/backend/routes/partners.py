@@ -1,9 +1,10 @@
 import logging
 import os
 import re
+import json
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, Header, Request
 from typing import Annotated, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from models.schemas import (
     PartnerLocation, PartnerPlanUpdate, PartnerOfferCreate,
     PartnerLoginRequest, PartnerRegisterRequest,
@@ -11,6 +12,8 @@ from models.schemas import (
     CreditUseRequest, QRRedemptionRequest, BoostRequest, BoostCreditsRequest,
 )
 from services.offer_utils import calculate_auto_gems, calculate_free_discount, get_fee_tier_info
+from services.fee_calculator import get_monthly_fee_summary, get_partner_fee_history
+from services.offer_analytics import summarize_offer_analytics
 from services.supabase_service import (
     sb_get_partner, sb_get_partners, sb_update_partner, sb_create_partner,
     sb_get_partner_locations, sb_create_partner_location,
@@ -674,13 +677,30 @@ def redeem_offer(
     background_tasks: BackgroundTasks,
     user: CurrentPartner,
 ):
-    from services.partner_service import partner_service
     from services.websocket_manager import ws_manager
+    from routes.offers import validate_qr_token, complete_offer_redemption
+
     partner_id = _require_owned_partner_id(user)
-    result = partner_service.validate_redemption(request.qr_data, request.staff_id)
+    qr_raw = request.qr_data
+    if isinstance(qr_raw, dict):
+        qr_raw = qr_raw.get("qr_token") or qr_raw.get("token") or json.dumps(qr_raw)
+    validated = validate_qr_token(qr_raw, consume_nonce=True)
+    payload = validated["payload"]
+    offer = validated["offer"]
+    if str(offer.get("partner_id") or "") != str(partner_id):
+        raise HTTPException(status_code=403, detail="This QR code is not valid for your business")
+
+    result = complete_offer_redemption(
+        offer=offer,
+        user_id=str(payload.get("user_id") or ""),
+        scanned_by_user_id=request.staff_id,
+        qr_nonce=validated["nonce"],
+        lat=payload.get("lat"),
+        lng=payload.get("lng"),
+    )
     if result["success"]:
         background_tasks.add_task(ws_manager.notify_partner_redemption, partner_id, result)
-        customer_id = request.qr_data.get("customerId")
+        customer_id = str(payload.get("user_id") or "")
         if customer_id:
             background_tasks.add_task(ws_manager.notify_customer_redeemed, customer_id, result)
     return result
@@ -778,10 +798,9 @@ def _extract_team_token(authorization: Optional[str], payload: dict) -> str:
 def validate_scan(payload: dict, authorization: Annotated[Optional[str], Header()] = None):
     """Validate a QR code scanned via a team link. Token auth instead of partner login."""
     from services.supabase_service import _sb
-    import json
+    from routes.offers import validate_qr_token
 
     token = _extract_team_token(authorization, payload)
-    qr_data = payload.get("qr_data")
     # Verify the team link token
     try:
         link = _sb().table("partner_team_links").select("*").eq("token", token).eq("is_active", True).maybe_single().execute()
@@ -793,37 +812,37 @@ def validate_scan(payload: dict, authorization: Annotated[Optional[str], Header(
         logger.error("validate_scan token validation error: %s", e)
         raise HTTPException(status_code=500, detail="Unable to validate team link")
 
-    # Parse QR data
-    try:
-        data = json.loads(qr_data) if isinstance(qr_data, str) else qr_data
-    except Exception:
-        data = {"raw": qr_data}
+    validated = validate_qr_token(payload.get("qr_data") or payload.get("qr_token"), consume_nonce=False)
+    offer = validated["offer"]
+    qr_payload = validated["payload"]
+    if str(offer.get("partner_id") or "") != str(link.data.get("partner_id") or ""):
+        return {"success": False, "message": "QR code belongs to a different partner"}
 
-    offer_id = data.get("offerId") or data.get("offer_id")
-    if not offer_id:
-        return {"success": False, "message": "No offer ID in QR code"}
-
-    # Look up the offer
+    profile = None
     try:
-        offer = _sb().table("offers").select("*").eq("id", offer_id).maybe_single().execute()
-        if not offer or not offer.data:
-            return {"success": False, "message": "Offer not found"}
+        profile = _sb().table("profiles").select("name,full_name,email").eq("id", qr_payload.get("user_id")).maybe_single().execute()
     except Exception:
-        return {"success": False, "message": "Could not verify offer"}
+        profile = None
+    customer_name = ""
+    if profile and profile.data:
+        customer_name = str(profile.data.get("name") or profile.data.get("full_name") or profile.data.get("email") or "").strip()
+    parts = [p for p in customer_name.split(" ") if p]
+    user_display_name = parts[0] if parts else "Driver"
 
     return {
         "success": True,
         "message": "QR code validated",
         "data": {
             "offer": {
-                "id": offer.data.get("id"),
-                "title": offer.data.get("title", offer.data.get("description", "")[:60]),
-                "business_name": offer.data.get("business_name"),
-                "discount_percent": offer.data.get("discount_percent", 0),
-                "base_gems": offer.data.get("base_gems", 0),
+                "id": offer.get("id"),
+                "title": offer.get("title", str(offer.get("description", ""))[:60]),
+                "business_name": offer.get("business_name"),
+                "discount_percent": offer.get("discount_percent", 0),
+                "base_gems": offer.get("base_gems", 0),
             },
-            "customer_id": data.get("customerId"),
-            "token": data.get("token"),
+            "customer_id": qr_payload.get("user_id"),
+            "user_display_name": user_display_name,
+            "payload": qr_payload,
         },
     }
 
@@ -845,39 +864,124 @@ def get_partner_fees(partner_id: str, user: CurrentPartner):
     partner = sb_get_partner(partner_id)
     if not partner:
         raise HTTPException(status_code=404, detail=MSG_PARTNER_NOT_FOUND)
-    total_redemptions = partner.get("total_redemptions", 0) or 0
+    monthly = get_monthly_fee_summary(partner_id)
     total_owed = partner.get("total_fees_owed", 0) or 0
     total_paid = partner.get("total_fees_paid", 0) or 0
-    tier_info = get_fee_tier_info(total_redemptions)
+    tier_info = get_fee_tier_info(monthly.get("redemption_count", 0))
     return {
         "success": True,
         "data": {
             **tier_info,
+            "month_year": monthly.get("month_year"),
             "total_owed": round(total_owed, 2),
             "total_paid": round(total_paid, 2),
             "balance_due": round(total_owed - total_paid, 2),
+            "total_fees_cents": monthly.get("total_fees_cents", 0),
+            "redemptions_until_next_tier": monthly.get("redemptions_until_next_tier", 0),
+            "next_threshold": monthly.get("next_threshold"),
+            "history": get_partner_fee_history(partner_id),
         },
     }
+
+
+@router.get("/partner/v2/invoices/{partner_id}", responses={403: {"description": "Partner access denied"}})
+def get_partner_invoices(
+    partner_id: str,
+    user: CurrentPartner,
+    limit: Annotated[int, Query(ge=1, le=24)] = 12,
+):
+    _require_owned_partner_id(user, partner_id)
+    try:
+        result = (
+            _sb()
+            .table("partner_invoices")
+            .select("*")
+            .eq("partner_id", partner_id)
+            .order("month_year", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        invoices = result.data or []
+    except Exception:
+        invoices = []
+    return {"success": True, "data": invoices}
+
+
+@router.post("/partner/v2/invoices/{partner_id}/generate", responses={403: {"description": "Partner access denied"}})
+def generate_partner_invoice(
+    partner_id: str,
+    user: CurrentPartner,
+    month_year: Annotated[Optional[str], Query()] = None,
+):
+    _require_owned_partner_id(user, partner_id)
+    summary = get_monthly_fee_summary(partner_id, month_year)
+    month = summary.get("month_year")
+    amount_cents = int(summary.get("total_fees_cents") or 0)
+    generated_at = datetime.now(timezone.utc)
+    due_date = (generated_at + timedelta(days=14)).date().isoformat()
+    invoice_number = f"SR-{partner_id[:6]}-{str(month).replace('-', '')}"
+    payload = {
+        "partner_id": partner_id,
+        "month_year": month,
+        "invoice_number": invoice_number,
+        "amount_cents": amount_cents,
+        "status": "open",
+        "due_date": due_date,
+        "generated_at": generated_at.isoformat(),
+        "line_items": [
+            {
+                "description": f"Redemption fees for {month}",
+                "redemption_count": summary.get("redemption_count", 0),
+                "amount_cents": amount_cents,
+                "current_fee_cents": summary.get("current_fee_cents", 0),
+            }
+        ],
+    }
+    try:
+        result = _sb().table("partner_invoices").upsert(payload, on_conflict="partner_id,month_year").execute()
+        row = result.data[0] if result.data else payload
+    except Exception:
+        row = payload
+    return {"success": True, "data": row}
 
 
 @router.get("/partner/v2/analytics/{partner_id}", responses={403: {"description": "Partner access denied"}})
 def get_partner_analytics(partner_id: str, user: CurrentPartner):
     _require_owned_partner_id(user, partner_id)
     offers = sb_get_offers_by_partner(partner_id)
-    total_redemptions = sum(o.get("redemption_count", 0) or 0 for o in offers)
-    total_views = sum(o.get("views", 0) or 0 for o in offers)
+    totals_by_offer = {str(row.get("offer_id")): row for row in summarize_offer_analytics(limit=500)}
+    total_redemptions = 0
+    total_views = 0
+    total_visits = 0
+    chart_data = []
+    for offer in offers:
+        stats = totals_by_offer.get(str(offer.get("id")), {})
+        views = int(stats.get("views") or offer.get("view_count") or offer.get("views") or 0)
+        visits = int(stats.get("visits") or offer.get("visit_count") or 0)
+        redemptions = int(stats.get("redemptions") or offer.get("redemption_count") or 0)
+        total_views += views
+        total_visits += visits
+        total_redemptions += redemptions
+        chart_data.append({
+            "date": offer.get("business_name") or f"Offer {offer.get('id')}",
+            "revenue": redemptions,
+            "views": views,
+            "visits": visits,
+            "redemptions": redemptions,
+        })
     active_offers = len([o for o in offers if o.get("status") == "active"])
     return {
         "success": True,
         "data": {
             "total_views": total_views,
-            "total_clicks": int(total_views * 0.3),
+            "total_clicks": total_visits,
             "total_redemptions": total_redemptions,
-            "today_redemptions": 0,
-            "revenue": total_redemptions * 8.50,
+            "today_redemptions": total_redemptions,
+            "revenue": round(sum((int(row.get("redemptions") or 0) * 0.2) for row in totals_by_offer.values()), 2),
             "active_offers": active_offers,
             "team_members": 0,
             "conversion_rate": round((total_redemptions / max(total_views, 1)) * 100, 1),
+            "chart_data": chart_data[:20],
         },
     }
 

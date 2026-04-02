@@ -110,19 +110,24 @@ class PartnerApiService {
   }
 
   async validateScan(token: string, qr_data: string): Promise<any> {
-    const result = await this.request('/partner/v2/scan/validate', {
+    const result = await this.request('/api/partner/v2/scan/validate', {
       method: 'POST',
-      body: JSON.stringify({ token, qr_data })
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ qr_data })
     })
+    return result
+  }
 
-    if (result.success) {
-      // Do something on successful validation
-    }
-    else {
-      // Report to user unsuccessful validation
-    }
-
-    return result;
+  async redeemScan(token: string, qr_data: string, staffId: string = 'team_link'): Promise<any> {
+    return this.request('/api/partner/v2/redeem', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ qr_data, staff_id: staffId }),
+    })
   }
 
   logout() {
@@ -265,6 +270,15 @@ class PartnerApiService {
 
   async getFees(): Promise<any> {
     return this.request(`/api/partner/v2/fees/${this.partnerId}`)
+  }
+
+  async getInvoices(limit: number = 12): Promise<any> {
+    return this.request(`/api/partner/v2/invoices/${this.partnerId}?limit=${limit}`)
+  }
+
+  async generateInvoice(monthYear?: string): Promise<any> {
+    const qs = monthYear ? `?month_year=${encodeURIComponent(monthYear)}` : ''
+    return this.request(`/api/partner/v2/invoices/${this.partnerId}/generate${qs}`, { method: 'POST' })
   }
 
   async getReferralLeaderboard(): Promise<any> {

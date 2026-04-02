@@ -4,7 +4,7 @@ import Modal from '../components/common/Modal';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -53,10 +53,12 @@ import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileS
 
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { location } = useLocation();
   const { isLight, colors, toggleTheme } = useTheme();
   const { user, logout, updateUser } = useAuth();
   const updateUserRef = useRef(updateUser);
+  const handledBillingStatusRef = useRef<string | null>(null);
   useEffect(() => {
     updateUserRef.current = updateUser;
   });
@@ -352,6 +354,7 @@ export default function ProfileScreen() {
       const checkoutRes = await api.post<any>('/api/payments/checkout/session', {
         plan_id: plan,
         user_email: user?.email ?? undefined,
+        return_url: Platform.OS === 'web' ? undefined : 'snaproad://billing',
       });
       if (checkoutRes.success) {
         const url = checkoutRes.data?.url ?? (checkoutRes.data as any)?.data?.url;
@@ -367,7 +370,42 @@ export default function ProfileScreen() {
     }
     setShowPlanModal(false);
     await loadData('silent');
-  }, [updateUser, loadData]);
+  }, [updateUser, loadData, user?.email]);
+
+  useEffect(() => {
+    const status = typeof route.params?.status === 'string' ? route.params.status : '';
+    const sessionId = typeof route.params?.session_id === 'string' ? route.params.session_id : '';
+    const key = `${status}:${sessionId}`;
+    if (!status || handledBillingStatusRef.current === key) return;
+    handledBillingStatusRef.current = key;
+
+    const finalizeBilling = async () => {
+      if (status === 'success' && sessionId) {
+        const result = await api.get(`/api/payments/checkout/status/${sessionId}`);
+        if (!result.success) {
+          Alert.alert('Subscription Update', result.error || 'Payment completed, but we could not refresh your plan yet.');
+          return;
+        }
+        await loadData('silent');
+        Alert.alert('Subscription Updated', 'Your subscription is active and your account has been refreshed.');
+        return;
+      }
+
+      if (status === 'cancel') {
+        Alert.alert('Checkout Cancelled', 'Your plan was not changed.');
+        return;
+      }
+
+      if (status === 'portal') {
+        await loadData('silent');
+        Alert.alert('Billing Updated', 'Returned from the billing portal.');
+      }
+    };
+
+    finalizeBilling().catch(() => {
+      Alert.alert('Billing Update', 'Returned from billing, but the app could not refresh your account yet.');
+    });
+  }, [loadData, route.params?.session_id, route.params?.status]);
 
   const syncNotification = useCallback(async (setting: string, enabled: boolean) => {
     setNotifSyncing(true);
@@ -735,7 +773,7 @@ export default function ProfileScreen() {
                 onPress={async () => {
                   try {
                     const res = await api.post<{ success?: boolean; data?: { url?: string } }>('/api/payments/billing-portal', {
-                      return_url: Platform.OS === 'web' ? undefined : 'snaproad://welcome',
+                      return_url: Platform.OS === 'web' ? undefined : 'snaproad://billing/portal',
                     });
                     if (!res.success) {
                       Alert.alert('Manage Subscription', res.error || 'Could not open billing portal.');

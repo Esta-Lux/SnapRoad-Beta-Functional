@@ -6,6 +6,7 @@ export interface Offer {
   gems_reward: number
   redemption_count: number
   views: number
+  visits?: number
   status: 'active' | 'paused' | 'expired'
   created_at: string
   expires_at: string
@@ -15,6 +16,46 @@ export interface Offer {
   is_boosted?: boolean
   boost_multiplier?: number
   boost_expires?: string
+}
+
+export interface PartnerRedemption {
+  id?: string
+  offer_id: string | number
+  offer_name?: string
+  business_name?: string
+  fee_amount?: number
+  fee_cents?: number
+  fee_tier?: number
+  discount_applied?: number
+  user_name?: string
+  customer_id?: string
+  scanned_by_user_id?: string
+  redeemed_at?: string
+  created_at?: string
+}
+
+export interface PartnerFeeHistoryEntry {
+  partner_id: string
+  month_year: string
+  redemption_count: number
+  total_fees_cents: number
+  total_fees: number
+  last_redemption_at?: string
+}
+
+export interface PartnerFeeSummary {
+  current_fee: number
+  current_tier: number
+  tier_range: string
+  total_redemptions: number
+  total_owed: number
+  total_paid: number
+  balance_due: number
+  month_year?: string
+  total_fees_cents?: number
+  redemptions_until_next_tier?: number
+  next_threshold?: number
+  history?: PartnerFeeHistoryEntry[]
 }
 
 export interface PartnerLocation {
@@ -65,6 +106,7 @@ export interface Analytics {
     clicks: number
     redemptions: number
     revenue: number
+    visits?: number
   }>
   geo_data: Array<{
     city: string

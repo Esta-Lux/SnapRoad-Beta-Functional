@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
+import * as ScreenCapture from 'expo-screen-capture';
+import { api } from '../../api/client';
 import type { Offer } from '../../types';
 
 let QRCode: any = null;
@@ -12,6 +14,7 @@ interface Props {
   onDismiss: () => void;
   onRedeem: (offer: Offer) => void;
   onNavigate?: (offer: Offer) => void;
+  userLocation?: { lat: number; lng: number } | null;
 }
 
 function gemColor(discount: number): string {
@@ -21,9 +24,72 @@ function gemColor(discount: number): string {
   return '#22C55E';
 }
 
-export default function OfferRedemptionSheet({ offer, onDismiss, onRedeem, onNavigate }: Props) {
+export default function OfferRedemptionSheet({ offer, onDismiss, onRedeem, onNavigate, userLocation }: Props) {
   const color = gemColor(offer.discount_percent);
   const [showQR, setShowQR] = useState(false);
+  const [qrToken, setQrToken] = useState('');
+  const [qrExpiresAt, setQrExpiresAt] = useState('');
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [nowTs, setNowTs] = useState(Date.now());
+
+  useEffect(() => {
+    if (!showQR) return;
+
+    let active = true;
+    setQrLoading(true);
+    setQrError(null);
+    setQrToken('');
+    setQrExpiresAt('');
+
+    const lat = userLocation?.lat;
+    const lng = userLocation?.lng;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      setQrError('Current location is unavailable. Move closer to the offer and try again.');
+      setQrLoading(false);
+      return;
+    }
+
+    ScreenCapture.preventScreenCaptureAsync().catch(() => {});
+    api.post<any>(`/api/offers/${offer.id}/generate-qr`, { lat, lng })
+      .then((res) => {
+        if (!active) return;
+        if (!res.success) {
+          setQrError(res.error || 'Could not generate a secure QR code right now.');
+          return;
+        }
+        const payload = (res.data as any)?.data ?? res.data ?? {};
+        setQrToken(String(payload.qr_token ?? ''));
+        setQrExpiresAt(String(payload.expires_at ?? ''));
+      })
+      .catch(() => {
+        if (active) setQrError('Could not generate a secure QR code right now.');
+      })
+      .finally(() => {
+        if (active) setQrLoading(false);
+      });
+
+    return () => {
+      active = false;
+      ScreenCapture.allowScreenCaptureAsync().catch(() => {});
+    };
+  }, [offer.id, showQR, userLocation?.lat, userLocation?.lng]);
+
+  useEffect(() => {
+    if (!showQR || !qrExpiresAt) return;
+    const id = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [qrExpiresAt, showQR]);
+
+  const countdownText = (() => {
+    if (!qrExpiresAt) return '';
+    const remainingMs = new Date(qrExpiresAt).getTime() - nowTs;
+    if (remainingMs <= 0) return 'Expired';
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')} remaining`;
+  })();
 
   return (
     <Animated.View entering={SlideInDown.springify().damping(18)} exiting={SlideOutDown.duration(200)} style={styles.container}>
@@ -31,9 +97,16 @@ export default function OfferRedemptionSheet({ offer, onDismiss, onRedeem, onNav
       {showQR ? (
         <View style={styles.qrSection}>
           <Text style={styles.qrTitle}>Show this to redeem</Text>
+          <Text style={styles.qrCountdown}>{countdownText || 'Generating secure QR...'}</Text>
           <View style={styles.qrBox}>
-            {QRCode ? <QRCode value={`snaproad://redeem/${offer.id}`} size={180} backgroundColor="transparent" color="#f8fafc" /> : (
-              <Text style={styles.qrFallback}>QR: snaproad://redeem/{offer.id}</Text>
+            {qrLoading ? (
+              <ActivityIndicator color="#f8fafc" />
+            ) : qrError ? (
+              <Text style={styles.qrFallback}>{qrError}</Text>
+            ) : QRCode && qrToken ? (
+              <QRCode value={qrToken} size={180} backgroundColor="transparent" color="#f8fafc" />
+            ) : (
+              <Text style={styles.qrFallback}>{qrToken || 'QR unavailable right now.'}</Text>
             )}
           </View>
           <Text style={styles.qrBusiness}>{offer.business_name}</Text>
@@ -62,8 +135,12 @@ export default function OfferRedemptionSheet({ offer, onDismiss, onRedeem, onNav
             <Text style={styles.rewardText}>Earn {offer.gems_reward ?? 0} gems</Text>
           </View>
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.redeemBtn} onPress={() => setShowQR(true)}>
-              <Text style={styles.redeemText}>Redeem Offer</Text>
+            <TouchableOpacity style={styles.redeemBtn} onPress={() => onRedeem(offer)}>
+              <Text style={styles.redeemText}>Redeem Now</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.qrBtn} onPress={() => setShowQR(true)}>
+              <Ionicons name="qr-code-outline" size={16} color="#f8fafc" />
+              <Text style={styles.qrBtnText}>Show QR</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.dirBtn} onPress={() => (onNavigate ? onNavigate(offer) : onDismiss())}>
               <Ionicons name="navigate" size={16} color="#60a5fa" />
@@ -112,9 +189,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(59,130,246,0.12)', borderRadius: 16, paddingVertical: 15,
     borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)',
   },
+  qrBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 16,
+    paddingVertical: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  qrBtnText: { color: '#f8fafc', fontSize: 14, fontWeight: '700' },
   dirText: { color: '#60a5fa', fontSize: 14, fontWeight: '700' },
   qrSection: { alignItems: 'center', paddingVertical: 8 },
   qrTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '800', marginBottom: 20 },
+  qrCountdown: { color: '#93c5fd', fontSize: 12, fontWeight: '700', marginTop: -12, marginBottom: 16 },
   qrBox: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 20, padding: 24, marginBottom: 16 },
   qrFallback: { color: '#94a3b8', fontSize: 12, textAlign: 'center' },
   qrBusiness: { color: '#f8fafc', fontSize: 16, fontWeight: '700' },

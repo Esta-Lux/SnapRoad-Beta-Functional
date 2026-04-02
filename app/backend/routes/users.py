@@ -366,6 +366,30 @@ def update_notification_settings(settings: dict, auth_user: CurrentUser):
     return {"success": True, "message": "Settings updated", "data": users_db[user_id].get("notification_settings", current)}
 
 
+@router.post("/user/push-token", responses={400: {"description": "Missing push token"}})
+def register_push_token(body: dict, auth_user: CurrentUser):
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
+    token = str(body.get("token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Missing push token")
+
+    updates = {
+        "expo_push_token": token,
+        "push_token_platform": str(body.get("platform") or "").strip().lower() or None,
+        "push_token_updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _persist_user(user_id, updates)
+    return {
+        "success": True,
+        "message": "Push token registered",
+        "data": {
+            "expo_push_token": token,
+            "push_token_platform": updates["push_token_platform"],
+        },
+    }
+
+
 @router.get("/help/faq")
 def get_faq():
     return {"success": True, "data": faq_data}

@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
-import { storage } from '../utils/storage';
+import { loadCachedLocation, persistCachedLocation } from '../utils/locationCache';
 import type { Coordinate } from '../types';
-
-const LAST_LOC_KEY = 'last_location_v1';
-const PERSIST_THROTTLE_MS = 30_000;
 
 interface LocationState {
   location: Coordinate;
@@ -14,28 +11,6 @@ interface LocationState {
   accuracy: number | null;
   isLocating: boolean;
   permissionDenied: boolean;
-}
-
-function readCachedLocation(): Coordinate | null {
-  const raw = storage.getString(LAST_LOC_KEY);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as { lat?: number; lng?: number; t?: number };
-    const lat = Number(parsed.lat);
-    const lng = Number(parsed.lng);
-    const ts = Number(parsed.t);
-    const isFresh = !Number.isFinite(ts) || Date.now() - ts < 24 * 60 * 60 * 1000;
-    if (Number.isFinite(lat) && Number.isFinite(lng) && isFresh) return { lat, lng };
-  } catch {}
-  return null;
-}
-
-let lastPersistAt = 0;
-function persistLocation(lat: number, lng: number) {
-  const now = Date.now();
-  if (now - lastPersistAt < PERSIST_THROTTLE_MS) return;
-  lastPersistAt = now;
-  storage.set(LAST_LOC_KEY, JSON.stringify({ lat, lng, t: now }));
 }
 
 /** Sentinel until first GPS fix or persisted last location — avoids biasing places/search to a dev default. */
@@ -53,9 +28,8 @@ function smoothHeading(current: number, raw: number): number {
 }
 
 export function useLocation(isNavigating = false) {
-  const cached = readCachedLocation();
   const [state, setState] = useState<LocationState>({
-    location: cached ?? UNKNOWN_LOCATION,
+    location: UNKNOWN_LOCATION,
     heading: 0,
     speed: 0,
     accuracy: null,
@@ -67,6 +41,21 @@ export function useLocation(isNavigating = false) {
   const headingSubRef = useRef<Location.LocationSubscription | null>(null);
   const smoothedRef = useRef(0);
   const bgPermRequested = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCachedLocation().then((cached) => {
+      if (cancelled || !cached) return;
+      setState((prev) => (
+        prev.location.lat === UNKNOWN_LOCATION.lat && prev.location.lng === UNKNOWN_LOCATION.lng
+          ? { ...prev, location: cached }
+          : prev
+      ));
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const startWatching = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -88,7 +77,7 @@ export function useLocation(isNavigating = false) {
       });
       const lat = coarse.coords.latitude;
       const lng = coarse.coords.longitude;
-      persistLocation(lat, lng);
+      persistCachedLocation(lat, lng);
       setState((prev) => ({
         ...prev,
         location: { lat, lng },
@@ -119,7 +108,7 @@ export function useLocation(isNavigating = false) {
         const speedMph = Math.max(0, (loc.coords.speed ?? 0) * 2.237);
         const gpsHeading = loc.coords.heading;
 
-        persistLocation(lat, lng);
+        persistCachedLocation(lat, lng);
 
         const useGpsCourse = typeof gpsHeading === 'number' && gpsHeading >= 0 && speedMph > 3;
 

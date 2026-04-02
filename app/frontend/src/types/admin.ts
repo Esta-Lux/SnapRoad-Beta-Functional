@@ -196,6 +196,45 @@ export interface FinanceData {
   }
 }
 
+export interface AdminFeeSummaryItem {
+  partner_id: string
+  month_year: string
+  redemption_count: number
+  total_fees_cents: number
+  total_fees: number
+  current_fee: number
+  current_tier: number
+  next_threshold: number
+  redemptions_until_next_tier: number
+  last_redemption_at?: string
+}
+
+export interface AdminOfferAnalyticsRow {
+  offer_id: number | string
+  partner_id?: string
+  views: number
+  visits: number
+  redemptions: number
+  latest_at?: string
+}
+
+export interface AdminRealtimeSummary {
+  today_views: number
+  today_visits: number
+  today_redemptions: number
+  top_offers_today: Array<{ offer_id: string; redemptions: number }>
+  top_partners_today: Array<{ partner_id: string; redemptions: number }>
+}
+
+export interface AdminRealtimeFeedItem {
+  event_type: string
+  offer_id?: number | string
+  partner_id?: string
+  created_at?: string
+  lat?: number
+  lng?: number
+}
+
 export interface ReferralAnalyticsData {
   summary: {
     total_signups: number

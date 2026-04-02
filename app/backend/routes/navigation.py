@@ -24,6 +24,7 @@ from config import (
 )
 from middleware.auth import get_current_user
 from database import get_supabase
+from services.cache import cache_get, cache_set
 
 
 class VoiceCommandBody(BaseModel):
@@ -53,6 +54,18 @@ def _resolve_user_scoped_data(auth_user: dict) -> tuple[str, list, list]:
             return user_id, list(user.get("saved_locations", saved_locations)), list(saved_routes)
         user["saved_routes"] = list(saved_routes)
     return user_id, user["saved_locations"], user["saved_routes"]
+
+
+def _nav_offer_distance_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    import math
+
+    r = 3958.8
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lng2 - lng1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 # ==================== SAVED LOCATIONS ====================
@@ -314,6 +327,56 @@ def get_route_notifications(
 
     notifications = notifications[:limit]
     return {"success": True, "data": notifications, "total": len(notifications), "push_eligible": push_eligible}
+
+
+@router.get("/navigation/nearby-offers")
+def get_navigation_nearby_offers(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    trip_id: str = Query(...),
+    auth_user: dict = Depends(get_current_user),
+):
+    from routes.offers import _active_offers_source
+
+    user_id, user_locations, user_routes = _resolve_user_scoped_data(auth_user)
+    prior_visits = users_db.get(user_id, {}).get("saved_locations", user_locations) or user_locations
+    history = users_db.get(user_id, {}).get("saved_routes", user_routes) or user_routes
+    alerted_key = f"nearby-offers-alerted:{trip_id}"
+    alerted_ids = {str(item) for item in (cache_get(alerted_key) or [])}
+
+    ranked = []
+    for offer in _active_offers_source(limit=500):
+        offer_id = str(offer.get("id") or "")
+        if not offer_id or offer_id in alerted_ids:
+            continue
+        offer_lat = float(offer.get("lat") or 0)
+        offer_lng = float(offer.get("lng") or 0)
+        miles = _nav_offer_distance_miles(lat, lng, offer_lat, offer_lng)
+        if miles > 1.0:
+            continue
+
+        score = 0.0
+        offer_type = str(offer.get("offer_type") or ("admin" if offer.get("is_admin_offer") else "partner")).lower()
+        if offer_type == "partner":
+            score += 5
+        score += max(0, 1.2 - miles) * 10
+
+        business_name = str(offer.get("business_name") or "").lower()
+        if any(business_name and business_name in str(loc.get("name") or "").lower() for loc in prior_visits):
+            score += 3
+        if any(business_name and business_name in str(route.get("destination") or "").lower() for route in history):
+            score += 2
+
+        ranked.append({
+            **offer,
+            "distance_miles": round(miles, 2),
+            "score": round(score, 2),
+        })
+
+    ranked.sort(key=lambda item: item.get("score", 0), reverse=True)
+    selected = ranked[:2]
+    cache_set(alerted_key, list(alerted_ids) + [str(item.get("id")) for item in selected], ttl=24 * 60 * 60)
+    return {"success": True, "data": selected, "count": len(selected)}
 
 
 class LeaveEarlyBody(BaseModel):

@@ -18,6 +18,14 @@ from models.schemas import (
 )
 from services.offer_utils import calculate_auto_gems, calculate_free_discount
 from services.cache import cache_delete
+from services.fee_calculator import list_monthly_fee_summaries, get_partner_fee_history
+from services.offer_analytics import (
+    summarize_offer_analytics,
+    recent_offer_feed,
+    map_data_for_day,
+    today_realtime_summary,
+    record_offer_event,
+)
 from services.telemetry_service import telemetry_service
 from services.supabase_service import (
     sb_list_profiles, sb_get_profile, sb_update_profile,
@@ -1293,7 +1301,19 @@ def cancel_boost(boost_id: str):
 
 @router.post("/analytics/track")
 def track_analytics_event(event: AnalyticsEvent):
-    return {"success": True, "message": "Event tracked"}
+    offers = sb_get_offers(limit=500)
+    offer = next((o for o in offers if str(o.get("id")) == str(event.offer_id)), None)
+    if not offer:
+        return {"success": False, "message": "Offer not found"}
+    tracked = record_offer_event(
+        offer=offer,
+        event_type=event.event_type,
+        partner_id=offer.get("partner_id"),
+        user_id=None,
+        lat=(event.user_location or {}).get("lat") if isinstance(event.user_location, dict) else None,
+        lng=(event.user_location or {}).get("lng") if isinstance(event.user_location, dict) else None,
+    )
+    return {"success": True, "message": "Event tracked", "data": tracked}
 
 
 @router.get("/analytics/dashboard")
@@ -1302,18 +1322,50 @@ def get_analytics_dashboard(
     days: Annotated[int, Query(ge=1, le=366)] = 7,
 ):
     redemption_stats = sb_get_redemption_stats()
+    offer_summary = summarize_offer_analytics(limit=200)
     return {
         "success": True,
         "data": {
             "summary": {
-                "total_views": 0,
-                "total_clicks": 0,
+                "total_views": sum(int(row.get("views") or 0) for row in offer_summary),
+                "total_clicks": sum(int(row.get("visits") or 0) for row in offer_summary),
                 "total_redemptions": redemption_stats.get("total", 0),
-                "total_revenue": 0,
+                "total_revenue": sum(int(row.get("redemptions") or 0) for row in offer_summary),
             },
+            "offers": offer_summary[:50],
             "window": {"business_id": business_id, "days": days},
         },
     }
+
+
+@router.get("/admin/fees/summary")
+def get_admin_fees_summary(month_year: Optional[str] = None):
+    return {"success": True, "data": list_monthly_fee_summaries(month_year)}
+
+
+@router.get("/admin/fees/partner/{partner_id}")
+def get_admin_partner_fee_history(partner_id: str, limit: Annotated[int, Query(ge=1, le=36)] = 12):
+    return {"success": True, "data": get_partner_fee_history(partner_id, limit)}
+
+
+@router.get("/admin/offers/analytics")
+def get_admin_offer_analytics(limit: Annotated[int, Query(ge=1, le=500)] = 200):
+    return {"success": True, "data": summarize_offer_analytics(limit)}
+
+
+@router.get("/admin/realtime/summary")
+def get_admin_realtime_summary():
+    return {"success": True, "data": today_realtime_summary()}
+
+
+@router.get("/admin/realtime/feed")
+def get_admin_realtime_feed(limit: Annotated[int, Query(ge=1, le=200)] = 50):
+    return {"success": True, "data": recent_offer_feed(limit)}
+
+
+@router.get("/admin/realtime/map-data")
+def get_admin_realtime_map_data():
+    return {"success": True, "data": map_data_for_day()}
 
 
 # ==================== SUPABASE STATUS ====================

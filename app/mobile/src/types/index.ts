@@ -133,6 +133,10 @@ export interface Offer {
   business_type?: string;
   redeemed?: boolean;
   distance_km?: number;
+  is_admin_offer?: boolean;
+  offer_type?: 'partner' | 'admin';
+  view_count?: number;
+  visit_count?: number;
 }
 
 export interface Challenge {

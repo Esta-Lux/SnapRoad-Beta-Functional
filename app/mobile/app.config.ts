@@ -25,6 +25,10 @@ const resolveApiUrl = (): string => {
 };
 
 const _prod = isProductionBuild();
+const _profile = String(process.env.EAS_BUILD_PROFILE || "").toLowerCase();
+const _includeDevClient =
+  ["development", "development-simulator", "preview"].includes(_profile) ||
+  (!_prod && _profile.length === 0);
 
 export default function expoConfig({ config }: ConfigContext): ExpoConfig {
   return {
@@ -103,7 +107,7 @@ export default function expoConfig({ config }: ConfigContext): ExpoConfig {
       favicon: "./assets/favicon.png",
     },
     plugins: [
-      "expo-dev-client",
+      ...(_includeDevClient ? ["expo-dev-client"] : []),
       [
         "@rnmapbox/maps",
         {
@@ -115,6 +119,22 @@ export default function expoConfig({ config }: ConfigContext): ExpoConfig {
         {
           merchantIdentifier: "merchant.com.snaproad",
           enableGooglePay: true,
+        },
+      ],
+      [
+        "expo-notifications",
+        {
+          icon: "./assets/icon.png",
+          color: "#FF6B2B",
+        },
+      ],
+      [
+        "expo-image-picker",
+        {
+          photosPermission:
+            "SnapRoad needs access to your photos to upload road reports and profile pictures.",
+          cameraPermission:
+            "SnapRoad needs camera access to capture road conditions and incidents.",
         },
       ],
       "expo-location",
@@ -133,6 +153,9 @@ export default function expoConfig({ config }: ConfigContext): ExpoConfig {
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY",
         "STRIPE_PUBLISHABLE_KEY",
       ]),
+      supportEmail: "support@snaproad.co",
+      iosAppStoreId: "",
+      androidPackage: "com.snaproad.app",
       eas: {
         projectId: "b800018b-79d3-4b8e-bbad-f5d628ee6a60",
       },

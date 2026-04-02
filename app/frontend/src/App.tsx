@@ -18,6 +18,11 @@ import { NavigationCoreProvider } from './contexts/NavigationCoreContext'
 import { MapboxProvider } from './contexts/MapboxContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import TeamScanPage from './pages/TeamScanPage'
+import RealtimeDashboard from './pages/Admin/RealtimeDashboard'
+import OffersUploadPage from './pages/Admin/OffersUploadPage'
+import OffersManagePage from './pages/Admin/OffersManagePage'
+import BillingPage from './pages/PartnerPortal/BillingPage'
+import ScannerPage from './pages/PartnerPortal/ScannerPage'
 
 function App() {
   return (
@@ -50,8 +55,13 @@ function App() {
           <Route path="/portal/partner/welcome" element={<PartnerWelcomePage />} />
           <Route path="/portal/partner/sign-in" element={<PartnerSignInPage />} />
           <Route path="/portal/partner" element={<PartnerGuard><PartnerDashboard /></PartnerGuard>} />
+          <Route path="/portal/partner/billing" element={<PartnerGuard><BillingPage /></PartnerGuard>} />
+          <Route path="/portal/partner/scanner" element={<PartnerGuard><ScannerPage /></PartnerGuard>} />
           <Route path="/portal/admin-sr2025secure/sign-in" element={<AdminSignInPage />} />
           <Route path="/portal/admin-sr2025secure" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
+          <Route path="/portal/admin-sr2025secure/realtime" element={<AdminGuard><RealtimeDashboard /></AdminGuard>} />
+          <Route path="/portal/admin-sr2025secure/offers/upload" element={<AdminGuard><OffersUploadPage /></AdminGuard>} />
+          <Route path="/portal/admin-sr2025secure/offers/manage" element={<AdminGuard><OffersManagePage /></AdminGuard>} />
           <Route path="/partner" element={<Navigate to="/portal/partner" replace />} />
           <Route path="/admin" element={<Navigate to="/portal/admin-sr2025secure" replace />} />
           <Route path="/login" element={<Navigate to="/driver/auth" replace />} />
