@@ -30,6 +30,20 @@ const _includeDevClient =
   ["development", "development-simulator", "preview"].includes(_profile) ||
   (!_prod && _profile.length === 0);
 
+function resolveSentryExpoPlugin(): string | [string, Record<string, string>] {
+  if (envAny(["SENTRY_ORG"], "").trim() && envAny(["SENTRY_PROJECT"], "").trim()) {
+    return [
+      "@sentry/react-native/expo",
+      {
+        url: "https://sentry.io/",
+        organization: envAny(["SENTRY_ORG"]).trim(),
+        project: envAny(["SENTRY_PROJECT"]).trim(),
+      },
+    ];
+  }
+  return "@sentry/react-native/expo";
+}
+
 export default function expoConfig({ config }: ConfigContext): ExpoConfig {
   return {
     ...config,
@@ -108,6 +122,8 @@ export default function expoConfig({ config }: ConfigContext): ExpoConfig {
     },
     plugins: [
       ...(_includeDevClient ? ["expo-dev-client"] : []),
+      // Native + EAS source map wiring; set SENTRY_ORG, SENTRY_PROJECT, SENTRY_AUTH_TOKEN on EAS for uploads.
+      resolveSentryExpoPlugin(),
       [
         "@rnmapbox/maps",
         {
@@ -153,6 +169,7 @@ export default function expoConfig({ config }: ConfigContext): ExpoConfig {
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY",
         "STRIPE_PUBLISHABLE_KEY",
       ]),
+      sentryDsn: envAny(["EXPO_PUBLIC_SENTRY_DSN", "SENTRY_DSN"]),
       supportEmail: "support@snaproad.co",
       iosAppStoreId: "",
       androidPackage: "com.snaproad.app",

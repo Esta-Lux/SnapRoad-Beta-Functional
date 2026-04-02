@@ -31,6 +31,26 @@ import AppTour from './src/components/gamification/AppTour';
 import LegalConsentGate from './src/components/legal/LegalConsentGate';
 import { storage } from './src/utils/storage';
 import { getPathFromUrl, parseParamsFromUrl } from './src/utils/deepLinks';
+import * as Sentry from '@sentry/react-native';
+
+Sentry.init({
+  dsn: 'https://7aa7280b39975e4a9e09904bd0c47a9d@o4511064446271488.ingest.us.sentry.io/4511148963004416',
+
+  // Adds more context data to events (IP address, cookies, user, etc.)
+  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+  sendDefaultPii: true,
+
+  // Enable Logs
+  enableLogs: true,
+
+  // Configure Session Replay
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1,
+  integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
+
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+  // spotlight: __DEV__,
+});
 
 const APP_IS_PRODUCTION =
   String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -382,7 +402,7 @@ function ApiConfigScreen({ message }: { message: string }) {
   );
 }
 
-export default function App() {
+export default Sentry.wrap(function App() {
   const apiConfigErr = getApiMisconfigurationMessage();
   if (apiConfigErr) {
     return <ApiConfigScreen message={apiConfigErr} />;
@@ -403,4 +423,4 @@ export default function App() {
       </GestureHandlerRootView>
     </AppErrorBoundary>
   );
-}
+});
