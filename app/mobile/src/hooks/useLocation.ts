@@ -13,9 +13,22 @@ interface LocationState {
   permissionDenied: boolean;
 }
 
-/** Sentinel until first GPS fix or persisted last location — avoids biasing places/search to a dev default. */
 const UNKNOWN_LOCATION: Coordinate = { lat: 0, lng: 0 };
 const HEADING_SMOOTHING = 0.2;
+const SPEED_SMOOTHING = 0.25;
+const LOW_SPEED_JUMP_METERS = 120;
+
+function haversineMeters(a: Coordinate, b: Coordinate): number {
+  const R = 6371000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const x =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
 
 function smoothHeading(current: number, raw: number): number {
   let delta = raw - current;
@@ -40,6 +53,7 @@ export function useLocation(isNavigating = false) {
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const headingSubRef = useRef<Location.LocationSubscription | null>(null);
   const smoothedRef = useRef(0);
+  const hasHeadingRef = useRef(false);
   const bgPermRequested = useRef(false);
 
   useEffect(() => {
@@ -68,7 +82,7 @@ export function useLocation(isNavigating = false) {
       bgPermRequested.current = true;
       try {
         await Location.requestBackgroundPermissionsAsync();
-      } catch { /* user denied — foreground-only nav still works */ }
+      } catch { /* foreground-only nav */ }
     }
 
     try {
@@ -107,21 +121,39 @@ export function useLocation(isNavigating = false) {
         const lng = loc.coords.longitude;
         const speedMph = Math.max(0, (loc.coords.speed ?? 0) * 2.237);
         const gpsHeading = loc.coords.heading;
+        const nextCoord = { lat, lng };
 
         persistCachedLocation(lat, lng);
 
         const useGpsCourse = typeof gpsHeading === 'number' && gpsHeading >= 0 && speedMph > 3;
 
         setState((prev) => {
+          const movedMeters = haversineMeters(prev.location, nextCoord);
+          if (
+            prev.location.lat !== UNKNOWN_LOCATION.lat &&
+            prev.location.lng !== UNKNOWN_LOCATION.lng &&
+            prev.speed < 8 &&
+            speedMph < 8 &&
+            movedMeters > LOW_SPEED_JUMP_METERS
+          ) {
+            return { ...prev, isLocating: false, accuracy: loc.coords.accuracy ?? prev.accuracy };
+          }
+
           let newHeading = prev.heading;
           if (useGpsCourse) {
-            smoothedRef.current = smoothHeading(smoothedRef.current, gpsHeading);
+            if (!hasHeadingRef.current) {
+              smoothedRef.current = gpsHeading;
+              hasHeadingRef.current = true;
+            } else {
+              smoothedRef.current = smoothHeading(smoothedRef.current, gpsHeading);
+            }
             newHeading = smoothedRef.current;
           }
+          const smoothSpeed = prev.speed + (speedMph - prev.speed) * SPEED_SMOOTHING;
           return {
             ...prev,
-            location: { lat, lng },
-            speed: speedMph,
+            location: nextCoord,
+            speed: smoothSpeed,
             accuracy: loc.coords.accuracy ?? null,
             isLocating: false,
             heading: newHeading,
@@ -135,7 +167,12 @@ export function useLocation(isNavigating = false) {
       if (typeof deg !== 'number' || !Number.isFinite(deg)) return;
       setState((prev) => {
         if (prev.speed > 3) return prev;
-        smoothedRef.current = smoothHeading(smoothedRef.current, deg);
+        if (!hasHeadingRef.current) {
+          smoothedRef.current = deg;
+          hasHeadingRef.current = true;
+        } else {
+          smoothedRef.current = smoothHeading(smoothedRef.current, deg);
+        }
         return { ...prev, heading: smoothedRef.current };
       });
     });

@@ -1,5 +1,6 @@
 import { useRef, useMemo } from 'react';
 import type { DrivingMode } from '../types';
+import { DRIVING_MODES } from '../constants/modes';
 
 interface CameraParams {
   speed: number;
@@ -25,12 +26,11 @@ interface SpeedZoomPoint { speed: number; zoom: number }
 
 const SPEED_ZOOM_CURVES: Record<DrivingMode, SpeedZoomPoint[]> = {
   calm: [
-    { speed: 0, zoom: 17.5 },
-    { speed: 10, zoom: 17.0 },
-    { speed: 25, zoom: 16.5 },
-    { speed: 45, zoom: 16.0 },
-    { speed: 65, zoom: 15.5 },
-    { speed: 80, zoom: 15.0 },
+    { speed: 0, zoom: 17.0 },
+    { speed: 15, zoom: 16.5 },
+    { speed: 30, zoom: 16.0 },
+    { speed: 50, zoom: 15.5 },
+    { speed: 70, zoom: 15.0 },
   ],
   adaptive: [
     { speed: 0, zoom: 17.8 },
@@ -43,48 +43,16 @@ const SPEED_ZOOM_CURVES: Record<DrivingMode, SpeedZoomPoint[]> = {
     { speed: 0, zoom: 18.0 },
     { speed: 20, zoom: 17.5 },
     { speed: 40, zoom: 17.0 },
-    { speed: 60, zoom: 16.2 },
+    { speed: 60, zoom: 16.3 },
     { speed: 80, zoom: 15.5 },
     { speed: 100, zoom: 15.0 },
   ],
 };
 
-const MODE_CONFIG: Record<DrivingMode, {
-  basePitch: number;
-  minPitch: number;
-  maxPitch: number;
-  basePadBottom: number;
-  padTopSpeed: number;
-  turnApproachPadBoost: number;
-  transitionMs: number;
-}> = {
-  calm: {
-    basePitch: 50,
-    minPitch: 40,
-    maxPitch: 58,
-    basePadBottom: 180,
-    padTopSpeed: 60,
-    turnApproachPadBoost: 40,
-    transitionMs: 1000,
-  },
-  adaptive: {
-    basePitch: 48,
-    minPitch: 35,
-    maxPitch: 55,
-    basePadBottom: 160,
-    padTopSpeed: 50,
-    turnApproachPadBoost: 30,
-    transitionMs: 700,
-  },
-  sport: {
-    basePitch: 42,
-    minPitch: 25,
-    maxPitch: 50,
-    basePadBottom: 140,
-    padTopSpeed: 40,
-    turnApproachPadBoost: 20,
-    transitionMs: 350,
-  },
+const ANIM_DURATIONS: Record<DrivingMode, { highway: number; city: number; slow: number }> = {
+  calm: { highway: 500, city: 700, slow: 900 },
+  adaptive: { highway: 300, city: 500, slow: 800 },
+  sport: { highway: 200, city: 350, slow: 500 },
 };
 
 function interpolateZoom(speed: number, curve: SpeedZoomPoint[]): number {
@@ -100,15 +68,7 @@ function interpolateZoom(speed: number, curve: SpeedZoomPoint[]): number {
   return curve[curve.length - 1].zoom;
 }
 
-/**
- * Cinematic camera controller for navigation.
- *
- * - Per-mode speed-to-zoom curves with smooth interpolation
- * - Dynamic pitch that flattens at higher speeds for stability
- * - Approaching-turn padding boost to show more road ahead
- * - Mode-specific animation timing (calm=smooth, sport=snappy)
- * - Works across all 4 map styles (Standard, Satellite, Streets, Dark)
- */
+/** Cinematic follow camera: pitch/padding from `DRIVING_MODES`, speed–zoom curves per mode. */
 export function useCameraController({
   speed,
   drivingMode,
@@ -118,34 +78,50 @@ export function useCameraController({
   nextStepDistance,
 }: CameraParams): CameraSettings | null {
   const prevZoom = useRef(17);
-  const prevPitch = useRef(48);
+  const prevPitch = useRef(55);
+  const prevHeading = useRef<number | null>(null);
 
   return useMemo(() => {
     if (!isNavigating || !cameraLocked) return null;
 
-    const cfg = MODE_CONFIG[drivingMode] ?? MODE_CONFIG.adaptive;
+    const cfg = DRIVING_MODES[drivingMode];
     const curve = SPEED_ZOOM_CURVES[drivingMode] ?? SPEED_ZOOM_CURVES.adaptive;
+    const durations = ANIM_DURATIONS[drivingMode] ?? ANIM_DURATIONS.adaptive;
     const speedMph = Math.max(0, speed);
 
-    // --- Zoom: interpolate along the mode's speed curve ---
-    const rawZoom = interpolateZoom(speedMph, curve);
+    const approachingTurn = nextStepDistance != null && nextStepDistance < 300;
+    const turnZoomBoost = approachingTurn ? 0.25 : 0;
+    const rawZoom = interpolateZoom(speedMph, curve) + turnZoomBoost;
     const smoothedZoom = lerp(prevZoom.current, rawZoom, 0.3);
     prevZoom.current = smoothedZoom;
 
-    // --- Pitch: flattens at speed for visual stability ---
-    const speedFactor = Math.min(speedMph / 70, 1);
-    const rawPitch = cfg.basePitch - speedFactor * (cfg.basePitch - cfg.minPitch);
-    const clampedPitch = Math.max(cfg.minPitch, Math.min(cfg.maxPitch, rawPitch));
+    const basePitch = cfg.navPitch;
+    const speedFactor = Math.min(speedMph / 80, 1);
+    const rawPitch = basePitch - speedFactor * 15;
+    const clampedPitch = Math.max(basePitch - 20, Math.min(basePitch, rawPitch));
     const smoothedPitch = lerp(prevPitch.current, clampedPitch, 0.25);
     prevPitch.current = smoothedPitch;
 
-    // --- Padding: base + speed offset + turn-approach boost ---
-    const speedPadTop = Math.min(speedMph * 0.8, cfg.padTopSpeed);
-    const approachingTurn = nextStepDistance != null && nextStepDistance < 300;
-    const turnBoost = approachingTurn ? cfg.turnApproachPadBoost : 0;
+    const turnBoost = approachingTurn ? 40 : 0;
+    const paddingBottom = cfg.cameraPaddingBottom + turnBoost;
+    const paddingTop = Math.min(speedMph * 0.8, 60);
 
-    const paddingBottom = cfg.basePadBottom + turnBoost;
-    const paddingTop = speedPadTop;
+    let animDuration: number;
+    if (speedMph > 50) animDuration = durations.highway;
+    else if (speedMph > 20) animDuration = durations.city;
+    else animDuration = durations.slow;
+
+    if (typeof heading === 'number' && Number.isFinite(heading)) {
+      const prev = prevHeading.current;
+      prevHeading.current = heading;
+      if (typeof prev === 'number') {
+        let delta = Math.abs(heading - prev);
+        if (delta > 180) delta = 360 - delta;
+        if (delta > 18 && speedMph < 20) {
+          animDuration = Math.max(160, Math.round(animDuration * 0.7));
+        }
+      }
+    }
 
     return {
       followZoomLevel: Math.round(smoothedZoom * 10) / 10,
@@ -156,7 +132,7 @@ export function useCameraController({
         paddingLeft: 0,
         paddingRight: 0,
       },
-      animationDuration: cfg.transitionMs,
+      animationDuration: animDuration,
     };
-  }, [speed, drivingMode, isNavigating, cameraLocked, nextStepDistance]);
+  }, [speed, drivingMode, isNavigating, cameraLocked, heading, nextStepDistance]);
 }

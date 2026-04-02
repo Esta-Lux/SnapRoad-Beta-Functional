@@ -16,7 +16,8 @@
     "eas:build:dev:ios-sim": "eas build --profile development-simulator --platform ios",
     "eas:build:prod:ios": "eas build --profile production --platform ios",
     "eas:build:prod:android": "eas build --profile production --platform android",
-    "eas:submit:ios": "eas submit --platform ios --latest",
+    "eas:submit:ios": "node scripts/submit-ios-testflight.cjs",
+    "eas:submit:ios:interactive": "eas submit --platform ios --latest",
     "android:sha1": "bash scripts/print-android-sha1.sh",
     "postinstall": "node scripts/restore-expo-vector-fonts.cjs"
   },

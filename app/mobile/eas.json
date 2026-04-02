@@ -3,6 +3,14 @@
     "version": ">= 14.0.0",
     "appVersionSource": "remote"
   },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleTeamId": "F9JGAWBHPZ",
+        "appleId": "riyan@snaproad.co"
+      }
+    }
+  },
   "build": {
     "development": {
       "developmentClient": true,

@@ -59,6 +59,7 @@ export function useNavigation(params: {
   const offRouteSinceRef = useRef<number | null>(null);
   const rerouteInFlightRef = useRef(false);
   const lastRerouteAtRef = useRef(0);
+  const navSessionStartRef = useRef<number>(0);
 
   // --- Fetch directions ---
   const fetchDirections = useCallback(async (
@@ -128,6 +129,8 @@ export function useNavigation(params: {
   const startNavigation = useCallback(() => {
     if (!navigationData) return;
     configureAudioSession();
+    stopSpeaking();
+    navSessionStartRef.current = Date.now();
     setIsNavigating(true);
     isNavigatingRef.current = true;
     traveledRef.current = 0;
@@ -138,11 +141,31 @@ export function useNavigation(params: {
     setShowRoutePreview(false);
     const dest = navigationData.destination.name ?? 'your destination';
     const etaMin = Math.round(navigationData.duration / 60);
-    const etaStr = etaMin < 60 ? `About ${etaMin} minutes` : `About ${Math.floor(etaMin / 60)} hours and ${etaMin % 60} minutes`;
-    speak(`Starting navigation to ${dest}. ${etaStr}.`, 'high', drivingMode);
+    const firstStep = navigationData.steps?.[0];
+    const firstInstr = firstStep?.instruction ? ` ${firstStep.instruction}.` : '';
+    if (drivingMode === 'sport') {
+      speak(`${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
+    } else if (drivingMode === 'calm') {
+      const etaStr = etaMin < 60 ? `about ${etaMin} minutes` : `about ${Math.floor(etaMin / 60)} hours`;
+      speak(`Navigating to ${dest}, ${etaStr} away.${firstInstr}`, 'high', drivingMode);
+    } else {
+      speak(`Starting navigation to ${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
+    }
   }, [navigationData, drivingMode]);
 
   const stopNavigation = useCallback(() => {
+    const sessionAge = Date.now() - navSessionStartRef.current;
+    if (sessionAge < 3000) {
+      setIsNavigating(false);
+      isNavigatingRef.current = false;
+      stopSpeaking();
+      setNavigationData(null);
+      setAvailableRoutes([]);
+      setLiveEta(null);
+      setSelectedDestination(null);
+      tripStartTimeRef.current = null;
+      return;
+    }
     setIsNavigating(false);
     isNavigatingRef.current = false;
     stopSpeaking();
@@ -302,9 +325,13 @@ export function useNavigation(params: {
     const step = navigationData.steps[stepIndex];
     if (!step?.instruction) return;
     const nextStep = navigationData.steps[stepIndex + 1] ?? null;
+    const nextManeuver = navigationData.steps[stepIndex + 1];
+    const liveDistToNext = nextManeuver && isFinite(nextManeuver.lat) && isFinite(nextManeuver.lng)
+      ? haversineMeters(userLocation.lat, userLocation.lng, nextManeuver.lat, nextManeuver.lng)
+      : step.distanceMeters;
     const phrase = formatTurnInstruction(
       step.instruction,
-      step.distanceMeters,
+      liveDistToNext,
       step.maneuver,
       drivingMode,
       step.intersections,
@@ -318,7 +345,7 @@ export function useNavigation(params: {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       speak(phrase, 'normal', drivingMode);
     }
-  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode]);
+  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation]);
 
   // --- Early turn warnings (500ft and 150ft before next step) ---
   const earlyWarningRef = useRef<{ stepIdx: number; spoke500: boolean; spoke150: boolean }>({ stepIdx: -1, spoke500: false, spoke150: false });
@@ -328,19 +355,15 @@ export function useNavigation(params: {
     const nextIdx = currentStepIndex + 1;
     if (nextIdx >= steps.length) return;
 
-    let cumulative = 0;
-    for (let i = 0; i <= currentStepIndex && i < steps.length; i++) {
-      cumulative += steps[i].distanceMeters ?? 0;
-    }
-    const nextStepStart = cumulative;
-    const distToNext = nextStepStart - progressAlongRouteMeters;
-
     if (earlyWarningRef.current.stepIdx !== nextIdx) {
       earlyWarningRef.current = { stepIdx: nextIdx, spoke500: false, spoke150: false };
     }
     const w = earlyWarningRef.current;
     const nextStep = steps[nextIdx];
     if (!nextStep?.instruction) return;
+    if (!isFinite(nextStep.lat) || !isFinite(nextStep.lng)) return;
+
+    const distToNext = haversineMeters(userLocation.lat, userLocation.lng, nextStep.lat, nextStep.lng);
 
     const FEET_500 = 152;
     const FEET_150 = 46;
@@ -354,7 +377,7 @@ export function useNavigation(params: {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       speak(nextStep.instruction, 'normal', drivingMode);
     }
-  }, [isNavigating, navigationData?.steps, currentStepIndex, progressAlongRouteMeters, drivingMode]);
+  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation]);
 
   // --- Arrival announcement ---
   const hasAnnouncedArrival = useRef(false);
@@ -369,7 +392,9 @@ export function useNavigation(params: {
     const dest = navigationData.destination.name ?? 'your destination';
     const arrivalMsg = drivingMode === 'calm'
       ? `You've arrived at ${dest}. Hope you had a nice drive.`
-      : `You've arrived at ${dest}. Have a great day!`;
+      : drivingMode === 'sport'
+        ? `You've arrived at ${dest}.`
+        : `You've arrived at ${dest}. Have a great day!`;
     speak(arrivalMsg, 'high', drivingMode);
   }, [isNavigating, liveEta?.distanceMiles, navigationData?.destination, drivingMode]);
 
