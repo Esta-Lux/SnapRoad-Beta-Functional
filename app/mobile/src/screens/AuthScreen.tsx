@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { friendlySupabaseAuthErrorMessage } from '../utils/deepLinks';
 
 function getPasswordStrength(pw: string): { label: string; color: string; level: number } {
   if (pw.length < 6) return { label: 'Weak password', color: '#EF4444', level: 1 };
@@ -140,12 +141,16 @@ export default function AuthScreen({ navigation, route }: Props) {
       if (!data?.url) throw new Error('No OAuth URL returned');
       const { Linking } = require('react-native');
       await Linking.openURL(data.url);
-    } catch (e: any) {
-      const raw = String(e?.message || e || '');
-      let friendly = 'Google sign-in is not available right now. Please sign in with email or try again later.';
+    } catch (e: unknown) {
+      const raw = String(e instanceof Error ? e.message : e || '');
+      let friendly: string;
       if (/provider is not enabled|unsupported provider/i.test(raw)) {
         friendly =
           'Google sign-in is not available right now. Please use email sign-in, or contact support if this keeps happening.';
+      } else if (/invalid\s*api\s*key/i.test(raw)) {
+        friendly = friendlySupabaseAuthErrorMessage(raw);
+      } else {
+        friendly = 'Google sign-in is not available right now. Please sign in with email or try again later.';
       }
       setLocalError(friendly);
     } finally {

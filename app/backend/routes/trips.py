@@ -6,7 +6,7 @@ import logging
 from models.schemas import TripResult, FuelLogCreate
 from middleware.auth import get_current_user, get_current_user_optional
 from pydantic import BaseModel
-from uuid import uuid4
+from uuid import UUID, uuid4
 from services.mock_data import (
     users_db, current_user_id, trips_db, fuel_logs, FUEL_PRICES, XP_CONFIG,
     create_new_user,
@@ -148,6 +148,10 @@ def _get_trip_by_id_supabase(user: dict, trip_id: str) -> dict:
     uid = _trip_user_id(user)
     if not uid:
         raise HTTPException(status_code=401, detail="Invalid token")
+    try:
+        UUID(str(trip_id).strip())
+    except ValueError:
+        return {"success": False, "message": MSG_TRIP_NOT_FOUND}
     sb = get_supabase()
     res = (
         sb.table("trips")
@@ -324,6 +328,37 @@ def get_recent_trips_mobile(
         _trips_log.warning("trips/history/recent: %s", exc)
 
     return {"success": True, "data": []}
+
+
+@router.get("/trips/weekly-insights", responses=_LEGACY_503_RESPONSES)
+def get_weekly_insights(user: OptionalUser):
+    """Must be registered before `/trips/{trip_id}` so `weekly-insights` is not parsed as a UUID trip id."""
+    if ENVIRONMENT == "production":
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return _weekly_insights_supabase(user)
+    _legacy_trips_guard()
+    cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    week_trips = [t for t in trips_db if t.get("date", "") >= cutoff_date]
+
+    if not week_trips:
+        return _EMPTY_WEEK_RESPONSE
+
+    total_miles, total_gems, avg_safety = _weekly_trip_stats(week_trips)
+    best_day = _best_safety_day(week_trips)
+    summary, tip = _ai_weekly_summary(week_trips, total_miles, avg_safety, best_day)
+
+    return {
+        "summary": summary,
+        "fuel_saved": round(total_miles * 0.03, 1),
+        "incidents_avoided": len(week_trips),
+        "best_day": best_day,
+        "safety_trend": _safety_trend(avg_safety),
+        "gems_earned_week": total_gems,
+        "miles_this_week": round(total_miles, 1),
+        "trips_this_week": len(week_trips),
+        "ai_tip": tip,
+    }
 
 
 @router.get("/trips/{trip_id}", responses=_LEGACY_503_RESPONSES)
@@ -754,36 +789,6 @@ def _weekly_insights_supabase(user: dict) -> dict:
     total_miles, total_gems, avg_safety = _weekly_trip_stats(week_trips)
     best_day = _best_safety_day(week_trips)
     summary, tip = _ai_weekly_summary(week_trips, total_miles, avg_safety, best_day)
-    return {
-        "summary": summary,
-        "fuel_saved": round(total_miles * 0.03, 1),
-        "incidents_avoided": len(week_trips),
-        "best_day": best_day,
-        "safety_trend": _safety_trend(avg_safety),
-        "gems_earned_week": total_gems,
-        "miles_this_week": round(total_miles, 1),
-        "trips_this_week": len(week_trips),
-        "ai_tip": tip,
-    }
-
-
-@router.get("/trips/weekly-insights", responses=_LEGACY_503_RESPONSES)
-def get_weekly_insights(user: OptionalUser):
-    if ENVIRONMENT == "production":
-        if not user:
-            raise HTTPException(status_code=401, detail="Authentication required")
-        return _weekly_insights_supabase(user)
-    _legacy_trips_guard()
-    cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-    week_trips = [t for t in trips_db if t.get("date", "") >= cutoff_date]
-
-    if not week_trips:
-        return _EMPTY_WEEK_RESPONSE
-
-    total_miles, total_gems, avg_safety = _weekly_trip_stats(week_trips)
-    best_day = _best_safety_day(week_trips)
-    summary, tip = _ai_weekly_summary(week_trips, total_miles, avg_safety, best_day)
-
     return {
         "summary": summary,
         "fuel_saved": round(total_miles * 0.03, 1),

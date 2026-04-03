@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
 const extra = Constants.expoConfig?.extra ?? {};
@@ -24,7 +25,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+    // PKCE OAuth returns `snaproad://auth?code=...`; we exchange in App.tsx. Web can still parse hash URLs.
+    detectSessionInUrl: Platform.OS === 'web',
   },
 });
 

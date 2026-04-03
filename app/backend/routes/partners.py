@@ -307,7 +307,6 @@ def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partne
     new_offer = sb_create_offer({
         "partner_id": owned_partner_id,
         "location_id": location["id"],
-        "title": offer.title,
         "business_name": business_name,
         "business_type": business_type,
         "description": offer.description,
@@ -325,7 +324,10 @@ def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partne
         "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
     })
     if not new_offer:
-        return {"success": False, "message": "Failed to create offer"}
+        return {
+            "success": False,
+            "message": "Could not save the offer. Check that your location is valid and try again. If this keeps happening, contact support.",
+        }
     return {"success": True, "message": f"Offer created at {location['name']}", "data": new_offer}
 
 
@@ -358,8 +360,14 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: Current
     premium_discount = offer.discount_percent
     free_discount = calculate_free_discount(premium_discount)
 
+    fallback_bn = (
+        (partner.get("business_name") or "").strip()
+        or (location.get("name") or "").strip()
+        or "Partner offer"
+    )
+    display_name = (offer.title or "").strip() or fallback_bn
     updates = {
-        "title": offer.title,
+        "business_name": display_name,
         "description": offer.description,
         "discount_percent": premium_discount,
         "premium_discount_percent": premium_discount,
@@ -369,7 +377,9 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: Current
         "image_url": offer.image_url,
         "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
     }
-    sb_update_offer(offer_id, updates)
+    ok = sb_update_offer(offer_id, updates)
+    if not ok:
+        return {"success": False, "message": "Could not update the offer. Please try again."}
     return {"success": True, "message": "Offer updated successfully"}
 
 

@@ -42,11 +42,28 @@ def llm_api_key() -> str:
     )
 
 
+def _normalize_http_base(raw: str) -> str:
+    """Ensure OpenAI-compatible clients get an absolute URL (avoids UnsupportedProtocol)."""
+    u = _strip(raw)
+    if not u:
+        return ""
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    return f"https://{u.lstrip('/')}"
+
+
 def llm_base_url() -> Optional[str]:
-    """OpenAI-compatible API root including /v1 (e.g. NVIDIA integrate)."""
-    if llm_provider() != "nvidia":
-        return None
-    return _strip(os.environ.get("NVIDIA_API_BASE")) or "https://integrate.api.nvidia.com/v1"
+    """OpenAI-compatible API root including /v1 (NVIDIA integrate, Azure OpenAI, etc.)."""
+    prov = llm_provider()
+    if prov == "nvidia":
+        raw = _strip(os.environ.get("NVIDIA_API_BASE")) or "https://integrate.api.nvidia.com/v1"
+        return _normalize_http_base(raw)
+    if prov == "openai":
+        raw = _strip(os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_API_BASE"))
+        if not raw:
+            return None
+        return _normalize_http_base(raw)
+    return None
 
 
 def chat_completion_model() -> str:

@@ -2,7 +2,6 @@ import React from 'react';
 import {
   Alert,
   Modal,
-  Platform,
   Share,
   StyleSheet,
   Text,
@@ -79,14 +78,15 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
       action: () => {
         onClose();
         const msg =
-          'Check out SnapRoad — the AI driving companion for safer, more rewarding drives.';
-        const sharePayload =
-          Platform.OS === 'ios'
-            ? { title: 'SnapRoad', message: msg, url: DEFAULT_SHARE_URL }
-            : { title: 'SnapRoad', message: `${msg} ${DEFAULT_SHARE_URL}` };
-        requestAnimationFrame(() => {
-          Share.share(sharePayload).catch(() => {});
-        });
+          `Check out SnapRoad — the AI driving companion for safer, more rewarding drives.\n${DEFAULT_SHARE_URL}`;
+        // Defer until the menu modal finishes closing — Share + Modal on iOS can hang otherwise.
+        setTimeout(async () => {
+          try {
+            await Share.share({ title: 'SnapRoad', message: msg });
+          } catch {
+            Alert.alert('Share', 'Could not open the share sheet. Try again in a moment.');
+          }
+        }, 350);
       },
     },
     {

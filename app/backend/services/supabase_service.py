@@ -524,8 +524,9 @@ def sb_create_partner_referral(data: dict) -> Optional[dict]:
 
 def sb_get_offers(status: str = "active", limit: int = 50) -> list:
     try:
+        # Omit `title` — some production DBs predate that column (use business_name for display).
         query = _sb().table("offers").select(
-            "id,partner_id,location_id,title,description,business_name,"
+            "id,partner_id,location_id,description,business_name,"
             "business_type,discount_percent,base_gems,lat,lng,status,"
             "redemption_count,views,image_url,created_at,expires_at,"
             "created_by,address,offer_url,is_admin_offer"
@@ -568,7 +569,10 @@ def sb_create_offer(data: dict) -> Optional[dict]:
 
 def sb_update_offer(offer_id: str, updates: dict) -> bool:
     try:
-        _sb().table("offers").update(updates).eq("id", offer_id).execute()
+        payload = {k: v for k, v in updates.items() if k != "title"}
+        if not payload:
+            return True
+        _sb().table("offers").update(payload).eq("id", offer_id).execute()
         return True
     except Exception as e:
         logger.warning(f"sb_update_offer: {e}")

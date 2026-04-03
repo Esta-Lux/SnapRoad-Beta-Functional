@@ -268,9 +268,12 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
         setNewOfferImage(null)
         loadData()
       } else {
-        sendNotification('system', 'Error', data.message || 'Failed to create offer')
+        sendNotification('system', 'Offer not created', data.message || 'Something went wrong. Please try again.')
       }
-    } catch { sendNotification('system', 'Error', 'Failed to create offer') }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Network error. Check your connection and try again.'
+      sendNotification('system', 'Could not create offer', msg)
+    }
   }
 
   const handleEditOffer = async (offerId: string) => {
@@ -289,9 +292,12 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
         setEditingOffer(null)
         loadData()
       } else {
-        sendNotification('system', 'Error', data.message || 'Failed to update offer')
+        sendNotification('system', 'Offer not updated', data.message || 'Something went wrong. Please try again.')
       }
-    } catch { sendNotification('system', 'Error', 'Failed to update offer') }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Network error. Check your connection and try again.'
+      sendNotification('system', 'Could not update offer', msg)
+    }
   }
 
   const handleDeleteOffer = async (offerId: string) => {

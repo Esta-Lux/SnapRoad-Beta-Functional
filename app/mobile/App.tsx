@@ -31,7 +31,12 @@ import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
 import AppTour from './src/components/gamification/AppTour';
 import LegalConsentGate from './src/components/legal/LegalConsentGate';
 import { storage } from './src/utils/storage';
-import { getPathFromUrl, parseParamsFromUrl } from './src/utils/deepLinks';
+import {
+  decodeOAuthErrorDescription,
+  friendlySupabaseAuthErrorMessage,
+  getPathFromUrl,
+  parseParamsFromUrl,
+} from './src/utils/deepLinks';
 import * as Sentry from '@sentry/react-native';
 
 Sentry.init({
@@ -264,6 +269,34 @@ function RootNavigator() {
 
     lastHandledUrlRef.current = normalizedUrl;
     const params = parseParamsFromUrl(normalizedUrl);
+
+    if (params.error) {
+      const rawDesc = params.error_description || params.error || '';
+      const decoded = decodeOAuthErrorDescription(rawDesc);
+      Alert.alert('Google sign-in', friendlySupabaseAuthErrorMessage(decoded || params.error));
+      return;
+    }
+
+    // Supabase JS v2 uses PKCE by default → redirect is often snaproad://auth?code=... (not hash tokens).
+    if (params.code) {
+      try {
+        const { supabase } = await import('./src/lib/supabase');
+        const { data: exchanged, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(params.code);
+        if (exchangeErr) {
+          Alert.alert('Google sign-in', friendlySupabaseAuthErrorMessage(exchangeErr.message));
+          return;
+        }
+        const session = exchanged?.session;
+        if (session?.access_token && session?.refresh_token) {
+          await completeOAuthSignIn(session.access_token, session.refresh_token);
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        Alert.alert('Google sign-in', friendlySupabaseAuthErrorMessage(msg));
+      }
+      return;
+    }
+
     let accessToken = params.access_token || '';
     let refreshToken = params.refresh_token || '';
 

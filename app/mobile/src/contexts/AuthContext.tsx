@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 import { api } from '../api/client';
 import type { User, ApiUser } from '../types';
 import { applySnapRoadFromProfilePayload } from '../utils/profileScore';
+import { friendlySupabaseAuthErrorMessage } from '../utils/deepLinks';
 
 interface AuthContextType {
   user: User | null;
@@ -224,7 +225,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refresh_token: refreshToken,
       });
       if (sessionError) {
-        const message = sessionError.message || 'Could not restore your Google session.';
+        const message = friendlySupabaseAuthErrorMessage(
+          sessionError.message || 'Could not restore your Google session.',
+        );
         setAuthError(message);
         return { ok: false, message };
       }
