@@ -1,8 +1,21 @@
 import type { PlanTier } from '../types';
 
+/** Match founders `price` and public list price in `/api/payments/plans` (premium). */
+export const PREMIUM_FOUNDERS_MONTHLY = 4.99;
+export const PREMIUM_PUBLIC_MONTHLY = 16.99;
+
+export function premiumSavingsPercent(): number {
+  if (PREMIUM_PUBLIC_MONTHLY <= 0) return 0;
+  return Math.round((1 - PREMIUM_FOUNDERS_MONTHLY / PREMIUM_PUBLIC_MONTHLY) * 100);
+}
+
 export interface PlanConfig {
   name: string;
   price: string;
+  /** Strikethrough list price (e.g. regular monthly before founders discount). */
+  compareAtPrice?: string;
+  /** Short line under price, e.g. savings vs public. */
+  savingsHint?: string;
   routeLimit: number;
   features: string[];
   comingSoon?: boolean;
@@ -25,10 +38,12 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
   },
   premium: {
     name: 'Premium',
-    price: '$10.99/mo',
+    price: `$${PREMIUM_FOUNDERS_MONTHLY.toFixed(2)}/mo`,
+    compareAtPrice: `$${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo`,
+    savingsHint: `Save about ${premiumSavingsPercent()}% vs regular price ($${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo)`,
     routeLimit: 20,
     popular: true,
-    foundersNote: 'Lock in founders pricing for life',
+    foundersNote: 'Founders pricing — lock in this rate',
     features: [
       'Everything in Basic',
       'Share location & track friends',

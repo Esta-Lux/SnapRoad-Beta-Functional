@@ -5,12 +5,10 @@ Centralized gem pricing, redemption fees, and discount calculations.
 
 
 def calculate_auto_gems(discount_percent: int, is_free_item: bool = False) -> int:
-    """Auto-calculate gem points based on PM-defined tiers."""
-    if is_free_item:
-        return 125
-    if discount_percent >= 5:
-        return 100
-    return 45
+    """Auto-calculate gem cost for drivers from discount bands (partners do not set this)."""
+    from services.gem_economy import offer_gems_reward_for_discount
+
+    return offer_gems_reward_for_discount(float(discount_percent), bool(is_free_item))
 
 
 def calculate_free_discount(premium_discount: int) -> int:

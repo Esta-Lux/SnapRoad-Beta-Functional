@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 
@@ -112,10 +112,17 @@ class LocationUpdateBody(BaseModel):
     speed_mph: Optional[float] = None
     is_navigating: bool = False
     destination_name: Optional[str] = None
+    is_sharing: Optional[bool] = Field(
+        default=None,
+        description="When set, updates sharing flag; when omitted, existing DB value is kept.",
+    )
+    battery_pct: Optional[int] = Field(default=None, ge=0, le=100)
 
 
 class LocationSharingBody(BaseModel):
     is_sharing: bool
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 
 class LocationTagBody(BaseModel):
@@ -123,6 +130,19 @@ class LocationTagBody(BaseModel):
     lat: float
     lng: float
     message: Optional[str] = "Check out where I am!"
+
+
+class SnapRaceStartBody(BaseModel):
+    opponent_id: str
+    wager: int = Field(default=10, ge=1, le=1000)
+
+
+class ConvoyStartBody(BaseModel):
+    member_ids: List[str] = Field(default_factory=list)
+    destination_name: str = Field(min_length=1, max_length=300)
+    destination_lat: float = Field(ge=-90, le=90)
+    destination_lng: float = Field(ge=-180, le=180)
+
 
 class RoadReport(BaseModel):
     type: str
@@ -187,8 +207,10 @@ class FuelLogCreate(BaseModel):
 
     gallons: float
     price_per_gallon: float
-    odometer: float
+    odometer: Optional[float] = None
     station: Optional[str] = "Unknown"
+    is_full_tank: bool = True
+    use_auto_odometer: bool = False
 
 
 # ==================== PARTNER ====================

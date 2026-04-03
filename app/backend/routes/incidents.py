@@ -171,7 +171,7 @@ def _insert_road_report_row(sb, p: dict, response_uid: str) -> Optional[dict]:
     rows = _road_report_rows_after_insert(sb, p, created)
     if not rows:
         return None
-    return {"success": True, "data": _row_to_incident(rows[0], response_uid), "gems_earned": 15}
+    return {"success": True, "data": _row_to_incident(rows[0], response_uid), "gems_earned": 50}
 
 
 def _try_supabase_report(report: IncidentReportCompat, uid: str, now: datetime) -> Optional[dict]:
@@ -215,7 +215,7 @@ def _memory_report_fallback(
         "expires_at": exp.isoformat(),
     }
     incidents_db.append(incident)
-    return {"success": True, "data": incident, "gems_earned": 15}
+    return {"success": True, "data": incident, "gems_earned": 50}
 
 
 @router.post("/report", responses=OPENAPI_ERROR_RESPONSES)

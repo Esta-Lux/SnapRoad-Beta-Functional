@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="SnapRoad">
+  <defs>
+    <linearGradient id="srG" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#14b8a6"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="28" fill="#0f172a"/>
+  <path d="M28 78c12-18 28-28 48-32 10-2 18-6 24-12" fill="none" stroke="url(#srG)" stroke-width="10" stroke-linecap="round"/>
+  <path d="M52 40c8 4 14 12 16 22" fill="none" stroke="url(#srG)" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="82" cy="38" r="8" fill="#f8fafc"/>
+</svg>

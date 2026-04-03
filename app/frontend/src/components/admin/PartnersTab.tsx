@@ -112,7 +112,7 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
 
   const handleGiveCredits = async (partner: Partner, amount: number) => {
     try {
-      const currentCredits = Number((partner as any).credits || 0)
+      const currentCredits = Number(partner.credits ?? 0)
       const res = await adminApi.updatePartner(partner.id, {
         credits: currentCredits + amount,
       })

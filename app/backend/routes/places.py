@@ -312,6 +312,7 @@ async def nearby_places(
     lat: Annotated[float, Query(..., ge=-90, le=90)],
     lng: Annotated[float, Query(..., ge=-180, le=180)],
     radius: Annotated[int, Query(ge=20, le=50000)] = 50,
+    limit: Annotated[int, Query(ge=1, le=30)] = 10,
     place_type: Annotated[
         Optional[str],
         Query(alias="type", description="Google place type, e.g. gas_station"),
@@ -334,7 +335,8 @@ async def nearby_places(
     data = r.json()
 
     raw = []
-    for p in data.get("results", [])[:15]:
+    # First page returns at most ~20 POIs
+    for p in data.get("results", [])[:20]:
         geo = p.get("geometry", {}).get("location", {})
         plat = geo.get("lat")
         plng = geo.get("lng")
@@ -357,7 +359,8 @@ async def nearby_places(
         return (a.get("lat", 0) - b.get("lat", 0)) ** 2 + (a.get("lng", 0) - b.get("lng", 0)) ** 2
 
     click_point = {"lat": lat, "lng": lng}
-    results = sorted(raw, key=lambda r: dist_sq(r, click_point))[:10]
+    take = min(max(limit, 1), 30)
+    results = sorted(raw, key=lambda r: dist_sq(r, click_point))[:take]
 
     return {"success": True, "data": results}
 

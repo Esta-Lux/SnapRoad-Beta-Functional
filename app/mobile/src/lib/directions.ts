@@ -25,6 +25,11 @@ export interface DirectionsStep {
   lanes?: string;
   lat: number;
   lng: number;
+  /**
+   * Per-step line from Mapbox (`geometry.coordinates`), [lng, lat] pairs.
+   * Present when directions are fetched with `geometries=geojson`.
+   */
+  geometryCoordinates?: [number, number][];
   /** Intersections along this step. First entry is usually the turn point. */
   intersections?: StepIntersection[];
 }
@@ -87,6 +92,7 @@ interface RawRoute {
   geometry: { coordinates: [number, number][] };
   legs: Array<{
     steps: Array<{
+      geometry?: { coordinates?: [number, number][]; type?: string };
       maneuver?: { instruction?: string; modifier?: string; type?: string; location?: [number, number] };
       name?: string;
       distance: number;
@@ -112,6 +118,7 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
 
   for (const leg of route.legs) {
     for (const step of leg.steps) {
+      const g = step.geometry?.coordinates;
       steps.push({
         instruction: step.maneuver?.instruction || '',
         distance: formatDistance(step.distance),
@@ -122,6 +129,7 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
         lanes: step.intersections?.[0]?.lanes ? JSON.stringify(step.intersections[0].lanes) : undefined,
         lat: step.maneuver?.location?.[1] ?? 0,
         lng: step.maneuver?.location?.[0] ?? 0,
+        geometryCoordinates: Array.isArray(g) && g.length >= 2 ? g : undefined,
         intersections: Array.isArray(step.intersections)
           ? step.intersections.map((int: any) => ({
               classes: Array.isArray(int.classes) ? (int.classes as string[]) : [],

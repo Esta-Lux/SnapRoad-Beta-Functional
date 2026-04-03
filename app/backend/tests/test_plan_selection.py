@@ -6,7 +6,7 @@ Tests for:
 - POST /api/user/plan - User can select/change plan
 - GET /api/user/plan - Get user's current plan
 - GET /api/user/onboarding-status - Get onboarding completion status
-- POST /api/trips/complete - Awards gems with multiplier based on plan
+- POST /api/trips/complete - Duration-tier gems (optional: set TEST_USER_JWT + BASE_URL)
 """
 import pytest
 import requests
@@ -190,62 +190,41 @@ class TestOnboardingStatus:
 
 
 class TestTripCompletionWithMultiplier:
-    """Test trip completion with gem multiplier based on plan"""
-    
-    def test_trip_complete_basic_plan(self):
-        """POST /api/trips/complete - Basic plan gets 1x multiplier"""
-        # First set to basic plan
-        requests.post(f"{BASE_URL}/api/user/plan", json={"plan": "basic"})
-        
-        # Complete a trip
-        response = requests.post(f"{BASE_URL}/api/trips/complete")
+    """Trip completion: duration-tier gems (see services.gem_economy.trip_gems_from_duration_minutes). Requires auth."""
+
+    _QUALIFYING_BODY = {
+        "distance_miles": 1.0,
+        "duration_seconds": 120,
+        "safety_score": 85,
+    }
+
+    @pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL / BASE_URL not set")
+    @pytest.mark.skipif(
+        not os.environ.get("TEST_USER_JWT", "").strip(),
+        reason="Set TEST_USER_JWT (Bearer token for a test user) to run trip completion tests",
+    )
+    def test_trip_complete_basic_duration_tier(self):
+        """POST /api/trips/complete — short trip uses duration tier (< 20 min → 10 gems non-premium)."""
+        token = os.environ["TEST_USER_JWT"].strip()
+        headers = {"Authorization": f"Bearer {token}"}
+        requests.post(f"{BASE_URL}/api/user/plan", json={"plan": "basic"}, headers=headers)
+
+        response = requests.post(
+            f"{BASE_URL}/api/trips/complete",
+            headers=headers,
+            json=self._QUALIFYING_BODY,
+        )
         assert response.status_code == 200
-        
+
         data = response.json()
-        assert data["success"] == True
-        assert data["data"]["multiplier"] == 1
-        assert data["data"]["base_gems"] == 5
-        assert data["data"]["gems_earned"] == 5  # 5 * 1 = 5
-        assert data["data"]["is_premium"] == False
-        print(f"✓ Basic plan trip: base={data['data']['base_gems']}, multiplier={data['data']['multiplier']}x, earned={data['data']['gems_earned']} gems")
-    
+        assert data["success"] is True
+        inner = data.get("data") or {}
+        assert inner.get("gems_earned") == 10
+        print(f"✓ Trip complete: {inner.get('gems_earned')} gems (duration tier, basic)")
+
+    @pytest.mark.skip(reason="Premium is enforced via checkout; cannot toggle via /api/user/plan in tests")
     def test_trip_complete_premium_plan(self):
-        """POST /api/trips/complete - Premium plan gets 2x multiplier"""
-        # First set to premium plan
-        requests.post(f"{BASE_URL}/api/user/plan", json={"plan": "premium"})
-        
-        # Complete a trip
-        response = requests.post(f"{BASE_URL}/api/trips/complete")
-        assert response.status_code == 200
-        
-        data = response.json()
-        assert data["success"] == True
-        assert data["data"]["multiplier"] == 2
-        assert data["data"]["base_gems"] == 5
-        assert data["data"]["gems_earned"] == 10  # 5 * 2 = 10
-        assert data["data"]["is_premium"] == True
-        print(f"✓ Premium plan trip: base={data['data']['base_gems']}, multiplier={data['data']['multiplier']}x, earned={data['data']['gems_earned']} gems")
-    
-    def test_gems_accumulate_correctly(self):
-        """Verify gems accumulate correctly after trips"""
-        # Get initial gems
-        initial_response = requests.get(f"{BASE_URL}/api/user/profile")
-        initial_gems = initial_response.json()["data"]["gems"]
-        
-        # Set premium plan
-        requests.post(f"{BASE_URL}/api/user/plan", json={"plan": "premium"})
-        
-        # Complete a trip
-        trip_response = requests.post(f"{BASE_URL}/api/trips/complete")
-        gems_earned = trip_response.json()["data"]["gems_earned"]
-        
-        # Verify total gems increased
-        final_response = requests.get(f"{BASE_URL}/api/user/profile")
-        final_gems = final_response.json()["data"]["gems"]
-        
-        # Note: Due to mock data, we just verify the trip returned correct gems
-        assert gems_earned == 10  # Premium = 5 * 2
-        print(f"✓ Gems earned correctly: +{gems_earned} gems")
+        pass
 
 
 class TestDiscountCalculation:

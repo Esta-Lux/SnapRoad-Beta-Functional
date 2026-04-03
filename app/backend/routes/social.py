@@ -9,6 +9,8 @@ from models.schemas import (
     LocationUpdateBody,
     LocationSharingBody,
     LocationTagBody,
+    SnapRaceStartBody,
+    ConvoyStartBody,
 )
 from services.mock_data import (
     users_db, current_user_id, road_reports_db, XP_CONFIG,
@@ -175,6 +177,26 @@ def get_friends_list(
             "safety_score": p.get("safety_score", 0),
             "friend_code": p.get("friend_code"),
         })
+    loc_res = supabase.table("live_locations").select(
+        "user_id, lat, lng, heading, speed_mph, is_sharing, last_updated, is_navigating, destination_name, battery_pct"
+    ).in_("user_id", friend_ids).execute()
+    loc_map = {str(r["user_id"]): r for r in (loc_res.data or [])}
+    for row in out:
+        fid = row["friend_id"]
+        ll = loc_map.get(fid)
+        if not ll:
+            continue
+        row["lat"] = ll.get("lat")
+        row["lng"] = ll.get("lng")
+        row["heading"] = ll.get("heading")
+        row["speed_mph"] = ll.get("speed_mph")
+        row["is_sharing"] = bool(ll.get("is_sharing"))
+        row["last_updated"] = ll.get("last_updated")
+        row["is_navigating"] = bool(ll.get("is_navigating"))
+        row["destination_name"] = ll.get("destination_name")
+        bat = ll.get("battery_pct")
+        if bat is not None:
+            row["battery_pct"] = int(bat)
     return {"success": True, "data": out}
 
 
@@ -282,6 +304,25 @@ def accept_friend_request(body: dict, current_user: CurrentUser):
     return {"success": True, "message": "Friend request accepted"}
 
 
+@router.get("/friends/location/sharing", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def get_my_location_sharing(current_user: CurrentUser):
+    """Current user's location sharing preference (false if no live_locations row yet)."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    uid = current_user["id"]
+    try:
+        from database import get_supabase
+        from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+            sb = get_supabase()
+            res = sb.table("live_locations").select("is_sharing").eq("user_id", uid).limit(1).execute()
+            if res.data and len(res.data) > 0:
+                return {"success": True, "data": {"is_sharing": bool(res.data[0].get("is_sharing"))}}
+    except Exception as e:
+        logger.warning("failed to read location sharing: %s", e)
+    return {"success": True, "data": {"is_sharing": False}}
+
+
 @router.post("/friends/location/update", responses={401: {"description": MSG_AUTH_REQUIRED}})
 def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
     """Update current user's live location (Supabase: live_locations upsert; mock: no-op)."""
@@ -299,7 +340,17 @@ def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
         from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
         if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
             sb = get_supabase()
-            sb.table("live_locations").upsert({
+            prev = sb.table("live_locations").select("is_sharing").eq("user_id", uid).limit(1).execute()
+            prev_share = None
+            if prev.data and len(prev.data) > 0:
+                prev_share = prev.data[0].get("is_sharing")
+            if body.is_sharing is not None:
+                is_sharing = bool(body.is_sharing)
+            elif prev_share is not None:
+                is_sharing = bool(prev_share)
+            else:
+                is_sharing = False
+            payload = {
                 "user_id": uid,
                 "lat": body.lat,
                 "lng": body.lng,
@@ -308,8 +359,11 @@ def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
                 "is_navigating": body.is_navigating,
                 "destination_name": body.destination_name or None,
                 "last_updated": datetime.now(timezone.utc).isoformat() + "Z",
-                "is_sharing": True,
-            }).execute()
+                "is_sharing": is_sharing,
+            }
+            if body.battery_pct is not None:
+                payload["battery_pct"] = int(body.battery_pct)
+            sb.table("live_locations").upsert(payload).execute()
     except Exception as e:
         logger.warning("failed to upsert live location: %s", e)
     return {"success": True}
@@ -317,7 +371,7 @@ def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
 
 @router.put("/friends/location/sharing", responses={401: {"description": MSG_AUTH_REQUIRED}})
 def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
-    """Turn location sharing on or off."""
+    """Turn location sharing on or off. Upserts a row when enabling sharing if none exists."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
@@ -326,10 +380,24 @@ def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
         from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
         if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
             sb = get_supabase()
-            sb.table("live_locations").update({
-                "is_sharing": body.is_sharing,
-                "last_updated": datetime.now(timezone.utc).isoformat() + "Z",
-            }).eq("user_id", uid).execute()
+            now = datetime.now(timezone.utc).isoformat() + "Z"
+            existing = sb.table("live_locations").select("user_id, lat, lng").eq("user_id", uid).limit(1).execute()
+            if existing.data and len(existing.data) > 0:
+                sb.table("live_locations").update({
+                    "is_sharing": body.is_sharing,
+                    "last_updated": now,
+                }).eq("user_id", uid).execute()
+            elif body.is_sharing:
+                lat = float(body.lat) if body.lat is not None else 0.0
+                lng = float(body.lng) if body.lng is not None else 0.0
+                sb.table("live_locations").insert({
+                    "user_id": uid,
+                    "lat": lat,
+                    "lng": lng,
+                    "is_sharing": True,
+                    "is_navigating": False,
+                    "last_updated": now,
+                }).execute()
     except Exception as e:
         logger.warning("failed to update location sharing setting: %s", e)
     return {"success": True}
@@ -356,6 +424,98 @@ def send_location_tag(body: LocationTagBody, current_user: CurrentUser):
     except Exception as e:
         logger.warning("failed to insert location tag: %s", e)
     return {"success": True, "message": "Location tag sent"}
+
+
+@router.post("/social/snaprace/start", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def snaprace_start(body: SnapRaceStartBody, current_user: CurrentUser):
+    """Start a head-to-head challenge: debits wager from challenger and records the race."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    uid = str(current_user["id"])
+    opp = str(body.opponent_id).strip()
+    if not opp or opp == uid:
+        raise HTTPException(status_code=400, detail="Invalid opponent")
+    wager = int(body.wager)
+    sb = get_supabase()
+    if not _friendship_accepted(sb, uid, opp):
+        raise HTTPException(status_code=400, detail="You can only challenge accepted friends")
+    prof = sb.table("profiles").select("gems").eq("id", uid).limit(1).execute()
+    if not prof.data:
+        raise HTTPException(status_code=400, detail="Profile not found")
+    gems = int(prof.data[0].get("gems") or 0)
+    if gems < wager:
+        raise HTTPException(status_code=400, detail="Not enough gems")
+    existing = (
+        sb.table("snap_races")
+        .select("id")
+        .eq("challenger_id", uid)
+        .eq("opponent_id", opp)
+        .eq("status", "active")
+        .limit(1)
+        .execute()
+    )
+    if existing.data and len(existing.data) > 0:
+        raise HTTPException(status_code=400, detail="You already have an active SnapRace with this friend")
+    new_gems = gems - wager
+    sb.table("profiles").update({"gems": new_gems}).eq("id", uid).execute()
+    try:
+        ins = sb.table("snap_races").insert(
+            {
+                "challenger_id": uid,
+                "opponent_id": opp,
+                "wager_gems": wager,
+                "status": "active",
+            }
+        ).execute()
+        if not ins.data:
+            raise RuntimeError("snap_races insert returned no data")
+        race_id = ins.data[0].get("id")
+    except Exception as e:
+        logger.warning("snap_races insert failed (apply sql/020_snap_races.sql if missing): %s", e)
+        sb.table("profiles").update({"gems": gems}).eq("id", uid).execute()
+        raise HTTPException(status_code=404, detail="This feature is not available yet.")
+    return {
+        "success": True,
+        "data": {"race_id": str(race_id), "gems_remaining": new_gems, "wager": wager},
+    }
+
+
+@router.post("/social/convoy/start", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def convoy_start(body: ConvoyStartBody, current_user: CurrentUser):
+    """Persist a convoy session; navigation still happens client-side from destination."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    uid = str(current_user["id"])
+    sb = get_supabase()
+    member_ids_clean = [
+        str(m).strip() for m in body.member_ids if m and str(m).strip() and str(m).strip() != uid
+    ]
+    if not member_ids_clean:
+        raise HTTPException(status_code=400, detail="Pick at least one friend for the convoy")
+    for mid in member_ids_clean:
+        if not _friendship_accepted(sb, uid, mid):
+            raise HTTPException(status_code=400, detail="All convoy members must be accepted friends")
+    dest = {
+        "name": body.destination_name.strip(),
+        "lat": body.destination_lat,
+        "lng": body.destination_lng,
+    }
+    convoy_id = None
+    try:
+        ins = sb.table("convoys").insert(
+            {
+                "leader_id": uid,
+                "group_id": None,
+                "destination": dest,
+                "member_ids": member_ids_clean,
+                "status": "active",
+            }
+        ).execute()
+        if ins.data:
+            convoy_id = str(ins.data[0].get("id")) if ins.data[0].get("id") is not None else None
+    except Exception as e:
+        logger.warning("convoys insert failed: %s", e)
+    return {"success": True, "data": {"convoy_id": convoy_id, "destination": dest}}
 
 
 # ==================== ROAD REPORTS ====================

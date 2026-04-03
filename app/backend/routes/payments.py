@@ -36,11 +36,12 @@ SUBSCRIPTION_PLANS = {
         "features": ["Privacy-first navigation", "Basic rewards (1x gems)", "Safety score tracking", "Community reports"]
     },
     "premium": {
-        "name": "Premium", 
-        # Beta pricing (Founders) — use Stripe price id if configured
+        "name": "Premium",
+        # `price` is charged (founders / beta). `public_price` is list price shown for savings UX only.
         "price": 4.99,
+        "public_price": 16.99,
         "period": "month",
-        "features": ["All Basic features", "2x gem multiplier", "Premium offers", "Advanced analytics", "Fuel tracking", "Ad-free", "Priority support"]
+        "features": ["All Basic features", "2x gem multiplier", "Premium offers", "Advanced analytics", "Fuel tracking", "Ad-free", "Priority support"],
     },
     "family": {
         "name": "Family",
@@ -134,11 +135,15 @@ def _checkout_return_urls(origin_hint: Optional[str], return_url: Optional[str])
 
 @router.get("/plans")
 async def get_subscription_plans():
-    """Get all available subscription plans"""
-    return {
-        "success": True,
-        "data": SUBSCRIPTION_PLANS
-    }
+    """Get all available subscription plans (display fields for mobile; amounts are not taken from client for checkout)."""
+    data = dict(SUBSCRIPTION_PLANS)
+    prem = dict(data.get("premium") or {})
+    pub = prem.get("public_price")
+    founders = prem.get("price")
+    if isinstance(pub, (int, float)) and isinstance(founders, (int, float)) and pub > 0:
+        prem["savings_percent_vs_public"] = int(round(max(0.0, min(100.0, (1.0 - float(founders) / float(pub)) * 100.0))))
+    data["premium"] = prem
+    return {"success": True, "data": data}
 
 
 def _get_stripe_module():

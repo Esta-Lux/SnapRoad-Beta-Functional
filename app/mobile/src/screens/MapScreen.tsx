@@ -10,6 +10,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapboxGL, { isMapAvailable } from '../utils/mapbox';
 import Constants from 'expo-constants';
+import * as Battery from 'expo-battery';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,15 +34,28 @@ import IncidentHeatmap from '../components/map/IncidentHeatmap';
 import PlaceCard from '../components/map/PlaceCard';
 import PlaceDetailSheet from '../components/map/PlaceDetailSheet';
 import OfferRedemptionSheet from '../components/map/OfferRedemptionSheet';
-import BuildingsLayer from '../components/map/BuildingsLayer';
+import BuildingsLayer, { shouldUseMapboxBuildingNightEffects } from '../components/map/BuildingsLayer';
 import PhotoReportMarkers, { type PhotoReport } from '../components/map/PhotoReportMarkers';
 import TrafficSafetyLayer, { type TrafficSafetyZone } from '../components/map/TrafficSafetyLayer';
 import PhotoReportDetailModal from '../components/map/PhotoReportDetailModal';
 import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config/restrictedRegions';
-import FuelStationMarkers from '../components/map/FuelStationMarkers';
+import MapCategoryExploreSheet from '../components/map/MapCategoryExploreSheet';
 import PhotoReportSheet from '../components/map/PhotoReportSheet';
-import TurnSignalMarkers from '../components/map/TurnSignalMarkers';
-import LaneGuide from '../components/navigation/LaneGuide';
+import ManeuverHighlightLayers from '../components/map/ManeuverHighlightLayers';
+import { getDistanceToUpcomingManeuverMeters } from '../navigation/routeGeometry';
+import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
+import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
+import {
+  formatTurnDistanceForCard,
+  resolveTurnCardState,
+  buildActivePrimary,
+  buildPreviewPrimarySecondary,
+  buildConfirmPrimary,
+  buildCruisePrimary,
+  iconManeuverForState,
+  shouldShowRoadDisambiguation,
+} from '../navigation/turnCardModel';
+import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
 import GemOverlay from '../components/gamification/GemOverlay';
 import TripShare from '../components/gamification/TripShare';
 import HamburgerMenu from '../components/profile/HamburgerMenu';
@@ -68,6 +82,28 @@ const MAPBOX_TOKEN =
   (Constants.expoConfig?.extra?.mapboxPublicToken as string) ||
   '';
 if (MapboxGL && MAPBOX_TOKEN) MapboxGL.setAccessToken(MAPBOX_TOKEN);
+
+const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
+
+function mapFriendsApiToLocations(rows: unknown): FriendLocation[] {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((r: Record<string, unknown>) => ({
+      id: String(r.friend_id ?? r.id ?? ''),
+      name: (r.name as string) ?? 'Friend',
+      avatar: r.avatar_url as string | undefined,
+      lat: Number(r.lat ?? 0),
+      lng: Number(r.lng ?? 0),
+      heading: Number(r.heading ?? 0),
+      speedMph: Number(r.speed_mph ?? 0),
+      isNavigating: !!r.is_navigating,
+      destinationName: typeof r.destination_name === 'string' ? r.destination_name : undefined,
+      lastUpdated: typeof r.last_updated === 'string' ? r.last_updated : '',
+      isSharing: !!r.is_sharing,
+      batteryPct: r.battery_pct != null && r.battery_pct !== '' ? Number(r.battery_pct) : undefined,
+    }))
+    .filter((f) => f.id.length > 0);
+}
 
 const INCIDENT_COLORS: Record<string, string> = {
   police: '#4A90D9', accident: '#D04040', hazard: '#E07830',
@@ -107,22 +143,6 @@ const REPORT_TYPES = [
 ] as const;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function getTurnIcon(maneuver?: string, iconColor = '#fff') {
-  const sz = 32;
-  const c = iconColor;
-  if (!maneuver) return <Ionicons name="arrow-up" size={sz} color={c} />;
-  if (maneuver === 'arrive') return <Ionicons name="flag" size={sz} color={c} />;
-  if (maneuver === 'depart') return <Ionicons name="navigate" size={sz} color={c} />;
-  if (maneuver === 'u-turn') return <Ionicons name="return-up-back-outline" size={sz} color={c} />;
-  if (maneuver === 'roundabout') return <Ionicons name="sync-outline" size={sz} color={c} />;
-  if (maneuver === 'merge') return <Ionicons name="git-merge-outline" size={sz} color={c} />;
-  if (maneuver.includes('sharp-left')) return <Ionicons name="arrow-undo" size={sz} color={c} />;
-  if (maneuver.includes('sharp-right')) return <Ionicons name="arrow-redo" size={sz} color={c} />;
-  if (maneuver.includes('left')) return <Ionicons name="arrow-back" size={sz} color={c} />;
-  if (maneuver.includes('right')) return <Ionicons name="arrow-forward" size={sz} color={c} />;
-  return <Ionicons name="arrow-up" size={sz} color={c} />;
-}
 
 /** Analyse congestion array and return a simple traffic summary. */
 function analyzeCongestion(congestion?: string[]): {
@@ -167,6 +187,14 @@ function parseCameraViewsFromTraffic(raw: unknown): CameraViewFeed[] | undefined
   return list.length ? list : undefined;
 }
 
+type CategoryExploreState = {
+  title: string;
+  subtitle?: string;
+  results: { name: string; address: string; lat: number; lng: number; place_id?: string; rating?: number; placeType?: string }[];
+  error: string | null;
+  loading: boolean;
+};
+
 // ═════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
@@ -210,8 +238,24 @@ export default function MapScreen() {
   const [isExploring, setIsExploring] = useState(false);
   const [compassMode, setCompassMode] = useState(false);
   const [followMode, setFollowMode] = useState<'free' | 'follow' | 'heading'>('follow');
-  const nextStepDist = nav.navigationData?.steps?.[nav.currentStepIndex]?.distanceMeters;
-  const camCtrl = useCameraController({ speed, drivingMode, isNavigating: nav.isNavigating, cameraLocked, heading, nextStepDistance: nextStepDist });
+  const nextManeuverDistanceMeters = useMemo(
+    () =>
+      getDistanceToUpcomingManeuverMeters(
+        nav.navigationData?.steps,
+        nav.currentStepIndex,
+        location,
+      ),
+    [nav.navigationData?.steps, nav.currentStepIndex, location.lat, location.lng],
+  );
+  const camCtrl = useCameraController({
+    speedMph: speed,
+    drivingMode,
+    isNavigating: nav.isNavigating,
+    cameraLocked,
+    nextManeuverDistanceMeters,
+    safeAreaTop: insets.top,
+    safeAreaBottom: insets.bottom,
+  });
   const userInteracting = useRef(false);
   const lastCameraUpdate = useRef({ lat: 0, lng: 0, heading: 0 });
 
@@ -229,6 +273,7 @@ export default function MapScreen() {
   const reportCardTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startNavTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigationTripIdRef = useRef<string>('');
+  const lastLivePublishRef = useRef(0);
 
   // ── Map style ──
   const [styleOverride, setStyleOverride] = useState(0);
@@ -253,7 +298,7 @@ export default function MapScreen() {
 
   // ── Layers ──
   const { showTraffic, showIncidents, showCameras, setShowTraffic, setShowIncidents, setShowCameras,
-    showConstruction, setShowConstruction, showFuel, setShowFuel,
+    showConstruction, setShowConstruction,
     showPhotoReports, setShowPhotoReports, showTrafficSafety, setShowTrafficSafety } = useMapLayers();
 
   // ── New layer data ──
@@ -262,7 +307,7 @@ export default function MapScreen() {
   /** User-visible status when speed-camera layer is on but empty / limited */
   const [trafficSafetyHint, setTrafficSafetyHint] = useState<string | null>(null);
   const [selectedPhotoReport, setSelectedPhotoReport] = useState<PhotoReport | null>(null);
-  const [fuelStations, setFuelStations] = useState<{id: string; name?: string; lat: number; lng: number; price?: number}[]>([]);
+  const [categoryExplore, setCategoryExplore] = useState<CategoryExploreState | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [showPhotoReport, setShowPhotoReport] = useState(false);
   const [showGemOverlay, setShowGemOverlay] = useState(false);
@@ -313,16 +358,55 @@ export default function MapScreen() {
   }, [styleOverride, drivingMode, streetsStyleIndex]);
 
   /** streets-v12 and navigation-night-v1 support heading indicator; Standard omits it. */
-  const userLocationHeadingOk = true;
   const atmosphereStyle = ATMOSPHERE[drivingMode];
   const isCalm = drivingMode === 'calm';
   const isAdaptive = drivingMode === 'adaptive';
   const isSport = drivingMode === 'sport';
+
+  /** Flat light + emissive/flood extrusion styling (BuildingsLayer); Sport + dark or navigation-night basemaps only. */
+  const mapboxNightBuildingEffects = useMemo(
+    () => shouldUseMapboxBuildingNightEffects(activeStyleURL, drivingMode, isLight),
+    [activeStyleURL, drivingMode, isLight],
+  );
   const animDuration = isCalm
     ? (nav.isNavigating ? 1000 : 1200)         // slow, smooth calm
     : isSport
       ? (speed > 25 ? 200 : speed > 10 ? 350 : 600)   // snappy sport
       : speed > 15 ? 300 : speed > 5 ? 500 : 800;     // adaptive standard
+
+  /** ~500m grid so place cards / detail distance text do not jitter every GPS tick */
+  const placeCardLocGridLat = Math.round(location.lat * 200) / 200;
+  const placeCardLocGridLng = Math.round(location.lng * 200) / 200;
+  const placeCardDistanceMeters = useMemo(() => {
+    if (!selectedPlace) return undefined;
+    return haversineMeters(location.lat, location.lng, selectedPlace.lat, selectedPlace.lng);
+  }, [placeCardLocGridLat, placeCardLocGridLng, selectedPlace?.lat, selectedPlace?.lng]);
+
+  const refreshSavedPlaces = useCallback(() => {
+    api.get<any>('/api/locations').then((r) => {
+      const d = (r.data as any)?.data ?? r.data;
+      if (Array.isArray(d)) setSavedPlaces(d);
+    }).catch(() => {});
+  }, []);
+
+  const selectedPlaceFavoriteMatch = useMemo(() => {
+    if (!selectedPlace?.lat || !selectedPlace?.lng) return { id: null as number | null, isFavorite: false };
+    for (const p of savedPlaces) {
+      if (p.lat == null || p.lng == null) continue;
+      if (haversineMeters(selectedPlace.lat, selectedPlace.lng, p.lat, p.lng) < 85) {
+        const c = (p.category || '').toLowerCase();
+        if (c === 'favorite' || (c !== 'home' && c !== 'work')) {
+          return { id: p.id, isFavorite: true };
+        }
+      }
+    }
+    return { id: null, isFavorite: false };
+  }, [selectedPlace, savedPlaces]);
+
+  const placeDetailUserLocation = useMemo(() => {
+    if (Math.abs(location.lat) <= 1e-5 && Math.abs(location.lng) <= 1e-5) return undefined;
+    return { lat: location.lat, lng: location.lng };
+  }, [placeCardLocGridLat, placeCardLocGridLng]);
 
   const stableCenterRef = useRef<[number, number]>([location.lng, location.lat]);
   const [stableCenter, setStableCenter] = useState<[number, number]>([location.lng, location.lat]);
@@ -354,6 +438,8 @@ export default function MapScreen() {
 
   const currentStep = nav.navigationData?.steps?.[nav.currentStepIndex];
   const nextStep = nav.navigationData?.steps?.[nav.currentStepIndex + 1];
+  const confirmUntil = useTurnConfirmationUntil(nav.isNavigating, nav.currentStepIndex, drivingMode);
+  const inConfirmWindow = Date.now() < confirmUntil;
   const isAmbient = !nav.isNavigating && speed > 6.7;
   const mapOk = isMapAvailable() && MapboxGL !== null;
 
@@ -372,15 +458,12 @@ export default function MapScreen() {
 
   // Fetch saved places + friends on mount
   useEffect(() => {
-    api.get<any>('/api/locations').then((r) => {
+    refreshSavedPlaces();
+    api.get<any>('/api/friends/list').then((r) => {
       const d = (r.data as any)?.data ?? r.data;
-      if (Array.isArray(d)) setSavedPlaces(d);
+      setFriendLocations(mapFriendsApiToLocations(d));
     }).catch(() => {});
-    api.get<any>('/api/social/friends/list').then((r) => {
-      const d = (r.data as any)?.data ?? r.data;
-      if (Array.isArray(d)) setFriendLocations(d);
-    }).catch(() => {});
-  }, []);
+  }, [refreshSavedPlaces]);
 
   // Fix 8: Offers refresh on significant location change (~1km)
   useEffect(() => {
@@ -608,29 +691,6 @@ export default function MapScreen() {
       });
   }, [showTrafficSafety, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
-  useEffect(() => {
-    if (!showFuel) return;
-    const rLat = Math.round(location.lat * 100);
-    const rLng = Math.round(location.lng * 100);
-    if (rLat === 0 && rLng === 0) return;
-    api.get<any>(`/api/places/autocomplete?q=gas+station&lat=${location.lat}&lng=${location.lng}`).then((r) => {
-      const predictions = (r.data as any)?.data ?? [];
-      if (!Array.isArray(predictions) || predictions.length === 0) return;
-      const resolved = predictions.slice(0, 8).map(async (p: any) => {
-        if (!p.place_id) return null;
-        try {
-          const det = await api.get<any>(`/api/places/details/${p.place_id}`);
-          const d = det.data?.data ?? det.data;
-          if (d?.lat && d?.lng) return { id: String(p.place_id), name: d.name ?? p.name, lat: d.lat, lng: d.lng };
-        } catch {}
-        return null;
-      });
-      Promise.all(resolved).then((results) => {
-        setFuelStations(results.filter(Boolean) as any[]);
-      });
-    }).catch(() => {});
-  }, [showFuel, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
-
   // Crash detection removed — SOS endpoints (/api/family/sos, /api/concerns/submit) do not exist.
   // Will be re-implemented when family/emergency features are built with real backend support.
 
@@ -641,7 +701,17 @@ export default function MapScreen() {
         if (!payload?.new) return;
         setFriendLocations((prev) => prev.map((f) =>
           String(f.id) === String(payload.new.user_id)
-            ? { ...f, lat: payload.new.lat ?? f.lat, lng: payload.new.lng ?? f.lng, speedMph: payload.new.speed_mph ?? f.speedMph, heading: payload.new.heading ?? f.heading }
+            ? {
+              ...f,
+              lat: payload.new.lat ?? f.lat,
+              lng: payload.new.lng ?? f.lng,
+              speedMph: payload.new.speed_mph ?? f.speedMph,
+              heading: payload.new.heading ?? f.heading,
+              isSharing: typeof payload.new.is_sharing === 'boolean' ? payload.new.is_sharing : f.isSharing,
+              isNavigating: typeof payload.new.is_navigating === 'boolean' ? payload.new.is_navigating : f.isNavigating,
+              destinationName: payload.new.destination_name ?? f.destinationName,
+              batteryPct: payload.new.battery_pct ?? f.batteryPct,
+            }
             : f
         ));
       })
@@ -658,6 +728,45 @@ export default function MapScreen() {
       nav.updatePosition(location.lat, location.lng);
     }
   }, [location.lat, location.lng, heading]);
+
+  useEffect(() => {
+    const sharingOn = storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
+    if (!sharingOn) return;
+    const rLat = Math.round(location.lat * 1000);
+    const rLng = Math.round(location.lng * 1000);
+    if (rLat === 0 && rLng === 0) return;
+    const now = Date.now();
+    if (now - lastLivePublishRef.current < 25000) return;
+    lastLivePublishRef.current = now;
+
+    let cancelled = false;
+    (async () => {
+      let battery_pct: number | undefined;
+      try {
+        const lvl = await Battery.getBatteryLevelAsync();
+        if (cancelled) return;
+        battery_pct = Math.round(Math.max(0, Math.min(1, lvl)) * 100);
+      } catch {
+        /* optional */
+      }
+      if (cancelled) return;
+      try {
+        await api.post('/api/friends/location/update', {
+          lat: location.lat,
+          lng: location.lng,
+          heading,
+          speed_mph: speed,
+          is_navigating: nav.isNavigating,
+          destination_name: nav.selectedDestination?.name ?? undefined,
+          is_sharing: true,
+          battery_pct,
+        });
+      } catch {
+        /* offline */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [location.lat, location.lng, heading, speed, nav.isNavigating, nav.selectedDestination?.name]);
 
   // Fix 1: Reset exploring state + traffic banner + camera lock when nav starts
   useEffect(() => {
@@ -888,6 +997,89 @@ export default function MapScreen() {
     });
   }, [recentSearches]);
 
+  const openCategoryExplore = useCallback((chipKey: string) => {
+    setActiveChip(chipKey);
+    if (chipKey === 'favorites') {
+      const favs = savedPlaces.filter(
+        (p) => (p.category || '').toLowerCase() === 'favorite',
+      );
+      const withCoords = favs.filter((p) => p.lat != null && p.lng != null);
+      if (withCoords.length === 0) {
+        Alert.alert('No favorites', 'Use the heart on a place card to add favorites, or save a place in Profile.');
+        return;
+      }
+      setCategoryExplore({
+        title: 'Your favorites',
+        subtitle: 'Tap a place for full details and directions.',
+        results: withCoords.map((p) => ({
+          name: p.name,
+          address: p.address ?? '',
+          lat: Number(p.lat),
+          lng: Number(p.lng),
+          placeType: p.category,
+        })),
+        error: null,
+        loading: false,
+      });
+      return;
+    }
+    const EXPLORE: Record<string, { title: string; subtitle?: string; type?: string; radius: number; limit: number }> = {
+      nearby: { title: 'Nearby', subtitle: 'Places around your location', radius: 1200, limit: 15 },
+      cheap_gas: {
+        title: 'Gas stations',
+        subtitle: 'Nearest first. Live fuel prices are not shown (use station apps for prices).',
+        type: 'gas_station',
+        radius: 20000,
+        limit: 20,
+      },
+      gas: { title: 'Gas stations', subtitle: 'Nearby fuel', type: 'gas_station', radius: 8000, limit: 18 },
+      food: { title: 'Restaurants', type: 'restaurant', radius: 5000, limit: 18 },
+      coffee: { title: 'Coffee & cafés', type: 'cafe', radius: 5000, limit: 18 },
+      parking: { title: 'Parking', type: 'parking', radius: 5000, limit: 18 },
+      ev: { title: 'EV charging', type: 'electric_vehicle_charging_station', radius: 15000, limit: 18 },
+      grocery: { title: 'Grocery stores', type: 'supermarket', radius: 8000, limit: 18 },
+    };
+    const cfg = EXPLORE[chipKey];
+    if (!cfg) return;
+    setCategoryExplore({ title: cfg.title, subtitle: cfg.subtitle, results: [], error: null, loading: true });
+    const lat0 = location.lat;
+    const lng0 = location.lng;
+    const typeQs = cfg.type ? `&type=${encodeURIComponent(cfg.type)}` : '';
+    void api
+      .get<any>(`/api/places/nearby?lat=${lat0}&lng=${lng0}&radius=${cfg.radius}${typeQs}&limit=${cfg.limit}`)
+      .then((r) => {
+        if (!r.success) {
+          setCategoryExplore((prev) =>
+            prev ? { ...prev, loading: false, error: r.error || 'Could not load places.', results: [] } : null,
+          );
+          return;
+        }
+        const root = r.data as Record<string, unknown> | undefined;
+        if (root && root.success === false) {
+          const err = String((root as { error?: string }).error || 'Could not load places.');
+          setCategoryExplore((prev) => (prev ? { ...prev, loading: false, error: err, results: [] } : null));
+          return;
+        }
+        const payload = root?.data ?? root;
+        const arr = Array.isArray(payload) ? payload : [];
+        const mapped = arr.map((p: Record<string, unknown>) => ({
+          name: String(p.name ?? ''),
+          address: String(p.address ?? ''),
+          lat: Number(p.lat) || 0,
+          lng: Number(p.lng) || 0,
+          place_id: p.place_id != null ? String(p.place_id) : undefined,
+          rating: typeof p.rating === 'number' ? p.rating : undefined,
+          placeType: Array.isArray(p.types) && p.types[0] ? String(p.types[0]) : undefined,
+        }));
+        mapped.sort(
+          (a, b) => haversineMeters(lat0, lng0, a.lat, a.lng) - haversineMeters(lat0, lng0, b.lat, b.lng),
+        );
+        setCategoryExplore((prev) =>
+          prev ? { ...prev, loading: false, error: null, results: mapped } : null,
+        );
+      });
+  }, [location.lat, location.lng, savedPlaces]);
+
   const handleStartDirections = useCallback(async (place: { name: string; address?: string; lat: number; lng: number }) => {
     setSelectedPlace(null);
     nav.setSelectedDestination({ name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng });
@@ -897,6 +1089,17 @@ export default function MapScreen() {
       { maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined },
     );
   }, [nav, avoidLowClearances, vehicleHeight]);
+
+  const lastNavigateFriendNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    const p = route.params?.navigateToFriend as { name?: string; lat?: number; lng?: number; nonce?: number } | undefined;
+    if (!p?.nonce || !p.name || p.lat == null || p.lng == null) return;
+    if (!isFinite(p.lat) || !isFinite(p.lng) || (Math.abs(p.lat) < 1e-6 && Math.abs(p.lng) < 1e-6)) return;
+    if (lastNavigateFriendNonceRef.current === p.nonce) return;
+    lastNavigateFriendNonceRef.current = p.nonce;
+    rnNav.setParams({ navigateToFriend: undefined } as any);
+    void handleStartDirections({ name: p.name, address: `Meet ${p.name}`, lat: p.lat, lng: p.lng });
+  }, [route.params?.navigateToFriend?.nonce, handleStartDirections, rnNav]);
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery('');
@@ -1114,10 +1317,28 @@ export default function MapScreen() {
             animationMode="easeTo"
             animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
             followUserLocation={(nav.isNavigating && cameraLocked) || compassMode}
+            followUserMode={
+              nav.isNavigating && cameraLocked
+                ? MapboxGL.UserTrackingMode.FollowWithCourse
+                : compassMode
+                  ? MapboxGL.UserTrackingMode.FollowWithHeading
+                  : undefined
+            }
             followPitch={camCtrl ? camCtrl.followPitch : compassMode ? 45 : undefined}
             followZoomLevel={camCtrl ? camCtrl.followZoomLevel : compassMode ? 15 : undefined}
             followPadding={camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING}
           />
+
+          {mapboxNightBuildingEffects && MapboxGL.Light ? (
+            <MapboxGL.Light
+              style={{
+                anchor: 'viewport',
+                position: isSport ? [1.2, 205, 42] : [1.2, 198, 36],
+                color: isSport ? '#DCE4FF' : '#C8D4F0',
+                intensity: isSport ? 0.4 : 0.33,
+              }}
+            />
+          ) : null}
 
           {/* Terrain only on Standard/Satellite — classic styles don't reliably support it */}
           {MapboxGL.RasterDemSource && MapboxGL.Terrain &&
@@ -1151,7 +1372,6 @@ export default function MapScreen() {
                 )}
             />
           )}
-          {showFuel && <FuelStationMarkers stations={fuelStations} visible={showFuel} onStationTap={(s) => Alert.alert(s.name || 'Gas Station', s.price ? `$${s.price.toFixed(2)}/gal` : 'Tap for directions')} />}
 
           {nav.navigationData?.polyline && (
             <RouteOverlay
@@ -1170,28 +1390,14 @@ export default function MapScreen() {
             />
           )}
 
-          {nav.isNavigating &&
-            nav.navigationData?.steps &&
-            (() => {
-              const upcoming = nav
-                .navigationData!.steps.slice(nav.currentStepIndex + 1, nav.currentStepIndex + 5)
-                .filter(
-                  (st) =>
-                    isFinite(st.lat) &&
-                    isFinite(st.lng) &&
-                    st.maneuver !== 'arrive' &&
-                    st.maneuver !== 'depart',
-                )
-                .map((st) => ({ lat: st.lat, lng: st.lng, maneuver: st.maneuver }));
-              if (!upcoming.length) return null;
-              return (
-                <TurnSignalMarkers
-                  steps={upcoming}
-                  puckColor={modeConfig.routeColor}
-                  puckRingColor="#FFFFFF"
-                />
-              );
-            })()}
+          {nav.isNavigating && (
+            <ManeuverHighlightLayers
+              steps={nav.navigationData?.steps}
+              currentStepIndex={nav.currentStepIndex}
+              maneuverLineColor={modeConfig.routeColor}
+              visible={!!nav.navigationData?.steps?.length}
+            />
+          )}
 
           {!nav.isNavigating && <OfferMarkers offers={nearbyOffers} onOfferTap={setSelectedOffer} />}
           {showIncidents && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
@@ -1206,13 +1412,12 @@ export default function MapScreen() {
             { text: 'Cancel', style: 'cancel' },
           ])} />
 
-          {/* User location puck — same default arrow for all modes/styles */}
-          <MapboxGL.UserLocation
-            visible={true}
-            showsUserHeadingIndicator={userLocationHeadingOk}
-            androidRenderMode="compass"
-            animated={!((nav.isNavigating && cameraLocked) || compassMode)}
-            minDisplacement={1}
+          {/* Native puck: course while actively following route; device heading when browsing */}
+          <MapboxGL.LocationPuck
+            visible
+            puckBearingEnabled
+            puckBearing={nav.isNavigating && cameraLocked ? 'course' : 'heading'}
+            androidRenderMode={nav.isNavigating && cameraLocked ? 'gps' : 'compass'}
           />
 
           {MapboxGL.Atmosphere && <MapboxGL.Atmosphere style={atmosphereStyle} />}
@@ -1249,15 +1454,38 @@ export default function MapScreen() {
           address={selectedPlace.address}
           category={selectedPlace.category}
           maki={selectedPlace.maki}
-          distanceMeters={haversineMeters(location.lat, location.lng, selectedPlace.lat, selectedPlace.lng)}
+          distanceMeters={placeCardDistanceMeters}
           isLight={isLight}
+          isFavorite={selectedPlaceFavoriteMatch.isFavorite}
           onDirections={() => handleStartDirections(selectedPlace)}
-          onSave={async () => {
+          onToggleFavorite={async () => {
             try {
-              await api.post('/api/locations', { name: selectedPlace.name, address: selectedPlace.address ?? '', category: 'favorite', lat: selectedPlace.lat, lng: selectedPlace.lng });
+              if (selectedPlaceFavoriteMatch.id != null) {
+                const res = await api.delete(`/api/locations/${selectedPlaceFavoriteMatch.id}`);
+                if (!res.success) {
+                  Alert.alert('Error', res.error ?? 'Could not remove favorite.');
+                  return;
+                }
+                refreshSavedPlaces();
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                return;
+              }
+              const res = await api.post('/api/locations', {
+                name: selectedPlace.name,
+                address: selectedPlace.address ?? '',
+                category: 'favorite',
+                lat: selectedPlace.lat,
+                lng: selectedPlace.lng,
+              });
+              if (!res.success) {
+                Alert.alert('Error', res.error ?? 'Could not add favorite.');
+                return;
+              }
+              refreshSavedPlaces();
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert('Saved', `${selectedPlace.name} added to your places.`);
-            } catch { Alert.alert('Error', 'Could not save place.'); }
+            } catch {
+              Alert.alert('Error', 'Could not update favorites.');
+            }
           }}
           onDismiss={() => setSelectedPlace(null)}
         />
@@ -1268,12 +1496,10 @@ export default function MapScreen() {
         <PlaceDetailSheet
           placeId={selectedPlaceId}
           summary={selectedPlace ? { name: selectedPlace.name, lat: selectedPlace.lat, lng: selectedPlace.lng } : undefined}
-          userLocation={
-            Math.abs(location.lat) > 1e-5 || Math.abs(location.lng) > 1e-5
-              ? { lat: location.lat, lng: location.lng }
-              : undefined
-          }
+          userLocation={placeDetailUserLocation}
           isLight={isLight}
+          savedPlaces={savedPlaces}
+          onFavoritesChange={refreshSavedPlaces}
           onClose={() => { setSelectedPlaceId(null); setSelectedPlace(null); }}
           onDirections={(place) => {
             setSelectedPlaceId(null);
@@ -1292,7 +1518,7 @@ export default function MapScreen() {
               Alert.alert('Could not save', res.error ?? 'Try again later.');
               throw new Error(res.error ?? 'Save failed');
             }
-            Alert.alert('Saved', `${p.name} added to your places.`);
+            refreshSavedPlaces();
           }}
         />
       )}
@@ -1351,47 +1577,22 @@ export default function MapScreen() {
             <FlatList
               horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}
               data={[
-                { key: 'favorites', label: 'Favorites', icon: 'star-outline' as const, query: '' },
-                { key: 'nearby', label: 'Nearby', icon: 'location-outline' as const, query: '' },
-                { key: 'cheap_gas', label: 'Cheap Gas', icon: 'pricetag-outline' as const, query: '' },
-                { key: 'gas', label: 'Gas', icon: 'flash-outline' as const, query: 'gas station' },
-                { key: 'food', label: 'Food', icon: 'restaurant-outline' as const, query: 'restaurant' },
-                { key: 'coffee', label: 'Coffee', icon: 'cafe-outline' as const, query: 'coffee' },
-                { key: 'parking', label: 'Parking', icon: 'car-outline' as const, query: 'parking' },
-                { key: 'ev', label: 'EV', icon: 'battery-charging-outline' as const, query: 'ev charging' },
-                { key: 'grocery', label: 'Grocery', icon: 'cart-outline' as const, query: 'grocery' },
+                { key: 'favorites', label: 'Favorites', icon: 'star-outline' as const },
+                { key: 'nearby', label: 'Nearby', icon: 'location-outline' as const },
+                { key: 'cheap_gas', label: 'Cheap Gas', icon: 'pricetag-outline' as const },
+                { key: 'gas', label: 'Gas', icon: 'flash-outline' as const },
+                { key: 'food', label: 'Food', icon: 'restaurant-outline' as const },
+                { key: 'coffee', label: 'Coffee', icon: 'cafe-outline' as const },
+                { key: 'parking', label: 'Parking', icon: 'car-outline' as const },
+                { key: 'ev', label: 'EV', icon: 'battery-charging-outline' as const },
+                { key: 'grocery', label: 'Grocery', icon: 'cart-outline' as const },
               ]}
               keyExtractor={(c) => c.key}
               renderItem={({ item: chip }) => {
                 const sel = activeChip === chip.key;
                 return (
                   <TouchableOpacity style={[s.chip, { backgroundColor: sel ? colors.primary : colors.surface, borderColor: sel ? 'transparent' : colors.border }]}
-                    onPress={() => {
-                      setActiveChip(chip.key);
-                      if (chip.query) { handleSearchChange(chip.query); setIsSearchFocused(true); }
-                      else if (chip.key === 'nearby' || chip.key === 'cheap_gas') {
-                        const lat0 = location.lat;
-                        const lng0 = location.lng;
-                        const radius = chip.key === 'cheap_gas' ? 20000 : 1000;
-                        const typeQs = chip.key === 'cheap_gas' ? '&type=gas_station' : '';
-                        api.get<any>(`/api/places/nearby?lat=${lat0}&lng=${lng0}&radius=${radius}${typeQs}`).then((r) => {
-                          const d = (r.data as any)?.data ?? r.data;
-                          if (Array.isArray(d)) {
-                            const mapped = d.map((p: any) => ({
-                              name: p.name,
-                              address: p.address ?? '',
-                              lat: p.lat ?? 0,
-                              lng: p.lng ?? 0,
-                              placeType: p.types?.[0],
-                              place_id: p.place_id,
-                            }));
-                            mapped.sort((a, b) => haversineMeters(lat0, lng0, a.lat, a.lng) - haversineMeters(lat0, lng0, b.lat, b.lng));
-                            setSearchResults(mapped);
-                          }
-                          setIsSearchFocused(true);
-                        }).catch(() => {});
-                      }
-                    }}>
+                    onPress={() => openCategoryExplore(chip.key)}>
                     <Ionicons name={chip.icon} size={13} color={sel ? '#fff' : colors.textSecondary} style={{ marginRight: 4 }} />
                     <Text style={{ color: sel ? '#fff' : colors.text, fontSize: 12, fontWeight: '600' }}>{chip.label}</Text>
                   </TouchableOpacity>
@@ -1471,105 +1672,80 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* ═══ TURN CARD — unified premium HUD, mode-specific gradient ════════ */}
+      {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
       {nav.isNavigating && currentStep && (() => {
-        // Each mode keeps its exact gradient colors — only the layout is unified
-        const tcGrad: [string, string] = modeConfig.turnCardGradient;
-        const tcRadius = modeConfig.turnCardRadius;
-        const tcShadowColor = modeConfig.turnCardShadowColor;
-        const tcTextColor = modeConfig.turnCardTextColor;
-        const nextManeuverCoord = nav.navigationData?.steps?.[nav.currentStepIndex + 1];
+        const nextManeuverCoord = nextStep;
         const liveDistMeters = nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
           ? haversineMeters(location.lat, location.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
           : (currentStep.distanceMeters ?? 0);
-        const distParts = liveDistMeters > 0
-          ? (liveDistMeters < 160
-            ? [`${Math.round(liveDistMeters * 3.281 / 10) * 10}`, 'FT']
-            : [`${(liveDistMeters / 1609.34).toFixed(1)}`, 'MI'])
-          : ['0', 'FT'];
-        // Road we're currently on = next step's name (Mapbox gives the name of the road you're on next)
-        const currentRoad = currentStep.name ?? null;
+
+        const cardState = resolveTurnCardState({
+          distanceToNextManeuverM: liveDistMeters,
+          speedMph: speed,
+          mode: drivingMode,
+          inConfirmationWindow: inConfirmWindow,
+          nextStep: nextManeuverCoord,
+        });
+
+        const distParts = formatTurnDistanceForCard(liveDistMeters);
+        const destinationName = nav.navigationData?.destination?.name ?? null;
+
+        let primary: string;
+        let secondary: string | undefined;
+        switch (cardState) {
+          case 'active':
+            primary = buildActivePrimary(nextManeuverCoord, destinationName) || currentStep.instruction;
+            secondary = undefined;
+            break;
+          case 'preview': {
+            const p = buildPreviewPrimarySecondary(currentStep, nextManeuverCoord, destinationName);
+            primary = p.primary;
+            secondary = p.secondary;
+            if (drivingMode === 'sport' && speed > 50) secondary = undefined;
+            break;
+          }
+          case 'confirm':
+            primary = buildConfirmPrimary(currentStep);
+            secondary =
+              (drivingMode === 'calm' || drivingMode === 'adaptive') &&
+              nextManeuverCoord &&
+              nextManeuverCoord.maneuver !== 'arrive'
+                ? `Then ${buildActivePrimary(nextManeuverCoord, destinationName)}`
+                : undefined;
+            break;
+          case 'cruise':
+            primary = buildCruisePrimary(nextManeuverCoord, destinationName);
+            secondary = undefined;
+            break;
+          default:
+            primary = buildActivePrimary(nextManeuverCoord, destinationName) || currentStep.instruction;
+            secondary = undefined;
+        }
+
+        const maneuverIconKey = iconManeuverForState(cardState, currentStep, nextManeuverCoord);
+        const disambigName =
+          shouldShowRoadDisambiguation(currentStep?.name) ? (currentStep?.name ?? null) :
+          shouldShowRoadDisambiguation(nextManeuverCoord?.name) ? (nextManeuverCoord?.name ?? null) :
+          null;
 
         return (
-          <View style={[s.turnWrap, { top: insets.top }]}>
-            <Animated.View
-              entering={FadeIn.duration(350)}
-              style={[
-                s.tcPremWrap,
-                {
-                  borderRadius: tcRadius,
-                  ...Platform.select({
-                    ios: { shadowColor: tcShadowColor, shadowOpacity: 0.55, shadowRadius: 20, shadowOffset: { width: 0, height: 6 } },
-                    android: { elevation: 16 },
-                    default: {},
-                  }),
-                },
-              ]}
-            >
-              <LinearGradient
-                colors={tcGrad}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[
-                  s.tcPremGrad,
-                  { borderRadius: tcRadius },
-                  !isSport && { borderWidth: StyleSheet.hairlineWidth * 2, borderColor: 'rgba(255,255,255,0.28)' },
-                  isSport && { borderWidth: 1, borderColor: modeConfig.turnCardBorderColor ?? 'rgba(196,149,106,0.25)' },
-                ]}
-              >
-                {/* ── Row 1: dist | icon | instruction | mute ── */}
-                <View style={s.tcPremRow}>
-                  {/* Distance — large, left */}
-                  <View style={s.tcPremDistBlock}>
-                    <Text style={[s.tcPremDistVal, { color: tcTextColor, fontSize: modeConfig.distanceFontSize }]} numberOfLines={1}>{distParts[0] ?? ''}</Text>
-                    <Text style={[s.tcPremDistUnit, { color: tcTextColor }]}>{distParts[1] ?? ''}</Text>
-                  </View>
-                  {/* Turn icon */}
-                  <View style={[s.tcPremIconBox, { backgroundColor: modeConfig.turnCardIconBg }]}>
-                    {getTurnIcon(currentStep.maneuver, tcTextColor)}
-                  </View>
-                  {/* Instruction + next step */}
-                  <View style={s.tcPremInstrBlock}>
-                    <Text style={[s.tcPremInstr, { color: tcTextColor }]} numberOfLines={3}>{currentStep.instruction}</Text>
-                    {nextStep && (
-                      <View style={s.tcPremThenRow}>
-                        <Ionicons name="return-down-forward-outline" size={12} color={tcTextColor} />
-                        <Text style={[s.tcPremThen, { color: tcTextColor }]} numberOfLines={1}> {nextStep.instruction}</Text>
-                      </View>
-                    )}
-                  </View>
-                  {/* Mute */}
-                  <TouchableOpacity
-                    style={s.tcPremMute}
-                    onPress={() => { setIsMuted((m) => !m); if (!isMuted) stopSpeaking(); }}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={17} color={tcTextColor} />
-                  </TouchableOpacity>
-                </View>
-
-                {/* ── Row 2: Lane guidance — inside the card so arrows sit on the gradient ── */}
-                {currentStep.lanes && (
-                  <LaneGuide
-                    lanes={currentStep.lanes}
-                    activeColor="#ffffff"
-                    inactiveColor="rgba(255,255,255,0.25)"
-                  />
-                )}
-
-                {/* ── Row 3: Current road with shield ── */}
-                {currentRoad && (
-                  <View style={s.tcPremRoadStrip}>
-                    <View style={s.tcRoadShield}>
-                      <Text style={[s.tcRoadShieldTxt, { color: tcTextColor }]} numberOfLines={1}>
-                        {currentRoad.replace(/\s+/g, ' ').substring(0, 8)}
-                      </Text>
-                    </View>
-                    <Text style={[s.tcPremRoadTxt, { color: tcTextColor }]} numberOfLines={1}> {currentRoad}</Text>
-                  </View>
-                )}
-              </LinearGradient>
-            </Animated.View>
+          <View style={[s.turnWrap, { top: insets.top }]} key={nav.currentStepIndex}>
+            <TurnInstructionCard
+              mode={drivingMode}
+              modeConfig={modeConfig}
+              state={cardState}
+              distanceValue={distParts.value}
+              distanceUnit={distParts.unit}
+              primaryInstruction={primary}
+              secondaryInstruction={secondary}
+              maneuverForIcon={maneuverIconKey}
+              isMuted={isMuted}
+              onMutePress={() => { setIsMuted((m) => !m); if (!isMuted) stopSpeaking(); }}
+              lanesJson={currentStep.lanes}
+              roadDisambiguationLabel={disambigName}
+              isSportBorder={isSport}
+              speedMph={speed}
+            />
           </View>
         );
       })()}
@@ -1726,80 +1902,19 @@ export default function MapScreen() {
         );
       })()}
 
-      {/* ═══ ETA BAR — stats row + End button row below ════════════════════ */}
-      {nav.isNavigating && nav.liveEta && (() => {
-        const etaAccent = modeConfig.etaAccentColor;
-        const etaBg = isLight ? modeConfig.etaBarBg : modeConfig.etaBarBgDark;
-        const arrivalTime = new Date(Date.now() + nav.liveEta.etaMinutes * 60000)
-          .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        const textPrimary = modeConfig.etaValueColor;
-        const textSec = modeConfig.etaLabelColor;
-        const distLabel = formatDistance(nav.liveEta.distanceMiles);
-
-        return (
-          <Animated.View
-            entering={FadeIn.duration(150)}
-            exiting={FadeOut.duration(150)}
-            style={[
-              s.etaBarUnified,
-              {
-                flexDirection: 'column',
-                paddingBottom: Math.max(insets.bottom, 8) + 4,
-                backgroundColor: etaBg,
-                borderTopColor: etaAccent + '33',
-              },
-            ]}
-          >
-            <View style={s.etaStatsRow}>
-              {modeConfig.showPerfData && (
-                <>
-                  <View style={s.etaUniSpeedBlock}>
-                    <Text style={[s.etaUniSpeedVal, { color: etaAccent, fontSize: modeConfig.speedFontSize }]}>{Math.round(speed)}</Text>
-                    <Text style={[s.etaUniSpeedUnit, { color: etaAccent + '99' }]}>mph</Text>
-                  </View>
-                  <View style={[s.etaUniDiv, { backgroundColor: etaAccent + '33' }]} />
-                </>
-              )}
-              <View style={s.etaUniCol}>
-                <Text style={[s.etaUniLbl, { color: textSec }]}>ETA</Text>
-                <Text style={[s.etaUniValAccent, { color: etaAccent }]}>{formatDuration(nav.liveEta.etaMinutes)}</Text>
-              </View>
-              <View style={[s.etaUniDiv, { backgroundColor: etaAccent + '33' }]} />
-              <View style={s.etaUniCol}>
-                <Text style={[s.etaUniLbl, { color: textSec }]}>DIST</Text>
-                <Text style={[s.etaUniVal, { color: textPrimary }]}>{distLabel}</Text>
-              </View>
-              <View style={[s.etaUniDiv, { backgroundColor: etaAccent + '33' }]} />
-              <View style={s.etaUniCol}>
-                <Text style={[s.etaUniLbl, { color: textSec }]}>ARRIVE</Text>
-                <Text style={[s.etaUniVal, { color: modeConfig.etaArriveColor }]}>{arrivalTime}</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={[s.etaEndRowBtn, {
-                marginTop: 10,
-                marginHorizontal: 4,
-                backgroundColor: modeConfig.endButtonColor,
-                borderRadius: modeConfig.endButtonRadius,
-                ...(modeConfig.endButtonGlow ? {
-                  shadowColor: modeConfig.endButtonGlowColor,
-                  shadowOpacity: 0.3,
-                  shadowRadius: 8,
-                } : {}),
-                ...(modeConfig.endButtonBorder ? {
-                  borderWidth: 1,
-                  borderColor: modeConfig.endButtonBorder,
-                } : {}),
-              }]}
-              onPress={nav.stopNavigation}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="stop-circle" size={22} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={s.etaEndRowBtnT}>End navigation</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        );
-      })()}
+      {/* ═══ NAV STATUS — slim strip (ETA · dist · arrive) + separated End button ═ */}
+      {nav.isNavigating && nav.liveEta && (
+        <NavigationStatusStrip
+          drivingMode={drivingMode}
+          modeConfig={modeConfig}
+          isLight={isLight}
+          liveEta={nav.liveEta}
+          speedMph={speed}
+          isRerouting={nav.isRerouting}
+          onEndNavigation={nav.stopNavigation}
+          bottomInset={insets.bottom}
+        />
+      )}
 
       {/* ═══ ROUTE PREVIEW ════════════════════════════════════════════════ */}
       {nav.showRoutePreview && nav.navigationData && !nav.isNavigating && (() => {
@@ -1961,6 +2076,13 @@ export default function MapScreen() {
           <>
             <Text style={[s.tripTitle, {	color: colors.text }]}>Trip Summary</Text>
             <Text style={[s.tripRoute, { color: colors.textTertiary }]}>{nav.tripSummary.origin} → {nav.tripSummary.destination}</Text>
+            {nav.tripSummary.counted === false && (
+              <View style={{ backgroundColor: isLight ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.15)', borderRadius: 12, padding: 12, marginBottom: 12 }}>
+                <Text style={{ color: isLight ? '#92400E' : '#FBBF24', fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
+                  This drive was too short to count for gems or trip history. Go a bit farther next time.
+                </Text>
+              </View>
+            )}
             <View style={s.tripGrid}>
               {[
                 { l: 'Distance', v: `${(nav.tripSummary.distance ?? 0).toFixed(1)} mi`, c: colors.text },
@@ -1991,7 +2113,7 @@ export default function MapScreen() {
 
       {!nav.showRoutePreview && !nav.tripSummary && !selectedPlace && !selectedPlaceId && (
         <TouchableOpacity style={[s.reportFab, {
-          bottom: (nav.isNavigating ? 100 : 40) + insets.bottom,
+          bottom: (nav.isNavigating ? MAP_NAV_BOTTOM_INSET : 40) + insets.bottom,
           right: 16,
           backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
           borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
@@ -2072,7 +2194,7 @@ export default function MapScreen() {
           : null;
         const isOverSpeed = typeof currentSpeedLimit === 'number' && speed > currentSpeedLimit;
         return (
-          <View style={{ position: 'absolute', left: 14, bottom: (nav.isNavigating ? 100 : 40) + insets.bottom, alignItems: 'center', gap: 6 }}>
+          <View style={{ position: 'absolute', left: 14, bottom: (nav.isNavigating ? MAP_NAV_BOTTOM_INSET : 40) + insets.bottom, alignItems: 'center', gap: 6 }}>
             {modeConfig.showSpeedLimit && currentSpeedLimit !== null && currentSpeedLimit !== undefined && nav.isNavigating && (
               <View style={[s.speedLimitSign, isOverSpeed && { borderColor: '#FF3B30' }]}>
                 <Text style={s.speedLimitNum}>{currentSpeedLimit}</Text>
@@ -2218,7 +2340,6 @@ export default function MapScreen() {
                 sub: user?.isPremium ? undefined : 'Premium — tap to upgrade and enable',
               },
               { k: 'construction', l: 'Construction', ic: 'construct-outline' as const, v: showConstruction, t: setShowConstruction },
-              { k: 'fuel', l: 'Gas Stations', ic: 'flash-outline' as const, v: showFuel, t: setShowFuel },
               {
                 k: 'trafficSafety',
                 l: 'Traffic safety (speed cameras)',
@@ -2275,10 +2396,74 @@ export default function MapScreen() {
         report={selectedPhotoReport}
         onClose={() => setSelectedPhotoReport(null)}
       />
-      <HamburgerMenu visible={showMenu} onClose={() => setShowMenu(false)} isLight={isLight} onNavigate={(screen) => { setShowMenu(false); if (screen === 'Profile' || screen === 'Help') { rnNav.navigate('Profile' as never); } else if (screen === 'TripAnalytics' || screen === 'RouteHistory') { rnNav.navigate('Rewards' as never); } else if (screen === 'SnapRace') { setShowSnapRace(true); } else if (screen === 'Convoy') { setShowConvoy(true); } else if (screen === 'Social') { rnNav.navigate('Dashboards' as never); } }} />
+      <HamburgerMenu
+        visible={showMenu}
+        onClose={() => setShowMenu(false)}
+        isLight={isLight}
+        onNavigate={(screen) => {
+          setShowMenu(false);
+          if (screen === 'Profile' || screen === 'Help') {
+            rnNav.navigate('Profile' as never);
+          } else if (screen === 'TripAnalytics') {
+            (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Rewards', {
+              screen: 'RewardsMain',
+              params: { openTripAnalytics: true },
+            });
+          } else if (screen === 'RouteHistory') {
+            (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Rewards', {
+              screen: 'RewardsMain',
+              params: { openRouteHistory: true },
+            });
+          } else if (screen === 'SnapRace') {
+            setShowSnapRace(true);
+          } else if (screen === 'Convoy') {
+            setShowConvoy(true);
+          } else if (screen === 'Social') {
+            rnNav.navigate('Dashboards' as never);
+          }
+        }}
+      />
       <SnapRaceMode visible={showSnapRace} onClose={() => setShowSnapRace(false)} userId={user?.id ?? ''} friends={friendLocations.map(f => ({ id: f.id, name: f.name }))} gems={user?.gems ?? 0} />
-      <ConvoyMode visible={showConvoy} onClose={() => setShowConvoy(false)} members={friendLocations.map(f => ({ id: f.id, name: f.name, lat: f.lat, lng: f.lng }))} onStartConvoy={() => setShowConvoy(false)} />
+      <ConvoyMode
+        visible={showConvoy}
+        onClose={() => setShowConvoy(false)}
+        members={friendLocations.map((f) => ({ id: f.id, name: f.name, lat: f.lat, lng: f.lng }))}
+        onStartConvoy={(dest) => {
+          setShowConvoy(false);
+          void handleSelectResult({ name: dest.name, address: '', lat: dest.lat, lng: dest.lng });
+        }}
+      />
       {showGemOverlay && <GemOverlay visible={showGemOverlay} gemsEarned={gemOverlayAmount} onDone={() => setShowGemOverlay(false)} />}
+      <MapCategoryExploreSheet
+        visible={categoryExplore != null}
+        onClose={() => setCategoryExplore(null)}
+        title={categoryExplore?.title ?? ''}
+        subtitle={categoryExplore?.subtitle}
+        loading={categoryExplore?.loading ?? false}
+        error={categoryExplore?.error ?? null}
+        results={categoryExplore?.results ?? []}
+        userLat={location.lat}
+        userLng={location.lng}
+        colors={{
+          surface: colors.surfaceSecondary,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          textTertiary: colors.textTertiary,
+          border: colors.border,
+          primary: colors.primary,
+        }}
+        onPick={(row) => {
+          setCategoryExplore(null);
+          void handleSelectResult({
+            name: row.name,
+            address: row.address,
+            lat: row.lat,
+            lng: row.lng,
+            place_id: row.place_id,
+            placeType: row.placeType,
+          });
+        }}
+      />
       <TripShare visible={showTripShare} onClose={() => setShowTripShare(false)} trip={nav.tripSummary ?? null} />
 
       <OrionChat
@@ -2358,49 +2543,7 @@ const s = StyleSheet.create({
   resultName: { fontSize: 15, fontWeight: '600' },
   resultAddr: { fontSize: 12, marginTop: 3 },
 
-  // ─── Unified premium turn card (larger, Google Maps–inspired) ───────────
   turnWrap: { position: 'absolute', left: 0, right: 0, zIndex: 25 },
-  tcPremWrap: {
-    marginHorizontal: 10,
-    marginTop: Platform.OS === 'ios' ? 4 : 8,
-    overflow: 'hidden',
-  },
-  // Larger padding for a more premium feel
-  tcPremGrad: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12 },
-  tcPremRow: { flexDirection: 'row', alignItems: 'center' },
-  // Distance block: bigger numbers
-  tcPremDistBlock: { alignItems: 'center', minWidth: 60, flexShrink: 0 },
-  tcPremDistVal: { color: '#fff', fontSize: 34, fontWeight: '900', letterSpacing: -1.5, lineHeight: 36 },
-  tcPremDistUnit: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '700', marginTop: -2, textTransform: 'uppercase', letterSpacing: 0.5 },
-  // Icon box: larger
-  tcPremIconBox: {
-    width: 60, height: 60, borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.20)',
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.32)',
-    justifyContent: 'center', alignItems: 'center',
-    marginHorizontal: 14, flexShrink: 0,
-  },
-  tcPremInstrBlock: { flex: 1, minWidth: 0 },
-  // Instruction: slightly larger
-  tcPremInstr: { color: '#fff', fontSize: 19, fontWeight: '800', letterSpacing: -0.3, lineHeight: 26 },
-  tcPremThenRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5 },
-  tcPremThen: { color: 'rgba(255,255,255,0.70)', fontSize: 13, fontWeight: '600', flex: 1 },
-  tcPremMute: { paddingLeft: 12, paddingTop: 2, flexShrink: 0 },
-  // Road strip: slightly more visible
-  tcPremRoadStrip: {
-    flexDirection: 'row', alignItems: 'center',
-    marginTop: 8, paddingTop: 7,
-    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.16)',
-  },
-  tcPremRoadTxt: { color: 'rgba(255,255,255,0.62)', fontSize: 12, fontWeight: '500', flex: 1 },
-  // Road shield badge (mimics highway markers)
-  tcRoadShield: {
-    backgroundColor: 'rgba(255,255,255,0.20)',
-    borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.30)',
-    flexShrink: 0,
-  },
-  tcRoadShieldTxt: { color: '#fff', fontSize: 10, fontWeight: '700' },
 
   // Legacy turn card refs (kept so old styles don't crash)
   turnCard: { margin: 12, marginTop: Platform.OS === 'ios' ? 8 : 12, borderRadius: 20, flexDirection: 'row', padding: 16, alignItems: 'center', ...shadow(24, 0.5) },

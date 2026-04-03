@@ -5,6 +5,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- transitional: partner v2 responses vary; narrow types as contracts stabilize */
 
 import { getApiBaseUrl } from '@/services/api'
+import { messageFromHttpJson } from '@/lib/httpErrorMessage'
 
 class PartnerApiService {
   private partnerId: string = 'default_partner'
@@ -48,16 +49,20 @@ class PartnerApiService {
       if (!response.ok) {
         let detail = ''
         try {
-          const payload = await response.clone().json() as { detail?: string; message?: string }
-          detail = payload.detail || payload.message || ''
+          const payload = await response.clone().json()
+          detail = messageFromHttpJson(payload, response.status)
         } catch {
-          detail = ''
+          detail = messageFromHttpJson(null, response.status)
         }
         if (response.status === 401 && token) {
           this.logout()
           throw new Error('Session expired. Please sign in again.')
         }
-        throw new Error(detail || `HTTP error! status: ${response.status}`)
+        const friendly =
+          response.status === 404 && !detail
+            ? 'This partner feature is not available.'
+            : detail
+        throw new Error(friendly || `Something went wrong (${response.status}). Please try again.`)
       }
       return await response.json()
     } catch (error) {

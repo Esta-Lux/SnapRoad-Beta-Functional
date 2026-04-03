@@ -40,8 +40,8 @@ export default function ScannerWorkspace({
   useEffect(() => {
     return () => {
       if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {})
-        scannerRef.current.clear().catch(() => {})
+        void Promise.resolve(scannerRef.current.stop()).catch(() => {})
+        void Promise.resolve(scannerRef.current.clear()).catch(() => {})
       }
     }
   }, [])
@@ -71,8 +71,8 @@ export default function ScannerWorkspace({
 
   const stopCamera = () => {
     if (scannerRef.current) {
-      scannerRef.current.stop().catch(() => {})
-      scannerRef.current.clear().catch(() => {})
+      void Promise.resolve(scannerRef.current.stop()).catch(() => {})
+      void Promise.resolve(scannerRef.current.clear()).catch(() => {})
       scannerRef.current = null
     }
   }

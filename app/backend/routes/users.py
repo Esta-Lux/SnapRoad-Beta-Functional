@@ -93,6 +93,7 @@ def get_user_profile(auth_user: CurrentUser):
                     "role",
                     "streak",
                     "vehicle_height_meters",
+                    "vehicle_type",
                 ):
                     if row.get(k) is not None:
                         user[k] = row[k]
@@ -528,6 +529,11 @@ def update_profile(body: dict, auth_user: CurrentUser):
             if height < 0 or height > 5.0:
                 raise HTTPException(status_code=400, detail="vehicle_height_meters must be between 0 and 5.0")
             updates["vehicle_height_meters"] = height
+    if "vehicle_type" in updates:
+        vt = str(updates.get("vehicle_type") or "").strip().lower()
+        if vt not in ("car", "motorcycle", ""):
+            raise HTTPException(status_code=400, detail="vehicle_type must be car, motorcycle, or empty")
+        updates["vehicle_type"] = vt if vt else None
     # Graceful write behavior: if persistence layer/schema lacks this field,
     # keeping it in-memory remains non-fatal for this endpoint.
     _persist_user(str(user.get("id")), updates)

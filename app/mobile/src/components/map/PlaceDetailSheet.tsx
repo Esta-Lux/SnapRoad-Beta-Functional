@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { api } from '../../api/client';
 import { haversineMeters } from '../../utils/distance';
+import type { SavedLocation } from '../../types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -86,6 +87,8 @@ interface Props {
   onClose: () => void;
   onDirections: (place: { name: string; address: string; lat: number; lng: number }) => void;
   onSave?: (place: SavedPlacePayload) => void | Promise<void>;
+  savedPlaces?: SavedLocation[];
+  onFavoritesChange?: () => void;
   isLight?: boolean;
 }
 
@@ -250,7 +253,15 @@ function normalizeDetail(placeId: string, d: Record<string, unknown>, summary?: 
 }
 
 export default function PlaceDetailSheet({
-  placeId, summary, userLocation, onClose, onDirections, onSave, isLight = false,
+  placeId,
+  summary,
+  userLocation,
+  onClose,
+  onDirections,
+  onSave,
+  savedPlaces = [],
+  onFavoritesChange,
+  isLight = false,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<PlaceDetailData | null>(null);
@@ -357,6 +368,22 @@ export default function PlaceDetailSheet({
       ? haversineMeters(userLocation!.lat, userLocation!.lng, lat, lng)
       : null;
 
+  const favoriteMatch = useMemo((): SavedLocation | null => {
+    if (lat == null || lng == null || !savedPlaces.length) return null;
+    for (const p of savedPlaces) {
+      if (p.lat == null || p.lng == null) continue;
+      if (haversineMeters(lat, lng, p.lat, p.lng) < 85) {
+        const c = (p.category || '').toLowerCase();
+        if (c === 'favorite' || (c !== 'home' && c !== 'work')) return p;
+      }
+    }
+    return null;
+  }, [lat, lng, savedPlaces]);
+
+  useEffect(() => {
+    setSaved(!!favoriteMatch);
+  }, [favoriteMatch]);
+
   const dismissSheet = () => {
     translateY.value = withTiming(SCREEN_H, { duration: 250 });
     backdropOpacity.value = withTiming(0, { duration: 200 }, () => { runOnJS(onClose)(); });
@@ -393,6 +420,39 @@ export default function PlaceDetailSheet({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   }, [place, onSave, lat, lng]);
+
+  const handleFavorite = useCallback(async () => {
+    if (!place || lat == null || lng == null) return;
+    try {
+      if (favoriteMatch?.id) {
+        const res = await api.delete(`/api/locations/${favoriteMatch.id}`);
+        if (!res.success) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          return;
+        }
+        setSaved(false);
+        onFavoritesChange?.();
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        return;
+      }
+      const res = await api.post('/api/locations', {
+        name: place.name,
+        address: place.address ?? '',
+        category: 'favorite',
+        lat,
+        lng,
+      });
+      if (!res.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        return;
+      }
+      setSaved(true);
+      onFavoritesChange?.();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  }, [place, lat, lng, favoriteMatch, onFavoritesChange]);
 
   const handleShare = useCallback(async () => {
     if (!place || lat == null || lng == null) return;
@@ -781,11 +841,13 @@ export default function PlaceDetailSheet({
                 <View style={S.bottomActions}>
                   {onSave ? (
                     <TouchableOpacity
-                      style={[S.bottomBtn, { backgroundColor: surface, borderColor: border }]}
-                      onPress={handleSave}
+                      style={[S.bottomBtn, { backgroundColor: surface, borderColor: saved ? '#FECACA' : border }]}
+                      onPress={handleFavorite}
                     >
-                      <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={18} color={saved ? accent : text2} />
-                      <Text style={[S.bottomBtnText, { color: saved ? accent : text1 }]}>{saved ? 'Saved' : 'Save'}</Text>
+                      <Ionicons name={saved ? 'heart' : 'heart-outline'} size={18} color={saved ? '#EF4444' : text2} />
+                      <Text style={[S.bottomBtnText, { color: saved ? '#EF4444' : text1 }]}>
+                        {saved ? 'Favorites' : 'Add to Favorites'}
+                      </Text>
                     </TouchableOpacity>
                   ) : null}
                   <TouchableOpacity

@@ -639,10 +639,18 @@ export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg
                         <Ionicons name={PLAN_ICONS[tier as PlanTier] as any} size={16} color={accent} />
                         <Text style={{ color: accent, fontSize: 16, fontWeight: '800' }}>{plan.name}</Text>
                       </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
                         <Text style={{ color: text, fontSize: 26, fontWeight: '900' }}>{plan.price.split('/')[0]}</Text>
                         {plan.price.includes('/') && <Text style={{ color: sub, fontSize: 13 }}>/{plan.price.split('/')[1]}</Text>}
                       </View>
+                      {plan.compareAtPrice ? (
+                        <Text style={{ color: sub, fontSize: 13, marginTop: 4, textDecorationLine: 'line-through' }}>
+                          Regular {plan.compareAtPrice}
+                        </Text>
+                      ) : null}
+                      {plan.savingsHint ? (
+                        <Text style={{ color: '#22C55E', fontSize: 12, fontWeight: '600', marginTop: 4 }}>{plan.savingsHint}</Text>
+                      ) : null}
                       {(plan as any).foundersNote && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
                           <Ionicons name="star" size={10} color="#FF9500" />
