@@ -6,6 +6,9 @@ import { distanceToPolyline, haversineMeters, remainingDistanceOnPolyline } from
 import { speak, formatTurnInstruction, stopSpeaking, configureAudioSession } from '../utils/voice';
 import { api } from '../api/client';
 import * as Haptics from 'expo-haptics';
+import { useAuth } from '../contexts/AuthContext';
+import { tripGemsFromDurationMinutes } from '../utils/tripGems';
+import type { ApiUser } from '../types';
 
 export interface NavigationData {
   origin: Coordinate & { name?: string };
@@ -22,6 +25,7 @@ export interface NavigationData {
 
 export interface TripSummary {
   distance: number;
+  /** Minutes */
   duration: number;
   safety_score: number;
   gems_earned: number;
@@ -29,6 +33,8 @@ export interface TripSummary {
   origin: string;
   destination: string;
   date: string;
+  /** False = trip sheet still shows, but drive did not meet min distance/time for rewards. */
+  counted?: boolean;
 }
 
 export function useNavigation(params: {
@@ -38,6 +44,11 @@ export function useNavigation(params: {
   drivingMode: DrivingMode;
 }) {
   const { userLocation, speed, heading, drivingMode } = params;
+  const { user, setUserFromApi } = useAuth();
+  const setUserFromApiRef = useRef(setUserFromApi);
+  useEffect(() => {
+    setUserFromApiRef.current = setUserFromApi;
+  }, [setUserFromApi]);
 
   const [navigationData, setNavigationData] = useState<NavigationData | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
@@ -205,15 +216,32 @@ export function useNavigation(params: {
     rerouteInFlightRef.current = false;
     tripStartTimeRef.current = null;
 
-    if (
-      traveledRef.current < MIN_GPS_METERS
-      || durationSec < MIN_QUALIFYING_SEC
-      || roundedDist < MIN_QUALIFYING_MI
-    ) {
+    const qualifies =
+      traveledRef.current >= MIN_GPS_METERS
+      && durationSec >= MIN_QUALIFYING_SEC
+      && roundedDist >= MIN_QUALIFYING_MI;
+
+    const summaryPayload: TripSummary = {
+      distance: roundedDist,
+      duration: Math.max(1, durationMin || 1),
+      safety_score: 85,
+      gems_earned: qualifies
+        ? tripGemsFromDurationMinutes(Math.max(1, durationMin || 1), Boolean(user?.isPremium))
+        : 0,
+      xp_earned: qualifies ? 100 : 0,
+      origin: originName,
+      destination: destName,
+      date: new Date().toLocaleDateString(),
+      counted: qualifies,
+    };
+
+    queueMicrotask(() => setTripSummary(summaryPayload));
+
+    if (!qualifies) {
       setTimeout(
         () =>
           speak(
-            'Navigation ended. Trips count after you drive a short distance for at least a minute.',
+            'Trip summary saved. Drive at least about two tenths of a mile for forty seconds to earn gems next time.',
             'normal',
             drivingMode,
           ),
@@ -228,35 +256,20 @@ export function useNavigation(params: {
       ? new Date(tripStartMs).toISOString()
       : new Date(now - durationSec * 1000).toISOString();
 
-    const summaryPayload: TripSummary = {
-      distance: roundedDist,
-      duration: Math.max(1, durationMin),
+    api.post('/api/trips/complete', {
+      distance_miles: roundedDist,
+      duration_seconds: durationSec,
       safety_score: 85,
-      gems_earned: 5,
-      xp_earned: 100,
-      origin: originName,
-      destination: destName,
-      date: new Date().toLocaleDateString(),
-    };
-
-    queueMicrotask(() => setTripSummary(summaryPayload));
-
-    api.post<{ success: boolean; data?: { gems_earned?: number; xp_earned?: number; safety_score?: number } }>(
-      '/api/trips/complete',
-      {
-        distance_miles: roundedDist,
-        duration_seconds: durationSec,
-        safety_score: 85,
-        started_at: startedAt,
-        ended_at: new Date(now).toISOString(),
-        hard_braking_events: 0,
-        speeding_events: 0,
-        incidents_reported: 0,
-      },
-    ).then((res) => {
+      started_at: startedAt,
+      ended_at: new Date(now).toISOString(),
+      hard_braking_events: 0,
+      speeding_events: 0,
+      incidents_reported: 0,
+    }).then(async (res) => {
       if (!res.success || !res.data) return;
-      const root = res.data as Record<string, unknown>;
-      const d = (root?.data as Record<string, unknown> | undefined) ?? root;
+      const body = res.data as Record<string, unknown>;
+      const d = (body?.data as Record<string, unknown> | undefined) ?? body;
+      const apiCounted = d?.counted !== false && d?.trip_id != null;
       setTripSummary((prev) => {
         if (!prev) return prev;
         return {
@@ -264,10 +277,18 @@ export function useNavigation(params: {
           gems_earned: Number(d?.gems_earned ?? prev.gems_earned),
           xp_earned: Number(d?.xp_earned ?? prev.xp_earned),
           safety_score: Number(d?.safety_score ?? prev.safety_score),
+          counted: apiCounted,
         };
       });
-    }).catch(() => { /* offline */ });
-  }, [navigationData, drivingMode, userLocation]);
+      if (apiCounted) {
+        const pr = await api.getProfile();
+        const payload = (pr.data as { data?: Record<string, unknown> } | undefined)?.data ?? pr.data;
+        if (pr.success && payload && typeof payload === 'object') {
+          setUserFromApiRef.current(payload as ApiUser);
+        }
+      }
+    }).catch(() => { /* offline — summary already shown */ });
+  }, [navigationData, drivingMode, userLocation, user?.isPremium]);
 
   const dismissTripSummary = useCallback(() => setTripSummary(null), []);
 

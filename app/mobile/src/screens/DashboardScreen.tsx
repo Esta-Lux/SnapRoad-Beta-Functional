@@ -7,6 +7,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,23 +17,48 @@ import SnapRaceMode from '../components/social/SnapRaceMode';
 import Skeleton from '../components/common/Skeleton';
 import Modal from '../components/common/Modal';
 import type { Friend } from '../types';
+import { storage } from '../utils/storage';
 
 type Section = 'friends' | 'family';
+
+const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
+
+function formatFriendSeen(iso?: string): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (sec < 45) return 'just now';
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
+}
 
 const FriendRow = memo(function FriendRow({
   friend, cardBg, text, sub, onPress,
 }: { friend: Friend; cardBg: string; text: string; sub: string; onPress: (f: Friend) => void }) {
   const initials = (friend.name ?? 'U').split(' ').filter(Boolean).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const online = friend.status === 'accepted' && friend.is_sharing;
+  let subLine = 'Offline';
+  if (friend.status === 'pending') subLine = 'Pending acceptance';
+  else if (!online) subLine = friend.last_updated ? `Last seen ${formatFriendSeen(friend.last_updated)}` : 'Not sharing location';
+  else if (friend.is_navigating && friend.destination_name) subLine = `Navigating to ${friend.destination_name}`;
+  else if ((friend.speed_mph ?? 0) > 3) subLine = `Driving · ${Math.round(friend.speed_mph ?? 0)} mph`;
+  else subLine = `Live · ${formatFriendSeen(friend.last_updated)}`;
+
   return (
     <TouchableOpacity style={[styles.friendCard, { backgroundColor: cardBg }]} onPress={() => onPress(friend)} activeOpacity={0.7}>
       <View style={styles.friendAvatar}><Text style={styles.friendInitials}>{initials}</Text></View>
       <View style={{ flex: 1, marginLeft: 12 }}>
         <Text style={[styles.friendName, { color: text }]}>{friend.name}</Text>
-        <Text style={{ color: sub, fontSize: 12 }}>
-          {online && (friend.speed_mph ?? 0) > 3 ? `Driving · ${Math.round(friend.speed_mph ?? 0)} mph` : online ? 'Online' : friend.status === 'pending' ? 'Pending' : 'Offline'}
-        </Text>
+        <Text style={{ color: sub, fontSize: 12 }} numberOfLines={2}>{subLine}</Text>
       </View>
+      {online && friend.battery_pct != null && Number.isFinite(friend.battery_pct) && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: 8 }}>
+          <Ionicons name="battery-charging-outline" size={15} color={friend.battery_pct > 20 ? '#34C759' : '#FF9500'} />
+          <Text style={{ color: sub, fontSize: 11, fontWeight: '800' }}>{Math.round(friend.battery_pct)}%</Text>
+        </View>
+      )}
       {online && <View style={styles.onlineDot} />}
     </TouchableOpacity>
   );
@@ -161,6 +187,7 @@ export default function DashboardScreen() {
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [isSharingLocation, setIsSharingLocation] = useState(false);
   const [showSnapRace, setShowSnapRace] = useState(false);
+  const [snapRaceOpponentId, setSnapRaceOpponentId] = useState<string | null>(null);
   const [incomingReq, setIncomingReq] = useState<{ id: string; from_user_id: string; from_name?: string; from_email?: string }[]>([]);
   const [outgoingReq, setOutgoingReq] = useState<{ id: string; to_user_id: string; to_name?: string }[]>([]);
   const [searchHits, setSearchHits] = useState<{ id: string; name: string; email?: string; friend_code?: string; is_friend?: boolean }[]>([]);
@@ -196,6 +223,16 @@ export default function DashboardScreen() {
     if (section === 'friends') {
       loadFriends();
       loadPending();
+      const local = storage.getString(SHARE_LOC_STORAGE_KEY);
+      if (local === '1') setIsSharingLocation(true);
+      else if (local === '0') setIsSharingLocation(false);
+      api.get<any>('/api/friends/location/sharing').then((r) => {
+        const v = (r.data as any)?.data?.is_sharing;
+        if (typeof v === 'boolean') {
+          setIsSharingLocation(v);
+          storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
+        }
+      }).catch(() => {});
     }
   }, [section, loadFriends, loadPending]);
 
@@ -237,6 +274,12 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10 }}>
+        <Text style={{ color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }}>Social</Text>
+        <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4, lineHeight: 18 }}>
+          Friends, live location, and challenges. Open SnapRace or Convoy from the map menu anytime.
+        </Text>
+      </View>
       {/* Section toggle */}
       <Animated.View entering={FadeInDown.duration(300).delay(50)} style={[styles.toggleRow, { backgroundColor: colors.surfaceSecondary }]}>
         {(['friends', 'family'] as Section[]).map((s) => (
@@ -423,11 +466,29 @@ export default function DashboardScreen() {
           <>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{selectedFriend.name}</Text>
             <TouchableOpacity style={[styles.friendAction, { backgroundColor: colors.primary }]} activeOpacity={0.8}
-              onPress={() => { setSelectedFriend(null); navigation.getParent()?.navigate('Map'); }}>
+              onPress={() => {
+                const lat = selectedFriend.lat;
+                const lng = selectedFriend.lng;
+                if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 1e-6 && Math.abs(lng) < 1e-6)) {
+                  Alert.alert('Location unavailable', 'This friend is not sharing their live location yet.');
+                  return;
+                }
+                setSelectedFriend(null);
+                navigation.getParent()?.navigate('Map', {
+                  screen: 'MapMain',
+                  params: {
+                    navigateToFriend: { name: selectedFriend.name, lat, lng, nonce: Date.now() },
+                  },
+                });
+              }}>
               <Ionicons name="navigate-outline" size={16} color="#fff" /><Text style={styles.friendActionText}>Navigate to</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.friendAction, { backgroundColor: '#7C3AED', marginTop: 8 }]} activeOpacity={0.8}
-              onPress={() => { setSelectedFriend(null); setShowSnapRace(true); }}>
+              onPress={() => {
+                setSnapRaceOpponentId(selectedFriend.friend_id);
+                setSelectedFriend(null);
+                setShowSnapRace(true);
+              }}>
               <Ionicons name="flash-outline" size={16} color="#fff" /><Text style={styles.friendActionText}>Challenge to Race</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.friendAction, { backgroundColor: colors.danger, marginTop: 8 }]} activeOpacity={0.8} onPress={() => handleRemoveFriend(selectedFriend.friend_id)}>
@@ -437,7 +498,14 @@ export default function DashboardScreen() {
         )}
       </Modal>
 
-      <SnapRaceMode visible={showSnapRace} onClose={() => setShowSnapRace(false)} userId={user?.id ?? ''} friends={friends.filter((f) => f.status === 'accepted').map((f) => ({ id: f.friend_id, name: f.name }))} gems={user?.gems ?? 0} />
+      <SnapRaceMode
+        visible={showSnapRace}
+        onClose={() => { setShowSnapRace(false); setSnapRaceOpponentId(null); }}
+        userId={user?.id ?? ''}
+        friends={friends.filter((f) => f.status === 'accepted').map((f) => ({ id: f.friend_id, name: f.name }))}
+        gems={user?.gems ?? 0}
+        initialOpponentId={snapRaceOpponentId}
+      />
     </SafeAreaView>
   );
 }

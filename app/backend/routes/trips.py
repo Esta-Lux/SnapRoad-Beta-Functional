@@ -8,7 +8,7 @@ from middleware.auth import get_current_user
 from pydantic import BaseModel
 from uuid import uuid4
 from services.mock_data import (
-    users_db, current_user_id, trips_db, fuel_logs, fuel_stats, FUEL_PRICES, XP_CONFIG,
+    users_db, current_user_id, trips_db, fuel_logs, FUEL_PRICES, XP_CONFIG,
     create_new_user,
 )
 from routes.gamification import add_xp_to_user
@@ -250,18 +250,23 @@ class TripCompleteBody(BaseModel):
     speeding_events: int = 0
     incidents_reported: int = 0
 
-_MIN_TRIP_MILES = 0.15
-_MIN_TRIP_SECONDS = 45
+# Keep in sync with mobile `useNavigation.stopNavigation` qualifying gates.
+_MIN_TRIP_MILES = 0.12
+_MIN_TRIP_SECONDS = 42
 
 
 def _compute_trip_rewards(
-    distance: float, safety: float, user: dict,
+    distance: float,
+    safety: float,
+    user: dict,
+    duration_seconds: float,
 ) -> tuple[int, int]:
     """Return (gems_earned, xp_earned) for a qualifying trip."""
+    from services.gem_economy import trip_gems_from_duration_minutes
+
     is_premium = user.get("is_premium") or user.get("plan", "basic") not in ("basic", "free", "")
-    safety_bonus = 5 if safety > 90 else 0
-    base_gems = max(1, int(distance * 2)) + safety_bonus
-    gems = base_gems * 2 if is_premium else base_gems
+    duration_min = max(0.0, float(duration_seconds)) / 60.0
+    gems = trip_gems_from_duration_minutes(duration_min, bool(is_premium))
     xp = max(10, int(distance * 100)) + (100 if safety > 90 else 0)
     return gems, xp
 
@@ -320,11 +325,11 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
                 "xp_earned": 0,
                 "safety_score": max(0, min(100, body.safety_score)),
                 "distance_miles": round(distance, 2),
-                "message": f"Trips need at least ~{_MIN_TRIP_MILES} mi and {_MIN_TRIP_SECONDS}s of driving.",
+                "message": f"Trips need at least ~{_MIN_TRIP_MILES:.2f} mi and {_MIN_TRIP_SECONDS}s of driving.",
             },
         }
     safety = max(0, min(100, body.safety_score))
-    gems_earned, xp_earned = _compute_trip_rewards(distance, safety, user)
+    gems_earned, xp_earned = _compute_trip_rewards(distance, safety, user, body.duration_seconds)
     trip_id = str(uuid4())
     trip_row = _build_trip_row(trip_id, user_id, body, distance, safety, gems_earned, xp_earned)
 
@@ -339,6 +344,7 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
         "success": True,
         "data": {
             "trip_id": trip_id,
+            "counted": True,
             "gems_earned": gems_earned,
             "xp_earned": xp_earned,
             "safety_score": round(safety, 1),
@@ -620,6 +626,91 @@ def _fuel_uid(user: dict) -> str:
     return str(user.get("user_id") or user.get("id") or "")
 
 
+def _prior_fill_timestamp(prior: dict) -> Optional[str]:
+    ct = prior.get("created_at")
+    if ct:
+        return str(ct)
+    d = prior.get("date")
+    return f"{d}T00:00:00+00:00" if d else None
+
+
+def _trip_miles_since(profile_id: str, since_iso: Optional[str]) -> float:
+    """Sum SnapRoad `trips.distance_miles` strictly after last fuel log timestamp."""
+    if not since_iso or not profile_id:
+        return 0.0
+    try:
+        sb = get_supabase()
+        rows = (
+            sb.table("trips")
+            .select("distance_miles")
+            .eq("profile_id", profile_id)
+            .gt("created_at", since_iso)
+            .execute()
+        )
+        return round(sum(float(r.get("distance_miles") or 0) for r in (rows.data or [])), 2)
+    except Exception:
+        total = 0.0
+        since = str(since_iso)
+        for t in trips_db:
+            pid = str(t.get("profile_id") or t.get("user_id") or "")
+            if pid != str(profile_id):
+                continue
+            tc = str(t.get("created_at") or "")
+            if tc and tc > since:
+                total += float(t.get("distance_miles") or 0)
+        return round(total, 2)
+
+
+def _fuel_get_latest_fill(uid: str) -> Optional[dict]:
+    try:
+        sb = get_supabase()
+        r = (
+            sb.table("fuel_history")
+            .select("*")
+            .eq("user_id", uid)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if r.data:
+            return r.data[0]
+    except Exception:
+        pass
+    return fuel_logs[0] if fuel_logs else None
+
+
+def _fuel_odometer_suggestion(uid: str) -> dict:
+    """Last fill + SnapRoad trip miles for smart odometer (missed off-app trips = user adjusts)."""
+    blank = {
+        "last_fill_odometer_mi": None,
+        "last_fill_at": None,
+        "trips_miles_since_last_fill": None,
+        "suggested_odometer_mi": None,
+        "can_auto_odometer": False,
+    }
+    prior = _fuel_get_latest_fill(uid)
+    if not prior:
+        return blank
+    po = prior.get("odometer")
+    if po is None or po == "":
+        return blank
+    try:
+        lo = float(po)
+    except (TypeError, ValueError):
+        return blank
+    since = _prior_fill_timestamp(prior)
+    if not since:
+        return blank
+    trip_miles = _trip_miles_since(uid, since)
+    return {
+        "last_fill_odometer_mi": round(lo, 1),
+        "last_fill_at": since,
+        "trips_miles_since_last_fill": round(trip_miles, 1),
+        "suggested_odometer_mi": round(lo + trip_miles, 1),
+        "can_auto_odometer": True,
+    }
+
+
 def _fuel_query(user: dict, sb=None):
     """Paginated fuel_history for the authenticated user."""
     if sb is None:
@@ -686,24 +777,89 @@ def get_fuel_history(
 @router.post("/fuel/log")
 def log_fuel(entry: FuelLogCreate, user: CurrentUser):
     uid = _fuel_uid(user)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Invalid user")
     total_cost = round(float(entry.gallons) * float(entry.price_per_gallon), 2)
+    is_full = bool(entry.is_full_tank)
+
+    prior_row = _fuel_get_latest_fill(uid)
+    prior_odom: Optional[float] = None
+    prior_is_full = True
+    since_ts: Optional[str] = None
+    trip_miles = 0.0
+    if prior_row:
+        since_ts = _prior_fill_timestamp(prior_row)
+        trip_miles = _trip_miles_since(uid, since_ts)
+        po = prior_row.get("odometer")
+        if po is not None and po != "":
+            try:
+                prior_odom = float(po)
+            except (TypeError, ValueError):
+                prior_odom = None
+        prior_is_full = bool(prior_row.get("is_full_tank", True))
+
+    odometer_source = "manual"
+    new_odom: Optional[float] = None
+    if entry.use_auto_odometer:
+        if prior_row is None or prior_odom is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Automatic odometer needs a prior fill with odometer. Enter your dash reading for this fill.",
+            )
+        new_odom = round(prior_odom + trip_miles, 1)
+        odometer_source = "auto_trips"
+    elif entry.odometer is not None:
+        try:
+            new_odom = round(float(entry.odometer), 1)
+        except (TypeError, ValueError):
+            new_odom = None
+
+    if new_odom is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Enter odometer, or log with SnapRoad trip estimate (needs a prior fill with odometer).",
+        )
+
+    mpg_this_fill = None
+    if (
+        new_odom is not None
+        and prior_odom is not None
+        and new_odom > prior_odom
+        and float(entry.gallons) > 0
+        and is_full
+        and prior_is_full
+    ):
+        mpg_this_fill = round((new_odom - prior_odom) / float(entry.gallons), 1)
+
     payload = {
         "user_id": uid,
         "station_name": (entry.station or "Unknown").strip() or "Unknown",
         "price_per_gallon": round(float(entry.price_per_gallon), 4),
         "gallons": round(float(entry.gallons), 4),
         "total_cost": total_cost,
-        "odometer": round(float(entry.odometer), 1) if entry.odometer else None,
+        "odometer": new_odom,
+        "is_full_tank": is_full,
+        "odometer_source": odometer_source,
+        "trips_miles_used": round(trip_miles, 2) if prior_row else None,
     }
     try:
         sb = get_supabase()
         created = sb.table("fuel_history").insert(payload).execute()
         row = (created.data or [{}])[0]
-        return {"success": True, "message": "Fuel log entry added", "data": row}
+        out = {**row, "mpg_this_fill": mpg_this_fill}
+        return {"success": True, "message": "Fuel log entry added", "data": out}
     except Exception:
         if ENVIRONMENT == "production":
             raise
-        new_entry = {**payload, "id": str(uuid4()), "date": datetime.now(timezone.utc).date().isoformat(), "total": total_cost}
+        now_iso = datetime.now(timezone.utc).isoformat()
+        new_entry = {
+            **payload,
+            "id": str(uuid4()),
+            "date": datetime.now(timezone.utc).date().isoformat(),
+            "total": total_cost,
+            "mpg_this_fill": mpg_this_fill,
+            "created_at": now_iso,
+        }
         fuel_logs.insert(0, new_entry)
         return {"success": True, "message": "Fuel log entry added (dev/memory)", "data": new_entry}
 
@@ -748,26 +904,86 @@ def get_fuel_prices(user: CurrentUser, lat: float = 39.9612, lng: float = -82.99
     }
 
 
+def _compute_fuel_stats_from_items(items: list) -> dict:
+    """Derive gig-driver-friendly stats: interval MPG, $/mi, last odometer (items newest-first)."""
+    total_gallons = sum(float(f.get("gallons", 0)) for f in items)
+    total_spent = sum(float(f.get("total_cost", f.get("total", 0))) for f in items)
+
+    def _odom(f) -> Optional[float]:
+        o = f.get("odometer")
+        if o is None or o == "":
+            return None
+        try:
+            v = float(o)
+            return v if v > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    with_odom = [f for f in items if _odom(f) is not None]
+    chrono = sorted(
+        with_odom,
+        key=lambda f: (f.get("created_at") or f.get("date") or "", f.get("id") or ""),
+    )
+
+    last_odometer_mi = round(float(chrono[-1]["odometer"]), 1) if chrono else None
+    miles_since_last_fill = None
+    if len(chrono) >= 2:
+        miles_since_last_fill = round(float(chrono[-1]["odometer"]) - float(chrono[-2]["odometer"]), 1)
+
+    interval_mpgs: list[float] = []
+    for i in range(1, len(chrono)):
+        prev_f = chrono[i - 1]
+        curr_f = chrono[i]
+        if not bool(prev_f.get("is_full_tank", True)) or not bool(curr_f.get("is_full_tank", True)):
+            continue
+        prev_o = float(prev_f["odometer"])
+        curr_o = float(curr_f["odometer"])
+        gal = float(curr_f.get("gallons", 0))
+        if curr_o > prev_o and gal > 0:
+            interval_mpgs.append((curr_o - prev_o) / gal)
+
+    avg_mpg = round(sum(interval_mpgs) / len(interval_mpgs), 1) if interval_mpgs else None
+
+    odom_span = None
+    if len(chrono) >= 2:
+        odom_span = float(chrono[-1]["odometer"]) - float(chrono[0]["odometer"])
+    cost_per_mile = None
+    if odom_span and odom_span > 0 and total_spent > 0:
+        cost_per_mile = round(total_spent / odom_span, 3)
+
+    return {
+        "total_entries": len(items),
+        "total_gallons": round(total_gallons, 1),
+        "total_spent": round(total_spent, 2),
+        "avg_mpg": avg_mpg,
+        "last_odometer_mi": last_odometer_mi,
+        "miles_since_last_fill": miles_since_last_fill,
+        "cost_per_mile": cost_per_mile,
+    }
+
+
 @router.get("/fuel/stats")
 def get_fuel_stats(user: CurrentUser):
     try:
         sb = get_supabase()
         uid = _fuel_uid(user)
-        rows = sb.table("fuel_history").select("gallons, total_cost, odometer, created_at").eq("user_id", uid).order("created_at", desc=True).execute()
+        rows = (
+            sb.table("fuel_history")
+            .select("id, gallons, total_cost, odometer, created_at, is_full_tank")
+            .eq("user_id", uid)
+            .order("created_at", desc=True)
+            .execute()
+        )
         items = rows.data or []
-        total_gallons = sum(float(f.get("gallons", 0)) for f in items)
-        total_spent = sum(float(f.get("total_cost", 0)) for f in items)
-        avg_mpg = None
-        if len(items) >= 2:
-            first_odom = float(items[-1].get("odometer") or 0)
-            last_odom = float(items[0].get("odometer") or 0)
-            if last_odom > first_odom and total_gallons > 0:
-                avg_mpg = round((last_odom - first_odom) / total_gallons, 1)
-        return {"success": True, "data": {"total_entries": len(items), "total_gallons": round(total_gallons, 1), "total_spent": round(total_spent, 2), "avg_mpg": avg_mpg}}
+        data = _compute_fuel_stats_from_items(items)
+        data.update(_fuel_odometer_suggestion(uid))
+        return {"success": True, "data": data}
     except Exception:
         if ENVIRONMENT == "production":
             raise
-        return {"success": True, "data": fuel_stats}
+        data = _compute_fuel_stats_from_items(fuel_logs)
+        data.update(_fuel_odometer_suggestion(uid))
+        return {"success": True, "data": data}
 
 
 def _fuel_analytics_monthly_supabase(uid: str, month_span: int) -> list:

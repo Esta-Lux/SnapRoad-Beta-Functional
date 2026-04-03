@@ -4,19 +4,20 @@ import Modal from '../components/common/Modal';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../hooks/useLocation';
 import { api } from '../api/client';
-import { PLANS } from '../constants/plans';
+import { PLANS, premiumSavingsPercent, PREMIUM_PUBLIC_MONTHLY } from '../constants/plans';
 import { applySnapRoadFromProfilePayload, computeSnapRoadScoreBreakdown } from '../utils/profileScore';
 import FuelTracker from '../components/profile/FuelTracker';
 import DriverSnapshotModal from '../components/profile/DriverSnapshotModal';
 import HelpSupport from '../components/profile/HelpSupport';
 import SubmitConcern from '../components/profile/SubmitConcern';
-import type { DrivingMode, PlanTier, SavedLocation, SavedRoute, User } from '../types';
+import type { CommuteRoute, DrivingMode, PlanTier, SavedLocation, SavedRoute, User } from '../types';
+import AddCommuteModal from '../components/profile/AddCommuteModal';
 import {
   AboutCard,
   AddPlaceModal,
@@ -44,6 +45,7 @@ import {
   TripHistoryModal,
   WeeklyRecapModal,
   RoutesCard,
+  CommuteRoutesSection,
   SectionHeader,
   SignOutButton,
   VehicleCard,
@@ -71,13 +73,21 @@ export default function ProfileScreen() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [places, setPlaces] = useState<SavedLocation[]>([]);
+  const favoritePlaces = useMemo(
+    () => places.filter((p) => (p.category || '').toLowerCase() === 'favorite'),
+    [places],
+  );
   const [routes, setRoutes] = useState<SavedRoute[]>([]);
+  const [commutes, setCommutes] = useState<CommuteRoute[]>([]);
+  const [commuteLimit, setCommuteLimit] = useState(5);
+  const [showAddCommute, setShowAddCommute] = useState(false);
   const [notifSyncing, setNotifSyncing] = useState(false);
 
   const [placeAlerts, setPlaceAlerts] = useState<{ id: string; name: string; address?: string; alert_minutes_before: number; days_of_week: string[]; realtime_push?: boolean }[]>([]);
   const [placeAlertLimit, setPlaceAlertLimit] = useState(5);
   const [placeAlertPremium, setPlaceAlertPremium] = useState(false);
 
+  const [vehicleType, setVehicleType] = useState<'car' | 'motorcycle'>('car');
   const [tallVehicle, setTallVehicle] = useState(false);
   const [vehicleHeight, setVehicleHeight] = useState('');
   const heightPresets = [
@@ -129,9 +139,18 @@ export default function ProfileScreen() {
   const [gemTxRows, setGemTxRows] = useState<ProfileGemTxItem[]>([]);
   const [badgeRows, setBadgeRows] = useState<ProfileBadgeItem[]>([]);
   const [lastSyncedAt, setLastSyncedAt] = useState<string>('');
-  const [fuelSummary, setFuelSummary] = useState<{ monthlyEstimate: number | null; avgMpg: number | null }>({
+  const [fuelSummary, setFuelSummary] = useState<{
+    monthlyEstimate: number | null;
+    avgMpg: number | null;
+    costPerMile: number | null;
+    lastOdometerMi: number | null;
+    milesSinceLastFill: number | null;
+  }>({
     monthlyEstimate: null,
     avgMpg: null,
+    costPerMile: null,
+    lastOdometerMi: null,
+    milesSinceLastFill: null,
   });
 
   const handleDeleteAccount = useCallback(async () => {
@@ -157,10 +176,11 @@ export default function ProfileScreen() {
       const safeGet = async (url: string) => {
         try { return await api.get<any>(url); } catch { return { success: false, data: null }; }
       };
-      const [profileRes, locRes, routeRes, notifRes, weeklyRes, leaderRes, tripsHistoryRes, gemsRes, badgesRes, fuelStatsRes, fuelTrendsRes] = await Promise.all([
+      const [profileRes, locRes, routeRes, commuteRes, notifRes, weeklyRes, leaderRes, tripsHistoryRes, gemsRes, badgesRes, fuelStatsRes, fuelTrendsRes] = await Promise.all([
         api.getProfile().catch(() => ({ success: false, data: null })),
         safeGet('/api/locations'),
         safeGet('/api/routes'),
+        safeGet('/api/commute-routes'),
         safeGet('/api/settings/notifications'),
         safeGet('/api/trips/weekly-insights'),
         safeGet('/api/leaderboard?time_filter=weekly&limit=10'),
@@ -190,27 +210,46 @@ export default function ProfileScreen() {
         xp: pp.xp != null ? Number(pp.xp) : undefined,
       };
       if (displayName) userPatch.name = displayName;
+      const planLower = planStr.toLowerCase();
+      const premiumByPlan = planLower === 'premium' || planLower === 'family';
+      const premiumByFlag = pp.is_premium != null && Boolean(pp.is_premium);
       if (planStr) {
         userPatch.plan = planStr;
-        userPatch.isFamilyPlan = planStr === 'family';
-        userPatch.isPremium = planStr === 'premium' || planStr === 'family';
-      } else if (pp.is_premium != null) {
-        userPatch.isPremium = Boolean(pp.is_premium);
       }
+      userPatch.isFamilyPlan = planLower === 'family';
+      userPatch.isPremium = premiumByPlan || premiumByFlag;
       if (pp.gem_multiplier != null) {
         userPatch.gem_multiplier = Number(pp.gem_multiplier);
       }
       applySnapRoadFromProfilePayload(userPatch, pp);
       const statsBody = (fuelStatsRes?.data as any)?.data ?? fuelStatsRes?.data ?? {};
       const trendsBody = (fuelTrendsRes?.data as any)?.data ?? fuelTrendsRes?.data ?? {};
-      const avgMpg = statsBody.averageMpg != null ? Number(statsBody.averageMpg) : null;
+      const avgMpgRaw = statsBody.avg_mpg ?? statsBody.averageMpg;
+      const avgMpg = avgMpgRaw != null && avgMpgRaw !== '' ? Number(avgMpgRaw) : null;
       const monthlyGallons = Number(trendsBody.monthly_avg_gallons ?? 0);
       const pricePerGal = Number(trendsBody.avg_price_per_gallon ?? 0);
       const monthlyEstimate =
         monthlyGallons > 0 && pricePerGal > 0 ? Math.round(monthlyGallons * pricePerGal) : null;
-      setFuelSummary({ monthlyEstimate, avgMpg });
+      const cpmRaw = statsBody.cost_per_mile;
+      const costPerMile = cpmRaw != null && cpmRaw !== '' ? Number(cpmRaw) : null;
+      const lastOm = statsBody.last_odometer_mi;
+      const lastOdometerMi = lastOm != null && lastOm !== '' ? Number(lastOm) : null;
+      const msf = statsBody.miles_since_last_fill;
+      const milesSinceLastFill = msf != null && msf !== '' ? Number(msf) : null;
+      setFuelSummary({
+        monthlyEstimate,
+        avgMpg,
+        costPerMile,
+        lastOdometerMi,
+        milesSinceLastFill,
+      });
       setPlaces(Array.isArray(unwrap(locRes)) ? unwrap(locRes) : []);
       setRoutes(Array.isArray(unwrap(routeRes)) ? unwrap(routeRes) : []);
+      if (commuteRes.success && commuteRes.data) {
+        const cw = commuteRes.data as { data?: CommuteRoute[]; limit?: number };
+        setCommutes(Array.isArray(cw.data) ? cw.data : []);
+        setCommuteLimit(Number(cw.limit ?? 5));
+      }
       api.get<any>('/api/place-alerts').then((r) => {
         const d = r?.data?.data ?? r?.data ?? [];
         if (Array.isArray(d)) setPlaceAlerts(d);
@@ -225,10 +264,10 @@ export default function ProfileScreen() {
       setSpeedAlerts(Boolean(push.safety_alerts ?? true));
       const weekly = weeklyRes?.data?.data ?? weeklyRes?.data ?? {};
       setWeeklyRecap({
-        totalTrips: Number(weekly.total_trips ?? 0),
-        totalMiles: Number(weekly.total_miles ?? 0),
+        totalTrips: Number(weekly.total_trips ?? weekly.trips_this_week ?? 0),
+        totalMiles: Number(weekly.total_miles ?? weekly.miles_this_week ?? 0),
         gemsEarnedWeek: Number(weekly.gems_earned_week ?? 0),
-        avgSafetyScore: Number(weekly.safety_score_avg ?? 0),
+        avgSafetyScore: Number(weekly.safety_score_avg ?? weekly.avg_safety_score ?? 0),
         aiTip: String(weekly.ai_tip ?? ''),
       });
       const lb = leaderRes?.data?.data ?? leaderRes?.data ?? {};
@@ -243,6 +282,11 @@ export default function ProfileScreen() {
       const rankNum = Number(lb.my_rank ?? 0);
       setMyRank(rankNum);
       userPatch.rank = rankNum;
+      const vtRaw = pp.vehicle_type;
+      if (vtRaw === 'motorcycle' || vtRaw === 'car') {
+        userPatch.vehicle_type = vtRaw;
+        setVehicleType(vtRaw);
+      }
       updateUserRef.current(userPatch);
       const historyData = tripsHistoryRes?.data?.data ?? tripsHistoryRes?.data ?? {};
       const recentTrips = Array.isArray(historyData.recent_trips) ? historyData.recent_trips : [];
@@ -280,9 +324,21 @@ export default function ProfileScreen() {
     }
   }, []);
 
+  const skipProfileFocusSilentRef = useRef(true);
+
   useEffect(() => {
     loadData('initial');
   }, [loadData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (skipProfileFocusSilentRef.current) {
+        skipProfileFocusSilentRef.current = false;
+        return;
+      }
+      void loadData('silent');
+    }, [loadData]),
+  );
 
   useEffect(() => {
     if (user?.vehicle_height_meters && user.vehicle_height_meters > 0) {
@@ -291,17 +347,29 @@ export default function ProfileScreen() {
     }
   }, [user?.vehicle_height_meters]);
 
+  useEffect(() => {
+    if (user?.vehicle_type === 'motorcycle' || user?.vehicle_type === 'car') {
+      setVehicleType(user.vehicle_type);
+    }
+  }, [user?.vehicle_type]);
+
   const handleSaveVehicle = useCallback(async () => {
-    const height = tallVehicle ? parseFloat(vehicleHeight) : null;
-    const res = await api.put('/api/user/profile', { vehicle_height_meters: height });
+    const height = vehicleType === 'car' && tallVehicle ? parseFloat(vehicleHeight) : null;
+    const res = await api.put('/api/user/profile', {
+      vehicle_height_meters: Number.isFinite(height as number) ? height : null,
+      vehicle_type: vehicleType,
+    });
     if (res.success) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Saved', 'Vehicle settings updated.');
-      updateUser({ vehicle_height_meters: height ?? undefined } as any);
+      updateUser({
+        vehicle_height_meters: height ?? undefined,
+        vehicle_type: vehicleType,
+      } as any);
     } else {
       Alert.alert('Error', res.error ?? 'Could not save vehicle settings');
     }
-  }, [tallVehicle, vehicleHeight, updateUser]);
+  }, [vehicleType, tallVehicle, vehicleHeight, updateUser]);
 
   const handleDeletePlace = useCallback(async (id: number) => {
     Alert.alert('Delete Place', 'Remove this saved place?', [
@@ -312,6 +380,20 @@ export default function ProfileScreen() {
         onPress: async () => {
           await api.delete(`/api/locations/${id}`);
           setPlaces((prev) => prev.filter((p) => p.id !== id));
+        },
+      },
+    ]);
+  }, []);
+
+  const handleDeleteCommute = useCallback(async (id: string) => {
+    Alert.alert('Remove commute', 'Delete this commute alert?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await api.delete(`/api/commute-routes/${id}`);
+          setCommutes((prev) => prev.filter((c) => c.id !== id));
         },
       },
     ]);
@@ -579,6 +661,39 @@ export default function ProfileScreen() {
               onPressShareScore={() => setShowDriverSnapshot(true)}
             />
 
+            <SectionHeader title={`Favorites (${favoritePlaces.length})`} isLight={isLight} />
+            <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
+              <PlacesCard
+                cardBg={cardBg}
+                text={text}
+                sub={sub}
+                places={favoritePlaces}
+                loading={initialLoading}
+                onDelete={handleDeletePlace}
+                onAdd={() => setShowAddPlace(true)}
+              />
+            </View>
+
+            <SectionHeader title={`Commute alerts (${commutes.length}/${commuteLimit})`} isLight={isLight} />
+            <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 6, marginTop: -6, lineHeight: 16 }}>
+              Route + leave time + days. Point &quot;Place alerts&quot; below is for arriving at a single spot.
+            </Text>
+            <CommuteRoutesSection
+              cardBg={cardBg}
+              text={text}
+              sub={sub}
+              border={colors.border}
+              primary={colors.primary}
+              routes={commutes}
+              loading={initialLoading}
+              limit={commuteLimit}
+              onDelete={handleDeleteCommute}
+              onAdd={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowAddCommute(true);
+              }}
+            />
+
             {/* Place Alerts Dashboard */}
             <SectionHeader title={`Place Alerts (${placeAlerts.length}/${placeAlertLimit})`} isLight={isLight} />
             <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 12 }}>
@@ -675,8 +790,28 @@ export default function ProfileScreen() {
                   {fuelSummary.avgMpg != null ? `${fuelSummary.avgMpg} MPG` : '—'}
                 </Text>
               </View>
+              <View style={styles.fuelRow}>
+                <Text style={[styles.fuelLabel, { color: sub }]}>Cost per mile</Text>
+                <Text style={[styles.fuelValue, { color: text }]}>
+                  {fuelSummary.costPerMile != null ? `$${fuelSummary.costPerMile.toFixed(2)}/mi` : '—'}
+                </Text>
+              </View>
+              <View style={styles.fuelRow}>
+                <Text style={[styles.fuelLabel, { color: sub }]}>Last odometer</Text>
+                <Text style={[styles.fuelValue, { color: text }]}>
+                  {fuelSummary.lastOdometerMi != null ? `${fuelSummary.lastOdometerMi.toLocaleString()} mi` : '—'}
+                </Text>
+              </View>
+              {fuelSummary.milesSinceLastFill != null ? (
+                <View style={styles.fuelRow}>
+                  <Text style={[styles.fuelLabel, { color: sub }]}>Miles since prior fill</Text>
+                  <Text style={[styles.fuelValue, { color: text }]}>
+                    {fuelSummary.milesSinceLastFill.toLocaleString()} mi
+                  </Text>
+                </View>
+              ) : null}
               <Text style={[styles.fuelHint, { color: sub }]}>
-                From your fill-ups and trips (see Fuel Tracker for details).
+                Log date, gallons, price, station, and odometer for expense and mileage records. Avg MPG uses miles between fill-ups.
               </Text>
               <TouchableOpacity style={styles.fuelBtn} onPress={() => setShowFuelTracker(true)}>
                 <Text style={styles.fuelBtnText}>Log Fuel Fill-up</Text>
@@ -767,6 +902,36 @@ export default function ProfileScreen() {
             <SectionHeader title="Your Plan" isLight={isLight} />
             <PlanCard cardBg={cardBg} text={text} sub={sub} planName={planConfig.name} planPrice={planConfig.price} planFeatures={planConfig.features} currentPlan={currentPlan} onUpgrade={() => setShowPlanModal(true)} />
 
+            <TouchableOpacity
+              style={{
+                marginHorizontal: 16,
+                marginBottom: 12,
+                paddingVertical: 16,
+                paddingHorizontal: 16,
+                borderRadius: 14,
+                backgroundColor: isLight ? '#EFF6FF' : 'rgba(59,130,246,0.12)',
+                borderWidth: 1,
+                borderColor: colors.primary + '40',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+              onPress={() => setShowPlanModal(true)}
+              activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityLabel="Plans and billing"
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: text, fontSize: 16, fontWeight: '800' }}>Plans &amp; billing</Text>
+                <Text style={{ color: sub, fontSize: 12, marginTop: 4, lineHeight: 16 }}>
+                  {currentPlan === 'basic'
+                    ? `${PLANS.premium.price} founders · reg. $${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo · ~${premiumSavingsPercent()}% off`
+                    : 'View plans, compare features, or change subscription'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+            </TouchableOpacity>
+
             {currentPlan !== 'basic' && (
               <TouchableOpacity
                 style={{ marginHorizontal: 16, marginBottom: 12, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', backgroundColor: cardBg }}
@@ -793,47 +958,20 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             )}
 
-            {/* Premium vs Free comparison */}
-            <View style={{ marginHorizontal: 16, marginBottom: 16, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: colors.border }}>
-              <View style={{ flexDirection: 'row' }}>
-                <View style={{ flex: 1, padding: 14, backgroundColor: isLight ? '#f8fafc' : '#1e293b' }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: text, marginBottom: 8 }}>Free</Text>
-                  {[
-                    '1x gem multiplier',
-                    '5 saved routes',
-                    'Basic map',
-                    'No real-time alerts',
-                    '30% offer discounts',
-                    'Standard navigation',
-                  ].map((f, i) => <Text key={i} style={{ fontSize: 11, color: sub, marginBottom: 4 }}>{f}</Text>)}
-                </View>
-                <View style={{ width: 1, backgroundColor: colors.border }} />
-                <TouchableOpacity style={{ flex: 1, padding: 14, backgroundColor: isLight ? '#EFF6FF' : 'rgba(59,130,246,0.08)' }} onPress={() => currentPlan === 'basic' ? setShowPlanModal(true) : null}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                    <Ionicons name="diamond" size={14} color="#3B82F6" style={{ marginRight: 4 }} />
-                    <Text style={{ fontSize: 14, fontWeight: '800', color: '#3B82F6' }}>Premium</Text>
-                  </View>
-                  {[
-                    '2x gem multiplier',
-                    '20 saved routes',
-                    'Share location & friends',
-                    'Traffic cameras & alerts',
-                    '70% offer discounts',
-                    'Orion AI co-pilot',
-                    'Smart commute analytics',
-                    'Delay alerts',
-                  ].map((f, i) => <Text key={i} style={{ fontSize: 11, color: '#3B82F6', marginBottom: 4 }}>{f}</Text>)}
-                  {currentPlan === 'basic' && (
-                    <View style={{ backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 8, alignItems: 'center', marginTop: 6 }}>
-                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Upgrade $4.99/mo</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-
             <SectionHeader title="Vehicle" isLight={isLight} />
-            <VehicleCard cardBg={cardBg} text={text} sub={sub} tallVehicle={tallVehicle} vehicleHeight={vehicleHeight} setTallVehicle={setTallVehicle} setVehicleHeight={setVehicleHeight} heightPresets={heightPresets} onSave={handleSaveVehicle} />
+            <VehicleCard
+              cardBg={cardBg}
+              text={text}
+              sub={sub}
+              vehicleType={vehicleType}
+              setVehicleType={setVehicleType}
+              tallVehicle={tallVehicle}
+              vehicleHeight={vehicleHeight}
+              setTallVehicle={setTallVehicle}
+              setVehicleHeight={setVehicleHeight}
+              heightPresets={heightPresets}
+              onSave={handleSaveVehicle}
+            />
 
             <SectionHeader title={`Saved Places (${places.length})`} isLight={isLight} />
             <PlacesCard cardBg={cardBg} text={text} sub={sub} places={places} loading={initialLoading} onDelete={handleDeletePlace} onAdd={() => setShowAddPlace(true)} />
@@ -1164,6 +1302,19 @@ export default function ProfileScreen() {
           <Text style={styles.fuelBtnText}>Go to Overview to add alerts</Text>
         </TouchableOpacity>
       </Modal>
+      <AddCommuteModal
+        visible={showAddCommute}
+        onClose={() => setShowAddCommute(false)}
+        cardBg={cardBg}
+        text={text}
+        sub={sub}
+        primary={colors.primary}
+        border={colors.border}
+        places={places}
+        originLat={location.lat}
+        originLng={location.lng}
+        onCreated={() => void loadData('silent')}
+      />
       <FuelTracker visible={showFuelTracker} onClose={() => setShowFuelTracker(false)} />
       <HelpSupport visible={showHelp} onClose={() => setShowHelp(false)} />
       <SubmitConcern visible={showConcern} onClose={() => setShowConcern(false)} />

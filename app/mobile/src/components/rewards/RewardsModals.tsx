@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Skeleton from '../common/Skeleton';
@@ -19,19 +19,30 @@ export function BadgeDetailModal({
   cardBg,
   text,
   sub,
+  primary,
+  isLight,
   onClose,
 }: {
   selectedBadge: Badge | null;
   onClose: () => void;
+  primary: string;
+  isLight: boolean;
 } & Pick<ThemeProps, 'cardBg' | 'text' | 'sub'>) {
+  const overlay = isLight ? 'rgba(15,23,42,0.45)' : 'rgba(2,6,23,0.72)';
   return (
     <Modal visible={!!selectedBadge} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity style={rewardsStyles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[rewardsStyles.modalCard, { backgroundColor: cardBg }]} onStartShouldSetResponder={() => true}>
-          <Text style={{ fontSize: 48, textAlign: 'center' }}>{selectedBadge?.earned ? '🏆' : '🔒'}</Text>
+      <TouchableOpacity style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]} activeOpacity={1} onPress={onClose}>
+        <View style={[rewardsStyles.modalCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: `${primary}22` }]} onStartShouldSetResponder={() => true}>
+          <View style={{ alignSelf: 'center', width: 72, height: 72, borderRadius: 22, backgroundColor: selectedBadge?.earned ? `${primary}18` : `${sub}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+            <Ionicons name={selectedBadge?.earned ? 'trophy' : 'lock-closed'} size={36} color={selectedBadge?.earned ? primary : sub} />
+          </View>
           <Text style={[rewardsStyles.modalTitle, { color: text }]}>{selectedBadge?.name}</Text>
           <Text style={{ color: sub, textAlign: 'center', fontSize: 13 }}>{selectedBadge?.description}</Text>
-          {!selectedBadge?.earned && <Text style={{ color: '#F59E0B', textAlign: 'center', fontSize: 12, marginTop: 8 }}>Progress: {selectedBadge?.progress}%</Text>}
+          {!selectedBadge?.earned && (
+            <Text style={{ color: primary, textAlign: 'center', fontSize: 12, marginTop: 8, fontWeight: '700' }}>
+              Progress: {selectedBadge?.progress}%
+            </Text>
+          )}
         </View>
       </TouchableOpacity>
     </Modal>
@@ -44,6 +55,9 @@ export function OfferDetailModal({
   cardBg,
   text,
   sub,
+  primary,
+  success,
+  isLight,
   onClose,
   onRedeem,
 }: {
@@ -51,22 +65,40 @@ export function OfferDetailModal({
   redeemingOfferId: number | null;
   onClose: () => void;
   onRedeem: (offer: Offer) => void;
+  primary: string;
+  success: string;
+  isLight: boolean;
 } & Pick<ThemeProps, 'cardBg' | 'text' | 'sub'>) {
+  const overlay = isLight ? 'rgba(15,23,42,0.45)' : 'rgba(2,6,23,0.72)';
   return (
     <Modal visible={!!selectedOffer} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={rewardsStyles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[rewardsStyles.modalSheet, { backgroundColor: cardBg }]} onStartShouldSetResponder={() => true}>
-          <View style={rewardsStyles.modalHandle} />
+      <TouchableOpacity style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]} activeOpacity={1} onPress={onClose}>
+        <View style={[rewardsStyles.modalSheet, { backgroundColor: cardBg, borderTopWidth: 1, borderColor: `${primary}22` }]} onStartShouldSetResponder={() => true}>
+          <View style={[rewardsStyles.modalHandle, { backgroundColor: sub }]} />
           <Text style={[rewardsStyles.modalTitle, { color: text }]}>{selectedOffer?.business_name}</Text>
-          <Text style={{ color: sub, fontSize: 14, marginBottom: 12 }}>{selectedOffer?.description ?? `${selectedOffer?.discount_percent}% off`}</Text>
+          <Text style={{ color: sub, fontSize: 14, marginBottom: 16, lineHeight: 20 }}>{selectedOffer?.description ?? `${selectedOffer?.discount_percent}% off`}</Text>
           {!selectedOffer?.redeemed && (
             <TouchableOpacity
-              style={[rewardsStyles.navBtn, redeemingOfferId === selectedOffer?.id && { opacity: 0.6 }]}
               disabled={redeemingOfferId === selectedOffer?.id}
               onPress={() => selectedOffer && onRedeem(selectedOffer)}
+              activeOpacity={0.85}
+              style={{ opacity: redeemingOfferId === selectedOffer?.id ? 0.65 : 1 }}
             >
-              <Text style={rewardsStyles.navBtnText}>{redeemingOfferId === selectedOffer?.id ? 'Redeeming...' : 'Redeem Offer'}</Text>
+              <LinearGradient
+                colors={[primary, `${primary}dd`]}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={{ borderRadius: 14, paddingVertical: 15, alignItems: 'center' }}
+              >
+                <Text style={rewardsStyles.navBtnText}>{redeemingOfferId === selectedOffer?.id ? 'Redeeming...' : 'Redeem Offer'}</Text>
+              </LinearGradient>
             </TouchableOpacity>
+          )}
+          {selectedOffer?.redeemed && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 }}>
+              <Ionicons name="checkmark-circle" size={22} color={success} />
+              <Text style={{ color: success, fontSize: 15, fontWeight: '800' }}>Already redeemed</Text>
+            </View>
           )}
         </View>
       </TouchableOpacity>
@@ -81,6 +113,10 @@ export function AllOffersModal({
   cardBg,
   text,
   sub,
+  border,
+  primary,
+  success,
+  isLight,
   onClose,
   onSelectOffer,
 }: {
@@ -88,25 +124,38 @@ export function AllOffersModal({
   offers: Offer[];
   onClose: () => void;
   onSelectOffer: (offer: Offer) => void;
+  border: string;
+  primary: string;
+  success: string;
+  isLight: boolean;
 } & ThemeProps) {
+  const overlay = isLight ? 'rgba(15,23,42,0.4)' : 'rgba(2,6,23,0.65)';
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={rewardsStyles.modalOverlay}>
-        <View style={[rewardsStyles.fullSheet, { backgroundColor: bg }]}>
-          <View style={rewardsStyles.sheetHeader}>
+      <View style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]}>
+        <View style={[rewardsStyles.fullSheet, { backgroundColor: bg, borderTopWidth: 1, borderColor: border }]}>
+          <View style={[rewardsStyles.sheetHeader, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border }]}>
             <Text style={[rewardsStyles.sheetTitle, { color: text }]}>All Offers</Text>
-            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color={sub} /></TouchableOpacity>
+            <TouchableOpacity onPress={onClose} hitSlop={12}><Ionicons name="close" size={24} color={sub} /></TouchableOpacity>
           </View>
-          <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+          <ScrollView contentContainerStyle={{ paddingBottom: 24, paddingTop: 8 }}>
             {offers.map((o) => (
-              <TouchableOpacity key={o.id} style={[rewardsStyles.offerCard, { backgroundColor: cardBg }]} onPress={() => onSelectOffer(o)}>
+              <TouchableOpacity key={o.id} style={[rewardsStyles.offerCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]} onPress={() => onSelectOffer(o)} activeOpacity={0.82}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[rewardsStyles.offerBiz, { color: text }]}>{o.business_name}</Text>
-                  <Text style={{ color: sub, fontSize: 12 }}>{o.description ?? `${o.discount_percent}% off`}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <View style={{ backgroundColor: `${primary}20`, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+                      <Text style={{ color: primary, fontSize: 11, fontWeight: '900' }}>{o.discount_percent ?? 0}%</Text>
+                    </View>
+                    <Text style={[rewardsStyles.offerBiz, { color: text, flex: 1 }]} numberOfLines={1}>{o.business_name}</Text>
+                  </View>
+                  <Text style={{ color: sub, fontSize: 12 }} numberOfLines={2}>{o.description ?? `${o.discount_percent}% off`}</Text>
                 </View>
-                <Text style={{ color: o.redeemed ? '#22C55E' : '#16A34A', fontSize: 12, fontWeight: '700' }}>
-                  {o.redeemed ? 'Redeemed' : `+${o.gems_reward ?? 0} gems`}
-                </Text>
+                <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                  <Ionicons name={o.redeemed ? 'checkmark-done' : 'diamond-outline'} size={18} color={o.redeemed ? success : primary} />
+                  <Text style={{ color: o.redeemed ? success : primary, fontSize: 12, fontWeight: '800' }}>
+                    {o.redeemed ? 'Redeemed' : `+${o.gems_reward ?? 0}`}
+                  </Text>
+                </View>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -127,6 +176,9 @@ export function ChallengeHistoryModal({
   cardBg,
   text,
   sub,
+  primary,
+  heroGradient,
+  isLight,
   onClose,
   onTabChange,
   onSelectBadge,
@@ -140,18 +192,22 @@ export function ChallengeHistoryModal({
   onClose: () => void;
   onTabChange: (tab: ChallengeModalTab) => void;
   onSelectBadge: (badge: Badge) => void;
+  primary: string;
+  heroGradient: readonly [string, string];
+  isLight: boolean;
 } & ThemeProps) {
   const wins = challengeHistoryStats?.wins ?? 0;
   const losses = challengeHistoryStats?.losses ?? 0;
   const winRate = challengeHistoryStats?.win_rate ?? 0;
   const netGems = (challengeHistoryStats?.total_gems_won ?? 0) - (challengeHistoryStats?.total_gems_lost ?? 0);
 
+  const overlay = isLight ? 'rgba(15,23,42,0.4)' : 'rgba(2,6,23,0.65)';
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={rewardsStyles.modalOverlay}>
-        <View style={[rewardsStyles.fullSheet, { backgroundColor: bg }]}>
+      <View style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]}>
+        <View style={[rewardsStyles.fullSheet, { backgroundColor: bg, borderTopWidth: 1, borderColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)' }]}>
           <LinearGradient
-            colors={['#0F9D77', '#0B7A63']}
+            colors={[...heroGradient]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={[rewardsStyles.modalHero, { paddingTop: 8, paddingBottom: 12 }]}
@@ -181,18 +237,18 @@ export function ChallengeHistoryModal({
               </View>
             </View>
           </LinearGradient>
-          <View style={[rewardsStyles.modalTabRow, { backgroundColor: cardBg }]}>
+          <View style={[rewardsStyles.modalTabRow, { backgroundColor: cardBg, borderBottomColor: `${sub}35` }]}>
             <TouchableOpacity
-              style={[rewardsStyles.modalTabBtn, activeTab === 'history' && rewardsStyles.modalTabBtnActive]}
+              style={[rewardsStyles.modalTabBtn, activeTab === 'history' && [rewardsStyles.modalTabBtnActive, { borderBottomColor: primary }]]}
               onPress={() => onTabChange('history')}
             >
-              <Text style={[rewardsStyles.modalTabText, { color: activeTab === 'history' ? '#4F6BFF' : sub }]}>History</Text>
+              <Text style={[rewardsStyles.modalTabText, { color: activeTab === 'history' ? primary : sub }]}>History</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[rewardsStyles.modalTabBtn, activeTab === 'badges' && rewardsStyles.modalTabBtnActive]}
+              style={[rewardsStyles.modalTabBtn, activeTab === 'badges' && [rewardsStyles.modalTabBtnActive, { borderBottomColor: primary }]]}
               onPress={() => onTabChange('badges')}
             >
-              <Text style={[rewardsStyles.modalTabText, { color: activeTab === 'badges' ? '#4F6BFF' : sub }]}>Badges</Text>
+              <Text style={[rewardsStyles.modalTabText, { color: activeTab === 'badges' ? primary : sub }]}>Badges</Text>
             </TouchableOpacity>
           </View>
           {historyLoading ? (
@@ -227,9 +283,9 @@ export function ChallengeHistoryModal({
                   {badges.length === 0 ? (
                     <View style={[rewardsStyles.emptyCard, { backgroundColor: cardBg }]}><Text style={{ color: sub }}>No badges yet</Text></View>
                   ) : badges.map((b) => (
-                    <TouchableOpacity key={`history-badge-${b.id}`} style={[rewardsStyles.nativeBadgeCard, { backgroundColor: cardBg, opacity: b.earned ? 1 : 0.82 }]} onPress={() => onSelectBadge(b)}>
-                      <View style={rewardsStyles.nativeBadgeIconWrap}>
-                        <Text style={{ fontSize: 24, opacity: b.earned ? 1 : 0.55 }}>{b.earned ? '🏆' : '🔒'}</Text>
+                    <TouchableOpacity key={`history-badge-${b.id}`} style={[rewardsStyles.nativeBadgeCard, { backgroundColor: cardBg, opacity: b.earned ? 1 : 0.82, borderColor: `${primary}28` }]} onPress={() => onSelectBadge(b)}>
+                      <View style={[rewardsStyles.nativeBadgeIconWrap, { backgroundColor: b.earned ? `${primary}18` : undefined }]}>
+                        <Ionicons name={b.earned ? 'trophy' : 'lock-closed'} size={26} color={b.earned ? primary : sub} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={[rewardsStyles.nativeBadgeTitle, { color: text }]}>{b.name}</Text>
@@ -237,7 +293,7 @@ export function ChallengeHistoryModal({
                         {!b.earned && (
                           <>
                             <View style={rewardsStyles.nativeProgressTrack}>
-                              <View style={[rewardsStyles.nativeProgressFill, { width: `${Math.min(100, Math.max(0, b.progress ?? 0))}%` }]} />
+                              <LinearGradient colors={[primary, `${primary}99`]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={[rewardsStyles.nativeProgressFill, { width: `${Math.min(100, Math.max(0, b.progress ?? 0))}%` }]} />
                             </View>
                             <Text style={[rewardsStyles.nativeProgressText, { color: sub }]}>{Math.round(b.progress ?? 0)}%</Text>
                           </>

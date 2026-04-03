@@ -1,10 +1,14 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Share, Alert } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 import Modal from '../common/Modal';
+import { formatDuration } from '../../utils/format';
 
 interface TripData {
   distance: number;
+  /** Minutes (matches trip summary / `useNavigation`). */
   duration: number;
   safety_score: number;
   gems_earned: number;
@@ -18,13 +22,9 @@ interface Props {
   trip: TripData | null;
 }
 
-function formatDuration(seconds: number): string {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
-}
-
 export default function TripShare({ visible, onClose, trip }: Props) {
+  const cardRef = useRef<View>(null);
+
   if (!trip) return <Modal visible={visible} onClose={onClose}><Text style={styles.empty}>No trip data</Text></Modal>;
 
   const shareMessage = [
@@ -38,9 +38,18 @@ export default function TripShare({ visible, onClose, trip }: Props) {
 
   const handleShare = async () => {
     try {
-      await Share.share({ message: shareMessage });
+      const uri = await captureRef(cardRef, { format: 'png', quality: 0.92 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share trip' });
+      } else {
+        await Share.share({ message: shareMessage, url: uri });
+      }
     } catch {
-      Alert.alert('Error', 'Unable to share trip.');
+      try {
+        await Share.share({ message: shareMessage });
+      } catch {
+        Alert.alert('Error', 'Unable to share trip.');
+      }
     }
   };
 
@@ -53,25 +62,27 @@ export default function TripShare({ visible, onClose, trip }: Props) {
 
   return (
     <Modal visible={visible} onClose={onClose}>
-      <Text style={styles.title}>Trip Summary</Text>
+      <View ref={cardRef} collapsable={false} style={styles.shareCard}>
+        <Text style={styles.title}>Trip Summary</Text>
 
-      <View style={styles.route}>
-        <Ionicons name="location" size={16} color="#3B82F6" />
-        <Text style={styles.routeText} numberOfLines={1}>{trip.origin}</Text>
-        <Ionicons name="arrow-forward" size={14} color="#94a3b8" />
-        <Text style={styles.routeText} numberOfLines={1}>{trip.destination}</Text>
-      </View>
+        <View style={styles.route}>
+          <Ionicons name="location" size={16} color="#3B82F6" />
+          <Text style={styles.routeText} numberOfLines={1}>{trip.origin}</Text>
+          <Ionicons name="arrow-forward" size={14} color="#94a3b8" />
+          <Text style={styles.routeText} numberOfLines={1}>{trip.destination}</Text>
+        </View>
 
-      <View style={styles.grid}>
-        {stats.map((s) => (
-          <View key={s.label} style={styles.statCard}>
-            <View style={[styles.iconCircle, { backgroundColor: `${s.color}20` }]}>
-              <Ionicons name={s.icon} size={20} color={s.color} />
+        <View style={styles.grid}>
+          {stats.map((s) => (
+            <View key={s.label} style={styles.statCard}>
+              <View style={[styles.iconCircle, { backgroundColor: `${s.color}20` }]}>
+                <Ionicons name={s.icon} size={20} color={s.color} />
+              </View>
+              <Text style={styles.statValue}>{s.value}</Text>
+              <Text style={styles.statLabel}>{s.label}</Text>
             </View>
-            <Text style={styles.statValue}>{s.value}</Text>
-            <Text style={styles.statLabel}>{s.label}</Text>
-          </View>
-        ))}
+          ))}
+        </View>
       </View>
 
       <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
@@ -83,6 +94,12 @@ export default function TripShare({ visible, onClose, trip }: Props) {
 }
 
 const styles = StyleSheet.create({
+  shareCard: {
+    backgroundColor: '#0f172a',
+    borderRadius: 16,
+    padding: 4,
+    marginBottom: 8,
+  },
   title: {
     fontSize: 22,
     fontWeight: '800',

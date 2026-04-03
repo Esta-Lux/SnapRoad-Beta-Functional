@@ -165,33 +165,6 @@ export default React.memo(function RouteOverlay({
         aboveLayerID="sr-route-casing"
       />
 
-      {/* Line-aligned progress chevrons (Mapbox-style; ASCII only — reliable on native RN Mapbox) */}
-      <MapboxGL.SymbolLayer
-        id="sr-route-chevrons"
-        filter={['==', ['get', 'segment'], 'ahead']}
-        style={{
-          symbolPlacement: 'line',
-          symbolSpacing: 48,
-          textField: '>',
-          textSize: [
-            'interpolate', ['linear'], ['zoom'],
-            13, 14,
-            16, 18,
-            20, 22,
-          ],
-          textColor: '#FFFFFF',
-          textHaloColor: 'rgba(15,23,42,0.65)',
-          textHaloWidth: 2,
-          textOpacity: isRerouting ? 0.25 : 0.88,
-          textRotationAlignment: 'map',
-          textKeepUpright: false,
-          textAllowOverlap: true,
-          textIgnorePlacement: true,
-          textFont: ['DIN Pro Medium', 'Arial Unicode MS Regular'],
-        }}
-        aboveLayerID="sr-route-ahead"
-      />
-
       <MapboxGL.LineLayer
         id="sr-route-passed"
         filter={['==', ['get', 'segment'], 'passed']}

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Modal from '../common/Modal';
 import { api } from '../../api/client';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface Props {
   visible: boolean;
@@ -24,6 +25,7 @@ interface StatItem {
 }
 
 export default function TripAnalytics({ visible, onClose }: Props) {
+  const { colors, isLight, shadow } = useTheme();
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +94,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#f8fafc',
     textAlign: 'center',
     marginBottom: 20,
     letterSpacing: -0.3,
@@ -101,7 +102,6 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   error: {
-    color: '#f87171',
     textAlign: 'center',
     paddingVertical: 20,
     fontSize: 14,
@@ -113,13 +113,11 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '47%',
-    backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: 16,
     padding: 16,
     alignItems: 'center',
     gap: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
   },
   iconBg: {
     width: 44,
@@ -132,11 +130,9 @@ const styles = StyleSheet.create({
   value: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#f8fafc',
   },
   label: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#94a3b8',
   },
 });

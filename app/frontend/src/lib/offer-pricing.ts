@@ -4,29 +4,38 @@
 
 export const GEM_PRICING_TIERS = {
   LOW_DISCOUNT: {
-    threshold: 5,
-    gems: 45,
-    label: 'Standard Offer',
+    threshold: 10,
+    gems: 20,
+    label: 'Light discount (≤10%)',
     color: '#0084FF',
+  },
+  MID_DISCOUNT: {
+    threshold: 45,
+    gems: 45,
+    label: 'Strong discount (11–45%)',
+    color: '#9D4EDD',
   },
   HIGH_DISCOUNT: {
     threshold: 100,
-    gems: 100,
-    label: 'Premium Offer',
+    gems: 50,
+    label: 'Deep discount (46%+)',
     color: '#9D4EDD',
   },
   FREE_ITEM: {
     threshold: 100,
-    gems: 125,
-    label: 'Exclusive Offer',
+    gems: 35,
+    label: 'Free item',
     color: '#00DFA2',
   },
 };
 
+/** Synced with backend `services/gem_economy.offer_gems_reward_for_discount`. */
 export function calculateAutoGems(discountPercent: number, isFreeItem: boolean): number {
-  if (isFreeItem) return 125;
-  if (discountPercent >= 5) return 100;
-  return 45;
+  if (isFreeItem) return 35;
+  const disc = Math.max(0, Math.min(100, discountPercent));
+  if (disc <= 10) return 20;
+  if (disc <= 45) return 45;
+  return 50;
 }
 
 /** @deprecated Use calculateAutoGems — kept for backward compat */
@@ -42,10 +51,10 @@ export function getOfferTier(discountPercent: number, isFreeItem: boolean) {
   if (isFreeItem) {
     return { tier: 'FREE_ITEM', ...GEM_PRICING_TIERS.FREE_ITEM };
   }
-  if (discountPercent >= 5) {
-    return { tier: 'HIGH_DISCOUNT', ...GEM_PRICING_TIERS.HIGH_DISCOUNT };
-  }
-  return { tier: 'LOW_DISCOUNT', ...GEM_PRICING_TIERS.LOW_DISCOUNT };
+  const disc = Math.max(0, Math.min(100, discountPercent));
+  if (disc <= 10) return { tier: 'LOW_DISCOUNT', ...GEM_PRICING_TIERS.LOW_DISCOUNT };
+  if (disc <= 45) return { tier: 'MID_DISCOUNT', ...GEM_PRICING_TIERS.MID_DISCOUNT };
+  return { tier: 'HIGH_DISCOUNT', ...GEM_PRICING_TIERS.HIGH_DISCOUNT };
 }
 
 export function calculateFreeDiscount(premiumDiscount: number): number {

@@ -56,6 +56,33 @@ def _resolve_user_scoped_data(auth_user: dict) -> tuple[str, list, list]:
     return user_id, user["saved_locations"], user["saved_routes"]
 
 
+def _production_saved_places_user_id(auth_user: dict) -> str:
+    uid = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
+    if not uid:
+        raise HTTPException(status_code=401, detail="Invalid auth context")
+    return uid
+
+
+def _sb_list_user_saved_places(uid: str) -> list:
+    sb = get_supabase()
+    try:
+        res = sb.table("user_saved_places").select("*").eq("user_id", uid).order("created_at").execute()
+    except Exception:
+        return []
+    out = []
+    for x in res.data or []:
+        out.append({
+            "id": int(x["id"]),
+            "name": x.get("name") or "",
+            "address": x.get("address") or "",
+            "category": x.get("category") or "favorite",
+            "lat": x.get("lat"),
+            "lng": x.get("lng"),
+            "created_at": x.get("created_at"),
+        })
+    return out
+
+
 def _nav_offer_distance_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     import math
 
@@ -74,6 +101,10 @@ def get_locations(
     limit: int = Query(default=100, ge=1, le=100),
     auth_user: dict = Depends(get_current_user),
 ):
+    if ENVIRONMENT == "production":
+        uid = _production_saved_places_user_id(auth_user)
+        user_locations = _sb_list_user_saved_places(uid)
+        return {"success": True, "data": user_locations[:limit], "count": len(user_locations[:limit])}
     _, user_locations, _ = _resolve_user_scoped_data(auth_user)
     return {"success": True, "data": user_locations[:limit], "count": len(user_locations[:limit])}
 
@@ -81,7 +112,33 @@ def get_locations(
 @router.post("/locations")
 def add_location(location: Location, auth_user: dict = Depends(get_current_user)):
     if ENVIRONMENT == "production":
-        raise HTTPException(status_code=503, detail="Legacy saved locations unavailable in production")
+        uid = _production_saved_places_user_id(auth_user)
+        sb = get_supabase()
+        row = {
+            "user_id": uid,
+            "name": location.name,
+            "address": location.address or "",
+            "category": (location.category or "favorite").strip() or "favorite",
+            "lat": location.lat,
+            "lng": location.lng,
+        }
+        try:
+            ins = sb.table("user_saved_places").insert(row).execute()
+            saved = (ins.data or [{}])[0]
+            if "id" not in saved:
+                raise ValueError("no id")
+        except Exception:
+            raise HTTPException(status_code=500, detail="Could not save place")
+        loc = {
+            "id": int(saved["id"]),
+            "name": saved.get("name") or location.name,
+            "address": saved.get("address") or "",
+            "category": saved.get("category") or "favorite",
+            "lat": saved.get("lat", location.lat),
+            "lng": saved.get("lng", location.lng),
+            "created_at": saved.get("created_at") or datetime.now().isoformat(),
+        }
+        return {"success": True, "message": "Location saved", "data": loc}
     _, user_locations, _ = _resolve_user_scoped_data(auth_user)
     new_id = max([l.get("id", 0) for l in user_locations], default=0) + 1
     loc = {"id": new_id, "name": location.name, "address": location.address, "category": location.category, "lat": location.lat, "lng": location.lng, "created_at": datetime.now().isoformat()}
@@ -92,7 +149,13 @@ def add_location(location: Location, auth_user: dict = Depends(get_current_user)
 @router.delete("/locations/{location_id}")
 def delete_location(location_id: int, auth_user: dict = Depends(get_current_user)):
     if ENVIRONMENT == "production":
-        raise HTTPException(status_code=503, detail="Legacy saved locations unavailable in production")
+        uid = _production_saved_places_user_id(auth_user)
+        sb = get_supabase()
+        try:
+            sb.table("user_saved_places").delete().eq("user_id", uid).eq("id", location_id).execute()
+        except Exception:
+            raise HTTPException(status_code=500, detail="Could not delete place")
+        return {"success": True, "message": "Location deleted"}
     _, user_locations, _ = _resolve_user_scoped_data(auth_user)
     user_locations[:] = [l for l in user_locations if l.get("id") != location_id]
     return {"success": True, "message": "Location deleted"}

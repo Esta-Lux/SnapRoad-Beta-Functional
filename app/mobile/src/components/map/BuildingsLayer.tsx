@@ -1,4 +1,5 @@
 import React from 'react';
+import type { FillExtrusionLayerStyle } from '@rnmapbox/maps';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import type { DrivingMode } from '../../types';
 
@@ -40,6 +41,20 @@ function hasCompositeSource(url: string): boolean {
   return STYLES_WITH_COMPOSITE.some((s) => url.includes(s));
 }
 
+/** Sport + dark / navigation-night basemaps, or profile dark theme on streets: Mapbox flat light + emissive/flood extrusions. */
+export function shouldUseMapboxBuildingNightEffects(
+  activeStyleURL: string,
+  drivingMode: DrivingMode,
+  isLight = true,
+): boolean {
+  if (!hasCompositeSource(activeStyleURL)) return false;
+  if (drivingMode === 'sport') return true;
+  if (activeStyleURL.includes('dark-v')) return true;
+  if (activeStyleURL.includes('navigation-night')) return true;
+  if (!isLight && activeStyleURL.includes('streets-v')) return true;
+  return false;
+}
+
 export default React.memo(function BuildingsLayer({
   drivingMode = 'adaptive',
   isLight = true,
@@ -63,10 +78,47 @@ export default React.memo(function BuildingsLayer({
     colors = isLight ? ADAPTIVE_COLORS : SPORT_COLORS.explore;
   }
 
-  const opacity = isClassic ? Math.min(colors.opacity, 0.40) : colors.opacity;
+  const nightEffects = shouldUseMapboxBuildingNightEffects(activeStyleURL, drivingMode, isLight);
+  const opacityCap = nightEffects ? 0.52 : 0.4;
+  const opacity = isClassic ? Math.min(colors.opacity, opacityCap) : colors.opacity;
 
-  const aoIntensity = isClassic ? 0 : isCalm ? (isNavigating ? 0.40 : 0.25) : 0.18;
-  const aoRadius    = isClassic ? 0 : isCalm ? 3.5 : 2.5;
+  const baseStyle = {
+    fillExtrusionColor: [
+      'interpolate', ['linear'], ['get', 'height'],
+      0, colors.low,
+      50, colors.mid,
+      200, colors.high,
+    ],
+    fillExtrusionHeight: [
+      'interpolate', ['linear'], ['zoom'],
+      14.5, 0,
+      15, ['get', 'height'],
+    ],
+    fillExtrusionBase: [
+      'interpolate', ['linear'], ['zoom'],
+      14.5, 0,
+      15, ['get', 'min_height'],
+    ],
+    fillExtrusionOpacity: Math.min(opacity, 0.55),
+    fillExtrusionVerticalGradient: true,
+  };
+
+  const nightStyle = nightEffects
+    ? {
+        // Slight edge radius unlocks wall AO when flat lights are active (Mapbox GL).
+        fillExtrusionEdgeRadius: 0.9,
+        fillExtrusionEmissiveStrength: isSport ? 0.45 : 0.38,
+        fillExtrusionFloodLightColor: isSport ? '#FFB877' : '#A8BCE8',
+        fillExtrusionFloodLightIntensity: isSport ? 0.24 : 0.19,
+        fillExtrusionFloodLightWallRadius: 30,
+        fillExtrusionFloodLightGroundRadius: 42,
+        fillExtrusionFloodLightGroundAttenuation: 0.7,
+        fillExtrusionAmbientOcclusionIntensity: isSport ? 0.34 : 0.28,
+        fillExtrusionAmbientOcclusionWallRadius: 3.2,
+        fillExtrusionAmbientOcclusionGroundRadius: 22,
+        fillExtrusionAmbientOcclusionGroundAttenuation: 0.55,
+      }
+    : {};
 
   try {
     return (
@@ -78,26 +130,7 @@ export default React.memo(function BuildingsLayer({
         filter={['==', ['get', 'extrude'], 'true']}
         minZoomLevel={14.5}
         maxZoomLevel={22}
-        style={{
-          fillExtrusionColor: [
-            'interpolate', ['linear'], ['get', 'height'],
-            0,   colors.low,
-            50,  colors.mid,
-            200, colors.high,
-          ],
-          fillExtrusionHeight: [
-            'interpolate', ['linear'], ['zoom'],
-            14.5, 0,
-            15, ['get', 'height'],
-          ],
-          fillExtrusionBase: [
-            'interpolate', ['linear'], ['zoom'],
-            14.5, 0,
-            15, ['get', 'min_height'],
-          ],
-          fillExtrusionOpacity: Math.min(opacity, 0.5),
-          fillExtrusionVerticalGradient: true,
-        }}
+        style={{ ...baseStyle, ...nightStyle } as unknown as FillExtrusionLayerStyle}
       />
     );
   } catch {

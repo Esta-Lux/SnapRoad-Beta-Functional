@@ -1,7 +1,7 @@
 // SnapRoad Admin Portal - Ryan's Emergent Improvements + Our Admin Components
 // Professional architecture with modular, clean, extensible code
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, AlertTriangle, Eye, Gift, Building2, BarChart3,
@@ -79,6 +79,11 @@ export default function AdminDashboard({ initialTab = 'dashboard', initialOffers
   useEffect(() => {
     setActiveTab(initialTab)
   }, [initialTab])
+
+  useLayoutEffect(() => {
+    const item = NAV_BASE.find((n) => n.id === activeTab)
+    document.title = item ? `SnapRoad Admin · ${item.label}` : 'SnapRoad Admin'
+  }, [activeTab])
 
   const NAV_ITEMS = NAV_BASE.map(item => ({
     ...item,

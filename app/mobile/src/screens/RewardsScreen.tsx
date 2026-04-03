@@ -1,6 +1,8 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Alert } from 'react-native';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -40,8 +42,15 @@ import type {
   LeaderboardEntry,
 } from '../components/rewards/types';
 
+export type RewardsMainParams = {
+  openTripAnalytics?: boolean;
+  openRouteHistory?: boolean;
+};
+
 export default function RewardsScreen() {
-  const { colors } = useTheme();
+  const route = useRoute();
+  const navigation = useNavigation();
+  const { colors, isLight, shadow } = useTheme();
   const { user, updateUser } = useAuth();
   const { location } = useLocation();
   const insets = useSafeAreaInsets();
@@ -49,8 +58,19 @@ export default function RewardsScreen() {
   const cardBg = colors.card;
   const text = colors.text;
   const sub = colors.textSecondary;
+  const rt = {
+    cardBg,
+    text,
+    sub,
+    border: colors.border,
+    primary: colors.primary,
+    success: colors.success,
+    danger: colors.danger,
+    warning: colors.warning,
+  };
 
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [badges, setBadges] = useState<Badge[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -76,11 +96,13 @@ export default function RewardsScreen() {
   const [showRouteHistory, setShowRouteHistory] = useState(false);
   const [challengeTarget, setChallengeTarget] = useState<{ id: string; name: string } | null>(null);
 
-  const loadAll = useCallback(async (coords?: { lat: number; lng: number }) => {
-    setLoading(true);
+  const leaderboardTfRef = useRef(leaderboardTf);
+  leaderboardTfRef.current = leaderboardTf;
+
+  const loadFull = useCallback(async (mode: 'initial' | 'refresh' | 'silent', lat: number, lng: number) => {
+    if (mode === 'initial') setInitialLoading(true);
+    else if (mode === 'refresh') setRefreshing(true);
     setErrorMsg(null);
-    const lat = coords?.lat ?? location.lat;
-    const lng = coords?.lng ?? location.lng;
     try {
       const safeGet = async (url: string) => {
         try { return await api.get<any>(url); } catch { return { success: false, data: null }; }
@@ -93,7 +115,7 @@ export default function RewardsScreen() {
         safeGet('/api/trips?limit=10'),
         safeGet('/api/trips/weekly-insights'),
         safeGet('/api/gems/history'),
-        safeGet('/api/leaderboard?time_filter=weekly&limit=10'),
+        safeGet(`/api/leaderboard?time_filter=${encodeURIComponent(leaderboardTfRef.current)}&limit=10`),
       ]);
       const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
       const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
@@ -144,12 +166,95 @@ export default function RewardsScreen() {
       updateUser({ rank: Number(lData?.my_rank ?? 0) });
     } catch {
       setErrorMsg('Could not refresh rewards data. Pull to retry.');
-    } finally { setLoading(false); }
-  }, [updateUser, location.lat, location.lng, leaderboardTf]);
+    } finally {
+      if (mode === 'initial') setInitialLoading(false);
+      else setRefreshing(false);
+    }
+  }, [updateUser]);
+
+  const fetchLeaderboardOnly = useCallback(async (tf: typeof leaderboardTf) => {
+    try {
+      const res = await api.get<any>(`/api/leaderboard?time_filter=${encodeURIComponent(tf)}&limit=10`);
+      if (!res.success) return;
+      const lData = (res.data as any)?.data ?? res.data ?? {};
+      const rows = Array.isArray(lData?.leaderboard) ? lData.leaderboard : [];
+      setLeaderboard(rows.map((r: any, idx: number) => ({
+        rank: Number(r.rank ?? idx + 1),
+        id: String(r.id ?? idx),
+        name: String(r.name ?? 'Driver'),
+        safety_score: Number(r.safety_score ?? 0),
+        level: Number(r.level ?? 1),
+        gems: Number(r.gems ?? 0),
+        state: String(r.state ?? ''),
+        is_premium: Boolean(r.is_premium),
+      })));
+      const mr = Number(lData?.my_rank ?? 0);
+      setMyRank(mr);
+      updateUser({ rank: mr });
+    } catch {
+      /* keep prior leaderboard */
+    }
+  }, [updateUser]);
+
+  const skipLeaderboardChipEffect = useRef(true);
+  useEffect(() => {
+    if (skipLeaderboardChipEffect.current) {
+      skipLeaderboardChipEffect.current = false;
+      return;
+    }
+    void fetchLeaderboardOnly(leaderboardTf);
+  }, [leaderboardTf, fetchLeaderboardOnly]);
+
+  const refreshNearbyOffers = useCallback(async (lat: number, lng: number) => {
+    try {
+      const res = await api.get<any>(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=5`);
+      const raw = res?.data?.data ?? res?.data ?? [];
+      setOffers(Array.isArray(raw) ? raw : []);
+    } catch {
+      /* keep existing offers */
+    }
+  }, []);
+
+  const rewardsLocGrid = useMemo(
+    () => `${Math.round(location.lat * 200) / 200}_${Math.round(location.lng * 200) / 200}`,
+    [location.lat, location.lng],
+  );
+  const rewardsBootstrapped = useRef(false);
+  const lastOfferGrid = useRef<string | null>(null);
+  /** Skip first tab focus — initial `useEffect` already loads; avoids double fetch. */
+  const skipRewardsFocusSilentRef = useRef(true);
 
   useEffect(() => {
-    loadAll({ lat: location.lat, lng: location.lng });
-  }, [loadAll, location.lat, location.lng]);
+    if (!rewardsBootstrapped.current) {
+      rewardsBootstrapped.current = true;
+      lastOfferGrid.current = rewardsLocGrid;
+      void loadFull('initial', location.lat, location.lng);
+      return;
+    }
+    if (lastOfferGrid.current === rewardsLocGrid) return;
+    lastOfferGrid.current = rewardsLocGrid;
+    void refreshNearbyOffers(location.lat, location.lng);
+  }, [rewardsLocGrid, location.lat, location.lng, loadFull, refreshNearbyOffers]);
+
+  /** Map hamburger → nested tab navigate opens these modals */
+  useEffect(() => {
+    const p = route.params as RewardsMainParams | undefined;
+    if (!p?.openTripAnalytics && !p?.openRouteHistory) return;
+    if (p.openTripAnalytics) setShowTripAnalytics(true);
+    if (p.openRouteHistory) setShowRouteHistory(true);
+    navigation.setParams({ openTripAnalytics: undefined, openRouteHistory: undefined } as never);
+  }, [route.params, navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (skipRewardsFocusSilentRef.current) {
+        skipRewardsFocusSilentRef.current = false;
+        return;
+      }
+      if (!rewardsBootstrapped.current) return;
+      void loadFull('silent', location.lat, location.lng);
+    }, [loadFull, location.lat, location.lng]),
+  );
 
   const earnedBadges = badges.filter((b) => b.earned).length;
   const multiplier = user?.isPremium ? '2x' : '1x';
@@ -230,8 +335,8 @@ export default function RewardsScreen() {
       <ScrollView style={{ flex: 1, backgroundColor: bg }}
         refreshControl={
           <RefreshControl
-            refreshing={loading}
-            onRefresh={() => loadAll({ lat: location.lat, lng: location.lng })}
+            refreshing={refreshing}
+            onRefresh={() => void loadFull('refresh', location.lat, location.lng)}
             tintColor="#3B82F6"
           />
         }>
@@ -243,48 +348,87 @@ export default function RewardsScreen() {
         miles={String(Math.round(user?.totalMiles ?? 0))}
       />
       {errorMsg && (
-        <View style={[rewardsStyles.errorBanner, { backgroundColor: cardBg }]}>
-          <Ionicons name="alert-circle-outline" size={14} color="#EF4444" />
-          <Text style={{ color: '#EF4444', fontSize: 12, flex: 1 }}>{errorMsg}</Text>
+        <View style={[rewardsStyles.errorBanner, { backgroundColor: `${colors.danger}12`, borderWidth: 1, borderColor: `${colors.danger}35` }]}>
+          <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
+          <Text style={{ color: colors.danger, fontSize: 13, flex: 1, fontWeight: '600' }}>{errorMsg}</Text>
         </View>
       )}
 
-      {/* Daily streak & quick stats */}
-      <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 16, marginBottom: 14 }}>
-        <View style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, padding: 14, alignItems: 'center' }}>
-          <Ionicons name="flame" size={22} color="#F59E0B" />
-          <Text style={{ color: text, fontSize: 20, fontWeight: '900', marginTop: 4 }}>{user?.totalTrips ?? 0}</Text>
-          <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Trips</Text>
+      <View style={{ marginHorizontal: 16, marginBottom: 14, gap: 10 }}>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
+            <LinearGradient colors={[`${colors.warning}28`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.warning}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                <Ionicons name="flame" size={22} color={colors.warning} />
+              </View>
+              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{user?.totalTrips ?? 0}</Text>
+              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Trips</Text>
+            </LinearGradient>
+          </View>
+          <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
+            <LinearGradient colors={[`${colors.primary}28`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.primary}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                <Ionicons name="trophy" size={22} color={colors.primary} />
+              </View>
+              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{myRank ? `#${myRank}` : '—'}</Text>
+              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Rank</Text>
+            </LinearGradient>
+          </View>
         </View>
-        <View style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, padding: 14, alignItems: 'center' }}>
-          <Ionicons name="trophy" size={22} color="#3B82F6" />
-          <Text style={{ color: text, fontSize: 20, fontWeight: '900', marginTop: 4 }}>#{myRank || '—'}</Text>
-          <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Rank</Text>
-        </View>
-        <View style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, padding: 14, alignItems: 'center' }}>
-          <Ionicons name="ribbon" size={22} color="#10B981" />
-          <Text style={{ color: text, fontSize: 20, fontWeight: '900', marginTop: 4 }}>{earnedBadges}</Text>
-          <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Badges</Text>
-        </View>
-        <View style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, padding: 14, alignItems: 'center' }}>
-          <Ionicons name="diamond" size={22} color="#8B5CF6" />
-          <Text style={{ color: text, fontSize: 20, fontWeight: '900', marginTop: 4 }}>{multiplier}</Text>
-          <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Gems</Text>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
+            <LinearGradient colors={[`${colors.success}28`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.success}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                <Ionicons name="ribbon" size={22} color={colors.success} />
+              </View>
+              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{earnedBadges}</Text>
+              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Badges</Text>
+            </LinearGradient>
+          </View>
+          <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
+            <LinearGradient colors={[`${colors.leaderboardGradientStart}33`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.leaderboardGradientStart}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                <Ionicons name="diamond" size={22} color={colors.leaderboardGradientStart} />
+              </View>
+              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{multiplier}</Text>
+              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Gem mult.</Text>
+            </LinearGradient>
+          </View>
         </View>
       </View>
 
       {!user?.isPremium && (
-        <View style={{ marginHorizontal: 16, marginBottom: 14, backgroundColor: 'rgba(59,130,246,0.08)', borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)' }}>
-          <Ionicons name="diamond" size={20} color="#3B82F6" style={{ marginRight: 10 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: text, fontSize: 14, fontWeight: '700' }}>Upgrade to Premium</Text>
-            <Text style={{ color: sub, fontSize: 12 }}>2x gems, advanced offers, analytics & more</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#3B82F6" />
-        </View>
+        <TouchableOpacity
+          activeOpacity={0.88}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); (navigation as { navigate: (n: string) => void }).navigate('Profile'); }}
+          style={{ marginHorizontal: 16, marginBottom: 14, borderRadius: 18, overflow: 'hidden', ...shadow(8) }}
+        >
+          <LinearGradient
+            colors={isLight ? ['#eef2ff', '#ede9fe'] : ['rgba(99,102,241,0.45)', 'rgba(139,92,246,0.28)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderWidth: 1, borderColor: isLight ? 'rgba(79,70,229,0.22)' : 'rgba(167,139,250,0.35)' }}
+          >
+            <LinearGradient colors={[colors.ctaGradientStart, colors.ctaGradientEnd]} style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+              <Ionicons name="sparkles" size={22} color="#fff" />
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Upgrade to Premium</Text>
+              <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>2× gems, richer offers, deeper analytics, and priority perks.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </LinearGradient>
+        </TouchableOpacity>
       )}
 
-      <RewardsTabs cardBg={cardBg} subText={sub} rewardsTab={rewardsTab} onTabChange={setRewardsTab} />
+      <RewardsTabs
+        colors={colors}
+        rewardsTab={rewardsTab}
+        onTabChange={(t) => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setRewardsTab(t);
+        }}
+      />
 
       {rewardsTab === 'challenges' && (
         <>
@@ -295,19 +439,15 @@ export default function RewardsScreen() {
               setShowChallengeHistory(true);
               loadChallengeHistory();
             }}
-            cardBg={cardBg}
-            text={text}
-            sub={sub}
+            {...rt}
           />
-          <SectionTitle title="Active Challenges" text={text} />
+          <SectionTitle title="Active Challenges" text={text} accent={colors.primary} />
           <ChallengesPreview
-            loading={loading}
+            loading={initialLoading}
             challenges={challenges}
             claimingChallengeId={claimingChallengeId}
             onClaim={handleClaimChallenge}
-            cardBg={cardBg}
-            text={text}
-            sub={sub}
+            {...rt}
           />
         </>
       )}
@@ -321,90 +461,108 @@ export default function RewardsScreen() {
               setShowChallengeHistory(true);
               loadChallengeHistory();
             }}
-            cardBg={cardBg}
-            text={text}
-            sub={sub}
+            {...rt}
           />
-          <SectionTitle title={`Badges · ${earnedBadges}/${badges.length}`} text={text} />
-          <BadgesPreview loading={loading} badges={badges} onPressBadge={setSelectedBadge} cardBg={cardBg} text={text} />
+          <SectionTitle title={`Badges · ${earnedBadges}/${badges.length}`} text={text} accent={colors.primary} />
+          <BadgesPreview loading={initialLoading} badges={badges} onPressBadge={setSelectedBadge} {...rt} />
         </>
       )}
 
       {rewardsTab === 'offers' && (
         <>
-          <ViewAllButton title="View all offers" onPress={() => setShowAllOffers(true)} cardBg={cardBg} text={text} sub={sub} />
-          <SectionTitle title="Nearby Partner Offers" text={text} />
-          <OffersPreview loading={loading} offers={offers.filter((o: any) => !o.is_admin_offer)} onPressOffer={setSelectedOffer} cardBg={cardBg} text={text} sub={sub} />
+          <ViewAllButton title="View all offers" onPress={() => setShowAllOffers(true)} {...rt} />
+          <SectionTitle title="Nearby Partner Offers" text={text} accent={colors.primary} />
+          <OffersPreview loading={initialLoading} offers={offers.filter((o: any) => !o.is_admin_offer)} onPressOffer={setSelectedOffer} {...rt} />
           {offers.some((o: any) => o.is_admin_offer) && (
             <>
-              <SectionTitle title="Featured Deals" text={text} />
-              <OffersPreview loading={loading} offers={offers.filter((o: any) => o.is_admin_offer)} onPressOffer={setSelectedOffer} cardBg={cardBg} text={text} sub={sub} />
+              <SectionTitle title="Featured Deals" text={text} accent={colors.primary} />
+              <OffersPreview loading={initialLoading} offers={offers.filter((o: any) => o.is_admin_offer)} onPressOffer={setSelectedOffer} {...rt} />
             </>
           )}
         </>
       )}
 
-      <SectionTitle title="Recent Gem Activity" text={text} />
-      <GemActivityList loading={loading} gemTx={gemTx} cardBg={cardBg} text={text} sub={sub} />
+      <SectionTitle title="Recent Gem Activity" text={text} accent={colors.primary} />
+      <GemActivityList loading={initialLoading} gemTx={gemTx} {...rt} />
 
-      <SectionTitle title="Recent Trips" text={text} />
-      <TripsList loading={loading} trips={trips} cardBg={cardBg} text={text} sub={sub} />
+      <SectionTitle title="Recent Trips" text={text} accent={colors.primary} />
+      <TripsList loading={initialLoading} trips={trips} {...rt} />
 
       {insights && (
         <>
-          <SectionTitle title="This Week" text={text} />
-          <WeeklyInsightsSection insights={insights} cardBg={cardBg} text={text} sub={sub} />
+          <SectionTitle title="This Week" text={text} accent={colors.primary} />
+          <WeeklyInsightsSection insights={insights} {...rt} />
         </>
       )}
 
       {/* Quick action buttons */}
-      <View style={{ flexDirection: 'row', gap: 12, marginHorizontal: 16, marginBottom: 16, marginTop: 8 }}>
+      <SectionTitle title="Insights & history" text={text} accent={colors.primary} />
+      <View style={{ flexDirection: 'row', gap: 12, marginHorizontal: 16, marginBottom: 16, marginTop: 4 }}>
         <TouchableOpacity
-          style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(59,130,246,0.15)' }}
-          onPress={() => setShowTripAnalytics(true)}
-          activeOpacity={0.7}
+          style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.border, ...shadow(4) }}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowTripAnalytics(true); }}
+          activeOpacity={0.75}
         >
-          <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(59,130,246,0.12)', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
-            <Ionicons name="analytics-outline" size={18} color="#3B82F6" />
+          <LinearGradient colors={[`${colors.primary}22`, `${colors.primary}08`]} style={{ width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+            <Ionicons name="analytics-outline" size={20} color={colors.primary} />
+          </LinearGradient>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: text, fontSize: 14, fontWeight: '800' }}>Trip Analytics</Text>
+            <Text style={{ color: sub, fontSize: 11, marginTop: 2, fontWeight: '600' }}>Miles, safety, savings</Text>
           </View>
-          <Text style={{ color: text, fontSize: 14, fontWeight: '700', flex: 1 }}>Trip Analytics</Text>
-          <Ionicons name="chevron-forward" size={16} color={sub} />
+          <Ionicons name="chevron-forward" size={18} color={sub} />
         </TouchableOpacity>
         <TouchableOpacity
-          style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(16,185,129,0.15)' }}
-          onPress={() => setShowRouteHistory(true)}
-          activeOpacity={0.7}
+          style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.border, ...shadow(4) }}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowRouteHistory(true); }}
+          activeOpacity={0.75}
         >
-          <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(16,185,129,0.12)', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
-            <Ionicons name="time-outline" size={18} color="#10B981" />
+          <LinearGradient colors={[`${colors.success}28`, `${colors.success}0d`]} style={{ width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+            <Ionicons name="time-outline" size={20} color={colors.success} />
+          </LinearGradient>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: text, fontSize: 14, fontWeight: '800' }}>Route History</Text>
+            <Text style={{ color: sub, fontSize: 11, marginTop: 2, fontWeight: '600' }}>Past drives & scores</Text>
           </View>
-          <Text style={{ color: text, fontSize: 14, fontWeight: '700', flex: 1 }}>Route History</Text>
-          <Ionicons name="chevron-forward" size={16} color={sub} />
+          <Ionicons name="chevron-forward" size={18} color={sub} />
         </TouchableOpacity>
       </View>
 
-      <SectionTitle title="Rank & Leaderboard" text={text} />
+      <SectionTitle title="Rank & Leaderboard" text={text} accent={colors.primary} />
       <LeaderboardPreview
-        loading={loading}
+        loading={initialLoading}
         entries={leaderboard}
         myRank={myRank}
         myGems={user?.gems ?? 0}
         text={text}
         sub={sub}
         cardBg={cardBg}
+        border={colors.border}
+        primary={colors.primary}
+        success={colors.success}
+        danger={colors.danger}
+        warning={colors.warning}
+        headerGradient={[colors.leaderboardGradientStart, colors.leaderboardGradientEnd]}
+        gemsAccent={colors.primary}
         timeFilter={leaderboardTf}
-        onTimeFilterChange={setLeaderboardTf}
+        onTimeFilterChange={(t) => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setLeaderboardTf(t);
+        }}
       />
 
       <View style={{ height: insets.bottom + 20 }} />
 
-      <BadgeDetailModal selectedBadge={selectedBadge} cardBg={cardBg} text={text} sub={sub} onClose={() => setSelectedBadge(null)} />
+      <BadgeDetailModal selectedBadge={selectedBadge} cardBg={cardBg} text={text} sub={sub} primary={colors.primary} isLight={isLight} onClose={() => setSelectedBadge(null)} />
       <OfferDetailModal
         selectedOffer={selectedOffer}
         redeemingOfferId={redeemingOfferId}
         cardBg={cardBg}
         text={text}
         sub={sub}
+        primary={colors.primary}
+        success={colors.success}
+        isLight={isLight}
         onClose={() => setSelectedOffer(null)}
         onRedeem={handleRedeemOffer}
       />
@@ -415,6 +573,10 @@ export default function RewardsScreen() {
         cardBg={cardBg}
         text={text}
         sub={sub}
+        border={colors.border}
+        primary={colors.primary}
+        success={colors.success}
+        isLight={isLight}
         onClose={() => setShowAllOffers(false)}
         onSelectOffer={setSelectedOffer}
       />
@@ -429,6 +591,9 @@ export default function RewardsScreen() {
         cardBg={cardBg}
         text={text}
         sub={sub}
+        primary={colors.primary}
+        heroGradient={[colors.rewardsGradientStart, colors.rewardsGradientEnd]}
+        isLight={isLight}
         onClose={() => setShowChallengeHistory(false)}
         onTabChange={setChallengeModalTab}
         onSelectBadge={setSelectedBadge}

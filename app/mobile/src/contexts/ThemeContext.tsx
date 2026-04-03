@@ -92,8 +92,8 @@ const DARK: ThemeColors = {
   card: '#1a1a24',
   tabBar: '#0f0f18',
   searchBar: '#1a1a24',
-  rewardsGradientStart: '#059669',
-  rewardsGradientEnd: '#0d9488',
+  rewardsGradientStart: '#3730a3',
+  rewardsGradientEnd: '#7c3aed',
   leaderboardGradientStart: '#9333ea',
   leaderboardGradientEnd: '#ec4899',
 };
@@ -118,8 +118,8 @@ const LIGHT: ThemeColors = {
   card: '#ffffff',
   tabBar: '#ffffff',
   searchBar: '#f0f0f2',
-  rewardsGradientStart: '#059669',
-  rewardsGradientEnd: '#0d9488',
+  rewardsGradientStart: '#4338ca',
+  rewardsGradientEnd: '#9333ea',
   leaderboardGradientStart: '#9333ea',
   leaderboardGradientEnd: '#ec4899',
 };

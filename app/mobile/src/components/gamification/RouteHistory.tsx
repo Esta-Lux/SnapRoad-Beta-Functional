@@ -77,8 +77,8 @@ export default function RouteHistory({ visible, onClose }: Props) {
     const color = accentColor(item.safety_score);
     const estGal = item.distance > 0 ? item.distance / ASSUMED_MPG : 0;
     const estCost = estGal * ASSUMED_PRICE_PER_GAL;
-    const cardBg = isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.05)';
-    const borderC = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)';
+    const cardBg = colors.card;
+    const borderC = colors.border;
     return (
       <View style={[styles.tripCard, { backgroundColor: cardBg, borderColor: borderC }]}>
         <View style={[styles.accentBar, { backgroundColor: color }]} />
@@ -175,11 +175,9 @@ const styles = StyleSheet.create({
   },
   tripCard: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
   },
   accentBar: {
     width: 4,
@@ -219,7 +217,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: '700',
-    color: '#f8fafc',
   },
   metaRow: {
     flexDirection: 'row',

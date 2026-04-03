@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import React from 'react';
-import { ActivityIndicator, View, Text, Image, ScrollView, Platform, StyleSheet, Linking } from 'react-native';
+import { ActivityIndicator, View, Text, Image, ScrollView, Platform, StyleSheet, Linking, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -10,7 +10,7 @@ import { getApiMisconfigurationMessage } from './src/api/client';
 import { api } from './src/api/client';
 import { LinearGradient } from 'expo-linear-gradient';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { NavigationContainer } from '@react-navigation/native';
+import { CommonActions, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -72,6 +72,7 @@ const DashboardStack = createStackNavigator();
 const RewardsStack = createStackNavigator();
 const ProfileStack = createStackNavigator();
 const PublicStack = createStackNavigator();
+const rootNavigationRef = createNavigationContainerRef();
 
 function MapStackScreen() {
   return (
@@ -225,8 +226,39 @@ function RootNavigator() {
     if (!normalizedUrl || lastHandledUrlRef.current === normalizedUrl) return;
 
     const path = getPathFromUrl(normalizedUrl);
-    if (path !== 'auth') {
+
+    if (path.startsWith('billing/')) {
       lastHandledUrlRef.current = normalizedUrl;
+      const params = parseParamsFromUrl(normalizedUrl);
+      const sessionId = (params.session_id || '').trim();
+      const statusSeg = path.slice('billing/'.length).split('/')[0] || '';
+
+      if (isAuthenticated) {
+        if (statusSeg === 'success' && sessionId) {
+          try {
+            await api.get(`/api/payments/checkout/status/${encodeURIComponent(sessionId)}`);
+          } catch (e) {
+            console.warn('[Billing] checkout status failed', e);
+          }
+        }
+        const goProfile = () => {
+          if (!rootNavigationRef.isReady()) return;
+          rootNavigationRef.dispatch(
+            CommonActions.navigate({
+              name: 'Profile',
+              params: {
+                screen: 'ProfileMain',
+                params: { status: statusSeg, session_id: sessionId },
+              },
+            }),
+          );
+        };
+        requestAnimationFrame(goProfile);
+      }
+      return;
+    }
+
+    if (path !== 'auth') {
       return;
     }
 
@@ -249,7 +281,7 @@ function RootNavigator() {
     if (accessToken && refreshToken) {
       await completeOAuthSignIn(accessToken, refreshToken);
     }
-  }, [completeOAuthSignIn]);
+  }, [completeOAuthSignIn, isAuthenticated]);
 
   React.useEffect(() => {
     let alive = true;
@@ -295,6 +327,18 @@ function RootNavigator() {
       cancelled = true;
     };
   }, [isAuthenticated, user?.id]);
+
+  React.useEffect(() => {
+    const subReceive = Notifications.addNotificationReceivedListener((notification) => {
+      const data = notification.request.content.data as Record<string, unknown> | undefined;
+      if (data?.type === 'commute_alert') {
+        const title = notification.request.content.title ?? 'Time to head out';
+        const body = notification.request.content.body ?? '';
+        Alert.alert(title, body, [{ text: 'OK' }], { cancelable: true });
+      }
+    });
+    return () => subReceive.remove();
+  }, []);
 
   const linking = React.useMemo<any>(() => ({
     prefixes: ['snaproad://'],
@@ -349,7 +393,7 @@ function RootNavigator() {
   }
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer ref={rootNavigationRef} linking={linking}>
       {isAuthenticated ? (
         <>
           <MainTabs />

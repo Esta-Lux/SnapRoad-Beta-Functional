@@ -28,6 +28,15 @@ export default function OverviewTab({ analytics }: Props) {
 
   return (
     <div className="space-y-8">
+      <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-800/40 px-5 py-4">
+        <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-slate-950">
+          <img src="/snaproad-logo.svg" alt="" className="h-full w-full object-cover" width={44} height={44} />
+        </div>
+        <div>
+          <p className="text-white font-semibold">SnapRoad for partners</p>
+          <p className="text-slate-400 text-sm">Performance at a glance</p>
+        </div>
+      </div>
       <div className="grid grid-cols-4 gap-6">
         {stats.map((stat, i) => (
           <div key={i} className="relative bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-white/5 overflow-hidden group hover:border-white/10">

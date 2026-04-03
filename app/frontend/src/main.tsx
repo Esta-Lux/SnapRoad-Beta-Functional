@@ -51,7 +51,35 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <ThemeProvider>
         <BrowserRouter>
           <App />
-          <Toaster position="top-right" />
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 4200,
+              style: {
+                background: 'rgba(15, 23, 42, 0.96)',
+                color: '#f1f5f9',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                borderRadius: '14px',
+                boxShadow: '0 18px 48px rgba(0, 0, 0, 0.4)',
+                padding: '14px 16px',
+                maxWidth: '420px',
+                fontSize: '14px',
+                fontWeight: 500,
+              },
+              success: {
+                iconTheme: { primary: '#34d399', secondary: '#0f172a' },
+                style: {
+                  border: '1px solid rgba(52, 211, 153, 0.45)',
+                },
+              },
+              error: {
+                iconTheme: { primary: '#f87171', secondary: '#0f172a' },
+                style: {
+                  border: '1px solid rgba(248, 113, 113, 0.45)',
+                },
+              },
+            }}
+          />
         </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>

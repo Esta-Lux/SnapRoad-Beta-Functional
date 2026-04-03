@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import DocumentTitleTracker from '@/components/DocumentTitleTracker'
 import AuthRedirect from './pages/AuthRedirect'
 import PartnerSignup from './pages/PartnerSignup'
 import PartnerWelcomePage from './pages/PartnerWelcomePage'
@@ -28,6 +29,7 @@ function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
+        <DocumentTitleTracker />
         <Routes>
           {/* App entry: Driver auth (new login screen) */}
           <Route path="/" element={<Navigate to="/driver/auth" replace />} />

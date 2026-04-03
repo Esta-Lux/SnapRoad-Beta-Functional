@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useLayoutEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Building2, Plus, Gift, TrendingUp, BarChart3,
+  Plus, Gift, TrendingUp, BarChart3,
   Bell, Settings, LogOut, HelpCircle,
   Rocket, Store, CreditCard, Share2, BadgeCheck, QrCode, Receipt,
 } from 'lucide-react'
@@ -78,6 +78,10 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
   const [deletingOffer, setDeletingOffer] = useState<Offer | null>(null)
 
   const { sendNotification } = useNotifications()
+
+  useLayoutEffect(() => {
+    document.title = `SnapRoad Partner · ${TAB_META[activeTab].title}`
+  }, [activeTab])
 
   useEffect(() => {
     if (!localStorage.getItem('partner_onboarding_complete')) setShowOnboarding(true)
@@ -397,8 +401,8 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
       <aside className="fixed left-0 top-0 bottom-0 w-72 bg-slate-900/50 backdrop-blur-xl border-r border-white/5 flex flex-col">
         <div className="p-6 border-b border-white/5">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/25">
-              <Building2 className="text-white" size={24} />
+            <div className="w-12 h-12 rounded-2xl overflow-hidden shadow-lg shadow-emerald-500/20 border border-white/10 bg-slate-950 shrink-0">
+              <img src="/snaproad-logo.svg" alt="" className="w-full h-full object-cover" width={48} height={48} />
             </div>
             <div>
               <span className="text-white font-bold text-lg">SnapRoad</span>

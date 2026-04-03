@@ -26,6 +26,8 @@ import type {
   AdminRealtimeFeedItem,
 } from '@/types/admin'
 import { getApiBaseUrl } from '@/services/api'
+import { messageFromHttpJson } from '@/lib/httpErrorMessage'
+import { useAuthStore } from '@/store/authStore'
 
 class AdminApiService {
   private token: string | null = null
@@ -62,7 +64,22 @@ class AdminApiService {
     try {
       const response = await fetch(url, config)
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        let msg = ''
+        try {
+          const payload = await response.clone().json()
+          msg = messageFromHttpJson(payload, response.status)
+        } catch {
+          msg = messageFromHttpJson(null, response.status)
+        }
+        if (response.status === 401) {
+          this.setToken(null)
+          try {
+            useAuthStore.getState().logout()
+          } catch {
+            /* store unavailable in rare bootstrap cases */
+          }
+        }
+        throw new Error(msg)
       }
       return await response.json()
     } catch (error) {

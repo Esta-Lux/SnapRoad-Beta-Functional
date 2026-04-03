@@ -24,6 +24,8 @@ export interface User {
   plan?: string;
   gem_multiplier?: number;
   vehicle_height_meters?: number;
+  /** car | motorcycle — from profiles.vehicle_type */
+  vehicle_type?: 'car' | 'motorcycle';
   /** From GET /api/user/profile — server-computed gamification score */
   snapRoadScore?: number;
   snapRoadTier?: string;
@@ -118,8 +120,12 @@ export interface Friend {
   lat?: number;
   lng?: number;
   speed_mph?: number;
+  heading?: number;
   is_sharing?: boolean;
   last_updated?: string;
+  is_navigating?: boolean;
+  destination_name?: string;
+  battery_pct?: number | null;
 }
 
 export interface Offer {
@@ -188,6 +194,24 @@ export interface SavedRoute {
   notifications: boolean;
 }
 
+/** Supabase-backed commute alerts (A→B, leave-by, push). */
+export interface CommuteRoute {
+  id: string;
+  name: string;
+  origin_lat: number;
+  origin_lng: number;
+  origin_label: string;
+  dest_lat: number;
+  dest_lng: number;
+  dest_label: string;
+  leave_by_time: string;
+  tz: string;
+  alert_minutes_before: number;
+  days_of_week: string[];
+  notifications_enabled: boolean;
+  created_at?: string;
+}
+
 export interface SavedLocation {
   id: number;
   name: string;
@@ -209,6 +233,7 @@ export interface FriendLocation {
   destinationName?: string;
   lastUpdated: string;
   isSharing: boolean;
+  batteryPct?: number | null;
   isFamilyMember?: boolean;
   sosActive?: boolean;
 }

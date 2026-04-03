@@ -15,6 +15,10 @@ interface Props {
   maki?: string;
   distanceMeters?: number;
   onDirections: () => void;
+  /** Favorites: heart toggle (preferred over onSave). */
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void | Promise<void>;
+  /** @deprecated use onToggleFavorite + isFavorite */
   onSave?: () => void;
   onDismiss: () => void;
   isLight?: boolean;
@@ -47,7 +51,19 @@ function categoryLabel(category?: string): string | null {
   return category.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export default function PlaceCard({ name, address, category, maki, distanceMeters, onDirections, onSave, onDismiss, isLight = false }: Props) {
+export default function PlaceCard({
+  name,
+  address,
+  category,
+  maki,
+  distanceMeters,
+  onDirections,
+  isFavorite = false,
+  onToggleFavorite,
+  onSave,
+  onDismiss,
+  isLight = false,
+}: Props) {
   const insets = useSafeAreaInsets();
   const bg = isLight ? '#ffffff' : '#111827';
   const nameColor = isLight ? '#111827' : '#f8fafc';
@@ -119,10 +135,18 @@ export default function PlaceCard({ name, address, category, maki, distanceMeter
             <Ionicons name="navigate" size={16} color="#fff" />
             <Text style={styles.dirText}>Directions</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.saveBtn, { borderColor }]} onPress={onSave} activeOpacity={0.8}>
-            <Ionicons name="bookmark-outline" size={16} color="#3B82F6" />
-            <Text style={styles.saveText}>Save</Text>
-          </TouchableOpacity>
+          {(onToggleFavorite || onSave) ? (
+            <TouchableOpacity
+              style={[styles.saveBtn, { borderColor: isFavorite ? '#EF4444' : borderColor, backgroundColor: isFavorite ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.08)' }]}
+              onPress={() => { void (onToggleFavorite?.() ?? onSave?.()); }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name={isFavorite ? 'heart' : 'heart-outline'} size={16} color={isFavorite ? '#EF4444' : '#3B82F6'} />
+              <Text style={[styles.saveText, { color: isFavorite ? '#EF4444' : '#3B82F6' }]}>
+                {isFavorite ? 'Favorites' : 'Add to Favorites'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </Animated.View>
     </GestureDetector>

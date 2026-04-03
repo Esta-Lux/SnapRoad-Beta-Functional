@@ -22,7 +22,7 @@ type StatsProps = {
   miles: number;
 };
 
-export function ProfileStatsStrip({ cardBg, text, sub, gems, rank, trips, miles }: StatsProps) {
+export const ProfileStatsStrip = React.memo(function ProfileStatsStrip({ cardBg, text, sub, gems, rank, trips, miles }: StatsProps) {
   const cols = [
     { icon: 'diamond-outline' as const, val: formatGemsCompact(gems), lbl: 'Gems' },
     { icon: 'trophy-outline' as const, val: `#${rank}`, lbl: 'Rank' },
@@ -40,11 +40,11 @@ export function ProfileStatsStrip({ cardBg, text, sub, gems, rank, trips, miles 
       ))}
     </View>
   );
-}
+});
 
 type TabId = 'overview' | 'score' | 'fuel' | 'settings';
 
-export function ProfileTabBar({
+export const ProfileTabBar = React.memo(function ProfileTabBar({
   activeTab,
   onChange,
   sub,
@@ -71,7 +71,7 @@ export function ProfileTabBar({
       ))}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   tabRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(148,163,184,0.35)' },

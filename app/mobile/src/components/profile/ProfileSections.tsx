@@ -19,7 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Skeleton from '../common/Skeleton';
 import { DRIVING_MODES } from '../../constants/modes';
-import type { DrivingMode, PlanTier, SavedLocation, SavedRoute, User } from '../../types';
+import type { CommuteRoute, DrivingMode, PlanTier, SavedLocation, SavedRoute, User } from '../../types';
 import type { ProfileOverviewActionItem } from './types';
 export type {
   ProfileBadgeItem,
@@ -290,6 +290,8 @@ export function VehicleCard(props: {
   cardBg: string;
   text: string;
   sub: string;
+  vehicleType: 'car' | 'motorcycle';
+  setVehicleType: (v: 'car' | 'motorcycle') => void;
   tallVehicle: boolean;
   vehicleHeight: string;
   setTallVehicle: (v: boolean) => void;
@@ -297,15 +299,37 @@ export function VehicleCard(props: {
   heightPresets: HeightPreset[];
   onSave: () => void;
 }) {
-  const { cardBg, text, sub, tallVehicle, vehicleHeight, setTallVehicle, setVehicleHeight, heightPresets, onSave } = props;
+  const {
+    cardBg, text, sub, vehicleType, setVehicleType, tallVehicle, vehicleHeight,
+    setTallVehicle, setVehicleHeight, heightPresets, onSave,
+  } = props;
   return (
     <View style={[styles.card, { backgroundColor: cardBg }]}>
+      <Text style={{ color: sub, fontSize: 12, marginBottom: 8 }}>Vehicle type</Text>
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+        {(['car', 'motorcycle'] as const).map((vt) => (
+          <TouchableOpacity
+            key={vt}
+            style={[styles.presetChip, vehicleType === vt && styles.presetChipActive, { flex: 1, alignItems: 'center', paddingVertical: 10 }]}
+            onPress={() => setVehicleType(vt)}
+          >
+            <Ionicons name={vt === 'car' ? 'car-outline' : 'car-sport-outline'} size={18} color={vehicleType === vt ? '#fff' : text} />
+            <Text style={[styles.presetChipText, vehicleType === vt && { color: '#fff' }, { marginTop: 4, textTransform: 'capitalize' }]}>{vt}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {vehicleType === 'car' ? (
       <View style={styles.settingRow}>
         <Ionicons name="car-outline" size={18} color={text} />
-        <Text style={[styles.settingLabel, { color: text }]}>I drive a tall vehicle</Text>
+        <Text style={[styles.settingLabel, { color: text }]}>Tall vehicle / height routing</Text>
         <Switch value={tallVehicle} onValueChange={setTallVehicle} trackColor={{ false: '#ccc', true: '#3B82F6' }} />
       </View>
-      {tallVehicle && (
+      ) : (
+        <Text style={{ color: sub, fontSize: 12, marginBottom: 10, lineHeight: 16 }}>
+          Motorcycle mode skips truck-height routing. You can still report incidents and use all map features.
+        </Text>
+      )}
+      {vehicleType === 'car' && tallVehicle && (
         <>
           <View style={styles.presetsRow}>
             {heightPresets.map((p) => (
@@ -326,6 +350,11 @@ export function VehicleCard(props: {
             <Text style={styles.saveBtnText}>Save Vehicle Settings</Text>
           </TouchableOpacity>
         </>
+      )}
+      {(vehicleType === 'motorcycle' || (vehicleType === 'car' && !tallVehicle)) && (
+        <TouchableOpacity style={[styles.saveBtn, { marginTop: 12 }]} onPress={onSave}>
+          <Text style={styles.saveBtnText}>Save Vehicle Settings</Text>
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -369,6 +398,92 @@ export function PlacesCard({
       <TouchableOpacity style={styles.addBtn} onPress={onAdd}>
         <Ionicons name="add" size={16} color="#3B82F6" /><Text style={styles.addBtnText}>Add Place</Text>
       </TouchableOpacity>
+    </View>
+  );
+}
+
+const DAY_LABELS: Record<string, string> = {
+  mon: 'Mo', tue: 'Tu', wed: 'We', thu: 'Th', fri: 'Fr', sat: 'Sa', sun: 'Su',
+};
+
+export function CommuteRoutesSection({
+  cardBg,
+  text,
+  sub,
+  border,
+  primary,
+  routes,
+  loading,
+  limit,
+  onDelete,
+  onAdd,
+}: {
+  cardBg: string;
+  text: string;
+  sub: string;
+  border: string;
+  primary: string;
+  routes: CommuteRoute[];
+  loading: boolean;
+  limit: number;
+  onDelete: (id: string) => void;
+  onAdd: () => void;
+}) {
+  return (
+    <View style={{ paddingHorizontal: 16, gap: 10, marginBottom: 12 }}>
+      <TouchableOpacity
+        onPress={onAdd}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          paddingVertical: 12,
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: border,
+          backgroundColor: cardBg,
+        }}
+      >
+        <Ionicons name="add-circle-outline" size={20} color={primary} />
+        <Text style={{ color: primary, fontWeight: '800', fontSize: 15 }}>Add commute alert</Text>
+      </TouchableOpacity>
+      {loading ? (
+        <Skeleton width="100%" height={48} borderRadius={12} />
+      ) : routes.length === 0 ? (
+        <View style={[styles.card, { backgroundColor: cardBg, borderWidth: StyleSheet.hairlineWidth, borderColor: border }]}>
+          <Text style={{ color: sub, fontSize: 13, textAlign: 'center', lineHeight: 18 }}>
+            Save a route with leave time and days. We&apos;ll nudge you before you need to head out (push when you allow notifications).
+          </Text>
+        </View>
+      ) : (
+        routes.map((r) => (
+          <View
+            key={r.id}
+            style={[styles.listRow, { backgroundColor: cardBg, borderRadius: 14, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: border }]}
+          >
+            <Ionicons name="navigate-outline" size={18} color={primary} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={[styles.listTitle, { color: text }]}>{r.name}</Text>
+              <Text style={{ color: sub, fontSize: 11 }} numberOfLines={2}>
+                {(r.origin_label || 'Start') + ' → ' + (r.dest_label || 'End')}
+              </Text>
+              <Text style={{ color: sub, fontSize: 10, marginTop: 4, fontWeight: '600' }}>
+                Leave {r.leave_by_time} · alert {r.alert_minutes_before >= 60 ? `${Math.round(r.alert_minutes_before / 60)}h` : `${r.alert_minutes_before}m`} before
+              </Text>
+              <Text style={{ color: sub, fontSize: 10, marginTop: 2 }}>
+                {(r.days_of_week || []).map((d) => DAY_LABELS[d] || d).join(' ')}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => onDelete(r.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="trash-outline" size={18} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
+        ))
+      )}
+      <Text style={{ color: sub, fontSize: 11, textAlign: 'center' }}>
+        {routes.length}/{limit} commute routes
+      </Text>
     </View>
   );
 }

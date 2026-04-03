@@ -9,24 +9,40 @@ import { QRCodeCanvas } from 'qrcode.react'
 import { partnerApi } from '@/services/partnerApi'
 import { getPartnerPortalBaseUrl } from '@/lib/partnerPortalUrl'
 
-const REFERRAL_LEADERBOARD = [
-  { rank: 1, name: 'UrbanEats Co.', referrals: 12, credits: 600, badge: 'gold' },
-  { rank: 2, name: 'FuelStop Pro', referrals: 9, credits: 450, badge: 'silver' },
-  { rank: 3, name: 'City Wheels', referrals: 7, credits: 350, badge: 'bronze' },
-  { rank: 4, name: 'Greenway Mart', referrals: 5, credits: 250, badge: null },
-  { rank: 5, name: 'Your Business', referrals: 3, credits: 150, badge: null, isMe: true },
-]
-
 const REFERRAL_TIERS = [
   { name: 'Bronze', range: '1–2 referrals', credits: '50 credits each', color: '#CD7F32' },
   { name: 'Silver', range: '3–5 referrals', credits: '60 credits each', color: '#C0C0C0' },
   { name: 'Gold', range: '6+ referrals', credits: '75 credits each', color: '#FFD700' },
 ]
 
-const REFERRAL_TREND = [
-  { month: 'Jan', referrals: 0 }, { month: 'Feb', referrals: 1 }, { month: 'Mar', referrals: 0 },
-  { month: 'Apr', referrals: 1 }, { month: 'May', referrals: 1 }, { month: 'Jun', referrals: 3 },
-]
+type LeaderboardRow = {
+  rank: number
+  name: string
+  referrals: number
+  credits: number
+  partner_id: string
+  badge?: string | null
+}
+
+type ReferralRow = { created_at?: string }
+
+function buildReferralTrend(rows: ReferralRow[]): { month: string; referrals: number }[] {
+  const map = new Map<string, number>()
+  for (const r of rows) {
+    if (!r.created_at) continue
+    const d = new Date(r.created_at)
+    if (Number.isNaN(d.getTime())) continue
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    map.set(key, (map.get(key) ?? 0) + 1)
+  }
+  const keys = [...map.keys()].sort()
+  const last12 = keys.slice(-12)
+  return last12.map((k) => {
+    const [y, m] = k.split('-').map(Number)
+    const label = new Date(y, m - 1).toLocaleString('default', { month: 'short' })
+    return { month: label, referrals: map.get(k) ?? 0 }
+  })
+}
 
 interface Props {
   partnerId?: string
@@ -35,6 +51,9 @@ interface Props {
 export default function ReferralsTab({ partnerId }: Props) {
   const [copiedLink, setCopiedLink] = useState(false)
   const [referralStats, setReferralStats] = useState({ total: 0, active: 0, total_earned: 0 })
+  const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([])
+  const [trendData, setTrendData] = useState<{ month: string; referrals: number }[]>([])
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true)
   const qrRef = useRef<HTMLDivElement>(null)
   const referralLink = useMemo(() => {
     const base = getPartnerPortalBaseUrl()
@@ -43,16 +62,39 @@ export default function ReferralsTab({ partnerId }: Props) {
   }, [partnerId])
 
   useEffect(() => {
-    const fetchReferrals = async () => {
+    const load = async () => {
+      setLeaderboardLoading(true)
       try {
-        const data = (await partnerApi.getReferrals()) as {
-          success?: boolean
-          stats?: { total: number; active: number; total_earned: number }
+        const [refRes, lbRes] = await Promise.all([
+          partnerApi.getReferrals(),
+          partnerApi.getReferralLeaderboard(),
+        ])
+        if (refRes.success && refRes.stats) {
+          setReferralStats(refRes.stats)
+          const rows = (refRes.data ?? []) as ReferralRow[]
+          setTrendData(buildReferralTrend(rows))
         }
-        if (data.success && data.stats) setReferralStats(data.stats)
-      } catch (e) { console.error(e) }
+        if (lbRes.success && Array.isArray(lbRes.data)) {
+          const mapped: LeaderboardRow[] = lbRes.data.map((e: Record<string, unknown>) => ({
+            rank: Number(e.rank) || 0,
+            name: String(e.name ?? 'Partner'),
+            referrals: Number(e.referrals) || 0,
+            credits: Number(e.credits) || 0,
+            partner_id: String(e.partner_id ?? ''),
+            badge: (e.badge as string | null | undefined) ?? null,
+          }))
+          setLeaderboard(mapped)
+        } else {
+          setLeaderboard([])
+        }
+      } catch (e) {
+        console.error(e)
+        setLeaderboard([])
+      } finally {
+        setLeaderboardLoading(false)
+      }
     }
-    fetchReferrals()
+    void load()
   }, [partnerId])
 
   const copyLink = useCallback(() => {
@@ -89,7 +131,7 @@ export default function ReferralsTab({ partnerId }: Props) {
         {[
           { label: 'Total Referrals', value: String(referralStats.total), icon: Share2, color: '#0084FF' },
           { label: 'Approved Partners', value: String(referralStats.active), icon: CheckCircle, color: '#00DFA2' },
-          { label: 'Credits Earned', value: String(referralStats.total_earned), icon: Wallet, color: '#F59E0B' },
+          { label: 'Credits Earned', value: String(Math.round(referralStats.total_earned)), icon: Wallet, color: '#F59E0B' },
         ].map((kpi, i) => (
           <div key={i} className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-3">
@@ -158,21 +200,27 @@ export default function ReferralsTab({ partnerId }: Props) {
       <div className="grid grid-cols-2 gap-6">
         <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
           <h3 className="text-white font-semibold mb-4">Referral Trend</h3>
-          <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={REFERRAL_TREND}>
-              <defs>
-                <linearGradient id="refGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#0084FF" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#0084FF" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="month" stroke="#64748b" fontSize={11} />
-              <YAxis stroke="#64748b" fontSize={11} allowDecimals={false} />
-              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} />
-              <Area type="monotone" dataKey="referrals" stroke="#0084FF" fill="url(#refGrad)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
+          {trendData.length === 0 ? (
+            <p className="text-slate-400 text-sm py-10 text-center">
+              Your referral history will appear here once partners join using your link.
+            </p>
+          ) : (
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={trendData}>
+                <defs>
+                  <linearGradient id="refGradLive" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#0084FF" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#0084FF" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="month" stroke="#64748b" fontSize={11} />
+                <YAxis stroke="#64748b" fontSize={11} allowDecimals={false} />
+                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} />
+                <Area type="monotone" dataKey="referrals" stroke="#0084FF" fill="url(#refGradLive)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
         <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
@@ -195,23 +243,34 @@ export default function ReferralsTab({ partnerId }: Props) {
         <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
           <Award size={18} className="text-amber-400" />Partner Leaderboard
         </h3>
-        <div className="space-y-2">
-          {REFERRAL_LEADERBOARD.map(entry => (
-            <div key={entry.rank}
-              className={`flex items-center gap-4 p-4 rounded-xl border transition-colors ${entry.isMe ? 'border-[#0084FF]/30 bg-[#0084FF]/5' : 'border-white/5 bg-white/[0.02]'}`}>
-              <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
-                entry.rank === 1 ? 'bg-[#FFD700]/20 text-[#FFD700]' :
-                entry.rank === 2 ? 'bg-slate-400/20 text-slate-300' :
-                entry.rank === 3 ? 'bg-[#CD7F32]/20 text-[#CD7F32]' : 'bg-white/5 text-slate-400'
-              }`}>{entry.rank}</span>
-              <div className="flex-1">
-                <p className={`text-sm font-medium ${entry.isMe ? 'text-[#0084FF]' : 'text-white'}`}>{entry.name} {entry.isMe && '(You)'}</p>
-              </div>
-              <span className="text-slate-400 text-sm">{entry.referrals} referrals</span>
-              <span className="text-amber-400 font-semibold text-sm">{entry.credits} credits</span>
-            </div>
-          ))}
-        </div>
+        {leaderboardLoading ? (
+          <p className="text-slate-400 text-sm py-8 text-center">Loading leaderboard…</p>
+        ) : leaderboard.length === 0 ? (
+          <p className="text-slate-400 text-sm py-8 text-center">No referral activity yet. Share your link to climb the board.</p>
+        ) : (
+          <div className="space-y-2">
+            {leaderboard.map((entry) => {
+              const isMe = Boolean(partnerId && entry.partner_id === partnerId)
+              return (
+                <div key={`${entry.rank}-${entry.partner_id}`}
+                  className={`flex items-center gap-4 p-4 rounded-xl border transition-colors ${isMe ? 'border-[#0084FF]/30 bg-[#0084FF]/5' : 'border-white/5 bg-white/[0.02]'}`}>
+                  <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
+                    entry.rank === 1 ? 'bg-[#FFD700]/20 text-[#FFD700]' :
+                    entry.rank === 2 ? 'bg-slate-400/20 text-slate-300' :
+                    entry.rank === 3 ? 'bg-[#CD7F32]/20 text-[#CD7F32]' : 'bg-white/5 text-slate-400'
+                  }`}>{entry.rank}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium truncate ${isMe ? 'text-[#0084FF]' : 'text-white'}`}>
+                      {entry.name}{isMe ? ' (You)' : ''}
+                    </p>
+                  </div>
+                  <span className="text-slate-400 text-sm shrink-0">{entry.referrals} referrals</span>
+                  <span className="text-amber-400 font-semibold text-sm shrink-0">{Math.round(entry.credits)} credits</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )

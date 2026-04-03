@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Alert, Dimensions, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SheetModal from '../common/Modal';
@@ -22,7 +24,8 @@ function formatGems(n: number): string {
 
 /** Bottom sheet: preview stats, then system share — matches app sheet + theme tokens. */
 export default function DriverSnapshotModal({ visible, onClose, user, weeklyRecap, myRank }: Props) {
-  const { colors, spacing, radius, typography } = useTheme();
+  const cardRef = useRef<View>(null);
+  const { colors, spacing, typography } = useTheme();
   const w = Dimensions.get('window').width;
   const score = Math.round(user?.safetyScore ?? 0);
   const ringSize = Math.min(160, w * 0.4);
@@ -41,9 +44,18 @@ export default function DriverSnapshotModal({ visible, onClose, user, weeklyReca
 
   const handleShare = async () => {
     try {
-      await Share.share({ message: shareMessage, title: 'My SnapRoad snapshot' });
+      const uri = await captureRef(cardRef, { format: 'png', quality: 0.92 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'My SnapRoad snapshot' });
+      } else {
+        await Share.share({ message: shareMessage, title: 'My SnapRoad snapshot', url: uri });
+      }
     } catch {
-      Alert.alert('Share', 'Could not open the share sheet.');
+      try {
+        await Share.share({ message: shareMessage, title: 'My SnapRoad snapshot' });
+      } catch {
+        Alert.alert('Share', 'Could not open the share sheet.');
+      }
     }
   };
 
@@ -62,7 +74,11 @@ export default function DriverSnapshotModal({ visible, onClose, user, weeklyReca
         Review your stats, then share with the system sheet.
       </Text>
 
-      <View style={[styles.summaryCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+      <View
+        ref={cardRef}
+        collapsable={false}
+        style={[styles.summaryCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
+      >
         <View style={styles.routeRow}>
           <Ionicons name="navigate-outline" size={22} color={colors.primary} />
           <Text style={[typography.body, { color: colors.text, flex: 1 }]} numberOfLines={2}>

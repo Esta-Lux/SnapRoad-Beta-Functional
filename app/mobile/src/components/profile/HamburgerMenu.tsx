@@ -2,20 +2,34 @@ import React from 'react';
 import {
   Alert,
   Modal,
+  Platform,
   Share,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import Constants from 'expo-constants';
 import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+
+const DEFAULT_SHARE_URL =
+  (Constants.expoConfig?.extra as { snaproadSiteUrl?: string } | undefined)?.snaproadSiteUrl ?? 'https://snaproad.app';
+
+export type HamburgerMenuTarget =
+  | 'Social'
+  | 'SnapRace'
+  | 'Convoy'
+  | 'TripAnalytics'
+  | 'RouteHistory'
+  | 'Profile'
+  | 'Help';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
   isLight?: boolean;
-  onNavigate: (screen: string) => void;
+  onNavigate: (screen: HamburgerMenuTarget) => void;
 }
 
 interface MenuItem {
@@ -63,16 +77,23 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
       icon: 'share-social-outline',
       label: 'Share SnapRoad',
       action: () => {
-        Share.share({
-          message:
-            'Check out SnapRoad — the AI driving companion that makes every trip safer and more rewarding! https://snaproad.app',
-        }).catch(() => {});
+        onClose();
+        const msg =
+          'Check out SnapRoad — the AI driving companion for safer, more rewarding drives.';
+        const sharePayload =
+          Platform.OS === 'ios'
+            ? { title: 'SnapRoad', message: msg, url: DEFAULT_SHARE_URL }
+            : { title: 'SnapRoad', message: `${msg} ${DEFAULT_SHARE_URL}` };
+        requestAnimationFrame(() => {
+          Share.share(sharePayload).catch(() => {});
+        });
       },
     },
     {
       icon: 'information-circle-outline',
       label: 'About',
       action: () => {
+        onClose();
         Alert.alert('SnapRoad', 'Version 1.0.0\n\n\u00A9 2025 SnapRoad Inc.\nAll rights reserved.');
       },
     },

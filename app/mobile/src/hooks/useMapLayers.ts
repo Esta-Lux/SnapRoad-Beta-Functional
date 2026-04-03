@@ -8,7 +8,6 @@ interface LayerState {
   showIncidents: boolean;
   showCameras: boolean;
   showConstruction: boolean;
-  showFuel: boolean;
   showPhotoReports: boolean;
   /** Open data speed camera / traffic safety POIs (not available in some regions). */
   showTrafficSafety: boolean;
@@ -19,7 +18,6 @@ const DEFAULTS: LayerState = {
   showIncidents: true,
   showCameras: false,
   showConstruction: false,
-  showFuel: false,
   showPhotoReports: false,
   showTrafficSafety: false,
 };
@@ -30,7 +28,7 @@ function loadSaved(): LayerState {
     if (raw) {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        const { showOsm: _removed, ...rest } = parsed;
+        const { showOsm: _removed, showFuel: _removedFuel, ...rest } = parsed;
         return { ...DEFAULTS, ...rest };
       }
     }
@@ -53,7 +51,6 @@ export function useMapLayers() {
   const setShowIncidents = useCallback((v: boolean) => setState((p) => ({ ...p, showIncidents: v })), []);
   const setShowCameras = useCallback((v: boolean) => setState((p) => ({ ...p, showCameras: v })), []);
   const setShowConstruction = useCallback((v: boolean) => setState((p) => ({ ...p, showConstruction: v })), []);
-  const setShowFuel = useCallback((v: boolean) => setState((p) => ({ ...p, showFuel: v })), []);
   const setShowPhotoReports = useCallback((v: boolean) => setState((p) => ({ ...p, showPhotoReports: v })), []);
   const setShowTrafficSafety = useCallback((v: boolean) => setState((p) => ({ ...p, showTrafficSafety: v })), []);
 
@@ -64,7 +61,6 @@ export function useMapLayers() {
     setShowIncidents,
     setShowCameras,
     setShowConstruction,
-    setShowFuel,
     setShowPhotoReports,
     setShowTrafficSafety,
   };

@@ -117,6 +117,7 @@ export interface Partner {
   phone: string
   address: string
   created_at: string
+  credits?: number
 }
 
 export interface Campaign {

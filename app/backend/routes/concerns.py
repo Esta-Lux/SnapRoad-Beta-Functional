@@ -29,7 +29,7 @@ class SubmitConcernBody(BaseModel):
 def submit_concern(body: SubmitConcernBody, user: dict = Depends(get_current_user)):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    user_id = user.get("user_id")
+    user_id = str(user.get("user_id") or user.get("id") or "").strip()
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
     category = (body.category or body.type or "").strip()
