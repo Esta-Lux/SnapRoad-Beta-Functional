@@ -11,7 +11,10 @@ export interface TurnSignalStep {
 
 interface Props {
   steps: TurnSignalStep[];
+  /** Inner fill — use same as active route line (e.g. mode routeColor). */
   puckColor: string;
+  /** Outer ring — white reads like Mapbox / Apple nav pucks on the map. */
+  puckRingColor?: string;
 }
 
 function maneuverIcon(maneuver?: string): keyof typeof Ionicons.glyphMap {
@@ -30,7 +33,7 @@ function maneuverIcon(maneuver?: string): keyof typeof Ionicons.glyphMap {
 /**
  * Upcoming maneuver points — MarkerView + directional Ionicons (no map CircleLayer dots).
  */
-export default React.memo(function TurnSignalMarkers({ steps, puckColor }: Props) {
+export default React.memo(function TurnSignalMarkers({ steps, puckColor, puckRingColor = '#FFFFFF' }: Props) {
   const list = useMemo(
     () => steps.filter((s) => isFinite(s.lat) && isFinite(s.lng)),
     [steps],
@@ -52,9 +55,9 @@ export default React.memo(function TurnSignalMarkers({ steps, puckColor }: Props
             allowOverlap
           >
             <View style={styles.hit}>
-              <View style={[styles.puckOuter, { borderColor: `${puckColor}88` }]}>
+              <View style={[styles.puckOuter, { borderColor: puckRingColor }]}>
                 <View style={[styles.puckInner, { backgroundColor: puckColor }]}>
-                  <Ionicons name={icon} size={17} color="#FFFFFF" />
+                  <Ionicons name={icon} size={18} color="#FFFFFF" />
                 </View>
               </View>
             </View>

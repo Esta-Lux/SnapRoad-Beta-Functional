@@ -4,6 +4,19 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "What changed (shown in Expo Updates)"
+        required: false
+        default: "Manual OTA publish"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eas-update-production
+  cancel-in-progress: false
 
 jobs:
   update:
@@ -14,15 +27,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: ".nvmrc"
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+
+      - name: Verify EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::GitHub Actions secret EXPO_TOKEN is missing. Add it: Repo Settings → Secrets and variables → Actions → New repository secret. Create a token at https://expo.dev/accounts/snaproad/settings/access-tokens"
+            exit 1
+          fi
 
       - name: Install dependencies
         run: cd app/mobile && npm ci
 
       - name: EAS Update (production)
-        run: cd app/mobile && npx eas-cli update --branch production --message "${{ github.event.head_commit.message }}"
+        working-directory: app/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           APP_ENV: production
           EXPO_PUBLIC_API_URL: https://api.snaproad.app
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
-
+          UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
+        run: npx eas-cli update --branch production --non-interactive --message "$UPDATE_MSG"

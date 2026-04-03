@@ -79,7 +79,9 @@ export default React.memo(function RouteOverlay({
     }
 
     if (ahead.length >= 2) {
-      if (hasCongestion) {
+      // Congestion-colored segments only on route *preview*; during navigation keep one
+      // continuous "ahead" color so the line matches the mode / turn card (no blue→green break).
+      if (hasCongestion && !isNavigating) {
         const aheadCoords = ahead.map((c) =>
           typeof c[0] === 'number' ? { lng: c[0] as number, lat: c[1] as number } : c,
         ) as Coordinate[];
@@ -101,7 +103,7 @@ export default React.memo(function RouteOverlay({
 
   if (polyline.length < 2 || !MapboxGL) return null;
 
-  const useCongestionColor = hasCongestion;
+  const useCongestionColor = hasCongestion && !isNavigating;
 
   const aheadLineColor: any = useCongestionColor
     ? [
@@ -163,23 +165,26 @@ export default React.memo(function RouteOverlay({
         aboveLayerID="sr-route-casing"
       />
 
-      {/* ASCII chevron — more reliable on native Mapbox text than emoji / exotic Unicode */}
+      {/* Line-aligned progress chevrons (Mapbox-style; ASCII only — reliable on native RN Mapbox) */}
       <MapboxGL.SymbolLayer
         id="sr-route-chevrons"
         filter={['==', ['get', 'segment'], 'ahead']}
         style={{
           symbolPlacement: 'line',
-          symbolSpacing: 55,
+          symbolSpacing: 48,
           textField: '>',
           textSize: [
             'interpolate', ['linear'], ['zoom'],
-            13, 12,
-            16, 16,
-            20, 20,
+            13, 14,
+            16, 18,
+            20, 22,
           ],
           textColor: '#FFFFFF',
-          textOpacity: isRerouting ? 0.2 : 0.65,
+          textHaloColor: 'rgba(15,23,42,0.65)',
+          textHaloWidth: 2,
+          textOpacity: isRerouting ? 0.25 : 0.88,
           textRotationAlignment: 'map',
+          textKeepUpright: false,
           textAllowOverlap: true,
           textIgnorePlacement: true,
           textFont: ['DIN Pro Medium', 'Arial Unicode MS Regular'],
