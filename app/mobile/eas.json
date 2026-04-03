@@ -45,7 +45,8 @@
       "env": {
         "APP_ENV": "production",
         "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
-        "EXPO_PUBLIC_EXPO_PROJECT_URL": "https://expo.dev/accounts/snaproad/projects/snaproad"
+        "EXPO_PUBLIC_EXPO_PROJECT_URL": "https://expo.dev/accounts/snaproad/projects/snaproad",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     }
   }

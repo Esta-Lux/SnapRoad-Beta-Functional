@@ -22,4 +22,7 @@ jobs:
         run: cd app/mobile && npx eas-cli update --branch production --message "${{ github.event.head_commit.message }}"
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APP_ENV: production
+          EXPO_PUBLIC_API_URL: https://api.snaproad.app
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
 
