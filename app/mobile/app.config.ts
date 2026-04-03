@@ -12,8 +12,11 @@ const envAny = (names: string[], fallback = ""): string => {
 const EAS_PROJECT_ID = "b800018b-79d3-4b8e-bbad-f5d628ee6a60";
 
 const isProductionBuild = (): boolean => {
-  const v = (process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || "").toLowerCase();
-  return v === "production";
+  const profile = String(process.env.EAS_BUILD_PROFILE || "").toLowerCase();
+  if (profile) return profile === "production";
+  const v = (process.env.APP_ENV || process.env.ENVIRONMENT || "").toLowerCase();
+  if (v) return v === "production";
+  return (process.env.NODE_ENV || "").toLowerCase() === "production";
 };
 
 const resolveApiUrl = (): string => {

@@ -1,16 +1,32 @@
-.emergent
-.windsurf
+# Root .easignore — safety net only.
+# EAS should be run from app/mobile/ which has its own .easignore.
+# If EAS ever resolves the repo root as the project, exclude everything
+# except the mobile app so the archive stays small.
+
 .git
 .github
+.emergent
+.windsurf
+.cursor
+.vscode
+.idea
+
 **/node_modules
 **/.expo
 **/.eas-inspect-archive
 **/.gradle
 **/.cxx
+**/build
+**/dist
+
 .env
 .env.*
 !.env.example
+
 *.tgz
+*.log
+
+# Non-mobile project areas
 app/backend
 app/frontend
 app/docs
@@ -18,6 +34,20 @@ memory
 notes
 loadtests
 test_reports
+scripts
+docker-entrypoint.sh
+Dockerfile
+.dockerignore
+cleanup.sh
+railway.toml
+sonar-project.properties
+vercel.json
+.gitconfig
+.gitleaks.toml
+.nvmrc
+*.md
+
+# Keep the mobile app
 !app
 !app/mobile
 !app/mobile/**
