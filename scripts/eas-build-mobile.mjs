@@ -16,6 +16,18 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileRoot = resolve(root, "app", "mobile");
 
+/**
+ * Robocopy / Windows often leaves the read-only flag set on files. EAS uploads a
+ * tarball that preserves modes; Linux extract then fails with "Permission denied".
+ */
+function clearWindowsReadOnlyTree(projectRoot) {
+  if (process.platform !== "win32") return;
+  spawnSync("attrib", ["-R", `${projectRoot}\\*`, "/S", "/D"], {
+    stdio: "inherit",
+    shell: true,
+  });
+}
+
 const args = process.argv.slice(2);
 if (args.length === 0) {
   console.error("Usage: node scripts/eas-build-mobile.mjs <eas-cli args...>");
@@ -24,6 +36,8 @@ if (args.length === 0) {
   );
   process.exit(1);
 }
+
+clearWindowsReadOnlyTree(mobileRoot);
 
 const env = {
   ...process.env,
