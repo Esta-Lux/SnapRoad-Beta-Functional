@@ -24,10 +24,10 @@
     "tunnel:3001": "npx tunnelmole 3001",
     "tunnel:ngrok": "ngrok http 3000",
     "eas:sync-env": "node scripts/sync-eas-env.mjs",
-    "eas:android:preview": "cd app/mobile && npx eas-cli build --platform android --profile preview --clear-cache",
-    "eas:android:production": "cd app/mobile && npx eas-cli build --platform android --profile production --clear-cache",
-    "eas:ios:preview": "cd app/mobile && npx eas-cli build --platform ios --profile preview",
-    "eas:ios:production": "cd app/mobile && npx eas-cli build --platform ios --profile production",
+    "eas:android:preview": "node scripts/eas-build-mobile.mjs build --platform android --profile preview --clear-cache --non-interactive",
+    "eas:android:production": "node scripts/eas-build-mobile.mjs build --platform android --profile production --clear-cache --non-interactive",
+    "eas:ios:preview": "node scripts/eas-build-mobile.mjs build --platform ios --profile preview --non-interactive",
+    "eas:ios:production": "node scripts/eas-build-mobile.mjs build --platform ios --profile production --non-interactive",
     "eas:validate": "node scripts/validate-eas-setup.mjs"
   },
   "devDependencies": {
