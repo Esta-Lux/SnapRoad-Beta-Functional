@@ -1,5 +1,17 @@
-import "dotenv/config";
-import type { ExpoConfig, ConfigContext } from "expo/config";
+/**
+ * Local dev: load `.env` so Metro / `expo start` see EXPO_PUBLIC_* without exporting them in the shell.
+ *
+ * EAS Build: do not load `.env`. Variables come from Expo → Project → Environment variables
+ * (per environment: development / preview / production) plus `eas.json` → `build.<profile>.env`.
+ * Important: for any key defined in BOTH `eas.json` and the dashboard, `eas.json` wins — keep
+ * secrets and EXPO_PUBLIC_* you want to manage in the dashboard out of `eas.json` unless intentional.
+ *
+ * `EAS_BUILD` is set (non-empty) on EAS Build workers.
+ */
+if (!process.env.EAS_BUILD) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require("dotenv/config");
+}
 
 const envAny = (names: string[], fallback = ""): string => {
   for (const name of names) {
@@ -49,7 +61,7 @@ function resolveSentryExpoPlugin(): string | [string, Record<string, string>] {
   return "@sentry/react-native/expo";
 }
 
-export default function expoConfig({ config }: ConfigContext): ExpoConfig {
+export default function expoConfig({ config }: { config: Record<string, unknown> }) {
   return {
     ...config,
     name: "SnapRoad",
@@ -126,7 +138,7 @@ export default function expoConfig({ config }: ConfigContext): ExpoConfig {
         "android.permission.ACCESS_FINE_LOCATION",
       ],
       ...(_prod ? {} : { usesCleartextTraffic: true }),
-    } as ExpoConfig["android"],
+    },
     web: {
       favicon: "./assets/favicon.png",
     },
