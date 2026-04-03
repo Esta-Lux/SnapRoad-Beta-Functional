@@ -1187,7 +1187,8 @@ export default function MapScreen() {
               return (
                 <TurnSignalMarkers
                   steps={upcoming}
-                  puckColor={modeConfig.turnArrowBg ?? modeConfig.routeColor}
+                  puckColor={modeConfig.routeColor}
+                  puckRingColor="#FFFFFF"
                 />
               );
             })()}
@@ -1505,7 +1506,17 @@ export default function MapScreen() {
                 },
               ]}
             >
-              <LinearGradient colors={tcGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.tcPremGrad, { borderRadius: tcRadius }, isSport && { borderWidth: 1, borderColor: modeConfig.turnCardBorderColor }]}>
+              <LinearGradient
+                colors={tcGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[
+                  s.tcPremGrad,
+                  { borderRadius: tcRadius },
+                  !isSport && { borderWidth: StyleSheet.hairlineWidth * 2, borderColor: 'rgba(255,255,255,0.28)' },
+                  isSport && { borderWidth: 1, borderColor: modeConfig.turnCardBorderColor ?? 'rgba(196,149,106,0.25)' },
+                ]}
+              >
                 {/* ── Row 1: dist | icon | instruction | mute ── */}
                 <View style={s.tcPremRow}>
                   {/* Distance — large, left */}
