@@ -542,10 +542,27 @@ def sb_get_offers(status: str = "active", limit: int = 50) -> list:
 
 def sb_create_offer(data: dict) -> Optional[dict]:
     try:
-        result = _sb().table("offers").insert(data).execute()
-        return result.data[0] if result.data else None
+        sb = _sb()
+        ins = sb.table("offers").insert(data).execute()
+        rows = ins.data if ins.data else []
+        if rows:
+            return rows[0]
+        pid = data.get("partner_id")
+        if pid:
+            sel = (
+                sb.table("offers")
+                .select("*")
+                .eq("partner_id", str(pid))
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            got = sel.data or []
+            if got:
+                return got[0]
+        return None
     except Exception as e:
-        logger.error(f"sb_create_offer: {e}")
+        logger.error("sb_create_offer: %s", e, exc_info=True)
         return None
 
 
@@ -1126,10 +1143,22 @@ def sb_create_concern(payload: dict) -> Optional[dict]:
             "status": payload.get("status", "open"),
             "context": payload.get("context"),
         }
-        # PostgREST often returns no body on insert unless we ask for representation.
-        result = _sb().table("concerns").insert(data).select("*").execute()
-        rows = result.data if result.data else []
-        return rows[0] if rows else None
+        # supabase-py 2.x: insert() does not support .select(); use execute() then read data or refetch.
+        sb = _sb()
+        ins = sb.table("concerns").insert(data).execute()
+        rows = ins.data if ins.data else []
+        if rows:
+            return rows[0]
+        sel = (
+            sb.table("concerns")
+            .select("*")
+            .eq("user_id", data["user_id"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        got = sel.data or []
+        return got[0] if got else None
     except Exception as e:
         if not _table_missing(e):
             logger.error(f"sb_create_concern: {e}")

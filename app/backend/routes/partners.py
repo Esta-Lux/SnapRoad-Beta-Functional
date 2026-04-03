@@ -292,12 +292,24 @@ def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partne
         return {"success": False, "message": "Location not found"}
 
     auto_gems = calculate_auto_gems(offer.discount_percent, offer.is_free_item)
+    if offer.gems_reward is not None and int(offer.gems_reward) > 0:
+        auto_gems = int(offer.gems_reward)
     free_discount = calculate_free_discount(offer.discount_percent)
+
+    business_name = (
+        (partner.get("business_name") or "").strip()
+        or (location.get("name") or "").strip()
+        or offer.title.strip()
+        or "Partner offer"
+    )
+    business_type = str(partner.get("business_type") or location.get("business_type") or "retail").strip() or "retail"
 
     new_offer = sb_create_offer({
         "partner_id": owned_partner_id,
         "location_id": location["id"],
         "title": offer.title,
+        "business_name": business_name,
+        "business_type": business_type,
         "description": offer.description,
         "discount_percent": offer.discount_percent,
         "base_gems": auto_gems,
@@ -306,6 +318,7 @@ def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partne
         "is_free_item": offer.is_free_item,
         "lat": location["lat"],
         "lng": location["lng"],
+        "address": (location.get("address") or partner.get("address") or "") or None,
         "status": "active",
         "image_url": offer.image_url,
         "created_by": owned_partner_id,
@@ -336,7 +349,8 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: Current
         return {"success": False, "message": MSG_PARTNER_NOT_FOUND}
     
     locations = sb_get_partner_locations(owned_partner_id)
-    location = next((l for l in locations if l["id"] == str(offer.location_id)), None)
+    want_loc = str(offer.location_id).strip()
+    location = next((l for l in locations if str(l.get("id")) == want_loc), None)
     if not location:
         return {"success": False, "message": "Location not found"}
     

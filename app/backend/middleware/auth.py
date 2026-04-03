@@ -76,16 +76,16 @@ def _decode_snaproad_access_token(token: str) -> Optional[dict]:
     }
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    if not credentials or not credentials.credentials:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    token = credentials.credentials.strip()
+def _user_from_bearer_token(token: str) -> Optional[dict]:
+    """Resolve SnapRoad JWT, Supabase session, or dev mock token. Returns None if invalid."""
+    if not token or not str(token).strip():
+        return None
+    token = str(token).strip()
 
     snaproad = _decode_snaproad_access_token(token)
     if snaproad:
         return snaproad
 
-    # Supabase access token (OAuth / mobile Supabase session)
     supabase_user = sb_get_auth_user_from_access_token(token)
     if supabase_user and supabase_user.get("id"):
         user_id = str(supabase_user.get("id"))
@@ -98,17 +98,32 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             "partner_id": profile.get("partner_id"),
         }
 
-    # Optional development-only mock token support.
     if os.getenv("ENVIRONMENT") != "production" and ALLOW_MOCK_AUTH:
-        if token and token.startswith("mock_token_"):
+        if token.startswith("mock_token_"):
             logger.warning("Mock token used in development mode")
             user_id = token.replace("mock_token_", "")
             return {"id": user_id, "user_id": user_id, "role": "user"}
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or expired token",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    return None
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if not credentials or not credentials.credentials:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    user = _user_from_bearer_token(credentials.credentials)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+async def get_current_user_optional(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Same resolution as get_current_user but returns None when unauthenticated or invalid."""
+    if not credentials or not credentials.credentials:
+        return None
+    return _user_from_bearer_token(credentials.credentials)
 
 
 async def require_admin(user: dict = Depends(get_current_user)):

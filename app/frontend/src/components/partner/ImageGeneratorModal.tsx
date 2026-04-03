@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Sparkles, RefreshCw, Check } from 'lucide-react'
 import { getApiBaseUrl } from '@/services/api'
+import { partnerApi } from '@/services/partnerApi'
 
 interface Props {
   onClose: () => void
@@ -27,12 +28,25 @@ export default function ImageGeneratorModal({ onClose, onGenerate }: Props) {
     setErrorHint(null)
     try {
       const base = getApiBaseUrl().replace(/\/$/, '')
+      const token = partnerApi.getToken()
       const res = await fetch(`${base}/api/images/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ prompt: `${prompt}, ${style} style, professional business promotional image`, offer_type: style }),
       })
       const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const detail = typeof data?.detail === 'string' ? data.detail : ''
+        setErrorHint(
+          res.status === 401
+            ? (detail || 'Sign in to the partner portal again, then retry image generation.')
+            : (detail || `Request failed (${res.status}). Try again or upload your own image.`),
+        )
+        return
+      }
       if (data?.success && data?.image_url) {
         setGeneratedImage(data.image_url as string)
       } else {

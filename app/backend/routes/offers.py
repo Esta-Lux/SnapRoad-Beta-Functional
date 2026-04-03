@@ -735,7 +735,11 @@ def record_location_visit(visit: LocationVisit, auth_user: CurrentUser):
 
 @router.post("/images/generate")
 @limiter.limit("10/minute")
-async def generate_offer_image(request: Request, body: ImageGenerateRequest):
+async def generate_offer_image(
+    request: Request,
+    body: ImageGenerateRequest,
+    _user: CurrentUser,
+):
     from services.image_generation import generate_promo_image_url
 
     _ = request

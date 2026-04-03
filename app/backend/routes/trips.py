@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import logging
 from models.schemas import TripResult, FuelLogCreate
-from middleware.auth import get_current_user
+from middleware.auth import get_current_user, get_current_user_optional
 from pydantic import BaseModel
 from uuid import uuid4
 from services.mock_data import (
@@ -27,6 +27,7 @@ except Exception:  # pragma: no cover
 router = APIRouter(prefix="/api", tags=["Trips"])
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+OptionalUser = Annotated[Optional[dict], Depends(get_current_user_optional)]
 
 _LEGACY_503_RESPONSES = {
     503: {"description": "Legacy endpoint unavailable in production"},
@@ -49,13 +50,131 @@ def _legacy_trips_guard() -> None:
         raise HTTPException(status_code=503, detail="Legacy trips endpoints unavailable in production")
 
 
+def _trip_user_id(user: dict) -> str:
+    return str(user.get("id") or user.get("user_id") or "").strip()
+
+
+def _trip_row_to_client_shape(r: dict) -> dict:
+    """Map a Supabase `trips` row to the legacy JSON shape used by mobile Rewards."""
+    dur_sec = int(r.get("duration_seconds") or 0)
+    if not dur_sec and r.get("duration_minutes") is not None:
+        dur_sec = int(r.get("duration_minutes") or 0) * 60
+    ended = r.get("ended_at") or r.get("started_at") or ""
+    date_part = ended[:10] if isinstance(ended, str) and len(ended) >= 10 else ""
+    time_part = ""
+    if isinstance(ended, str) and "T" in ended:
+        try:
+            time_part = ended.split("T", 1)[1].replace("Z", "")[:8]
+        except Exception:
+            time_part = ""
+    return {
+        "id": str(r.get("id")),
+        "date": date_part,
+        "time": time_part,
+        "origin": "Start",
+        "destination": "End",
+        "distance_miles": float(r.get("distance_miles") or 0),
+        "duration_minutes": max(0, dur_sec // 60),
+        "safety_score": float(r.get("safety_score") or 0),
+        "gems_earned": int(r.get("gems_earned") or 0),
+        "xp_earned": int(r.get("xp_earned") or 0),
+    }
+
+
+def _get_trips_supabase(user: dict, page: int, limit: int) -> dict:
+    uid = _trip_user_id(user)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    sb = get_supabase()
+    count_res = (
+        sb.table("trips")
+        .select("*", count="exact")
+        .eq("user_id", uid)
+        .execute()
+    )
+    total = int(count_res.count or 0)
+    start = (page - 1) * limit
+    end = start + limit - 1
+    res = (
+        sb.table("trips")
+        .select("*")
+        .eq("user_id", uid)
+        .order("ended_at", desc=True)
+        .range(start, end)
+        .execute()
+    )
+    items = [_trip_row_to_client_shape(r) for r in (res.data or [])]
+    return {
+        "success": True,
+        "data": {
+            "items": items,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total,
+                "total_pages": (total + limit - 1) // limit if limit else 0,
+            },
+        },
+    }
+
+
+def _get_trip_history_supabase(user: dict, limit: int) -> dict:
+    uid = _trip_user_id(user)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    sb = get_supabase()
+    res = (
+        sb.table("trips")
+        .select("*")
+        .eq("user_id", uid)
+        .order("ended_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    recent = [_trip_row_to_client_shape(r) for r in (res.data or [])]
+    prof = sb.table("profiles").select("total_trips,total_miles").eq("id", uid).limit(1).execute()
+    p = prof.data[0] if prof.data else {}
+    return {
+        "success": True,
+        "data": {
+            "recent_trips": recent,
+            "total_trips": int(p.get("total_trips") or 0),
+            "total_miles": float(p.get("total_miles") or 0),
+        },
+    }
+
+
+def _get_trip_by_id_supabase(user: dict, trip_id: str) -> dict:
+    uid = _trip_user_id(user)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    sb = get_supabase()
+    res = (
+        sb.table("trips")
+        .select("*")
+        .eq("user_id", uid)
+        .eq("id", trip_id)
+        .limit(1)
+        .execute()
+    )
+    rows = res.data or []
+    if not rows:
+        return {"success": False, "message": MSG_TRIP_NOT_FOUND}
+    return {"success": True, "data": _trip_row_to_client_shape(rows[0])}
+
+
 # ==================== TRIP HISTORY ====================
 
 @router.get("/trips", responses=_LEGACY_503_RESPONSES)
 def get_trips(
+    user: OptionalUser,
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
+    if ENVIRONMENT == "production":
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return _get_trips_supabase(user, page, limit)
     _legacy_trips_guard()
     start = (page - 1) * limit
     end = start + limit
@@ -110,15 +229,19 @@ def start_trip(body: StartTripBody):
 
 
 @router.get("/trips/history", responses=_LEGACY_503_RESPONSES)
-def get_trip_history(limit: Annotated[int, Query(ge=1, le=100)] = 10):
+def get_trip_history(user: OptionalUser, limit: Annotated[int, Query(ge=1, le=100)] = 10):
+    if ENVIRONMENT == "production":
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return _get_trip_history_supabase(user, limit)
     _legacy_trips_guard()
-    user = users_db.get(current_user_id, {})
+    mock_user = users_db.get(current_user_id, {})
     return {
         "success": True,
         "data": {
             "recent_trips": trips_db[:limit],
-            "total_trips": user.get("total_trips", 0),
-            "total_miles": user.get("total_miles", 0),
+            "total_trips": mock_user.get("total_trips", 0),
+            "total_miles": mock_user.get("total_miles", 0),
         },
     }
 
@@ -204,7 +327,11 @@ def get_recent_trips_mobile(
 
 
 @router.get("/trips/{trip_id}", responses=_LEGACY_503_RESPONSES)
-def get_trip_by_id(trip_id: str):
+def get_trip_by_id(trip_id: str, user: OptionalUser):
+    if ENVIRONMENT == "production":
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return _get_trip_by_id_supabase(user, trip_id)
     _legacy_trips_guard()
     trip = next((t for t in trips_db if str(t.get("id")) == str(trip_id)), None)
 
@@ -582,8 +709,70 @@ _EMPTY_WEEK_RESPONSE = {
 }
 
 
+def _week_trip_dicts_from_supabase(user_id: str) -> list:
+    """Rows shaped for _weekly_trip_stats / _best_safety_day (need `date` YYYY-MM-DD)."""
+    sb = get_supabase()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    res = (
+        sb.table("trips")
+        .select("distance_miles,gems_earned,safety_score,ended_at,started_at")
+        .eq("user_id", user_id)
+        .order("ended_at", desc=True)
+        .limit(400)
+        .execute()
+    )
+    out: list = []
+    for r in res.data or []:
+        ended_raw = r.get("ended_at") or r.get("started_at")
+        if not ended_raw:
+            continue
+        try:
+            es = str(ended_raw).replace("Z", "+00:00")
+            dt = datetime.fromisoformat(es)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if dt < cutoff:
+                continue
+        except Exception:
+            continue
+        out.append({
+            "date": dt.strftime("%Y-%m-%d"),
+            "distance_miles": r.get("distance_miles", 0),
+            "gems_earned": r.get("gems_earned", 0),
+            "safety_score": r.get("safety_score", 0),
+        })
+    return out
+
+
+def _weekly_insights_supabase(user: dict) -> dict:
+    uid = _trip_user_id(user)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    week_trips = _week_trip_dicts_from_supabase(uid)
+    if not week_trips:
+        return _EMPTY_WEEK_RESPONSE
+    total_miles, total_gems, avg_safety = _weekly_trip_stats(week_trips)
+    best_day = _best_safety_day(week_trips)
+    summary, tip = _ai_weekly_summary(week_trips, total_miles, avg_safety, best_day)
+    return {
+        "summary": summary,
+        "fuel_saved": round(total_miles * 0.03, 1),
+        "incidents_avoided": len(week_trips),
+        "best_day": best_day,
+        "safety_trend": _safety_trend(avg_safety),
+        "gems_earned_week": total_gems,
+        "miles_this_week": round(total_miles, 1),
+        "trips_this_week": len(week_trips),
+        "ai_tip": tip,
+    }
+
+
 @router.get("/trips/weekly-insights", responses=_LEGACY_503_RESPONSES)
-def get_weekly_insights():
+def get_weekly_insights(user: OptionalUser):
+    if ENVIRONMENT == "production":
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return _weekly_insights_supabase(user)
     _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
     week_trips = [t for t in trips_db if t.get("date", "") >= cutoff_date]

@@ -274,18 +274,13 @@ class TestAIImageGeneration:
     """Test AI image generation endpoint (may fail if API key not configured)"""
     
     def test_image_generate_endpoint_exists(self):
-        """Test that image generation endpoint exists and responds"""
+        """Image generation requires a valid Bearer token (partner portal sends one)."""
         response = requests.post(f"{BASE_URL}/api/images/generate", json={
             "prompt": "Test promotional image",
             "offer_type": "cafe"
         })
-        # Should return 200 even if API key not configured (will return error message)
-        assert response.status_code == 200
-        data = response.json()
-        # Either success with image or failure with message
-        assert "success" in data
-        if not data["success"]:
-            assert "message" in data
+        assert response.status_code == 401
+        assert "detail" in response.json()
 
 
 class TestPortalRouting:

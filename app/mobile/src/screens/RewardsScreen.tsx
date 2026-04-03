@@ -138,7 +138,15 @@ export default function RewardsScreen() {
       const bData = unwrap(bRes);
       setBadges(Array.isArray(bData) ? bData : (bData?.badges ?? []));
       setOffers(Array.isArray(unwrap(oRes)) ? unwrap(oRes) : []);
-      setTrips(Array.isArray(unwrap(tRes)) ? unwrap(tRes) : []);
+      const rawTrips: unknown = unwrap(tRes);
+      let tripList: Trip[] = [];
+      if (Array.isArray(rawTrips)) {
+        tripList = rawTrips;
+      } else if (rawTrips && typeof rawTrips === 'object' && 'items' in rawTrips) {
+        const items = (rawTrips as { items?: unknown }).items;
+        if (Array.isArray(items)) tripList = items as Trip[];
+      }
+      setTrips(tripList);
       const iData = iRes?.data?.data ?? iRes?.data;
       setInsights(iData && typeof iData === 'object' ? iData as WeeklyInsights : null);
       const gData = gRes?.data?.data ?? gRes?.data;
