@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import { getApiMisconfigurationMessage } from './src/api/client';
 import { api } from './src/api/client';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -193,6 +194,24 @@ function RootNavigator() {
   React.useEffect(() => {
     const t = setTimeout(() => setShowSplash(false), 900);
     return () => clearTimeout(t);
+  }, []);
+
+  React.useEffect(() => {
+    if (__DEV__ || !Updates.isEnabled) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await Updates.checkForUpdateAsync();
+        if (!r.isAvailable || cancelled) return;
+        await Updates.fetchUpdateAsync();
+        await Updates.reloadAsync();
+      } catch (e) {
+        console.warn('[OTA] Update check failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   React.useEffect(() => {

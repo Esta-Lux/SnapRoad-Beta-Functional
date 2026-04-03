@@ -9,6 +9,8 @@ const envAny = (names: string[], fallback = ""): string => {
   return fallback;
 };
 
+const EAS_PROJECT_ID = "b800018b-79d3-4b8e-bbad-f5d628ee6a60";
+
 const isProductionBuild = (): boolean => {
   const v = (process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || "").toLowerCase();
   return v === "production";
@@ -51,6 +53,8 @@ export default function expoConfig({ config }: ConfigContext): ExpoConfig {
     slug: "snaproad",
     scheme: "snaproad",
     version: "1.0.0",
+    runtimeVersion: { policy: "appVersion" },
+    updates: { url: `https://u.expo.dev/${EAS_PROJECT_ID}` },
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
@@ -122,6 +126,7 @@ export default function expoConfig({ config }: ConfigContext): ExpoConfig {
     },
     plugins: [
       ...(_includeDevClient ? ["expo-dev-client"] : []),
+      "expo-updates",
       // Native + EAS source map wiring; set SENTRY_ORG, SENTRY_PROJECT, SENTRY_AUTH_TOKEN on EAS for uploads.
       resolveSentryExpoPlugin(),
       [
@@ -179,7 +184,7 @@ export default function expoConfig({ config }: ConfigContext): ExpoConfig {
       iosAppStoreId: "",
       androidPackage: "com.snaproad.app",
       eas: {
-        projectId: "b800018b-79d3-4b8e-bbad-f5d628ee6a60",
+        projectId: EAS_PROJECT_ID,
       },
     },
   };
