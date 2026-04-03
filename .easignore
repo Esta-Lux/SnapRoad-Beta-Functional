@@ -1,64 +1,23 @@
-# --- VCS ---
+.emergent
+.windsurf
 .git
 .github
-
-# --- Dependencies ---
 **/node_modules
-
-# --- Python / backend cache ---
-**/__pycache__
-**/*.pyc
-.venv
-venv
-.pytest_cache
-.ruff_cache
-
-# --- Environment / secrets ---
-.env
-.env.*
-!.env.example
-*.p8
-*.p12
-*.key
-*.mobileprovision
-keys/
-.mapkit/
-
-# --- Logs / temp / reports ---
-**/*.log
-logs
-coverage
-htmlcov
-playwright-report
-test-results
-test_reports
-loadtests
-*.bak
-*.tmp
-.DS_Store
-Thumbs.db
-.vscode
-.idea
-.vercel
-
-# --- Build artifacts everywhere ---
-**/dist
-**/build
-**/.vite
 **/.expo
 **/.eas-inspect-archive
 **/.gradle
 **/.cxx
-
-# --- Exclude non-mobile monorepo areas ---
+.env
+.env.*
+!.env.example
+*.tgz
 app/backend
 app/frontend
 app/docs
 memory
 notes
-supabase/.temp
-
-# --- Keep only the mobile app subtree ---
+loadtests
+test_reports
 !app
 !app/mobile
 !app/mobile/**
