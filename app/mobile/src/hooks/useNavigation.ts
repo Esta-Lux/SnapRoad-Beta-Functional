@@ -218,6 +218,8 @@ export function useNavigation(params: {
     } else {
       navSpeak(`Starting navigation to ${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
     }
+    // Skip duplicate step-0 cue from the step-change effect (already covered above).
+    lastSpokenStepRef.current = 0;
   }, [navigationData, drivingMode, navSpeak]);
 
   const stopNavigation = useCallback(() => {
@@ -413,12 +415,8 @@ export function useNavigation(params: {
     );
     if (!phrase) return;
 
-    if (stepIndex === 0) {
-      setTimeout(() => navSpeak(phrase, 'normal', drivingMode), 2500);
-    } else {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      navSpeak(phrase, 'normal', drivingMode);
-    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    navSpeak(phrase, 'normal', drivingMode);
   }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation, navSpeak]);
 
   // --- Early turn warnings (500ft and 150ft before next step) ---

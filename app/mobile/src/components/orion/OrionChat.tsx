@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../api/client';
+import { configureAudioSession, restoreDefaultAudioSession } from '../../utils/voice';
 
 type VoiceType = {
   destroy: () => Promise<void>;
@@ -129,17 +130,23 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
     messagesRef.current = messages;
   }, [messages]);
 
-  const speakReply = useCallback(
-    (reply: string) => {
-      try {
-        Speech.stop();
-        Speech.speak(reply, { rate: 0.96, pitch: 1, language: 'en-US' });
-      } catch {
-        /* ignore */
-      }
-    },
-    [],
-  );
+  const speakReply = useCallback((reply: string) => {
+    const finish = () => { void restoreDefaultAudioSession(); };
+    try {
+      Speech.stop();
+      void configureAudioSession();
+      Speech.speak(reply, {
+        rate: 0.96,
+        pitch: 1,
+        language: 'en-US',
+        onDone: finish,
+        onStopped: finish,
+        onError: finish,
+      });
+    } catch {
+      void restoreDefaultAudioSession();
+    }
+  }, []);
 
   const sendMessage = useCallback(
     async (textRaw: string) => {

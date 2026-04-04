@@ -1,7 +1,6 @@
 import * as Speech from 'expo-speech';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import type { DrivingMode } from '../types';
-import { DRIVING_MODES } from '../constants/modes';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
@@ -9,14 +8,15 @@ let lastSpokenAt = 0;
 const MIN_GAP_MS = 2200;
 
 /**
- * Sets iOS/Android audio session so turn-by-turn is audible in silent mode and ducks background music.
+ * Session before TTS: iOS uses non-mixing so navigation cues behave like other nav apps (music yields).
+ * Pair with {@link restoreDefaultAudioSession} in Speech callbacks when an utterance finishes.
  */
 export async function configureAudioSession(): Promise<void> {
   try {
     await Audio.setAudioModeAsync({
       playsInSilentModeIOS: true,
       allowsRecordingIOS: false,
-      interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
       interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
       shouldDuckAndroid: true,
       playThroughEarpieceAndroid: false,
@@ -27,7 +27,32 @@ export async function configureAudioSession(): Promise<void> {
   }
 }
 
-export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', mode: DrivingMode = 'adaptive') {
+/** Relax session after Orion / turn-by-turn finishes so media can resume normally. */
+export async function restoreDefaultAudioSession(): Promise<void> {
+  try {
+    await Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      allowsRecordingIOS: false,
+      interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+      shouldDuckAndroid: false,
+      playThroughEarpieceAndroid: false,
+      staysActiveInBackground: false,
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Orion and navigation share the same Speech settings. */
+const ORION_SPEECH_RATE = 0.96;
+const ORION_SPEECH_PITCH = 1.0;
+
+function onUtteranceFinished() {
+  void restoreDefaultAudioSession();
+}
+
+export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', _mode: DrivingMode = 'adaptive') {
   if (!phrase.trim()) return;
   const normalized = phrase.trim().toLowerCase();
   const now = Date.now();
@@ -38,17 +63,20 @@ export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', mo
 
   void configureAudioSession();
 
-  const cfg = DRIVING_MODES[mode];
   if (priority === 'high') Speech.stop();
   Speech.speak(phrase, {
-    rate: cfg?.speechRate ?? 1.02,
-    pitch: cfg?.speechPitch ?? 1.0,
+    rate: ORION_SPEECH_RATE,
+    pitch: ORION_SPEECH_PITCH,
     language: 'en-US',
+    onDone: onUtteranceFinished,
+    onStopped: onUtteranceFinished,
+    onError: onUtteranceFinished,
   });
 }
 
 export function stopSpeaking() {
   Speech.stop();
+  void restoreDefaultAudioSession();
 }
 
 function naturalDistanceFull(meters: number): string {
@@ -156,7 +184,7 @@ export function formatTurnInstruction(
     if (mode === 'calm') return "You're all set. Enjoy the drive.";
     if (mode === 'adaptive') return 'Starting navigation. Follow the route.';
     if (mode === 'sport') return 'Go.';
-    return 'Head out and follow the route.';
+    return "Head out and follow the route.";
   }
 
   const hasLight = intersections?.some((i) => i.classes?.includes('traffic_signal')) ?? false;

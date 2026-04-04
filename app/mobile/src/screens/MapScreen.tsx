@@ -93,6 +93,18 @@ function placePhotoThumbUri(photoRef?: string, maxWidth = 96): string | undefine
   return `${API_BASE_URL}/api/places/photo?ref=${encodeURIComponent(photoRef)}&maxwidth=${maxWidth}`;
 }
 
+function searchResultPriceHint(item: GeocodeResult): string | null {
+  const raw = `${item.placeType || ''}`.toLowerCase();
+  const isGas = raw.includes('gas') || raw.includes('fuel');
+  if (isGas) {
+    return 'Live $/gal needs a fuel-price data API — check prices at the pump';
+  }
+  if (typeof item.price_level === 'number' && item.price_level >= 1 && item.price_level <= 4) {
+    return 'Typical cost: ' + '$'.repeat(item.price_level);
+  }
+  return null;
+}
+
 function mapFriendsApiToLocations(rows: unknown): FriendLocation[] {
   if (!Array.isArray(rows)) return [];
   return rows
@@ -327,6 +339,7 @@ export default function MapScreen() {
   const [showCommunitySheet, setShowCommunitySheet] = useState(false);
   const reportPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const announcedRef = useRef<Set<string>>(new Set());
+  const announcedOfferNavRef = useRef<Set<string>>(new Set());
   const trackedOfferViewsRef = useRef<Set<string>>(new Set());
   const trackedOfferVisitsRef = useRef<Set<string>>(new Set());
   const confirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -957,10 +970,35 @@ export default function MapScreen() {
       }
     };
     poll();
-    const ms = nav.isNavigating ? 30000 : 60000;
+    const ms = nav.isNavigating ? 20000 : 60000;
     reportPollRef.current = setInterval(poll, ms);
     return () => { if (reportPollRef.current) clearInterval(reportPollRef.current); };
   }, [nav.isNavigating]);
+
+  useEffect(() => {
+    if (!nav.isNavigating) announcedOfferNavRef.current.clear();
+  }, [nav.isNavigating]);
+
+  /** Voice offer hints during navigation (same TTS stack as turn-by-turn). */
+  useEffect(() => {
+    if (!nav.isNavigating || !nearbyOffers.length) return;
+    const ordered = [...nearbyOffers].sort((a, b) => {
+      const da = haversineMeters(location.lat, location.lng, a.lat ?? 0, a.lng ?? 0);
+      const db = haversineMeters(location.lat, location.lng, b.lat ?? 0, b.lng ?? 0);
+      return da - db;
+    });
+    for (const o of ordered) {
+      if (o.lat == null || o.lng == null) continue;
+      const d = haversineMeters(location.lat, location.lng, o.lat, o.lng);
+      if (d < 80 || d > 1800) continue;
+      const id = String(o.id);
+      if (announcedOfferNavRef.current.has(id)) continue;
+      announcedOfferNavRef.current.add(id);
+      const name = o.business_name || 'Partner offer';
+      speak(`Orion: SnapRoad offer nearby — ${name}.`, 'normal', drivingMode);
+      break;
+    }
+  }, [nav.isNavigating, nearbyOffers, location.lat, location.lng, drivingMode]);
 
   // Report cards during navigation
   useEffect(() => {
@@ -1085,8 +1123,11 @@ export default function MapScreen() {
         setIsSearching(false);
         return;
       }
+      // Text Search returns photo_reference + price_level; Autocomplete does not (fixes short queries like "kro" with no thumbnail).
+      const looksLikeStreetAddress = /^\d+\s+\S/.test(prep.query.trim());
       const useTextSearch =
-        prep.preferTextSearch || (hasLoc && prep.query.length >= 5);
+        prep.preferTextSearch
+        || (hasLoc && prep.query.length >= 2 && prep.query.length <= 28 && !looksLikeStreetAddress);
       const biasQs = hasLoc
         ? `&lat=${loc.lat}&lng=${loc.lng}&radius=${prep.radiusM}${prep.openNow ? '&open_now=true' : ''}${useTextSearch ? '&textsearch=true' : ''}`
         : '';
@@ -2121,7 +2162,8 @@ export default function MapScreen() {
                     const hasCoords = item.lat !== 0 && item.lng !== 0;
                     const dist = hasCoords ? haversineMeters(location.lat, location.lng, item.lat, item.lng) : null;
                     const distText = dist != null ? (dist < 160 ? `${Math.round(dist * 3.281)} ft` : `${(dist / 1609.344).toFixed(1)} mi`) : '';
-                    const suri = placePhotoThumbUri((item as GeocodeResult).photo_reference, 96);
+                    const suri = placePhotoThumbUri((item as GeocodeResult).photo_reference, 128);
+                    const priceHint = searchResultPriceHint(item as GeocodeResult);
                     const openHint =
                       (item as GeocodeResult).open_now === true
                         ? 'Open now'
@@ -2130,16 +2172,19 @@ export default function MapScreen() {
                           : '';
                     return (
                       <TouchableOpacity style={[s.resultRow, { borderBottomColor: colors.border }]} onPress={() => handleSelectResult(item)}>
-                        <View style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: colors.surfaceSecondary, justifyContent: 'center', alignItems: 'center', marginRight: 10, overflow: 'hidden' }}>
+                        <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: colors.surfaceSecondary, justifyContent: 'center', alignItems: 'center', marginRight: 10, overflow: 'hidden' }}>
                           {suri ? (
-                            <Image source={{ uri: suri }} style={{ width: 34, height: 34 }} resizeMode="cover" />
+                            <Image source={{ uri: suri }} style={{ width: 44, height: 44 }} resizeMode="cover" />
                           ) : (
-                            <Ionicons name={icon} size={15} color={colors.primary} />
+                            <Ionicons name={icon} size={18} color={colors.primary} />
                           )}
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={[s.resultName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                           <Text style={[s.resultAddr, { color: colors.textSecondary }]} numberOfLines={1}>{item.address}</Text>
+                          {priceHint ? (
+                            <Text style={{ color: colors.textTertiary, fontSize: 11, fontWeight: '600', marginTop: 2 }} numberOfLines={2}>{priceHint}</Text>
+                          ) : null}
                           {openHint ? (
                             <Text style={{ color: openHint === 'Open now' ? '#22C55E' : colors.textTertiary, fontSize: 11, fontWeight: '600', marginTop: 2 }}>{openHint}</Text>
                           ) : null}
@@ -2708,14 +2753,21 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      {!nav.isNavigating && !nav.showRoutePreview && (
-        <TouchableOpacity style={[s.orionFab, { top: insets.top + 236, right: 20 }]} onPress={() => {
-          if (user?.isPremium) { setShowOrion(true); }
-          else { Alert.alert('Premium Feature', 'Orion AI co-pilot is available with SnapRoad Premium. Upgrade to unlock.', [{ text: 'Later' }, { text: 'Upgrade', onPress: () => rnNav.navigate('Profile' as never) }]); }
-        }} activeOpacity={0.8}>
-          <LinearGradient colors={user?.isPremium ? ['#7C3AED', '#5B21B6'] : ['#94a3b8', '#64748b']} style={s.orionGrad}>
+      {!nav.showRoutePreview && !nav.tripSummary && (user?.isPremium || nav.isNavigating) && (
+        <TouchableOpacity
+          style={[s.orionFab, { top: insets.top + 236, right: 20 }]}
+          onPress={() => {
+            if (user?.isPremium || nav.isNavigating) setShowOrion(true);
+          }}
+          activeOpacity={0.8}
+        >
+          <LinearGradient colors={user?.isPremium ? ['#7C3AED', '#5B21B6'] : ['#6366F1', '#4F46E5']} style={s.orionGrad}>
             <Ionicons name="mic-outline" size={22} color="#fff" />
-            {!user?.isPremium && <View style={{ position: 'absolute', top: -2, right: -2, backgroundColor: '#F59E0B', borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="lock-closed" size={8} color="#fff" /></View>}
+            {!user?.isPremium && nav.isNavigating && (
+              <View style={{ position: 'absolute', top: -2, right: -2, backgroundColor: '#3B82F6', borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="navigate" size={8} color="#fff" />
+              </View>
+            )}
           </LinearGradient>
         </TouchableOpacity>
       )}

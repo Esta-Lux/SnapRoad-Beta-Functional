@@ -279,10 +279,13 @@ export default function PlaceDetailSheet({
   const green = '#22C55E';
   const handleColor = isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.2)';
 
-  /** Default “half sheet” leaves the map (and right-side Orion FAB) visible; full expand on drag up. */
-  const DETENT_EXPANDED = Math.max(52, Math.round(insets.top + 14));
-  const DETENT_HALF = Math.round(SCREEN_H * 0.48);
-  const DETENT_DISMISS = Math.round(SCREEN_H * 0.82);
+  /**
+   * translateY offsets the full-height sheet downward. Visible height = SCREEN_H - translateY.
+   * Half = ~50% screen; expanded = ~70% screen; drag down past dismiss threshold to close.
+   */
+  const DETENT_EXPANDED = Math.round(SCREEN_H * 0.3);
+  const DETENT_HALF = Math.round(SCREEN_H * 0.5);
+  const DETENT_DISMISS = Math.round(SCREEN_H * 0.88);
 
   const translateY = useSharedValue(DETENT_HALF);
   const backdropOpacity = useSharedValue(0);
@@ -293,7 +296,7 @@ export default function PlaceDetailSheet({
     backdropOpacity.value = 0;
     translateY.value = withSpring(DETENT_HALF, SPRING);
     backdropOpacity.value = withTiming(0.42, { duration: 300 });
-  }, [placeId, DETENT_HALF, DETENT_EXPANDED]);
+  }, [placeId, DETENT_HALF]);
 
   useEffect(() => {
     setSaved(false);
@@ -346,7 +349,9 @@ export default function PlaceDetailSheet({
     .onStart(() => { startY.value = translateY.value; })
     .onUpdate((e) => {
       const next = startY.value + e.translationY;
-      translateY.value = Math.max(DETENT_EXPANDED - 28, next);
+      const minY = DETENT_EXPANDED - 20;
+      const maxY = SCREEN_H * 0.95;
+      translateY.value = Math.min(maxY, Math.max(minY, next));
     })
     .onEnd((e) => {
       const mid = (DETENT_HALF + DETENT_EXPANDED) / 2;
@@ -546,6 +551,7 @@ export default function PlaceDetailSheet({
             </View>
           ) : (
             <>
+            <View style={S.bodyFlex}>
               {photoUrls.length > 0 ? (
                 <View style={S.photoWrap}>
                   <FlatList
@@ -587,10 +593,12 @@ export default function PlaceDetailSheet({
               </TouchableOpacity>
 
               <ScrollView
+                style={S.scrollFlex}
                 showsVerticalScrollIndicator={false}
                 bounces
                 nestedScrollEnabled
-                contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: insets.bottom + 24, flexGrow: 1 }}
               >
                 <View style={S.header}>
                   <Text style={[S.placeName, { color: text1 }]} numberOfLines={2}>{place.name}</Text>
@@ -878,18 +886,18 @@ export default function PlaceDetailSheet({
                   </TouchableOpacity>
                 </View>
               </ScrollView>
-
-              <View style={[S.stickyBottom, { paddingBottom: Math.max(insets.bottom, 8), backgroundColor: bg, borderTopColor: border }]}>
-                <TouchableOpacity style={S.directionsBtn} onPress={handleDirections} activeOpacity={0.85}>
-                  <LinearGradient colors={['#2563EB', '#1D4ED8']} style={S.directionsBtnGrad}>
-                    <Ionicons name="navigate" size={18} color="#fff" />
-                    <Text style={S.directionsBtnText}>Directions</Text>
-                    {distMeters != null ? (
-                      <Text style={S.directionsBtnDist}>· {formatDistanceMeters(distMeters)}</Text>
-                    ) : null}
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
+            </View>
+            <View style={[S.stickyBottom, { paddingBottom: Math.max(insets.bottom, 8), backgroundColor: bg, borderTopColor: border }]}>
+              <TouchableOpacity style={S.directionsBtn} onPress={handleDirections} activeOpacity={0.85}>
+                <LinearGradient colors={['#2563EB', '#1D4ED8']} style={S.directionsBtnGrad}>
+                  <Ionicons name="navigate" size={18} color="#fff" />
+                  <Text style={S.directionsBtnText}>Directions</Text>
+                  {distMeters != null ? (
+                    <Text style={S.directionsBtnDist}>· {formatDistanceMeters(distMeters)}</Text>
+                  ) : null}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
             </>
           )}
         </Animated.View>
@@ -900,8 +908,11 @@ export default function PlaceDetailSheet({
 
 const S = StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
+  bodyFlex: { flex: 1, minHeight: 0 },
+  scrollFlex: { flex: 1, minHeight: 0 },
   container: {
     position: 'absolute', left: 0, right: 0, top: 0, height: SCREEN_H,
+    flexDirection: 'column',
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.25, shadowRadius: 24 },
