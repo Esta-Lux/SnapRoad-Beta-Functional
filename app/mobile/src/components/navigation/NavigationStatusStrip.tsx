@@ -28,6 +28,8 @@ type Props = {
   isRerouting: boolean;
   onEndNavigation: () => void;
   bottomInset: number;
+  /** Optional line above ETA (e.g. friend live-follow). */
+  contextLine?: string | null;
 };
 
 export default React.memo(function NavigationStatusStrip({
@@ -39,6 +41,7 @@ export default React.memo(function NavigationStatusStrip({
   isRerouting,
   onEndNavigation,
   bottomInset,
+  contextLine,
 }: Props) {
   const [calmExpanded, setCalmExpanded] = useState(false);
 
@@ -198,6 +201,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     paddingHorizontal: 14,
   },
+  contextLine: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
   strip: {
     borderTopWidth: StyleSheet.hairlineWidth * 2,
     borderTopLeftRadius: 14,
@@ -212,23 +222,23 @@ const styles = StyleSheet.create({
     }),
   },
   primaryLine: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     letterSpacing: -0.2,
     textAlign: 'center',
   },
-  primaryEmphasis: { fontWeight: '800' },
-  primaryMid: { fontWeight: '700' },
-  primaryArrive: { fontWeight: '700' },
+  primaryEmphasis: { fontWeight: '900', fontSize: 28, letterSpacing: -0.6 },
+  primaryMid: { fontWeight: '800', fontSize: 24, letterSpacing: -0.5 },
+  primaryArrive: { fontWeight: '800' },
   bullet: { fontWeight: '500' },
   secondaryRow: {
     marginTop: 6,
     alignItems: 'center',
   },
   secondary: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    letterSpacing: -0.1,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: -0.05,
     textAlign: 'center',
   },
   endBtn: {
@@ -244,5 +254,5 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  endBtnText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.15 },
+  endBtnText: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 0.2 },
 });

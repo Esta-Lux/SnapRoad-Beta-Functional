@@ -36,6 +36,69 @@ async def _require_ws_token(websocket: WebSocket) -> dict:
 # ==================== STRIPE WEBHOOKS ====================
 
 
+def _sync_payment_transaction_from_session(session: dict) -> None:
+    """Upsert payment_transactions from checkout.session.completed (requires migration 030 columns)."""
+    from database import get_supabase
+    from config import STRIPE_SECRET_KEY
+
+    session_id = session.get("id")
+    if not session_id:
+        return
+    meta = session.get("metadata") or {}
+    user_id = str(meta.get("user_id") or "").strip() or None
+    plan_id = str(meta.get("plan_id") or "").strip() or None
+    plan_name = meta.get("plan_name") or meta.get("plan") or None
+    customer = session.get("customer")
+    subscription = session.get("subscription")
+    payment_status = session.get("payment_status") or "paid"
+    amount_total = session.get("amount_total")
+    currency = (session.get("currency") or "usd") or "usd"
+    idempotency_key = session.get("client_reference_id") or session.get("idempotency_key")
+
+    amount = None
+    if amount_total is not None:
+        try:
+            amount = float(amount_total) / 100.0
+        except (TypeError, ValueError):
+            amount = None
+
+    row: dict = {
+        "session_id": str(session_id),
+        "plan_id": plan_id,
+        "plan_name": str(plan_name)[:200] if plan_name else None,
+        "amount": amount,
+        "currency": str(currency).lower()[:12] if currency else "usd",
+        "user_id": user_id,
+        "payment_status": str(payment_status)[:64],
+        "stripe_customer_id": str(customer) if customer else None,
+        "stripe_subscription_id": str(subscription) if subscription else None,
+        "idempotency_key": str(idempotency_key)[:200] if idempotency_key else None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    sub_raw = subscription
+    if sub_raw and str(sub_raw).startswith("sub_") and STRIPE_SECRET_KEY:
+        try:
+            import stripe
+
+            stripe.api_key = STRIPE_SECRET_KEY
+            sub_obj = stripe.Subscription.retrieve(str(sub_raw))
+            cps = getattr(sub_obj, "current_period_start", None)
+            cpe = getattr(sub_obj, "current_period_end", None)
+            if cps is not None:
+                row["period_start"] = datetime.fromtimestamp(int(cps), tz=timezone.utc).isoformat()
+            if cpe is not None:
+                row["period_end"] = datetime.fromtimestamp(int(cpe), tz=timezone.utc).isoformat()
+        except Exception as exc:
+            logger.warning("Stripe subscription expand for payment_transactions failed: %s", exc)
+
+    try:
+        sb = get_supabase()
+        sb.table("payment_transactions").upsert(row, on_conflict="session_id").execute()
+    except Exception as exc:
+        logger.warning("payment_transactions upsert skipped: %s", exc)
+
+
 def _handle_checkout_session_completed(session: dict) -> None:
     """Apply Supabase updates from Stripe Checkout metadata (partner portal + driver app)."""
     from services.supabase_service import (
@@ -54,6 +117,11 @@ def _handle_checkout_session_completed(session: dict) -> None:
     if payment_status not in ("paid", "no_payment_required"):
         logger.info("checkout.session.completed skipped: payment_status=%s", payment_status)
         return
+
+    try:
+        _sync_payment_transaction_from_session(session)
+    except Exception as exc:
+        logger.warning("payment_transactions sync error: %s", exc)
 
     partner_id = (meta.get("partner_id") or "").strip()
 

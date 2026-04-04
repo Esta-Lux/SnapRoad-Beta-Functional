@@ -270,16 +270,28 @@ MAP_LOCATIONS = [
     {"id": 15, "name": "Starbucks - Short North", "address": "785 N High St, Columbus, OH 43215", "lat": 39.9770, "lng": -83.0035, "type": "cafe"},
 ]
 
-# ==================== BADGES (160) ====================
-# Imported from server.py - kept as reference data
+# ==================== BADGES ====================
+# requirement_type: miles | trips | gems | safety | streak — progress computed server-side from profile.
 ALL_BADGES = [
-    {"id": 1, "name": "First Mile", "desc": "Drive your first mile", "icon": "car", "category": "distance", "requirement": 1, "gems": 10},
-    {"id": 2, "name": "Ten Down", "desc": "Drive 10 miles total", "icon": "road", "category": "distance", "requirement": 10, "gems": 25},
-    {"id": 3, "name": "Road Runner", "desc": "Drive 50 miles total", "icon": "runner", "category": "distance", "requirement": 50, "gems": 50},
-    {"id": 4, "name": "Century Club", "desc": "Drive 100 miles total", "icon": "100", "category": "distance", "requirement": 100, "gems": 100},
-    {"id": 5, "name": "Road Warrior", "desc": "Drive 250 miles total", "icon": "sword", "category": "distance", "requirement": 250, "gems": 150},
+    {"id": 1, "name": "First Mile", "desc": "Drive your first mile", "icon": "car", "category": "distance", "requirement_type": "miles", "requirement": 1, "gems": 10},
+    {"id": 2, "name": "Ten Down", "desc": "Drive 10 miles total", "icon": "navigate", "category": "distance", "requirement_type": "miles", "requirement": 10, "gems": 25},
+    {"id": 3, "name": "Road Runner", "desc": "Drive 50 miles total", "icon": "footsteps", "category": "distance", "requirement_type": "miles", "requirement": 50, "gems": 50},
+    {"id": 4, "name": "Century Club", "desc": "Drive 100 miles total", "icon": "ribbon", "category": "distance", "requirement_type": "miles", "requirement": 100, "gems": 100},
+    {"id": 5, "name": "Road Warrior", "desc": "Drive 250 miles total", "icon": "flash", "category": "distance", "requirement_type": "miles", "requirement": 250, "gems": 150},
+    {"id": 6, "name": "Highway Hero", "desc": "Drive 500 miles total", "icon": "car-sport", "category": "distance", "requirement_type": "miles", "requirement": 500, "gems": 200},
+    {"id": 7, "name": "Cross Country", "desc": "Drive 1,000 miles total", "icon": "earth", "category": "distance", "requirement_type": "miles", "requirement": 1000, "gems": 350},
+    {"id": 8, "name": "First Trip", "desc": "Complete your first SnapRoad trip", "icon": "flag", "category": "trips", "requirement_type": "trips", "requirement": 1, "gems": 15},
+    {"id": 9, "name": "Regular", "desc": "Complete 10 trips", "icon": "calendar", "category": "trips", "requirement_type": "trips", "requirement": 10, "gems": 40},
+    {"id": 10, "name": "Commuter", "desc": "Complete 50 trips", "icon": "repeat", "category": "trips", "requirement_type": "trips", "requirement": 50, "gems": 120},
+    {"id": 11, "name": "Road Regular", "desc": "Complete 100 trips", "icon": "analytics", "category": "trips", "requirement_type": "trips", "requirement": 100, "gems": 250},
+    {"id": 12, "name": "Gem Collector", "desc": "Hold 500 gems", "icon": "diamond", "category": "gems", "requirement_type": "gems", "requirement": 500, "gems": 50},
+    {"id": 13, "name": "Gem Hoarder", "desc": "Hold 2,000 gems", "icon": "diamond-outline", "category": "gems", "requirement_type": "gems", "requirement": 2000, "gems": 150},
+    {"id": 14, "name": "Safety Starter", "desc": "Reach 75 safety score", "icon": "shield-checkmark", "category": "safety", "requirement_type": "safety", "requirement": 75, "gems": 30},
+    {"id": 15, "name": "Safety Pro", "desc": "Reach 85 safety score", "icon": "shield", "category": "safety", "requirement_type": "safety", "requirement": 85, "gems": 75},
+    {"id": 16, "name": "Elite Driver", "desc": "Reach 95 safety score", "icon": "trophy", "category": "safety", "requirement_type": "safety", "requirement": 95, "gems": 200},
+    {"id": 17, "name": "On a Roll", "desc": "3-day safe drive streak", "icon": "flame", "category": "streak", "requirement_type": "streak", "requirement": 3, "gems": 35},
+    {"id": 18, "name": "Streak Master", "desc": "7-day safe drive streak", "icon": "flame-outline", "category": "streak", "requirement_type": "streak", "requirement": 7, "gems": 100},
 ]
-# Full 160 badges kept in the original constant - abbreviated here for brevity
 
 COMMUNITY_BADGES = [
     {"id": 1, "name": "First Report", "desc": "Post your first road report", "icon": "pin", "requirement": 1},

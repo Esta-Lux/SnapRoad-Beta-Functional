@@ -32,6 +32,11 @@ import { useAuthStore } from '@/store/authStore'
 class AdminApiService {
   private token: string | null = null
 
+  /**
+   * Admin JWT is stored in localStorage for SPA compatibility; any XSS in this origin could exfiltrate it.
+   * Mitigations: strict CSP (see app/frontend/vercel.json), trusted dependencies only, short-lived tokens.
+   * Longer term: move admin session to an httpOnly, Secure, SameSite cookie issued by the API.
+   */
   setToken(token: string | null) {
     this.token = token
     if (token) {

@@ -1,4 +1,5 @@
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Annotated, Optional
@@ -9,7 +10,6 @@ from models.schemas import (
     LocationUpdateBody,
     LocationSharingBody,
     LocationTagBody,
-    SnapRaceStartBody,
     ConvoyStartBody,
 )
 from services.mock_data import (
@@ -49,6 +49,8 @@ def search_friends(current_user: CurrentUser, q: str = "", user_id: str = ""):
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     uid = current_user["id"]
     query = (q or user_id).strip()
+    if len(query) > 100:
+        raise HTTPException(status_code=400, detail="Search query too long (max 100 characters)")
     if not query:
         return {"success": True, "data": []}
     supabase = get_supabase()
@@ -58,18 +60,27 @@ def search_friends(current_user: CurrentUser, q: str = "", user_id: str = ""):
         _PROFILE_SEARCH_COLS
     ).neq("id", uid).ilike("friend_code", query).limit(5).execute()
 
-    safe_q = query[:100].replace("%", "").replace(",", "").replace("(", "").replace(")", "").replace(".", "").strip()
+    # Avoid PostgREST `.or_()` string interpolation; use separate ilike filters.
+    safe_q = re.sub(r"[%(),]", "", query).strip()
     if not safe_q:
-        return {"success": True, "data": []}
-    name_res = supabase.table("profiles").select(
-        _PROFILE_SEARCH_COLS
-    ).neq("id", uid).or_(
-        f"full_name.ilike.%{safe_q}%,name.ilike.%{safe_q}%,email.ilike.%{safe_q}%"
-    ).limit(10).execute()
+        name_rows: list = []
+    else:
+        pat = f"%{safe_q}%"
+        fn = supabase.table("profiles").select(_PROFILE_SEARCH_COLS).neq("id", uid).ilike("full_name", pat).limit(10).execute()
+        nm = supabase.table("profiles").select(_PROFILE_SEARCH_COLS).neq("id", uid).ilike("name", pat).limit(10).execute()
+        em = supabase.table("profiles").select(_PROFILE_SEARCH_COLS).neq("id", uid).ilike("email", pat).limit(10).execute()
+        seen_ids: set[str] = set()
+        name_rows = []
+        for chunk in (fn.data or [], nm.data or [], em.data or []):
+            for row in chunk:
+                rid = str(row.get("id", ""))
+                if rid and rid not in seen_ids:
+                    seen_ids.add(rid)
+                    name_rows.append(row)
 
     seen = set()
     combined = []
-    for row in (code_res.data or []) + (name_res.data or []):
+    for row in (code_res.data or []) + name_rows:
         rid = str(row["id"])
         if rid not in seen:
             seen.add(rid)
@@ -424,60 +435,6 @@ def send_location_tag(body: LocationTagBody, current_user: CurrentUser):
     except Exception as e:
         logger.warning("failed to insert location tag: %s", e)
     return {"success": True, "message": "Location tag sent"}
-
-
-@router.post("/social/snaprace/start", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def snaprace_start(body: SnapRaceStartBody, current_user: CurrentUser):
-    """Start a head-to-head challenge: debits wager from challenger and records the race."""
-    if not current_user:
-        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
-    uid = str(current_user["id"])
-    opp = str(body.opponent_id).strip()
-    if not opp or opp == uid:
-        raise HTTPException(status_code=400, detail="Invalid opponent")
-    wager = int(body.wager)
-    sb = get_supabase()
-    if not _friendship_accepted(sb, uid, opp):
-        raise HTTPException(status_code=400, detail="You can only challenge accepted friends")
-    prof = sb.table("profiles").select("gems").eq("id", uid).limit(1).execute()
-    if not prof.data:
-        raise HTTPException(status_code=400, detail="Profile not found")
-    gems = int(prof.data[0].get("gems") or 0)
-    if gems < wager:
-        raise HTTPException(status_code=400, detail="Not enough gems")
-    existing = (
-        sb.table("snap_races")
-        .select("id")
-        .eq("challenger_id", uid)
-        .eq("opponent_id", opp)
-        .eq("status", "active")
-        .limit(1)
-        .execute()
-    )
-    if existing.data and len(existing.data) > 0:
-        raise HTTPException(status_code=400, detail="You already have an active SnapRace with this friend")
-    new_gems = gems - wager
-    sb.table("profiles").update({"gems": new_gems}).eq("id", uid).execute()
-    try:
-        ins = sb.table("snap_races").insert(
-            {
-                "challenger_id": uid,
-                "opponent_id": opp,
-                "wager_gems": wager,
-                "status": "active",
-            }
-        ).execute()
-        if not ins.data:
-            raise RuntimeError("snap_races insert returned no data")
-        race_id = ins.data[0].get("id")
-    except Exception as e:
-        logger.warning("snap_races insert failed (apply sql/020_snap_races.sql if missing): %s", e)
-        sb.table("profiles").update({"gems": gems}).eq("id", uid).execute()
-        raise HTTPException(status_code=404, detail="This feature is not available yet.")
-    return {
-        "success": True,
-        "data": {"race_id": str(race_id), "gems_remaining": new_gems, "wager": wager},
-    }
 
 
 @router.post("/social/convoy/start", responses={401: {"description": MSG_AUTH_REQUIRED}})

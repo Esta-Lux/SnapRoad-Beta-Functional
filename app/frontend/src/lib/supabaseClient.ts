@@ -16,7 +16,6 @@ function readEnv(): { url: string; key: string } {
   ).trim()
 
   if (import.meta.env.DEV && (!url || !key)) {
-    // eslint-disable-next-line no-console
     console.warn('[SnapRoad] getSupabaseClient: missing URL or public key', {
       hasUrl: Boolean(url),
       hasKey: Boolean(key),
@@ -33,7 +32,6 @@ export function getSupabaseClient(): SupabaseClient | null {
     client = createClient(url, key)
   } catch (e) {
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
       console.error('[SnapRoad] Supabase createClient failed:', e)
     }
     return null

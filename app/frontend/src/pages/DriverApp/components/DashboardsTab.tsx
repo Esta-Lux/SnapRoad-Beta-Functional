@@ -1,4 +1,4 @@
-import { Users, Lock, Swords } from 'lucide-react'
+import { Users, Lock } from 'lucide-react'
 
 interface Props {
   isLight: boolean
@@ -7,7 +7,6 @@ interface Props {
   onUpgrade: () => void
   onOpenFriends: () => void
   onOpenFamily: () => void
-  onOpenSnapRace: () => void
 }
 
 export default function DashboardsTab({
@@ -17,7 +16,6 @@ export default function DashboardsTab({
   onUpgrade,
   onOpenFriends,
   onOpenFamily,
-  onOpenSnapRace,
 }: Props) {
   const bg = isLight ? '#f5f5f7' : '#0a0a0f'
   const card = isLight ? 'bg-white border-slate-200' : 'bg-slate-900/60 border-white/10'
@@ -59,7 +57,7 @@ export default function DashboardsTab({
             </div>
             <div className="flex-1 min-w-0">
               <div className={`font-semibold ${text}`}>Friends</div>
-              <div className={`text-xs ${muted}`}>Track friends, follow, tag, and SnapRace</div>
+              <div className={`text-xs ${muted}`}>Track friends, follow, and location tags</div>
             </div>
           </div>
 
@@ -70,20 +68,11 @@ export default function DashboardsTab({
             >
               Open Friends Hub
             </button>
-            <button
-              onClick={() => (isPremium ? onOpenSnapRace() : onUpgrade())}
-              className={`px-3 py-2 rounded-xl text-sm font-semibold ${isPremium ? (isLight ? 'bg-red-600 text-white' : 'bg-red-500 text-white') : (isLight ? 'bg-slate-100 text-slate-500' : 'bg-slate-800 text-slate-400')}`}
-            >
-              <span className="inline-flex items-center gap-2">
-                <Swords size={16} />
-                SnapRace
-              </span>
-            </button>
           </div>
 
           {!isPremium && (
             <div className="mt-3 space-y-1">
-              <Locked label="Premium required: live friend tracking + SnapRace" />
+              <Locked label="Premium required for live friend tracking" />
               <button
                 onClick={onUpgrade}
                 className={`mt-2 w-full rounded-xl py-2 text-sm font-bold ${isLight ? 'bg-amber-500 text-white' : 'bg-amber-500 text-white'}`}
@@ -131,4 +120,3 @@ export default function DashboardsTab({
     </div>
   )
 }
-

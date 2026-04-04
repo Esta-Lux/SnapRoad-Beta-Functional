@@ -132,11 +132,6 @@ class LocationTagBody(BaseModel):
     message: Optional[str] = "Check out where I am!"
 
 
-class SnapRaceStartBody(BaseModel):
-    opponent_id: str
-    wager: int = Field(default=10, ge=1, le=1000)
-
-
 class ConvoyStartBody(BaseModel):
     member_ids: List[str] = Field(default_factory=list)
     destination_name: str = Field(min_length=1, max_length=300)

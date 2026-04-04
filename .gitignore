@@ -56,6 +56,7 @@ htmlcov/
 
 # Supabase CLI local cache (may contain project refs / connection strings)
 supabase/.temp/
+app/mobile/supabase/.temp/
 
 # Sentry mcp config
 .cursor/mcp.json

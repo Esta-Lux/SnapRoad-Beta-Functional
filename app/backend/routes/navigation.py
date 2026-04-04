@@ -951,7 +951,7 @@ def get_map_traffic(
     if lat is not None and lng is not None and CAMERAS_API_KEY and (CAMERAS_API_URL or "").strip():
         external = _fetch_cameras_from_api(lat, lng, radius)
         reports.extend(external)
-    # Ohio OHGO cameras (mobile + any client using /api/map/traffic; web may still call OHGO directly)
+    # Ohio OHGO cameras (server-side; web DriverApp uses GET /api/map/cameras)
     if lat is not None and lng is not None:
         reports.extend(_fetch_ohgo_cameras(lat, lng, radius))
     # Filter by distance only when lat/lng provided (so external + DB reports near user are shown)

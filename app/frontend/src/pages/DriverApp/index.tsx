@@ -74,17 +74,13 @@ import { useOffersAndRewards, type DriverUserData } from './hooks/useOffersAndRe
 import { useMapLayers } from './hooks/useMapLayers'
 import { useTripTracking } from './hooks/useTripTracking'
 const WeeklyInsights = lazy(() => import('./components/WeeklyInsights'))
-const SnapRaceMode = lazy(() => import('./components/SnapRaceMode'))
 const FamilyDashboard = lazy(() => import('./components/FamilyDashboard'))
-const SnapRaceDashboard = lazy(() => import('./components/SnapRaceDashboard'))
 const ConvoyMode = lazy(() => import('./components/ConvoyMode'))
 const PhotoIncidentFeed = lazy(() => import('./components/PhotoIncidentFeed'))
 const SnapRoadScoreCard = lazy(() => import('./components/SnapRoadScoreCard'))
 const BadgesGrid = lazy(() => import('./components/BadgesGrid'))
 const OrionVoice = lazy(() => import('./components/OrionVoice'))
 const OHGOCameraPopup = lazy(() => import('./components/OHGOCameraPopup'))
-
-const OHGO_API_KEY = import.meta.env.VITE_OHGO_API_KEY || ''
 
 // Shared api returns { success, data: backendBody }. Backend often returns { data: payload }. Unwrap for payload.
 function payload<T>(res: { success?: boolean; data?: unknown }): T | undefined {
@@ -372,8 +368,6 @@ export default function DriverApp() {
   const [showQuickPhotoReport, setShowQuickPhotoReport] = useState(false)
   const [showQuickReportIconsOnly, setShowQuickReportIconsOnly] = useState(false)
   const [showPhotoReport, setShowPhotoReport] = useState(false)
-  const [showSnapRace, setShowSnapRace] = useState(false)
-  const [showSnapRaceDashboard, setShowSnapRaceDashboard] = useState(false)
   const [showFamilyDashboard, setShowFamilyDashboard] = useState(false)
   const [showConvoy, setShowConvoy] = useState(false)
   const [familyPipOpen, setFamilyPipOpen] = useState(false)
@@ -757,7 +751,7 @@ export default function DriverApp() {
     setSelectedRoadStatus,
     loadRoadReports,
     loadPhotoReports,
-  } = useMapLayers(userLocation, OHGO_API_KEY, ohgoEnabled)
+  } = useMapLayers(userLocation, ohgoEnabled)
 
   // User plan state
   
@@ -2257,8 +2251,6 @@ export default function DriverApp() {
             { icon: Users, label: 'Friends Hub', badge: userData.friends_count, action: () => { setShowFriendsHub(true); setShowMenu(false) } },
             { icon: Users, label: 'Family Mode', action: () => { setShowFamilyDashboard(true); setShowMenu(false) } },
             { icon: Users, label: 'Convoy Mode', action: () => { setShowConvoy(true); setShowMenu(false) } },
-            { icon: Swords, label: 'SnapRace', action: () => { setShowSnapRace(true); setShowMenu(false) } },
-            { icon: Swords, label: 'SnapRace Dashboard', action: () => { setShowSnapRaceDashboard(true); setShowMenu(false) } },
             { icon: BarChart3, label: 'Leaderboard', action: () => { setShowLeaderboard(true); setShowMenu(false) } },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
@@ -6559,7 +6551,6 @@ export default function DriverApp() {
           onUpgrade={() => setShowPlanSelection(true)}
           onOpenFriends={() => setShowFriendsHub(true)}
           onOpenFamily={() => setShowFamilyDashboard(true)}
-          onOpenSnapRace={() => setShowSnapRaceDashboard(true)}
         />
       )}
         {activeTab === 'rewards' && renderRewards()}
@@ -7086,29 +7077,6 @@ export default function DriverApp() {
           loadNearbyOffers()
         }}
       />
-      <Suspense fallback={null}>
-      <SnapRaceMode
-        isOpen={showSnapRace}
-        onClose={() => setShowSnapRace(false)}
-        currentUserId={(user as { id?: string } | undefined)?.id ?? String(userData.id ?? '')}
-        friends={friendLocations}
-        currentRoute={routePolylineForMap}
-        userLocation={userLocation}
-        onStartRaceNavigation={(race) => {
-          fetchDirections({ name: 'Race finish', lat: race.destination.lat, lng: race.destination.lng }).catch(() => {})
-          toast.success('Race navigation started')
-        }}
-      />
-      </Suspense>
-
-      <Suspense fallback={null}>
-      <SnapRaceDashboard
-        isOpen={showSnapRaceDashboard}
-        onClose={() => setShowSnapRaceDashboard(false)}
-        currentUserId={(user as { id?: string } | undefined)?.id ?? String(userData.id ?? '')}
-        onStartNewRace={() => setShowSnapRace(true)}
-      />
-      </Suspense>
       <Suspense fallback={null}>
       <FamilyDashboard
         isOpen={showFamilyDashboard}

@@ -1,68 +1,38 @@
-import React, { useEffect, useState, useCallback, memo, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, FlatList, Alert,
-  TextInput, RefreshControl, Switch, ScrollView,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  FlatList,
+  Alert,
+  TextInput,
+  RefreshControl,
+  Switch,
+  ScrollView,
+  AppState,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
-import { useAuth } from '../contexts/AuthContext';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { api } from '../api/client';
-import SnapRaceMode from '../components/social/SnapRaceMode';
 import Skeleton from '../components/common/Skeleton';
 import Modal from '../components/common/Modal';
 import type { Friend } from '../types';
 import { storage } from '../utils/storage';
+import { useLocation } from '../hooks/useLocation';
+import { supabase } from '../lib/supabase';
+import { normalizeFriendFromApi, deriveFriendPresence } from '../lib/friendPresence';
+import FriendListCard, { type FriendListCardTheme } from '../components/social/FriendListCard';
+import FriendDetailModalContent from '../components/social/FriendDetailModal';
 
 type Section = 'friends' | 'family';
 
 const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
-
-function formatFriendSeen(iso?: string): string {
-  if (!iso) return '';
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return '';
-  const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (sec < 45) return 'just now';
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  return `${Math.floor(sec / 86400)}d ago`;
-}
-
-const FriendRow = memo(function FriendRow({
-  friend, cardBg, text, sub, onPress,
-}: { friend: Friend; cardBg: string; text: string; sub: string; onPress: (f: Friend) => void }) {
-  const initials = (friend.name ?? 'U').split(' ').filter(Boolean).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-  const online = friend.status === 'accepted' && friend.is_sharing;
-  let subLine = 'Offline';
-  if (friend.status === 'pending') subLine = 'Pending acceptance';
-  else if (!online) subLine = friend.last_updated ? `Last seen ${formatFriendSeen(friend.last_updated)}` : 'Not sharing location';
-  else if (friend.is_navigating && friend.destination_name) subLine = `Navigating to ${friend.destination_name}`;
-  else if ((friend.speed_mph ?? 0) > 3) subLine = `Driving · ${Math.round(friend.speed_mph ?? 0)} mph`;
-  else subLine = `Live · ${formatFriendSeen(friend.last_updated)}`;
-
-  return (
-    <TouchableOpacity style={[styles.friendCard, { backgroundColor: cardBg }]} onPress={() => onPress(friend)} activeOpacity={0.7}>
-      <View style={styles.friendAvatar}><Text style={styles.friendInitials}>{initials}</Text></View>
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text style={[styles.friendName, { color: text }]}>{friend.name}</Text>
-        <Text style={{ color: sub, fontSize: 12 }} numberOfLines={2}>{subLine}</Text>
-      </View>
-      {online && friend.battery_pct != null && Number.isFinite(friend.battery_pct) && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: 8 }}>
-          <Ionicons name="battery-charging-outline" size={15} color={friend.battery_pct > 20 ? '#34C759' : '#FF9500'} />
-          <Text style={{ color: sub, fontSize: 11, fontWeight: '800' }}>{Math.round(friend.battery_pct)}%</Text>
-        </View>
-      )}
-      {online && <View style={styles.onlineDot} />}
-    </TouchableOpacity>
-  );
-});
 
 const MOCK_FAMILY = [
   { id: '1', name: 'Mom', status: 'Online', speed: 0, battery: 92, avatar: 'M', color: '#EC4899' },
@@ -114,7 +84,6 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
         </Animated.View>
       ))}
 
-      {/* Mock map placeholder */}
       <Text style={[styles.previewSection, { color: colors.text, marginTop: 16 }]}>Live Map</Text>
       <View style={[styles.mockMapCard, { backgroundColor: isLight ? '#e8edf4' : '#1a1a2e' }]}>
         <View style={styles.mockMapPins}>
@@ -131,7 +100,6 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
         </View>
       </View>
 
-      {/* Mock activity feed */}
       <Text style={[styles.previewSection, { color: colors.text, marginTop: 16 }]}>Activity Feed</Text>
       {MOCK_EVENTS.map((e) => (
         <View key={e.id} style={[styles.mockEventRow, { backgroundColor: isLight ? '#fff' : 'rgba(255,255,255,0.04)', borderColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }]}>
@@ -145,7 +113,6 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
         </View>
       ))}
 
-      {/* Feature highlights */}
       <Text style={[styles.previewSection, { color: colors.text, marginTop: 16 }]}>Family Features</Text>
       <View style={[styles.featureGrid]}>
         {[
@@ -175,10 +142,12 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
 
 export default function DashboardScreen() {
   const { isLight, colors } = useTheme();
-  const { user } = useAuth();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const [section, setSection] = useState<Section>('friends');
+  const friendsTabActive = section === 'friends' && isFocused;
+  const { location } = useLocation(false, { paused: !friendsTabActive });
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(true);
@@ -186,21 +155,25 @@ export default function DashboardScreen() {
   const [friendCode, setFriendCode] = useState('');
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [isSharingLocation, setIsSharingLocation] = useState(false);
-  const [showSnapRace, setShowSnapRace] = useState(false);
-  const [snapRaceOpponentId, setSnapRaceOpponentId] = useState<string | null>(null);
   const [incomingReq, setIncomingReq] = useState<{ id: string; from_user_id: string; from_name?: string; from_email?: string }[]>([]);
   const [outgoingReq, setOutgoingReq] = useState<{ id: string; to_user_id: string; to_name?: string }[]>([]);
   const [searchHits, setSearchHits] = useState<{ id: string; name: string; email?: string; friend_code?: string; is_friend?: boolean }[]>([]);
   const [addTargetId, setAddTargetId] = useState<string | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appStateRef = useRef(AppState.currentState);
 
-  const loadFriends = useCallback(async () => {
-    setFriendsLoading(true);
+  const loadFriends = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setFriendsLoading(true);
     try {
       const res = await api.get<any>('/api/friends/list');
       const data = (res.data as any)?.data ?? res.data;
-      setFriends(Array.isArray(data) ? data : []);
-    } catch {} finally { setFriendsLoading(false); }
+      const raw = Array.isArray(data) ? data : [];
+      setFriends(raw.map((row: Record<string, unknown>) => normalizeFriendFromApi(row)));
+    } catch {
+      if (!opts?.silent) setFriends([]);
+    } finally {
+      if (!opts?.silent) setFriendsLoading(false);
+    }
   }, []);
 
   const loadPending = useCallback(async () => {
@@ -226,15 +199,111 @@ export default function DashboardScreen() {
       const local = storage.getString(SHARE_LOC_STORAGE_KEY);
       if (local === '1') setIsSharingLocation(true);
       else if (local === '0') setIsSharingLocation(false);
-      api.get<any>('/api/friends/location/sharing').then((r) => {
-        const v = (r.data as any)?.data?.is_sharing;
-        if (typeof v === 'boolean') {
-          setIsSharingLocation(v);
-          storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
-        }
-      }).catch(() => {});
+      api
+        .get<any>('/api/friends/location/sharing')
+        .then((r) => {
+          const v = (r.data as any)?.data?.is_sharing;
+          if (typeof v === 'boolean') {
+            setIsSharingLocation(v);
+            storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
+          }
+        })
+        .catch(() => {});
     }
   }, [section, loadFriends, loadPending]);
+
+  useEffect(() => {
+    if (!friendsTabActive) return;
+    const sub = AppState.addEventListener('change', (next) => {
+      if (appStateRef.current.match(/inactive|background/) && next === 'active') {
+        loadFriends({ silent: true });
+      }
+      appStateRef.current = next;
+    });
+    return () => sub.remove();
+  }, [friendsTabActive, loadFriends]);
+
+  useEffect(() => {
+    if (!friendsTabActive) return;
+    const id = setInterval(() => loadFriends({ silent: true }), 45_000);
+    return () => clearInterval(id);
+  }, [friendsTabActive, loadFriends]);
+
+  useEffect(() => {
+    if (!friendsTabActive) return;
+    const channel = supabase
+      .channel('dashboard-friend-locations')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, (payload: { new?: Record<string, unknown> }) => {
+        const row = payload.new;
+        if (!row?.user_id) return;
+        const uid = String(row.user_id);
+        setFriends((prev) =>
+          prev.map((f) => {
+            if (String(f.friend_id) !== uid) return f;
+            return {
+              ...f,
+              lat: row.lat != null ? Number(row.lat) : f.lat,
+              lng: row.lng != null ? Number(row.lng) : f.lng,
+              heading: row.heading != null ? Number(row.heading) : f.heading,
+              speed_mph: row.speed_mph != null ? Number(row.speed_mph) : f.speed_mph,
+              is_sharing: typeof row.is_sharing === 'boolean' ? row.is_sharing : f.is_sharing,
+              last_updated: typeof row.last_updated === 'string' ? row.last_updated : f.last_updated,
+              is_navigating: typeof row.is_navigating === 'boolean' ? row.is_navigating : f.is_navigating,
+              destination_name: typeof row.destination_name === 'string' ? row.destination_name : f.destination_name,
+              battery_pct: row.battery_pct != null && row.battery_pct !== '' ? Number(row.battery_pct) : f.battery_pct,
+            };
+          }),
+        );
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [friendsTabActive]);
+
+  const myCoord = useMemo(() => {
+    if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return null;
+    if (location.lat === 0 && location.lng === 0) return null;
+    return { lat: location.lat, lng: location.lng };
+  }, [location.lat, location.lng]);
+
+  const friendListData = useMemo(
+    () =>
+      friends.map((friend) => ({
+        friend,
+        presence: deriveFriendPresence(friend, myCoord),
+      })),
+    [friends, myCoord],
+  );
+
+  const liveFreshCount = useMemo(
+    () => friendListData.filter(({ presence }) => presence.isLiveFresh).length,
+    [friendListData],
+  );
+
+  const listTheme = useMemo<FriendListCardTheme>(
+    () => ({
+      cardBg: colors.card,
+      text: colors.text,
+      sub: colors.textSecondary,
+      primary: colors.primary,
+      border: colors.border,
+    }),
+    [colors.card, colors.text, colors.textSecondary, colors.primary, colors.border],
+  );
+
+  const detailsTheme = useMemo(
+    () => ({
+      text: colors.text,
+      sub: colors.textSecondary,
+      card: colors.card,
+      border: colors.border,
+      primary: colors.primary,
+      danger: colors.danger,
+      surface: colors.surfaceSecondary,
+    }),
+    [colors],
+  );
 
   const handleAddFriend = useCallback(async () => {
     const uid = (addTargetId || '').trim();
@@ -255,46 +324,66 @@ export default function DashboardScreen() {
     } else Alert.alert('Error', res.error ?? 'Could not add friend');
   }, [addTargetId, loadFriends, loadPending]);
 
-  const handleRemoveFriend = useCallback(async (id: string) => {
-    Alert.alert('Remove Friend', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: async () => {
-        await api.delete(`/api/friends/${id}`);
-        setSelectedFriend(null);
-        loadFriends();
-      }},
-    ]);
-  }, [loadFriends]);
+  const handleRemoveFriend = useCallback(
+    async (id: string) => {
+      Alert.alert('Remove Friend', 'Are you sure?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            await api.delete(`/api/friends/${id}`);
+            setSelectedFriend(null);
+            loadFriends();
+          },
+        },
+      ]);
+    },
+    [loadFriends],
+  );
 
-  const onlineCount = friends.filter((f) => f.status === 'accepted' && f.is_sharing).length;
+  const renderFriend = useCallback(
+    ({ item }: { item: (typeof friendListData)[0] }) => (
+      <FriendListCard friend={item.friend} presence={item.presence} theme={listTheme} onPress={setSelectedFriend} />
+    ),
+    [listTheme],
+  );
 
-  const renderFriend = useCallback(({ item }: { item: Friend }) => (
-    <FriendRow friend={item} cardBg={colors.card} text={colors.text} sub={colors.textSecondary} onPress={setSelectedFriend} />
-  ), [colors]);
+  const listKeyExtractor = useCallback((item: (typeof friendListData)[0]) => item.friend.id, []);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10 }}>
         <Text style={{ color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }}>Social</Text>
         <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4, lineHeight: 18 }}>
-          Friends, live location, and challenges. Open SnapRace or Convoy from the map menu anytime.
+          Friends, live location, and meetups. Open Convoy from the map menu anytime.
         </Text>
       </View>
-      {/* Section toggle */}
-      <Animated.View entering={FadeInDown.duration(300).delay(50)} style={[styles.toggleRow, { backgroundColor: colors.surfaceSecondary }]}>
+
+      <Animated.View entering={FadeInDown.duration(300).delay(50)} style={[styles.toggleRow, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
         {(['friends', 'family'] as Section[]).map((s) => (
-          <TouchableOpacity key={s} style={[styles.togglePill, section === s && { backgroundColor: s === 'family' ? '#7C3AED' : colors.primary }]}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSection(s); }}>
+          <TouchableOpacity
+            key={s}
+            style={[styles.togglePill, section === s && { backgroundColor: s === 'family' ? '#7C3AED' : colors.primary }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setSection(s);
+            }}
+            activeOpacity={0.85}
+          >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <Ionicons name={s === 'friends' ? 'people-outline' : 'home-outline'} size={14} color={section === s ? '#fff' : colors.textSecondary} />
               <Text style={[styles.toggleText, { color: section === s ? '#fff' : colors.textSecondary }]}>{s === 'friends' ? 'Friends' : 'Family'}</Text>
-              {s === 'family' && <View style={styles.comingSoonDot}><Text style={styles.comingSoonDotText}>Soon</Text></View>}
+              {s === 'family' && (
+                <View style={styles.comingSoonDot}>
+                  <Text style={styles.comingSoonDotText}>Soon</Text>
+                </View>
+              )}
             </View>
           </TouchableOpacity>
         ))}
       </Animated.View>
 
-      {/* ─── Friends tab ────────────────────────────────────────────── */}
       {section === 'friends' && (
         <View style={{ flex: 1 }}>
           {(incomingReq.length > 0 || outgoingReq.length > 0) && (
@@ -311,8 +400,11 @@ export default function DashboardScreen() {
                     style={[styles.reqBtn, { backgroundColor: colors.primary }]}
                     onPress={async () => {
                       const res = await api.post('/api/friends/accept', { friendship_id: r.id });
-                      if (res.success) { loadFriends(); loadPending(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }
-                      else Alert.alert('Error', res.error ?? 'Could not accept');
+                      if (res.success) {
+                        loadFriends();
+                        loadPending();
+                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                      } else Alert.alert('Error', res.error ?? 'Could not accept');
                     }}
                   >
                     <Text style={styles.reqBtnT}>Accept</Text>
@@ -342,58 +434,92 @@ export default function DashboardScreen() {
             </View>
           )}
           <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Friends{onlineCount > 0 ? ` · ${onlineCount} online` : ''}</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Friends
+              {liveFreshCount > 0 ? ` · ${liveFreshCount} live` : ''}
+            </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: '600' }}>Share Location</Text>
-              <Switch value={isSharingLocation} onValueChange={(v) => { setIsSharingLocation(v); api.put('/api/friends/location/sharing', { is_sharing: v }).catch(() => {}); }} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#fff" />
+              <Switch
+                value={isSharingLocation}
+                onValueChange={(v) => {
+                  setIsSharingLocation(v);
+                  api.put('/api/friends/location/sharing', { is_sharing: v }).catch(() => {});
+                }}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#fff"
+              />
             </View>
           </View>
+
           {friendsLoading ? (
             <View style={{ padding: 16, gap: 12 }}>
-              {[1, 2, 3].map((i) => <Skeleton key={i} width="100%" height={60} borderRadius={14} />)}
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} width="100%" height={72} borderRadius={14} />
+              ))}
             </View>
           ) : friends.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={48} color={colors.textTertiary} />
+              <View style={[styles.emptyHero, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                <LinearGradient colors={[`${colors.primary}33`, `${colors.primary}08`]} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
+                <Ionicons name="people" size={32} color={colors.primary} />
+                <Text style={[styles.emptyHeroTitle, { color: colors.text }]}>Grow your convoy</Text>
+                <Text style={[styles.emptyHeroSub, { color: colors.textSecondary }]}>
+                  Add friends to share live location and navigate to each other on the map.
+                </Text>
+              </View>
               <Text style={[styles.emptyTitle, { color: colors.text }]}>No friends yet</Text>
-              <Text style={[styles.emptySub, { color: colors.textSecondary }]}>Add friends to see them on the map and share your location</Text>
+              <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                Use Add Friend below — search by name, email, or 6-character friend code.
+              </Text>
             </View>
           ) : (
-            <FlatList data={friends} keyExtractor={(f) => f.id}
+            <FlatList
+              data={friendListData}
+              keyExtractor={listKeyExtractor}
               refreshControl={
-                <RefreshControl
-                  refreshing={friendsLoading}
-                  onRefresh={() => { loadFriends(); loadPending(); }}
-                  tintColor={colors.primary}
-                />
+                <RefreshControl refreshing={friendsLoading} onRefresh={() => { loadFriends(); loadPending(); }} tintColor={colors.primary} />
               }
               contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 80 }}
+              ListHeaderComponent={
+                friendListData.length > 0 && friendListData.length <= 2 ? (
+                  <View style={[styles.tipCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                    <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.tipText, { color: colors.textSecondary }]}>
+                      Pull down to refresh. Turn on Share Location so friends can route to you in real time.
+                    </Text>
+                  </View>
+                ) : null
+              }
               renderItem={renderFriend}
             />
           )}
-          <TouchableOpacity style={[styles.addFriendBtn, { bottom: insets.bottom + 16, backgroundColor: colors.primary }]} onPress={() => setShowAddFriend(true)} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={[styles.addFriendBtn, { bottom: insets.bottom + 16, backgroundColor: colors.primary }]}
+            onPress={() => setShowAddFriend(true)}
+            activeOpacity={0.88}
+          >
             <Ionicons name="person-add-outline" size={18} color="#fff" />
             <Text style={styles.addFriendText}>Add Friend</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* ─── Family tab (Coming Soon preview) ──────────────────────── */}
       {section === 'family' && (
         <View style={{ flex: 1, paddingHorizontal: 16 }}>
           <FamilyPreview colors={colors} isLight={isLight} />
         </View>
       )}
 
-      {/* Modals */}
-      <Modal visible={showAddFriend} onClose={() => { setShowAddFriend(false); setSearchHits([]); setAddTargetId(null); }}>
+      <Modal visible={showAddFriend} onClose={() => { setShowAddFriend(false); setSearchHits([]); setAddTargetId(null); }} scrollable={false}>
         <Text style={[styles.modalTitle, { color: colors.text }]}>Add Friend</Text>
         <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 10, textAlign: 'center', lineHeight: 18 }}>
           Search by name, email, or 6-character SnapRoad friend code. Tap a result before sending — we will not guess from free text.
         </Text>
         <TextInput
           style={[styles.modalInput, { color: colors.text, backgroundColor: colors.surfaceSecondary }]}
-          placeholder="Search drivers…" placeholderTextColor={colors.textSecondary}
+          placeholder="Search drivers…"
+          placeholderTextColor={colors.textSecondary}
           value={friendCode}
           onChangeText={(t) => {
             setFriendCode(t);
@@ -461,57 +587,55 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </Modal>
 
-      <Modal visible={!!selectedFriend} onClose={() => setSelectedFriend(null)}>
-        {selectedFriend && (
-          <>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>{selectedFriend.name}</Text>
-            <TouchableOpacity style={[styles.friendAction, { backgroundColor: colors.primary }]} activeOpacity={0.8}
-              onPress={() => {
-                const lat = selectedFriend.lat;
-                const lng = selectedFriend.lng;
-                if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 1e-6 && Math.abs(lng) < 1e-6)) {
-                  Alert.alert('Location unavailable', 'This friend is not sharing their live location yet.');
-                  return;
-                }
-                setSelectedFriend(null);
-                navigation.getParent()?.navigate('Map', {
-                  screen: 'MapMain',
-                  params: {
-                    navigateToFriend: { name: selectedFriend.name, lat, lng, nonce: Date.now() },
+      <Modal visible={!!selectedFriend} onClose={() => setSelectedFriend(null)} scrollable={false}>
+        {selectedFriend ? (
+          <FriendDetailModalContent
+            friend={selectedFriend}
+            myLocation={myCoord}
+            theme={detailsTheme}
+            onClose={() => setSelectedFriend(null)}
+            onNavigate={(opts) => {
+              setSelectedFriend(null);
+              navigation.getParent()?.navigate('Map', {
+                screen: 'MapMain',
+                params: {
+                  navigateToFriend: {
+                    friendId: opts.friendId,
+                    name: opts.name,
+                    lat: opts.lat,
+                    lng: opts.lng,
+                    nonce: Date.now(),
+                    isLiveFresh: opts.isLiveFresh,
+                    lastUpdated: opts.lastUpdated,
                   },
-                });
-              }}>
-              <Ionicons name="navigate-outline" size={16} color="#fff" /><Text style={styles.friendActionText}>Navigate to</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.friendAction, { backgroundColor: '#7C3AED', marginTop: 8 }]} activeOpacity={0.8}
-              onPress={() => {
-                setSnapRaceOpponentId(selectedFriend.friend_id);
-                setSelectedFriend(null);
-                setShowSnapRace(true);
-              }}>
-              <Ionicons name="flash-outline" size={16} color="#fff" /><Text style={styles.friendActionText}>Challenge to Race</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.friendAction, { backgroundColor: colors.danger, marginTop: 8 }]} activeOpacity={0.8} onPress={() => handleRemoveFriend(selectedFriend.friend_id)}>
-              <Ionicons name="trash-outline" size={16} color="#fff" /><Text style={styles.friendActionText}>Remove Friend</Text>
-            </TouchableOpacity>
-          </>
-        )}
+                },
+              });
+            }}
+            onViewOnMap={(friendId) => {
+              setSelectedFriend(null);
+              navigation.getParent()?.navigate('Map', {
+                screen: 'MapMain',
+                params: { mapFocusFriend: { friendId, nonce: Date.now() } },
+              });
+            }}
+            onRemove={handleRemoveFriend}
+          />
+        ) : null}
       </Modal>
-
-      <SnapRaceMode
-        visible={showSnapRace}
-        onClose={() => { setShowSnapRace(false); setSnapRaceOpponentId(null); }}
-        userId={user?.id ?? ''}
-        friends={friends.filter((f) => f.status === 'accepted').map((f) => ({ id: f.friend_id, name: f.name }))}
-        gems={user?.gems ?? 0}
-        initialOpponentId={snapRaceOpponentId}
-      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  toggleRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 12, marginBottom: 4, borderRadius: 14, padding: 4 },
+  toggleRow: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    borderRadius: 14,
+    padding: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   togglePill: { flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: 'center' },
   toggleText: { fontSize: 14, fontWeight: '700' },
   comingSoonDot: { backgroundColor: 'rgba(124,58,237,0.25)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
@@ -519,15 +643,47 @@ const styles = StyleSheet.create({
 
   sectionHeader: { paddingHorizontal: 16, paddingVertical: 8 },
   sectionTitle: { fontSize: 16, fontWeight: '800' },
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8, paddingHorizontal: 32 },
+  tipCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  tipText: { flex: 1, fontSize: 12, lineHeight: 17 },
+
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, paddingHorizontal: 24 },
+  emptyHero: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    marginBottom: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  emptyHeroTitle: { fontSize: 17, fontWeight: '800', marginTop: 10 },
+  emptyHeroSub: { fontSize: 12, textAlign: 'center', lineHeight: 17, marginTop: 6 },
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 19 },
-  friendCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: 14, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 2 },
-  friendAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#007AFF', justifyContent: 'center', alignItems: 'center' },
-  friendInitials: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  friendName: { fontSize: 15, fontWeight: '700' },
-  onlineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#34C759' },
-  addFriendBtn: { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 24, paddingHorizontal: 20, paddingVertical: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 4 },
+
+  addFriendBtn: {
+    position: 'absolute',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 4,
+  },
   addFriendText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   previewOverlayBadge: { alignItems: 'center', marginBottom: 12, marginTop: 4 },
@@ -558,8 +714,6 @@ const styles = StyleSheet.create({
   modalInput: { borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 16 },
   modalBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   modalBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  friendAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, paddingVertical: 14, marginTop: 12 },
-  friendActionText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   requestCard: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, padding: 12, borderWidth: StyleSheet.hairlineWidth },
   reqBtn: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },

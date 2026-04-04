@@ -5,6 +5,7 @@ Uses a persistent HTTP client for connection pooling and an in-memory TTL cache
 to avoid redundant round-trips while the user is typing.
 """
 
+import math
 import os
 import time
 from collections import OrderedDict
@@ -104,13 +105,101 @@ def _location_bias_ok(lat: Optional[float], lng: Optional[float]) -> bool:
     return True
 
 
-async def fetch_autocomplete_predictions(q: str, lat: Optional[float] = None, lng: Optional[float] = None) -> list:
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371000.0
+    p1 = math.radians(lat1)
+    p2 = math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
+
+
+async def fetch_text_search_predictions(
+    q: str,
+    lat: float,
+    lng: float,
+    radius_m: int,
+    open_now: bool,
+) -> list:
+    """Place Text Search biased to a circle; supports opennow filter (legacy API)."""
+    key = _KEY()
+    if not key or not (q or "").strip():
+        return []
+
+    rad = int(min(max(radius_m, 1000), 50000))
+    cache_key = f"ts|{q.lower().strip()}|{round(lat, 3)}|{round(lng, 3)}|{rad}|{int(open_now)}"
+    cached = _cache_get(_textsearch_cache, cache_key)
+    if cached is not None:
+        return cached
+
+    params: dict = {
+        "query": q.strip(),
+        "location": f"{lat},{lng}",
+        "radius": str(rad),
+        "key": key,
+        "language": "en",
+    }
+    if open_now:
+        params["opennow"] = "true"
+
+    r = await _get_http().get(f"{_BASE}/textsearch/json", params=params)
+    data = r.json()
+    status = data.get("status")
+    if status not in ("OK", "ZERO_RESULTS"):
+        _cache_set(_textsearch_cache, cache_key, [])
+        return []
+
+    out: list = []
+    for item in data.get("results", [])[:20]:
+        geo = item.get("geometry", {}).get("location", {})
+        plat = geo.get("lat")
+        plng = geo.get("lng")
+        if plat is None or plng is None:
+            continue
+        try:
+            dist = _haversine_m(lat, lng, float(plat), float(plng))
+        except (TypeError, ValueError):
+            dist = None
+        oh = item.get("opening_hours") or {}
+        out.append({
+            "place_id": item.get("place_id"),
+            "name": item.get("name", ""),
+            "address": item.get("formatted_address", ""),
+            "description": item.get("formatted_address", ""),
+            "types": item.get("types", []),
+            "lat": float(plat),
+            "lng": float(plng),
+            "distance_meters": int(dist) if dist is not None else None,
+            "open_now": oh.get("open_now"),
+        })
+    out.sort(
+        key=lambda x: (
+            x.get("distance_meters") is None,
+            x.get("distance_meters") if x.get("distance_meters") is not None else 10**9,
+        ),
+    )
+    out = out[:15]
+    _cache_set(_textsearch_cache, cache_key, out)
+    return out
+
+
+async def fetch_autocomplete_predictions(
+    q: str,
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    radius_m: int = 18000,
+) -> list:
     """Google Place Autocomplete with optional circular bias; nearest-first when `distance_meters` is present."""
     key = _KEY()
     if not key or not (q or "").strip():
         return []
 
-    cache_key = f"{q.lower().strip()}|{round(lat, 2) if lat is not None else ''}|{round(lng, 2) if lng is not None else ''}"
+    r_clamped = int(min(max(radius_m, 3000), 50000))
+    cache_key = (
+        f"{q.lower().strip()}|{round(lat, 2) if lat is not None else ''}|"
+        f"{round(lng, 2) if lng is not None else ''}|r{r_clamped}"
+    )
     cached = _cache_get(_autocomplete_cache, cache_key)
     if cached is not None:
         return cached
@@ -118,8 +207,7 @@ async def fetch_autocomplete_predictions(q: str, lat: Optional[float] = None, ln
     params: dict = {"input": q.strip(), "key": key, "language": "en"}
     if _location_bias_ok(lat, lng):
         params["location"] = f"{lat},{lng}"
-        # Tighter local bias + strictbounds so autocomplete stays near the user
-        params["radius"] = "25000"
+        params["radius"] = str(r_clamped)
         params["strictbounds"] = "true"
 
     r = await _get_http().get(f"{_BASE}/autocomplete/json", params=params)
@@ -183,12 +271,35 @@ async def autocomplete(
     q: Annotated[str, Query(..., min_length=1)],
     lat: Annotated[Optional[float], Query()] = None,
     lng: Annotated[Optional[float], Query()] = None,
+    radius: Annotated[
+        Optional[int],
+        Query(ge=3000, le=50000, description="Location bias radius in meters (autocomplete / text search)"),
+    ] = None,
+    open_now: Annotated[
+        bool,
+        Query(description="If true and lat/lng set, uses Text Search with opennow (otherwise ignored)"),
+    ] = False,
+    textsearch: Annotated[
+        bool,
+        Query(
+            description=(
+                "If true and lat/lng set, uses Place Text Search (distance-ranked) instead of Autocomplete"
+            ),
+        ),
+    ] = False,
 ):
     key = _KEY()
     if not key:
         return {"success": False, "error": MSG_GOOGLE_PLACES_KEY_NOT_CONFIGURED, "data": []}
 
-    predictions = await fetch_autocomplete_predictions(q, lat, lng)
+    radius_m = radius if radius is not None else 18000
+    use_text = _location_bias_ok(lat, lng) and (open_now or textsearch)
+    if use_text:
+        predictions = await fetch_text_search_predictions(
+            q, float(lat), float(lng), radius_m, open_now,
+        )
+    else:
+        predictions = await fetch_autocomplete_predictions(q, lat, lng, radius_m)
     return {"success": True, "data": predictions}
 
 

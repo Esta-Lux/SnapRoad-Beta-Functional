@@ -82,8 +82,14 @@ export default function HelpSupport({ visible, onClose }: Props) {
   };
 
   return (
-    <Modal visible={visible} onClose={onClose}>
-      <ScrollView showsVerticalScrollIndicator={false} style={{ backgroundColor: colors.surface }}>
+    <Modal visible={visible} onClose={onClose} scrollable={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        style={{ backgroundColor: colors.surface }}
+        contentContainerStyle={{ paddingBottom: 24 }}
+      >
         <Text style={[styles.title, { color: colors.text }]}>Help &amp; Support</Text>
 
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Frequently Asked Questions</Text>

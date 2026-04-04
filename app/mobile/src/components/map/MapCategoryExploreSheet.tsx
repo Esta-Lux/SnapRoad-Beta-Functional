@@ -56,7 +56,7 @@ export default function MapCategoryExploreSheet({
   colors,
 }: Props) {
   return (
-    <Modal visible={visible} onClose={onClose}>
+    <Modal visible={visible} onClose={onClose} scrollable={false}>
       <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
       {subtitle ? (
         <Text style={[styles.sub, { color: colors.textSecondary }]}>{subtitle}</Text>

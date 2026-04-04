@@ -1,7 +1,9 @@
+const DEFAULT_PROD_PARTNER_ORIGIN = 'https://app.snaproad.app'
+
 /**
  * Base URL for partner-facing links (referral signup QR, shared URLs).
- * Set VITE_PARTNER_PORTAL_URL in production when the app lives on a fixed host
- * (e.g. https://app.snaproad.app) so links stay correct even if opened from elsewhere.
+ * Prefer VITE_PARTNER_PORTAL_URL on Vercel (e.g. https://app.snaproad.app).
+ * In production builds without env, fall back to the live partner host.
  */
 export function getPartnerPortalBaseUrl(): string {
   const env = (import.meta.env.VITE_PARTNER_PORTAL_URL as string | undefined)?.trim().replace(/\/$/, '')
@@ -9,5 +11,6 @@ export function getPartnerPortalBaseUrl(): string {
   if (typeof globalThis !== 'undefined' && 'location' in globalThis && globalThis.location?.origin) {
     return globalThis.location.origin
   }
+  if (import.meta.env.PROD) return DEFAULT_PROD_PARTNER_ORIGIN
   return ''
 }

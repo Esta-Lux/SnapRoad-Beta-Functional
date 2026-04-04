@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, View, Text, TouchableOpacity, StyleSheet, RefreshControl, Share, Linking, Platform, TextInput } from 'react-native';
+import { Alert, ScrollView, View, Text, TouchableOpacity, StyleSheet, RefreshControl, Share, Linking, Platform, TextInput, KeyboardAvoidingView } from 'react-native';
 import Modal from '../components/common/Modal';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation, useRoute, useFocusEffect, useIsFocused } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -14,6 +15,7 @@ import { PLANS, premiumSavingsPercent, PREMIUM_PUBLIC_MONTHLY } from '../constan
 import { applySnapRoadFromProfilePayload, computeSnapRoadScoreBreakdown } from '../utils/profileScore';
 import FuelTracker from '../components/profile/FuelTracker';
 import DriverSnapshotModal from '../components/profile/DriverSnapshotModal';
+import ProfileInsightsDashboard from '../components/profile/ProfileInsightsDashboard';
 import HelpSupport from '../components/profile/HelpSupport';
 import SubmitConcern from '../components/profile/SubmitConcern';
 import type { CommuteRoute, DrivingMode, PlanTier, SavedLocation, SavedRoute, User } from '../types';
@@ -22,11 +24,8 @@ import {
   AboutCard,
   AddPlaceModal,
   AppearanceCard,
-  BadgesModal,
-  DrivingScoreModal,
   DrivingModeCard,
   DeleteAccountButton,
-  GemHistoryModal,
   IncidentReportModal,
   LevelProgressModal,
   LeaderboardModal,
@@ -42,8 +41,6 @@ import {
   ProfileWeeklyRecap,
   ProfileOverviewSection,
   MyCarRow,
-  TripHistoryModal,
-  WeeklyRecapModal,
   RoutesCard,
   CommuteRoutesSection,
   SectionHeader,
@@ -56,9 +53,10 @@ import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileS
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { location } = useLocation();
+  const profileFocused = useIsFocused();
+  const { location } = useLocation(false, { paused: !profileFocused });
   const { isLight, colors, toggleTheme } = useTheme();
-  const { user, logout, updateUser } = useAuth();
+  const { user, logout, updateUser, statsVersion } = useAuth();
   const updateUserRef = useRef(updateUser);
   const handledBillingStatusRef = useRef<string | null>(null);
   useEffect(() => {
@@ -113,13 +111,9 @@ export default function ProfileScreen() {
   const [draftName, setDraftName] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [showLevelProgress, setShowLevelProgress] = useState(false);
-  const [showWeeklyRecap, setShowWeeklyRecap] = useState(false);
+  const [showInsightsDashboard, setShowInsightsDashboard] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [showTripHistory, setShowTripHistory] = useState(false);
-  const [showGemHistory, setShowGemHistory] = useState(false);
-  const [showBadges, setShowBadges] = useState(false);
   const [showIncidentReport, setShowIncidentReport] = useState(false);
-  const [showDrivingScore, setShowDrivingScore] = useState(false);
   const [showFuelTracker, setShowFuelTracker] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showConcern, setShowConcern] = useState(false);
@@ -132,6 +126,9 @@ export default function ProfileScreen() {
     gemsEarnedWeek: 0,
     avgSafetyScore: 0,
     aiTip: '',
+    highlights: [],
+    orionCommentary: null,
+    behavior: { hard_braking_events_total: 0, speeding_events_total: 0 },
   });
   const [leaderboardRows, setLeaderboardRows] = useState<ProfileLeaderboardEntry[]>([]);
   const [myRank, setMyRank] = useState(0);
@@ -182,9 +179,9 @@ export default function ProfileScreen() {
         safeGet('/api/routes'),
         safeGet('/api/commute-routes'),
         safeGet('/api/settings/notifications'),
-        safeGet('/api/trips/weekly-insights'),
+        safeGet('/api/weekly-recap'),
         safeGet('/api/leaderboard?time_filter=weekly&limit=10'),
-        safeGet('/api/trips/history'),
+        safeGet('/api/trips/history/recent?limit=100'),
         safeGet('/api/gems/history'),
         safeGet('/api/badges'),
         safeGet('/api/fuel/stats'),
@@ -263,12 +260,22 @@ export default function ProfileScreen() {
       setOfferAlerts(Boolean(push.offers ?? true));
       setSpeedAlerts(Boolean(push.safety_alerts ?? true));
       const weekly = weeklyRes?.data?.data ?? weeklyRes?.data ?? {};
+      const beh = weekly.behavior;
       setWeeklyRecap({
         totalTrips: Number(weekly.total_trips ?? weekly.trips_this_week ?? 0),
         totalMiles: Number(weekly.total_miles ?? weekly.miles_this_week ?? 0),
-        gemsEarnedWeek: Number(weekly.gems_earned_week ?? 0),
+        gemsEarnedWeek: Number(weekly.gems_earned ?? weekly.gems_earned_week ?? 0),
         avgSafetyScore: Number(weekly.safety_score_avg ?? weekly.avg_safety_score ?? 0),
-        aiTip: String(weekly.ai_tip ?? ''),
+        aiTip: '',
+        highlights: Array.isArray(weekly.highlights) ? weekly.highlights.map((x: unknown) => String(x)) : [],
+        orionCommentary: typeof weekly.orion_commentary === 'string' ? weekly.orion_commentary : null,
+        behavior:
+          beh && typeof beh === 'object'
+            ? {
+                hard_braking_events_total: Number((beh as any).hard_braking_events_total ?? 0),
+                speeding_events_total: Number((beh as any).speeding_events_total ?? 0),
+              }
+            : { hard_braking_events_total: 0, speeding_events_total: 0 },
       });
       const lb = leaderRes?.data?.data ?? leaderRes?.data ?? {};
       const rows = Array.isArray(lb.leaderboard) ? lb.leaderboard : [];
@@ -288,19 +295,42 @@ export default function ProfileScreen() {
         setVehicleType(vtRaw);
       }
       updateUserRef.current(userPatch);
-      const historyData = tripsHistoryRes?.data?.data ?? tripsHistoryRes?.data ?? {};
-      const recentTrips = Array.isArray(historyData.recent_trips) ? historyData.recent_trips : [];
-      setTripHistoryRows(recentTrips.map((t: any, idx: number) => ({
-        id: String(t.id ?? idx),
-        date: String(t.date ?? ''),
-        time: String(t.time ?? ''),
-        origin: String(t.origin ?? 'Current Location'),
-        destination: String(t.destination ?? 'Dropped pin'),
-        distance_miles: Number(t.distance_miles ?? 0),
-        duration_minutes: Number(t.duration_minutes ?? 0),
-        gems_earned: Number(t.gems_earned ?? 0),
-        safety_score: Number(t.safety_score ?? 0),
-      })));
+      const historyRoot = tripsHistoryRes?.data?.data ?? tripsHistoryRes?.data;
+      const recentTrips = Array.isArray(historyRoot) ? historyRoot : [];
+      setTripHistoryRows(
+        recentTrips.map((t: any, idx: number) => {
+          const rawDate = String(t.date ?? '');
+          let dateStr = '';
+          let timeStr = '';
+          let tripEndedAtIso = rawDate;
+          try {
+            const d = new Date(rawDate);
+            if (!Number.isNaN(d.getTime())) {
+              dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+              timeStr = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+              tripEndedAtIso = d.toISOString();
+            }
+          } catch {
+            /* keep raw */
+          }
+          const dist =
+            t.distance_miles != null ? Number(t.distance_miles) : Number(t.distance ?? 0);
+          const durSec = Number(t.duration ?? 0);
+          const durMin = t.duration_minutes != null ? Number(t.duration_minutes) : Math.round(durSec / 60);
+          return {
+            id: String(t.id ?? idx),
+            date: dateStr || rawDate,
+            time: timeStr,
+            origin: String(t.origin ?? 'Start'),
+            destination: String(t.destination ?? 'End'),
+            distance_miles: dist,
+            duration_minutes: durMin,
+            gems_earned: Number(t.gems_earned ?? 0),
+            safety_score: Number(t.safety_score ?? 0),
+            tripEndedAtIso,
+          };
+        }),
+      );
       const gemData = gemsRes?.data?.data ?? gemsRes?.data ?? {};
       const tx = Array.isArray(gemData.recent_transactions) ? gemData.recent_transactions : [];
       setGemTxRows(tx.map((item: any, idx: number) => ({
@@ -312,11 +342,18 @@ export default function ProfileScreen() {
       })));
       const badgeData = badgesRes?.data?.data ?? badgesRes?.data ?? {};
       const badgeList = Array.isArray(badgeData.badges) ? badgeData.badges : Array.isArray(badgeData) ? badgeData : [];
-      setBadgeRows(badgeList.map((b: any, idx: number) => ({
-        id: b.id ?? idx,
-        name: String(b.name ?? 'Badge'),
-        earned: Boolean(b.earned),
-      })));
+      setBadgeRows(
+        badgeList.map((b: any, idx: number) => ({
+          id: b.id ?? idx,
+          name: String(b.name ?? 'Badge'),
+          earned: Boolean(b.earned),
+          description: String(b.description ?? b.desc ?? ''),
+          category: typeof b.category === 'string' ? b.category : undefined,
+          progress: typeof b.progress === 'number' ? b.progress : undefined,
+          icon: typeof b.icon === 'string' ? b.icon : undefined,
+          gems: b.gems != null ? Number(b.gems) : undefined,
+        })),
+      );
       setLastSyncedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } finally {
       if (mode === 'initial') setInitialLoading(false);
@@ -339,6 +376,11 @@ export default function ProfileScreen() {
       void loadData('silent');
     }, [loadData]),
   );
+
+  useEffect(() => {
+    if (!statsVersion) return;
+    void loadData('silent');
+  }, [statsVersion, loadData]);
 
   useEffect(() => {
     if (user?.vehicle_height_meters && user.vehicle_height_meters > 0) {
@@ -501,6 +543,7 @@ export default function ProfileScreen() {
   const currentPlan = user?.isFamilyPlan ? 'family' : user?.isPremium ? 'premium' : 'basic';
   const planConfig = PLANS[currentPlan];
   const initials = (user?.name ?? 'U').split(' ').filter(Boolean).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+  const badgeTotal = badgeRows.length || 1;
   const actionRows: ProfileOverviewActionItem[] = [
     {
       key: 'share_location',
@@ -532,8 +575,8 @@ export default function ProfileScreen() {
       key: 'achievements',
       icon: 'trophy-outline',
       label: 'Achievements',
-      value: `${badgeRows.filter((b) => b.earned).length}/160 badges`,
-      onPress: () => setShowBadges(true),
+      value: `${badgeRows.filter((b) => b.earned).length}/${badgeTotal} badges · open Insights for full list`,
+      onPress: () => setShowInsightsDashboard(true),
     },
     {
       key: 'incidents',
@@ -543,47 +586,11 @@ export default function ProfileScreen() {
       onPress: () => setShowIncidentReport(true),
     },
     {
-      key: 'driving_score',
-      icon: 'speedometer-outline',
-      label: 'Driving Score',
-      value: user?.isPremium ? 'Detailed breakdown' : 'Unlock with Premium',
-      badgeText: user?.isPremium ? undefined : 'PREMIUM',
-      onPress: () => setShowDrivingScore(true),
-    },
-    {
-      key: 'rank',
-      icon: 'ribbon-outline',
-      label: 'Rank & Leaderboard',
-      value: `Current rank #${user?.rank ?? '--'}`,
-      onPress: () => setShowLeaderboard(true),
-    },
-    {
-      key: 'weekly_recap',
-      icon: 'sparkles-outline',
-      label: 'Weekly Recap',
-      value: 'Analyzed by Orion',
-      onPress: () => setShowWeeklyRecap(true),
-    },
-    {
       key: 'dashboards',
       icon: 'people-outline',
       label: 'Dashboards',
       value: 'Friends · Family',
       onPress: () => navigation.getParent()?.navigate('Dashboards'),
-    },
-    {
-      key: 'trip_history',
-      icon: 'time-outline',
-      label: 'Trip History',
-      value: `${user?.totalTrips ?? 0} recorded trips`,
-      onPress: () => setShowTripHistory(true),
-    },
-    {
-      key: 'gem_history',
-      icon: 'diamond-outline',
-      label: 'Gem History',
-      value: 'View transactions',
-      onPress: () => setShowGemHistory(true),
     },
     {
       key: 'friends',
@@ -597,9 +604,15 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={insets.top}
+      >
       <ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => loadData('refresh')} tintColor="#3B82F6" />
         }
@@ -650,6 +663,37 @@ export default function ProfileScreen() {
           <>
             <SectionHeader title="Overview" isLight={isLight} />
             <MyCarRow cardBg={cardBg} text={text} sub={sub} accent={colors.primary} />
+            <TouchableOpacity
+              activeOpacity={0.92}
+              onPress={() => setShowInsightsDashboard(true)}
+              style={{ marginHorizontal: 16, marginBottom: 12, borderRadius: 16, overflow: 'hidden' }}
+              accessibilityRole="button"
+              accessibilityLabel="Open Insights and Recap dashboard"
+            >
+              <LinearGradient
+                colors={['#1D4ED8', '#3B82F6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{ paddingVertical: 16, paddingHorizontal: 16 }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1, paddingRight: 12 }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 }}>
+                      INSIGHTS & RECAP
+                    </Text>
+                    <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900', marginTop: 6 }}>
+                      Your tracking dashboard
+                    </Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: 13, marginTop: 6 }}>
+                      Trips · Safety · Gems · Fuel · Badges · Orion (Premium)
+                    </Text>
+                  </View>
+                  <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, padding: 10 }}>
+                    <Ionicons name="stats-chart" size={26} color="#fff" />
+                  </View>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
             <ProfileOverviewSection
               actions={actionRows}
               cardBg={cardBg}
@@ -749,9 +793,9 @@ export default function ProfileScreen() {
             <SectionHeader title="Driving Score" isLight={isLight} />
             <TouchableOpacity
               activeOpacity={0.9}
-              onPress={() => setShowDrivingScore(true)}
+              onPress={() => setShowInsightsDashboard(true)}
               accessibilityRole="button"
-              accessibilityLabel="Open SnapRoad score breakdown"
+              accessibilityLabel="Open Insights dashboard for score and coaching"
               style={[styles.scoreCard, { backgroundColor: cardBg }]}
             >
               <View style={styles.scoreTopRow}>
@@ -769,7 +813,7 @@ export default function ProfileScreen() {
               <View style={styles.scoreTrack}>
                 <View style={[styles.scoreFill, { width: `${(snapRoad.total / 1000) * 100}%` }]} />
               </View>
-              <Text style={[styles.scoreTapHint, { color: colors.primary }]}>View breakdown →</Text>
+              <Text style={[styles.scoreTapHint, { color: colors.primary }]}>Open Insights & Recap →</Text>
             </TouchableOpacity>
           </>
         )}
@@ -862,7 +906,7 @@ export default function ProfileScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.fuelBtn, { flexDirection: 'row', gap: 8, justifyContent: 'center', backgroundColor: '#3B82F6' }]}
-                    onPress={() => setShowDrivingScore(true)}
+                    onPress={() => setShowInsightsDashboard(true)}
                   >
                     <Ionicons name="shield-checkmark" size={18} color="#fff" />
                     <Text style={styles.fuelBtnText}>Driving Score Breakdown</Text>
@@ -1066,6 +1110,7 @@ export default function ProfileScreen() {
           </>
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <Modal visible={showEditName} onClose={() => setShowEditName(false)}>
         <View style={{ paddingVertical: 8 }}>
@@ -1145,15 +1190,28 @@ export default function ProfileScreen() {
         level={user?.level ?? 1}
         totalXp={user?.xp ?? 0}
       />
-      <WeeklyRecapModal
-        visible={showWeeklyRecap}
-        onClose={() => setShowWeeklyRecap(false)}
-        cardBg={cardBg}
-        text={text}
-        sub={sub}
-        recap={weeklyRecap}
+      <ProfileInsightsDashboard
+        visible={showInsightsDashboard}
+        onClose={() => setShowInsightsDashboard(false)}
+        weeklyRecap={weeklyRecap}
+        tripHistoryRows={tripHistoryRows}
+        gemTxRows={gemTxRows}
+        badgeRows={badgeRows}
+        fuelSummary={fuelSummary}
+        myRank={myRank}
         isPremium={Boolean(user?.isPremium)}
-        onUpgrade={() => setShowPlanModal(true)}
+        onUpgrade={() => {
+          setShowInsightsDashboard(false);
+          setShowPlanModal(true);
+        }}
+        onOpenLeaderboard={() => {
+          setShowInsightsDashboard(false);
+          setShowLeaderboard(true);
+        }}
+        onOpenFuelTracker={() => {
+          setShowInsightsDashboard(false);
+          setShowFuelTracker(true);
+        }}
       />
       <LeaderboardModal
         visible={showLeaderboard}
@@ -1164,29 +1222,12 @@ export default function ProfileScreen() {
         myRank={myRank}
         entries={leaderboardRows}
       />
-      <BadgesModal
-        visible={showBadges}
-        onClose={() => setShowBadges(false)}
-        cardBg={cardBg}
-        text={text}
-        sub={sub}
-        badges={badgeRows}
-      />
-      <TripHistoryModal visible={showTripHistory} onClose={() => setShowTripHistory(false)} trips={tripHistoryRows} />
-      <GemHistoryModal visible={showGemHistory} onClose={() => setShowGemHistory(false)} tx={gemTxRows} />
       <DriverSnapshotModal
         visible={showDriverSnapshot}
         onClose={() => setShowDriverSnapshot(false)}
         user={user}
         weeklyRecap={weeklyRecap}
         myRank={myRank}
-      />
-      <DrivingScoreModal
-        visible={showDrivingScore}
-        onClose={() => setShowDrivingScore(false)}
-        user={user}
-        isPremium={Boolean(user?.isPremium)}
-        onUpgrade={() => setShowPlanModal(true)}
       />
       <IncidentReportModal
         visible={showIncidentReport}
@@ -1242,13 +1283,17 @@ export default function ProfileScreen() {
           }
         }}
       />
-      <Modal visible={showPlaceAlertsDashboard} onClose={() => setShowPlaceAlertsDashboard(false)}>
+      <Modal visible={showPlaceAlertsDashboard} onClose={() => setShowPlaceAlertsDashboard(false)} scrollable={false}>
         <Text style={{ color: text, fontSize: 20, fontWeight: '800', marginBottom: 4 }}>Place alerts</Text>
         <Text style={{ color: sub, fontSize: 13, marginBottom: 14, lineHeight: 18 }}>
           {`You're using ${placeAlerts.length} of ${placeAlertLimit} alert${placeAlertLimit === 1 ? '' : 's'}.`}
           {placeAlertPremium ? ' Premium: real-time push enabled.' : ' Free plan uses scheduled notifications.'}
         </Text>
-        <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={{ maxHeight: 360 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {placeAlerts.length > 0 ? (
             placeAlerts.map((alert) => (
               <View
@@ -1351,6 +1396,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   liveSyncText: { fontSize: 12, fontWeight: '600' },
+  lifetimeHint: { fontSize: 11, fontWeight: '600', textAlign: 'center', marginTop: -4, marginBottom: 6, paddingHorizontal: 16 },
   alertRow: {
     flexDirection: 'row',
     alignItems: 'center',

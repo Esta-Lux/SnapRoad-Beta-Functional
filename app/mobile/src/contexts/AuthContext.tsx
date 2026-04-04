@@ -21,6 +21,11 @@ interface AuthContextType {
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
   setUserFromApi: (apiUser: ApiUser | null) => void;
+  /** GET /api/user/profile and replace `user` from server (SnapRoad score, level, etc.). */
+  refreshUserFromServer: () => Promise<boolean>;
+  /** Bumped after a counted trip completes so Profile/Rewards can reload lists. */
+  statsVersion: number;
+  bumpStatsVersion: () => void;
   completeOAuthSignIn: (accessToken: string, refreshToken: string) => Promise<{ ok: boolean; message?: string }>;
 }
 
@@ -100,7 +105,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [statsVersion, setStatsVersion] = useState(0);
   const clearAuthError = useCallback(() => setAuthError(null), []);
+  const bumpStatsVersion = useCallback(() => {
+    setStatsVersion((v) => v + 1);
+  }, []);
 
   const restoreSession = async () => {
     const token = await api.getToken();
@@ -273,6 +282,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch { /* Supabase may not be configured */ }
     setUser(null);
     setAuthError(null);
+    setStatsVersion(0);
   };
 
   const updateUser = useCallback((updates: Partial<User>) => {
@@ -287,14 +297,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const setUserFromApi = (apiUser: ApiUser | null) => {
+  const setUserFromApi = useCallback((apiUser: ApiUser | null) => {
     if (!apiUser) {
       setUser(null);
       return;
     }
     const record = { ...apiUser, name: apiUser.name ?? apiUser.full_name } as Record<string, unknown>;
     setUser(mapApiUserToContext(record));
-  };
+  }, []);
+
+  const refreshUserFromServer = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await api.getProfile();
+      const payload = (res.data as { data?: Record<string, unknown> } | undefined)?.data ?? res.data;
+      if (!res.success || !payload || typeof payload !== 'object') return false;
+      setUserFromApi(payload as ApiUser);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [setUserFromApi]);
 
   return (
     <AuthContext.Provider
@@ -312,6 +334,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         updateUser,
         setUserFromApi,
+        refreshUserFromServer,
+        statsVersion,
+        bumpStatsVersion,
         completeOAuthSignIn,
       }}
     >

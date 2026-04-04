@@ -1,3 +1,5 @@
+import { api } from '@/services/api'
+
 export interface GasStation {
   name: string
   price: number
@@ -6,28 +8,28 @@ export interface GasStation {
   brand: string
 }
 
-export async function fetchNearbyGasPrices(lat: number, lng: number): Promise<GasStation[]> {
-  // Note: GasBuddy blocks browser-side requests via CORS and their unofficial endpoints are unstable.
-  // Default to mock data unless explicitly enabled via env.
-  const provider = (import.meta as any)?.env?.VITE_GAS_PRICES_PROVIDER ?? 'mock'
-  if (provider !== 'gasbuddy') return getMockGasStations(lat, lng)
-
-  try {
-    const res = await fetch(`https://www.gasbuddy.com/api/stations/near?lat=${lat}&lng=${lng}&radius=5&limit=10`)
-    if (!res.ok) return getMockGasStations(lat, lng)
-    const data = await res.json()
-    return (data.stations ?? [])
-      .map((s: any) => ({
-        name: s.name,
-        price: s.prices?.[0]?.credit_price ?? 0,
-        lat: s.lat,
-        lng: s.lng,
-        brand: s.brand ?? s.name,
-      }))
-      .filter((s: GasStation) => s.price > 0)
-  } catch {
-    return getMockGasStations(lat, lng)
+type FuelPricesApiPayload = {
+  success?: boolean
+  data?: {
+    stations?: GasStation[]
   }
+}
+
+export async function fetchNearbyGasPrices(lat: number, lng: number): Promise<GasStation[]> {
+  try {
+    const res = await api.get<FuelPricesApiPayload>(
+      `/api/fuel/prices?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`,
+    )
+    if (!res.success) return getMockGasStations(lat, lng)
+    const body = res.data as FuelPricesApiPayload | undefined
+    const stations = body?.data?.stations
+    if (Array.isArray(stations) && stations.length) {
+      return stations.filter((s) => Number(s.price) > 0)
+    }
+  } catch {
+    /* backend or network unavailable */
+  }
+  return getMockGasStations(lat, lng)
 }
 
 function getMockGasStations(lat: number, lng: number): GasStation[] {

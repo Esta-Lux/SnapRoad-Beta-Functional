@@ -39,27 +39,21 @@ import {
 } from './src/utils/deepLinks';
 import * as Sentry from '@sentry/react-native';
 
-Sentry.init({
-  dsn: 'https://7aa7280b39975e4a9e09904bd0c47a9d@o4511064446271488.ingest.us.sentry.io/4511148963004416',
-
-  // Adds more context data to events (IP address, cookies, user, etc.)
-  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
-  sendDefaultPii: true,
-
-  // Enable Logs
-  enableLogs: true,
-
-  // Configure Session Replay
-  replaysSessionSampleRate: 0.1,
-  replaysOnErrorSampleRate: 1,
-  integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
-
-  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
-  // spotlight: __DEV__,
-});
-
 const APP_IS_PRODUCTION =
   String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
+
+const sentryDsn = (process.env.EXPO_PUBLIC_SENTRY_DSN || '').trim();
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    // Never send default PII (e.g. email) in production store builds; OK for dev/staging diagnostics.
+    sendDefaultPii: !APP_IS_PRODUCTION,
+    enableLogs: true,
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1,
+    integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
+  });
+}
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({

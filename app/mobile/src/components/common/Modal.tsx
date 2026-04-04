@@ -1,5 +1,14 @@
 import React, { useEffect, type ReactNode } from 'react';
-import { View, Modal as RNModal, StyleSheet, Pressable, Dimensions, Platform, KeyboardAvoidingView } from 'react-native';
+import {
+  View,
+  Modal as RNModal,
+  StyleSheet,
+  Pressable,
+  Dimensions,
+  Platform,
+  KeyboardAvoidingView,
+  ScrollView,
+} from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -7,7 +16,6 @@ import Animated, {
   withTiming,
   runOnJS,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -20,14 +28,30 @@ interface Props {
   children: ReactNode;
   /** When true, dragging the handle down dismisses the sheet (Gesture API v2). */
   panDismissible?: boolean;
+  /**
+   * When true (default), children are wrapped in a ScrollView for keyboard-safe scrolling.
+   * Set false when the sheet already contains a ScrollView, FlatList, or other scroll container.
+   */
+  scrollable?: boolean;
+  /** Added to safe-area top inset for iOS `KeyboardAvoidingView` offset. */
+  keyboardOffsetExtra?: number;
 }
 
-export default function Modal({ visible, onClose, children, panDismissible = false }: Props) {
+export default function Modal({
+  visible,
+  onClose,
+  children,
+  panDismissible: _panDismissible = false,
+  scrollable = true,
+  keyboardOffsetExtra = 0,
+}: Props) {
   const { colors, isLight } = useTheme();
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(SCREEN_H);
   const backdropOpacity = useSharedValue(0);
   const panOffset = useSharedValue(0);
+
+  const kbOffset = keyboardOffsetExtra + (Platform.OS === 'ios' ? insets.top : 0);
 
   useEffect(() => {
     if (visible) {
@@ -58,7 +82,11 @@ export default function Modal({ visible, onClose, children, panDismissible = fal
 
   return (
     <RNModal visible={visible} transparent statusBarTranslucent animationType="none" onRequestClose={handleBackdropPress}>
-      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={kbOffset}
+      >
         <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
           <Pressable
             style={[StyleSheet.absoluteFill, { backgroundColor: isLight ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.6)' }]}
@@ -81,7 +109,21 @@ export default function Modal({ visible, onClose, children, panDismissible = fal
           ]}
         >
           <View style={[styles.handle, { backgroundColor: isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)' }]} />
-          {children}
+          {scrollable ? (
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              nestedScrollEnabled
+              style={styles.sheetScroll}
+              contentContainerStyle={styles.sheetScrollContent}
+            >
+              {children}
+            </ScrollView>
+          ) : (
+            children
+          )}
         </Animated.View>
       </KeyboardAvoidingView>
     </RNModal>
@@ -96,6 +138,15 @@ const styles = StyleSheet.create({
     padding: 20,
     maxHeight: '85%',
     borderTopWidth: StyleSheet.hairlineWidth,
+    flexShrink: 1,
+  },
+  sheetScroll: {
+    flexGrow: 0,
+    maxHeight: SCREEN_H * 0.68,
+  },
+  sheetScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 6,
   },
   handleHit: {
     paddingVertical: 12,

@@ -3,6 +3,7 @@ import MapboxGL from '../../utils/mapbox';
 import type { Coordinate } from '../../types';
 import type { CongestionLevel } from '../../lib/directions';
 import { splitRouteByNearestPoint } from '../../utils/distance';
+import { TRAFFIC_CONGESTION_HEX } from '../../constants/trafficCongestion';
 
 interface Props {
   polyline: Coordinate[];
@@ -19,14 +20,6 @@ interface Props {
   showCongestion?: boolean;
   isRerouting?: boolean;
 }
-
-const CONGESTION_COLORS: Record<string, string> = {
-  low: '#34C759',
-  moderate: '#FFD60A',
-  heavy: '#FF9500',
-  severe: '#FF3B30',
-  unknown: '#4A90D9',
-};
 
 export default React.memo(function RouteOverlay({
   polyline,
@@ -67,7 +60,7 @@ export default React.memo(function RouteOverlay({
       };
     }
 
-    const { passed, ahead } = splitRouteByNearestPoint(polyline, userLocation);
+    const { passed, ahead, splitIndex } = splitRouteByNearestPoint(polyline, userLocation);
     const features: GeoJSON.Feature[] = [];
 
     if (passed.length >= 2) {
@@ -79,14 +72,16 @@ export default React.memo(function RouteOverlay({
     }
 
     if (ahead.length >= 2) {
-      // Congestion-colored segments only on route *preview*; during navigation keep one
-      // continuous "ahead" color so the line matches the mode / turn card (no blue→green break).
-      if (hasCongestion && !isNavigating) {
-        const aheadCoords = ahead.map((c) =>
-          typeof c[0] === 'number' ? { lng: c[0] as number, lat: c[1] as number } : c,
-        ) as Coordinate[];
-        const offset = polyline.length - aheadCoords.length;
-        const aheadCongestion = congestion!.slice(Math.max(0, offset));
+      if (hasCongestion) {
+        const aheadCoords: Coordinate[] = ahead.map(([lng, lat]) => ({ lng, lat }));
+        const edgeCount = aheadCoords.length - 1;
+        const aheadCongestion: CongestionLevel[] = [];
+        for (let e = 0; e < edgeCount; e++) {
+          const ci = splitIndex + e;
+          aheadCongestion.push(
+            ci >= 0 && ci < congestion!.length ? congestion![ci]! : 'unknown',
+          );
+        }
         const cf = buildCongestionFeatures(aheadCoords, aheadCongestion, 'ahead');
         features.push(...cf.features);
       } else {
@@ -103,16 +98,22 @@ export default React.memo(function RouteOverlay({
 
   if (polyline.length < 2 || !MapboxGL) return null;
 
-  const useCongestionColor = hasCongestion && !isNavigating;
+  const useCongestionColor = hasCongestion;
 
   const aheadLineColor: any = useCongestionColor
     ? [
         'match',
         ['get', 'congestion'],
-        'low', CONGESTION_COLORS.low,
-        'moderate', CONGESTION_COLORS.moderate,
-        'heavy', CONGESTION_COLORS.heavy,
-        'severe', CONGESTION_COLORS.severe,
+        'low',
+        TRAFFIC_CONGESTION_HEX.low,
+        'moderate',
+        TRAFFIC_CONGESTION_HEX.moderate,
+        'heavy',
+        TRAFFIC_CONGESTION_HEX.heavy,
+        'severe',
+        TRAFFIC_CONGESTION_HEX.severe,
+        'unknown',
+        TRAFFIC_CONGESTION_HEX.unknown,
         routeColor,
       ]
     : routeColor;
@@ -126,6 +127,20 @@ export default React.memo(function RouteOverlay({
       shape={geoJSON as GeoJSON.FeatureCollection}
       lineMetrics={false}
     >
+      {/* Draw traveled portion underneath so the active route reads clearly on top */}
+      <MapboxGL.LineLayer
+        id="sr-route-passed"
+        filter={['==', ['get', 'segment'], 'passed']}
+        style={{
+          lineColor: passedColor,
+          lineWidth: Math.max(4, routeWidth - 1),
+          lineOpacity: 0.55,
+          lineBlur: 0.35,
+          lineCap: 'round',
+          lineJoin: 'round',
+        }}
+      />
+
       <MapboxGL.LineLayer
         id="sr-route-glow"
         filter={['==', ['get', 'segment'], 'ahead']}
@@ -137,6 +152,7 @@ export default React.memo(function RouteOverlay({
           lineCap: 'round',
           lineJoin: 'round',
         }}
+        aboveLayerID="sr-route-passed"
       />
 
       <MapboxGL.LineLayer
@@ -163,18 +179,6 @@ export default React.memo(function RouteOverlay({
           lineJoin: 'round',
         }}
         aboveLayerID="sr-route-casing"
-      />
-
-      <MapboxGL.LineLayer
-        id="sr-route-passed"
-        filter={['==', ['get', 'segment'], 'passed']}
-        style={{
-          lineColor: passedColor,
-          lineWidth: Math.max(4, routeWidth - 1),
-          lineOpacity: 0.5,
-          lineCap: 'round',
-          lineJoin: 'round',
-        }}
       />
     </MapboxGL.ShapeSource>
   );

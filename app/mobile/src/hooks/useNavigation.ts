@@ -8,7 +8,20 @@ import { api } from '../api/client';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../contexts/AuthContext';
 import { tripGemsFromDurationMinutes } from '../utils/tripGems';
-import type { ApiUser } from '../types';
+import type { User } from '../types';
+
+function applyTripCompleteProfileToUser(updateUser: (u: Partial<User>) => void, profile: unknown) {
+  if (!profile || typeof profile !== 'object') return;
+  const p = profile as Record<string, unknown>;
+  const patch: Partial<User> = {};
+  if (p.gems != null) patch.gems = Number(p.gems);
+  if (p.level != null) patch.level = Number(p.level);
+  if (p.total_trips != null) patch.totalTrips = Number(p.total_trips);
+  if (p.total_miles != null) patch.totalMiles = Number(p.total_miles);
+  if (p.xp != null) patch.xp = Number(p.xp);
+  if (p.safety_score != null) patch.safetyScore = Number(p.safety_score);
+  if (Object.keys(patch).length) updateUser(patch);
+}
 
 export interface NavigationData {
   origin: Coordinate & { name?: string };
@@ -44,11 +57,15 @@ export function useNavigation(params: {
   drivingMode: DrivingMode;
 }) {
   const { userLocation, speed, heading, drivingMode } = params;
-  const { user, setUserFromApi } = useAuth();
-  const setUserFromApiRef = useRef(setUserFromApi);
+  const { user, updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
+  const updateUserRef = useRef(updateUser);
+  const refreshUserFromServerRef = useRef(refreshUserFromServer);
+  const bumpStatsVersionRef = useRef(bumpStatsVersion);
   useEffect(() => {
-    setUserFromApiRef.current = setUserFromApi;
-  }, [setUserFromApi]);
+    updateUserRef.current = updateUser;
+    refreshUserFromServerRef.current = refreshUserFromServer;
+    bumpStatsVersionRef.current = bumpStatsVersion;
+  }, [updateUser, refreshUserFromServer, bumpStatsVersion]);
 
   const [navigationData, setNavigationData] = useState<NavigationData | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
@@ -280,13 +297,10 @@ export function useNavigation(params: {
           counted: apiCounted,
         };
       });
-      if (apiCounted) {
-        const pr = await api.getProfile();
-        const payload = (pr.data as { data?: Record<string, unknown> } | undefined)?.data ?? pr.data;
-        if (pr.success && payload && typeof payload === 'object') {
-          setUserFromApiRef.current(payload as ApiUser);
-        }
-      }
+      if (!apiCounted) return;
+      applyTripCompleteProfileToUser(updateUserRef.current, d?.profile);
+      await refreshUserFromServerRef.current();
+      bumpStatsVersionRef.current();
     }).catch(() => { /* offline — summary already shown */ });
   }, [navigationData, drivingMode, userLocation, user?.isPremium]);
 

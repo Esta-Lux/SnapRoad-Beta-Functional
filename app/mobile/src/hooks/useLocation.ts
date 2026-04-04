@@ -40,7 +40,16 @@ function smoothHeading(current: number, raw: number): number {
   return result;
 }
 
-export function useLocation(isNavigating = false) {
+export type UseLocationOptions = {
+  /**
+   * When true, tear down GPS / heading subscriptions (e.g. tab blurred).
+   * Keeps last known coordinates in state so UI stays coherent when returning.
+   */
+  paused?: boolean;
+};
+
+export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
+  const paused = opts?.paused ?? false;
   const [state, setState] = useState<LocationState>({
     location: UNKNOWN_LOCATION,
     heading: 0,
@@ -179,14 +188,21 @@ export function useLocation(isNavigating = false) {
   }, [isNavigating]);
 
   useEffect(() => {
-    startWatching();
+    if (paused) {
+      watchRef.current?.remove();
+      watchRef.current = null;
+      headingSubRef.current?.remove();
+      headingSubRef.current = null;
+      return;
+    }
+    void startWatching();
     return () => {
       watchRef.current?.remove();
       watchRef.current = null;
       headingSubRef.current?.remove();
       headingSubRef.current = null;
     };
-  }, [startWatching]);
+  }, [paused, startWatching]);
 
   return state;
 }

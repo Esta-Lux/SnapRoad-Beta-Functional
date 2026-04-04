@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Query, HTTPException, Depends, Request
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Any, Dict
 from datetime import datetime, timedelta, timezone
 import json
 import logging
+import math
 from models.schemas import TripResult, FuelLogCreate
 from middleware.auth import get_current_user, get_current_user_optional
 from pydantic import BaseModel
@@ -472,10 +473,34 @@ def _persist_trip_and_update_profile(
         }).eq("id", user_id).execute()
 
 
+def _read_profile_totals_after_trip(user_id: str) -> Optional[Dict[str, Any]]:
+    """Return authoritative profile counters for mobile to sync after /trips/complete."""
+    if not user_id:
+        return None
+    try:
+        sb = get_supabase()
+        r = sb.table("profiles").select(
+            "gems, xp, total_trips, total_miles, level, safety_score",
+        ).eq("id", user_id).limit(1).execute()
+        if r.data:
+            row = r.data[0]
+            return {
+                "gems": row.get("gems"),
+                "xp": row.get("xp"),
+                "total_trips": row.get("total_trips"),
+                "total_miles": row.get("total_miles"),
+                "level": row.get("level"),
+                "safety_score": row.get("safety_score"),
+            }
+    except Exception as exc:
+        _trips_log.warning("profile totals read after trip failed: %s", exc)
+    return None
+
+
 @router.post("/trips/complete", responses=_503_RESPONSES)
 def complete_trip(body: TripCompleteBody, user: CurrentUser):
     """Persist a completed trip to Supabase and update profile stats."""
-    user_id = user.get("id", "")
+    user_id = str(user.get("user_id") or user.get("id") or "").strip()
     distance = max(0, body.distance_miles)
     if body.duration_seconds < _MIN_TRIP_SECONDS or distance < _MIN_TRIP_MILES:
         return {
@@ -504,17 +529,18 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
         if ENVIRONMENT == "production":
             raise HTTPException(status_code=503, detail="Trip storage unavailable")
 
-    return {
-        "success": True,
-        "data": {
-            "trip_id": trip_id,
-            "counted": True,
-            "gems_earned": gems_earned,
-            "xp_earned": xp_earned,
-            "safety_score": round(safety, 1),
-            "distance_miles": round(distance, 2),
-        },
+    profile_totals = _read_profile_totals_after_trip(user_id)
+    payload = {
+        "trip_id": trip_id,
+        "counted": True,
+        "gems_earned": gems_earned,
+        "xp_earned": xp_earned,
+        "safety_score": round(safety, 1),
+        "distance_miles": round(distance, 2),
     }
+    if profile_totals is not None:
+        payload["profile"] = profile_totals
+    return {"success": True, "data": payload}
 
 
 def _compute_safety_score(
@@ -1089,13 +1115,103 @@ def get_fuel_trends(user: CurrentUser):
         return {"success": True, "data": {"total_gallons": round(total_gallons, 1), "total_spent": round(total_spent, 2), "avg_price_per_gallon": round(avg_price, 2), "entries": len(fuel_logs), "monthly_avg_gallons": round(total_gallons / 3, 1)}}
 
 
+def _haversine_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    rlat1, rlng1, rlat2, rlng2 = map(math.radians, (lat1, lng1, lat2, lng2))
+    dlat = rlat2 - rlat1
+    dlng = rlng2 - rlng1
+    a = math.sin(dlat / 2) ** 2 + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlng / 2) ** 2
+    c = 2 * math.asin(min(1.0, math.sqrt(a)))
+    return 6371.0 * c * 0.621371
+
+
+def _mock_nearby_stations(lat: float, lng: float) -> list[dict]:
+    return [
+        {"name": "Kroger Gas", "price": 3.09, "lat": lat + 0.01, "lng": lng + 0.01, "brand": "Kroger"},
+        {"name": "Sunoco", "price": 3.19, "lat": lat - 0.01, "lng": lng + 0.02, "brand": "Sunoco"},
+        {"name": "Marathon", "price": 3.14, "lat": lat + 0.02, "lng": lng - 0.01, "brand": "Marathon"},
+    ]
+
+
+def _fetch_gasbuddy_stations(lat: float, lng: float) -> list[dict]:
+    try:
+        import httpx
+
+        with httpx.Client(timeout=12.0) as client:
+            r = client.get(
+                "https://www.gasbuddy.com/api/stations/near",
+                params={"lat": lat, "lng": lng, "radius": 5, "limit": 10},
+            )
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        _trips_log.warning("GasBuddy proxy request failed: %s", e)
+        return []
+    raw = data.get("stations") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for s in raw:
+        if not isinstance(s, dict):
+            continue
+        prices = s.get("prices")
+        price = 0.0
+        if isinstance(prices, list) and prices:
+            try:
+                price = float((prices[0] or {}).get("credit_price") or 0)
+            except (TypeError, ValueError):
+                price = 0.0
+        try:
+            slat = float(s.get("lat"))
+            slng = float(s.get("lng"))
+        except (TypeError, ValueError):
+            continue
+        if price <= 0:
+            continue
+        name = str(s.get("name") or "Station")
+        brand = str(s.get("brand") or name)
+        out.append({"name": name, "price": round(price, 3), "lat": slat, "lng": slng, "brand": brand})
+    return out
+
+
+def _stations_to_nearby(stations: list[dict], lat: float, lng: float) -> list[dict]:
+    nearby: list[dict] = []
+    for s in stations:
+        try:
+            d = _haversine_miles(lat, lng, float(s["lat"]), float(s["lng"]))
+        except (TypeError, ValueError, KeyError):
+            d = 0.0
+        nearby.append({
+            "name": s["name"],
+            "address": s.get("brand") or s["name"],
+            "regular": s["price"],
+            "distance_miles": round(d, 2),
+            "lat": s["lat"],
+            "lng": s["lng"],
+        })
+    return nearby
+
+
 @router.get("/fuel/prices")
-def get_fuel_prices(user: CurrentUser, lat: float = 39.9612, lng: float = -82.9988):
+def get_fuel_prices(
+    lat: Annotated[float, Query(description="Latitude")] = 39.9612,
+    lng: Annotated[float, Query(description="Longitude")] = -82.9988,
+):
+    """Public fuel snapshot: tries GasBuddy JSON when reachable; otherwise static demo stations.
+
+    Not used by the mobile map “nearby gas” flow (that uses Places nearby only). Demo prices
+    are placeholders—do not present them as live market data in product UI.
+    """
+    stations = _fetch_gasbuddy_stations(lat, lng)
+    if not stations:
+        stations = _mock_nearby_stations(lat, lng)
+    nearby_stations = _stations_to_nearby(stations, lat, lng)
     return {
         "success": True,
         "data": {
             "prices": FUEL_PRICES,
             "location": {"lat": lat, "lng": lng},
+            "stations": stations,
+            "nearby_stations": nearby_stations,
         },
     }
 

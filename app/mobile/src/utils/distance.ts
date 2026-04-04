@@ -130,8 +130,27 @@ export function remainingDistanceOnPolyline(
   return Math.max(0, remaining);
 }
 
+/** Minimum spacing so duplicate vertices don't break LineString validity. */
+const ROUTE_SPLIT_MIN_M = 1.5;
+
+function dedupeCoordRing(coords: [number, number][]): [number, number][] {
+  if (coords.length < 2) return coords;
+  const out: [number, number][] = [coords[0]];
+  for (let i = 1; i < coords.length; i++) {
+    const prev = out[out.length - 1];
+    const cur = coords[i];
+    if (haversineMeters(prev[1], prev[0], cur[1], cur[0]) >= ROUTE_SPLIT_MIN_M) {
+      out.push(cur);
+    }
+  }
+  return out;
+}
+
 /**
- * Split a route polyline into passed and ahead segments based on user position.
+ * Split a route into "passed" vs "ahead" for map styling (grey trail + active color).
+ * Projects the user onto the closest **segment** (not just the nearest vertex) so the
+ * split point moves smoothly along the polyline — matches {@link remainingDistanceOnPolyline}
+ * and avoids jumps / half-line popping when GPS moves between dense vertices.
  */
 export function splitRouteByNearestPoint(
   pts: Coordinate[],
@@ -140,9 +159,74 @@ export function splitRouteByNearestPoint(
   if (pts.length < 2) {
     return { passed: [], ahead: pts.map((p) => [p.lng, p.lat] as [number, number]), splitIndex: 0 };
   }
-  const { index: bestIdx } = nearestPointOnPolyline(user, pts);
-  const toCoord = (p: Coordinate): [number, number] => [p.lng, p.lat];
-  const passed = pts.slice(0, bestIdx + 1).map(toCoord);
-  const ahead = pts.slice(Math.max(0, bestIdx)).map(toCoord);
-  return { passed, ahead, splitIndex: bestIdx };
+
+  const latScale = 111320;
+  const lngScale = 111320 * Math.cos((user.lat * Math.PI) / 180);
+  const px = user.lng * lngScale;
+  const py = user.lat * latScale;
+
+  let bestDist = Number.POSITIVE_INFINITY;
+  let bestI = 0;
+  let bestT = 0;
+
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const ax = a.lng * lngScale;
+    const ay = a.lat * latScale;
+    const bx = b.lng * lngScale;
+    const by = b.lat * latScale;
+    const abx = bx - ax;
+    const aby = by - ay;
+    const ab2 = abx * abx + aby * aby;
+    const t = ab2 > 1e-10 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / ab2)) : 0;
+    const qx = ax + abx * t;
+    const qy = ay + aby * t;
+    const d = Math.hypot(px - qx, py - qy);
+    if (d < bestDist) {
+      bestDist = d;
+      bestI = i;
+      bestT = t;
+    }
+  }
+
+  const a = pts[bestI];
+  const b = pts[bestI + 1];
+  const split: Coordinate = {
+    lat: a.lat + bestT * (b.lat - a.lat),
+    lng: a.lng + bestT * (b.lng - a.lng),
+  };
+
+  const toPair = (p: Coordinate): [number, number] => [p.lng, p.lat];
+
+  const passed: [number, number][] = [];
+  for (let k = 0; k <= bestI; k++) {
+    passed.push(toPair(pts[k]));
+  }
+  if (haversineMeters(split.lat, split.lng, pts[bestI].lat, pts[bestI].lng) >= ROUTE_SPLIT_MIN_M) {
+    passed.push([split.lng, split.lat]);
+  }
+
+  const ahead: [number, number][] = [];
+  const splitNearNextVertex =
+    haversineMeters(split.lat, split.lng, b.lat, b.lng) < ROUTE_SPLIT_MIN_M;
+  if (splitNearNextVertex && bestI + 1 < pts.length) {
+    for (let k = bestI + 1; k < pts.length; k++) {
+      ahead.push(toPair(pts[k]));
+    }
+  } else {
+    ahead.push([split.lng, split.lat]);
+    for (let k = bestI + 1; k < pts.length; k++) {
+      ahead.push(toPair(pts[k]));
+    }
+  }
+
+  const passedOut = dedupeCoordRing(passed);
+  const aheadOut = dedupeCoordRing(ahead);
+
+  return {
+    passed: passedOut.length >= 2 ? passedOut : [],
+    ahead: aheadOut.length >= 2 ? aheadOut : [],
+    splitIndex: bestI,
+  };
 }

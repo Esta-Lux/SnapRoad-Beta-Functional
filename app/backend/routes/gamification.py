@@ -1,5 +1,6 @@
+import json
 import logging
-from typing import Annotated
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import datetime, timedelta
@@ -146,13 +147,50 @@ def get_xp_config():
     return {"success": True, "data": XP_CONFIG}
 
 
+def _badge_progress_pct(badge: dict, profile: dict, user: dict, earned: bool) -> int:
+    if earned:
+        return 100
+    merged: dict[str, Any] = {**(user or {}), **(profile or {})}
+    rtype = (badge.get("requirement_type") or "miles").lower()
+    req = float(badge.get("requirement") or 1)
+    if req <= 0:
+        return 0
+    if rtype == "miles":
+        cur = float(merged.get("total_miles") or 0)
+    elif rtype == "trips":
+        cur = float(merged.get("total_trips") or 0)
+    elif rtype == "gems":
+        cur = float(merged.get("gems") or 0)
+    elif rtype == "safety":
+        cur = float(merged.get("safety_score") or 0)
+    elif rtype == "streak":
+        cur = float(merged.get("safe_drive_streak") or merged.get("streak") or 0)
+    else:
+        cur = 0.0
+    return int(max(0, min(100, round(100 * cur / req))))
+
+
 # ==================== BADGES ====================
 @router.get("/badges")
 def get_badges(user: CurrentUser):
     user_id = str(user.get("id") or current_user_id)
-    user = _user_state(user_id)
-    earned = set(user.get("badges_earned", []))
-    badges = [{**b, "earned": b["id"] in earned} for b in ALL_BADGES]
+    user_row = _user_state(user_id)
+    profile = {}
+    try:
+        profile = sb_get_profile(user_id) or {}
+    except Exception:
+        profile = {}
+    earned = set(user_row.get("badges_earned", []))
+    badges = []
+    for b in ALL_BADGES:
+        is_earned = b["id"] in earned
+        progress = _badge_progress_pct(b, profile, user_row, is_earned)
+        badges.append({
+            **b,
+            "description": b.get("desc") or "",
+            "earned": is_earned,
+            "progress": progress,
+        })
     return {"success": True, "data": {"badges": badges, "earned_count": len(earned), "total_count": len(ALL_BADGES)}}
 
 
@@ -459,6 +497,15 @@ def get_gem_history(user: CurrentUser):
         return {"success": True, "data": {"current_balance": u.get("gems", 0), "total_earned": 0, "total_spent": 0, "recent_transactions": []}}
 
 
+def _profile_is_premium(profile: dict) -> bool:
+    if not profile:
+        return False
+    if bool(profile.get("is_premium")):
+        return True
+    plan = str(profile.get("plan") or "").lower()
+    return plan in ("premium", "family")
+
+
 # ==================== DRIVING SCORE ====================
 @router.get("/driving-score")
 def get_driving_score(user: CurrentUser):
@@ -468,6 +515,7 @@ def get_driving_score(user: CurrentUser):
         sb = get_supabase()
         profile = sb_get_profile(user_id) or {}
         base_score = int(profile.get("safety_score", 0))
+        is_premium = _profile_is_premium(profile)
 
         trips = sb.table("trips").select("safety_score, hard_braking_events, speeding_events, created_at").eq("profile_id", user_id).order("created_at", desc=True).limit(50).execute()
         rows = trips.data or []
@@ -481,7 +529,7 @@ def get_driving_score(user: CurrentUser):
                 {"id": "turns", "name": "Turn Signals", "score": 0, "trend": "stable", "description": "Signaling before turns"},
                 {"id": "focus", "name": "Focus Time", "score": 0, "trend": "stable", "description": "Minimal phone distractions"},
             ]
-            return {"success": True, "data": {"overall_score": base_score, "metrics": metrics, "orion_tips": [], "last_updated": datetime.now().isoformat(), "no_data": True}}
+            return {"success": True, "data": {"overall_score": base_score, "metrics": metrics, "orion_tips": [], "last_updated": datetime.now().isoformat(), "no_data": True, "premium_insights": is_premium}}
 
         avg_safety = sum(float(r.get("safety_score", 0)) for r in rows) / len(rows)
         avg_braking = sum(int(r.get("hard_braking_events", 0)) for r in rows) / len(rows)
@@ -498,33 +546,99 @@ def get_driving_score(user: CurrentUser):
             {"id": "focus", "name": "Focus Time", "score": int(avg_safety), "trend": "stable", "description": "Minimal phone distractions"},
         ]
         sorted_metrics = sorted(metrics, key=lambda x: x["score"])
-        orion_tips = [{"id": str(i + 1), "metric": m["id"], "tip": tip_templates.get(m["id"], "Keep driving safely!"), "priority": "high" if i == 0 else "medium"} for i, m in enumerate(sorted_metrics[:3])]
+        orion_tips = []
+        if is_premium:
+            orion_tips = [{"id": str(i + 1), "metric": m["id"], "tip": tip_templates.get(m["id"], "Keep driving safely!"), "priority": "high" if i == 0 else "medium"} for i, m in enumerate(sorted_metrics[:3])]
         overall_score = base_score or (sum(m["score"] for m in metrics) // len(metrics))
-        return {"success": True, "data": {"overall_score": overall_score, "metrics": metrics, "orion_tips": orion_tips, "last_updated": datetime.now().isoformat()}}
+        return {"success": True, "data": {"overall_score": overall_score, "metrics": metrics, "orion_tips": orion_tips, "last_updated": datetime.now().isoformat(), "premium_insights": is_premium}}
     except Exception:
         if ENVIRONMENT == "production":
             raise
         u = _user_state(user_id)
         base_score = u.get("safety_score", 85)
         metrics = [{"id": k, "name": k.title(), "score": base_score, "trend": "stable", "description": ""} for k in ("speed", "braking", "acceleration", "following", "turns", "focus")]
-        return {"success": True, "data": {"overall_score": base_score, "metrics": metrics, "orion_tips": [], "last_updated": datetime.now().isoformat()}}
+        return {"success": True, "data": {"overall_score": base_score, "metrics": metrics, "orion_tips": [], "last_updated": datetime.now().isoformat(), "premium_insights": False}}
 
 
-# ==================== WEEKLY RECAP ====================
+def _llm_orion_tracking_commentary(payload: dict) -> Optional[str]:
+    """One-sentence Orion recap from real aggregates; None if LLM unavailable or fails."""
+    client = get_sync_openai_client() if _OpenAI is not None else None
+    if client is None:
+        return None
+    try:
+        response = client.chat.completions.create(
+            model=chat_completion_model(),
+            temperature=0.35,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Orion, SnapRoad's in-car coach. Given ONLY JSON trip aggregates, "
+                        "return strict JSON {\"commentary\": \"...\"} where commentary is ONE short sentence, "
+                        "no quotes inside, encouraging and specific to the numbers (hard braking, speeding events, miles, trips)."
+                    ),
+                },
+                {"role": "user", "content": json.dumps(payload)},
+            ],
+            response_format={"type": "json_object"},
+        )
+        content = (response.choices[0].message.content or "").strip()
+        parsed = json.loads(content) if content else {}
+        c = parsed.get("commentary")
+        if isinstance(c, str) and c.strip():
+            return c.strip()
+    except Exception as exc:
+        logger.warning("orion tracking commentary failed: %s", exc)
+    return None
+
+
+# ==================== WEEKLY RECAP / TRACKING RANGE ====================
 @router.get("/weekly-recap")
-def get_weekly_recap(user: CurrentUser):
+def get_weekly_recap(
+    user: CurrentUser,
+    days: Annotated[int, Query(ge=1, le=90)] = 7,
+    start: Annotated[Optional[str], Query(description="ISO8601 start; use with end")] = None,
+    end: Annotated[Optional[str], Query(description="ISO8601 end")] = None,
+):
     user_id = str(user.get("id") or current_user_id)
     try:
         sb = get_supabase()
         profile = sb_get_profile(user_id) or {}
-        week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+        is_premium = _profile_is_premium(profile)
 
-        trip_res = sb.table("trips").select(
-            "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, created_at"
-        ).eq("profile_id", user_id).gte("created_at", week_ago).execute()
+        if start and end:
+            trip_q = (
+                sb.table("trips")
+                .select(
+                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, created_at, hard_braking_events, speeding_events"
+                )
+                .eq("profile_id", user_id)
+                .gte("created_at", start)
+                .lte("created_at", end)
+            )
+            trip_res = trip_q.execute()
+            redemption_res = (
+                sb.table("redemptions")
+                .select("id")
+                .eq("user_id", user_id)
+                .gte("created_at", start)
+                .lte("created_at", end)
+                .execute()
+            )
+        else:
+            cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+            trip_res = (
+                sb.table("trips")
+                .select(
+                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, created_at, hard_braking_events, speeding_events"
+                )
+                .eq("profile_id", user_id)
+                .gte("created_at", cutoff)
+                .execute()
+            )
+            redemption_res = sb.table("redemptions").select("id").eq("user_id", user_id).gte("created_at", cutoff).execute()
+
         trips = trip_res.data or []
-
-        redemption_res = sb.table("redemptions").select("id").eq("user_id", user_id).gte("created_at", week_ago).execute()
         offers_redeemed = len(redemption_res.data or [])
 
         total_miles = sum(float(t.get("distance_miles", 0)) for t in trips)
@@ -536,11 +650,25 @@ def get_weekly_recap(user: CurrentUser):
 
         best_safety = max(safety_scores) if safety_scores else 0
         longest = max((float(t.get("distance_miles", 0)) for t in trips), default=0)
+        hard_sum = sum(int(t.get("hard_braking_events") or 0) for t in trips)
+        speed_sum = sum(int(t.get("speeding_events") or 0) for t in trips)
         highlights = []
         if best_safety:
             highlights.append(f"Best safety score: {int(best_safety)}")
         if longest:
             highlights.append(f"Longest trip: {round(longest, 1)} miles")
+
+        orion_commentary: Optional[str] = None
+        if is_premium and trips:
+            payload = {
+                "trips": len(trips),
+                "miles_rounded": round(total_miles, 1),
+                "safety_avg": safety_avg,
+                "hard_braking_events_total": hard_sum,
+                "speeding_events_total": speed_sum,
+                "gems_earned": gems_earned,
+            }
+            orion_commentary = _llm_orion_tracking_commentary(payload)
 
         stats = {
             "total_trips": len(trips),
@@ -552,13 +680,44 @@ def get_weekly_recap(user: CurrentUser):
             "offers_redeemed": offers_redeemed,
             "streak_days": int(profile.get("safe_drive_streak", 0)),
             "highlights": highlights,
+            "range_days": days if not (start and end) else None,
+            "orion_commentary": orion_commentary,
+            "premium_insights": is_premium,
+            "behavior": {"hard_braking_events_total": hard_sum, "speeding_events_total": speed_sum},
         }
         return {"success": True, "data": stats}
     except Exception:
         if ENVIRONMENT == "production":
             raise
         u = _user_state(user_id)
-        return {"success": True, "data": {"total_trips": 0, "total_miles": 0, "total_time_minutes": 0, "gems_earned": 0, "xp_earned": 0, "safety_score_avg": u.get("safety_score", 0), "offers_redeemed": 0, "streak_days": u.get("safe_drive_streak", 0), "highlights": []}}
+        return {
+            "success": True,
+            "data": {
+                "total_trips": 0,
+                "total_miles": 0,
+                "total_time_minutes": 0,
+                "gems_earned": 0,
+                "xp_earned": 0,
+                "safety_score_avg": u.get("safety_score", 0),
+                "offers_redeemed": 0,
+                "streak_days": u.get("safe_drive_streak", 0),
+                "highlights": [],
+                "orion_commentary": None,
+                "premium_insights": False,
+                "behavior": {"hard_braking_events_total": 0, "speeding_events_total": 0},
+            },
+        }
+
+
+@router.get("/profile/tracking-summary")
+def get_tracking_summary(
+    user: CurrentUser,
+    days: Annotated[int, Query(ge=1, le=90)] = 7,
+    start: Annotated[Optional[str], Query()] = None,
+    end: Annotated[Optional[str], Query()] = None,
+):
+    """Alias for range-aware recap stats (same payload as /api/weekly-recap)."""
+    return get_weekly_recap(user, days=days, start=start, end=end)
 
 
 if ENVIRONMENT == "production":

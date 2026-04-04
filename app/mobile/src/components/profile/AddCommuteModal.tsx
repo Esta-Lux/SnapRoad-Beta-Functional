@@ -110,12 +110,17 @@ export default function AddCommuteModal({
   };
 
   return (
-    <Modal visible={visible} onClose={onClose}>
-      <Text style={[styles.title, { color: text }]}>Commute alert</Text>
-      <Text style={[styles.sub, { color: sub }]}>
-        Starting point uses your current GPS. Pick a saved destination, leave-by time, and days.
-      </Text>
-      <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <Modal visible={visible} onClose={onClose} scrollable={false}>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 8 }}
+      >
+        <Text style={[styles.title, { color: text }]}>Commute alert</Text>
+        <Text style={[styles.sub, { color: sub }]}>
+          Starting point uses your current GPS. Pick a saved destination, leave-by time, and days.
+        </Text>
         <Text style={[styles.label, { color: sub }]}>Name</Text>
         <TextInput
           value={name}
@@ -181,14 +186,14 @@ export default function AddCommuteModal({
             </TouchableOpacity>
           ))}
         </View>
+        <TouchableOpacity
+          style={[styles.saveBtn, { backgroundColor: primary, opacity: saving ? 0.7 : 1, marginTop: 8 }]}
+          onPress={() => void submit()}
+          disabled={saving}
+        >
+          <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save commute'}</Text>
+        </TouchableOpacity>
       </ScrollView>
-      <TouchableOpacity
-        style={[styles.saveBtn, { backgroundColor: primary, opacity: saving ? 0.7 : 1 }]}
-        onPress={() => void submit()}
-        disabled={saving}
-      >
-        <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save commute'}</Text>
-      </TouchableOpacity>
     </Modal>
   );
 }

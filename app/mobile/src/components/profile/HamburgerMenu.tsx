@@ -1,7 +1,9 @@
 import React from 'react';
 import {
   Alert,
+  InteractionManager,
   Modal,
+  Platform,
   Share,
   StyleSheet,
   Text,
@@ -15,9 +17,16 @@ import { Ionicons } from '@expo/vector-icons';
 const DEFAULT_SHARE_URL =
   (Constants.expoConfig?.extra as { snaproadSiteUrl?: string } | undefined)?.snaproadSiteUrl ?? 'https://snaproad.app';
 
+/** Let the menu Modal dismiss before opening another modal, navigating, or the system share sheet (avoids iOS freezes). */
+function runAfterMenuClose(onClose: () => void, action: () => void, delayMs = 220) {
+  onClose();
+  InteractionManager.runAfterInteractions(() => {
+    setTimeout(action, delayMs);
+  });
+}
+
 export type HamburgerMenuTarget =
   | 'Social'
-  | 'SnapRace'
   | 'Convoy'
   | 'TripAnalytics'
   | 'RouteHistory'
@@ -48,53 +57,56 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
       icon: 'people-outline',
       label: 'Social',
       accent: '#8B5CF6',
-      action: () => { onClose(); onNavigate('Social'); },
-    },
-    {
-      icon: 'flag-outline',
-      label: 'SnapRace',
-      accent: '#EF4444',
-      action: () => { onClose(); onNavigate('SnapRace'); },
+      action: () => runAfterMenuClose(onClose, () => onNavigate('Social')),
     },
     {
       icon: 'car-sport-outline',
       label: 'Convoy',
       accent: '#F59E0B',
-      action: () => { onClose(); onNavigate('Convoy'); },
+      action: () => runAfterMenuClose(onClose, () => onNavigate('Convoy')),
     },
     {
       icon: 'analytics-outline',
       label: 'Trip Analytics',
-      action: () => { onClose(); onNavigate('TripAnalytics'); },
+      action: () => runAfterMenuClose(onClose, () => onNavigate('TripAnalytics')),
     },
     {
       icon: 'time-outline',
       label: 'Route History',
-      action: () => { onClose(); onNavigate('RouteHistory'); },
+      action: () => runAfterMenuClose(onClose, () => onNavigate('RouteHistory')),
     },
     {
       icon: 'share-social-outline',
       label: 'Share SnapRoad',
       action: () => {
-        onClose();
-        const msg =
-          `Check out SnapRoad — the AI driving companion for safer, more rewarding drives.\n${DEFAULT_SHARE_URL}`;
-        // Defer until the menu modal finishes closing — Share + Modal on iOS can hang otherwise.
-        setTimeout(async () => {
-          try {
-            await Share.share({ title: 'SnapRoad', message: msg });
-          } catch {
-            Alert.alert('Share', 'Could not open the share sheet. Try again in a moment.');
-          }
-        }, 350);
+        runAfterMenuClose(
+          onClose,
+          () => {
+            void (async () => {
+              try {
+                const msg =
+                  'Check out SnapRoad — the AI driving companion for safer, more rewarding drives.';
+                const sharePayload =
+                  Platform.OS === 'ios'
+                    ? { title: 'SnapRoad', message: msg, url: DEFAULT_SHARE_URL }
+                    : { title: 'SnapRoad', message: `${msg} ${DEFAULT_SHARE_URL}` };
+                await Share.share(sharePayload);
+              } catch {
+                Alert.alert('Share', 'Could not open the share sheet. Try again in a moment.');
+              }
+            })();
+          },
+          320,
+        );
       },
     },
     {
       icon: 'information-circle-outline',
       label: 'About',
       action: () => {
-        onClose();
-        Alert.alert('SnapRoad', 'Version 1.0.0\n\n\u00A9 2025 SnapRoad Inc.\nAll rights reserved.');
+        runAfterMenuClose(onClose, () => {
+          Alert.alert('SnapRoad', 'Version 1.0.0\n\n\u00A9 2025 SnapRoad Inc.\nAll rights reserved.');
+        });
       },
     },
   ];

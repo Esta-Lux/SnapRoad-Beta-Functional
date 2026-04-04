@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useRoute, useNavigation, useIsFocused } from '@react-navigation/native';
 import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -50,9 +50,10 @@ export type RewardsMainParams = {
 export default function RewardsScreen() {
   const route = useRoute();
   const navigation = useNavigation();
+  const rewardsFocused = useIsFocused();
   const { colors, isLight, shadow } = useTheme();
-  const { user, updateUser } = useAuth();
-  const { location } = useLocation();
+  const { user, updateUser, statsVersion } = useAuth();
+  const { location } = useLocation(false, { paused: !rewardsFocused });
   const insets = useSafeAreaInsets();
   const bg = colors.background;
   const cardBg = colors.card;
@@ -268,6 +269,12 @@ export default function RewardsScreen() {
       void loadFull('silent', location.lat, location.lng);
     }, [loadFull, location.lat, location.lng]),
   );
+
+  useEffect(() => {
+    if (!statsVersion) return;
+    if (!rewardsBootstrapped.current) return;
+    void loadFull('silent', location.lat, location.lng);
+  }, [statsVersion, loadFull, location.lat, location.lng]);
 
   const earnedBadges = badges.filter((b) => b.earned).length;
   const multiplier = user?.isPremium ? '2x' : '1x';

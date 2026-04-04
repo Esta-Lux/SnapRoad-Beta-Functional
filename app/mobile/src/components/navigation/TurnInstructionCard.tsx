@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import Animated, {
   FadeIn,
@@ -14,37 +14,68 @@ import { Ionicons } from '@expo/vector-icons';
 import type { DrivingMode } from '../../types';
 import type { ModeConfig } from '../../constants/modes';
 import type { TurnCardState } from '../../navigation/turnCardModel';
+import type { DirectionsStep } from '../../lib/directions';
+import { getBannerThenLine, getLaneData } from '../../navigation/bannerInstructions';
 import LaneGuide from './LaneGuide';
 
-function maneuverIcon(
-  maneuver: string | undefined,
-  color: string,
-  size: number,
-): React.ReactElement {
-  const m = maneuver ?? 'straight';
+function normalizeModifier(mod: string | undefined, maneuverKey: string): string {
+  const m = (mod || maneuverKey || '').toLowerCase().replace(/-/g, ' ');
+  return m;
+}
+
+function maneuverIconLegacy(maneuver: string | undefined, color: string, size: number): React.ReactElement {
+  const m = (maneuver ?? 'straight').toLowerCase();
   if (m === 'arrive') return <Ionicons name="flag" size={size} color={color} />;
   if (m === 'depart') return <Ionicons name="navigate" size={size} color={color} />;
-  if (m === 'u-turn') return <Ionicons name="return-up-back-outline" size={size} color={color} />;
+  if (m === 'u-turn' || m === 'uturn') return <Ionicons name="return-up-back-outline" size={size} color={color} />;
   if (m === 'roundabout') return <Ionicons name="sync-outline" size={size} color={color} />;
   if (m === 'merge') return <Ionicons name="git-merge-outline" size={size} color={color} />;
-  if (m.includes('sharp-left')) return <Ionicons name="arrow-undo" size={size} color={color} />;
-  if (m.includes('sharp-right')) return <Ionicons name="arrow-redo" size={size} color={color} />;
+  if (m.includes('sharp') && m.includes('left')) return <Ionicons name="arrow-undo" size={size} color={color} />;
+  if (m.includes('sharp') && m.includes('right')) return <Ionicons name="arrow-redo" size={size} color={color} />;
   if (m.includes('left')) return <Ionicons name="arrow-back" size={size} color={color} />;
   if (m.includes('right')) return <Ionicons name="arrow-forward" size={size} color={color} />;
   return <Ionicons name="arrow-up" size={size} color={color} />;
 }
 
+function getBannerTurnIcon(
+  step: DirectionsStep | null | undefined,
+  maneuverForIcon: string,
+  color: string,
+  sz: number,
+): React.ReactElement {
+  const banner = step?.bannerInstructions?.[0];
+  const primary = banner?.primary;
+  const type = (primary?.type || '').toLowerCase();
+  const modifier = normalizeModifier(primary?.modifier, maneuverForIcon);
+
+  if (type === 'arrive') return <Ionicons name="flag" size={sz} color={color} />;
+  if (type === 'depart') return <Ionicons name="navigate" size={sz} color={color} />;
+  if (type === 'roundabout' || type === 'rotary') return <Ionicons name="sync-outline" size={sz} color={color} />;
+  if (type === 'merge') return <Ionicons name="git-merge-outline" size={sz} color={color} />;
+
+  if (modifier === 'uturn' || modifier === 'u turn') {
+    return <Ionicons name="return-up-back-outline" size={sz} color={color} />;
+  }
+  if (modifier === 'sharp left') return <Ionicons name="arrow-undo" size={sz} color={color} />;
+  if (modifier === 'left') return <Ionicons name="arrow-back" size={sz} color={color} />;
+  if (modifier === 'slight left') {
+    return <Ionicons name="arrow-up-outline" size={sz} color={color} style={{ transform: [{ rotate: '-35deg' }] }} />;
+  }
+  if (modifier === 'sharp right') return <Ionicons name="arrow-redo" size={sz} color={color} />;
+  if (modifier === 'right') return <Ionicons name="arrow-forward" size={sz} color={color} />;
+  if (modifier === 'slight right') {
+    return <Ionicons name="arrow-up-outline" size={sz} color={color} style={{ transform: [{ rotate: '35deg' }] }} />;
+  }
+
+  return maneuverIconLegacy(maneuverForIcon, color, sz);
+}
+
 const DENSITY: Record<
   DrivingMode,
   {
-    iconBox: number;
-    iconRadius: number;
-    iconGlyph: number;
     gradPadH: number;
     gradPadV: number;
     gradPadB: number;
-    mainSize: number;
-    secondSize: number;
     thenOpacity: number;
     borderW: number;
     enterMs: number;
@@ -52,43 +83,28 @@ const DENSITY: Record<
   }
 > = {
   calm: {
-    iconBox: 46,
-    iconRadius: 15,
-    iconGlyph: 26,
     gradPadH: 16,
     gradPadV: 14,
     gradPadB: 12,
-    mainSize: 17,
-    secondSize: 13,
     thenOpacity: 0.72,
     borderW: StyleSheet.hairlineWidth * 2,
     enterMs: 480,
     distScale: 0.94,
   },
   adaptive: {
-    iconBox: 44,
-    iconRadius: 14,
-    iconGlyph: 25,
     gradPadH: 15,
     gradPadV: 12,
     gradPadB: 10,
-    mainSize: 18,
-    secondSize: 13,
-    thenOpacity: 0.7,
+    thenOpacity: 0.72,
     borderW: StyleSheet.hairlineWidth * 2,
     enterMs: 380,
     distScale: 1,
   },
   sport: {
-    iconBox: 40,
-    iconRadius: 12,
-    iconGlyph: 24,
     gradPadH: 14,
     gradPadV: 10,
     gradPadB: 9,
-    mainSize: 17,
-    secondSize: 12,
-    thenOpacity: 0.64,
+    thenOpacity: 0.68,
     borderW: 1,
     enterMs: 260,
     distScale: 1.05,
@@ -106,11 +122,12 @@ export type TurnInstructionCardProps = {
   maneuverForIcon: string;
   isMuted: boolean;
   onMutePress: () => void;
+  /** Fallback lanes JSON when banner has no lane components */
   lanesJson?: string;
-  /** Rare: highway shield / long-name disambiguation */
+  /** Current step for banner / voice / lane banner data */
+  step?: DirectionsStep | null;
   roadDisambiguationLabel?: string | null;
   isSportBorder: boolean;
-  /** Highway / urgent contexts — slightly larger distance + icon */
   speedMph?: number;
 };
 
@@ -126,6 +143,7 @@ export default React.memo(function TurnInstructionCard({
   isMuted,
   onMutePress,
   lanesJson,
+  step,
   roadDisambiguationLabel,
   isSportBorder,
   speedMph = 0,
@@ -136,15 +154,23 @@ export default React.memo(function TurnInstructionCard({
   const tcTextColor = modeConfig.turnCardTextColor;
   const d = DENSITY[mode];
 
-  const distScale = useSharedValue(1);
+  const primaryDisplay = useMemo(() => {
+    const bannerText = step?.bannerInstructions?.[0]?.primary?.text?.trim();
+    if (bannerText) return bannerText;
+    return primaryInstruction;
+  }, [step, primaryInstruction]);
+
+  const effectiveLanes = useMemo(() => getLaneData(step) ?? lanesJson, [step, lanesJson]);
+
+  const distScaleAnim = useSharedValue(1);
   const textOpacity = useSharedValue(1);
   const prevStateRef = useRef<TurnCardState | null>(null);
 
   useEffect(() => {
     const prev = prevStateRef.current;
     const targetScale =
-      state === 'active' ? 1.08 :
-      state === 'preview' ? 0.96 :
+      state === 'active' ? 1.06 :
+      state === 'preview' ? 0.97 :
       1;
     const spring =
       mode === 'sport'
@@ -152,7 +178,7 @@ export default React.memo(function TurnInstructionCard({
         : mode === 'calm'
           ? { damping: 22, stiffness: 200, mass: 0.95 }
           : { damping: 19, stiffness: 260, mass: 0.9 };
-    distScale.value = withSpring(targetScale, spring);
+    distScaleAnim.value = withSpring(targetScale, spring);
 
     if (prev === 'preview' && state === 'active') {
       textOpacity.value = withSequence(
@@ -166,26 +192,30 @@ export default React.memo(function TurnInstructionCard({
   }, [state, mode]);
 
   const distAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: distScale.value }],
+    transform: [{ scale: distScaleAnim.value }],
   }));
 
   const textAnimatedStyle = useAnimatedStyle(() => ({
     opacity: textOpacity.value,
   }));
 
-  const speedBoost = speedMph > 58 && state !== 'cruise' && state !== 'confirm' ? 1.07 : 1;
-  const laneBoost = lanesJson && (state === 'active' || state === 'preview') ? 1.06 : 1;
+  const speedBoost = speedMph > 58 && state !== 'cruise' && state !== 'confirm' ? 1.05 : 1;
+  const laneBoost = effectiveLanes && (state === 'active' || state === 'preview') ? 1.04 : 1;
 
-  const distFont = Math.round(
-    modeConfig.distanceFontSize * (state === 'active' ? 1.05 : 1) * d.distScale * speedBoost,
-  );
-
+  const distFont = Math.round(42 * (state === 'active' ? 1.04 : 1) * d.distScale * speedBoost);
   const emphasizeArrow = state === 'active' || state === 'preview';
-  const iconBox = Math.round(d.iconBox * (emphasizeArrow ? 1 : 0.92) * laneBoost * speedBoost);
-  const iconGlyph = Math.round(d.iconGlyph * (emphasizeArrow ? 1 : 0.9) * laneBoost * speedBoost);
-  const showSecond = !!secondaryInstruction && (state === 'preview' || state === 'confirm');
+  const iconBox = Math.round((emphasizeArrow ? 68 : 62) * laneBoost * speedBoost);
+  const iconRadius = emphasizeArrow ? 18 : 16;
+  const iconGlyph = Math.round(34 * (emphasizeArrow ? 1 : 0.92) * laneBoost);
+
+  const bannerThen = getBannerThenLine(step);
+  const showThenRow =
+    !!bannerThen ||
+    (!!secondaryInstruction && (state === 'preview' || state === 'confirm' || state === 'active'));
+  const thenText = bannerThen || secondaryInstruction;
 
   const fadeMs = d.enterMs;
+  const hasBannerPrimary = !!step?.bannerInstructions?.[0]?.primary;
 
   return (
     <Animated.View entering={FadeIn.duration(fadeMs)} style={styles.wrap}>
@@ -220,7 +250,7 @@ export default React.memo(function TurnInstructionCard({
           <Animated.View
             style={[
               styles.distCol,
-              { minWidth: state === 'cruise' ? 52 : 56 },
+              { minWidth: state === 'cruise' ? 56 : 60 },
               distAnimatedStyle,
             ]}
           >
@@ -235,18 +265,20 @@ export default React.memo(function TurnInstructionCard({
 
           <View
             style={[
-              styles.iconBox,
+              styles.iconBoxOuter,
               {
                 width: iconBox,
                 height: iconBox,
-                borderRadius: d.iconRadius,
+                borderRadius: iconRadius,
                 backgroundColor: modeConfig.turnCardIconBg,
-                borderWidth: emphasizeArrow ? 1.5 : 1,
-                borderColor: emphasizeArrow ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.22)',
+                borderWidth: emphasizeArrow ? 2 : 1.5,
+                borderColor: emphasizeArrow ? 'rgba(255,255,255,0.34)' : 'rgba(255,255,255,0.22)',
               },
             ]}
           >
-            {maneuverIcon(maneuverForIcon, tcTextColor, iconGlyph)}
+            {hasBannerPrimary
+              ? getBannerTurnIcon(step, maneuverForIcon, tcTextColor, iconGlyph)
+              : maneuverIconLegacy(maneuverForIcon, tcTextColor, iconGlyph)}
           </View>
 
           <Animated.View style={[styles.textCol, textAnimatedStyle]}>
@@ -255,32 +287,36 @@ export default React.memo(function TurnInstructionCard({
                 styles.primary,
                 {
                   color: tcTextColor,
-                  fontSize: d.mainSize,
                   fontWeight: state === 'active' ? '800' : '700',
                 },
               ]}
-              numberOfLines={state === 'cruise' ? 2 : 3}
+              numberOfLines={state === 'cruise' ? 2 : 2}
             >
-              {primaryInstruction}
+              {primaryDisplay}
             </Text>
-            {showSecond && (
+            {thenText && showThenRow && state !== 'cruise' ? (
               <View style={styles.thenRow}>
-                <Ionicons name="return-down-forward-outline" size={11} color={tcTextColor} style={{ opacity: d.thenOpacity }} />
+                <Ionicons
+                  name="return-down-forward-outline"
+                  size={12}
+                  color={tcTextColor}
+                  style={{ opacity: d.thenOpacity }}
+                />
                 <Text
                   style={[
                     styles.secondary,
                     {
                       color: tcTextColor,
-                      fontSize: d.secondSize,
                       opacity: d.thenOpacity,
                     },
                   ]}
-                  numberOfLines={2}
+                  numberOfLines={1}
                 >
-                  {secondaryInstruction}
+                  {' '}
+                  {thenText}
                 </Text>
               </View>
-            )}
+            ) : null}
           </Animated.View>
 
           <TouchableOpacity
@@ -292,9 +328,9 @@ export default React.memo(function TurnInstructionCard({
           </TouchableOpacity>
         </View>
 
-        {lanesJson ? (
-          <View style={{ marginTop: 8 }}>
-            <LaneGuide lanes={lanesJson} activeColor="#ffffff" inactiveColor="rgba(255,255,255,0.25)" />
+        {effectiveLanes ? (
+          <View style={{ marginTop: 6 }}>
+            <LaneGuide lanes={effectiveLanes} activeColor="#ffffff" inactiveColor="rgba(255,255,255,0.28)" />
           </View>
         ) : null}
 
@@ -323,13 +359,19 @@ const styles = StyleSheet.create({
   grad: { overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center' },
   distCol: { alignItems: 'center', flexShrink: 0, marginRight: 4 },
-  distVal: { fontWeight: '900', letterSpacing: -1.2 },
-  distUnit: { fontSize: 11, fontWeight: '700', marginTop: -2, textTransform: 'uppercase', letterSpacing: 0.45 },
-  iconBox: { justifyContent: 'center', alignItems: 'center', marginHorizontal: 10, flexShrink: 0 },
+  distVal: { fontWeight: '900', letterSpacing: -1.8, lineHeight: 44 },
+  distUnit: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: -2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  iconBoxOuter: { justifyContent: 'center', alignItems: 'center', marginHorizontal: 14, flexShrink: 0 },
   textCol: { flex: 1, minWidth: 0 },
-  primary: { letterSpacing: -0.25, lineHeight: 22 },
-  thenRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 5, gap: 4 },
-  secondary: { flex: 1, fontWeight: '600', lineHeight: 17 },
+  primary: { fontSize: 22, letterSpacing: -0.3, lineHeight: 28 },
+  thenRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 2 },
+  secondary: { flex: 1, fontSize: 14, fontWeight: '700', lineHeight: 18 },
   mute: { paddingLeft: 8, paddingTop: 2, flexShrink: 0 },
   disambig: {
     flexDirection: 'row',

@@ -11,12 +11,15 @@ interface Props {
   lanes?: string;
   activeColor?: string;
   inactiveColor?: string;
+  /** Arrow glyph size (default 30). */
+  arrowSize?: number;
 }
 
 export default function LaneGuide({
   lanes,
   activeColor = '#ffffff',
   inactiveColor = 'rgba(255,255,255,0.25)',
+  arrowSize = 30,
 }: Props) {
   if (!lanes) return null;
 
@@ -38,7 +41,7 @@ export default function LaneGuide({
           valid={lane.valid}
           activeColor={activeColor}
           inactiveColor={inactiveColor}
-          size={26}
+          size={arrowSize}
         />
       ))}
     </View>
@@ -50,10 +53,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    marginTop: 4,
+    gap: 8,
+    paddingVertical: 10,
+    marginTop: 6,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.15)',
+    borderTopColor: 'rgba(255,255,255,0.18)',
   },
 });

@@ -121,6 +121,9 @@ def _assert_partner_resource_owner(
     return result.data[0]
 
 
+# SECURITY: Partner-scoped mutations must resolve `owned_partner_id` from the JWT (and/or
+# `_assert_partner_resource_owner` for row-level resources) before any write. New endpoints must follow this.
+
 # ==================== PARTNER PLANS ====================
 @router.get("/partner/plans")
 def get_partner_plans():

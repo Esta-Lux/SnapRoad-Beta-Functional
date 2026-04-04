@@ -1,5 +1,4 @@
 """Production saved commute routes (A→B) with scheduled alert dispatch."""
-from __future__ import annotations
 
 import os
 import uuid
@@ -81,7 +80,11 @@ def list_commute_routes(request: Request, user: dict = Depends(get_current_user)
 
 @router.post("")
 @limiter.limit("20/minute")
-def create_commute_route(request: Request, body: CommuteRouteCreate, user: dict = Depends(get_current_user)):
+def create_commute_route(
+    request: Request,
+    body: CommuteRouteCreate,
+    user: dict = Depends(get_current_user),
+):
     uid = user["id"]
     premium = _is_premium(user)
     limit = PREMIUM_LIMIT if premium else FREE_LIMIT

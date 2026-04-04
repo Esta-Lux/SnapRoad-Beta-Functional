@@ -21,7 +21,12 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useMapLayers } from '../hooks/useMapLayers';
 import { DRIVING_MODES } from '../constants/modes';
-import { forwardGeocode, reverseGeocode, type GeocodeResult } from '../lib/directions';
+import {
+  forwardGeocode,
+  prepareMapSearchQuery,
+  reverseGeocode,
+  type GeocodeResult,
+} from '../lib/directions';
 import RouteOverlay from '../components/map/RouteOverlay';
 import OfferMarkers from '../components/map/OfferMarkers';
 import ReportMarkers from '../components/map/ReportMarkers';
@@ -45,6 +50,9 @@ import ManeuverHighlightLayers from '../components/map/ManeuverHighlightLayers';
 import { getDistanceToUpcomingManeuverMeters } from '../navigation/routeGeometry';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
+import { getPrimaryBannerText } from '../navigation/bannerInstructions';
+import { isLiveShareFresh } from '../lib/friendPresence';
+import type { NavigateToFriendParams } from '../types';
 import {
   formatTurnDistanceForCard,
   resolveTurnCardState,
@@ -59,7 +67,6 @@ import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
 import GemOverlay from '../components/gamification/GemOverlay';
 import TripShare from '../components/gamification/TripShare';
 import HamburgerMenu from '../components/profile/HamburgerMenu';
-import SnapRaceMode from '../components/social/SnapRaceMode';
 import ConvoyMode from '../components/social/ConvoyMode';
 // Crash detection hook removed (no SOS backend); friend locations handled inline via Supabase realtime
 import { formatDistance, haversineMeters } from '../utils/distance';
@@ -70,7 +77,7 @@ import OrionChat from '../components/orion/OrionChat';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigatingState } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
-import { useNavigation as useRNNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import { storage } from '../utils/storage';
 import { supabase } from '../lib/supabase';
 import type { DrivingMode, Incident, SavedLocation, Offer, FriendLocation } from '../types';
@@ -202,8 +209,12 @@ type CategoryExploreState = {
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const rnNav = useRNNavigation();
+  const mapTabFocused = useIsFocused();
+  const { isNavigating: ctxNavigating, setIsNavigating: setNavCtx } = useNavigatingState();
   const [isNavActive, setIsNavActive] = useState(false);
-  const { location, heading, speed, isLocating, permissionDenied } = useLocation(isNavActive);
+  const { location, heading, speed, isLocating, permissionDenied } = useLocation(isNavActive, {
+    paused: !mapTabFocused && !ctxNavigating,
+  });
   const { isLight, colors } = useTheme();
   const route = useRoute<any>();
   const { user, updateUser } = useAuth();
@@ -214,6 +225,12 @@ export default function MapScreen() {
 
   // ── Navigation hook ──
   const nav = useNav({ userLocation: location, speed, heading, drivingMode });
+  const navFetchRef = useRef(nav.fetchDirections);
+  const navSetDestRef = useRef(nav.setSelectedDestination);
+  useEffect(() => {
+    navFetchRef.current = nav.fetchDirections;
+    navSetDestRef.current = nav.setSelectedDestination;
+  }, [nav.fetchDirections, nav.setSelectedDestination]);
 
   // Sync nav.isNavigating → useLocation accuracy
   useEffect(() => { setIsNavActive(nav.isNavigating); }, [nav.isNavigating]);
@@ -274,6 +291,9 @@ export default function MapScreen() {
   const startNavTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigationTripIdRef = useRef<string>('');
   const lastLivePublishRef = useRef(0);
+  const [ephemeralTurnHint, setEphemeralTurnHint] = useState<string | null>(null);
+  const ephemeralHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceHintFiredStepRef = useRef<number>(-1);
 
   // ── Map style ──
   const [styleOverride, setStyleOverride] = useState(0);
@@ -284,6 +304,21 @@ export default function MapScreen() {
   const [activeChip, setActiveChip] = useState<string>('favorites');
   const [nearbyOffers, setNearbyOffers] = useState<Offer[]>([]);
   const [friendLocations, setFriendLocations] = useState<FriendLocation[]>([]);
+  /** Live-follow: reroutes when friend moves (throttled). Trip/gems still use normal nav completion rules — moving targets may behave oddly. */
+  const [friendFollowSession, setFriendFollowSession] = useState<{
+    friendId: string;
+    name: string;
+    mode: 'live' | 'last_known';
+    startedLive: boolean;
+  } | null>(null);
+  const friendFollowLastDestRef = useRef<{ lat: number; lng: number } | null>(null);
+  const friendFollowLastRerouteRef = useRef(0);
+  const friendFollowRerouteBusyRef = useRef(false);
+  const friendFollowSessionRef = useRef<typeof friendFollowSession>(null);
+  useEffect(() => {
+    friendFollowSessionRef.current = friendFollowSession;
+  }, [friendFollowSession]);
+
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<{ name: string; address?: string; category?: string; maki?: string; lat: number; lng: number } | null>(null);
@@ -291,7 +326,6 @@ export default function MapScreen() {
   const handledRedeemRouteRef = useRef<string | null>(null);
   const [showOrion, setShowOrion] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const [showSnapRace, setShowSnapRace] = useState(false);
   const [showConvoy, setShowConvoy] = useState(false);
   const [currentAddress, setCurrentAddress] = useState<string>('');
   const [recentSearches, setRecentSearches] = useState<GeocodeResult[]>([]);
@@ -330,7 +364,6 @@ export default function MapScreen() {
   const hasTallVehicle = typeof vehicleHeight === 'number' && vehicleHeight > 0;
 
   // ── Sync nav state to tab bar ──
-  const { setIsNavigating: setNavCtx } = useNavigatingState();
   useEffect(() => { setNavCtx(nav.isNavigating); }, [nav.isNavigating, setNavCtx]);
 
   // ─── Derived values ────────────────────────────────────────────────────────
@@ -408,6 +441,15 @@ export default function MapScreen() {
     return { lat: location.lat, lng: location.lng };
   }, [placeCardLocGridLat, placeCardLocGridLng]);
 
+  /** Stable object for PlaceDetailSheet so effects are not keyed off new references each render. */
+  const placeDetailSummary = useMemo(
+    () =>
+      selectedPlace
+        ? { name: selectedPlace.name, lat: selectedPlace.lat, lng: selectedPlace.lng }
+        : undefined,
+    [selectedPlace?.name, selectedPlace?.lat, selectedPlace?.lng],
+  );
+
   const stableCenterRef = useRef<[number, number]>([location.lng, location.lat]);
   const [stableCenter, setStableCenter] = useState<[number, number]>([location.lng, location.lat]);
   const headingRef = useRef(heading);
@@ -423,16 +465,16 @@ export default function MapScreen() {
     }
   }, [location.lat, location.lng]);
 
-  // Compass mode: smooth real-time heading follow at ~12fps
+  // Compass mode: heading follow (~8fps) — lighter than 12fps+ for battery/GPU while staying smooth
   useEffect(() => {
     if (!compassMode || nav.isNavigating || isExploring) return;
     const id = setInterval(() => {
       cameraRef.current?.setCamera({
         heading: headingRef.current,
-        animationDuration: 80,
+        animationDuration: 120,
         animationMode: 'easeTo',
       });
-    }, 80);
+    }, 120);
     return () => clearInterval(id);
   }, [compassMode, nav.isNavigating, isExploring]);
 
@@ -711,6 +753,7 @@ export default function MapScreen() {
               isNavigating: typeof payload.new.is_navigating === 'boolean' ? payload.new.is_navigating : f.isNavigating,
               destinationName: payload.new.destination_name ?? f.destinationName,
               batteryPct: payload.new.battery_pct ?? f.batteryPct,
+              lastUpdated: typeof payload.new.last_updated === 'string' ? payload.new.last_updated : f.lastUpdated,
             }
             : f
         ));
@@ -917,6 +960,22 @@ export default function MapScreen() {
 
   // ─── Callbacks ─────────────────────────────────────────────────────────────
 
+  const sortGeocodeByProximity = useCallback((rows: GeocodeResult[], loc: { lat: number; lng: number }) => {
+    const hasLoc = Math.abs(loc.lat) > 1e-5 || Math.abs(loc.lng) > 1e-5;
+    if (!hasLoc) return rows;
+    return [...rows].sort((a, b) => {
+      const da =
+        a.lat !== 0 && a.lng !== 0
+          ? haversineMeters(loc.lat, loc.lng, a.lat, a.lng)
+          : Number.POSITIVE_INFINITY;
+      const db =
+        b.lat !== 0 && b.lng !== 0
+          ? haversineMeters(loc.lat, loc.lng, b.lat, b.lng)
+          : Number.POSITIVE_INFINITY;
+      return da - db;
+    });
+  }, []);
+
   const handleSearchChange = useCallback((text: string) => {
     setSearchQuery(text);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -925,38 +984,50 @@ export default function MapScreen() {
     const gen = ++searchGenRef.current;
     searchTimerRef.current = setTimeout(async () => {
       const loc = locationRef.current;
-      const biasQs = (Math.abs(loc.lat) > 1e-5 || Math.abs(loc.lng) > 1e-5)
-        ? `&lat=${loc.lat}&lng=${loc.lng}`
+      const hasLoc = Math.abs(loc.lat) > 1e-5 || Math.abs(loc.lng) > 1e-5;
+      const prep = prepareMapSearchQuery(text.trim());
+      if (prep.query.length < 2) {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+      const useTextSearch =
+        prep.preferTextSearch || (hasLoc && prep.query.length >= 5);
+      const biasQs = hasLoc
+        ? `&lat=${loc.lat}&lng=${loc.lng}&radius=${prep.radiusM}${prep.openNow ? '&open_now=true' : ''}${useTextSearch ? '&textsearch=true' : ''}`
         : '';
       try {
-        const res = await api.get<any>(`/api/places/autocomplete?q=${encodeURIComponent(text)}${biasQs}`);
+        const res = await api.get<any>(
+          `/api/places/autocomplete?q=${encodeURIComponent(prep.query)}${biasQs}`,
+        );
         if (searchGenRef.current !== gen) return;
         const root = res.data as any;
         const predictions = root?.data ?? root?.predictions ?? [];
         if (Array.isArray(predictions) && predictions.length > 0) {
-          setSearchResults(predictions.map((p: any) => ({
-            name: p.name || p.description || text,
+          const mapped: GeocodeResult[] = predictions.map((p: any) => ({
+            name: p.name || p.description || prep.query,
             address: p.address || p.description || '',
             lat: p.lat ?? 0,
             lng: p.lng ?? 0,
             placeType: p.types?.[0] ?? 'poi',
             place_id: p.place_id,
-          })));
+          }));
+          setSearchResults(sortGeocodeByProximity(mapped, loc));
           setIsSearching(false);
           return;
         }
       } catch {}
       if (searchGenRef.current !== gen) return;
-      const mbResults = await forwardGeocode(text, loc);
+      const mbResults = await forwardGeocode(prep.query, hasLoc ? loc : undefined);
       if (searchGenRef.current !== gen) return;
       const filtered =
-        Math.abs(loc.lat) > 1e-5 || Math.abs(loc.lng) > 1e-5
-          ? mbResults.filter((r) => haversineMeters(loc.lat, loc.lng, r.lat, r.lng) <= 60000)
+        hasLoc
+          ? mbResults.filter((r) => haversineMeters(loc.lat, loc.lng, r.lat, r.lng) <= 50000)
           : mbResults;
-      setSearchResults(filtered);
+      setSearchResults(sortGeocodeByProximity(filtered, loc));
       setIsSearching(false);
     }, 200);
-  }, []);
+  }, [sortGeocodeByProximity]);
 
   const handleSelectResult = useCallback(async (result: GeocodeResult & { place_id?: string }) => {
     Keyboard.dismiss();
@@ -1025,11 +1096,11 @@ export default function MapScreen() {
     }
     const EXPLORE: Record<string, { title: string; subtitle?: string; type?: string; radius: number; limit: number }> = {
       nearby: { title: 'Nearby', subtitle: 'Places around your location', radius: 1200, limit: 15 },
-      cheap_gas: {
-        title: 'Gas stations',
-        subtitle: 'Nearest first. Live fuel prices are not shown (use station apps for prices).',
+      nearby_gas: {
+        title: 'Nearby gas',
+        subtitle: 'Closest stations first. Prices aren’t shown here—check signage or a station app.',
         type: 'gas_station',
-        radius: 20000,
+        radius: 15000,
         limit: 20,
       },
       gas: { title: 'Gas stations', subtitle: 'Nearby fuel', type: 'gas_station', radius: 8000, limit: 18 },
@@ -1080,26 +1151,161 @@ export default function MapScreen() {
       });
   }, [location.lat, location.lng, savedPlaces]);
 
-  const handleStartDirections = useCallback(async (place: { name: string; address?: string; lat: number; lng: number }) => {
-    setSelectedPlace(null);
-    nav.setSelectedDestination({ name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng });
-    await nav.fetchDirections(
-      { name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng },
-      undefined,
-      { maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined },
-    );
-  }, [nav, avoidLowClearances, vehicleHeight]);
+  const handleStartDirections = useCallback(
+    async (
+      place: { name: string; address?: string; lat: number; lng: number },
+      opts?: { preserveFriendFollow?: boolean },
+    ) => {
+      if (!opts?.preserveFriendFollow) {
+        setFriendFollowSession(null);
+        friendFollowLastDestRef.current = null;
+        friendFollowLastRerouteRef.current = 0;
+        friendFollowRerouteBusyRef.current = false;
+      }
+      setSelectedPlace(null);
+      nav.setSelectedDestination({ name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng });
+      await nav.fetchDirections(
+        { name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng },
+        undefined,
+        { maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined },
+      );
+    },
+    [nav, avoidLowClearances, vehicleHeight],
+  );
+
+  const beginFriendFollowNavigation = useCallback(
+    (p: { friendId: string; name: string; lat: number; lng: number; isLiveFresh: boolean }) => {
+      if (!p.friendId) {
+        void handleStartDirections({ name: p.name, address: `Meet ${p.name}`, lat: p.lat, lng: p.lng });
+        return;
+      }
+      setFriendFollowSession({
+        friendId: p.friendId,
+        name: p.name,
+        mode: p.isLiveFresh ? 'live' : 'last_known',
+        startedLive: p.isLiveFresh,
+      });
+      friendFollowLastDestRef.current = { lat: p.lat, lng: p.lng };
+      friendFollowLastRerouteRef.current = Date.now();
+      void handleStartDirections(
+        { name: p.name, address: `Meet ${p.name}`, lat: p.lat, lng: p.lng },
+        { preserveFriendFollow: true },
+      );
+    },
+    [handleStartDirections],
+  );
 
   const lastNavigateFriendNonceRef = useRef<number | null>(null);
   useEffect(() => {
-    const p = route.params?.navigateToFriend as { name?: string; lat?: number; lng?: number; nonce?: number } | undefined;
+    const p = route.params?.navigateToFriend as NavigateToFriendParams | undefined;
     if (!p?.nonce || !p.name || p.lat == null || p.lng == null) return;
     if (!isFinite(p.lat) || !isFinite(p.lng) || (Math.abs(p.lat) < 1e-6 && Math.abs(p.lng) < 1e-6)) return;
     if (lastNavigateFriendNonceRef.current === p.nonce) return;
     lastNavigateFriendNonceRef.current = p.nonce;
     rnNav.setParams({ navigateToFriend: undefined } as any);
-    void handleStartDirections({ name: p.name, address: `Meet ${p.name}`, lat: p.lat, lng: p.lng });
-  }, [route.params?.navigateToFriend?.nonce, handleStartDirections, rnNav]);
+    const fid = p.friendId ?? '';
+    const fresh =
+      typeof p.isLiveFresh === 'boolean'
+        ? p.isLiveFresh
+        : isLiveShareFresh(true, p.lastUpdated, p.lat, p.lng);
+    beginFriendFollowNavigation({
+      friendId: fid,
+      name: p.name,
+      lat: p.lat,
+      lng: p.lng,
+      isLiveFresh: fresh,
+    });
+  }, [route.params?.navigateToFriend?.nonce, beginFriendFollowNavigation, rnNav]);
+
+  const lastMapFocusFriendNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    const p = route.params?.mapFocusFriend as { friendId?: string; nonce?: number } | undefined;
+    if (!p?.friendId || p.nonce == null) return;
+    if (lastMapFocusFriendNonceRef.current === p.nonce) return;
+    lastMapFocusFriendNonceRef.current = p.nonce;
+    rnNav.setParams({ mapFocusFriend: undefined } as any);
+    const fl = friendLocations.find((f) => String(f.id) === String(p.friendId));
+    if (!fl || !Number.isFinite(fl.lat) || !Number.isFinite(fl.lng) || (fl.lat === 0 && fl.lng === 0)) return;
+    cameraRef.current?.setCamera({
+      centerCoordinate: [fl.lng, fl.lat],
+      zoomLevel: 15,
+      pitch: 45,
+      animationDuration: 650,
+      animationMode: 'flyTo',
+    } as any);
+  }, [route.params?.mapFocusFriend?.nonce, friendLocations, rnNav]);
+
+  useEffect(() => {
+    if (!nav.isNavigating && !nav.showRoutePreview) {
+      setFriendFollowSession(null);
+      friendFollowLastDestRef.current = null;
+      friendFollowLastRerouteRef.current = 0;
+      friendFollowRerouteBusyRef.current = false;
+    }
+  }, [nav.isNavigating, nav.showRoutePreview]);
+
+  useEffect(() => {
+    const sess = friendFollowSessionRef.current;
+    if (!sess || !nav.isNavigating) return;
+    const fl = friendLocations.find((x) => String(x.id) === String(sess.friendId));
+    if (!fl) return;
+    const fresh = isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng);
+    setFriendFollowSession((prev) => {
+      if (!prev) return prev;
+      const mode: 'live' | 'last_known' = fresh && fl.isSharing ? 'live' : 'last_known';
+      return prev.mode === mode ? prev : { ...prev, mode };
+    });
+  }, [friendLocations, nav.isNavigating]);
+
+  useEffect(() => {
+    const sess = friendFollowSessionRef.current;
+    if (!nav.isNavigating || !sess) return;
+    const fl = friendLocations.find((x) => String(x.id) === String(sess.friendId));
+    if (!fl) return;
+    const fresh = isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng);
+    if (!fresh || !fl.isSharing) return;
+
+    const last = friendFollowLastDestRef.current;
+    if (!last) return;
+    const moved = haversineMeters(last.lat, last.lng, fl.lat, fl.lng);
+    const now = Date.now();
+    if (moved < 125) return;
+    if (now - friendFollowLastRerouteRef.current < 52_000) return;
+    if (friendFollowRerouteBusyRef.current) return;
+
+    friendFollowRerouteBusyRef.current = true;
+    friendFollowLastRerouteRef.current = now;
+    friendFollowLastDestRef.current = { lat: fl.lat, lng: fl.lng };
+
+    const place = { name: sess.name, address: `Meet ${sess.name}`, lat: fl.lat, lng: fl.lng };
+    navSetDestRef.current({ name: place.name, address: place.address, lat: place.lat, lng: place.lng });
+    void navFetchRef
+      .current(place, locationRef.current, {
+        maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined,
+      })
+      .finally(() => {
+        friendFollowRerouteBusyRef.current = false;
+      });
+  }, [friendLocations, nav.isNavigating, avoidLowClearances, vehicleHeight]);
+
+  const friendFollowContextLine = useMemo(() => {
+    if (!nav.isNavigating || !friendFollowSession) return null;
+    const fl = friendLocations.find((x) => String(x.id) === String(friendFollowSession.friendId));
+    const fresh = fl
+      ? isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng)
+      : false;
+    const name = friendFollowSession.name;
+    if (fl && fresh && fl.isSharing && friendFollowSession.mode === 'live') {
+      return `Following ${name} live`;
+    }
+    if (fl && !fl.isSharing) {
+      return `Routing to last known location · ${name}`;
+    }
+    if (fl && fl.isSharing && !fresh) {
+      return `Last known location (stale) · ${name}`;
+    }
+    return `Routing to ${name}`;
+  }, [nav.isNavigating, friendFollowSession, friendLocations]);
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery('');
@@ -1215,8 +1421,18 @@ export default function MapScreen() {
         const name = f?.properties?.name || f?.properties?.name_en;
         const pos = lngLatFromPressGeometry(f?.geometry);
         if (name && pos) {
+          const nextName = String(name);
+          if (
+            selectedPlace
+            && !selectedPlaceId
+            && selectedPlace.name === nextName
+            && haversineMeters(selectedPlace.lat, selectedPlace.lng, pos.lat, pos.lng) < 15
+          ) {
+            return;
+          }
+          setSelectedPlaceId(null);
           setSelectedPlace({
-            name,
+            name: nextName,
             address: f.properties?.address ?? '',
             category: f.properties?.category,
             lat: pos.lat,
@@ -1250,9 +1466,11 @@ export default function MapScreen() {
       const { reverseGeocode } = await import('../lib/directions');
       const geo = await reverseGeocode(tapLat, tapLng);
       if (geo) {
+        setSelectedPlaceId(null);
         setSelectedPlace({ name: geo.name, address: geo.address, lat: tapLat, lng: tapLng });
         return;
       }
+      setSelectedPlaceId(null);
       setSelectedPlace({
         name: 'Dropped Pin',
         address: `${tapLat.toFixed(5)}, ${tapLng.toFixed(5)}`,
@@ -1262,7 +1480,7 @@ export default function MapScreen() {
     } catch (err) {
       console.warn('[MapScreen] handleMapPress', err);
     }
-  }, [nav.isNavigating, lngLatFromPressGeometry]);
+  }, [nav.isNavigating, lngLatFromPressGeometry, selectedPlace, selectedPlaceId]);
 
   // ─── Permission denied ─────────────────────────────────────────────────────
 
@@ -1385,7 +1603,9 @@ export default function MapScreen() {
               glowColor={modeConfig.routeGlowColor}
               glowOpacity={modeConfig.routeGlowOpacity}
               congestion={nav.navigationData.congestion}
-              showCongestion={modeConfig.showCongestion && nav.isNavigating}
+              showCongestion={
+                modeConfig.showCongestion && (nav.showRoutePreview || nav.isNavigating)
+              }
               isRerouting={nav.isRerouting}
             />
           )}
@@ -1407,10 +1627,26 @@ export default function MapScreen() {
           {user?.isPremium && showCameras && !nav.isNavigating && (
             <CameraMarkers cameras={cameraLocations} onCameraTap={(cam) => setSelectedTrafficCamera(cam)} />
           )}
-          <FriendMarkers friends={friendLocations} onFriendTap={(f) => Alert.alert(f.name, 'What would you like to do?', [
-            { text: 'Navigate to', onPress: () => handleSelectResult({ name: f.name, address: '', lat: f.lat, lng: f.lng }) },
-            { text: 'Cancel', style: 'cancel' },
-          ])} />
+          <FriendMarkers
+            friends={friendLocations}
+            onFriendTap={(f) => {
+              const fresh = isLiveShareFresh(f.isSharing, f.lastUpdated || undefined, f.lat, f.lng);
+              Alert.alert(f.name, 'What would you like to do?', [
+                {
+                  text: 'Navigate to',
+                  onPress: () =>
+                    beginFriendFollowNavigation({
+                      friendId: f.id,
+                      name: f.name,
+                      lat: f.lat,
+                      lng: f.lng,
+                      isLiveFresh: fresh,
+                    }),
+                },
+                { text: 'Cancel', style: 'cancel' },
+              ]);
+            }}
+          />
 
           {/* Native puck: course while actively following route; device heading when browsing */}
           <MapboxGL.LocationPuck
@@ -1495,7 +1731,7 @@ export default function MapScreen() {
       {selectedPlaceId && !nav.isNavigating && (
         <PlaceDetailSheet
           placeId={selectedPlaceId}
-          summary={selectedPlace ? { name: selectedPlace.name, lat: selectedPlace.lat, lng: selectedPlace.lng } : undefined}
+          summary={placeDetailSummary}
           userLocation={placeDetailUserLocation}
           isLight={isLight}
           savedPlaces={savedPlaces}
@@ -1579,7 +1815,7 @@ export default function MapScreen() {
               data={[
                 { key: 'favorites', label: 'Favorites', icon: 'star-outline' as const },
                 { key: 'nearby', label: 'Nearby', icon: 'location-outline' as const },
-                { key: 'cheap_gas', label: 'Cheap Gas', icon: 'pricetag-outline' as const },
+                { key: 'nearby_gas', label: 'Nearby Gas', icon: 'speedometer-outline' as const },
                 { key: 'gas', label: 'Gas', icon: 'flash-outline' as const },
                 { key: 'food', label: 'Food', icon: 'restaurant-outline' as const },
                 { key: 'coffee', label: 'Coffee', icon: 'cafe-outline' as const },
@@ -1628,7 +1864,7 @@ export default function MapScreen() {
                 <View style={{ paddingVertical: 24, alignItems: 'center' }}>
                   <Ionicons name="search-outline" size={22} color={colors.textTertiary} />
                   <Text style={{ color: colors.textTertiary, fontSize: 13, marginTop: 6 }}>
-                    {searchQuery.length < 3 ? 'Keep typing to search...' : 'No results found'}
+                    {searchQuery.trim().length < 2 ? 'Keep typing to search...' : 'No results found'}
                   </Text>
                 </View>
               ) : (
@@ -1742,6 +1978,7 @@ export default function MapScreen() {
               isMuted={isMuted}
               onMutePress={() => { setIsMuted((m) => !m); if (!isMuted) stopSpeaking(); }}
               lanesJson={currentStep.lanes}
+              step={currentStep}
               roadDisambiguationLabel={disambigName}
               isSportBorder={isSport}
               speedMph={speed}
@@ -1901,6 +2138,30 @@ export default function MapScreen() {
           </Animated.View>
         );
       })()}
+
+      {nav.isNavigating && ephemeralTurnHint ? (
+        <Animated.View
+          entering={FadeIn.duration(180)}
+          exiting={FadeOut.duration(180)}
+          style={{
+            position: 'absolute',
+            left: 16,
+            right: 16,
+            bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 12,
+            zIndex: 24,
+            backgroundColor: 'rgba(15,23,42,0.92)',
+            borderRadius: 14,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.08)',
+          }}
+        >
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700', textAlign: 'center' }}>
+            {ephemeralTurnHint}
+          </Text>
+        </Animated.View>
+      ) : null}
 
       {/* ═══ NAV STATUS — slim strip (ETA · dist · arrive) + separated End button ═ */}
       {nav.isNavigating && nav.liveEta && (
@@ -2401,7 +2662,7 @@ export default function MapScreen() {
         onClose={() => setShowMenu(false)}
         isLight={isLight}
         onNavigate={(screen) => {
-          setShowMenu(false);
+          /* Menu already closed by HamburgerMenu before this runs (deferred). */
           if (screen === 'Profile' || screen === 'Help') {
             rnNav.navigate('Profile' as never);
           } else if (screen === 'TripAnalytics') {
@@ -2414,8 +2675,6 @@ export default function MapScreen() {
               screen: 'RewardsMain',
               params: { openRouteHistory: true },
             });
-          } else if (screen === 'SnapRace') {
-            setShowSnapRace(true);
           } else if (screen === 'Convoy') {
             setShowConvoy(true);
           } else if (screen === 'Social') {
@@ -2423,7 +2682,6 @@ export default function MapScreen() {
           }
         }}
       />
-      <SnapRaceMode visible={showSnapRace} onClose={() => setShowSnapRace(false)} userId={user?.id ?? ''} friends={friendLocations.map(f => ({ id: f.id, name: f.name }))} gems={user?.gems ?? 0} />
       <ConvoyMode
         visible={showConvoy}
         onClose={() => setShowConvoy(false)}

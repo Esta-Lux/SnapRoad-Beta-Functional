@@ -15,6 +15,7 @@ import WelcomePage from './pages/WelcomePage'
 import PartnerDashboard from './pages/PartnerDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import DriverApp from './pages/DriverApp'
+import DriverWebRetiredPage from './pages/DriverWebRetiredPage'
 import { NavigationCoreProvider } from './contexts/NavigationCoreContext'
 import { MapboxProvider } from './contexts/MapboxContext'
 import { ThemeProvider } from './contexts/ThemeContext'
@@ -24,33 +25,57 @@ import OffersUploadPage from './pages/Admin/OffersUploadPage'
 import OffersManagePage from './pages/Admin/OffersManagePage'
 import BillingPage from './pages/PartnerPortal/BillingPage'
 import ScannerPage from './pages/PartnerPortal/ScannerPage'
+import { isPartnerPortalPrimarySite } from '@/lib/siteProfile'
 
 function App() {
+  const partnerPrimary = isPartnerPortalPrimarySite()
+
+  const driverAppTree = (
+    <DriverGuard>
+      <ThemeProvider>
+        <MapboxProvider>
+          <NavigationCoreProvider fallbackCenter={{ lat: 39.9612, lng: -82.9988 }} enableGps={true}>
+            <DriverApp />
+          </NavigationCoreProvider>
+        </MapboxProvider>
+      </ThemeProvider>
+    </DriverGuard>
+  )
+
   return (
     <ErrorBoundary>
       <AuthProvider>
         <DocumentTitleTracker />
         <Routes>
-          {/* App entry: Driver auth (new login screen) */}
-          <Route path="/" element={<Navigate to="/driver/auth" replace />} />
+          <Route
+            path="/"
+            element={<Navigate to={partnerPrimary ? '/portal/partner' : '/driver/auth'} replace />}
+          />
           <Route path="/auth" element={<AuthRedirect />} />
           <Route path="/auth/partner-signup" element={<PartnerSignup />} />
           <Route path="/join" element={<Navigate to="/auth/partner-signup" replace />} />
-          <Route path="/welcome" element={<WelcomePage />} />
+          <Route
+            path="/welcome"
+            element={
+              partnerPrimary ? (
+                <Navigate to="/portal/partner/welcome" replace />
+              ) : (
+                <WelcomePage />
+              )
+            }
+          />
 
-          {/* Driver App - Mapbox */}
-          <Route path="/driver" element={
-            <DriverGuard>
-              <ThemeProvider>
-                <MapboxProvider>
-                  <NavigationCoreProvider fallbackCenter={{ lat: 39.9612, lng: -82.9988 }} enableGps={true}>
-                    <DriverApp />
-                  </NavigationCoreProvider>
-                </MapboxProvider>
-              </ThemeProvider>
-            </DriverGuard>
-          } />
-          <Route path="/driver/auth" element={<WelcomePage />} />
+          {partnerPrimary ? (
+            <>
+              <Route path="/driver" element={<DriverWebRetiredPage />} />
+              <Route path="/driver/*" element={<DriverWebRetiredPage />} />
+            </>
+          ) : (
+            <>
+              <Route path="/driver" element={driverAppTree} />
+              <Route path="/driver/auth" element={<WelcomePage />} />
+            </>
+          )}
 
           <Route path="/scan/:partnerId/:token" element={<TeamScanPage />} />
           <Route path="/scan/:partnerId" element={<TeamScanPage />} />
@@ -66,9 +91,17 @@ function App() {
           <Route path="/portal/admin-sr2025secure/offers/manage" element={<AdminGuard><OffersManagePage /></AdminGuard>} />
           <Route path="/partner" element={<Navigate to="/portal/partner" replace />} />
           <Route path="/admin" element={<Navigate to="/portal/admin-sr2025secure" replace />} />
-          <Route path="/login" element={<Navigate to="/driver/auth" replace />} />
+          <Route
+            path="/login"
+            element={
+              <Navigate to={partnerPrimary ? '/portal/partner/sign-in' : '/driver/auth'} replace />
+            }
+          />
           <Route path="/business" element={<BusinessDashboard />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route
+            path="*"
+            element={<Navigate to={partnerPrimary ? '/portal/partner' : '/'} replace />}
+          />
         </Routes>
       </AuthProvider>
     </ErrorBoundary>

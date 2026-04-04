@@ -298,6 +298,8 @@ export default function PlaceDetailSheet({
     setShowAllReviews(false);
   }, [placeId]);
 
+  // Fetch once per placeId. Do not depend on `summary`: parent often passes a new object each
+  // render; including it re-ran this on every GPS tick and toggled loading (sheet glitch).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -334,7 +336,7 @@ export default function PlaceDetailSheet({
       }
     })();
     return () => { cancelled = true; };
-  }, [placeId, summary]);
+  }, [placeId]);
 
   const panGesture = Gesture.Pan()
     .onStart(() => { startY.value = translateY.value; })

@@ -115,6 +115,7 @@ export interface Friend {
   friend_id: string;
   name: string;
   email?: string;
+  /** Resolved from `avatar_url` on the API. */
   avatar?: string;
   status: string;
   lat?: number;
@@ -126,6 +127,23 @@ export interface Friend {
   is_navigating?: boolean;
   destination_name?: string;
   battery_pct?: number | null;
+}
+
+/** Map tab: navigate with live-follow when `isLiveFresh` and updates remain fresh. */
+export interface NavigateToFriendParams {
+  friendId: string;
+  name: string;
+  lat: number;
+  lng: number;
+  nonce: number;
+  isLiveFresh: boolean;
+  lastUpdated?: string;
+}
+
+/** Map tab: fly to friend's marker. */
+export interface MapFocusFriendParams {
+  friendId: string;
+  nonce: number;
 }
 
 export interface Offer {

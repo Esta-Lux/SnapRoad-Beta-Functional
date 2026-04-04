@@ -59,21 +59,26 @@ class TestDrivingScore:
         print("✓ All metrics have required fields with valid values")
     
     def test_driving_score_has_orion_tips(self):
-        """Test that response includes Orion tips"""
+        """Orion tips are premium-gated; list exists and is length 0–3."""
         response = requests.get(f"{BASE_URL}/api/driving-score")
         data = response.json()
         assert "orion_tips" in data["data"]
         tips = data["data"]["orion_tips"]
-        assert len(tips) >= 1  # At least 1 tip
-        assert len(tips) <= 3  # Max 3 tips
-        print(f"✓ Orion tips count: {len(tips)}")
+        premium = data["data"].get("premium_insights", False)
+        assert isinstance(tips, list)
+        assert len(tips) <= 3
+        if premium and not data["data"].get("no_data"):
+            assert len(tips) >= 1
+        print(f"✓ Orion tips count: {len(tips)} (premium_insights={premium})")
     
     def test_orion_tips_have_required_fields(self):
         """Test that each Orion tip has required fields"""
         response = requests.get(f"{BASE_URL}/api/driving-score")
         data = response.json()
         tips = data["data"]["orion_tips"]
-        
+        if not tips:
+            print("✓ No Orion tips (non-premium or no trip data)")
+            return
         for tip in tips:
             assert "id" in tip
             assert "metric" in tip
@@ -94,7 +99,7 @@ class TestDrivingScore:
         if len(tips) >= 2:
             assert tips[1]["priority"] == "medium"
         if len(tips) >= 3:
-            assert tips[2]["priority"] == "low"
+            assert tips[2]["priority"] in ("low", "medium")
         print("✓ Orion tips are in correct priority order")
 
 

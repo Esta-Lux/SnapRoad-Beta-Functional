@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -68,88 +66,85 @@ export default function SubmitConcern({ visible, onClose }: Props) {
   };
 
   return (
-    <Modal visible={visible} onClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <Modal visible={visible} onClose={onClose} scrollable={false}>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        showsVerticalScrollIndicator={false}
         style={{ backgroundColor: colors.surface }}
+        contentContainerStyle={{ paddingBottom: 16 }}
       >
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          style={{ backgroundColor: colors.surface }}
+        <Text style={[styles.title, { color: colors.text }]}>Submit Concern</Text>
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>Type</Text>
+        <View style={styles.pillRow}>
+          {CONCERN_TYPES.map((t) => (
+            <TouchableOpacity
+              key={t}
+              style={[
+                styles.pill,
+                { backgroundColor: colors.card, borderColor: 'rgba(148,163,184,0.25)' },
+                type === t && styles.pillActive,
+              ]}
+              onPress={() => setType(t)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.pillText, { color: colors.textSecondary }, type === t && styles.pillTextActive]}>{t}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>Severity</Text>
+        <View style={styles.pillRow}>
+          {(['low', 'medium', 'high'] as const).map((s) => (
+            <TouchableOpacity
+              key={s}
+              style={[
+                styles.pill,
+                { backgroundColor: colors.card, borderColor: 'rgba(148,163,184,0.25)' },
+                severity === s && styles.pillActive,
+              ]}
+              onPress={() => setSeverity(s)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.pillText, { color: colors.textSecondary }, severity === s && styles.pillTextActive]}>
+                {s[0].toUpperCase() + s.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>Message</Text>
+        <TextInput
+          style={[styles.messageInput, { backgroundColor: colors.card, color: colors.text, borderColor: 'rgba(148,163,184,0.2)' }]}
+          placeholder="Describe your concern..."
+          placeholderTextColor={colors.textSecondary}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+          value={message}
+          onChangeText={setMessage}
+        />
+        <Text style={[styles.counter, { color: colors.textSecondary }]}>{message.trim().length}/500</Text>
+
+        {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
+
+        <TouchableOpacity
+          style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
+          onPress={handleSubmit}
+          disabled={submitting}
+          activeOpacity={0.8}
         >
-          <Text style={[styles.title, { color: colors.text }]}>Submit Concern</Text>
-
-      <Text style={[styles.label, { color: colors.textSecondary }]}>Type</Text>
-      <View style={styles.pillRow}>
-        {CONCERN_TYPES.map((t) => (
-          <TouchableOpacity
-            key={t}
-            style={[
-              styles.pill,
-              { backgroundColor: colors.card, borderColor: 'rgba(148,163,184,0.25)' },
-              type === t && styles.pillActive,
-            ]}
-            onPress={() => setType(t)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.pillText, { color: colors.textSecondary }, type === t && styles.pillTextActive]}>{t}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={[styles.label, { color: colors.textSecondary }]}>Severity</Text>
-      <View style={styles.pillRow}>
-        {(['low', 'medium', 'high'] as const).map((s) => (
-          <TouchableOpacity
-            key={s}
-            style={[
-              styles.pill,
-              { backgroundColor: colors.card, borderColor: 'rgba(148,163,184,0.25)' },
-              severity === s && styles.pillActive,
-            ]}
-            onPress={() => setSeverity(s)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.pillText, { color: colors.textSecondary }, severity === s && styles.pillTextActive]}>
-              {s[0].toUpperCase() + s.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={[styles.label, { color: colors.textSecondary }]}>Message</Text>
-      <TextInput
-        style={[styles.messageInput, { backgroundColor: colors.card, color: colors.text, borderColor: 'rgba(148,163,184,0.2)' }]}
-        placeholder="Describe your concern..."
-        placeholderTextColor={colors.textSecondary}
-        multiline
-        numberOfLines={4}
-        textAlignVertical="top"
-        value={message}
-        onChangeText={setMessage}
-      />
-      <Text style={[styles.counter, { color: colors.textSecondary }]}>{message.trim().length}/500</Text>
-
-      {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
-
-      <TouchableOpacity
-        style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
-        onPress={handleSubmit}
-        disabled={submitting}
-        activeOpacity={0.8}
-      >
-        {submitting ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : (
-          <>
-            <Ionicons name="paper-plane-outline" size={16} color="#fff" />
-            <Text style={styles.submitBtnText}>Submit</Text>
-          </>
-        )}
-      </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          {submitting ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="paper-plane-outline" size={16} color="#fff" />
+              <Text style={styles.submitBtnText}>Submit</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </ScrollView>
     </Modal>
   );
 }

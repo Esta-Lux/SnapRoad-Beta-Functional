@@ -124,6 +124,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
     // `usesCleartextTraffic` is honored by Expo prebuild but omitted from ExpoConfig.android types (SDK 54).
     android: {
       package: "com.snaproad.app",
+      softwareKeyboardLayoutMode: "resize",
       adaptiveIcon: {
         backgroundColor: "#0a0a0f",
         foregroundImage: "./assets/android-icon-foreground.png",
@@ -185,6 +186,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       /** Set by EAS during `eas build` -- used at runtime to treat preview/internal builds as non-store. */
       easBuildProfile: process.env.EAS_BUILD_PROFILE || "",
       apiUrl: resolveApiUrl(),
+      // Restrict this token in the Mapbox dashboard: iOS/Android bundle com.snaproad.app; web https://app.snaproad.app
       mapboxPublicToken: envAny(["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"]),
       supabaseUrl: envAny(["EXPO_PUBLIC_SUPABASE_URL", "SUPABASE_URL"]),
       supabaseAnonKey: envAny(["EXPO_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY"]),

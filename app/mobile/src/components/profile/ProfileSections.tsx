@@ -31,15 +31,10 @@ export type {
 } from './types';
 export {
   AddPlaceModal,
-  BadgesModal,
-  GemHistoryModal,
   IncidentReportModal,
-  DrivingScoreModal,
   LeaderboardModal,
   LevelProgressModal,
   PlanModal,
-  TripHistoryModal,
-  WeeklyRecapModal,
 } from './ProfileModals';
 
 type NotificationItem = { label: string; val: boolean; set: (v: boolean) => void };

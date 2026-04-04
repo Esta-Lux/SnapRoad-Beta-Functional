@@ -14,6 +14,32 @@ export interface StepIntersection {
   classes?: string[];  // e.g. ['traffic_signal'], ['stop_sign']
 }
 
+export interface BannerInstructionItem {
+  text?: string;
+  type?: string;
+  modifier?: string;
+  components?: Array<{
+    type?: string;
+    text?: string;
+    imageBaseURL?: string;
+    directions?: string[];
+    active?: boolean;
+  }>;
+}
+
+export interface BannerInstruction {
+  distanceAlongGeometry?: number;
+  primary?: BannerInstructionItem;
+  secondary?: BannerInstructionItem | null;
+  sub?: BannerInstructionItem | null;
+}
+
+export interface VoiceInstruction {
+  distanceAlongGeometry?: number;
+  announcement?: string;
+  ssmlAnnouncement?: string;
+}
+
 export interface DirectionsStep {
   instruction: string;
   distance: string;
@@ -32,6 +58,8 @@ export interface DirectionsStep {
   geometryCoordinates?: [number, number][];
   /** Intersections along this step. First entry is usually the turn point. */
   intersections?: StepIntersection[];
+  bannerInstructions?: BannerInstruction[];
+  voiceInstructions?: VoiceInstruction[];
 }
 
 export type CongestionLevel = 'low' | 'moderate' | 'heavy' | 'severe' | 'unknown';
@@ -57,6 +85,81 @@ export interface GeocodeResult {
   category?: string;
   maki?: string;
   place_id?: string;
+}
+
+/** Parsed search box query: strips intent phrases and sets flags for local-first / open-now behavior. */
+export interface PreparedMapSearch {
+  /** Query sent to `/api/places/autocomplete` or Mapbox forward geocode */
+  query: string;
+  /** Request Google Text Search with `opennow` when lat/lng present (backend). */
+  openNow: boolean;
+  /** Prefer Google Text Search (distance-ranked in backend) vs Autocomplete. */
+  preferTextSearch: boolean;
+  /** Location bias radius in meters for backend. */
+  radiusM: number;
+}
+
+const RE_OPEN_NOW = /\b(open\s+now|open\s+right\s+now|currently\s+open)\b/i;
+const RE_NEAR_ME = /\b(near\s+me|nearby|around\s+me|close\s+to\s+me)\b/i;
+const RE_CLOSEST = /\b(closest|nearest)\b/i;
+/** Maps to plain POI search (no price claims). Includes legacy "cheap gas" phrasing. */
+const RE_NEARBY_GAS = /\b(nearby\s+gas|gas\s+near\s*me|cheap\s+gas(?:\s+near)?)\b/i;
+const RE_NEARBY_COFFEE = /\b(nearby\s+coffee|coffee\s+near\s*me)\b/i;
+
+/**
+ * Normalize natural-language map search for driving: local bias, optional open-now, POI shortcuts.
+ * Backend must support `open_now` + `textsearch` query params; Mapbox fallback is proximity-biased + sorted by distance.
+ */
+export function prepareMapSearchQuery(raw: string): PreparedMapSearch {
+  const original = raw.trim();
+  let q = original;
+  let openNow = false;
+  let preferTextSearch = false;
+  let radiusM = 14000;
+
+  if (RE_NEARBY_GAS.test(original)) {
+    return {
+      query: 'gas station',
+      openNow: false,
+      preferTextSearch: true,
+      radiusM: 18000,
+    };
+  }
+  if (RE_NEARBY_COFFEE.test(original)) {
+    return {
+      query: 'coffee',
+      openNow: false,
+      preferTextSearch: true,
+      radiusM: 12000,
+    };
+  }
+
+  if (RE_OPEN_NOW.test(q)) {
+    openNow = true;
+    preferTextSearch = true;
+    q = q.replace(RE_OPEN_NOW, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  const localIntent = RE_NEAR_ME.test(q) || RE_CLOSEST.test(q);
+  if (localIntent) {
+    preferTextSearch = true;
+    radiusM = 12000;
+    q = q.replace(RE_NEAR_ME, ' ').replace(RE_CLOSEST, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  if (openNow && q.length < 2) {
+    q = 'restaurants';
+  }
+  if (localIntent && q.length < 2) {
+    q = 'restaurants';
+  }
+
+  return {
+    query: q.trim(),
+    openNow,
+    preferTextSearch,
+    radiusM,
+  };
 }
 
 function formatDistance(meters: number): string {
@@ -97,7 +200,11 @@ interface RawRoute {
       name?: string;
       distance: number;
       duration: number;
-      intersections?: Array<{ lanes?: unknown }>;
+      intersections?: Array<{ lanes?: unknown; classes?: string[] }>;
+      bannerInstructions?: BannerInstruction[];
+      banner_instructions?: BannerInstruction[];
+      voiceInstructions?: VoiceInstruction[];
+      voice_instructions?: VoiceInstruction[];
     }>;
     annotation?: {
       congestion?: string[];
@@ -131,10 +238,15 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
         lng: step.maneuver?.location?.[0] ?? 0,
         geometryCoordinates: Array.isArray(g) && g.length >= 2 ? g : undefined,
         intersections: Array.isArray(step.intersections)
-          ? step.intersections.map((int: any) => ({
-              classes: Array.isArray(int.classes) ? (int.classes as string[]) : [],
-            }))
+          ? step.intersections.map((int: unknown) => {
+              const intRec = int as { classes?: string[] };
+              return {
+                classes: Array.isArray(intRec.classes) ? intRec.classes : [],
+              };
+            })
           : undefined,
+        bannerInstructions: step.bannerInstructions ?? step.banner_instructions ?? [],
+        voiceInstructions: step.voiceInstructions ?? step.voice_instructions ?? [],
       });
     }
     if (leg.annotation?.congestion) {
@@ -171,6 +283,7 @@ export async function forwardGeocode(
   query: string,
   proximity?: Coordinate,
   limit = 10,
+  opts?: { bbox?: string },
 ): Promise<GeocodeResult[]> {
   if (!MAPBOX_TOKEN || !query.trim()) return [];
   const params = new URLSearchParams({
@@ -182,6 +295,7 @@ export async function forwardGeocode(
     types: 'poi,address,place,locality,neighborhood',
   });
   if (proximity) params.set('proximity', `${proximity.lng},${proximity.lat}`);
+  if (opts?.bbox) params.set('bbox', opts.bbox);
   try {
     const res = await fetch(`${GEOCODING_BASE}/${encodeURIComponent(query)}.json?${params}`);
     if (!res.ok) {
@@ -245,6 +359,9 @@ interface DirectionsOptions {
   exclude?: string;
 }
 
+const DIRECTIONS_BANNER_VOICE_PARAMS =
+  'banner_instructions=true&voice_instructions=true&voice_units=imperial';
+
 export async function getMapboxDirections(
   origin: Coordinate,
   destination: Coordinate,
@@ -260,6 +377,9 @@ export async function getMapboxDirections(
     alternatives: String(options?.alternatives ?? false),
     language: 'en',
     annotations: 'congestion,maxspeed,speed',
+    banner_instructions: 'true',
+    voice_instructions: 'true',
+    voice_units: 'imperial',
   });
   if (options?.exclude) params.set('exclude', options.exclude);
   if (typeof options?.maxHeightMeters === 'number' && Number.isFinite(options.maxHeightMeters)) {
@@ -278,7 +398,7 @@ export async function getMapboxDirections(
 export function getModeDirectionsConfig(mode: DrivingMode): { profile: DirectionsProfile; exclude?: string } {
   switch (mode) {
     case 'calm':
-      return { profile: 'driving', exclude: 'motorway' };
+      return { profile: 'driving-traffic', exclude: 'motorway' };
     case 'sport':
       return { profile: 'driving-traffic' };
     case 'adaptive':
@@ -301,12 +421,13 @@ export async function getMapboxRouteOptions(
   const results: DirectionsResult[] = [];
 
   try {
+    const commonQS = `access_token=${MAPBOX_TOKEN}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
     const [drivingRes, trafficRes] = await Promise.all([
       fetch(
-        `${DIRECTIONS_BASE}/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?access_token=${MAPBOX_TOKEN}&geometries=geojson&overview=full&steps=true&alternatives=true&language=en&annotations=congestion,maxspeed,speed${maxHeightParam}${excludeParam}`,
+        `${DIRECTIONS_BASE}/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?${commonQS}&alternatives=true`,
       ).then((r) => (r.ok ? r.json() : { routes: [] })),
       fetch(
-        `${DIRECTIONS_BASE}/${modeConfig.profile}/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?access_token=${MAPBOX_TOKEN}&geometries=geojson&overview=full&steps=true&alternatives=false&language=en&annotations=congestion,maxspeed,speed${maxHeightParam}${excludeParam}`,
+        `${DIRECTIONS_BASE}/${modeConfig.profile}/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?${commonQS}&alternatives=false`,
       ).then((r) => (r.ok ? r.json() : { routes: [] })),
     ]);
 

@@ -115,12 +115,12 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     terrainExaggeration: 1.2,
     buildingOpacity: 0.55,
 
-    directionsProfile: 'driving',
+    directionsProfile: 'driving-traffic',
     excludeParams: 'motorway',
 
-    showCongestion: false,
-    showTrafficBadge: false,
-    showTrafficBar: false,
+    showCongestion: true,
+    showTrafficBadge: true,
+    showTrafficBar: true,
     showSpeedLimit: false,
     showPerfData: false,
   },

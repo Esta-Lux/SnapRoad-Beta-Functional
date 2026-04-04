@@ -326,7 +326,7 @@ export default function FuelTracker({ visible, onClose }: Props) {
   const sug = suggestion;
 
   return (
-    <SheetModal visible={visible} onClose={onClose}>
+    <SheetModal visible={visible} onClose={onClose} scrollable={false}>
       <View style={[styles.headerRow, { marginBottom: spacing.md }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}>
           <Ionicons name="car-sport-outline" size={24} color={colors.primary} />
@@ -368,7 +368,12 @@ export default function FuelTracker({ visible, onClose }: Props) {
       </View>
 
       {tab === 'history' ? (
-        <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          style={{ maxHeight: 400 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+        >
           {loading ? (
             <ActivityIndicator size="large" color={colors.primary} style={{ paddingVertical: spacing.lg }} />
           ) : error ? (
@@ -388,7 +393,12 @@ export default function FuelTracker({ visible, onClose }: Props) {
           )}
         </ScrollView>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          contentContainerStyle={{ paddingBottom: 12 }}
+        >
           {sug.canAuto && (sug.tripsMiles != null || sug.suggested != null) ? (
             <View
               style={[

@@ -34,7 +34,7 @@ export default function PhotoReportDetailModal({ visible, report, onClose }: Pro
   }
 
   return (
-    <Modal visible={visible} onClose={onClose} panDismissible>
+    <Modal visible={visible} onClose={onClose} panDismissible scrollable={false}>
       <Text style={[styles.title, { color: colors.text }]}>Reported road condition</Text>
       <Text style={[styles.sub, { color: colors.textSecondary }]}>
         Community photo — faces and plates are blurred before publishing. Automated processing may miss some details; this is not legal advice.
@@ -48,7 +48,11 @@ export default function PhotoReportDetailModal({ visible, report, onClose }: Pro
         </View>
       )}
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={[styles.type, { color: colors.primary }]}>{report?.type || 'photo'}</Text>
         {!!report?.description && (
           <Text style={[styles.desc, { color: colors.text }]}>{report.description}</Text>

@@ -28,11 +28,7 @@ type PhotoReportMapItem = {
   user_id: string
 }
 
-export function useMapLayers(
-  userLocation: { lat: number; lng: number },
-  OHGO_API_KEY: string,
-  ohgoEnabled: boolean
-) {
+export function useMapLayers(userLocation: { lat: number; lng: number }, ohgoEnabled: boolean) {
   // Keep network refreshes stable while user position jitters.
   const queryLat = useMemo(() => Math.round(userLocation.lat * 1000) / 1000, [userLocation.lat])
   const queryLng = useMemo(() => Math.round(userLocation.lng * 1000) / 1000, [userLocation.lng])
@@ -144,30 +140,53 @@ export function useMapLayers(
   }, [queryLat, queryLng])
 
   useEffect(() => {
-    if (!OHGO_API_KEY || !ohgoEnabled || !showCameraLayer || (queryLat === 0 && queryLng === 0)) return
-    fetch(
-      `https://publicapi.ohgo.com/api/v1/cameras?api-key=${OHGO_API_KEY}&radius=${queryLat},${queryLng},25`
-    )
-      .then((r) => r.json())
-      .then((data: { results?: Array<{ id: string | number; latitude: number; longitude: number; mainRoute?: string; location?: string; cameraViews?: Array<{ id: string | number; smallUrl?: string; largeUrl?: string; small_url?: string; large_url?: string; direction?: string }> }> }) => {
-        const results = data.results ?? []
-        const list: OHGOCamera[] = results.map((cam) => ({
-          id: String(cam.id),
-          latitude: cam.latitude,
-          longitude: cam.longitude,
-          mainRoute: cam.mainRoute ?? '',
-          location: cam.location ?? '',
-          cameraViews: (cam.cameraViews ?? []).map((v) => ({
-            id: String(v.id),
-            smallUrl: (v.smallUrl ?? (v as { small_url?: string }).small_url ?? '').trim(),
-            largeUrl: (v.largeUrl ?? (v as { large_url?: string }).large_url ?? '').trim(),
-            direction: v.direction ?? '',
+    if (!ohgoEnabled || !showCameraLayer || (queryLat === 0 && queryLng === 0)) return
+    let cancelled = false
+    void api
+      .get<{
+        success?: boolean
+        data?: Array<{
+          id?: string | number
+          lat?: number
+          lng?: number
+          title?: string
+          description?: string
+          camera_views?: Array<{
+            id?: string | number
+            small_url?: string
+            large_url?: string
+            smallUrl?: string
+            largeUrl?: string
+            direction?: string
+          }>
+        }>
+      }>(`/api/map/cameras?lat=${queryLat}&lng=${queryLng}&radius=40`)
+      .then((res) => {
+        if (cancelled || !res.success) return
+        const payload = res.data as { data?: unknown } | undefined
+        const rows = Array.isArray(payload?.data) ? payload!.data! : []
+        const list: OHGOCamera[] = rows.map((cam) => ({
+          id: String(cam.id ?? ''),
+          latitude: Number(cam.lat ?? 0),
+          longitude: Number(cam.lng ?? 0),
+          mainRoute: String(cam.description ?? ''),
+          location: String(cam.title ?? ''),
+          cameraViews: (cam.camera_views ?? []).map((v: Record<string, unknown>) => ({
+            id: String(v.id ?? ''),
+            smallUrl: String(v.smallUrl ?? v.small_url ?? '').trim(),
+            largeUrl: String(v.largeUrl ?? v.large_url ?? '').trim(),
+            direction: String(v.direction ?? ''),
           })),
         }))
-        setOhgoCameras(list)
+        setOhgoCameras(list.filter((c) => c.latitude && c.longitude))
       })
-      .catch(() => setOhgoCameras([]))
-  }, [OHGO_API_KEY, ohgoEnabled, showCameraLayer, queryLat, queryLng])
+      .catch(() => {
+        if (!cancelled) setOhgoCameras([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [ohgoEnabled, showCameraLayer, queryLat, queryLng])
 
   return {
     mapReadyForLayers,
