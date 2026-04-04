@@ -58,6 +58,7 @@ export interface SignupRequest {
   email: string;
   password: string;
   date_of_birth: string;
+  referral_code?: string;
 }
 
 export interface AuthResponse {

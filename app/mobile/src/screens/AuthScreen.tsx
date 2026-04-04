@@ -36,7 +36,7 @@ function getPasswordStrength(pw: string): { label: string; color: string; level:
 
 type Props = {
   navigation: { navigate: (name: string, params?: object) => void; goBack: () => void };
-  route?: { params?: { mode?: 'signin' | 'signup' } };
+  route?: { params?: { mode?: 'signin' | 'signup'; referral_code?: string } };
 };
 
 const PALETTE = {
@@ -118,7 +118,13 @@ export default function AuthScreen({ navigation, route }: Props) {
       if (!email.trim()) { setLocalError('Email is required'); return; }
       if (password.length < 6) { setLocalError('Password must be at least 6 characters'); return; }
       if (password !== confirmPw) { setLocalError('Passwords do not match'); return; }
-      await signup(`${firstName.trim()} ${lastName.trim()}`, email, password, dateOfBirth);
+      await signup(
+        `${firstName.trim()} ${lastName.trim()}`,
+        email,
+        password,
+        dateOfBirth,
+        route?.params?.referral_code,
+      );
     } else {
       if (!email.trim() || !password) { setLocalError('Email and password required'); return; }
       await login(email, password);

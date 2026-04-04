@@ -10,6 +10,10 @@ class SignupRequest(BaseModel):
     email: str
     password: str
     date_of_birth: Optional[str] = None
+    referral_code: Optional[str] = Field(
+        default=None,
+        description="Referrer profile/user UUID; gem milestones when referee pays first subscription.",
+    )
 
 class LoginRequest(BaseModel):
     email: str

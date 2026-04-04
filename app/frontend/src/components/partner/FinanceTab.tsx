@@ -7,9 +7,24 @@ import { partnerApi } from '@/services/partnerApi'
 import { REDEMPTION_FEE_SCHEDULE } from '@/lib/offer-pricing'
 
 const EARN_OPPORTUNITIES = [
-  { title: 'Refer a New Partner', desc: 'Earn 50 credits for every approved business you refer', credits: '+50 credits', color: '#0084FF' },
-  { title: 'Monthly Active Bonus', desc: 'Maintain 10+ active offers to earn bonus credits', credits: '+25 credits/mo', color: '#00DFA2' },
-  { title: 'High Redemption Reward', desc: 'Earn 1 credit for every 10 offer redemptions', credits: '+1 per 10', color: '#F59E0B' },
+  {
+    title: 'Refer Partner Businesses',
+    desc: 'When a referred partner pays their first subscription month: +30 credits per 5 qualified referrals (up to 120 at 20).',
+    credits: '30 / 5 refs',
+    color: '#0084FF',
+  },
+  {
+    title: 'Other bonuses',
+    desc: 'Promotional credits from SnapRoad are applied by the billing system when active; no placeholder amounts.',
+    credits: 'See notices',
+    color: '#00DFA2',
+  },
+  {
+    title: 'Redemption fee tier',
+    desc: 'Lower per-scan fees as monthly redemptions grow (see fee summary below).',
+    credits: 'Tiered',
+    color: '#F59E0B',
+  },
 ]
 
 interface CreditEntry {

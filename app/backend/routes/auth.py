@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+import uuid
 from datetime import date
 from typing import Optional
 from urllib.parse import urlparse
@@ -18,6 +19,7 @@ from services.supabase_service import (
     sb_login_user,
     sb_get_auth_user_from_access_token,
     sb_update_profile,
+    sb_get_profile,
 )
 from limiter import limiter
 
@@ -75,6 +77,36 @@ def _parse_and_validate_dob(raw_value: Optional[str]) -> date:
     return dob
 
 
+def _record_driver_referral(referrer_raw: str, referred_user_id: str, referred_email: str) -> None:
+    """Insert pending referrals row when referee signs up; gems on first paid sub (webhook)."""
+    try:
+        rid = str(referrer_raw).strip()
+        if not rid or rid == referred_user_id:
+            return
+        try:
+            uuid.UUID(rid)
+        except ValueError:
+            logger.info("signup referral_code ignored (not a UUID): %s", rid[:12])
+            return
+        ref_profile = sb_get_profile(rid)
+        if not ref_profile:
+            logger.info("signup referral_code ignored: referrer profile not found")
+            return
+        from database import get_supabase
+
+        sb = get_supabase()
+        sb.table("referrals").insert({
+            "referrer_id": rid,
+            "referred_user_id": referred_user_id,
+            "referrer_email": (ref_profile.get("email") or "")[:320],
+            "referred_email": (referred_email or "")[:320],
+            "status": "pending",
+            "credits_awarded": 0,
+        }).execute()
+    except Exception as e:
+        logger.warning("driver referral insert skipped: %s", e)
+
+
 def _clean(user: dict) -> dict:
     """Return a JSON-serializable user dict (no secrets, no UUIDs)."""
     out = {}
@@ -105,7 +137,11 @@ def signup(request: Request, body: SignupRequest):
                 detail="This email is already registered. Use Sign in instead.",
             )
         user = sb_create_user(email, body.password, name, "driver")
-        sb_update_profile(str(user.get("id") or ""), {"date_of_birth": dob.isoformat()})
+        new_id = str(user.get("id") or "")
+        sb_update_profile(new_id, {"date_of_birth": dob.isoformat()})
+        ref_raw = (getattr(body, "referral_code", None) or "").strip()
+        if ref_raw and new_id:
+            _record_driver_referral(ref_raw, new_id, email)
         token = _build_token(user)
         logger.info(f"Supabase signup: {email}")
         return {"success": True, "data": {"user": _clean(user), "token": token}}

@@ -707,14 +707,18 @@ def get_referrals(
     _require_owned_partner_id(user, partner_id)
     referrals = sb_get_partner_referrals(partner_id)[:limit]
     total = len(referrals)
-    credits_earned = sum(float(r.get("credits_awarded", 0)) for r in referrals)
+    qualified = [r for r in referrals if r.get("qualified_at")]
+    pending = total - len(qualified)
+    partner_row = sb_get_partner(partner_id) or {}
+    tiers = int(partner_row.get("referral_milestone_tiers_paid") or 0)
+    credits_earned = float(tiers * 30)
     return {
         "success": True,
         "data": referrals,
         "stats": {
             "total": total,
-            "active": total,
-            "pending": 0,
+            "active": len(qualified),
+            "pending": pending,
             "total_earned": credits_earned,
         },
     }
@@ -1081,7 +1085,17 @@ def get_credit_history(
     _require_owned_partner_id(user, partner_id)
     boosts = sb_get_boosts(partner_id)
     referrals = sb_get_partner_referrals(partner_id)
+    partner_meta = sb_get_partner(partner_id) or {}
+    tiers = int(partner_meta.get("referral_milestone_tiers_paid") or 0)
     history = []
+    if tiers > 0:
+        history.append({
+            "id": "referral-milestones",
+            "type": "credit",
+            "description": f"Referral milestones ({tiers}×5 partners with first paid month)",
+            "amount": float(tiers * 30),
+            "date": partner_meta.get("updated_at") or "",
+        })
     for b in boosts:
         history.append({
             "id": b.get("id"),
@@ -1092,7 +1106,7 @@ def get_credit_history(
         })
     for r in referrals:
         earned = float(r.get("credits_awarded", 0) or 0)
-        if earned > 0:
+        if earned > 0 and not tiers:
             history.append({
                 "id": r.get("id"),
                 "type": "credit",
@@ -1122,15 +1136,21 @@ def get_referral_leaderboard(limit: Annotated[int, Query(ge=1, le=100)] = 10):
     leaderboard = []
     for p in partners:
         refs = sb_get_partner_referrals(p["id"])
-        total_credits = sum(float(r.get("credits_awarded", 0) or 0) for r in refs)
-        if refs:
-            leaderboard.append({
-                "name": p.get("business_name", "Unknown"),
-                "referrals": len(refs),
-                "credits": total_credits,
-                "partner_id": p["id"],
-            })
-    leaderboard.sort(key=lambda x: x["referrals"], reverse=True)
+        if not refs:
+            continue
+        qualified_n = sum(1 for r in refs if r.get("qualified_at"))
+        tiers = int(p.get("referral_milestone_tiers_paid") or 0)
+        milestone_credits = float(tiers * 30)
+        legacy = sum(float(r.get("credits_awarded", 0) or 0) for r in refs)
+        total_credits = milestone_credits if tiers > 0 else legacy
+        leaderboard.append({
+            "name": p.get("business_name", "Unknown"),
+            "referrals": qualified_n,
+            "referrals_signed_up": len(refs),
+            "credits": total_credits,
+            "partner_id": p["id"],
+        })
+    leaderboard.sort(key=lambda x: (x["credits"], x["referrals"]), reverse=True)
     for i, entry in enumerate(leaderboard[:limit]):
         entry["rank"] = i + 1
         badge = None

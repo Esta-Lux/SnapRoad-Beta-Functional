@@ -130,6 +130,13 @@ def _handle_checkout_session_completed(session: dict) -> None:
         plan = meta.get("plan")
         sb_update_partner(partner_id, {"plan": plan, "subscription_status": "active"})
         logger.info("Partner %s subscribed to plan %s", partner_id, plan)
+        try:
+            from services.referral_rewards import apply_partner_subscription_referral_rewards
+
+            if str(plan or "").strip().lower() != "internal":
+                apply_partner_subscription_referral_rewards(partner_id)
+        except Exception as exc:
+            logger.warning("partner referral rewards: %s", exc)
 
     # Partner one-time credits (metadata from /partner/v2/credits/purchase)
     if partner_id and meta.get("credits_amount") is not None and mode == "payment":
@@ -182,6 +189,12 @@ def _handle_checkout_session_completed(session: dict) -> None:
             sb_update_profile(user_id, profile_updates)
             if "plan" in profile_updates:
                 logger.info("Profile %s upgraded to %s", user_id, plan_id)
+                try:
+                    from services.referral_rewards import apply_driver_subscription_referral_rewards
+
+                    apply_driver_subscription_referral_rewards(user_id)
+                except Exception as exc:
+                    logger.warning("driver referral rewards: %s", exc)
 
 
 @router.post("/api/webhooks/stripe")

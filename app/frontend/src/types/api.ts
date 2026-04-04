@@ -59,6 +59,8 @@ export interface SignupRequest {
   name: string;
   date_of_birth: string;
   plan?: 'free' | 'premium' | 'family';
+  /** Referrer user UUID; gem milestones when referee pays first subscription. */
+  referral_code?: string;
 }
 
 export interface AuthResponse {

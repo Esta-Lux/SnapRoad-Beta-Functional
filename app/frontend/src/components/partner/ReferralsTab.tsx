@@ -9,10 +9,12 @@ import { QRCodeCanvas } from 'qrcode.react'
 import { partnerApi } from '@/services/partnerApi'
 import { getPartnerPortalBaseUrl } from '@/lib/partnerPortalUrl'
 
+/** Milestones when referred partners complete first paid month (Stripe). */
 const REFERRAL_TIERS = [
-  { name: 'Bronze', range: '1–2 referrals', credits: '50 credits each', color: '#CD7F32' },
-  { name: 'Silver', range: '3–5 referrals', credits: '60 credits each', color: '#C0C0C0' },
-  { name: 'Gold', range: '6+ referrals', credits: '75 credits each', color: '#FFD700' },
+  { name: 'Tier 1', range: '5 qualified partners', credits: '30 credits', color: '#CD7F32' },
+  { name: 'Tier 2', range: '10 qualified partners', credits: '60 credits total', color: '#C0C0C0' },
+  { name: 'Tier 3', range: '15 qualified partners', credits: '90 credits total', color: '#00DFA2' },
+  { name: 'Tier 4', range: '20 qualified partners', credits: '120 credits total', color: '#FFD700' },
 ]
 
 type LeaderboardRow = {
@@ -129,9 +131,9 @@ export default function ReferralsTab({ partnerId }: Props) {
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
         {[
-          { label: 'Total Referrals', value: String(referralStats.total), icon: Share2, color: '#0084FF' },
-          { label: 'Approved Partners', value: String(referralStats.active), icon: CheckCircle, color: '#00DFA2' },
-          { label: 'Credits Earned', value: String(Math.round(referralStats.total_earned)), icon: Wallet, color: '#F59E0B' },
+          { label: 'Referral rows', value: String(referralStats.total), icon: Share2, color: '#0084FF' },
+          { label: 'Paid 1st month', value: String(referralStats.active), icon: CheckCircle, color: '#00DFA2' },
+          { label: 'Credits (milestones)', value: String(Math.round(referralStats.total_earned)), icon: Wallet, color: '#F59E0B' },
         ].map((kpi, i) => (
           <div key={i} className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-3">
@@ -150,7 +152,9 @@ export default function ReferralsTab({ partnerId }: Props) {
         {/* Referral Link card */}
         <div className="bg-gradient-to-br from-[#0084FF]/10 to-[#00DFA2]/5 border border-[#0084FF]/20 rounded-2xl p-6">
           <h3 className="text-white font-semibold mb-1">Your Referral Link</h3>
-          <p className="text-slate-400 text-sm mb-4">Share this link to earn credits when partners join SnapRoad</p>
+          <p className="text-slate-400 text-sm mb-4">
+            Share this link; you earn milestone credits when referred partners pay their first subscription month (+30 per 5, up to 120).
+          </p>
           {!referralLink && (
             <p className="text-amber-400/90 text-sm mb-4">Loading your partner link… If this persists, open the dashboard again after sign-in.</p>
           )}
@@ -197,8 +201,8 @@ export default function ReferralsTab({ partnerId }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
-        <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6 min-w-0">
           <h3 className="text-white font-semibold mb-4">Referral Trend</h3>
           {trendData.length === 0 ? (
             <p className="text-slate-400 text-sm py-10 text-center">
@@ -223,7 +227,7 @@ export default function ReferralsTab({ partnerId }: Props) {
           )}
         </div>
 
-        <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
+        <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6 min-w-0">
           <h3 className="text-white font-semibold mb-4">Reward Tiers</h3>
           <div className="space-y-3">
             {REFERRAL_TIERS.map((tier, i) => (
@@ -264,7 +268,7 @@ export default function ReferralsTab({ partnerId }: Props) {
                       {entry.name}{isMe ? ' (You)' : ''}
                     </p>
                   </div>
-                  <span className="text-slate-400 text-sm shrink-0">{entry.referrals} referrals</span>
+                  <span className="text-slate-400 text-sm shrink-0">{entry.referrals} paid</span>
                   <span className="text-amber-400 font-semibold text-sm shrink-0">{Math.round(entry.credits)} credits</span>
                 </div>
               )
