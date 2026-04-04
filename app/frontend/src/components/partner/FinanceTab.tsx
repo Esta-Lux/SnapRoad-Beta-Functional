@@ -220,19 +220,19 @@ export default function FinanceTab() {
           {loadError}
         </div>
       )}
-      <div className="grid grid-cols-3 gap-6">
-        <div className="col-span-2 bg-gradient-to-br from-[#0084FF]/20 to-[#00DFA2]/10 rounded-2xl border border-[#0084FF]/20 p-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="bg-gradient-to-br from-[#0084FF]/20 to-[#00DFA2]/10 rounded-2xl border border-[#0084FF]/20 p-5 sm:p-6 lg:col-span-2 min-w-0">
           <div className="flex items-start justify-between">
             <div>
               <p className="text-slate-400 text-sm mb-1">Credit Balance</p>
-              <p className="text-5xl font-bold text-white mb-1">{loading ? '...' : creditBalance}</p>
+              <p className="text-4xl font-bold text-white mb-1 tabular-nums sm:text-5xl break-all">{loading ? '...' : creditBalance}</p>
               <p className="text-slate-400 text-sm">SnapRoad Partner Credits</p>
             </div>
             <div className="w-14 h-14 bg-[#0084FF]/20 rounded-2xl flex items-center justify-center">
               <Wallet className="text-[#0084FF]" size={28} />
             </div>
           </div>
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-wrap gap-2 sm:gap-3">
             <button onClick={handleAddCredits} className="px-5 py-2.5 rounded-xl bg-[#0084FF] text-white font-semibold text-sm hover:opacity-90 flex items-center gap-2" data-testid="add-credits-btn">
               <CreditCard size={16} />Add Credits
             </button>
@@ -264,7 +264,7 @@ export default function FinanceTab() {
           <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
             <Info size={18} className="text-amber-400" /> Redemption Fee Summary
           </h3>
-          <div className="grid grid-cols-4 gap-4 mb-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4 mb-4">
             <div className="bg-white/[0.03] rounded-xl p-3 text-center">
               <p className="text-slate-400 text-xs">Current Rate</p>
               <p className="text-white text-xl font-bold">${feeInfo.current_fee.toFixed(2)}</p>
@@ -286,7 +286,7 @@ export default function FinanceTab() {
           </div>
           <div className="bg-white/[0.02] rounded-xl p-3">
             <p className="text-slate-400 text-xs font-medium mb-2">Fee Schedule</p>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
               {REDEMPTION_FEE_SCHEDULE.map((tier, i) => (
                 <div key={i} className={`text-center p-2 rounded-lg ${feeInfo.current_tier === i + 1 ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-white/[0.02]'}`}>
                   <p className="text-slate-500 text-[10px]">{tier.range}</p>

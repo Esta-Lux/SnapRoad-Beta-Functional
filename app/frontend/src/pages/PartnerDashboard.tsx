@@ -552,7 +552,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} appType="partner" />
 
       {/* Main Content */}
-      <main className="ml-0 min-w-0 p-4 sm:p-6 md:ml-72 md:p-8">
+      <main className="ml-0 min-w-0 overflow-x-hidden p-4 pb-24 sm:p-6 md:ml-72 md:pb-8 md:p-8">
         <div className="mb-4 flex items-center gap-3 md:hidden">
           <button
             type="button"

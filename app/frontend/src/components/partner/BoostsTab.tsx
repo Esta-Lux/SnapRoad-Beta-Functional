@@ -39,18 +39,18 @@ export default function BoostsTab({ offers, onBoost }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-gradient-to-br from-orange-500/10 to-red-500/10 rounded-2xl border border-orange-500/20 p-8 text-center">
-        <Rocket className="text-orange-400 mx-auto mb-4" size={48} />
-        <h2 className="text-white font-bold text-2xl mb-2">Supercharge Your Offers</h2>
-        <p className="text-slate-400 mb-6 max-w-md mx-auto">Boost your offers to reach more drivers and get more redemptions.</p>
+      <div className="bg-gradient-to-br from-orange-500/10 to-red-500/10 rounded-2xl border border-orange-500/20 p-5 text-center sm:p-8">
+        <Rocket className="text-orange-400 mx-auto mb-4" size={40} />
+        <h2 className="text-white font-bold text-xl mb-2 sm:text-2xl">Supercharge Your Offers</h2>
+        <p className="text-slate-400 mb-6 max-w-md mx-auto text-sm sm:text-base">Boost your offers to reach more drivers and get more redemptions.</p>
         {loadingPricing ? (
           <Loader2 className="animate-spin text-slate-400 mx-auto" size={20} />
         ) : (
-          <div className="flex items-center justify-center gap-8 text-sm">
+          <div className="flex flex-col items-stretch justify-center gap-4 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-6 lg:gap-8">
             {pricingList.map((p, i) => (
-              <div key={p.name} className="text-center">
-                <p className={`font-bold text-xl ${colorMap[i] || 'text-white'}`}>{p.price.toFixed(0)} cr</p>
-                <p className="text-slate-500">{p.name} ({p.duration_hours}h)</p>
+              <div key={p.name} className="text-center rounded-xl bg-white/[0.04] px-4 py-3 sm:bg-transparent sm:py-0">
+                <p className={`font-bold text-lg sm:text-xl ${colorMap[i] || 'text-white'}`}>{p.price.toFixed(0)} cr</p>
+                <p className="text-slate-500 text-xs sm:text-sm">{p.name} ({p.duration_hours}h)</p>
               </div>
             ))}
           </div>
@@ -63,11 +63,11 @@ export default function BoostsTab({ offers, onBoost }: Props) {
           <Zap size={18} className="text-yellow-400" /> Active Boosts
         </h3>
         {boostedOffers.length > 0 ? (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {boostedOffers.map(offer => (
-              <div key={offer.id} className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-xl border border-yellow-500/20 p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <p className="text-white font-medium">{offer.title}</p>
+              <div key={offer.id} className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-xl border border-yellow-500/20 p-4 min-w-0">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <p className="text-white font-medium min-w-0 flex-1 break-words">{offer.title}</p>
                   <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs rounded-full font-medium">
                     {offer.boost_multiplier}x
                   </span>
@@ -89,7 +89,7 @@ export default function BoostsTab({ offers, onBoost }: Props) {
 
       <div>
         <h3 className="text-white font-semibold mb-4">Boost an Offer</h3>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {unboostedOffers.map(offer => (
             <div key={offer.id} className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-2xl border border-white/5 p-5">
               <h3 className="text-white font-medium mb-2">{offer.title}</h3>

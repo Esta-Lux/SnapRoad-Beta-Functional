@@ -18,7 +18,7 @@ export default function AnalyticsTab({ analytics }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 gap-3 mb-6 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         {stats.map((s, i) => (
           <div key={i} className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-2xl border border-white/5 p-5">
             <p className="text-slate-400 text-sm">{s.label}</p>

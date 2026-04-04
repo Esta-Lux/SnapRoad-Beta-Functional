@@ -19,6 +19,7 @@ const IncidentHeatmap = React.memo(function IncidentHeatmap({ incidents, visible
       type: 'FeatureCollection' as const,
       features: incidents
         .filter((inc) => inc.lat != null && inc.lng != null && isFinite(inc.lat) && isFinite(inc.lng))
+        .filter((inc) => (inc.upvotes ?? 0) >= 0)
         .map((inc) => ({
           type: 'Feature' as const,
           properties: { weight: incidentWeight(inc.type) },

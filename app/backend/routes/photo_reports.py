@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Request, Query
 
@@ -22,6 +22,10 @@ PUBLIC_BUCKET = PUBLIC_PHOTO_BUCKET
 PRIVATE_BUCKET = PRIVATE_ORIGINALS_BUCKET
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+# Community photo pins: ~3.5h on-map (matches incident report TTL policy).
+def _photo_expires_at() -> str:
+    return (datetime.now(timezone.utc) + timedelta(hours=3, minutes=30)).isoformat()
 
 
 @router.post("/upload")
@@ -137,6 +141,7 @@ async def upload_photo_report(
                     "ai_category": ai_category,
                     "description": (description or "").strip() or ai_description,
                     "created_at": datetime.now(timezone.utc).isoformat(),
+                    "expires_at": _photo_expires_at(),
                     "moderation_status": "active",
                     "blur_applied": blur_applied,
                     "needs_admin_review": False,
@@ -177,6 +182,7 @@ def get_nearby_photos(
             .gt("expires_at", now_iso)
             .or_("moderation_status.eq.active,moderation_status.is.null")
             .not_.is_("photo_url", "null")
+            .gte("upvotes", 0)
             .limit(limit)
         )
         res = q.execute()
@@ -202,13 +208,20 @@ def get_nearby_photos(
         return {"photos": []}
 
 
+def _is_photo_vote_dup(e: Exception) -> bool:
+    s = str(e).lower()
+    return "duplicate" in s or "unique" in s
+
+
 @router.post("/{report_id}/upvote")
 @limiter.limit("60/minute")
 def upvote_report(request: Request, report_id: str, user: dict = Depends(get_current_user)):
+    from services.reporter_rewards import award_reporter_on_peer_confirmation
+
     supabase = get_supabase()
     report_res = (
         supabase.table("incident_photos")
-        .select("id,user_id,moderation_status,photo_url")
+        .select("id,user_id,moderation_status,photo_url,upvotes")
         .eq("id", report_id)
         .limit(1)
         .execute()
@@ -221,13 +234,61 @@ def upvote_report(request: Request, report_id: str, user: dict = Depends(get_cur
         raise HTTPException(status_code=400, detail="Report is not visible")
     if not report.get("photo_url"):
         raise HTTPException(status_code=400, detail="Report is not visible")
-    if str(report.get("user_id")) == str(user.get("id")):
+    voter = str(user.get("id"))
+    if str(report.get("user_id")) == voter:
         raise HTTPException(status_code=400, detail="Cannot upvote your own report")
     try:
         supabase.table("incident_photo_upvotes").insert(
-            {"report_id": report_id, "user_id": user.get("id")}
+            {"report_id": report_id, "user_id": user.get("id"), "vote": 1}
         ).execute()
-    except Exception:
-        raise HTTPException(status_code=409, detail="Already upvoted")
+    except Exception as e:
+        if _is_photo_vote_dup(e):
+            raise HTTPException(status_code=409, detail="Already voted") from e
+        raise
     supabase.rpc("increment_upvotes", {"report_id": report_id}).execute()
-    return {"success": True}
+    new_u = int(report.get("upvotes") or 0) + 1
+    owner = str(report.get("user_id") or "")
+    reward = award_reporter_on_peer_confirmation(owner_id=owner or None, voter_id=voter)
+    out: dict = {"success": True, "upvotes": new_u}
+    if reward.get("awarded"):
+        out["reporter_reward"] = reward
+    return out
+
+
+@router.post("/{report_id}/downvote")
+@limiter.limit("60/minute")
+def downvote_report(request: Request, report_id: str, user: dict = Depends(get_current_user)):
+    supabase = get_supabase()
+    report_res = (
+        supabase.table("incident_photos")
+        .select("id,user_id,moderation_status,photo_url,upvotes,expires_at")
+        .eq("id", report_id)
+        .limit(1)
+        .execute()
+    )
+    report = report_res.data[0] if report_res.data else None
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    st = report.get("moderation_status")
+    if st and st not in ("active", None):
+        raise HTTPException(status_code=400, detail="Report is not visible")
+    if not report.get("photo_url"):
+        raise HTTPException(status_code=400, detail="Report is not visible")
+    voter = str(user.get("id"))
+    if str(report.get("user_id")) == voter:
+        raise HTTPException(status_code=400, detail="Cannot downvote your own report")
+    try:
+        supabase.table("incident_photo_upvotes").insert(
+            {"report_id": report_id, "user_id": user.get("id"), "vote": -1}
+        ).execute()
+    except Exception as e:
+        if _is_photo_vote_dup(e):
+            raise HTTPException(status_code=409, detail="Already voted") from e
+        raise
+    new_net = int(report.get("upvotes") or 0) - 1
+    now_iso = datetime.now(timezone.utc).isoformat()
+    upd = {"upvotes": new_net}
+    if new_net < 0:
+        upd["expires_at"] = now_iso
+    supabase.table("incident_photos").update(upd).eq("id", report_id).execute()
+    return {"success": True, "upvotes": new_net, "removed": new_net < 0}

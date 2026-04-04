@@ -32,7 +32,7 @@ export default function RedemptionsTab({ redemptions, feeInfo, onExportCsv, onOp
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-5">
           <p className="text-slate-400 text-xs mb-1">This month</p>
           <p className="text-2xl font-bold text-white">{feeInfo?.total_redemptions?.toLocaleString() || 0}</p>
@@ -55,11 +55,11 @@ export default function RedemptionsTab({ redemptions, feeInfo, onExportCsv, onOp
         </div>
       </div>
 
-      <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
+      <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-5 sm:p-6">
+        <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <h3 className="text-white font-semibold flex items-center gap-2">
-              <Receipt size={18} className="text-amber-400" /> Fee Tier Progress
+              <Receipt size={18} className="text-amber-400 shrink-0" /> Fee Tier Progress
             </h3>
             <p className="text-slate-400 text-sm mt-1">
               {feeInfo?.next_threshold
@@ -67,16 +67,18 @@ export default function RedemptionsTab({ redemptions, feeInfo, onExportCsv, onOp
                 : 'No threshold data available yet'}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
             <button
+              type="button"
               onClick={onExportCsv}
-              className="px-4 py-2 rounded-xl bg-white/5 text-slate-200 hover:bg-white/10 flex items-center gap-2"
+              className="px-4 py-2.5 rounded-xl bg-white/5 text-slate-200 hover:bg-white/10 flex items-center justify-center gap-2 text-sm min-w-0"
             >
               <Download size={16} /> Export CSV
             </button>
             <button
+              type="button"
               onClick={onOpenScanner}
-              className="px-4 py-2 rounded-xl bg-emerald-500 text-white hover:bg-emerald-400 flex items-center gap-2"
+              className="px-4 py-2.5 rounded-xl bg-emerald-500 text-white hover:bg-emerald-400 flex items-center justify-center gap-2 text-sm flex-1 sm:flex-initial min-w-[140px]"
             >
               <QrCode size={16} /> Team Scan Links
             </button>

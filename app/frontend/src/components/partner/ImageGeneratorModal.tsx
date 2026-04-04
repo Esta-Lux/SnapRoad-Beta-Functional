@@ -84,7 +84,7 @@ export default function ImageGeneratorModal({ onClose, onGenerate }: Props) {
 
               <div>
                 <label className="text-slate-400 text-sm mb-2 block">Style</label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {STYLES.map(s => (
                     <button key={s.id} onClick={() => setStyle(s.id)}
                       className={`py-2 px-3 rounded-xl text-sm font-medium transition-all ${style === s.id ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-slate-700/50 text-slate-400 border border-white/5 hover:border-white/20'}`}>

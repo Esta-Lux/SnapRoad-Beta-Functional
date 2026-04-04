@@ -79,9 +79,9 @@ def _severity_for(t: str) -> str:
     return "medium"
 
 
-def _expiry_hours_for(_t: str) -> int:
-    # Single policy today; weather-specific TTL can diverge here later.
-    return 24
+def _expiry_hours_for(_t: str) -> float:
+    # Community reports: ~3.5h on-map TTL (photos use the same policy).
+    return 3.5
 
 
 def _to_road_report_payload(report: IncidentReportCompat, user_id: str, now: datetime) -> dict:
@@ -276,6 +276,7 @@ def _nearby_from_db(lat: float, lng: float, radius_miles: float, now: datetime, 
             sb.table("road_reports")
             .select("id,type,description,lat,lng,upvotes,created_at,expires_at")
             .eq("status", "active")
+            .gte("upvotes", 0)
             .gte("lat", lat - lat_delta)
             .lte("lat", lat + lat_delta)
             .gte("lng", lng - lng_delta)
@@ -394,6 +395,8 @@ def _is_vote_duplicate_error(e: Exception) -> bool:
 
 
 def _upvote_db(sb, _incident_id: str, voter: str, report: dict) -> dict:
+    from services.reporter_rewards import award_reporter_on_peer_confirmation
+
     owner = str(report.get("user_id") or "")
     if owner and owner == voter:
         raise HTTPException(status_code=400, detail=MSG_CANNOT_UPVOTE_OWN)
@@ -404,10 +407,17 @@ def _upvote_db(sb, _incident_id: str, voter: str, report: dict) -> dict:
             raise HTTPException(status_code=409, detail=MSG_ALREADY_VOTED)
         raise
     sb.table("road_reports").update({"upvotes": int(report.get("upvotes") or 0) + 1}).eq("id", report.get("id")).execute()
-    return {"success": True, "upvotes": int(report.get("upvotes") or 0) + 1}
+    new_uv = int(report.get("upvotes") or 0) + 1
+    reward = award_reporter_on_peer_confirmation(owner_id=owner or None, voter_id=voter)
+    out = {"success": True, "upvotes": new_uv}
+    if reward.get("awarded"):
+        out["reporter_reward"] = reward
+    return out
 
 
 def _upvote_memory(incident_id: str, voter: str) -> dict:
+    from services.reporter_rewards import award_reporter_on_peer_confirmation
+
     for inc in incidents_db:
         if str(inc.get("id")) != str(incident_id):
             continue
@@ -424,7 +434,11 @@ def _upvote_memory(incident_id: str, voter: str) -> dict:
             inc["expires_at"] = (datetime.fromisoformat(inc["expires_at"]) + timedelta(minutes=30)).isoformat()
         except Exception:
             inc["expires_at"] = (_utc_now() + timedelta(minutes=30)).isoformat()
-        return {"success": True, "upvotes": inc["upvotes"]}
+        reward = award_reporter_on_peer_confirmation(owner_id=owner or None, voter_id=voter)
+        out = {"success": True, "upvotes": inc["upvotes"]}
+        if reward.get("awarded"):
+            out["reporter_reward"] = reward
+        return out
     raise HTTPException(status_code=404, detail=MSG_INCIDENT_NOT_FOUND)
 
 
@@ -456,6 +470,11 @@ class ConfirmBody(BaseModel):
 
 
 def _confirm_db(sb, row: dict, voter: str, body: ConfirmBody) -> dict:
+    from services.reporter_rewards import award_reporter_on_peer_confirmation
+
+    owner = str(row.get("user_id") or "")
+    if owner and owner == voter:
+        raise HTTPException(status_code=400, detail=MSG_CANNOT_UPVOTE_OWN)
     vote_value = 1 if body.confirmed else -1
     try:
         sb.table("road_report_votes").insert(
@@ -468,30 +487,46 @@ def _confirm_db(sb, row: dict, voter: str, body: ConfirmBody) -> dict:
     current = int(row.get("upvotes") or 0)
     new_votes = current + vote_value
     updates = {"upvotes": new_votes}
-    if not body.confirmed and new_votes <= -3:
+    if vote_value < 0 and new_votes < 0:
         updates["status"] = "inactive"
+        updates["expires_at"] = _utc_now().isoformat()
     sb.table("road_reports").update(updates).eq("id", row.get("id")).execute()
-    return {
+    removed = vote_value < 0 and new_votes < 0
+    out: dict = {
         "success": True,
         "confirmed": body.confirmed,
         "upvotes": new_votes,
-        "removed": (not body.confirmed and new_votes <= -3),
+        "removed": removed,
     }
+    if vote_value > 0:
+        reward = award_reporter_on_peer_confirmation(owner_id=owner or None, voter_id=voter)
+        if reward.get("awarded"):
+            out["reporter_reward"] = reward
+    return out
 
 
-def _confirm_memory(body: ConfirmBody) -> dict:
+def _confirm_memory(body: ConfirmBody, voter: str) -> dict:
+    from services.reporter_rewards import award_reporter_on_peer_confirmation
+
     for inc in incidents_db:
         if str(inc.get("id")) != str(body.incident_id):
             continue
+        owner = str(inc.get("reported_by") or "")
+        if owner and owner == voter:
+            raise HTTPException(status_code=400, detail=MSG_CANNOT_UPVOTE_OWN)
         if body.confirmed:
             inc["upvotes"] = int(inc.get("upvotes", 0)) + 1
             try:
                 inc["expires_at"] = (datetime.fromisoformat(inc["expires_at"]) + timedelta(minutes=30)).isoformat()
             except Exception:
                 inc["expires_at"] = (_utc_now() + timedelta(minutes=30)).isoformat()
-            return {"success": True, "confirmed": True, "upvotes": inc["upvotes"]}
+            out = {"success": True, "confirmed": True, "upvotes": inc["upvotes"]}
+            reward = award_reporter_on_peer_confirmation(owner_id=owner or None, voter_id=voter)
+            if reward.get("awarded"):
+                out["reporter_reward"] = reward
+            return out
         inc["upvotes"] = int(inc.get("upvotes", 0)) - 1
-        if inc["upvotes"] <= -3:
+        if inc["upvotes"] < 0:
             incidents_db.remove(inc)
             return {"success": True, "confirmed": False, "removed": True}
         return {"success": True, "confirmed": False, "upvotes": inc["upvotes"]}
@@ -508,7 +543,7 @@ def confirm_incident(request: Request, body: ConfirmBody, _user: CurrentUser):
     voter = str((_user or {}).get("id") or "")
     try:
         sb = get_supabase()
-        res = sb.table("road_reports").select("id,upvotes").eq("id", body.incident_id).limit(1).execute()
+        res = sb.table("road_reports").select("id,user_id,upvotes").eq("id", body.incident_id).limit(1).execute()
         row = res.data[0] if res.data else None
         if row:
             return _confirm_db(sb, row, voter, body)
@@ -517,10 +552,13 @@ def confirm_incident(request: Request, body: ConfirmBody, _user: CurrentUser):
     except Exception as e:
         _maybe_raise_incident_503(e, "confirm_incident supabase")
 
-    return _confirm_memory(body)
+    return _confirm_memory(body, voter)
 
 
 def _downvote_db(sb, row: dict, voter: str) -> dict:
+    owner = str(row.get("user_id") or "")
+    if owner and owner == voter:
+        raise HTTPException(status_code=400, detail=MSG_CANNOT_UPVOTE_OWN)
     try:
         sb.table("road_report_votes").insert(
             {"report_id": row.get("id"), "user_id": voter, "vote": -1}
@@ -531,21 +569,25 @@ def _downvote_db(sb, row: dict, voter: str) -> dict:
         raise
     new_votes = int(row.get("upvotes") or 0) - 1
     updates = {"upvotes": new_votes}
-    if new_votes <= -3:
+    if new_votes < 0:
         updates["status"] = "inactive"
+        updates["expires_at"] = _utc_now().isoformat()
     sb.table("road_reports").update(updates).eq("id", row.get("id")).execute()
-    return {"success": True, "upvotes": new_votes, "removed": new_votes <= -3}
+    return {"success": True, "upvotes": new_votes, "removed": new_votes < 0}
 
 
-def _downvote_memory(incident_id: str) -> dict:
+def _downvote_memory(incident_id: str, voter: str) -> dict:
     for inc in incidents_db:
         if str(inc.get("id")) != str(incident_id):
             continue
+        owner = str(inc.get("reported_by") or "")
+        if owner and owner == voter:
+            raise HTTPException(status_code=400, detail=MSG_CANNOT_UPVOTE_OWN)
         inc["upvotes"] = int(inc.get("upvotes", 0)) - 1
-        if inc["upvotes"] <= -3:
+        if inc["upvotes"] < 0:
             incidents_db.remove(inc)
-            return {"success": True, "removed": True}
-        return {"success": True, "upvotes": inc["upvotes"]}
+            return {"success": True, "upvotes": inc["upvotes"], "removed": True}
+        return {"success": True, "upvotes": inc["upvotes"], "removed": False}
     raise HTTPException(status_code=404, detail=MSG_INCIDENT_NOT_FOUND)
 
 
@@ -559,7 +601,7 @@ def downvote_incident(request: Request, incident_id: str, _user: CurrentUser):
     voter = str((_user or {}).get("id") or "")
     try:
         sb = get_supabase()
-        res = sb.table("road_reports").select("id,upvotes").eq("id", incident_id).limit(1).execute()
+        res = sb.table("road_reports").select("id,user_id,upvotes").eq("id", incident_id).limit(1).execute()
         row = res.data[0] if res.data else None
         if row:
             return _downvote_db(sb, row, voter)
@@ -568,7 +610,7 @@ def downvote_incident(request: Request, incident_id: str, _user: CurrentUser):
     except Exception as e:
         _maybe_raise_incident_503(e, "downvote_incident supabase")
 
-    return _downvote_memory(incident_id)
+    return _downvote_memory(incident_id, voter)
 
 
 if ENVIRONMENT == "production":

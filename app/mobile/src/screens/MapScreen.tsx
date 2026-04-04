@@ -252,6 +252,8 @@ export default function MapScreen() {
   // Sync nav.isNavigating → useLocation accuracy
   useEffect(() => { setIsNavActive(nav.isNavigating); }, [nav.isNavigating]);
 
+  const wasNavigatingRef = useRef(false);
+
   useEffect(() => {
     const t = getMapboxPublicToken();
     if (MapboxGL && t) {
@@ -347,6 +349,13 @@ export default function MapScreen() {
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<{ name: string; address?: string; category?: string; maki?: string; lat: number; lng: number } | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
+  useEffect(() => {
+    if (nav.isNavigating && !wasNavigatingRef.current) {
+      setSelectedPlaceId(null);
+      setSelectedPlace(null);
+    }
+    wasNavigatingRef.current = nav.isNavigating;
+  }, [nav.isNavigating]);
   const handledRedeemRouteRef = useRef<string | null>(null);
   const [showOrion, setShowOrion] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -680,8 +689,7 @@ export default function MapScreen() {
     }).catch(() => {});
   }, [showCameras, user?.isPremium, setShowCameras, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
-  // Fetch photo reports when layer enabled (API returns only active, public blurred URLs)
-  useEffect(() => {
+  const refreshPhotoReportsNearby = useCallback(() => {
     if (!showPhotoReports) return;
     api.get<{ photos?: unknown[] }>(`/api/photo-reports/nearby?lat=${location.lat}&lng=${location.lng}&radius=5`).then((r) => {
       if (!r.success) return;
@@ -702,7 +710,12 @@ export default function MapScreen() {
         })),
       );
     }).catch(() => {});
-  }, [showPhotoReports, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
+  }, [showPhotoReports, location.lat, location.lng]);
+
+  // Fetch photo reports when layer enabled (API returns only active, public blurred URLs)
+  useEffect(() => {
+    refreshPhotoReportsNearby();
+  }, [refreshPhotoReportsNearby, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
   useEffect(() => {
     if (!showTrafficSafety) {
@@ -915,7 +928,9 @@ export default function MapScreen() {
       const loc = locationRef.current;
       const res = await api.get<{ data?: Incident[] }>(`/api/incidents/nearby?lat=${loc.lat}&lng=${loc.lng}&radius_miles=2`);
       const d = (res.data as { data?: Incident[] })?.data;
-      if (Array.isArray(d)) setNearbyIncidents(d);
+      if (Array.isArray(d)) {
+        setNearbyIncidents(d.filter((inc) => (inc.upvotes ?? 0) >= 0));
+      }
     };
     poll();
     const ms = nav.isNavigating ? 30000 : 60000;
@@ -1523,10 +1538,21 @@ export default function MapScreen() {
 
   const handleDownvote = useCallback(async (inc: Incident) => {
     try {
-      await api.post('/api/incidents/confirm', { incident_id: inc.id, confirmed: false });
-      setActiveReportCard(null);
+      const res = await api.post<{ upvotes?: number; removed?: boolean }>(`/api/incidents/${inc.id}/downvote`);
+      if (!res.success) throw new Error(res.error || 'Failed');
+      const data = res.data as { upvotes?: number; removed?: boolean };
+      if (data?.removed) {
+        setNearbyIncidents((prev) => prev.filter((i) => String(i.id) !== String(inc.id)));
+        setActiveReportCard(null);
+      } else {
+        const votes = typeof data?.upvotes === 'number' ? data.upvotes : (inc.upvotes ?? 0) - 1;
+        setNearbyIncidents((prev) => prev.map((i) => (String(i.id) === String(inc.id) ? { ...i, upvotes: votes } : i)));
+        setActiveReportCard((prev) => (prev && String(prev.id) === String(inc.id) ? { ...prev, upvotes: votes } : prev));
+      }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch { setActiveReportCard(null); }
+    } catch (e: any) {
+      Alert.alert('Could not record vote', e?.message || 'Try again.');
+    }
   }, []);
 
   const lngLatFromPressGeometry = useCallback((geometry: any): { lng: number; lat: number } | null => {
@@ -1767,6 +1793,7 @@ export default function MapScreen() {
 
           {!nav.isNavigating && <OfferMarkers offers={nearbyOffers} onOfferTap={setSelectedOffer} />}
           {showIncidents && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
+            if ((inc.upvotes ?? 0) < 0) return false;
             if (inc.type === 'construction') return showConstruction;
             return true;
           })} onIncidentTap={setActiveReportCard} />}
@@ -2454,6 +2481,8 @@ export default function MapScreen() {
               clearTimeout(startNavTimeoutRef.current);
               startNavTimeoutRef.current = null;
             }
+            setSelectedPlaceId(null);
+            setSelectedPlace(null);
             // Start turn-by-turn immediately (voice + steps). Camera animates in parallel — no pre-delay.
             nav.startNavigation();
             if (isCalm) {
@@ -2543,7 +2572,7 @@ export default function MapScreen() {
         <View
           style={{
             position: 'absolute',
-            right: 16,
+            right: 20,
             bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 6,
             zIndex: 12,
             gap: 10,
@@ -2588,7 +2617,7 @@ export default function MapScreen() {
       {!nav.isNavigating && !nav.showRoutePreview && !nav.tripSummary && !selectedPlace && !selectedPlaceId && (
         <TouchableOpacity style={[s.reportFab, {
           bottom: 40 + insets.bottom,
-          right: 16,
+          right: 20,
           backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
           borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
         }]}
@@ -2864,10 +2893,18 @@ export default function MapScreen() {
         </View>
       )}
 
-      <PhotoReportSheet visible={showPhotoReport} lat={location.lat} lng={location.lng} onClose={() => setShowPhotoReport(false)} isLight={isLight} />
+      <PhotoReportSheet
+        visible={showPhotoReport}
+        lat={location.lat}
+        lng={location.lng}
+        onClose={() => setShowPhotoReport(false)}
+        isLight={isLight}
+        speedMph={speed}
+      />
       <PhotoReportDetailModal
         visible={!!selectedPhotoReport}
         report={selectedPhotoReport}
+        onVotesChanged={refreshPhotoReportsNearby}
         onClose={() => setSelectedPhotoReport(null)}
       />
       <HamburgerMenu

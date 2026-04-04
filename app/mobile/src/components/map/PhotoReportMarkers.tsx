@@ -21,6 +21,8 @@ interface Props {
 }
 
 const MARKER_VIEW_MAX = 60;
+/** Match road-report marker outer puck (~40px). */
+const PIN_OUTER = 40;
 const PURPLE = '#8B5CF6';
 const PURPLE_DEEP = '#6D28D9';
 
@@ -65,12 +67,12 @@ export default React.memo(function PhotoReportMarkers({ reports, onReportTap }: 
             >
               {uri ? (
                 <View style={styles.thumbRing}>
-                  <Image source={{ uri }} style={styles.thumb} />
+                  <Image source={{ uri }} style={styles.thumb} resizeMode="cover" />
                 </View>
               ) : (
                 <View style={styles.iconOuter}>
                   <View style={styles.iconInner}>
-                    <Ionicons name="camera" size={18} color="#FFFFFF" />
+                    <Ionicons name="camera" size={16} color="#FFFFFF" />
                   </View>
                 </View>
               )}
@@ -86,9 +88,9 @@ const styles = StyleSheet.create({
   hit: { alignItems: 'center', justifyContent: 'center' },
   hitPressed: { opacity: 0.9, transform: [{ scale: 0.96 }] },
   thumbRing: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: PIN_OUTER,
+    height: PIN_OUTER,
+    borderRadius: PIN_OUTER / 2,
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: '#fff',
@@ -105,12 +107,12 @@ const styles = StyleSheet.create({
   },
   thumb: { width: '100%', height: '100%' },
   iconOuter: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
-    backgroundColor: 'rgba(139, 92, 246, 0.25)',
+    width: PIN_OUTER,
+    height: PIN_OUTER,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.95)',
+    borderColor: `${PURPLE}55`,
     alignItems: 'center',
     justifyContent: 'center',
     ...Platform.select({
@@ -125,9 +127,9 @@ const styles = StyleSheet.create({
     }),
   },
   iconInner: {
-    width: 32,
-    height: 32,
-    borderRadius: 11,
+    width: 30,
+    height: 30,
+    borderRadius: 10,
     backgroundColor: PURPLE,
     alignItems: 'center',
     justifyContent: 'center',

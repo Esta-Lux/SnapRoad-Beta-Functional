@@ -14,12 +14,17 @@ import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../api/client';
 
+/** GPS often reads 1–4 mph while parked; cap keeps capture safe without blocking legitimate stopped reports. */
+const STATIONARY_MAX_MPH = 5;
+
 interface Props {
   visible: boolean;
   lat: number;
   lng: number;
   onClose: () => void;
   isLight?: boolean;
+  /** When set, camera / submit blocked above this speed (safety). */
+  speedMph?: number;
 }
 
 export default function PhotoReportSheet({
@@ -28,6 +33,7 @@ export default function PhotoReportSheet({
   lng,
   onClose,
   isLight = false,
+  speedMph = 0,
 }: Props) {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -46,7 +52,19 @@ export default function PhotoReportSheet({
   const chipBg = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.06)';
   const iconBg = isLight ? '#eff6ff' : 'rgba(59,130,246,0.15)';
 
+  function blockIfMoving(): boolean {
+    if (speedMph > STATIONARY_MAX_MPH) {
+      Alert.alert(
+        'Stop to capture',
+        'Photo reports are only available while you are stopped or moving very slowly (about 5 mph or less). Pull over safely before opening the camera.',
+      );
+      return true;
+    }
+    return false;
+  }
+
   async function takePhoto() {
+    if (blockIfMoving()) return;
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
       Alert.alert('Permission required', 'Camera access is needed to take a photo.');
@@ -58,6 +76,7 @@ export default function PhotoReportSheet({
   }
 
   async function chooseFromGallery() {
+    if (blockIfMoving()) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert('Permission required', 'Photo library access is needed to choose an image.');
@@ -70,6 +89,7 @@ export default function PhotoReportSheet({
 
   async function submitReport() {
     if (!imageUri) return;
+    if (blockIfMoving()) return;
     setSubmitting(true);
     try {
       const formData = new FormData();
@@ -137,6 +157,11 @@ export default function PhotoReportSheet({
         </TouchableOpacity>
       </View>
 
+      {speedMph > STATIONARY_MAX_MPH && (
+        <Text style={[styles.stationaryHint, { color: subColor }]}>
+          Stay at ~{STATIONARY_MAX_MPH} mph or below to take or submit a photo report.
+        </Text>
+      )}
       {!imageUri ? (
         <View style={styles.actions}>
           <TouchableOpacity style={styles.primaryBtn} onPress={takePhoto} activeOpacity={0.8}>
@@ -308,6 +333,13 @@ const styles = StyleSheet.create({
   previewActions: {
     marginTop: 14,
     gap: 10,
+  },
+  stationaryHint: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 10,
+    marginBottom: 2,
+    fontWeight: '600',
   },
   outlineBtn: {
     alignItems: 'center',

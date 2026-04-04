@@ -127,7 +127,7 @@ export default function ReferralsTab({ partnerId }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
         {[
           { label: 'Total Referrals', value: String(referralStats.total), icon: Share2, color: '#0084FF' },
           { label: 'Approved Partners', value: String(referralStats.active), icon: CheckCircle, color: '#00DFA2' },
