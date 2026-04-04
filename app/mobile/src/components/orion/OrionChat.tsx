@@ -91,6 +91,8 @@ export interface OrionContext {
     nextStep?: string;
   };
   nearbyOffers?: Array<{ id?: number | string; title?: string; partner_name?: string; lat?: number; lng?: number }>;
+  /** Short conditions string from `/api/weather/current` for coach grounding */
+  weather?: string;
 }
 
 interface Props {

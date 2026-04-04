@@ -64,6 +64,8 @@ import {
   shouldShowRoadDisambiguation,
 } from '../navigation/turnCardModel';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
+import { useMapWeather, weatherOverlayFactor } from '../hooks/useMapWeather';
+import MapWeatherOverlay from '../components/map/MapWeatherOverlay';
 import GemOverlay from '../components/gamification/GemOverlay';
 import TripShare from '../components/gamification/TripShare';
 import HamburgerMenu from '../components/profile/HamburgerMenu';
@@ -520,6 +522,14 @@ export default function MapScreen() {
   const inConfirmWindow = Date.now() < confirmUntil;
   const isAmbient = !nav.isNavigating && speed > 6.7;
   const mapOk = isMapAvailable() && MapboxGL !== null;
+
+  const mapWeather = useMapWeather(location.lat, location.lng, {
+    enabled: mapTabFocused && mapOk,
+  });
+  const weatherOverlayModeFactor = useMemo(
+    () => weatherOverlayFactor(drivingMode, isLight),
+    [drivingMode, isLight],
+  );
 
   // ─── Effects ───────────────────────────────────────────────────────────────
 
@@ -1820,6 +1830,14 @@ export default function MapScreen() {
         </View>
       )}
 
+      <MapWeatherOverlay
+        precipitation={mapWeather.precipitation}
+        intensity={mapWeather.intensity}
+        modeFactor={weatherOverlayModeFactor}
+        isLight={isLight}
+        isDay={mapWeather.isDay}
+      />
+
       {/* ═══ PLACE CARD (simple card for Mapbox results / map taps) ═══════ */}
       {selectedPlace && !selectedPlaceId && !nav.isNavigating && !nav.showRoutePreview && (
         <PlaceCard
@@ -2960,6 +2978,7 @@ export default function MapScreen() {
             lat: o.lat,
             lng: o.lng,
           })),
+          weather: mapWeather.summary ?? undefined,
         }}
         onAction={(action) => {
           if (action.type === 'navigate' && action.lat != null && action.lng != null) {

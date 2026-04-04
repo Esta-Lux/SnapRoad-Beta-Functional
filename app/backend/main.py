@@ -58,6 +58,7 @@ from routes.photo_reports import router as photo_reports_router
 from routes.place_alerts import router as place_alerts_router
 from routes.commute_routes import router as commute_routes_router
 from routes.legal import router as legal_router
+from routes.weather import router as weather_router
 from config import (
     JWT_SECRET,
     SUPABASE_URL,
@@ -251,6 +252,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(place_alerts_router)
     app.include_router(commute_routes_router)
     app.include_router(legal_router)
+    app.include_router(weather_router)
 
 def _build_health_response() -> dict:
     checks = {"database": "ok", "cache": "unknown", "supabase_env": _supabase_env_health_hint()}

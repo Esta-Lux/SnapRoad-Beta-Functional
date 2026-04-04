@@ -167,6 +167,7 @@ class ApiService {
     if (endpoint.startsWith('/api/auth/forgot-password')) return false;
     if (endpoint.startsWith('/api/auth/resend-verification')) return false;
     if (endpoint.startsWith('/api/auth/oauth/supabase')) return false;
+    if (endpoint.startsWith('/api/weather/')) return false;
     return true;
   }
 
