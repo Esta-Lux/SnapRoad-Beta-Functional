@@ -13,6 +13,8 @@ export interface AdminStats {
   incidents_today?: number
   revenue?: number
   total_mrr?: number
+  /** Backend may include a display string e.g. "+12%" when derived from analytics */
+  user_growth?: string
   /** Incident reports awaiting moderation (sidebar badge). */
   pending_incidents?: number
   open_concerns?: number

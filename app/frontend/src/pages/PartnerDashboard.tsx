@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useLayoutEffect } from 'react'
+import { useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Plus, Gift, TrendingUp, BarChart3,
@@ -572,7 +572,12 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
       {/* Modals */}
       <NotificationCenter isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
       <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} onLogout={() => { partnerApi.logout(); navigate('/portal/partner/welcome') }} />
-      <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} appType="partner" />
+      <HelpModal
+        isOpen={showHelp}
+        onClose={() => setShowHelp(false)}
+        appType="partner"
+        onReplayTour={() => setShowOnboarding(true)}
+      />
 
       {/* Main Content */}
       <main className="ml-0 min-w-0 overflow-x-hidden p-4 pb-24 sm:p-6 md:ml-72 md:pb-8 md:p-8">
