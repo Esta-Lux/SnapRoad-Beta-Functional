@@ -15,7 +15,7 @@ from routes.gamification import add_xp_to_user
 from config import ENVIRONMENT
 from services.llm_client import chat_completion_model, get_sync_openai_client
 from database import get_supabase
-from services.supabase_service import sb_update_profile
+from services.supabase_service import sb_update_profile, sb_get_profile
 
 _trips_log = logging.getLogger(__name__)
 
@@ -491,7 +491,9 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
             },
         }
     safety = max(0, min(100, body.safety_score))
-    gems_earned, xp_earned = _compute_trip_rewards(distance, safety, user, body.duration_seconds)
+    prof = sb_get_profile(str(user_id)) if user_id else None
+    reward_user = {**user, **(prof or {})}
+    gems_earned, xp_earned = _compute_trip_rewards(distance, safety, reward_user, body.duration_seconds)
     trip_id = str(uuid4())
     trip_row = _build_trip_row(trip_id, user_id, body, distance, safety, gems_earned, xp_earned)
 

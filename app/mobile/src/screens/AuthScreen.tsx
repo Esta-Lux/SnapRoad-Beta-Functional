@@ -10,13 +10,14 @@ import {
   ActivityIndicator,
   ScrollView,
   Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import { friendlySupabaseAuthErrorMessage } from '../utils/deepLinks';
 
 function getPasswordStrength(pw: string): { label: string; color: string; level: number } {
@@ -126,6 +127,13 @@ export default function AuthScreen({ navigation, route }: Props) {
     setLocalError(null);
     if (mode === 'signup') {
       setLocalError('Use email signup to complete age verification before signing in with Google.');
+      return;
+    }
+    if (!supabaseConfigured) {
+      Alert.alert(
+        'App configuration',
+        'Google sign-in needs your real Supabase project in this build. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in Expo → Environment variables for the production profile (or local .env), then create a new build or OTA update.',
+      );
       return;
     }
     setGoogleLoading(true);

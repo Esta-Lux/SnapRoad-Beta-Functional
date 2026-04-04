@@ -6,6 +6,7 @@ challenges, badges, redemptions, incidents, notifications, campaigns,
 rewards, audit_log, platform_settings, legal_documents, trips, referrals.
 """
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import HTTPException
 from database import get_supabase
@@ -25,6 +26,77 @@ def _sb():
 def _table_missing(error) -> bool:
     err = str(error)
     return "PGRST205" in err or "schema cache" in err or "does not exist" in err
+
+
+def promotion_access_active(row: Optional[dict]) -> bool:
+    """True when promotion_access_until is in the future (UTC)."""
+    if not row:
+        return False
+    raw = row.get("promotion_access_until")
+    if raw is None or str(raw).strip() == "":
+        return False
+    try:
+        s = str(raw).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt > datetime.now(timezone.utc)
+    except Exception:
+        return False
+
+
+def merge_profile_promotion_entitlements(row: dict) -> dict:
+    """
+    Copy of profile row with effective premium/plan while an admin promotion is active.
+    Does not change persisted Stripe fields; callers should use this for entitlement checks.
+    """
+    out = dict(row)
+    if not promotion_access_active(out):
+        return out
+    plan = str(out.get("promotion_plan") or "premium").strip().lower()
+    if plan == "family":
+        out["plan"] = "family"
+    else:
+        cur = str(out.get("plan") or "basic").strip().lower()
+        if cur in ("", "basic", "free"):
+            out["plan"] = "premium"
+    out["is_premium"] = True
+    try:
+        gm = int(out.get("gem_multiplier") or 1)
+    except Exception:
+        gm = 1
+    out["gem_multiplier"] = max(gm, 2)
+    return out
+
+
+def merge_partner_promotion_entitlements(row: dict) -> dict:
+    """Partner row with subscription treated as active during promotion window."""
+    out = dict(row)
+    if not promotion_access_active(out):
+        return out
+    out["subscription_status"] = "active"
+    pp = str(out.get("promotion_plan") or "").strip()
+    if pp:
+        out["plan"] = pp
+    return out
+
+
+def compute_extended_promotion_until_iso(existing_until_raw: Optional[object], days: int) -> str:
+    """Extend from max(now, current_until) by days; returns ISO8601 UTC."""
+    now = datetime.now(timezone.utc)
+    base = now
+    if existing_until_raw is not None and str(existing_until_raw).strip():
+        try:
+            s = str(existing_until_raw).replace("Z", "+00:00")
+            cur = datetime.fromisoformat(s)
+            if cur.tzinfo is None:
+                cur = cur.replace(tzinfo=timezone.utc)
+            if cur > base:
+                base = cur
+        except Exception:
+            pass
+    end = base + timedelta(days=max(1, min(int(days), 730)))
+    return end.isoformat()
 
 
 def _safe_count(table: str, filters: Optional[dict] = None) -> int:
@@ -174,9 +246,10 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
             # Verify password with bcrypt; support legacy sha256 for seamless migration.
             stored_hash = str(profile_data.get("password_hash", "") or "")
             password_ok = False
+            used_auth_fallback = False
             if stored_hash.startswith("$2"):
                 password_ok = pwd_context.verify(password, stored_hash)
-            else:
+            elif stored_hash:
                 import hashlib
                 legacy_sha = hashlib.sha256(password.encode()).hexdigest()
                 password_ok = legacy_sha == stored_hash
@@ -188,6 +261,32 @@ def sb_login_user(email: str, password: str) -> tuple[Optional[dict], Optional[s
                         ).eq("id", profile_data.get("id")).execute()
                     except Exception as hash_upgrade_error:
                         logger.warning("Password hash upgrade failed for %s: %s", email, hash_upgrade_error)
+
+            if not password_ok:
+                # Invited / dashboard-created users often have NULL password_hash; credential lives in Auth only.
+                try:
+                    auth_resp = sb.auth.sign_in_with_password({"email": email, "password": password})
+                    auth_user = getattr(auth_resp, "user", None)
+                    if auth_user and str(getattr(auth_user, "id", "") or "") == str(
+                        profile_data.get("id") or ""
+                    ):
+                        password_ok = True
+                        used_auth_fallback = True
+                    elif auth_user:
+                        logger.warning(
+                            "Login rejected: auth user id does not match profiles.id for %s",
+                            email,
+                        )
+                except Exception as auth_err:
+                    logger.debug("Supabase auth sign_in fallback failed for %s: %s", email, auth_err)
+
+            if password_ok and used_auth_fallback:
+                try:
+                    _sb().table("profiles").update(
+                        {"password_hash": pwd_context.hash(password)}
+                    ).eq("id", profile_data.get("id")).execute()
+                except Exception as backfill_err:
+                    logger.warning("password_hash backfill skipped for %s: %s", email, backfill_err)
 
             if not password_ok:
                 logger.warning(f"Password mismatch for {email}")
@@ -262,7 +361,8 @@ def sb_list_profiles(limit: int = 100) -> list:
         result = _sb().table("profiles").select(
             "id,email,name,plan,xp,level,gems,safety_score,"
             "total_miles,total_trips,total_savings,is_premium,"
-            "state,city,status,role,created_at,updated_at"
+            "state,city,status,role,created_at,updated_at,"
+            "promotion_access_until,promotion_plan"
         ).limit(limit).execute()
         return result.data or []
     except Exception as e:
@@ -271,10 +371,28 @@ def sb_list_profiles(limit: int = 100) -> list:
         return []
 
 
+def sb_get_profile_promotion_until_raw(profile_id: str) -> Optional[object]:
+    try:
+        r = _sb().table("profiles").select("promotion_access_until").eq("id", profile_id).maybe_single().execute()
+        return (r.data or {}).get("promotion_access_until")
+    except Exception:
+        return None
+
+
+def sb_get_partner_promotion_until_raw(partner_id: str) -> Optional[object]:
+    try:
+        r = _sb().table("partners").select("promotion_access_until").eq("id", partner_id).maybe_single().execute()
+        return (r.data or {}).get("promotion_access_until")
+    except Exception:
+        return None
+
+
 def sb_get_profile(profile_id: str) -> Optional[dict]:
     try:
         result = _sb().table("profiles").select("*").eq("id", profile_id).single().execute()
-        return result.data
+        if not result.data:
+            return None
+        return merge_profile_promotion_entitlements(dict(result.data))
     except Exception as e:
         logger.warning(f"sb_get_profile: {e}")
         return None
@@ -357,7 +475,8 @@ def sb_get_partners(limit: int = 50) -> list:
         result = _sb().table("partners").select(
             "id,business_name,business_type,email,plan,status,"
             "is_approved,is_founders,subscription_status,"
-            "created_at,updated_at,total_redemptions,phone,address"
+            "created_at,updated_at,total_redemptions,phone,address,"
+            "promotion_access_until,promotion_plan"
         ).limit(limit).execute()
         return result.data or []
     except Exception as e:
@@ -369,7 +488,9 @@ def sb_get_partners(limit: int = 50) -> list:
 def sb_get_partner(partner_id: str) -> Optional[dict]:
     try:
         result = _sb().table("partners").select("*").eq("id", partner_id).single().execute()
-        return result.data
+        if not result.data:
+            return None
+        return merge_partner_promotion_entitlements(dict(result.data))
     except Exception as e:
         logger.warning(f"sb_get_partner: {e}")
         return None

@@ -127,6 +127,44 @@ class AdminApiService {
     return this.request(`/api/admin/export/users?format=${format}`)
   }
 
+  async grantPromotions(payload: {
+    user_ids?: string[]
+    partner_ids?: string[]
+    days: number
+    plan: string
+    send_email?: boolean
+  }): Promise<
+    AdminApiResponse<{
+      reference: string
+      updated_users: number
+      updated_partners: number
+      emails_sent: number
+      email_errors: string[]
+    }>
+  > {
+    return this.request('/api/admin/promotions/grant', {
+      method: 'POST',
+      body: JSON.stringify({
+        user_ids: payload.user_ids ?? [],
+        partner_ids: payload.partner_ids ?? [],
+        days: payload.days,
+        plan: payload.plan,
+        send_email: Boolean(payload.send_email),
+      }),
+    })
+  }
+
+  async getInviteConfig(): Promise<AdminApiResponse<{ redirect_to: string }>> {
+    return this.request('/api/admin/invite-config')
+  }
+
+  async inviteAdminUser(email: string): Promise<AdminApiResponse<{ email: string; redirect_to: string }>> {
+    return this.request('/api/admin/invite-user', {
+      method: 'POST',
+      body: JSON.stringify({ email: email.trim() }),
+    })
+  }
+
   // ==================== INCIDENTS ====================
 
   async getIncidents(status?: string): Promise<AdminApiResponse<AdminIncident[]>> {

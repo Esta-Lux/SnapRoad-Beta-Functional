@@ -2,14 +2,15 @@
 SnapRoad Admin API Routes
 All endpoints use the Supabase DAO layer (supabase_service.py).
 """
-from pydantic import BaseModel
-from fastapi import APIRouter, Body, Depends, UploadFile, File, Query
+from pydantic import BaseModel, Field
+from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
-from typing import Annotated, Optional
+from typing import Annotated, Optional, List
 from datetime import datetime, timedelta, timezone
 import json
 import logging
 import io
+import secrets
 from middleware.auth import require_admin
 
 from models.schemas import (
@@ -29,9 +30,13 @@ from services.offer_analytics import (
 from services.telemetry_service import telemetry_service
 from services.supabase_service import (
     sb_list_profiles, sb_get_profile, sb_update_profile,
+    sb_update_partner,
+    compute_extended_promotion_until_iso,
+    sb_get_profile_promotion_until_raw,
+    sb_get_partner_promotion_until_raw,
     sb_suspend_profile, sb_activate_profile, sb_delete_profile,
     sb_get_partners, sb_get_partner, sb_create_partner,
-    sb_update_partner, sb_delete_partner,
+    sb_delete_partner,
     sb_get_partner_locations,
     sb_get_partner_locations_for_admin_map,
     sb_get_offers, sb_create_offer, sb_update_offer, sb_delete_offer,
@@ -59,6 +64,10 @@ from services.supabase_service import (
     sb_update_road_report_moderation,
     sb_get_live_users,
 )
+
+from services.outbound_email import send_html_email, promotion_email_html
+from services.supabase_invite import supabase_auth_invite_user
+from config import get_admin_invite_redirect_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Admin"], dependencies=[Depends(require_admin)])
@@ -1220,6 +1229,162 @@ def activate_user(user_id: str):
     if success:
         return {"success": True, "message": "User activated successfully"}
     return {"success": False, "message": "Failed to activate user"}
+
+
+class AdminInviteUserBody(BaseModel):
+    email: str = Field(..., min_length=3, max_length=320)
+
+
+@router.get("/admin/invite-config")
+def admin_invite_config(_admin: AdminUser):
+    """Show which redirect URL the API uses for Auth invites (must be allowlisted in Supabase)."""
+    return {"success": True, "data": {"redirect_to": get_admin_invite_redirect_url()}}
+
+
+@router.post("/admin/invite-user")
+def admin_invite_user_route(body: AdminInviteUserBody, admin: AdminUser):
+    """
+    Send Supabase invite email with redirect_to = admin sign-in (not the dashboard default Site URL).
+    After accept: ensure profiles.id matches auth user id and set role to admin if needed.
+    """
+    email = (body.email or "").strip().lower()
+    eparts = email.split("@")
+    if len(eparts) != 2 or not eparts[0].strip() or not eparts[1].strip():
+        raise HTTPException(status_code=400, detail="Invalid email address")
+
+    redirect_to = get_admin_invite_redirect_url()
+    ok, msg, _raw = supabase_auth_invite_user(email, redirect_to)
+    actor = str(admin.get("id") or admin.get("user_id") or "admin")
+    if ok:
+        try:
+            sb_create_audit_log("ADMIN_INVITE_SENT", actor, email, redirect_to)
+        except Exception:
+            pass
+        return {
+            "success": True,
+            "message": msg,
+            "data": {"email": email, "redirect_to": redirect_to},
+        }
+    if "not configured" in (msg or "").lower():
+        raise HTTPException(status_code=503, detail=msg)
+    raise HTTPException(status_code=400, detail=msg)
+
+
+_USER_PROMO_PLANS = frozenset({"premium", "family"})
+_PARTNER_PROMO_PLANS = frozenset({"starter", "growth", "enterprise"})
+
+
+class GrantPromotionBody(BaseModel):
+    user_ids: List[str] = Field(default_factory=list)
+    partner_ids: List[str] = Field(default_factory=list)
+    days: int = Field(default=30, ge=1, le=730)
+    plan: str = Field(default="premium", min_length=1, max_length=32)
+    send_email: bool = False
+
+
+@router.post("/admin/promotions/grant")
+def grant_promotions(body: GrantPromotionBody, admin: AdminUser):
+    """
+    Extend or start time-boxed access for drivers (premium/family benefits) or partners
+    (subscription treated as active). Optionally notify by email (Resend).
+    """
+    uids = [str(x).strip() for x in (body.user_ids or []) if str(x).strip()]
+    pids = [str(x).strip() for x in (body.partner_ids or []) if str(x).strip()]
+    if not uids and not pids:
+        return {"success": False, "message": "Select at least one user or partner"}
+    uids = uids[:300]
+    pids = pids[:300]
+
+    ref = f"PROMO-{secrets.token_hex(4).upper()}"
+    actor = str(admin.get("id") or admin.get("user_id") or "admin")
+    user_plan = str(body.plan or "premium").strip().lower()
+    if user_plan not in _USER_PROMO_PLANS:
+        user_plan = "premium"
+    partner_plan = str(body.plan or "growth").strip().lower()
+    if partner_plan not in _PARTNER_PROMO_PLANS:
+        partner_plan = "growth"
+
+    updated_users = 0
+    updated_partners = 0
+    emails_sent = 0
+    email_errors: list[str] = []
+
+    for uid in uids:
+        raw_until = sb_get_profile_promotion_until_raw(uid)
+        until_iso = compute_extended_promotion_until_iso(raw_until, body.days)
+        if sb_update_profile(uid, {"promotion_access_until": until_iso, "promotion_plan": user_plan}):
+            updated_users += 1
+        if body.send_email:
+            row = sb_get_profile(uid)
+            to = (row or {}).get("email")
+            name = (row or {}).get("name") or "there"
+            if to:
+                until_disp = until_iso[:10] if len(until_iso) >= 10 else until_iso
+                html = promotion_email_html(
+                    str(name),
+                    is_partner=False,
+                    plan_label=user_plan.title(),
+                    until_display=until_disp,
+                    reference=ref,
+                )
+                ok, err = send_html_email(
+                    str(to),
+                    f"SnapRoad: {body.days} days of {user_plan.title()} access",
+                    html,
+                )
+                if ok:
+                    emails_sent += 1
+                elif err:
+                    email_errors.append(f"{to}: {err}")
+
+    for pid in pids:
+        raw_until = sb_get_partner_promotion_until_raw(pid)
+        until_iso = compute_extended_promotion_until_iso(raw_until, body.days)
+        if sb_update_partner(pid, {"promotion_access_until": until_iso, "promotion_plan": partner_plan}):
+            updated_partners += 1
+        if body.send_email:
+            prow = sb_get_partner(pid)
+            to = (prow or {}).get("email")
+            name = (prow or {}).get("business_name") or "there"
+            if to:
+                until_disp = until_iso[:10] if len(until_iso) >= 10 else until_iso
+                html = promotion_email_html(
+                    str(name),
+                    is_partner=True,
+                    plan_label=partner_plan.title(),
+                    until_display=until_disp,
+                    reference=ref,
+                )
+                ok, err = send_html_email(
+                    str(to),
+                    f"SnapRoad Partner: {body.days} days complimentary {partner_plan.title()}",
+                    html,
+                )
+                if ok:
+                    emails_sent += 1
+                elif err:
+                    email_errors.append(f"{to}: {err}")
+
+    try:
+        sb_create_audit_log(
+            "PROMOTION_GRANTED",
+            actor,
+            ref,
+            f"users={updated_users} partners={updated_partners} days={body.days} email={body.send_email}",
+        )
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "data": {
+            "reference": ref,
+            "updated_users": updated_users,
+            "updated_partners": updated_partners,
+            "emails_sent": emails_sent,
+            "email_errors": email_errors[:12],
+        },
+    }
 
 
 # ==================== PRICING ====================

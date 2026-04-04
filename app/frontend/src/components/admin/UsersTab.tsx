@@ -1,10 +1,11 @@
 // Users & Families Management Tab
 // =============================================
 
-import { useState, useEffect, useMemo } from 'react'
-import { Search, Users, Edit2, Trash2, Shield, TrendingUp, Download } from 'lucide-react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Search, Users, Edit2, Trash2, Shield, TrendingUp, Download, Gift } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
 import type { AdminUser } from '@/types/admin'
+import GrantPromotionModal from '@/components/admin/GrantPromotionModal'
 
 interface UsersTabProps {
   theme: 'dark' | 'light'
@@ -17,9 +18,20 @@ export default function UsersTab({ theme }: UsersTabProps) {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [promoOpen, setPromoOpen] = useState(false)
 
   useEffect(() => {
     loadUsers()
+  }, [])
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }, [])
 
   const loadUsers = async () => {
@@ -120,6 +132,19 @@ export default function UsersTab({ theme }: UsersTabProps) {
     })
   }, [users, searchTerm, planFilter, statusFilter])
 
+  const toggleSelectAllFiltered = useCallback(() => {
+    setSelectedIds((prev) => {
+      const ids = filteredUsers.map((u) => u.id)
+      const allOn = ids.length > 0 && ids.every((id) => prev.has(id))
+      if (allOn) {
+        const next = new Set(prev)
+        ids.forEach((id) => next.delete(id))
+        return next
+      }
+      return new Set([...prev, ...ids])
+    })
+  }, [filteredUsers])
+
   const isDark = theme === 'dark'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
   const textPrimary = isDark ? 'text-white' : 'text-[#0B1220]'
@@ -128,6 +153,10 @@ export default function UsersTab({ theme }: UsersTabProps) {
   const avgSafety = users.length > 0
     ? Math.round(users.reduce((acc, u) => acc + (u.safety_score || 0), 0) / users.length)
     : 0
+
+  const filteredIds = useMemo(() => filteredUsers.map((u) => u.id), [filteredUsers])
+  const allFilteredSelected =
+    filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id))
 
   return (
     <div className="space-y-6">
@@ -206,6 +235,15 @@ export default function UsersTab({ theme }: UsersTabProps) {
             <Download size={18} />
             Export
           </button>
+          <button
+            type="button"
+            onClick={() => setPromoOpen(true)}
+            disabled={selectedIds.size === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-500/20 text-purple-300 rounded-lg hover:bg-purple-500/30 disabled:opacity-40"
+          >
+            <Gift size={18} />
+            Grant promotion ({selectedIds.size})
+          </button>
         </div>
       </div>
 
@@ -215,6 +253,15 @@ export default function UsersTab({ theme }: UsersTabProps) {
           <table className="w-full">
             <thead className={isDark ? 'bg-slate-800/50' : 'bg-[#F8FAFC]'}>
               <tr>
+                <th className="px-3 py-4 w-10">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible"
+                    checked={allFilteredSelected}
+                    onChange={toggleSelectAllFiltered}
+                    className="rounded border-slate-500"
+                  />
+                </th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">User</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Plan</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Safety Score</th>
@@ -227,6 +274,14 @@ export default function UsersTab({ theme }: UsersTabProps) {
             <tbody className="divide-y divide-slate-700/50">
               {filteredUsers.map((user) => (
                 <tr key={user.id} className={isDark ? 'hover:bg-slate-800/30' : 'hover:bg-[#F8FAFC]'}>
+                  <td className="px-3 py-4">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(user.id)}
+                      onChange={() => toggleSelect(user.id)}
+                      className="rounded border-slate-500"
+                    />
+                  </td>
                   <td className="px-6 py-4">
                     <div>
                       <div className={`text-sm font-medium ${textPrimary}`}>{user.name}</div>
@@ -241,6 +296,11 @@ export default function UsersTab({ theme }: UsersTabProps) {
                     }`}>
                       {user.plan ? user.plan.charAt(0).toUpperCase() + user.plan.slice(1) : 'Basic'}
                     </span>
+                    {user.promotion_access_until && (
+                      <div className={`text-[10px] mt-1 ${textSecondary}`}>
+                        Promo until {String(user.promotion_access_until).slice(0, 10)}
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
@@ -342,6 +402,19 @@ export default function UsersTab({ theme }: UsersTabProps) {
           <div className="w-12 h-12 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
         </div>
       )}
+
+      <GrantPromotionModal
+        open={promoOpen}
+        target="users"
+        selectedIds={[...selectedIds]}
+        theme={theme}
+        onClose={() => setPromoOpen(false)}
+        onSuccess={() => {
+          showFeedback('success', 'Promotion applied')
+          void loadUsers()
+          setSelectedIds(new Set())
+        }}
+      />
     </div>
   )
 }

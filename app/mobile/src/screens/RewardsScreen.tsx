@@ -231,6 +231,8 @@ export default function RewardsScreen() {
   const lastOfferGrid = useRef<string | null>(null);
   /** Skip first tab focus — initial `useEffect` already loads; avoids double fetch. */
   const skipRewardsFocusSilentRef = useRef(true);
+  /** Avoid refiring 8 parallel API calls on every tab focus (reduces jank / freezes). */
+  const lastSilentRewardsFetchAt = useRef(0);
 
   useEffect(() => {
     if (!rewardsBootstrapped.current) {
@@ -260,6 +262,9 @@ export default function RewardsScreen() {
         return;
       }
       if (!rewardsBootstrapped.current) return;
+      const now = Date.now();
+      if (now - lastSilentRewardsFetchAt.current < 45_000) return;
+      lastSilentRewardsFetchAt.current = now;
       void loadFull('silent', location.lat, location.lng);
     }, [loadFull, location.lat, location.lng]),
   );

@@ -17,6 +17,7 @@ from services.supabase_service import (
     sb_update_profile,
     sb_create_challenge,
     sb_get_challenges,
+    merge_profile_promotion_entitlements,
 )
 from config import ENVIRONMENT
 import uuid
@@ -255,13 +256,19 @@ def get_leaderboard(
 
     try:
         sb = get_supabase()
-        query = sb.table("profiles").select("id,name,safety_score,level,gems,total_miles,is_premium,state")
+        query = sb.table("profiles").select(
+            "id,name,safety_score,level,gems,total_miles,is_premium,state,"
+            "promotion_access_until,promotion_plan"
+        )
         if state and state.lower() != "all":
             query = query.eq("state", state.upper())
         query = _apply_leaderboard_order(query, tf)
         res = query.limit(limit).execute()
         if res.data:
-            leaderboard = [_build_leaderboard_entry(i + 1, u) for i, u in enumerate(res.data)]
+            leaderboard = [
+                _build_leaderboard_entry(i + 1, merge_profile_promotion_entitlements(dict(u)))
+                for i, u in enumerate(res.data)
+            ]
             my_profile = sb.table("profiles").select("name,safety_score,gems,level,state").eq("id", user_id).limit(1).execute()
             my_data = my_profile.data[0] if my_profile.data else {}
             return _leaderboard_response(leaderboard, my_data, user_id, len(leaderboard))

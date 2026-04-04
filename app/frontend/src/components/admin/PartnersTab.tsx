@@ -1,10 +1,11 @@
 // Partners & Campaigns Management Tab
 // =============================================
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Search, Building2, Plus, Edit2, Check, X, Gift } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
 import type { Partner } from '@/types/admin'
+import GrantPromotionModal from '@/components/admin/GrantPromotionModal'
 
 interface PartnersTabProps {
   theme: 'dark' | 'light'
@@ -21,6 +22,8 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
   const [editingPartner, setEditingPartner] = useState<Partner | null>(null)
   const [editForm, setEditForm] = useState({ business_name: '', email: '', business_type: '', address: '', phone: '' })
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [promoOpen, setPromoOpen] = useState(false)
   const [newPartner, setNewPartner] = useState({
     business_name: '',
     email: '',
@@ -185,6 +188,15 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
     })
   }, [partners, searchTerm, statusFilter])
 
+  const toggleSelectPartner = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
   const isDark = theme === 'dark'
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'
   const textPrimary = isDark ? 'text-white' : 'text-[#0B1220]'
@@ -276,6 +288,15 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
             <option value="suspended">Suspended</option>
           </select>
           <button
+            type="button"
+            onClick={() => setPromoOpen(true)}
+            disabled={selectedIds.size === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-500/20 text-violet-300 rounded-lg hover:bg-violet-500/30 disabled:opacity-40"
+          >
+            <Gift size={18} />
+            Grant promotion ({selectedIds.size})
+          </button>
+          <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-400 hover:to-pink-400"
           >
@@ -290,7 +311,16 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
         {filteredPartners.map((partner) => (
           <div key={partner.id} className={`p-5 rounded-xl border ${card} hover:shadow-lg transition-all`}>
             <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center mr-2">
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${partner.business_name || 'partner'}`}
+                  checked={selectedIds.has(partner.id)}
+                  onChange={() => toggleSelectPartner(partner.id)}
+                  className="rounded border-slate-500"
+                />
+              </div>
+              <div className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center text-2xl">
                   {getBusinessTypeIcon(partner.business_type)}
                 </div>
@@ -313,6 +343,12 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
                 <span className={textSecondary}>Plan</span>
                 <span className={`${textPrimary} capitalize`}>{partner.plan || 'starter'}</span>
               </div>
+              {partner.promotion_access_until && (
+                <div className={`text-xs ${textSecondary}`}>
+                  Promo until {String(partner.promotion_access_until).slice(0, 10)}
+                  {partner.promotion_plan ? ` · ${partner.promotion_plan}` : ''}
+                </div>
+              )}
               <div className="flex items-center justify-between text-sm">
                 <span className={textSecondary}>Member Since</span>
                 <span className={textPrimary}>{partner.created_at ? new Date(partner.created_at).toLocaleDateString() : 'N/A'}</span>
@@ -574,6 +610,19 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
           </div>
         </div>
       )}
+
+      <GrantPromotionModal
+        open={promoOpen}
+        target="partners"
+        selectedIds={[...selectedIds]}
+        theme={theme}
+        onClose={() => setPromoOpen(false)}
+        onSuccess={() => {
+          showFeedback('success', 'Partner promotion applied')
+          void loadPartners()
+          setSelectedIds(new Set())
+        }}
+      />
     </div>
   )
 }

@@ -7,7 +7,7 @@ from services.mock_data import (
     generated_images_db, driver_location_history,
 )
 from models.schemas import ImageGenerateRequest, LocationVisit
-from services.supabase_service import _sb
+from services.supabase_service import _sb, sb_get_profile
 from services.offer_utils import calculate_free_discount
 from services.cache import cache_get, cache_set, cache_delete
 from services.fee_calculator import record_redemption_fee
@@ -57,9 +57,9 @@ def _offer_type(offer: dict) -> str:
 
 def _get_profile_like(user_id: str) -> dict:
     try:
-        result = _sb().table("profiles").select("*").eq("id", user_id).limit(1).execute()
-        if result.data:
-            return result.data[0]
+        row = sb_get_profile(user_id)
+        if row:
+            return row
     except Exception:
         if ENVIRONMENT == "production":
             return {}

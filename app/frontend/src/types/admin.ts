@@ -74,6 +74,8 @@ export interface AdminUser {
   state: string
   city: string
   created_at: string
+  promotion_access_until?: string | null
+  promotion_plan?: string | null
 }
 
 export interface AdminIncident {
@@ -118,6 +120,8 @@ export interface Partner {
   address: string
   created_at: string
   credits?: number
+  promotion_access_until?: string | null
+  promotion_plan?: string | null
 }
 
 export interface Campaign {
