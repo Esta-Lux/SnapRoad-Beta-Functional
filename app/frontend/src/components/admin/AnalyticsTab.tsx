@@ -105,53 +105,53 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
       {/* Key Metrics */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-        <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-              <Users className="text-blue-400" size={20} />
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4 md:gap-4">
+        <div className={`p-3 sm:p-4 rounded-xl border ${card} min-w-0`}>
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 bg-blue-500/20 rounded-lg flex items-center justify-center">
+              <Users className="text-blue-400" size={18} />
             </div>
-            <div>
-              <div className={`text-2xl font-bold ${textPrimary}`}>{(stats?.total_users || 0).toLocaleString()}</div>
-              <div className={`text-xs ${textSecondary}`}>Total Users</div>
+            <div className="min-w-0">
+              <div className={`text-lg sm:text-2xl font-bold tabular-nums truncate ${textPrimary}`}>{(stats?.total_users || 0).toLocaleString()}</div>
+              <div className={`text-[10px] sm:text-xs ${textSecondary}`}>Total Users</div>
             </div>
           </div>
           <div className={`mt-2 text-xs ${textSecondary}`}>{(stats?.total_users || 0).toLocaleString()} total</div>
         </div>
-        <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-500/20 rounded-lg flex items-center justify-center">
-              <Building2 className="text-emerald-400" size={20} />
+        <div className={`p-3 sm:p-4 rounded-xl border ${card} min-w-0`}>
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 bg-emerald-500/20 rounded-lg flex items-center justify-center">
+              <Building2 className="text-emerald-400" size={18} />
             </div>
-            <div>
-              <div className={`text-2xl font-bold ${textPrimary}`}>{(stats?.active_partners || 0).toLocaleString()}</div>
-              <div className={`text-xs ${textSecondary}`}>Active Partners</div>
+            <div className="min-w-0">
+              <div className={`text-lg sm:text-2xl font-bold tabular-nums truncate ${textPrimary}`}>{(stats?.active_partners || 0).toLocaleString()}</div>
+              <div className={`text-[10px] sm:text-xs ${textSecondary}`}>Active Partners</div>
             </div>
           </div>
           <div className={`mt-2 text-xs ${textSecondary}`}>{(stats?.total_partners || 0).toLocaleString()} total</div>
         </div>
-        <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
-              <Gift className="text-purple-400" size={20} />
+        <div className={`p-3 sm:p-4 rounded-xl border ${card} min-w-0`}>
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 bg-purple-500/20 rounded-lg flex items-center justify-center">
+              <Gift className="text-purple-400" size={18} />
             </div>
-            <div>
-              <div className={`text-2xl font-bold ${textPrimary}`}>{(stats?.total_offers || 0).toLocaleString()}</div>
-              <div className={`text-xs ${textSecondary}`}>Active Offers</div>
+            <div className="min-w-0">
+              <div className={`text-lg sm:text-2xl font-bold tabular-nums truncate ${textPrimary}`}>{(stats?.total_offers || 0).toLocaleString()}</div>
+              <div className={`text-[10px] sm:text-xs ${textSecondary}`}>Active Offers</div>
             </div>
           </div>
           <div className={`mt-2 text-xs ${textSecondary}`}>Across all partners</div>
         </div>
-        <div className={`p-4 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-amber-500/20 rounded-lg flex items-center justify-center">
-              <Activity className="text-amber-400" size={20} />
+        <div className={`p-3 sm:p-4 rounded-xl border ${card} min-w-0`}>
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 bg-amber-500/20 rounded-lg flex items-center justify-center">
+              <Activity className="text-amber-400" size={18} />
             </div>
-            <div>
-              <div className={`text-2xl font-bold ${textPrimary}`}>{(realtimeSummary?.today_redemptions ?? stats?.total_redemptions ?? 0).toLocaleString()}</div>
-              <div className={`text-xs ${textSecondary}`}>Redemptions</div>
+            <div className="min-w-0">
+              <div className={`text-lg sm:text-2xl font-bold tabular-nums truncate ${textPrimary}`}>{(realtimeSummary?.today_redemptions ?? stats?.total_redemptions ?? 0).toLocaleString()}</div>
+              <div className={`text-[10px] sm:text-xs ${textSecondary}`}>Redemptions</div>
             </div>
           </div>
           <div className={`mt-2 text-xs ${textSecondary}`}>today {realtimeSummary?.today_redemptions ?? 0} · total {(stats?.total_redemptions || 0).toLocaleString()}</div>
@@ -159,50 +159,60 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
       </div>
 
       {realtimeSummary && (
-        <div className="grid grid-cols-3 gap-6">
-          <div className={`p-5 rounded-xl border ${card}`}>
-            <h3 className={`text-lg font-semibold ${textPrimary} mb-3 flex items-center gap-2`}>
-              <RadioTower size={18} className="text-cyan-400" /> Live Feed
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-6 min-w-0">
+          <div className={`p-4 sm:p-5 rounded-xl border ${card} min-w-0`}>
+            <h3 className={`text-base sm:text-lg font-semibold ${textPrimary} mb-3 flex items-center gap-2`}>
+              <RadioTower size={18} className="text-cyan-400 shrink-0" /> Live Feed
             </h3>
-            <div className="space-y-3 max-h-72 overflow-auto">
+            <div className="space-y-2 sm:space-y-3 max-h-60 sm:max-h-72 overflow-y-auto overscroll-contain -mx-1 px-1">
               {realtimeFeed.slice(0, 8).map((item, idx) => (
-                <div key={`${item.event_type}-${item.created_at || idx}`} className="rounded-xl bg-white/[0.03] px-4 py-3">
-                  <p className="text-white text-sm font-medium capitalize">{item.event_type}</p>
-                  <p className="text-slate-400 text-xs mt-1">Offer #{item.offer_id || '—'} · Partner {item.partner_id || '—'}</p>
-                  <p className="text-slate-500 text-xs mt-1">{item.created_at ? new Date(item.created_at).toLocaleString() : 'Just now'}</p>
+                <div
+                  key={`${item.event_type}-${item.created_at || idx}`}
+                  className={`rounded-xl px-3 py-2.5 sm:px-4 sm:py-3 ${isDark ? 'bg-white/[0.03]' : 'bg-slate-50'}`}
+                >
+                  <p className={`text-sm font-medium capitalize break-words ${textPrimary}`}>{item.event_type}</p>
+                  <p className={`text-xs mt-1 break-all ${textSecondary}`}>
+                    Offer #{item.offer_id || '—'} · Partner {item.partner_id || '—'}
+                  </p>
+                  <p className="text-xs mt-1 text-slate-500">
+                    {item.created_at ? new Date(item.created_at).toLocaleString() : 'Just now'}
+                  </p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className={`p-5 rounded-xl border ${card}`}>
-            <h3 className={`text-lg font-semibold ${textPrimary} mb-3`}>Top Offers Today</h3>
-            <div className="space-y-3">
+          <div className={`p-4 sm:p-5 rounded-xl border ${card} min-w-0`}>
+            <h3 className={`text-base sm:text-lg font-semibold ${textPrimary} mb-3`}>Top Offers Today</h3>
+            <div className="space-y-2 sm:space-y-3">
               {realtimeSummary.top_offers_today.slice(0, 6).map((row) => (
-                <div key={row.offer_id} className="flex items-center justify-between rounded-xl bg-white/[0.03] px-4 py-3">
-                  <span className="text-slate-300 text-sm">Offer #{row.offer_id}</span>
-                  <span className="text-emerald-300 font-semibold">{row.redemptions}</span>
+                <div
+                  key={row.offer_id}
+                  className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 sm:px-4 sm:py-3 min-w-0 ${isDark ? 'bg-white/[0.03]' : 'bg-slate-50'}`}
+                >
+                  <span className={`text-sm truncate min-w-0 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>Offer #{row.offer_id}</span>
+                  <span className="text-emerald-500 dark:text-emerald-300 font-semibold tabular-nums shrink-0">{row.redemptions}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className={`p-5 rounded-xl border ${card}`}>
-            <h3 className={`text-lg font-semibold ${textPrimary} mb-3 flex items-center gap-2`}>
-              <MapPinned size={18} className="text-amber-400" /> Redemption Heat
+          <div className={`p-4 sm:p-5 rounded-xl border ${card} min-w-0`}>
+            <h3 className={`text-base sm:text-lg font-semibold ${textPrimary} mb-3 flex items-center gap-2`}>
+              <MapPinned size={18} className="text-amber-400 shrink-0" /> Redemption Heat
             </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl bg-white/[0.03] px-4 py-4">
-                <p className="text-slate-400 text-xs">Map points today</p>
-                <p className="text-white text-2xl font-bold mt-2">{mapPoints.length}</p>
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
+              <div className={`rounded-xl px-3 py-3 sm:px-4 sm:py-4 min-w-0 ${isDark ? 'bg-white/[0.03]' : 'bg-slate-50'}`}>
+                <p className={`text-xs ${textSecondary}`}>Map points today</p>
+                <p className={`text-xl sm:text-2xl font-bold mt-1 tabular-nums ${textPrimary}`}>{mapPoints.length}</p>
               </div>
-              <div className="rounded-xl bg-white/[0.03] px-4 py-4">
-                <p className="text-slate-400 text-xs">Offer views today</p>
-                <p className="text-white text-2xl font-bold mt-2">{realtimeSummary.today_views}</p>
+              <div className={`rounded-xl px-3 py-3 sm:px-4 sm:py-4 min-w-0 ${isDark ? 'bg-white/[0.03]' : 'bg-slate-50'}`}>
+                <p className={`text-xs ${textSecondary}`}>Offer views today</p>
+                <p className={`text-xl sm:text-2xl font-bold mt-1 tabular-nums ${textPrimary}`}>{realtimeSummary.today_views}</p>
               </div>
-              <div className="rounded-xl bg-white/[0.03] px-4 py-4 col-span-2">
-                <p className="text-slate-400 text-xs">Offer visits today</p>
-                <p className="text-white text-2xl font-bold mt-2">{realtimeSummary.today_visits}</p>
+              <div className={`rounded-xl px-3 py-3 sm:px-4 sm:py-4 col-span-2 min-w-0 ${isDark ? 'bg-white/[0.03]' : 'bg-slate-50'}`}>
+                <p className={`text-xs ${textSecondary}`}>Offer visits today</p>
+                <p className={`text-xl sm:text-2xl font-bold mt-1 tabular-nums ${textPrimary}`}>{realtimeSummary.today_visits}</p>
               </div>
             </div>
           </div>
@@ -210,16 +220,16 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
       )}
 
       {/* Date Range Selector */}
-      <div className={`p-4 rounded-xl border ${card}`}>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
+      <div className={`p-3 sm:p-4 rounded-xl border ${card} min-w-0`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+          <div className="flex items-center gap-2 shrink-0">
             <Calendar className={textSecondary} size={18} />
-            <span className={`${textPrimary} font-medium`}>Date Range</span>
+            <span className={`${textPrimary} font-medium text-sm sm:text-base`}>Date Range</span>
           </div>
           <select
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value)}
-            className={`px-4 py-2 rounded-lg border ${
+            className={`w-full sm:w-auto min-w-0 flex-1 sm:flex-none max-w-full px-3 sm:px-4 py-2 rounded-lg border text-sm ${
               isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
             }`}
           >
@@ -228,18 +238,22 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
             <option value="90d">Last 90 Days</option>
             <option value="1y">Last Year</option>
           </select>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30">
-            <Download size={18} />
+          <button
+            type="button"
+            className="inline-flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 text-sm shrink-0"
+          >
+            <Download size={18} className="shrink-0" />
             Export Report
           </button>
         </div>
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-2 gap-6">
-        <div className={`p-5 rounded-xl border ${card}`}>
-          <h3 className={`text-lg font-semibold ${textPrimary} mb-4`}>User Growth</h3>
-          <ResponsiveContainer width="100%" height={300}>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6 min-w-0">
+        <div className={`p-4 sm:p-5 rounded-xl border ${card} min-w-0`}>
+          <h3 className={`text-base sm:text-lg font-semibold ${textPrimary} mb-3 sm:mb-4`}>User Growth</h3>
+          <div className="w-full h-[220px] sm:h-[280px] lg:h-[300px] min-h-[200px]">
+          <ResponsiveContainer width="100%" height="100%">
             <LineChart data={userGrowthData}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
               <XAxis dataKey="date" stroke={chartText} fontSize={12} />
@@ -257,11 +271,13 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
               <Line type="monotone" dataKey="activeUsers" stroke="#f59e0b" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
+          </div>
         </div>
 
-        <div className={`p-5 rounded-xl border ${card}`}>
-          <h3 className={`text-lg font-semibold ${textPrimary} mb-4`}>Revenue Trend</h3>
-          <ResponsiveContainer width="100%" height={300}>
+        <div className={`p-4 sm:p-5 rounded-xl border ${card} min-w-0`}>
+          <h3 className={`text-base sm:text-lg font-semibold ${textPrimary} mb-3 sm:mb-4`}>Revenue Trend</h3>
+          <div className="w-full h-[220px] sm:h-[280px] lg:h-[300px] min-h-[200px]">
+          <ResponsiveContainer width="100%" height="100%">
             <BarChart data={revenueData}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
               <XAxis dataKey="month" stroke={chartText} fontSize={12} />
@@ -277,20 +293,22 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
               <Bar dataKey="revenue" fill="#10b981" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          </div>
         </div>
       </div>
 
       {/* Partner Distribution & Key Metrics */}
-      <div className="grid grid-cols-2 gap-6">
-        <div className={`p-5 rounded-xl border ${card}`}>
-          <h3 className={`text-lg font-semibold ${textPrimary} mb-4`}>Partner Distribution</h3>
-          <ResponsiveContainer width="100%" height={300}>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6 min-w-0">
+        <div className={`p-4 sm:p-5 rounded-xl border ${card} min-w-0`}>
+          <h3 className={`text-base sm:text-lg font-semibold ${textPrimary} mb-3 sm:mb-4`}>Partner Distribution</h3>
+          <div className="w-full h-[240px] sm:h-[280px] lg:h-[300px] min-h-[220px]">
+          <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
                 data={partnerDistribution}
                 cx="50%"
                 cy="50%"
-                outerRadius={80}
+                outerRadius="72%"
                 fill="#8884d8"
                 dataKey="value"
                 label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
@@ -302,10 +320,11 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
               <Tooltip />
             </PieChart>
           </ResponsiveContainer>
+          </div>
         </div>
 
-        <div className={`p-5 rounded-xl border ${card}`}>
-          <h3 className={`text-lg font-semibold ${textPrimary} mb-4`}>Key Metrics</h3>
+        <div className={`p-4 sm:p-5 rounded-xl border ${card} min-w-0`}>
+          <h3 className={`text-base sm:text-lg font-semibold ${textPrimary} mb-3 sm:mb-4`}>Key Metrics</h3>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className={textSecondary}>Premium Users</span>
@@ -334,10 +353,11 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
       </div>
 
       {offerAnalytics.length > 0 && (
-        <div className={`p-5 rounded-xl border ${card}`}>
-          <h3 className={`text-lg font-semibold ${textPrimary} mb-4`}>Offer Analytics Table</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        <div className={`p-4 sm:p-5 rounded-xl border ${card} min-w-0`}>
+          <h3 className={`text-base sm:text-lg font-semibold ${textPrimary} mb-2 sm:mb-4`}>Offer Analytics Table</h3>
+          <p className={`text-xs ${textSecondary} mb-3 sm:hidden`}>Swipe horizontally to see all columns.</p>
+          <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 sm:px-0 overscroll-x-contain touch-pan-x">
+            <table className="w-full text-xs sm:text-sm min-w-[36rem]">
               <thead className={textSecondary}>
                 <tr>
                   <th className="text-left py-3">Offer</th>

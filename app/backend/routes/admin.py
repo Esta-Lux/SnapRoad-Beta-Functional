@@ -76,6 +76,12 @@ class AdminPhotoRejectBody(BaseModel):
     review_notes: Optional[str] = None
 
 
+class ConcernStatusBody(BaseModel):
+    """POST JSON: { "status": "open" | "in_progress" | "resolved" | "closed" }."""
+
+    status: str = Field(..., min_length=1, max_length=32)
+
+
 BOOST_PRICING_ADMIN = {
     "base_daily_cost": 25, "additional_day_cost": 20,
     "base_reach": 100, "base_reach_cost": 5,
@@ -122,8 +128,8 @@ def get_admin_concerns(
 
 
 @router.post("/admin/concerns/{concern_id}/status")
-def update_concern_status(concern_id: str, body: Annotated[dict, Body(..., embed=True)]):
-    status = body.get("status")
+def update_concern_status(concern_id: str, body: ConcernStatusBody):
+    status = body.status.strip().lower()
     if status not in ("open", "in_progress", "resolved", "closed"):
         return {"success": False, "message": "Invalid status"}
     ok = sb_update_concern_status(concern_id, status)

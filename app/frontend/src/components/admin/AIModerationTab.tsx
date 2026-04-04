@@ -66,11 +66,15 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
       .then(res => {
         if (res.success && res.data) {
           setIncidents(res.data.map(mapIncident))
+          setModError(null)
+        } else {
+          setModError(res.message || 'Could not load incidents')
         }
       })
       .catch(err => {
         console.error('Failed to load incidents:', err)
         setIncidents([])
+        setModError(adminApiErrorMessage(err))
       })
       .finally(() => {
         setLoading(false)

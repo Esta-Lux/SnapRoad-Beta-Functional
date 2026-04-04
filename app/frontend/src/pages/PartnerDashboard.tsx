@@ -81,30 +81,29 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
   const [deletingOffer, setDeletingOffer] = useState<Offer | null>(null)
   const [showPromotionWelcome, setShowPromotionWelcome] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  /** Non-blocking API issues (partner v2) so operators see why tiles look empty. */
+  const [dataLoadBanner, setDataLoadBanner] = useState<string | null>(null)
 
   const { sendNotification } = useNotifications()
 
-  const planIncomplete = useMemo(() => {
-    if (partnerProfile?.has_full_portal_access === true) return false
-    if (partnerProfile?.is_internal_complimentary) return false
-    if ((partnerProfile?.plan || '').toLowerCase() === 'internal') return false
-    const s = (partnerProfile?.subscription_status || '').toLowerCase()
-    return s === 'pending' || s === 'incomplete'
-  }, [
-    partnerProfile?.has_full_portal_access,
-    partnerProfile?.is_internal_complimentary,
-    partnerProfile?.plan,
-    partnerProfile?.subscription_status,
-  ])
+  /** Paid checkout, admin internal/complimentary, or active promotion (admin) */
+  const canAccessPortal = useMemo(() => {
+    if (!partnerProfile) return false
+    if (partnerProfile.has_full_portal_access === true) return true
+    if (partnerProfile.promotion_active) return true
+    if (partnerProfile.is_internal_complimentary) return true
+    if ((partnerProfile.plan || '').toLowerCase() === 'internal') return true
+    const s = (partnerProfile.subscription_status || '').toLowerCase()
+    const p = (partnerProfile.plan || '').toLowerCase()
+    if (p === 'unselected' || p === 'none' || p === '') return false
+    return s !== 'pending' && s !== 'incomplete'
+  }, [partnerProfile])
 
-  useEffect(() => {
-    if (!planIncomplete) return
-    setActiveTab((cur) => (cur === 'pricing' ? cur : 'pricing'))
-  }, [planIncomplete])
+  const needsPlanCheckout = !canAccessPortal
 
   const navigateTab = useCallback(
     (id: TabId) => {
-      if (planIncomplete && id !== 'pricing') {
+      if (!canAccessPortal && id !== 'pricing') {
         setActiveTab('pricing')
         setMobileNavOpen(false)
         return
@@ -112,7 +111,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
       setActiveTab(id)
       setMobileNavOpen(false)
     },
-    [planIncomplete],
+    [canAccessPortal],
   )
 
   useLayoutEffect(() => {
@@ -151,6 +150,13 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
     setActiveTab(initialTab)
     setMobileNavOpen(false)
   }, [initialTab, searchParams])
+
+  useEffect(() => {
+    if (!partnerProfile) return
+    if (!canAccessPortal && activeTab !== 'pricing') {
+      setActiveTab('pricing')
+    }
+  }, [partnerProfile, canAccessPortal, activeTab])
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)')
@@ -229,6 +235,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
 
   const loadData = useCallback(async () => {
     setLoading(true)
+    const warnings: string[] = []
     try {
       const [analyticsRes, redemptionsRes, feeRes] = await Promise.all([
         partnerApi.getAnalytics(),
@@ -236,11 +243,27 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
         partnerApi.getFees(),
       ])
       if (analyticsRes.success) setAnalytics(analyticsRes.data)
+      else {
+        const m = String((analyticsRes as { message?: string }).message || '').trim()
+        warnings.push(m || 'Analytics did not load. Check API logs or try refresh.')
+      }
       if (redemptionsRes.success) setRedemptions(redemptionsRes.data || [])
+      else {
+        const m = String((redemptionsRes as { message?: string }).message || '').trim()
+        warnings.push(m || 'Redemptions did not load.')
+      }
       if (feeRes.success) setFeeInfo(feeRes.data || null)
+      else {
+        const m = String((feeRes as { message?: string }).message || '').trim()
+        warnings.push(m || 'Fee summary did not load.')
+      }
     } catch (e) {
-      if (handlePartnerAuthError(e)) return
+      if (handlePartnerAuthError(e)) {
+        setLoading(false)
+        return
+      }
       console.error(e)
+      warnings.push(e instanceof Error ? e.message : 'Part of the dashboard failed to load.')
     }
     try {
       const offersRes = await partnerApi.getOffers()
@@ -260,11 +283,19 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
           location_id: o.location_id,
           location_name: o.location_name,
         })))
+      } else if (offersRes && offersRes.success === false) {
+        const m = String((offersRes as { message?: string }).message || '').trim()
+        warnings.push(m || 'Offers did not load.')
       }
     } catch (e) {
-      if (handlePartnerAuthError(e)) return
+      if (handlePartnerAuthError(e)) {
+        setLoading(false)
+        return
+      }
       console.error(e)
+      warnings.push(e instanceof Error ? e.message : 'Offers failed to load.')
     }
+    setDataLoadBanner(warnings.length ? [...new Set(warnings)].join(' · ') : null)
     setLoading(false)
   }, [navigate])
 
@@ -331,8 +362,8 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
   }
 
   const handlePlanUpgrade = async (planId: string) => {
-    if (planId === 'enterprise') {
-      window.open('mailto:sales@snaproad.co?subject=Enterprise Plan Inquiry', '_blank')
+    if (planId !== 'starter' && planId !== 'growth') {
+      sendNotification('system', 'Plans', 'Choose Starter or Growth. For larger deployments, email sales@snaproad.co.')
       return
     }
     try {
@@ -424,7 +455,6 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
     return undefined
   }
 
-  const needsPlanCheckout = planIncomplete
   const exportRedemptionsCsv = () => {
     const rows = [
       ['Redeemed At', 'Offer', 'Customer', 'Discount', 'Fee', 'Tier'],
@@ -589,6 +619,21 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
 
       {/* Main Content */}
       <main className="ml-0 min-w-0 overflow-x-hidden p-4 pb-24 sm:p-6 md:ml-72 md:pb-8 md:p-8">
+        {dataLoadBanner && (
+          <div
+            className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-amber-100"
+            role="alert"
+          >
+            <p className="flex-1 text-sm leading-snug">{dataLoadBanner}</p>
+            <button
+              type="button"
+              onClick={() => setDataLoadBanner(null)}
+              className="shrink-0 text-xs font-medium text-amber-200/90 hover:text-white"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         <div className="mb-4 flex items-center gap-3 md:hidden">
           <button
             type="button"
@@ -613,9 +658,10 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
             role="status"
           >
             <div>
-              <p className="font-semibold text-white">Choose a subscription plan</p>
+              <p className="font-semibold text-white">Subscribe to unlock the partner portal</p>
               <p className="text-sm text-slate-400">
-                Your account is active; complete checkout to finish onboarding and unlock billing-backed features.
+                Pick Starter or Growth and complete secure checkout. SnapRoad may grant access via an admin promotion
+                without payment until that offer ends.
               </p>
             </div>
             <button
@@ -673,8 +719,9 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
             {activeTab === 'team-links' && <TeamLinksTab partnerId={partnerProfile?.id || ''} />}
             {activeTab === 'pricing' && (
               <PricingTab
-                currentPlan={partnerProfile?.plan || 'starter'}
+                currentPlan={partnerProfile?.plan || 'unselected'}
                 isInternalComplimentary={partnerProfile?.is_internal_complimentary}
+                hasFullPortalAccess={partnerProfile?.has_full_portal_access}
                 onUpgrade={(planId) => handlePlanUpgrade(planId)}
               />
             )}

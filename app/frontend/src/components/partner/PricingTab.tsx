@@ -14,6 +14,7 @@ interface Props {
   currentPlan: string
   /** Admin-granted complimentary access */
   isInternalComplimentary?: boolean
+  /** From API: paid subscription, promotion, or internal */
   hasFullPortalAccess?: boolean
   onUpgrade: (planId: string) => void
 }
@@ -33,8 +34,8 @@ const PLAN_ADDONS: Record<string, string[]> = {
   ],
 }
 
-/** Paid tiers only — `internal` is admin-assigned and never listed here */
-const PAID_PLAN_ORDER = ['starter', 'growth', 'enterprise'] as const
+/** Self-serve paid tiers only — Enterprise is sales-led; `internal` is admin-only */
+const PAID_PLAN_ORDER = ['starter', 'growth'] as const
 const PLAN_COLORS: Record<string, string> = {
   starter: '#0084FF',
   growth: '#00DFA2',
@@ -44,6 +45,7 @@ const PLAN_COLORS: Record<string, string> = {
 export default function PricingTab({
   currentPlan,
   isInternalComplimentary,
+  hasFullPortalAccess,
   onUpgrade,
 }: Props) {
   const [plans, setPlans] = useState<Record<string, PlanData>>({})
@@ -75,8 +77,22 @@ export default function PricingTab({
   const showInternalBanner =
     isInternalComplimentary === true || currentPlan.toLowerCase() === 'internal'
 
+  const needsPaidSubscribe =
+    hasFullPortalAccess !== true &&
+    !showInternalBanner &&
+    ['unselected', '', 'none'].includes((currentPlan || '').toLowerCase())
+
   return (
     <div className="space-y-6 min-w-0">
+      {needsPaidSubscribe && (
+        <div className="rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 sm:px-5 text-left">
+          <p className="text-amber-100 text-sm font-medium">Choose a paid plan to unlock the partner portal</p>
+          <p className="text-slate-400 text-xs mt-1">
+            SnapRoad partner value is subscription-based (Starter or Growth). If SnapRoad extends a promotion or
+            complimentary access from admin, your portal unlocks without checkout until that promotion ends.
+          </p>
+        </div>
+      )}
       {showInternalBanner && (
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 sm:px-5 text-left">
           <p className="text-emerald-200 text-sm font-medium">Complimentary / internal access</p>
@@ -212,7 +228,7 @@ export default function PricingTab({
                       : 'bg-white/10 text-white hover:bg-white/15'
                 }`}
               >
-                {isActive ? 'Current Plan' : planId === 'enterprise' ? 'Contact Sales' : 'Upgrade Now'}
+                {isActive ? 'Current Plan' : 'Subscribe now'}
               </button>
 
               <p className="text-center text-slate-500 text-xs mt-2">No contracts — cancel anytime</p>

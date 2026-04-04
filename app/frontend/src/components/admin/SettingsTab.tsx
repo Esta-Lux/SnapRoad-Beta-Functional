@@ -139,7 +139,7 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   if (!settings) {
     return (
       <div className="flex items-center justify-center py-20">
-        <p className="text-slate-400">Failed to load settings</p>
+        <p className="text-slate-600 dark:text-slate-400">Failed to load settings</p>
       </div>
     )
   }
@@ -149,25 +149,35 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   const notifications = settings.notifications ?? defaultNotifications
   const features = settings.features ?? defaultFeatures
 
+  const heading = isDark ? 'text-white' : 'text-[#0B1220]'
+  const muted = isDark ? 'text-slate-400' : 'text-slate-600'
+  const labelStrong = isDark ? 'text-white' : 'text-[#0B1220]'
+  const row = 'flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'
+  const rowLabel = 'min-w-0 flex-1'
+
   return (
-    <div className="space-y-6">
+    <div className="max-w-full min-w-0 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-white">Settings & Configuration</h2>
-          <p className="text-slate-400">Manage platform settings and preferences</p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <h2 className={`text-xl font-bold sm:text-2xl ${heading}`}>Settings & Configuration</h2>
+          <p className={`mt-1 text-sm ${muted}`}>Manage platform settings and preferences</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30">
-            <RefreshCw size={18} />
+        <div className="flex w-full shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end lg:w-auto">
+          <button
+            type="button"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-500/20 px-4 py-2.5 text-sm text-blue-400 hover:bg-blue-500/30"
+          >
+            <RefreshCw size={18} className="shrink-0" />
             Reset to Defaults
           </button>
           <button
+            type="button"
             onClick={handleSaveSettings}
             disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-400 hover:to-pink-400 disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm text-white hover:from-purple-400 hover:to-pink-400 disabled:opacity-50"
           >
-            <Save size={18} />
+            <Save size={18} className="shrink-0" />
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
@@ -176,30 +186,30 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
       {/* Settings Sections */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* General Settings */}
-        <div className={`p-5 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Settings className="text-purple-400" size={20} />
-            <h3 className="text-lg font-semibold text-white">General Settings</h3>
+        <div className={`rounded-xl border p-4 sm:p-5 ${card}`}>
+          <div className="mb-4 flex items-center gap-2">
+            <Settings className="shrink-0 text-purple-400" size={20} />
+            <h3 className={`text-lg font-semibold ${heading}`}>General Settings</h3>
           </div>
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">Platform Name</div>
-                <div className="text-xs text-slate-400">Display name for the platform</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>Platform Name</div>
+                <div className={`text-xs ${muted}`}>Display name for the platform</div>
               </div>
               <input
                 type="text"
                 value={get('general', 'platform_name', defaultGeneral.platform_name)}
                 onChange={(e) => updateSetting('general', 'platform_name', e.target.value)}
-                className={`px-3 py-2 rounded-lg border ${
-                  isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+                className={`min-w-0 w-full rounded-lg border px-3 py-2 sm:max-w-xs ${
+                  isDark ? 'border-white/10 bg-slate-700/50 text-white' : 'border-[#E6ECF5] bg-white text-[#0B1220]'
                 }`}
               />
             </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">Maintenance Mode</div>
-                <div className="text-xs text-slate-400">Temporarily disable platform</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>Maintenance Mode</div>
+                <div className={`text-xs ${muted}`}>Temporarily disable platform</div>
               </div>
               <button
                 onClick={() => updateSetting('general', 'maintenance_mode', !general.maintenance_mode)}
@@ -212,10 +222,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 )}
               </button>
             </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">Debug Mode</div>
-                <div className="text-xs text-slate-400">Enable detailed logging</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>Debug Mode</div>
+                <div className={`text-xs ${muted}`}>Enable detailed logging</div>
               </div>
               <button
                 onClick={() => updateSetting('general', 'debug_mode', !general.debug_mode)}
@@ -232,44 +242,44 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
         </div>
 
         {/* Security Settings */}
-        <div className={`p-5 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Shield className="text-green-400" size={20} />
-            <h3 className="text-lg font-semibold text-white">Security Settings</h3>
+        <div className={`rounded-xl border p-4 sm:p-5 ${card}`}>
+          <div className="mb-4 flex items-center gap-2">
+            <Shield className="shrink-0 text-green-400" size={20} />
+            <h3 className={`text-lg font-semibold ${heading}`}>Security Settings</h3>
           </div>
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">JWT Expiry (hours)</div>
-                <div className="text-xs text-slate-400">Token validity period</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>JWT Expiry (hours)</div>
+                <div className={`text-xs ${muted}`}>Token validity period</div>
               </div>
               <input
                 type="number"
                 value={get('security', 'jwt_expiry_hours', defaultSecurity.jwt_expiry_hours)}
                 onChange={(e) => updateSetting('security', 'jwt_expiry_hours', parseInt(e.target.value) || 0)}
-                className={`w-20 px-3 py-2 rounded-lg border ${
-                  isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+                className={`w-full max-w-[6.5rem] rounded-lg border px-3 py-2 sm:w-20 ${
+                  isDark ? 'border-white/10 bg-slate-700/50 text-white' : 'border-[#E6ECF5] bg-white text-[#0B1220]'
                 }`}
               />
             </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">Password Min Length</div>
-                <div className="text-xs text-slate-400">Minimum password characters</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>Password Min Length</div>
+                <div className={`text-xs ${muted}`}>Minimum password characters</div>
               </div>
               <input
                 type="number"
                 value={get('security', 'password_min_length', defaultSecurity.password_min_length)}
                 onChange={(e) => updateSetting('security', 'password_min_length', parseInt(e.target.value) || 0)}
-                className={`w-20 px-3 py-2 rounded-lg border ${
-                  isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+                className={`w-full max-w-[6.5rem] rounded-lg border px-3 py-2 sm:w-20 ${
+                  isDark ? 'border-white/10 bg-slate-700/50 text-white' : 'border-[#E6ECF5] bg-white text-[#0B1220]'
                 }`}
               />
             </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">Require 2FA</div>
-                <div className="text-xs text-slate-400">Two-factor authentication</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>Require 2FA</div>
+                <div className={`text-xs ${muted}`}>Two-factor authentication</div>
               </div>
               <button
                 onClick={() => updateSetting('security', 'require_2fa', !security.require_2fa)}
@@ -286,16 +296,16 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
         </div>
 
         {/* Notification Settings */}
-        <div className={`p-5 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Bell className="text-blue-400" size={20} />
-            <h3 className="text-lg font-semibold text-white">Notifications</h3>
+        <div className={`rounded-xl border p-4 sm:p-5 ${card}`}>
+          <div className="mb-4 flex items-center gap-2">
+            <Bell className="shrink-0 text-blue-400" size={20} />
+            <h3 className={`text-lg font-semibold ${heading}`}>Notifications</h3>
           </div>
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">Email Notifications</div>
-                <div className="text-xs text-slate-400">Send email alerts</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>Email Notifications</div>
+                <div className={`text-xs ${muted}`}>Send email alerts</div>
               </div>
               <button
                 onClick={() => updateSetting('notifications', 'email_notifications', !notifications.email_notifications)}
@@ -308,10 +318,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 )}
               </button>
             </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">Push Notifications</div>
-                <div className="text-xs text-slate-400">Mobile push alerts</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>Push Notifications</div>
+                <div className={`text-xs ${muted}`}>Mobile push alerts</div>
               </div>
               <button
                 onClick={() => updateSetting('notifications', 'push_notifications', !notifications.push_notifications)}
@@ -324,10 +334,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 )}
               </button>
             </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">System Alerts</div>
-                <div className="text-xs text-slate-400">Critical system notifications</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>System Alerts</div>
+                <div className={`text-xs ${muted}`}>Critical system notifications</div>
               </div>
               <button
                 onClick={() => updateSetting('notifications', 'system_alerts', !notifications.system_alerts)}
@@ -344,16 +354,16 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
         </div>
 
         {/* Feature Settings */}
-        <div className={`p-5 rounded-xl border ${card}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Globe className="text-purple-400" size={20} />
-            <h3 className="text-lg font-semibold text-white">Feature Flags</h3>
+        <div className={`rounded-xl border p-4 sm:p-5 ${card}`}>
+          <div className="mb-4 flex items-center gap-2">
+            <Globe className="shrink-0 text-purple-400" size={20} />
+            <h3 className={`text-lg font-semibold ${heading}`}>Feature Flags</h3>
           </div>
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">AI Moderation</div>
-                <div className="text-xs text-slate-400">AI-powered content moderation</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>AI Moderation</div>
+                <div className={`text-xs ${muted}`}>AI-powered content moderation</div>
               </div>
               <button
                 onClick={() => updateSetting('features', 'ai_moderation', !features.ai_moderation)}
@@ -366,10 +376,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 )}
               </button>
             </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">Real-time Analytics</div>
-                <div className="text-xs text-slate-400">Live data processing</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>Real-time Analytics</div>
+                <div className={`text-xs ${muted}`}>Live data processing</div>
               </div>
               <button
                 onClick={() => updateSetting('features', 'real_time_analytics', !features.real_time_analytics)}
@@ -382,10 +392,10 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
                 )}
               </button>
             </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-white">Partner Referrals</div>
-                <div className="text-xs text-slate-400">Referral program features</div>
+            <div className={row}>
+              <div className={rowLabel}>
+                <div className={`text-sm font-medium ${labelStrong}`}>Partner Referrals</div>
+                <div className={`text-xs ${muted}`}>Referral program features</div>
               </div>
               <button
                 onClick={() => updateSetting('features', 'partner_referrals', !features.partner_referrals)}
@@ -403,51 +413,51 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
       </div>
 
       {/* Database Settings */}
-      <div className={`p-5 rounded-xl border ${card}`}>
-        <div className="flex items-center gap-2 mb-4">
-          <Database className="text-amber-400" size={20} />
-          <h3 className="text-lg font-semibold text-white">Database Configuration</h3>
+      <div className={`rounded-xl border p-4 sm:p-5 ${card}`}>
+        <div className="mb-4 flex items-center gap-2">
+          <Database className="shrink-0 text-amber-400" size={20} />
+          <h3 className={`text-lg font-semibold ${heading}`}>Database Configuration</h3>
         </div>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-white">Connection Pool Size</div>
-              <div className="text-xs text-slate-400">Database connections</div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className={row}>
+            <div className={rowLabel}>
+              <div className={`text-sm font-medium ${labelStrong}`}>Connection Pool Size</div>
+              <div className={`text-xs ${muted}`}>Database connections</div>
             </div>
             <input
               type="number"
               value={get('database', 'connection_pool_size', defaultDatabase.connection_pool_size)}
               onChange={(e) => updateSetting('database', 'connection_pool_size', parseInt(e.target.value) || 0)}
-              className={`w-20 px-3 py-2 rounded-lg border ${
-                isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+              className={`w-full max-w-[6.5rem] rounded-lg border px-3 py-2 sm:w-20 ${
+                isDark ? 'border-white/10 bg-slate-700/50 text-white' : 'border-[#E6ECF5] bg-white text-[#0B1220]'
               }`}
             />
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-white">Query Timeout (s)</div>
-              <div className="text-xs text-slate-400">Query time limit</div>
+          <div className={row}>
+            <div className={rowLabel}>
+              <div className={`text-sm font-medium ${labelStrong}`}>Query Timeout (s)</div>
+              <div className={`text-xs ${muted}`}>Query time limit</div>
             </div>
             <input
               type="number"
               value={get('database', 'query_timeout_seconds', defaultDatabase.query_timeout_seconds)}
               onChange={(e) => updateSetting('database', 'query_timeout_seconds', parseInt(e.target.value) || 0)}
-              className={`w-20 px-3 py-2 rounded-lg border ${
-                isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+              className={`w-full max-w-[6.5rem] rounded-lg border px-3 py-2 sm:w-20 ${
+                isDark ? 'border-white/10 bg-slate-700/50 text-white' : 'border-[#E6ECF5] bg-white text-[#0B1220]'
               }`}
             />
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-white">Backup Frequency (h)</div>
-              <div className="text-xs text-slate-400">Backup interval</div>
+          <div className={`${row} sm:col-span-2 lg:col-span-1`}>
+            <div className={rowLabel}>
+              <div className={`text-sm font-medium ${labelStrong}`}>Backup Frequency (h)</div>
+              <div className={`text-xs ${muted}`}>Backup interval</div>
             </div>
             <input
               type="number"
               value={get('database', 'backup_frequency_hours', defaultDatabase.backup_frequency_hours)}
               onChange={(e) => updateSetting('database', 'backup_frequency_hours', parseInt(e.target.value) || 0)}
-              className={`w-20 px-3 py-2 rounded-lg border ${
-                isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+              className={`w-full max-w-[6.5rem] rounded-lg border px-3 py-2 sm:w-20 ${
+                isDark ? 'border-white/10 bg-slate-700/50 text-white' : 'border-[#E6ECF5] bg-white text-[#0B1220]'
               }`}
             />
           </div>
@@ -455,53 +465,55 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
       </div>
 
       {/* Supabase Status & Migration */}
-      <div className={`p-5 rounded-xl border ${card}`}>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Cloud className="text-emerald-400" size={20} />
-            <h3 className="text-lg font-semibold text-white">Supabase</h3>
+      <div className={`rounded-xl border p-4 sm:p-5 ${card}`}>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-2">
+            <Cloud className="shrink-0 text-emerald-400" size={20} />
+            <h3 className={`text-lg font-semibold ${heading}`}>Supabase</h3>
           </div>
           <button
+            type="button"
             onClick={checkSupabaseStatus}
             disabled={sbLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-700/50 text-slate-300 rounded-lg hover:bg-slate-700 disabled:opacity-50"
+            className="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-slate-700/50 px-3 py-2 text-xs text-slate-300 hover:bg-slate-700 disabled:opacity-50 sm:w-auto"
           >
             <RefreshCw size={14} className={sbLoading ? 'animate-spin' : ''} />
             Refresh
           </button>
         </div>
         {sbLoading && !supabaseStatus ? (
-          <div className="flex items-center gap-2 text-slate-400 text-sm">
+          <div className={`flex items-center gap-2 text-sm ${muted}`}>
             <Loader2 size={16} className="animate-spin" /> Checking status...
           </div>
         ) : supabaseStatus ? (
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {supabaseStatus.connected ? (
-                <CheckCircle size={16} className="text-emerald-400" />
+                <CheckCircle size={16} className="shrink-0 text-emerald-400" />
               ) : (
-                <XCircle size={16} className="text-red-400" />
+                <XCircle size={16} className="shrink-0 text-red-400" />
               )}
-              <span className="text-sm text-white">
+              <span className={`text-sm ${labelStrong}`}>
                 {supabaseStatus.connected ? 'Connected' : 'Not connected'}
               </span>
               {supabaseStatus.tables && (
-                <span className="text-xs text-slate-400 ml-2">
+                <span className={`text-xs ${muted}`}>
                   {supabaseStatus.tables} tables
                 </span>
               )}
             </div>
             <button
+              type="button"
               onClick={runMigration}
               disabled={migrating}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 disabled:opacity-50 text-sm"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500/20 px-4 py-2.5 text-sm text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50 sm:w-auto"
             >
               {migrating ? <Loader2 size={16} className="animate-spin" /> : <Database size={16} />}
               {migrating ? 'Running Migration...' : 'Run Migration'}
             </button>
           </div>
         ) : (
-          <p className="text-slate-400 text-sm">Unable to fetch Supabase status</p>
+          <p className={`text-sm ${muted}`}>Unable to fetch Supabase status</p>
         )}
       </div>
     </div>

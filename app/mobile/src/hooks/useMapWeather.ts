@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
+import { logMapDataIssue } from '../utils/mapApiDiagnostics';
 import type { DrivingMode } from '../types';
 
 export type MapPrecipitation = 'none' | 'rain' | 'snow';
@@ -86,12 +87,14 @@ export function useMapWeather(
       if (cancelled) return;
 
       if (!res.success || res.data == null) {
+        if (!res.success) logMapDataIssue('GET /api/weather/current', res.error);
         setState((s) => ({ ...s, loading: false }));
         return;
       }
 
       const envelope = res.data;
       if (!envelope.success || envelope.data == null) {
+        logMapDataIssue('GET /api/weather/current', envelope.success === false ? 'API returned success:false' : 'missing data');
         setState((s) => ({ ...s, loading: false }));
         return;
       }

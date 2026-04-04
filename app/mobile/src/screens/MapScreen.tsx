@@ -81,6 +81,7 @@ import { useNavigatingState } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
 import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import { storage } from '../utils/storage';
+import { logMapDataIssue } from '../utils/mapApiDiagnostics';
 import { supabase } from '../lib/supabase';
 import type { DrivingMode, Incident, SavedLocation, Offer, FriendLocation } from '../types';
 
@@ -500,10 +501,17 @@ export default function MapScreen() {
   }, [placeCardLocGridLat, placeCardLocGridLng, selectedPlace?.lat, selectedPlace?.lng]);
 
   const refreshSavedPlaces = useCallback(() => {
-    api.get<any>('/api/locations').then((r) => {
-      const d = (r.data as any)?.data ?? r.data;
-      if (Array.isArray(d)) setSavedPlaces(d);
-    }).catch(() => {});
+    api
+      .get<any>('/api/locations')
+      .then((r) => {
+        if (!r.success) {
+          logMapDataIssue('GET /api/locations', r.error);
+          return;
+        }
+        const d = (r.data as any)?.data ?? r.data;
+        if (Array.isArray(d)) setSavedPlaces(d);
+      })
+      .catch((e) => logMapDataIssue('GET /api/locations', e));
   }, []);
 
   const selectedPlaceFavoriteMatch = useMemo(() => {
@@ -597,10 +605,17 @@ export default function MapScreen() {
       setFriendLocations([]);
       return;
     }
-    api.get<any>('/api/friends/list').then((r) => {
-      const d = (r.data as any)?.data ?? r.data;
-      setFriendLocations(mapFriendsApiToLocations(d));
-    }).catch(() => {});
+    api
+      .get<any>('/api/friends/list')
+      .then((r) => {
+        if (!r.success) {
+          logMapDataIssue('GET /api/friends/list', r.error);
+          return;
+        }
+        const d = (r.data as any)?.data ?? r.data;
+        setFriendLocations(mapFriendsApiToLocations(d));
+      })
+      .catch((e) => logMapDataIssue('GET /api/friends/list', e));
   }, [refreshSavedPlaces, user?.isPremium]);
 
   // Fix 8: Offers refresh on significant location change (~1km)
@@ -608,10 +623,17 @@ export default function MapScreen() {
     const rLat = Math.round(location.lat * 100);
     const rLng = Math.round(location.lng * 100);
     if (rLat === 0 && rLng === 0) return;
-    api.get<any>(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}&radius=5`).then((r) => {
-      const d = (r.data as any)?.data ?? r.data;
-      if (Array.isArray(d)) setNearbyOffers(d);
-    }).catch(() => {});
+    api
+      .get<any>(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}&radius=5`)
+      .then((r) => {
+        if (!r.success) {
+          logMapDataIssue('GET /api/offers/nearby', r.error);
+          return;
+        }
+        const d = (r.data as any)?.data ?? r.data;
+        if (Array.isArray(d)) setNearbyOffers(d);
+      })
+      .catch((e) => logMapDataIssue('GET /api/offers/nearby', e));
   }, [Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
   useEffect(() => {
@@ -620,10 +642,12 @@ export default function MapScreen() {
       const key = String(offer.id);
       if (trackedOfferViewsRef.current.has(key)) continue;
       trackedOfferViewsRef.current.add(key);
-      api.post(`/api/offers/${offer.id}/view`, {
-        lat: location.lat,
-        lng: location.lng,
-      }).catch(() => {});
+      api
+        .post(`/api/offers/${offer.id}/view`, {
+          lat: location.lat,
+          lng: location.lng,
+        })
+        .catch((e) => logMapDataIssue(`POST /api/offers/${offer.id}/view`, e));
     }
   }, [nearbyOffers, location.lat, location.lng]);
 
@@ -635,17 +659,21 @@ export default function MapScreen() {
       const distance = haversineMeters(location.lat, location.lng, offer.lat ?? 0, offer.lng ?? 0);
       if (distance > 500) continue;
       trackedOfferVisitsRef.current.add(key);
-      api.post(`/api/offers/${offer.id}/visit`, {
-        lat: location.lat,
-        lng: location.lng,
-        trip_id: navigationTripIdRef.current || undefined,
-      }).catch(() => {});
-      api.post('/api/driver/location-visit', {
-        lat: location.lat,
-        lng: location.lng,
-        business_name: offer.business_name,
-        business_type: offer.business_type,
-      }).catch(() => {});
+      api
+        .post(`/api/offers/${offer.id}/visit`, {
+          lat: location.lat,
+          lng: location.lng,
+          trip_id: navigationTripIdRef.current || undefined,
+        })
+        .catch((e) => logMapDataIssue(`POST /api/offers/${offer.id}/visit`, e));
+      api
+        .post('/api/driver/location-visit', {
+          lat: location.lat,
+          lng: location.lng,
+          business_name: offer.business_name,
+          business_type: offer.business_type,
+        })
+        .catch((e) => logMapDataIssue('POST /api/driver/location-visit', e));
     }
   }, [location.lat, location.lng, nearbyOffers]);
 
@@ -687,10 +715,12 @@ export default function MapScreen() {
     const rLat = Math.round(location.lat * 100);
     const rLng = Math.round(location.lng * 100);
     if (rLat === 0 && rLng === 0) return;
-    reverseGeocode(location.lat, location.lng).then((r) => {
-      if (r?.address) setCurrentAddress(r.address);
-      else if (r?.name) setCurrentAddress(r.name);
-    }).catch(() => {});
+    reverseGeocode(location.lat, location.lng)
+      .then((r) => {
+        if (r?.address) setCurrentAddress(r.address);
+        else if (r?.name) setCurrentAddress(r.name);
+      })
+      .catch((e) => logMapDataIssue('reverseGeocode', e));
   }, [Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
   useEffect(() => {
@@ -706,47 +736,59 @@ export default function MapScreen() {
     const rLat = Math.round(location.lat * 100);
     const rLng = Math.round(location.lng * 100);
     if (rLat === 0 && rLng === 0) return;
-    api.get<any>(`/api/map/cameras?lat=${location.lat}&lng=${location.lng}&radius=80`).then((r) => {
-      if (!r.success || r.data == null) return;
-      const raw = r.data;
-      const items = (raw as any)?.data ?? raw;
-      if (Array.isArray(items)) {
-        const cams = items
-          .map((rpt: any) => ({
-            id: String(rpt.id ?? Math.random()),
-            name: typeof rpt.title === 'string' ? rpt.title : 'Camera',
-            description: typeof rpt.description === 'string' ? rpt.description : undefined,
-            lat: Number(rpt.lat),
-            lng: Number(rpt.lng),
-            camera_views: parseCameraViewsFromTraffic(rpt.camera_views),
-          }))
-          .filter((c: CameraLocation) => isFinite(c.lat) && isFinite(c.lng));
-        setCameraLocations(cams);
-      }
-    }).catch(() => {});
+    api
+      .get<any>(`/api/map/cameras?lat=${location.lat}&lng=${location.lng}&radius=80`)
+      .then((r) => {
+        if (!r.success || r.data == null) {
+          if (!r.success) logMapDataIssue('GET /api/map/cameras', r.error);
+          return;
+        }
+        const raw = r.data;
+        const items = (raw as any)?.data ?? raw;
+        if (Array.isArray(items)) {
+          const cams = items
+            .map((rpt: any) => ({
+              id: String(rpt.id ?? Math.random()),
+              name: typeof rpt.title === 'string' ? rpt.title : 'Camera',
+              description: typeof rpt.description === 'string' ? rpt.description : undefined,
+              lat: Number(rpt.lat),
+              lng: Number(rpt.lng),
+              camera_views: parseCameraViewsFromTraffic(rpt.camera_views),
+            }))
+            .filter((c: CameraLocation) => isFinite(c.lat) && isFinite(c.lng));
+          setCameraLocations(cams);
+        }
+      })
+      .catch((e) => logMapDataIssue('GET /api/map/cameras', e));
   }, [showCameras, user?.isPremium, setShowCameras, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
   const refreshPhotoReportsNearby = useCallback(() => {
     if (!showPhotoReports) return;
-    api.get<{ photos?: unknown[] }>(`/api/photo-reports/nearby?lat=${location.lat}&lng=${location.lng}&radius=5`).then((r) => {
-      if (!r.success) return;
-      const raw = r.data as { photos?: unknown[] };
-      const d = raw?.photos;
-      if (!Array.isArray(d)) return;
-      setPhotoReports(
-        d.map((p: any) => ({
-          id: String(p.id),
-          lat: p.lat,
-          lng: p.lng,
-          type: p.type ?? 'photo',
-          description: p.description,
-          created_at: p.created_at ?? new Date().toISOString(),
-          photo_url: typeof p.photo_url === 'string' ? p.photo_url : undefined,
-          thumbnail_url: typeof p.thumbnail_url === 'string' ? p.thumbnail_url : undefined,
-          upvotes: typeof p.upvotes === 'number' ? p.upvotes : 0,
-        })),
-      );
-    }).catch(() => {});
+    api
+      .get<{ photos?: unknown[] }>(`/api/photo-reports/nearby?lat=${location.lat}&lng=${location.lng}&radius=5`)
+      .then((r) => {
+        if (!r.success) {
+          logMapDataIssue('GET /api/photo-reports/nearby', r.error);
+          return;
+        }
+        const raw = r.data as { photos?: unknown[] };
+        const d = raw?.photos;
+        if (!Array.isArray(d)) return;
+        setPhotoReports(
+          d.map((p: any) => ({
+            id: String(p.id),
+            lat: p.lat,
+            lng: p.lng,
+            type: p.type ?? 'photo',
+            description: p.description,
+            created_at: p.created_at ?? new Date().toISOString(),
+            photo_url: typeof p.photo_url === 'string' ? p.photo_url : undefined,
+            thumbnail_url: typeof p.thumbnail_url === 'string' ? p.thumbnail_url : undefined,
+            upvotes: typeof p.upvotes === 'number' ? p.upvotes : 0,
+          })),
+        );
+      })
+      .catch((e) => logMapDataIssue('GET /api/photo-reports/nearby', e));
   }, [showPhotoReports, location.lat, location.lng]);
 
   // Fetch photo reports when layer enabled (API returns only active, public blurred URLs)
@@ -827,7 +869,8 @@ export default function MapScreen() {
         }
         setTrafficSafetyHint('No speed camera POIs returned in this area yet.');
       })
-      .catch(() => {
+      .catch((e) => {
+        logMapDataIssue('GET /api/traffic-safety/zones', e);
         setTrafficSafetyZones([]);
         setTrafficSafetyHint('Network error loading speed cameras.');
       });
@@ -1067,7 +1110,7 @@ export default function MapScreen() {
         const distance = typeof offer.distance_miles === 'number' ? offer.distance_miles : 0.5;
         speak(`There's a ${offer.discount_percent}% off offer at ${name}, about ${distance.toFixed(1)} miles ahead. Would you like me to add a stop?`, 'normal', drivingMode);
       })
-      .catch(() => {});
+      .catch((e) => logMapDataIssue('GET /api/navigation/nearby-offers', e));
   }, [nav.isNavigating, location.lat, location.lng, drivingMode]);
 
   // Fix 13: Ambient mode with direction-based filtering

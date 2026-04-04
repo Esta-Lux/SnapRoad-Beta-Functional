@@ -21,6 +21,7 @@ export default function RewardsTab({ theme }: RewardsTabProps) {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [listError, setListError] = useState<string | null>(null)
 
   useEffect(() => {
     loadRewards()

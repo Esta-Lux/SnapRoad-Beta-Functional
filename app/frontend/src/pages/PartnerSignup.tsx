@@ -56,7 +56,11 @@ export default function PartnerSignup() {
         <div className="text-center mb-8">
           <img src={snaproadLogo} alt="SnapRoad" className="h-16 w-auto mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-white">Partner with SnapRoad</h1>
-          <p className="text-slate-400 mt-1">Create your partner account and start growing</p>
+          <p className="text-slate-400 mt-1">Create your account — next you&apos;ll choose a paid plan (Starter or Growth)</p>
+          <p className="text-slate-500 text-xs mt-2 max-w-md mx-auto leading-relaxed">
+            Partner tools are subscription-based. SnapRoad can extend promotional or complimentary access from admin if you
+            don&apos;t pay right away.
+          </p>
         </div>
 
         <div className="bg-slate-800/70 backdrop-blur rounded-2xl border border-slate-700/50 overflow-hidden shadow-xl p-6">

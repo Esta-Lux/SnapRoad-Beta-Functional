@@ -357,7 +357,7 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
       {/* Partners Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredPartners.map((partner) => (
-          <div key={partner.id} className={`p-5 rounded-xl border ${card} hover:shadow-lg transition-all`}>
+          <div key={partner.id} className={`p-5 rounded-xl border ${card} hover:shadow-lg transition-all min-w-0`}>
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center mr-2">
                 <input
@@ -418,31 +418,32 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
               </div>
             </div>
 
-            <div className="flex gap-2 mt-4 pt-4 border-t border-slate-700/50">
+            <div className="mt-4 pt-4 border-t border-slate-700/50 min-w-0">
+              <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => handleEditOpen(partner)}
-                className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 text-sm"
+                className="inline-flex shrink-0 items-center justify-center gap-1 px-3 py-2 min-h-[2.25rem] bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 text-sm"
               >
                 <Edit2 size={14} />
                 Edit
               </button>
               <button
                 onClick={() => onNavigate?.('offers')}
-                className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 text-sm"
+                className="inline-flex shrink-0 items-center justify-center gap-1 px-3 py-2 min-h-[2.25rem] bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 text-sm"
               >
                 <Gift size={14} />
                 Offers
               </button>
               <button
                 onClick={() => handleGiveCredits(partner, 25)}
-                className="flex items-center justify-center gap-1 px-3 py-2 bg-cyan-500/20 text-cyan-300 rounded-lg hover:bg-cyan-500/30 text-sm"
+                className="inline-flex shrink-0 items-center justify-center gap-1 px-3 py-2 min-h-[2.25rem] bg-cyan-500/20 text-cyan-300 rounded-lg hover:bg-cyan-500/30 text-sm"
                 title="Give 25 credits"
               >
                 +25cr
               </button>
               <button
                 onClick={() => handleSetPartnerPlan(partner.id, partner.plan === 'growth' ? 'starter' : 'growth')}
-                className="flex items-center justify-center gap-1 px-3 py-2 bg-purple-500/20 text-purple-300 rounded-lg hover:bg-purple-500/30 text-sm"
+                className="inline-flex shrink-0 items-center justify-center gap-1 px-3 py-2 min-h-[2.25rem] bg-purple-500/20 text-purple-300 rounded-lg hover:bg-purple-500/30 text-sm"
                 title="Toggle paid plan tier"
               >
                 {partner.plan === 'growth' ? 'Starter' : 'Growth'}
@@ -451,7 +452,7 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
                 <button
                   type="button"
                   onClick={() => handleGrantInternalAccess(partner.id)}
-                  className="flex items-center justify-center gap-1 px-3 py-2 bg-teal-500/20 text-teal-300 rounded-lg hover:bg-teal-500/30 text-sm"
+                  className="inline-flex shrink-0 items-center justify-center gap-1 px-3 py-2 min-h-[2.25rem] bg-teal-500/20 text-teal-300 rounded-lg hover:bg-teal-500/30 text-sm"
                   title="Grant $0 internal access"
                 >
                   +Internal
@@ -461,7 +462,7 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
                 <button
                   type="button"
                   onClick={() => handleRevokeInternalAccess(partner.id)}
-                  className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-500/20 text-slate-300 rounded-lg hover:bg-slate-500/30 text-sm"
+                  className="inline-flex shrink-0 items-center justify-center gap-1 px-3 py-2 min-h-[2.25rem] bg-slate-500/20 text-slate-300 rounded-lg hover:bg-slate-500/30 text-sm"
                   title="Revoke internal access"
                 >
                   −Internal
@@ -470,7 +471,7 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
               {partner.status === 'active' && (
                 <button
                   onClick={() => handleSuspend(partner.id)}
-                  className="flex items-center justify-center gap-1 px-3 py-2 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 text-sm"
+                  className="inline-flex shrink-0 items-center justify-center gap-1 px-3 py-2 min-h-[2.25rem] bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 text-sm"
                 >
                   <X size={14} />
                   Suspend
@@ -480,27 +481,32 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
                 <>
                   <button
                     onClick={() => handleApprove(partner.id)}
-                    className="flex items-center justify-center gap-1 px-3 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 text-sm"
+                    className="inline-flex shrink-0 items-center justify-center gap-1 px-3 py-2 min-h-[2.25rem] bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 text-sm"
+                    title="Approve"
                   >
                     <Check size={14} />
+                    Approve
                   </button>
                   <button
                     onClick={() => handleDelete(partner.id)}
-                    className="flex items-center justify-center gap-1 px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 text-sm"
+                    className="inline-flex shrink-0 items-center justify-center gap-1 px-3 py-2 min-h-[2.25rem] bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 text-sm"
+                    title="Delete"
                   >
                     <X size={14} />
+                    Delete
                   </button>
                 </>
               )}
               {partner.status === 'suspended' && (
                 <button
                   onClick={() => handleApprove(partner.id)}
-                  className="flex items-center justify-center gap-1 px-3 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 text-sm"
+                  className="inline-flex shrink-0 items-center justify-center gap-1 px-3 py-2 min-h-[2.25rem] bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 text-sm"
                 >
                   <Check size={14} />
                   Reactivate
                 </button>
               )}
+              </div>
             </div>
           </div>
         ))}

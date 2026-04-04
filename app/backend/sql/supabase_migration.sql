@@ -13,6 +13,8 @@
 --   7) 003_tiered_offers.sql
 --   8) 004_friend_locations.sql → 005 → 006_family_mode.sql → 006_operational_runtime_flags.sql
 --   9) 007 → 008 → 009 → 010 → 011 → 012 → 015_incident_photos_moderation.sql
+--   10) 035_referral_milestones.sql → referral milestone tracking (see services/referral_rewards.py)
+--   11) 036_offer_favorites.sql → per-user saved offers (POST /api/offers/{id}/favorite)
 --   (013 is deprecated; 014 replaces it. admin_dashboard_migration.sql is optional: skip if you ran 018;
 --    it overlaps trips/referrals/notifications and can confuse schema—prefer supabase + 017 + 014 + 018.)
 --

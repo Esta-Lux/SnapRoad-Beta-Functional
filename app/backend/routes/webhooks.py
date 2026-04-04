@@ -490,7 +490,7 @@ async def admin_monitor_ws(websocket: WebSocket):
 
 @router.get("/api/admin/monitor/events")
 def get_monitor_events(
-    limit: int = Query(default=100, ge=1, le=100),
+    limit: int = Query(default=100, ge=1, le=500),
     _admin: dict = Depends(require_admin),
 ):
     """Pull latest telemetry events (fallback for UI reloads)."""

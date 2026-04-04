@@ -345,7 +345,7 @@ class PartnerApiService {
       }
       return result
     } catch {
-      return { success: false, data: null }
+      return { success: false, data: null, message: 'Could not load analytics. Check network or sign in again.' }
     }
   }
 

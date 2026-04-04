@@ -79,28 +79,52 @@ router = APIRouter(prefix="/api", tags=["Partners"])
 
 
 PLAN_LOCATION_LIMITS = {
+    "unselected": 0,
     "starter": 5,
     "growth": 25,
     "enterprise": 999999,
     "internal": 999999,
 }
 
+# Self-serve Stripe checkout — Starter and Growth only (see PricingTab).
+SELF_SERVE_PARTNER_PLANS = frozenset({"starter", "growth"})
+
 
 def _partner_has_full_portal_access(partner: dict) -> bool:
-    """Paid checkout complete, or admin internal / complimentary grant."""
+    """Paid subscription active, admin internal/complimentary, or active promotion window (admin)."""
     if not partner:
         return False
+    if promotion_access_active(partner):
+        return True
     if partner.get("is_internal_complimentary") is True:
         return str(partner.get("subscription_status") or "").lower() == "active"
     plan = str(partner.get("plan") or "").strip().lower()
     if plan == "internal":
         return str(partner.get("subscription_status") or "").lower() == "active"
+    if plan in ("unselected", "", "none"):
+        return False
     sub = str(partner.get("subscription_status") or "").lower()
     return sub not in ("pending", "incomplete")
 
 
 def _plan_info(plan_key: str) -> dict:
-    return PARTNER_PLANS.get(plan_key, PARTNER_PLANS["starter"])
+    return PARTNER_PLANS.get(plan_key, PARTNER_PLANS["unselected"])
+
+
+MSG_PORTAL_PAYWALL = (
+    "Subscribe to a plan (Starter or Growth) or use an active SnapRoad promotion to use this feature."
+)
+
+
+def _require_partner_portal_entitled(user: dict, partner_id: str = "default_partner") -> str:
+    """Raises 403 unless paid, internal, complimentary, or promotion window is active."""
+    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    partner = sb_get_partner(owned_partner_id)
+    if not partner:
+        raise HTTPException(status_code=404, detail=MSG_PARTNER_NOT_FOUND)
+    if not _partner_has_full_portal_access(partner):
+        raise HTTPException(status_code=403, detail=MSG_PORTAL_PAYWALL)
+    return owned_partner_id
 
 
 def _require_owned_partner_id(user: dict, partner_id: Optional[str] = None) -> str:
@@ -142,7 +166,11 @@ def _assert_partner_resource_owner(
 # ==================== PARTNER PLANS ====================
 @router.get("/partner/plans")
 def get_partner_plans():
-    public = {k: v for k, v in PARTNER_PLANS.items() if k != "internal"}
+    public = {
+        k: v
+        for k, v in PARTNER_PLANS.items()
+        if k in SELF_SERVE_PARTNER_PLANS
+    }
     return {"success": True, "data": {"plans": public, "is_founders_active": True}}
 
 
@@ -153,12 +181,13 @@ def get_partner_profile(user: CurrentPartner, partner_id: str = "default_partner
     partner = sb_get_partner(owned_partner_id)
     if not partner:
         raise HTTPException(status_code=404, detail=MSG_PARTNER_NOT_FOUND)
-    plan_key = partner.get("plan", "starter")
+    plan_key = str(partner.get("plan") or "unselected").strip().lower() or "unselected"
     plan = _plan_info(plan_key)
     locations = sb_get_partner_locations(owned_partner_id)
     max_locs = PLAN_LOCATION_LIMITS.get(plan_key, 5)
     pu = partner.get("promotion_access_until")
     ppromo = partner.get("promotion_plan")
+    full_access = _partner_has_full_portal_access(partner)
     data = {
         "id": partner["id"],
         "business_name": partner.get("business_name", ""),
@@ -167,10 +196,12 @@ def get_partner_profile(user: CurrentPartner, partner_id: str = "default_partner
         "plan_info": plan,
         "is_founders": partner.get("is_founders", False),
         "subscription_status": partner.get("subscription_status") or "active",
+        "is_internal_complimentary": partner.get("is_internal_complimentary") is True,
+        "has_full_portal_access": full_access,
         "locations": locations,
         "location_count": len(locations),
         "max_locations": max_locs,
-        "can_add_location": len(locations) < max_locs,
+        "can_add_location": full_access and len(locations) < max_locs,
         "created_at": partner.get("created_at", ""),
     }
     if pu is not None and str(pu).strip():
@@ -243,7 +274,7 @@ def get_partner_locations(
 
 @router.post("/partner/locations", responses={403: {"description": "Partner access denied"}})
 def add_partner_location(location: PartnerLocation, user: CurrentPartner, partner_id: str = "default_partner"):
-    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    owned_partner_id = _require_partner_portal_entitled(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
     plan_key = partner.get("plan", "starter") if partner else "starter"
     max_locs = PLAN_LOCATION_LIMITS.get(plan_key, 5)
@@ -306,7 +337,7 @@ def set_primary_location(location_id: str, user: CurrentPartner, partner_id: str
 # ==================== PARTNER OFFERS ====================
 @router.post("/partner/offers", responses={403: {"description": "Partner access denied"}})
 def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partner_id: str = "default_partner"):
-    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    owned_partner_id = _require_partner_portal_entitled(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
     if not partner:
         return {"success": False, "message": MSG_PARTNER_NOT_FOUND}
@@ -370,7 +401,7 @@ def get_partner_offers(
 
 @router.put("/partner/offers/{offer_id}", responses=RESP_PARTNER_ACCESS_503)
 def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: CurrentPartner, partner_id: str = "default_partner"):
-    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    owned_partner_id = _require_partner_portal_entitled(user, partner_id)
     _assert_partner_resource_owner("offers", offer_id, owned_partner_id, "Not your offer")
     partner = sb_get_partner(owned_partner_id)
     if not partner:
@@ -411,7 +442,7 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: Current
 
 @router.delete("/partner/offers/{offer_id}", responses={403: {"description": "Partner access denied"}})
 def delete_partner_offer(offer_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
-    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    owned_partner_id = _require_partner_portal_entitled(user, partner_id)
     from services.supabase_service import _sb
     try:
         _sb().table("offers").delete().eq("id", offer_id).eq("partner_id", owned_partner_id).execute()
@@ -429,7 +460,7 @@ def get_boost_pricing():
 
 @router.post("/partner/boosts/create", responses=RESP_PARTNER_ACCESS_503)
 def create_offer_boost(boost_req: BoostRequest, user: CurrentPartner, partner_id: str = "default_partner"):
-    owned_partner_id = _require_owned_partner_id(user, partner_id)
+    owned_partner_id = _require_partner_portal_entitled(user, partner_id)
     _assert_partner_resource_owner("offers", str(boost_req.offer_id), owned_partner_id, "Not your offer")
     if boost_req.boost_type not in BOOST_PRICING:
         return {"success": False, "message": "Invalid boost type"}
@@ -587,10 +618,10 @@ def partner_register_v2(request: Request, body: PartnerRegisterRequest):
             "business_name": body.business_name,
             "business_type": "retail",
             "email": body.email,
-            "plan": "starter",
+            "plan": "unselected",
             "status": "active",
             "is_approved": True,
-            "subscription_status": "pending",
+            "subscription_status": "incomplete",
         }
         created = sb_create_partner(partner_data)
         if not created:
@@ -1187,17 +1218,20 @@ def stripe_subscribe(
     try:
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
-        plan_info = PARTNER_PLANS.get(plan)
+        plan_norm = str(plan or "").strip().lower()
+        if plan_norm not in SELF_SERVE_PARTNER_PLANS:
+            raise HTTPException(status_code=400, detail="Choose Starter or Growth; Enterprise is not self-serve.")
+        plan_info = PARTNER_PLANS.get(plan_norm)
         if not plan_info:
             raise HTTPException(status_code=400, detail="Invalid plan")
         price = plan_info.get("price_founders") or plan_info.get("price_public")
         if not price:
-            return {"success": False, "message": "Enterprise plans require contacting sales"}
+            return {"success": False, "message": "This plan is not available for online checkout."}
         base = _resolve_partner_portal_base(portal_origin)
         catalog_price = ""
-        if plan == "starter":
+        if plan_norm == "starter":
             catalog_price = (STRIPE_PARTNER_STARTER_PRICE_ID or "").strip()
-        elif plan == "growth":
+        elif plan_norm == "growth":
             catalog_price = (STRIPE_PARTNER_GROWTH_PRICE_ID or "").strip()
         if catalog_price:
             line_items = [{"price": catalog_price, "quantity": 1}]
@@ -1211,12 +1245,11 @@ def stripe_subscribe(
                 },
                 "quantity": 1,
             }]
-        owned_partner_id = _require_owned_partner_id(user, partner_id)
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="subscription",
             line_items=line_items,
-            metadata={"partner_id": owned_partner_id, "plan": plan},
+            metadata={"partner_id": owned_partner_id, "plan": plan_norm},
             success_url=f"{base}/portal/partner?payment=success",
             cancel_url=f"{base}/portal/partner?payment=cancelled",
         )
