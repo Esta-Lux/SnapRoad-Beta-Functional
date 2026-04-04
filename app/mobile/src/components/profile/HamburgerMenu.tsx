@@ -28,8 +28,7 @@ function runAfterMenuClose(onClose: () => void, action: () => void, delayMs = 22
 export type HamburgerMenuTarget =
   | 'Social'
   | 'Convoy'
-  | 'TripAnalytics'
-  | 'RouteHistory'
+  | 'PlaceAlerts'
   | 'Profile'
   | 'Help';
 
@@ -66,14 +65,10 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
       action: () => runAfterMenuClose(onClose, () => onNavigate('Convoy')),
     },
     {
-      icon: 'analytics-outline',
-      label: 'Trip Analytics',
-      action: () => runAfterMenuClose(onClose, () => onNavigate('TripAnalytics')),
-    },
-    {
-      icon: 'time-outline',
-      label: 'Route History',
-      action: () => runAfterMenuClose(onClose, () => onNavigate('RouteHistory')),
+      icon: 'notifications-outline',
+      label: 'Place alerts',
+      accent: '#3B82F6',
+      action: () => runAfterMenuClose(onClose, () => onNavigate('PlaceAlerts')),
     },
     {
       icon: 'share-social-outline',

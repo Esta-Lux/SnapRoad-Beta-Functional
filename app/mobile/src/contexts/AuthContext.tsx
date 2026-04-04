@@ -60,7 +60,13 @@ function allowStaffInDriverApp(): boolean {
 }
 
 function mapApiUserToContext(apiUser: Record<string, unknown>): User {
-  const name = String(apiUser.name ?? apiUser.email ?? 'Driver');
+  const email = String(apiUser.email ?? '').trim();
+  const emLower = email.toLowerCase();
+  const raw = String(apiUser.name ?? apiUser.full_name ?? '').trim();
+  let name = raw;
+  if (!name || (emLower && name.toLowerCase() === emLower)) {
+    name = 'Driver';
+  }
   const initials = name
     .split(' ')
     .filter(Boolean)

@@ -1,6 +1,6 @@
 import logging
 
-from typing import Annotated
+from typing import Annotated, List
 
 from fastapi import APIRouter, HTTPException, Depends
 from starlette.requests import Request
@@ -17,6 +17,99 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["AI"])
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+
+_NAV_CHAT_PREFIXES = (
+    "start navigation to ",
+    "navigation to ",
+    "start route to ",
+    "set navigation to ",
+    "directions to ",
+    "navigate to ",
+    "drive to ",
+    "go to ",
+    "take me to ",
+    "navigate ",
+    "take me ",
+)
+
+
+def _strip_orion_wake_phrase(raw: str) -> str:
+    s = raw.strip()
+    low = s.lower()
+    for pref in ("hey orion, ", "hey orion ", "orion, ", "orion "):
+        if low.startswith(pref):
+            return s[len(pref) :].lstrip()
+    return s
+
+
+async def _navigation_actions_from_message(ctx: dict, last_raw: str) -> List[dict]:
+    """Parse user text for navigate / add_stop intents (Orion chat → Map actions)."""
+    actions: list = []
+    last_raw = _strip_orion_wake_phrase(last_raw)
+    last_msg = last_raw.lower()
+    nearby_offers = ctx.get("nearbyOffers") or []
+
+    if "take me there" in last_msg or last_msg.strip() == "take me there":
+        if nearby_offers:
+            best = nearby_offers[0]
+            la = best.get("lat") or best.get("latitude")
+            ln = best.get("lng") or best.get("longitude")
+            if la is not None and ln is not None:
+                actions.append({
+                    "type": "navigate",
+                    "name": best.get("title") or best.get("partner_name") or "Destination",
+                    "lat": float(la),
+                    "lng": float(ln),
+                })
+        return actions
+
+    query = None
+    for pref in sorted(_NAV_CHAT_PREFIXES, key=len, reverse=True):
+        if pref in last_msg:
+            q = last_raw[last_msg.index(pref) + len(pref) :].strip()
+            if q.lower() in ("there", ""):
+                continue
+            if len(q) >= 2:
+                query = q
+                break
+
+    if query:
+        try:
+            from routes.places import fetch_autocomplete_predictions, fetch_place_coords_for_orion
+
+            olat = ctx.get("lat")
+            olng = ctx.get("lng")
+            lat_f = float(olat) if olat is not None else None
+            lng_f = float(olng) if olng is not None else None
+            preds = await fetch_autocomplete_predictions(query[:120], lat_f, lng_f)
+            if preds:
+                pid = preds[0].get("place_id")
+                if pid:
+                    det = await fetch_place_coords_for_orion(pid)
+                    if det and det.get("lat") is not None and det.get("lng") is not None:
+                        actions.append({
+                            "type": "navigate",
+                            "name": det.get("name") or preds[0].get("name") or query[:80],
+                            "lat": float(det["lat"]),
+                            "lng": float(det["lng"]),
+                        })
+        except Exception as e:
+            logger.warning("failed to resolve navigation destination: %s", e)
+
+    if not actions and ("add a stop" in last_msg or "stop at" in last_msg) and nearby_offers:
+        best = nearby_offers[0]
+        la = best.get("lat") or best.get("latitude")
+        ln = best.get("lng") or best.get("longitude")
+        if la is not None and ln is not None:
+            actions.append({
+                "type": "add_stop",
+                "name": best.get("partner_name") or best.get("title", "Offer"),
+                "lat": float(la),
+                "lng": float(ln),
+                "offer_id": best.get("id"),
+            })
+
+    return actions
 
 
 @router.post("/ai/generate-image")
@@ -45,76 +138,9 @@ async def orion_completions(
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
     content = await orion_service.completion(messages, body.context)
 
-    actions: list = []
     ctx = body.context or {}
-    nearby_offers = ctx.get("nearbyOffers") or []
     last_raw = body.messages[-1].content if body.messages else ""
-    last_msg = last_raw.lower()
-
-    # "Take me there" → first nearby offer / POI (navigation, not only add_stop)
-    if "take me there" in last_msg or last_msg.strip() == "take me there":
-        if nearby_offers:
-            best = nearby_offers[0]
-            la = best.get("lat") or best.get("latitude")
-            ln = best.get("lng") or best.get("longitude")
-            if la is not None and ln is not None:
-                actions.append({
-                    "type": "navigate",
-                    "name": best.get("title") or best.get("partner_name") or "Destination",
-                    "lat": float(la),
-                    "lng": float(ln),
-                })
-
-    if not actions:
-        navigate_prefixes = (
-            "take me to ",
-            "navigate to ",
-            "go to ",
-            "drive to ",
-            "directions to ",
-            "start navigation to ",
-        )
-        query = None
-        for pref in navigate_prefixes:
-            if pref in last_msg:
-                query = last_raw[last_msg.index(pref) + len(pref) :].strip()
-                break
-        if query and len(query) >= 2:
-            try:
-                from routes.places import fetch_autocomplete_predictions, fetch_place_coords_for_orion
-
-                olat = ctx.get("lat")
-                olng = ctx.get("lng")
-                lat_f = float(olat) if olat is not None else None
-                lng_f = float(olng) if olng is not None else None
-                preds = await fetch_autocomplete_predictions(query[:120], lat_f, lng_f)
-                if preds:
-                    pid = preds[0].get("place_id")
-                    if pid:
-                        det = await fetch_place_coords_for_orion(pid)
-                        if det and det.get("lat") is not None and det.get("lng") is not None:
-                            actions.append({
-                                "type": "navigate",
-                                "name": det.get("name") or preds[0].get("name") or query[:80],
-                                "lat": float(det["lat"]),
-                                "lng": float(det["lng"]),
-                            })
-            except Exception as e:
-                logger.warning("failed to resolve navigation destination: %s", e)
-
-    if not actions:
-        if ("add a stop" in last_msg or "stop at" in last_msg) and nearby_offers:
-            best = nearby_offers[0]
-            la = best.get("lat") or best.get("latitude")
-            ln = best.get("lng") or best.get("longitude")
-            if la is not None and ln is not None:
-                actions.append({
-                    "type": "add_stop",
-                    "name": best.get("partner_name") or best.get("title", "Offer"),
-                    "lat": float(la),
-                    "lng": float(ln),
-                    "offer_id": best.get("id"),
-                })
+    actions = await _navigation_actions_from_message(ctx, last_raw)
 
     return {"content": content, "actions": actions}
 

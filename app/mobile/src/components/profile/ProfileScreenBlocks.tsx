@@ -42,7 +42,7 @@ export const ProfileStatsStrip = React.memo(function ProfileStatsStrip({ cardBg,
   );
 });
 
-type TabId = 'overview' | 'score' | 'fuel' | 'settings';
+type TabId = 'overview' | 'settings';
 
 export const ProfileTabBar = React.memo(function ProfileTabBar({
   activeTab,
@@ -57,8 +57,6 @@ export const ProfileTabBar = React.memo(function ProfileTabBar({
     <View style={styles.tabRow}>
       {([
         { id: 'overview', label: 'Overview' },
-        { id: 'score', label: 'Score' },
-        { id: 'fuel', label: 'Fuel' },
         { id: 'settings', label: 'Settings' },
       ] as const).map((tab) => (
         <TouchableOpacity

@@ -255,35 +255,63 @@ async def _admin_health_ohgo(results: dict) -> None:
         results["ohgo"] = "down"
 
 
-def _llm_provider_config() -> tuple[str, str, str]:
-    """Return (provider_name, url, api_key) for the configured LLM provider."""
-    import os
-
-    nvidia_key = (os.environ.get("NVIDIA_API_KEY") or "").strip()
-    if nvidia_key:
-        base = (os.environ.get("NVIDIA_API_BASE") or "https://integrate.api.nvidia.com/v1").strip().rstrip("/")
-        return "nvidia", f"{base}/models", nvidia_key
-    openai_key = os.environ.get("OPENAI_API_KEY") or ""
-    return "openai", "https://api.openai.com/v1/models", openai_key
-
-
 async def _admin_health_llm(results: dict) -> None:
+    import os
     import time
 
     import httpx
 
-    provider, url, key = _llm_provider_config()
-    results["llm_provider"] = provider
-    try:
-        start = time.time()
-        async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.get(url, headers={"Authorization": f"Bearer {key}"})
-        results["llm"] = "healthy" if r.status_code == 200 else "degraded"
-        results["llm_latency"] = round((time.time() - start) * 1000)
-    except Exception:
+    async def ping_models(url: str, key: str) -> tuple[str, int]:
+        if not key.strip():
+            return "not_configured", 0
+        try:
+            start = time.time()
+            async with httpx.AsyncClient(timeout=8) as client:
+                r = await client.get(url, headers={"Authorization": f"Bearer {key}"})
+            lat = round((time.time() - start) * 1000)
+            status = "healthy" if r.status_code == 200 else "degraded"
+            return status, lat
+        except Exception:
+            return "down", 0
+
+    okey = (os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_KEY") or "").strip()
+    nkey = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+    o_url = "https://api.openai.com/v1/models"
+    n_base = (os.environ.get("NVIDIA_API_BASE") or "https://integrate.api.nvidia.com/v1").strip().rstrip("/")
+    n_url = f"{n_base}/models"
+
+    o_st, o_lat = await ping_models(o_url, okey)
+    n_st, n_lat = await ping_models(n_url, nkey)
+
+    results["llm_openai"] = o_st if okey else "not_configured"
+    results["llm_openai_latency"] = o_lat
+    results["llm_nvidia"] = n_st if nkey else "not_configured"
+    results["llm_nvidia_latency"] = n_lat
+
+    if okey and nkey:
+        results["llm_provider"] = "openai_primary_nvidia_fallback"
+    elif okey:
+        results["llm_provider"] = "openai"
+    elif nkey:
+        results["llm_provider"] = "nvidia"
+    else:
+        results["llm_provider"] = "none"
+
+    if results["llm_openai"] == "healthy":
+        results["llm"] = "healthy"
+        results["llm_latency"] = results["llm_openai_latency"]
+    elif results["llm_nvidia"] == "healthy":
+        results["llm"] = "healthy"
+        results["llm_latency"] = results["llm_nvidia_latency"]
+    elif results["llm_openai"] in ("degraded", "down") and results["llm_nvidia"] == "healthy":
+        results["llm"] = "degraded"
+        results["llm_latency"] = results["llm_nvidia_latency"]
+    else:
         results["llm"] = "down"
-    results["openai"] = results.get("llm", "down")
-    results["openai_latency"] = results.get("llm_latency")
+        results["llm_latency"] = max(o_lat, n_lat)
+
+    results["openai"] = results["llm_openai"]
+    results["openai_latency"] = results["llm_openai_latency"]
 
 
 async def _admin_health_realtime(results: dict) -> None:

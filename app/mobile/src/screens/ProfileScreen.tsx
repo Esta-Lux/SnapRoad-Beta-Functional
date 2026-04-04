@@ -12,7 +12,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../hooks/useLocation';
 import { api } from '../api/client';
 import { PLANS, premiumSavingsPercent, PREMIUM_PUBLIC_MONTHLY } from '../constants/plans';
-import { applySnapRoadFromProfilePayload, computeSnapRoadScoreBreakdown } from '../utils/profileScore';
+import { applySnapRoadFromProfilePayload } from '../utils/profileScore';
 import FuelTracker from '../components/profile/FuelTracker';
 import DriverSnapshotModal from '../components/profile/DriverSnapshotModal';
 import ProfileInsightsDashboard from '../components/profile/ProfileInsightsDashboard';
@@ -49,6 +49,7 @@ import {
 } from '../components/profile/ProfileSections';
 import type { ProfileOverviewActionItem } from '../components/profile/types';
 import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
+import PlaceAlertsDashboardModal from '../components/profile/PlaceAlertsDashboardModal';
 
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
@@ -106,10 +107,12 @@ export default function ProfileScreen() {
   const [newPlaceName, setNewPlaceName] = useState('');
   const [newPlaceAddress, setNewPlaceAddress] = useState('');
   const [newPlaceCategory] = useState('favorite');
-  const [profileTab, setProfileTab] = useState<'overview' | 'score' | 'fuel' | 'settings'>('overview');
+  const [profileTab, setProfileTab] = useState<'overview' | 'settings'>('overview');
   const [showEditName, setShowEditName] = useState(false);
   const [draftName, setDraftName] = useState('');
   const [savingName, setSavingName] = useState(false);
+  const [canChangeUsername, setCanChangeUsername] = useState(true);
+  const [usernameChangeAvailableAt, setUsernameChangeAvailableAt] = useState<string | null>(null);
   const [showLevelProgress, setShowLevelProgress] = useState(false);
   const [showInsightsDashboard, setShowInsightsDashboard] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -191,12 +194,19 @@ export default function ProfileScreen() {
       const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
       const pp = profilePayload as Record<string, unknown>;
       const planStr = typeof pp.plan === 'string' ? pp.plan : '';
-      const displayName =
+      const emailLower = String(pp.email ?? '').trim().toLowerCase();
+      const rawName =
         typeof pp.name === 'string' && pp.name.trim()
           ? pp.name.trim()
           : typeof pp.full_name === 'string' && pp.full_name.trim()
             ? pp.full_name.trim()
-            : undefined;
+            : '';
+      const displayName =
+        rawName && (!emailLower || rawName.toLowerCase() !== emailLower) ? rawName : undefined;
+      setCanChangeUsername(pp.can_change_username !== false);
+      setUsernameChangeAvailableAt(
+        typeof pp.username_change_available_at === 'string' ? pp.username_change_available_at : null,
+      );
       const userPatch: Partial<User> = {
         gems: Number(pp.gems ?? 0),
         level: Number(pp.level ?? 1),
@@ -206,7 +216,7 @@ export default function ProfileScreen() {
         streak: Number(pp.streak ?? pp.safe_drive_streak ?? 0),
         xp: pp.xp != null ? Number(pp.xp) : undefined,
       };
-      if (displayName) userPatch.name = displayName;
+      userPatch.name = displayName ?? 'Driver';
       const planLower = planStr.toLowerCase();
       const premiumByPlan = planLower === 'premium' || planLower === 'family';
       const premiumByFlag = pp.is_premium != null && Boolean(pp.is_premium);
@@ -381,6 +391,13 @@ export default function ProfileScreen() {
     if (!statsVersion) return;
     void loadData('silent');
   }, [statsVersion, loadData]);
+
+  useEffect(() => {
+    if (route.params?.openPlaceAlerts) {
+      setShowPlaceAlertsDashboard(true);
+      navigation.setParams({ openPlaceAlerts: undefined });
+    }
+  }, [route.params?.openPlaceAlerts, navigation]);
 
   useEffect(() => {
     if (user?.vehicle_height_meters && user.vehicle_height_meters > 0) {
@@ -600,8 +617,6 @@ export default function ProfileScreen() {
       onPress: () => navigation.getParent()?.navigate('Dashboards'),
     },
   ];
-  const snapRoad = useMemo(() => computeSnapRoadScoreBreakdown(user), [user]);
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
       <KeyboardAvoidingView
@@ -635,29 +650,6 @@ export default function ProfileScreen() {
           </Text>
         </View>
         <ProfileTabBar activeTab={profileTab} onChange={setProfileTab} sub={sub} />
-
-        {(profileTab === 'score' || profileTab === 'fuel') && (
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => setShowPlaceAlertsDashboard(true)}
-            style={[styles.placeAlertDash, { backgroundColor: cardBg, borderColor: colors.border }]}
-            accessibilityRole="button"
-            accessibilityLabel="Open Place Alerts dashboard"
-          >
-            <View style={[styles.placeAlertIconWrap, { backgroundColor: 'rgba(59,130,246,0.12)' }]}>
-              <Ionicons name="notifications-outline" size={22} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={[styles.placeAlertDashTitle, { color: text }]}>Place alerts</Text>
-              <Text style={[styles.placeAlertDashSub, { color: sub }]} numberOfLines={2}>
-                {placeAlerts.length > 0
-                  ? `${placeAlerts.length} active · Manage under Overview`
-                  : 'Get arrival reminders · Set up on Overview'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={sub} />
-          </TouchableOpacity>
-        )}
 
         {profileTab === 'overview' && (
           <>
@@ -694,6 +686,28 @@ export default function ProfileScreen() {
                 </View>
               </LinearGradient>
             </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.92}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setShowPlaceAlertsDashboard(true);
+              }}
+              style={[styles.placeAlertDash, { backgroundColor: cardBg, borderColor: colors.border, marginHorizontal: 16, marginBottom: 12 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Open place alerts dashboard"
+            >
+              <View style={[styles.placeAlertIconWrap, { backgroundColor: 'rgba(59,130,246,0.12)' }]}>
+                <Ionicons name="notifications-outline" size={22} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[styles.placeAlertDashTitle, { color: text }]}>Place alerts</Text>
+                <Text style={[styles.placeAlertDashSub, { color: sub }]} numberOfLines={2}>
+                  Starting point, destination, leave time, how early to warn, and repeat days. Premium adds real-time push for traffic ahead.
+                  {placeAlerts.length > 0 ? ` ${placeAlerts.length} active.` : ''}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={sub} />
+            </TouchableOpacity>
             <ProfileOverviewSection
               actions={actionRows}
               cardBg={cardBg}
@@ -706,6 +720,9 @@ export default function ProfileScreen() {
             />
 
             <SectionHeader title={`Favorites (${favoritePlaces.length})`} isLight={isLight} />
+            <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 6, marginTop: -6, lineHeight: 16 }}>
+              Saved favorite locations. The Favorites chip next to Map search opens this same list for quick picks.
+            </Text>
             <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
               <PlacesCard
                 cardBg={cardBg}
@@ -718,9 +735,9 @@ export default function ProfileScreen() {
               />
             </View>
 
-            <SectionHeader title={`Commute alerts (${commutes.length}/${commuteLimit})`} isLight={isLight} />
+            <SectionHeader title={`Commute reminders (${commutes.length}/${commuteLimit})`} isLight={isLight} />
             <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 6, marginTop: -6, lineHeight: 16 }}>
-              Route + leave time + days. Point &quot;Place alerts&quot; below is for arriving at a single spot.
+              Recurring commute routes with typical leave times. Use Place alerts above for one-off destinations and richer leave-time options.
             </Text>
             <CommuteRoutesSection
               cardBg={cardBg}
@@ -737,194 +754,6 @@ export default function ProfileScreen() {
                 setShowAddCommute(true);
               }}
             />
-
-            {/* Place Alerts Dashboard */}
-            <SectionHeader title={`Place Alerts (${placeAlerts.length}/${placeAlertLimit})`} isLight={isLight} />
-            <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 12 }}>
-              {placeAlerts.length > 0 ? placeAlerts.map((alert) => (
-                <View key={alert.id} style={[styles.alertRow, { backgroundColor: cardBg, borderColor: colors.border }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.alertName, { color: text }]}>{alert.name}</Text>
-                    <Text style={[styles.alertSub, { color: sub }]}>
-                      {alert.alert_minutes_before >= 60
-                        ? `${Math.round(alert.alert_minutes_before / 60)}h before`
-                        : `${alert.alert_minutes_before}min before`}
-                      {' · '}
-                      {alert.realtime_push ? 'Real-time push' : 'Scheduled only'}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => {
-                      Alert.alert('Delete Alert', `Remove alert for ${alert.name}?`, [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Delete', style: 'destructive', onPress: () => {
-                          api.delete(`/api/place-alerts/${alert.id}`).then(() => {
-                            setPlaceAlerts((prev) => prev.filter((a) => a.id !== alert.id));
-                          }).catch(() => {});
-                        }},
-                      ]);
-                    }}
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                  </TouchableOpacity>
-                </View>
-              )) : (
-                <View style={{ backgroundColor: cardBg, borderRadius: 14, padding: 20, alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
-                  <Ionicons name="notifications-outline" size={28} color={sub} style={{ marginBottom: 8 }} />
-                  <Text style={{ color: text, fontSize: 15, fontWeight: '700', marginBottom: 4 }}>Place Alerts</Text>
-                  <Text style={{ color: sub, fontSize: 13, textAlign: 'center', lineHeight: 18 }}>
-                    Get notified before arriving at saved locations.{'\n'}
-                    {user?.isPremium ? 'You have 20 alert slots with real-time push.' : 'Free plan: 5 alerts with scheduled notifications.'}
-                  </Text>
-                </View>
-              )}
-              {!placeAlertPremium && placeAlerts.length >= 5 && (
-                <TouchableOpacity style={styles.upgradeSmall} onPress={() => setShowPlanModal(true)}>
-                  <Ionicons name="diamond" size={14} color="#fff" style={{ marginRight: 6 }} />
-                  <Text style={styles.upgradeSmallText}>Upgrade for 20 alerts + real-time push</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </>
-        )}
-
-        {profileTab === 'score' && (
-          <>
-            <SectionHeader title="Driving Score" isLight={isLight} />
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() => setShowInsightsDashboard(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Open Insights dashboard for score and coaching"
-              style={[styles.scoreCard, { backgroundColor: cardBg }]}
-            >
-              <View style={styles.scoreTopRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.scoreLabel, { color: sub }]}>SnapRoad Score</Text>
-                  <Text style={[styles.scoreValue, { color: colors.primary }]}>{snapRoad.total}</Text>
-                  <Text style={[styles.scoreOutOf, { color: sub }]}>out of 1,000 · {snapRoad.tier}</Text>
-                </View>
-                {user?.isPremium ? (
-                  <View style={styles.premiumChip}>
-                    <Text style={styles.premiumChipText}>PREMIUM</Text>
-                  </View>
-                ) : null}
-              </View>
-              <View style={styles.scoreTrack}>
-                <View style={[styles.scoreFill, { width: `${(snapRoad.total / 1000) * 100}%` }]} />
-              </View>
-              <Text style={[styles.scoreTapHint, { color: colors.primary }]}>Open Insights & Recap →</Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {profileTab === 'fuel' && (
-          <>
-            <SectionHeader title="Fuel & Analytics" isLight={isLight} />
-            <View style={[styles.fuelCard, { backgroundColor: cardBg }]}>
-              <View style={styles.fuelRow}>
-                <Text style={[styles.fuelLabel, { color: sub }]}>Est. monthly spend</Text>
-                <Text style={[styles.fuelValue, { color: text }]}>
-                  {fuelSummary.monthlyEstimate != null ? `$${fuelSummary.monthlyEstimate}` : '—'}
-                </Text>
-              </View>
-              <View style={styles.fuelRow}>
-                <Text style={[styles.fuelLabel, { color: sub }]}>Avg efficiency</Text>
-                <Text style={[styles.fuelValue, { color: text }]}>
-                  {fuelSummary.avgMpg != null ? `${fuelSummary.avgMpg} MPG` : '—'}
-                </Text>
-              </View>
-              <View style={styles.fuelRow}>
-                <Text style={[styles.fuelLabel, { color: sub }]}>Cost per mile</Text>
-                <Text style={[styles.fuelValue, { color: text }]}>
-                  {fuelSummary.costPerMile != null ? `$${fuelSummary.costPerMile.toFixed(2)}/mi` : '—'}
-                </Text>
-              </View>
-              <View style={styles.fuelRow}>
-                <Text style={[styles.fuelLabel, { color: sub }]}>Last odometer</Text>
-                <Text style={[styles.fuelValue, { color: text }]}>
-                  {fuelSummary.lastOdometerMi != null ? `${fuelSummary.lastOdometerMi.toLocaleString()} mi` : '—'}
-                </Text>
-              </View>
-              {fuelSummary.milesSinceLastFill != null ? (
-                <View style={styles.fuelRow}>
-                  <Text style={[styles.fuelLabel, { color: sub }]}>Miles since prior fill</Text>
-                  <Text style={[styles.fuelValue, { color: text }]}>
-                    {fuelSummary.milesSinceLastFill.toLocaleString()} mi
-                  </Text>
-                </View>
-              ) : null}
-              <Text style={[styles.fuelHint, { color: sub }]}>
-                Log date, gallons, price, station, and odometer for expense and mileage records. Avg MPG uses miles between fill-ups.
-              </Text>
-              <TouchableOpacity style={styles.fuelBtn} onPress={() => setShowFuelTracker(true)}>
-                <Text style={styles.fuelBtnText}>Log Fuel Fill-up</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Premium Analytics Dashboard */}
-            {user?.isPremium ? (
-              <>
-                <SectionHeader title="Smart Commute Analytics" isLight={isLight} />
-                <View style={{ marginHorizontal: 16, marginBottom: 12, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: colors.border }}>
-                  <View style={{ flexDirection: 'row' }}>
-                    <View style={{ flex: 1, padding: 14, backgroundColor: cardBg, alignItems: 'center' }}>
-                      <Ionicons name="car-outline" size={24} color="#3B82F6" />
-                      <Text style={{ color: text, fontSize: 22, fontWeight: '900', marginTop: 6 }}>{user?.totalTrips ?? 0}</Text>
-                      <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase' }}>Total Trips</Text>
-                    </View>
-                    <View style={{ width: 1, backgroundColor: colors.border }} />
-                    <View style={{ flex: 1, padding: 14, backgroundColor: cardBg, alignItems: 'center' }}>
-                      <Ionicons name="speedometer-outline" size={24} color="#10B981" />
-                      <Text style={{ color: text, fontSize: 22, fontWeight: '900', marginTop: 6 }}>{Math.round(user?.totalMiles ?? 0)}</Text>
-                      <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase' }}>Miles Driven</Text>
-                    </View>
-                  </View>
-                  <View style={{ height: 1, backgroundColor: colors.border }} />
-                  <View style={{ flexDirection: 'row' }}>
-                    <View style={{ flex: 1, padding: 14, backgroundColor: cardBg, alignItems: 'center' }}>
-                      <Ionicons name="diamond-outline" size={24} color="#8B5CF6" />
-                      <Text style={{ color: text, fontSize: 22, fontWeight: '900', marginTop: 6 }}>{user?.gems ?? 0}</Text>
-                      <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase' }}>Gems Earned</Text>
-                    </View>
-                    <View style={{ width: 1, backgroundColor: colors.border }} />
-                    <View style={{ flex: 1, padding: 14, backgroundColor: cardBg, alignItems: 'center' }}>
-                      <Ionicons name="shield-checkmark-outline" size={24} color="#F59E0B" />
-                      <Text style={{ color: text, fontSize: 22, fontWeight: '900', marginTop: 6 }}>{user?.safetyScore ?? 85}</Text>
-                      <Text style={{ color: sub, fontSize: 10, fontWeight: '600', textTransform: 'uppercase' }}>Safety Score</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={{ marginHorizontal: 16, gap: 8, marginBottom: 12 }}>
-                  <TouchableOpacity
-                    style={[styles.fuelBtn, { flexDirection: 'row', gap: 8, justifyContent: 'center', backgroundColor: '#7C3AED' }]}
-                    onPress={() => setShowDriverSnapshot(true)}
-                  >
-                    <Ionicons name="stats-chart" size={18} color="#fff" />
-                    <Text style={styles.fuelBtnText}>Driver Snapshot</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.fuelBtn, { flexDirection: 'row', gap: 8, justifyContent: 'center', backgroundColor: '#3B82F6' }]}
-                    onPress={() => setShowInsightsDashboard(true)}
-                  >
-                    <Ionicons name="shield-checkmark" size={18} color="#fff" />
-                    <Text style={styles.fuelBtnText}>Driving Score Breakdown</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            ) : (
-              <View style={{ marginHorizontal: 16, marginBottom: 12, backgroundColor: isLight ? '#f8fafc' : '#1e293b', borderRadius: 16, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: colors.border }}>
-                <Ionicons name="lock-closed" size={32} color="#3B82F6" style={{ marginBottom: 10 }} />
-                <Text style={{ color: text, fontSize: 16, fontWeight: '800', marginBottom: 6 }}>Premium Analytics</Text>
-                <Text style={{ color: sub, fontSize: 13, textAlign: 'center', marginBottom: 14, lineHeight: 18 }}>
-                  Smart commute analytics, driver snapshots, detailed score breakdowns, and fuel insights are available with Premium.
-                </Text>
-                <TouchableOpacity style={[styles.fuelBtn, { paddingHorizontal: 32 }]} onPress={() => setShowPlanModal(true)}>
-                  <Text style={styles.fuelBtnText}>Upgrade to Premium</Text>
-                </TouchableOpacity>
-              </View>
-            )}
           </>
         )}
 
@@ -936,9 +765,10 @@ export default function ProfileScreen() {
               onPress={() => { setDraftName(user?.name ?? ''); setShowEditName(true); }}
               activeOpacity={0.75}
             >
-              <View>
-                <Text style={{ color: sub, fontSize: 12, marginBottom: 4 }}>Display name</Text>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={{ color: sub, fontSize: 12, marginBottom: 4 }}>Username</Text>
                 <Text style={{ color: text, fontSize: 16, fontWeight: '600' }}>{user?.name ?? 'Driver'}</Text>
+                <Text style={{ color: sub, fontSize: 11, marginTop: 4 }}>Shown instead of your email. You can change it once every 14 days.</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={sub} />
             </TouchableOpacity>
@@ -1020,56 +850,11 @@ export default function ProfileScreen() {
             <SectionHeader title={`Saved Places (${places.length})`} isLight={isLight} />
             <PlacesCard cardBg={cardBg} text={text} sub={sub} places={places} loading={initialLoading} onDelete={handleDeletePlace} onAdd={() => setShowAddPlace(true)} />
 
-            <SectionHeader title={`Saved Routes (${routes.length})`} isLight={isLight} />
+            <SectionHeader title={`Quick routes (${routes.length})`} isLight={isLight} />
+            <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 8, marginTop: -6, lineHeight: 16 }}>
+              Shortcuts for navigation—home, work, and places you drive to often (separate from Favorites and place alerts). Manage place alerts from the Overview tab.
+            </Text>
             <RoutesCard cardBg={cardBg} text={text} sub={sub} routes={routes} loading={initialLoading} onDelete={handleDeleteRoute} />
-
-            <SectionHeader title={`Place Alerts (${placeAlerts.length}/${placeAlertLimit})`} isLight={isLight} />
-            <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 12 }}>
-              {placeAlerts.map((alert) => (
-                <View key={alert.id} style={[styles.alertRow, { backgroundColor: cardBg, borderColor: colors.border }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.alertName, { color: text }]}>{alert.name}</Text>
-                    <Text style={[styles.alertSub, { color: sub }]}>
-                      {alert.alert_minutes_before >= 60
-                        ? `${Math.round(alert.alert_minutes_before / 60)}h before`
-                        : `${alert.alert_minutes_before}min before`}
-                      {' · '}
-                      {alert.realtime_push ? 'Real-time push' : 'Scheduled only'}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => {
-                      Alert.alert('Delete Alert', `Remove alert for ${alert.name}?`, [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Delete', style: 'destructive', onPress: () => {
-                          api.delete(`/api/place-alerts/${alert.id}`).then(() => {
-                            setPlaceAlerts((prev) => prev.filter((a) => a.id !== alert.id));
-                          }).catch(() => {});
-                        }},
-                      ]);
-                    }}
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-              {placeAlerts.length === 0 && (
-                <Text style={[styles.alertSub, { color: sub, textAlign: 'center', paddingVertical: 16 }]}>
-                  No place alerts set. Add locations to get notified before arriving.
-                </Text>
-              )}
-              {!placeAlertPremium && placeAlerts.length >= 5 && (
-                <View style={{ alignItems: 'center', paddingVertical: 8 }}>
-                  <Text style={[styles.alertSub, { color: sub, textAlign: 'center', marginBottom: 8 }]}>
-                    Free plan: {placeAlertLimit} alerts, scheduled notifications only
-                  </Text>
-                  <TouchableOpacity style={styles.upgradeSmall} onPress={() => setShowPlanModal(true)}>
-                    <Ionicons name="diamond" size={14} color="#fff" style={{ marginRight: 6 }} />
-                    <Text style={styles.upgradeSmallText}>Upgrade for 20 alerts + real-time push</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
 
             <SectionHeader title={notifSyncing ? 'Notifications (syncing...)' : 'Notifications'} isLight={isLight} />
             <NotificationsCard
@@ -1114,14 +899,30 @@ export default function ProfileScreen() {
 
       <Modal visible={showEditName} onClose={() => setShowEditName(false)}>
         <View style={{ paddingVertical: 8 }}>
-          <Text style={{ color: text, fontWeight: '800', fontSize: 18, marginBottom: 12 }}>Edit display name</Text>
-          <Text style={{ color: sub, fontSize: 13, marginBottom: 10 }}>This updates how your name appears in the app. Your sign-in email does not change.</Text>
+          <Text style={{ color: text, fontWeight: '800', fontSize: 18, marginBottom: 12 }}>Edit username</Text>
+          <Text style={{ color: sub, fontSize: 13, marginBottom: 10 }}>
+            This is how you appear in SnapRoad. Your sign-in email stays the same. You may change your username once every 14 days.
+          </Text>
+          {!canChangeUsername && usernameChangeAvailableAt ? (
+            <Text style={{ color: '#F59E0B', fontSize: 13, marginBottom: 10 }}>
+              Next change available{' '}
+              {(() => {
+                try {
+                  const d = new Date(usernameChangeAvailableAt);
+                  return Number.isNaN(d.getTime()) ? usernameChangeAvailableAt : d.toLocaleString();
+                } catch {
+                  return usernameChangeAvailableAt;
+                }
+              })()}
+            </Text>
+          ) : null}
           <TextInput
             value={draftName}
             onChangeText={setDraftName}
-            placeholder="Your name"
+            placeholder="Choose a username"
             placeholderTextColor={sub}
             autoCapitalize="words"
+            editable={canChangeUsername}
             style={{
               borderWidth: 1,
               borderColor: colors.border,
@@ -1132,11 +933,18 @@ export default function ProfileScreen() {
               fontSize: 16,
               marginBottom: 16,
               backgroundColor: cardBg,
+              opacity: canChangeUsername ? 1 : 0.55,
             }}
           />
           <TouchableOpacity
-            style={{ backgroundColor: colors.primary, paddingVertical: 14, borderRadius: 12, alignItems: 'center', opacity: savingName || !draftName.trim() ? 0.5 : 1 }}
-            disabled={savingName || !draftName.trim()}
+            style={{
+              backgroundColor: colors.primary,
+              paddingVertical: 14,
+              borderRadius: 12,
+              alignItems: 'center',
+              opacity: savingName || !draftName.trim() || !canChangeUsername ? 0.5 : 1,
+            }}
+            disabled={savingName || !draftName.trim() || !canChangeUsername}
             onPress={async () => {
               setSavingName(true);
               try {
@@ -1283,70 +1091,16 @@ export default function ProfileScreen() {
           }
         }}
       />
-      <Modal visible={showPlaceAlertsDashboard} onClose={() => setShowPlaceAlertsDashboard(false)} scrollable={false}>
-        <Text style={{ color: text, fontSize: 20, fontWeight: '800', marginBottom: 4 }}>Place alerts</Text>
-        <Text style={{ color: sub, fontSize: 13, marginBottom: 14, lineHeight: 18 }}>
-          {`You're using ${placeAlerts.length} of ${placeAlertLimit} alert${placeAlertLimit === 1 ? '' : 's'}.`}
-          {placeAlertPremium ? ' Premium: real-time push enabled.' : ' Free plan uses scheduled notifications.'}
-        </Text>
-        <ScrollView
-          style={{ maxHeight: 360 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {placeAlerts.length > 0 ? (
-            placeAlerts.map((alert) => (
-              <View
-                key={alert.id}
-                style={[styles.alertRow, { backgroundColor: cardBg, borderColor: colors.border, marginBottom: 8 }]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.alertName, { color: text }]}>{alert.name}</Text>
-                  <Text style={[styles.alertSub, { color: sub }]}>
-                    {alert.alert_minutes_before >= 60
-                      ? `${Math.round(alert.alert_minutes_before / 60)}h before`
-                      : `${alert.alert_minutes_before}min before`}
-                    {' · '}
-                    {alert.realtime_push ? 'Real-time push' : 'Scheduled only'}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => {
-                    Alert.alert('Delete Alert', `Remove alert for ${alert.name}?`, [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => {
-                          api.delete(`/api/place-alerts/${alert.id}`).then(() => {
-                            setPlaceAlerts((prev) => prev.filter((a) => a.id !== alert.id));
-                          }).catch(() => {});
-                        },
-                      },
-                    ]);
-                  }}
-                >
-                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-            ))
-          ) : (
-            <Text style={{ color: sub, fontSize: 14, lineHeight: 20 }}>
-              No alerts yet. Add locations from the Overview tab (Saved places) or when saving a destination.
-            </Text>
-          )}
-        </ScrollView>
-        <TouchableOpacity
-          style={[styles.fuelBtn, { marginTop: 16 }]}
-          onPress={() => {
-            setShowPlaceAlertsDashboard(false);
-            setProfileTab('overview');
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          }}
-        >
-          <Text style={styles.fuelBtnText}>Go to Overview to add alerts</Text>
-        </TouchableOpacity>
-      </Modal>
+      <PlaceAlertsDashboardModal
+        visible={showPlaceAlertsDashboard}
+        onClose={() => setShowPlaceAlertsDashboard(false)}
+        places={places}
+        userLocation={location}
+        placeAlerts={placeAlerts}
+        placeAlertLimit={placeAlertLimit}
+        placeAlertPremium={placeAlertPremium}
+        onRefresh={() => void loadData('silent')}
+      />
       <AddCommuteModal
         visible={showAddCommute}
         onClose={() => setShowAddCommute(false)}

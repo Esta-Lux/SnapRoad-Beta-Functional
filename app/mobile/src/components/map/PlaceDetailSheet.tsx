@@ -407,7 +407,14 @@ export default function PlaceDetailSheet({
   }, [place?.name]);
 
   const handleDirections = useCallback(() => {
-    if (place && lat != null && lng != null) {
+    if (
+      place &&
+      lat != null &&
+      lng != null &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      (Math.abs(lat) > 1e-5 || Math.abs(lng) > 1e-5)
+    ) {
       onDirections({ name: place.name, address: place.address, lat, lng });
     }
   }, [place, lat, lng, onDirections]);

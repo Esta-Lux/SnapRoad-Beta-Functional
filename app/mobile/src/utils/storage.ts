@@ -48,6 +48,20 @@ export const storage = {
   getString(key: string): string | undefined {
     return memoryCache[key];
   },
+  /** Prefer this when reading prefs on cold start — memory may not be hydrated yet. */
+  getStringAsync(key: string): Promise<string | undefined> {
+    if (Object.prototype.hasOwnProperty.call(memoryCache, key)) {
+      return Promise.resolve(memoryCache[key]);
+    }
+    if (!asyncStorage) return Promise.resolve(undefined);
+    return asyncStorage
+      .getItem(key)
+      .then((v) => {
+        if (v != null) memoryCache[key] = v;
+        return v ?? undefined;
+      })
+      .catch(() => undefined);
+  },
   set(key: string, value: string): void {
     memoryCache[key] = value;
     asyncStorage?.setItem(key, value).catch(() => {});

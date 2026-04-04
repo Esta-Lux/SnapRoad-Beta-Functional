@@ -1,16 +1,18 @@
 # SnapRoad - Orion AI Coach Service (Portable)
-# AI-powered driving assistant via OpenAI SDK (OpenAI or NVIDIA integrate API).
+# AI-powered driving assistant via OpenAI SDK (OpenAI primary, NVIDIA fallback).
 
 import re
 from datetime import datetime
-from typing import Optional, List, Dict, Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
 from dotenv import load_dotenv
 
 from services.llm_client import (
-    chat_completion_model,
-    get_async_openai_client,
+    chat_completions_create_with_fallback,
+    chat_completion_stream_chunks_with_fallback,
     is_llm_configured,
-    llm_provider,
+    nvidia_api_key,
+    openai_api_key,
 )
 
 load_dotenv()
@@ -26,13 +28,22 @@ def _sanitize_openai_error(err: Exception) -> str:
     return msg
 
 
+def _fmt_num(v: Any) -> str:
+    if v is None:
+        return "—"
+    if isinstance(v, (int, float)):
+        if isinstance(v, float) and v.is_integer():
+            return str(int(v))
+        return str(int(v)) if isinstance(v, float) and v == int(v) else str(v)
+    return str(v)
+
+
 def build_orion_system_prompt(ctx: Optional[Dict[str, Any]] = None) -> str:
-    """Build the same system prompt as frontend orion.ts from OrionContext."""
+    """Rich system prompt from mobile `context` + SnapRoad product knowledge."""
     c = ctx or {}
     hour = datetime.now().hour
     greeting = "morning" if hour < 12 else "afternoon" if hour < 17 else "evening"
     current_route = c.get("currentRoute") or {}
-    nearby_offers = c.get("nearbyOffers") or []
 
     route_block = ""
     if current_route:
@@ -47,128 +58,118 @@ def build_orion_system_prompt(ctx: Optional[Dict[str, Any]] = None) -> str:
 - Current instruction: {current_route.get('currentStep', '')}
 - Next instruction: {current_route.get('nextStep', '')}
 """
+
+    nearby_offers = c.get("nearbyOffers") or []
     offers_block = ""
     if nearby_offers:
         parts = [f"{o.get('title', '')} ({o.get('distance', '')})" for o in nearby_offers]
         offers_block = f"\n- Nearby offers: {', '.join(parts)}\n"
 
+    # Profile / gamification (passed from app)
+    trips = c.get("totalTrips")
+    miles = c.get("totalMiles")
+    gems = c.get("gems")
+    level = c.get("level")
+    rank = c.get("rank")
+    safety = c.get("safetyScore")
+    snap_score = c.get("snapRoadScore")
+    snap_tier = c.get("snapRoadTier")
+    premium = c.get("isPremium")
+    weekly_trips = c.get("weeklyTripCount")
+    weekly_miles = c.get("weeklyMiles")
+    weekly_summary = c.get("weeklySummary")  # optional free-text from Insights
+    favorite_hint = c.get("favoritePlacesSummary")  # short string
+    quick_routes_hint = c.get("quickRoutesSummary")
+
+    profile_lines = [
+        f"- Total trips (lifetime): {_fmt_num(trips)}",
+        f"- Total miles (lifetime): {_fmt_num(miles)}",
+        f"- Gems balance: {_fmt_num(gems)}",
+        f"- Driver level: {_fmt_num(level)}",
+        f"- Leaderboard rank: {_fmt_num(rank)}",
+        f"- Safety score (app): {_fmt_num(safety)}",
+    ]
+    if snap_score is not None:
+        profile_lines.append(f"- SnapRoad score: {_fmt_num(snap_score)} ({snap_tier or 'tier n/a'})")
+    if weekly_trips is not None or weekly_miles is not None:
+        profile_lines.append(
+            f"- This week (if provided): {_fmt_num(weekly_trips)} trips, {_fmt_num(weekly_miles)} mi"
+        )
+    if weekly_summary:
+        profile_lines.append(f"- Weekly recap note: {weekly_summary}")
+    if favorite_hint:
+        profile_lines.append(f"- Saved favorites (summary): {favorite_hint}")
+    if quick_routes_hint:
+        profile_lines.append(f"- Quick routes (home/work shortcuts): {quick_routes_hint}")
+    profile_lines.append(f"- Premium subscriber: {'yes' if premium else 'no'}")
+    profile_block = "\n".join(profile_lines)
+
     return f"""You are Orion, the AI navigator and personal assistant for SnapRoad — a privacy-first navigation app that rewards drivers for safe driving.
 
 ## Your personality:
-- Warm, confident, and helpful — like a knowledgeable friend in the passenger seat
-- Conversational and natural — never robotic or stiff
-- Proactively helpful — you notice things and mention them without being asked
-- Brief during navigation (drivers are focused), detailed when parked or browsing
-- You care about the driver's safety, savings, and time
+- Warm, confident, helpful — like a knowledgeable friend in the passenger seat
+- Brief during active navigation; richer detail when the driver is parked or chatting
+- Safety first — never encourage distracted driving
+- All answers about SnapRoad, this driver, trips, scores, gems, and routes must be grounded in the **Driver profile** and **Current context** below. If a stat is missing, say you do not see it in this session and suggest opening **Profile → Insights & Recap** or the relevant tab.
 
-## What you know about SnapRoad:
-- SnapRoad rewards safe driving with Gems (in-app currency)
-- Gems are earned every mile driven safely, for hazard reports, safe braking
-- Gems can be redeemed at local partner businesses for discounts
-- SnapRoad has zero ads and never sells user data
-- Premium plan includes 2x gem multiplier and detailed driving analytics
-- Features: turn-by-turn navigation, nearby offers, road reports, family tracking, fuel tracker, driving score, weekly recap, leaderboard, badges
-- SnapRoad is launching in Ohio Q3 2026, founded by Ryan A.
-- Privacy-first: all location data is encrypted and never sold
+## SnapRoad product facts (for general questions):
+- Gems reward safe miles, hazard reports, challenges, and partner offers
+- Premium: 2× gem multiplier, deeper analytics, traffic cameras layer, more place alerts, and richer Orion context when available
+- Features: turn-by-turn nav, offers, road reports, live friend locations (Premium), fuel tracker, driving score, weekly recap, leaderboards, badges, place alerts, quick routes, favorites
+- Privacy: encrypted location; data is not sold
+
+## Driver profile (from the app — treat as source of truth for this user):
+{profile_block}
 
 ## Current driver context:
 - Driver name: {c.get('userName') or 'there'}
 - Good {greeting}!
-- Current location: {c.get('currentAddress') or 'unknown'}
-- Navigating: {'YES' if c.get('isNavigating') else 'No'}
+- Current location label: {c.get('currentAddress') or 'unknown'}
+- Coarse position: lat/lng omitted for brevity (navigation uses live GPS)
+- Navigating now: {'YES' if c.get('isNavigating') else 'No'}
+- Driving mode: {c.get('drivingMode') or 'adaptive'}
+- Active destination name: {c.get('destination') or 'none'}
 {route_block}
-- Current speed: {c.get('speedMph') or 0} mph
-- Gems balance: {c.get('gems') or 0} gems
-- Driver level: {c.get('level') or 1}
+- Speed (if provided): {c.get('speedMph') or c.get('speed') or 0} mph
 {offers_block}
 
-## Navigation voice rules (IMPORTANT):
-- For turn instructions, be BRIEF: "In 300 feet, turn right onto Main Street"
-- For route start: "Starting navigation to [destination]. [brief tip about route]"
-- For arriving: "You've arrived at [destination]. Great driving!"
-- For rerouting: "No worries, recalculating your route"
-- For offers nearby: "Hey, there's a deal nearby — [offer name]. Want to stop?"
-- For speeding: "Just a heads up, speed limit is [X] here"
-- For hazards: "SnapRoad drivers reported something ahead, stay alert"
+## Improvement & coaching requests:
+- When the driver asks how to improve, give 3–5 **specific** tips tied to SnapRoad: smooth braking/accel, consistent speed, streaks, completing trips cleanly, hazard reports, checking Insights & Recap, optional Premium perks. Mention gems and safety score when relevant.
+
+## Navigation voice rules:
+- Turn guidance: very short. Route start/arrive/reroute: concise per product copy rules.
+- If the user asks to navigate somewhere in chat, the app may parse intents separately — still confirm briefly what you understood.
 
 ## Conversation rules:
-- During navigation: keep ALL responses under 15 words unless driver asks a question
-- When parked/stationary: can be more detailed and conversational
-- Always prioritize safety — never encourage distracted driving
-- If driver asks about route, traffic, or directions, answer specifically
-- If driver asks general questions, answer helpfully but briefly
-- Remember previous messages in the conversation
+- During navigation: keep casual replies under ~20 words unless they asked a real question
+- Off-topic: one short helpful line then gently steer back to driving or SnapRoad if appropriate
 
-Respond naturally as Orion. Be the best co-pilot the driver has ever had."""
+Respond naturally as Orion."""
 
 
-# Legacy system prompt for existing /api/orion/chat (session-based)
-ORION_SYSTEM_PROMPT = """You are Orion, SnapRoad's AI driving coach. You're friendly, encouraging, and focused on helping drivers be safer on the road while earning gem rewards.
+ORION_SYSTEM_PROMPT = """You are Orion, SnapRoad's AI driving coach. Friendly, concise, safety-first."""
 
-Your personality:
-- Warm and supportive, like a trusted friend who's also a driving expert
-- Use simple, clear language
-- Keep responses concise (2-3 sentences typically)
-- Be positive but honest about safety concerns
-
-Your knowledge areas:
-- Safe driving practices and tips
-- Fuel-efficient driving techniques  
-- Traffic law basics
-- How SnapRoad's gem rewards system works
-- Weather and road condition awareness
-- Vehicle maintenance basics
-
-When giving advice:
-- Always prioritize safety first
-- Mention gem earning opportunities when relevant
-- Be encouraging about progress
-- Give specific, actionable tips
-
-Response format:
-- Keep responses brief and conversational
-- Use occasional emojis sparingly (1-2 max)
-- If asked about non-driving topics, gently redirect to driving/safety topics
-
-Example interactions:
-User: "How can I improve my safety score?"
-Orion: "Great question! Focus on smooth braking and acceleration - harsh movements lower your score. Also, try to maintain consistent speeds and use your turn signals early. You're on track to earn bonus gems for safe driving!"
-
-User: "I'm stuck in traffic"
-Orion: "Traffic can be frustrating, but it's a great opportunity to practice patience - a key safe driving skill! Keep a safe following distance even when stopped, and avoid distracted driving. This calm approach actually helps your safety score."
-"""
 
 class OrionCoachService:
-    """Orion coach — LLM via NVIDIA (preferred) or OpenAI."""
+    """Orion coach — OpenAI first, NVIDIA fallback when both are configured."""
 
     def __init__(self):
-        self.sessions = {}
+        self.sessions: dict = {}
 
-    def _get_client(self):
-        client = get_async_openai_client()
-        if client is None:
-            raise ValueError("LLM API key not configured. Set NVIDIA_API_KEY or OPENAI_API_KEY in environment.")
-        return client
-    
     def _get_or_create_session(self, session_id: str) -> dict:
-        """Get existing session or create a new one"""
         if session_id not in self.sessions:
             self.sessions[session_id] = {
-                "messages": [
-                    {"role": "system", "content": ORION_SYSTEM_PROMPT}
-                ],
+                "messages": [{"role": "system", "content": ORION_SYSTEM_PROMPT}],
                 "history": [],
-                "created_at": datetime.now()
+                "created_at": datetime.now(),
             }
         return self.sessions[session_id]
-    
+
     async def send_message(self, session_id: str, user_text: str, context: Optional[dict] = None) -> dict:
-        """Send a message to Orion and get a response"""
+        """Session-based Orion chat (legacy) — uses same LLM fallback as completions."""
         try:
-            client = self._get_client()
             session = self._get_or_create_session(session_id)
-            
-            # Add context to the message if provided
+            session["messages"][0] = {"role": "system", "content": build_orion_system_prompt(context)}
             enhanced_text = user_text
             if context:
                 context_parts = []
@@ -182,62 +183,39 @@ class OrionCoachService:
                     context_parts.append(f"Weather: {context['weather']}")
                 if context_parts:
                     enhanced_text = f"{user_text}\n\n[Context: {', '.join(context_parts)}]"
-            
-            # Add user message to conversation
+
             session["messages"].append({"role": "user", "content": enhanced_text})
-            
-            response = await client.chat.completions.create(
-                model=chat_completion_model(),
+
+            response = await chat_completions_create_with_fallback(
                 messages=session["messages"],
                 max_tokens=300,
                 temperature=0.7,
+                stream=False,
             )
-            
-            assistant_message = response.choices[0].message.content
-            
-            # Add assistant response to conversation
+            assistant_message = response.choices[0].message.content or ""
+
             session["messages"].append({"role": "assistant", "content": assistant_message})
-            
-            # Store in history (user-facing format)
-            session["history"].append({
-                "role": "user",
-                "content": user_text,  # Original text without context
-                "timestamp": datetime.now().isoformat()
-            })
-            session["history"].append({
-                "role": "assistant",
-                "content": assistant_message,
-                "timestamp": datetime.now().isoformat()
-            })
-            
-            return {
-                "success": True,
-                "response": assistant_message,
-                "session_id": session_id
-            }
-            
+            session["history"].append({"role": "user", "content": user_text, "timestamp": datetime.now().isoformat()})
+            session["history"].append(
+                {"role": "assistant", "content": assistant_message, "timestamp": datetime.now().isoformat()}
+            )
+
+            return {"success": True, "response": assistant_message, "session_id": session_id}
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "session_id": session_id
-            }
-    
+            return {"success": False, "error": str(e), "session_id": session_id}
+
     def get_history(self, session_id: str) -> List[dict]:
-        """Get conversation history for a session"""
         if session_id in self.sessions:
             return self.sessions[session_id]["history"]
         return []
-    
+
     def clear_session(self, session_id: str) -> bool:
-        """Clear a chat session"""
         if session_id in self.sessions:
             del self.sessions[session_id]
             return True
         return False
-    
+
     def get_quick_tips(self) -> List[dict]:
-        """Get quick tip suggestions for the UI"""
         return [
             {"id": "fuel", "text": "How do I save fuel?", "icon": "fuel"},
             {"id": "safety", "text": "Improve my safety score", "icon": "shield"},
@@ -247,68 +225,63 @@ class OrionCoachService:
             {"id": "highway", "text": "Highway safety tips", "icon": "road"},
         ]
 
-    async def completion(
-        self, messages: List[Dict[str, str]], context: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """One-shot completion: system prompt from context + messages, return assistant content."""
+    def _config_message(self) -> str:
         if not is_llm_configured():
-            return "I'm not configured yet — add NVIDIA_API_KEY (or OPENAI_API_KEY) to the backend .env to enable Orion."
+            return "I'm not configured yet — add OPENAI_API_KEY and/or NVIDIA_API_KEY to the backend .env to enable Orion."
+        return ""
+
+    async def completion(self, messages: List[Dict[str, str]], context: Optional[Dict[str, Any]] = None) -> str:
+        if not is_llm_configured():
+            return self._config_message()
         try:
-            client = self._get_client()
             system_content = build_orion_system_prompt(context)
-            full_messages = [{"role": "system", "content": system_content}]
+            full_messages: List[Dict[str, str]] = [{"role": "system", "content": system_content}]
             for m in messages:
                 full_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
-            max_tokens = 60 if (context or {}).get("isNavigating") else 300
-            response = await client.chat.completions.create(
-                model=chat_completion_model(),
+            max_tokens = 60 if (context or {}).get("isNavigating") else 500
+            response = await chat_completions_create_with_fallback(
                 messages=full_messages,
                 max_tokens=max_tokens,
                 temperature=0.7,
+                stream=False,
             )
-            return (response.choices[0].message.content or "").strip() or "Sorry, I had trouble with that."
+            text = (response.choices[0].message.content or "").strip()
+            return text or "Sorry, I had trouble with that."
         except Exception as e:
             err_lower = str(e).lower()
             if "401" in err_lower or "incorrect api key" in err_lower or "invalid_api_key" in err_lower or "authentication" in err_lower:
-                if llm_provider() == "nvidia":
-                    return "Orion couldn't connect. Check NVIDIA_API_KEY in the backend .env (NVIDIA Build / API catalog)."
-                return "Orion couldn't connect. Please check OPENAI_API_KEY in the backend .env."
+                parts = []
+                if openai_api_key():
+                    parts.append("OpenAI key")
+                if nvidia_api_key():
+                    parts.append("NVIDIA key")
+                return "Orion couldn't authenticate with the AI provider. Check " + " and ".join(parts) + " in the backend .env."
             return f"Sorry, I had a hiccup. Try again! ({_sanitize_openai_error(e)})"
 
     async def completion_stream(
         self, messages: List[Dict[str, str]], context: Optional[Dict[str, Any]] = None
     ) -> AsyncGenerator[str, None]:
-        """Stream completion: yield content chunks (SSE-style delta content)."""
         if not is_llm_configured():
-            yield "I'm not configured — add NVIDIA_API_KEY or OPENAI_API_KEY to the backend .env."
+            yield self._config_message()
             return
         try:
-            client = self._get_client()
             system_content = build_orion_system_prompt(context)
-            full_messages = [{"role": "system", "content": system_content}]
+            full_messages: List[Dict[str, str]] = [{"role": "system", "content": system_content}]
             for m in messages:
                 full_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
-            stream = await client.chat.completions.create(
-                model=chat_completion_model(),
+            async for chunk in chat_completion_stream_chunks_with_fallback(
                 messages=full_messages,
                 max_tokens=500,
                 temperature=0.7,
-                stream=True,
-            )
-            async for chunk in stream:
-                content = chunk.choices[0].delta.content if chunk.choices else None
-                if content:
-                    yield content
+            ):
+                if chunk:
+                    yield chunk
         except Exception as e:
             err_lower = str(e).lower()
-            if "401" in err_lower or "incorrect api key" in err_lower or "invalid_api_key" in err_lower or "authentication" in err_lower:
-                if llm_provider() == "nvidia":
-                    yield "Orion couldn't connect. Check NVIDIA_API_KEY in the backend .env."
-                else:
-                    yield "Orion couldn't connect. Check OPENAI_API_KEY in the backend .env."
+            if "401" in err_lower or "incorrect api key" in err_lower:
+                yield "Orion couldn't connect. Check OPENAI_API_KEY and NVIDIA_API_KEY in the backend .env."
             else:
-                yield f"Sorry, I had a hiccup. Try again! ({_sanitize_openai_error(e)})"
+                yield f"Sorry, I had a hiccup. ({_sanitize_openai_error(e)})"
 
 
-# Create singleton instance
 orion_service = OrionCoachService()

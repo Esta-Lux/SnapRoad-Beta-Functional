@@ -193,24 +193,63 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => {
-    if (section === 'friends') {
-      loadFriends();
-      loadPending();
-      const local = storage.getString(SHARE_LOC_STORAGE_KEY);
-      if (local === '1') setIsSharingLocation(true);
-      else if (local === '0') setIsSharingLocation(false);
-      api
-        .get<any>('/api/friends/location/sharing')
-        .then((r) => {
-          const v = (r.data as any)?.data?.is_sharing;
-          if (typeof v === 'boolean') {
-            setIsSharingLocation(v);
-            storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
+    if (section !== 'friends') return;
+    let cancelled = false;
+
+    const run = async () => {
+      const localRaw = await storage.getStringAsync(SHARE_LOC_STORAGE_KEY);
+      const hadLocal = localRaw === '1' || localRaw === '0';
+      const localOn = localRaw === '1';
+      if (!cancelled && hadLocal) {
+        setIsSharingLocation(localOn);
+      }
+
+      await Promise.all([loadFriends(), loadPending()]);
+
+      try {
+        const r = await api.get<any>('/api/friends/location/sharing');
+        if (cancelled) return;
+        const v = (r.data as any)?.data?.is_sharing;
+        if (typeof v !== 'boolean') return;
+
+        if (v) {
+          setIsSharingLocation(true);
+          storage.set(SHARE_LOC_STORAGE_KEY, '1');
+          return;
+        }
+
+        if (localOn) {
+          try {
+            await api.put('/api/friends/location/sharing', {
+              is_sharing: true,
+              lat: location.lat,
+              lng: location.lng,
+            });
+            if (!cancelled) {
+              setIsSharingLocation(true);
+              storage.set(SHARE_LOC_STORAGE_KEY, '1');
+            }
+          } catch {
+            if (!cancelled) {
+              setIsSharingLocation(true);
+              storage.set(SHARE_LOC_STORAGE_KEY, '1');
+            }
           }
-        })
-        .catch(() => {});
-    }
-  }, [section, loadFriends, loadPending]);
+          return;
+        }
+
+        setIsSharingLocation(false);
+        storage.set(SHARE_LOC_STORAGE_KEY, '0');
+      } catch {
+        /* keep hydrated local preference */
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [section, loadFriends, loadPending, location.lat, location.lng]);
 
   useEffect(() => {
     if (!friendsTabActive) return;
@@ -442,9 +481,17 @@ export default function DashboardScreen() {
               <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: '600' }}>Share Location</Text>
               <Switch
                 value={isSharingLocation}
-                onValueChange={(v) => {
+                onValueChange={async (v) => {
                   setIsSharingLocation(v);
-                  api.put('/api/friends/location/sharing', { is_sharing: v }).catch(() => {});
+                  storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
+                  try {
+                    await api.put('/api/friends/location/sharing', {
+                      is_sharing: v,
+                      ...(v && myCoord ? { lat: myCoord.lat, lng: myCoord.lng } : {}),
+                    });
+                  } catch {
+                    /* preference stays in local storage */
+                  }
                 }}
                 trackColor={{ false: colors.border, true: colors.primary }}
                 thumbColor="#fff"

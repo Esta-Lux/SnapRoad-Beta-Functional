@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 from typing import Annotated
 
@@ -27,6 +27,36 @@ router = APIRouter(prefix="/api", tags=["Users"])
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 logger = logging.getLogger(__name__)
 
+_USERNAME_COOLDOWN_DAYS = 14
+
+
+def _username_change_meta_from_row(row: Optional[Dict[str, Any]]) -> dict:
+    """can_change_username + username_change_available_at (ISO) for profile payloads."""
+    if not row:
+        return {"can_change_username": True, "username_change_available_at": None}
+    changed_at = row.get("username_changed_at")
+    if not changed_at:
+        return {"can_change_username": True, "username_change_available_at": None}
+    try:
+        if isinstance(changed_at, str):
+            dt = datetime.fromisoformat(changed_at.replace("Z", "+00:00"))
+        elif isinstance(changed_at, datetime):
+            dt = changed_at
+        else:
+            return {"can_change_username": True, "username_change_available_at": None}
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        next_allowed = dt + timedelta(days=_USERNAME_COOLDOWN_DAYS)
+        now = datetime.now(timezone.utc)
+        if now >= next_allowed:
+            return {"can_change_username": True, "username_change_available_at": None}
+        return {
+            "can_change_username": False,
+            "username_change_available_at": next_allowed.isoformat(),
+        }
+    except Exception:
+        return {"can_change_username": True, "username_change_available_at": None}
+
 
 def _get_user_store(user: Optional[Dict[str, Any]]) -> dict:
     if not user:
@@ -37,7 +67,8 @@ def _get_user_store(user: Optional[Dict[str, Any]]) -> dict:
     if user_id not in users_db:
         initial = {
             "id": user_id,
-            "name": user.get("email", "Driver").split("@")[0].title() if user.get("email") else "Driver",
+            "name": "Driver",
+            "full_name": "Driver",
             "email": user.get("email", ""),
             "plan": "basic",
             "is_premium": False,
@@ -75,12 +106,14 @@ def _persist_user(user_id: str, updates: dict) -> None:
 def get_user_profile(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     uid = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
+    row: Optional[dict] = None
     if uid:
         try:
             row = sb_get_profile(uid)
             if row and isinstance(row, dict):
                 for k in (
                     "name",
+                    "full_name",
                     "email",
                     "gems",
                     "level",
@@ -100,6 +133,9 @@ def get_user_profile(auth_user: CurrentUser):
         except Exception as e:
             logger.warning("failed to fetch user profile from Supabase: %s", e)
     payload = {**user, **compute_snap_road_fields(user)}
+    meta = _username_change_meta_from_row(row)
+    payload["can_change_username"] = meta["can_change_username"]
+    payload["username_change_available_at"] = meta["username_change_available_at"]
     return {"success": True, "data": payload}
 
 
@@ -516,7 +552,37 @@ def update_notification_settings_put(
 @router.put("/user/profile", responses={400: {"description": "Invalid vehicle_height_meters value"}})
 def update_profile(body: dict, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
-    updates = {k: v for k, v in body.items() if k not in ("id", "email")}
+    uid = str(auth_user.get("user_id") or auth_user.get("id") or user.get("id") or "").strip()
+    updates = {k: v for k, v in body.items() if k not in ("id", "email", "username_changed_at")}
+    if "name" in updates:
+        new_name = str(updates.pop("name") or "").strip()
+        if len(new_name) < 2 or len(new_name) > 40:
+            raise HTTPException(
+                status_code=400,
+                detail="Username must be between 2 and 40 characters.",
+            )
+        if any(ord(c) < 32 for c in new_name):
+            raise HTTPException(status_code=400, detail="Username contains invalid characters.")
+        row = sb_get_profile(uid) if uid else None
+        old_name = str((row or {}).get("name") or (row or {}).get("full_name") or "").strip()
+        if new_name != old_name:
+            meta = _username_change_meta_from_row(row)
+            if not meta["can_change_username"]:
+                when_raw = meta.get("username_change_available_at")
+                human = "the date shown in settings"
+                if isinstance(when_raw, str) and when_raw:
+                    try:
+                        wd = datetime.fromisoformat(when_raw.replace("Z", "+00:00"))
+                        human = wd.astimezone(timezone.utc).strftime("%b %d, %Y %I:%M %p UTC")
+                    except Exception:
+                        human = when_raw
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"You can change your username again on or after {human}.",
+                )
+            updates["name"] = new_name
+            updates["full_name"] = new_name
+            updates["username_changed_at"] = datetime.now(timezone.utc).isoformat()
     if "vehicle_height_meters" in updates:
         raw = updates.get("vehicle_height_meters")
         if raw is None:

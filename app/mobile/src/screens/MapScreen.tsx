@@ -1151,11 +1151,66 @@ export default function MapScreen() {
       });
   }, [location.lat, location.lng, savedPlaces]);
 
+  const orionFavoriteSummary = useMemo(
+    () =>
+      savedPlaces
+        .filter((p) => (p.category || '').toLowerCase() === 'favorite')
+        .slice(0, 8)
+        .map((p) => p.name)
+        .join(', '),
+    [savedPlaces],
+  );
+
+  const orionCurrentRoute = useMemo(() => {
+    if (!nav.navigationData) return undefined;
+    const steps = nav.navigationData.steps;
+    const idx = nav.currentStepIndex;
+    return {
+      destination: nav.navigationData.destination?.name ?? '',
+      distanceMiles: nav.liveEta?.distanceMiles ?? (nav.navigationData.distance || 0) / 1609.34,
+      remainingMinutes: nav.liveEta?.etaMinutes ?? Math.round((nav.navigationData.duration || 0) / 60),
+      currentStep: steps?.[idx]?.instruction ?? '',
+      nextStep: steps?.[idx + 1]?.instruction ?? '',
+    };
+  }, [nav.navigationData, nav.currentStepIndex, nav.liveEta?.distanceMiles, nav.liveEta?.etaMinutes]);
+
   const handleStartDirections = useCallback(
     async (
       place: { name: string; address?: string; lat: number; lng: number },
       opts?: { preserveFriendFollow?: boolean },
     ) => {
+      if (
+        !Number.isFinite(place.lat) ||
+        !Number.isFinite(place.lng) ||
+        (Math.abs(place.lat) < 1e-5 && Math.abs(place.lng) < 1e-5)
+      ) {
+        Alert.alert(
+          'Directions unavailable',
+          'This place does not have a valid location yet. Wait for details to load, search again, or pick another result.',
+        );
+        return;
+      }
+      const origin = locationRef.current;
+      const originOk =
+        Number.isFinite(origin.lat) &&
+        Number.isFinite(origin.lng) &&
+        (Math.abs(origin.lat) > 1e-5 || Math.abs(origin.lng) > 1e-5);
+      if (!originOk) {
+        if (permissionDenied) {
+          Alert.alert(
+            'Location needed',
+            'SnapRoad needs your location to build a route. Enable location services for SnapRoad in Settings.',
+          );
+        } else if (isLocating) {
+          Alert.alert('Getting your location', 'Wait a moment for GPS, then try Directions again.');
+        } else {
+          Alert.alert(
+            'Location needed',
+            'We could not determine your current location. Open the Map tab and wait for the blue dot, or check permissions.',
+          );
+        }
+        return;
+      }
       if (!opts?.preserveFriendFollow) {
         setFriendFollowSession(null);
         friendFollowLastDestRef.current = null;
@@ -1166,11 +1221,11 @@ export default function MapScreen() {
       nav.setSelectedDestination({ name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng });
       await nav.fetchDirections(
         { name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng },
-        undefined,
+        origin,
         { maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined },
       );
     },
-    [nav, avoidLowClearances, vehicleHeight],
+    [nav, avoidLowClearances, vehicleHeight, permissionDenied, isLocating],
   );
 
   const beginFriendFollowNavigation = useCallback(
@@ -1235,8 +1290,12 @@ export default function MapScreen() {
     } as any);
   }, [route.params?.mapFocusFriend?.nonce, friendLocations, rnNav]);
 
+  const friendFollowNavActiveRef = useRef(false);
   useEffect(() => {
-    if (!nav.isNavigating && !nav.showRoutePreview) {
+    const active = nav.isNavigating || nav.showRoutePreview;
+    const wasActive = friendFollowNavActiveRef.current;
+    friendFollowNavActiveRef.current = active;
+    if (wasActive && !active) {
       setFriendFollowSession(null);
       friendFollowLastDestRef.current = null;
       friendFollowLastRerouteRef.current = 0;
@@ -2274,46 +2333,37 @@ export default function MapScreen() {
             </View>
           )}
           <TouchableOpacity onPress={() => {
+            if (startNavTimeoutRef.current) {
+              clearTimeout(startNavTimeoutRef.current);
+              startNavTimeoutRef.current = null;
+            }
+            // Start turn-by-turn immediately (voice + steps). Camera animates in parallel — no pre-delay.
+            nav.startNavigation();
             if (isCalm) {
-              // Cinematic calm sequence:
-              // 1. Pull back to show the route overview
               cameraRef.current?.setCamera({
                 centerCoordinate: [location.lng, location.lat],
                 zoomLevel: 12, pitch: 20, heading: 0,
-                animationDuration: 600, animationMode: 'flyTo',
+                animationDuration: 450, animationMode: 'flyTo',
               });
-              // 2. Start nav, then swoop in to 3D follow camera
-              if (startNavTimeoutRef.current) clearTimeout(startNavTimeoutRef.current);
               startNavTimeoutRef.current = setTimeout(() => {
-                nav.startNavigation();
                 cameraRef.current?.setCamera({
                   centerCoordinate: [location.lng, location.lat],
                   zoomLevel: 16, pitch: 55, heading: headingRef.current,
-                  animationDuration: 1400, animationMode: 'easeTo',
+                  animationDuration: 650, animationMode: 'easeTo',
                 });
-              }, 700);
+              }, 380);
             } else if (isSport) {
-              // Sport: instant snap into aggressive racing view
-              nav.startNavigation();
               cameraRef.current?.setCamera({
                 centerCoordinate: [location.lng, location.lat],
                 zoomLevel: 17.5, pitch: 65, heading: headingRef.current,
-                animationDuration: 400, animationMode: 'easeTo',
+                animationDuration: 350, animationMode: 'easeTo',
               });
             } else {
               cameraRef.current?.setCamera({
                 centerCoordinate: [location.lng, location.lat],
-                zoomLevel: 13, pitch: 30, heading: 0, animationDuration: 300,
+                zoomLevel: 17, pitch: 60, heading: headingRef.current,
+                animationDuration: 400, animationMode: 'easeTo',
               });
-              if (startNavTimeoutRef.current) clearTimeout(startNavTimeoutRef.current);
-              startNavTimeoutRef.current = setTimeout(() => {
-                nav.startNavigation();
-                cameraRef.current?.setCamera({
-                  centerCoordinate: [location.lng, location.lat],
-                  zoomLevel: 17, pitch: 60, heading: headingRef.current,
-                  animationDuration: 800,
-                });
-              }, 350);
             }
           }} activeOpacity={0.85}>
             <LinearGradient
@@ -2665,15 +2715,10 @@ export default function MapScreen() {
           /* Menu already closed by HamburgerMenu before this runs (deferred). */
           if (screen === 'Profile' || screen === 'Help') {
             rnNav.navigate('Profile' as never);
-          } else if (screen === 'TripAnalytics') {
-            (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Rewards', {
-              screen: 'RewardsMain',
-              params: { openTripAnalytics: true },
-            });
-          } else if (screen === 'RouteHistory') {
-            (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Rewards', {
-              screen: 'RewardsMain',
-              params: { openRouteHistory: true },
+          } else           if (screen === 'PlaceAlerts') {
+            (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Profile', {
+              screen: 'ProfileMain',
+              params: { openPlaceAlerts: true },
             });
           } else if (screen === 'Convoy') {
             setShowConvoy(true);
@@ -2735,8 +2780,20 @@ export default function MapScreen() {
           drivingMode,
           destination: nav.navigationData?.destination?.name,
           speed,
+          speedMph: speed,
           currentAddress,
           userName: user?.name || user?.email,
+          totalTrips: user?.totalTrips,
+          totalMiles: user?.totalMiles,
+          gems: user?.gems,
+          level: user?.level,
+          rank: user?.rank,
+          safetyScore: user?.safetyScore,
+          snapRoadScore: user?.snapRoadScore,
+          snapRoadTier: user?.snapRoadTier,
+          isPremium: user?.isPremium,
+          favoritePlacesSummary: orionFavoriteSummary || undefined,
+          currentRoute: orionCurrentRoute,
           nearbyOffers: nearbyOffers.slice(0, 5).map((o) => ({
             id: o.id,
             title: o.business_name,

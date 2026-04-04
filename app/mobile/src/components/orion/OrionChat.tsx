@@ -1,13 +1,51 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  View, Text, Modal, TouchableOpacity, TextInput, FlatList,
-  StyleSheet, KeyboardAvoidingView, Platform,
+  View,
+  Text,
+  Modal,
+  TouchableOpacity,
+  TextInput,
+  FlatList,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  PermissionsAndroid,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../api/client';
+
+type VoiceType = {
+  destroy: () => Promise<void>;
+  removeAllListeners: () => void;
+  onSpeechStart: ((ev?: unknown) => void) | null;
+  onSpeechEnd: ((ev?: unknown) => void) | null;
+  onSpeechResults: ((ev: { value?: string[] }) => void) | null;
+  onSpeechPartialResults: ((ev: { value?: string[] }) => void) | null;
+  onSpeechError: ((ev: { error?: { message?: string } }) => void) | null;
+  start: (locale: string) => Promise<void>;
+  stop: () => Promise<void>;
+  cancel: () => Promise<void>;
+  isAvailable?: () => Promise<boolean>;
+};
+
+function loadVoice(): VoiceType | null {
+  if (Platform.OS === 'web') return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('@react-native-voice/voice');
+    return (mod.default ?? mod) as VoiceType;
+  } catch {
+    return null;
+  }
+}
+
+const Voice = loadVoice();
 
 interface Message {
   id: string;
@@ -16,21 +54,42 @@ interface Message {
 }
 
 const SUGGESTIONS = [
-  'Navigate to the nearest gas station',
-  'How far am I from home?',
-  'Report a hazard ahead',
-  'What is my driving score?',
+  'Take me to the nearest gas station',
+  'How many trips have I logged?',
+  'How can I improve my safety score?',
+  'What are SnapRoad gems?',
 ];
 
-interface OrionContext {
+export interface OrionContext {
   lat?: number;
   lng?: number;
   isNavigating?: boolean;
   drivingMode?: string;
   destination?: string;
   speed?: number;
+  speedMph?: number;
   userName?: string;
   currentAddress?: string;
+  totalTrips?: number;
+  totalMiles?: number;
+  gems?: number;
+  level?: number;
+  rank?: number;
+  safetyScore?: number;
+  snapRoadScore?: number;
+  snapRoadTier?: string;
+  isPremium?: boolean;
+  weeklyTripCount?: number;
+  weeklyMiles?: number;
+  weeklySummary?: string;
+  favoritePlacesSummary?: string;
+  currentRoute?: {
+    destination?: string;
+    distanceMiles?: number;
+    remainingMinutes?: number;
+    currentStep?: string;
+    nextStep?: string;
+  };
   nearbyOffers?: Array<{ id?: number | string; title?: string; partner_name?: string; lat?: number; lng?: number }>;
 }
 
@@ -43,49 +102,99 @@ interface Props {
 }
 
 export default function OrionChat({ visible, onClose, isPremium, context, onAction }: Props) {
+  const { colors, isLight } = useTheme();
+  const insets = useSafeAreaInsets();
+  const card = colors.card;
+  const text = colors.text;
+  const sub = colors.textSecondary;
+  const border = colors.border;
+  const primary = colors.primary;
+  const sheetBg = isLight ? colors.background : '#0D0D0F';
+  const inputBg = isLight ? colors.surfaceSecondary : 'rgba(255,255,255,0.08)';
+  const assistantBg = isLight ? colors.surfaceSecondary : 'rgba(255,255,255,0.08)';
+
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'assistant', content: "Hey! I'm Orion, your AI co-pilot. How can I help?" },
+    { id: '1', role: 'assistant', content: "Hey! I'm Orion, your SnapRoad co-pilot. Ask about nav, your stats, or say “take me to …”." },
   ]);
   const [input, setInput] = useState('');
+  const [partialTranscript, setPartialTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const listRef = useRef<FlatList>(null);
-  const sendMessage = async (text: string) => {
-    if (!text.trim()) return;
-    const userMsg: Message = { id: String(Date.now()), role: 'user', content: text.trim() };
-    setMessages((prev) => [...prev, userMsg]);
-    setInput('');
-    setIsTyping(true);
+  const messagesRef = useRef(messages);
 
-    try {
-      const res = await api.post<{ content?: string; text?: string; actions?: Array<{ type: string; name?: string; lat?: number; lng?: number }> }>('/api/orion/completions', {
-        messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
-        context: context ?? {},
-      });
-      if (!res.success) throw new Error(res.error || 'Orion request failed');
-      const raw = res.data as Record<string, unknown> | undefined;
-      const reply =
-        (typeof raw?.content === 'string' ? raw.content : null)
-        ?? (typeof raw?.text === 'string' ? raw.text : null)
-        ?? "I couldn't process that right now.";
-      const inner = raw?.data as Record<string, unknown> | undefined;
-      const actions = (raw?.actions ?? inner?.actions) as
-        | Array<{ type: string; name?: string; lat?: number; lng?: number }>
-        | undefined;
-      const assistantMsg: Message = { id: String(Date.now() + 1), role: 'assistant', content: reply };
-      setMessages((prev) => [...prev, assistantMsg]);
-      Speech.speak(reply, { rate: 0.95, pitch: 0.9, language: 'en-US' });
-      if (Array.isArray(actions) && actions.length && onAction) {
-        const navFirst = actions.find((a) => a?.type === 'navigate');
-        if (navFirst) onAction(navFirst);
-        else actions.forEach((a) => onAction(a));
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const speakReply = useCallback(
+    (reply: string) => {
+      try {
+        Speech.stop();
+        Speech.speak(reply, { rate: 0.96, pitch: 1, language: 'en-US' });
+      } catch {
+        /* ignore */
       }
-    } catch {
-      setMessages((prev) => [...prev, { id: String(Date.now() + 1), role: 'assistant', content: "Sorry, I'm having trouble connecting. Try again." }]);
-    } finally {
-      setIsTyping(false);
-    }
-  };
+    },
+    [],
+  );
+
+  const sendMessage = useCallback(
+    async (textRaw: string) => {
+      const trimmed = textRaw.trim();
+      if (!trimmed) return;
+      const userMsg: Message = { id: String(Date.now()), role: 'user', content: trimmed };
+      const prior = messagesRef.current;
+      setMessages((prev) => [...prev, userMsg]);
+      setInput('');
+      setPartialTranscript('');
+      setIsTyping(true);
+
+      try {
+        const res = await api.post<{
+          content?: string;
+          text?: string;
+          actions?: Array<{ type: string; name?: string; lat?: number; lng?: number }>;
+        }>('/api/orion/completions', {
+          messages: [...prior, userMsg].map((m) => ({ role: m.role, content: m.content })),
+          context: {
+            ...context,
+            speedMph: context?.speedMph ?? context?.speed,
+          },
+        });
+        if (!res.success) throw new Error(res.error || 'Orion request failed');
+        const raw = res.data as Record<string, unknown> | undefined;
+        const reply =
+          (typeof raw?.content === 'string' ? raw.content : null)
+          ?? (typeof raw?.text === 'string' ? raw.text : null)
+          ?? "I couldn't process that right now.";
+        const inner = raw?.data as Record<string, unknown> | undefined;
+        const actions = (raw?.actions ?? inner?.actions) as
+          | Array<{ type: string; name?: string; lat?: number; lng?: number }>
+          | undefined;
+        const assistantMsg: Message = { id: String(Date.now() + 1), role: 'assistant', content: reply };
+        setMessages((prev) => [...prev, assistantMsg]);
+        speakReply(reply);
+        if (Array.isArray(actions) && actions.length && onAction) {
+          const navFirst = actions.find((a) => a?.type === 'navigate');
+          if (navFirst) onAction(navFirst);
+          else actions.forEach((a) => onAction(a));
+        }
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: String(Date.now() + 1),
+            role: 'assistant',
+            content: "Sorry, I'm having trouble connecting. Try again — if this persists, the AI service may be busy.",
+          },
+        ]);
+      } finally {
+        setIsTyping(false);
+      }
+    },
+    [context, onAction, speakReply],
+  );
 
   const micTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -94,97 +203,198 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
       clearTimeout(micTimeoutRef.current);
       micTimeoutRef.current = null;
     }
+    if (!visible && Voice) {
+      void Voice.cancel().catch(() => {});
+      setIsListening(false);
+      setPartialTranscript('');
+    }
   }, [visible]);
 
-  const handleMicPress = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsListening(!isListening);
-    if (!isListening) {
-      if (micTimeoutRef.current) clearTimeout(micTimeoutRef.current);
-      micTimeoutRef.current = setTimeout(() => {
-        setIsListening(false);
-        sendMessage('What is my driving score?');
-        micTimeoutRef.current = null;
-      }, 3000);
-    } else if (micTimeoutRef.current) {
-      clearTimeout(micTimeoutRef.current);
-      micTimeoutRef.current = null;
+  useEffect(() => {
+    if (!Voice) return;
+    Voice.onSpeechStart = () => {
+      setPartialTranscript('');
+    };
+    Voice.onSpeechPartialResults = (e) => {
+      const t = e?.value?.[0];
+      if (t) setPartialTranscript(t);
+    };
+    Voice.onSpeechResults = (e) => {
+      const t = e?.value?.[0]?.trim();
+      if (t) {
+        setInput(t);
+        setPartialTranscript('');
+      }
+    };
+    Voice.onSpeechEnd = () => {
+      setIsListening(false);
+    };
+    Voice.onSpeechError = () => {
+      setIsListening(false);
+      setPartialTranscript('');
+    };
+    return () => {
+      void Voice.destroy().then(() => Voice.removeAllListeners());
+    };
+  }, []);
+
+  const requestMicPermission = useCallback(async () => {
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
     }
-  }, [isListening, sendMessage]);
+    return true;
+  }, []);
+
+  const stopListening = useCallback(async () => {
+    if (!Voice) return;
+    try {
+      await Voice.stop();
+    } catch {
+      /* ignore */
+    }
+    setIsListening(false);
+  }, []);
+
+  const startListening = useCallback(async () => {
+    if (!Voice || Platform.OS === 'web') return;
+    const ok = await requestMicPermission();
+    if (!ok) return;
+    try {
+      if (typeof Voice.isAvailable === 'function') {
+        const avail = await Voice.isAvailable();
+        if (!avail) return;
+      }
+    } catch {
+      /* continue anyway */
+    }
+    setPartialTranscript('');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsListening(true);
+    try {
+      await Voice.start('en-US');
+    } catch {
+      setIsListening(false);
+    }
+  }, [requestMicPermission]);
+
+  const handleMicPress = useCallback(async () => {
+    if (!Voice) return;
+    if (isListening) {
+      await stopListening();
+      const toSend = (input.trim() || partialTranscript.trim());
+      if (toSend) await sendMessage(toSend);
+      setPartialTranscript('');
+    } else {
+      await startListening();
+    }
+  }, [Voice, isListening, stopListening, startListening, input, partialTranscript, sendMessage]);
+
+  const displayInput = isListening ? (partialTranscript || input) : input;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={s.backdrop}>
-        <KeyboardAvoidingView style={s.sheet} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={s.handle} />
-          {/* Header */}
-          <View style={s.header}>
-            <LinearGradient colors={['#7C3AED', '#5B21B6']} style={s.avatar}>
+      <View style={[styles.backdrop, { backgroundColor: isLight ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.5)' }]}>
+        <KeyboardAvoidingView
+          style={[styles.sheet, { backgroundColor: sheetBg, paddingBottom: Math.max(insets.bottom, 12) }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={[styles.handle, { backgroundColor: isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.15)' }]} />
+          <View style={styles.header}>
+            <LinearGradient colors={[colors.ctaGradientStart, colors.ctaGradientEnd]} style={styles.avatar}>
               <Ionicons name="sparkles" size={20} color="#fff" />
             </LinearGradient>
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={s.headerTitle}>Orion</Text>
-              <Text style={s.headerSub}>Your AI co-pilot</Text>
+              <Text style={[styles.headerTitle, { color: text }]}>Orion</Text>
+              <Text style={[styles.headerSub, { color: sub }]}>
+                {isPremium ? 'Premium · deeper stats on every reply' : 'Voice & chat · say “take me to …” to navigate'}
+              </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={s.closeBtn}>
-              <Ionicons name="close" size={20} color="rgba(255,255,255,0.6)" />
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
+              <Ionicons name="close" size={22} color={sub} />
             </TouchableOpacity>
           </View>
 
-          {/* Messages */}
           <FlatList
             ref={listRef}
             data={messages}
             keyExtractor={(m) => m.id}
+            style={{ flexGrow: 0 }}
+            keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
-            onContentSizeChange={() => listRef.current?.scrollToEnd()}
+            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
             renderItem={({ item }) => (
-              <View style={[s.bubble, item.role === 'user' ? s.userBubble : s.assistantBubble]}>
+              <View
+                style={[
+                  styles.bubble,
+                  item.role === 'user' ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start', backgroundColor: assistantBg, borderWidth: StyleSheet.hairlineWidth, borderColor: border },
+                ]}
+              >
                 {item.role === 'user' ? (
-                  <LinearGradient colors={['#7C3AED', '#5B21B6']} style={s.userGrad}>
-                    <Text style={s.bubbleText}>{item.content}</Text>
+                  <LinearGradient colors={[colors.ctaGradientStart, colors.ctaGradientEnd]} style={styles.userGrad}>
+                    <Text style={styles.bubbleTextUser}>{item.content}</Text>
                   </LinearGradient>
                 ) : (
-                  <Text style={[s.bubbleText, { color: 'rgba(255,255,255,0.9)' }]}>{item.content}</Text>
+                  <Text style={[styles.bubbleTextAsst, { color: text }]}>{item.content}</Text>
                 )}
               </View>
             )}
           />
 
-          {/* Typing indicator */}
           {isTyping && (
-            <View style={s.typingRow}>
-              <View style={s.typingDot} /><View style={[s.typingDot, { opacity: 0.6 }]} /><View style={[s.typingDot, { opacity: 0.3 }]} />
+            <View style={styles.typingRow}>
+              <ActivityIndicator size="small" color={primary} />
+              <Text style={{ color: sub, marginLeft: 8, fontSize: 13 }}>Orion is thinking…</Text>
             </View>
           )}
 
-          {/* Suggestions */}
+          {isListening && partialTranscript ? (
+            <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 }} numberOfLines={2}>
+              Listening: {partialTranscript}
+            </Text>
+          ) : null}
+
           {messages.length <= 2 && (
-            <View style={s.suggestRow}>
+            <View style={styles.suggestRow}>
               {SUGGESTIONS.map((sug, i) => (
-                <TouchableOpacity key={i} style={s.suggestChip} onPress={() => sendMessage(sug)}>
-                  <Text style={s.suggestText}>{sug}</Text>
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.suggestChip, { borderColor: border, backgroundColor: card }]}
+                  onPress={() => void sendMessage(sug)}
+                >
+                  <Text style={[styles.suggestText, { color: primary }]}>{sug}</Text>
                 </TouchableOpacity>
               ))}
             </View>
           )}
 
-          {/* Input row */}
-          <View style={s.inputRow}>
-            <TextInput style={s.textInput} placeholder="Ask Orion..." placeholderTextColor="rgba(255,255,255,0.3)"
-              value={input} onChangeText={setInput} returnKeyType="send" onSubmitEditing={() => sendMessage(input)} />
-            <TouchableOpacity onPress={() => sendMessage(input)} style={s.sendBtn}>
-              <Ionicons name="send" size={18} color="#7C3AED" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Mic button */}
-          <View style={s.micRow}>
-            <TouchableOpacity onPress={handleMicPress} activeOpacity={0.8}>
-              <LinearGradient colors={isListening ? ['#FF3B30', '#CC0000'] : ['#7C3AED', '#5B21B6']}
-                style={[s.micBtn, isListening && s.micBtnListening]}>
-                <Ionicons name={isListening ? 'radio' : 'mic'} size={28} color="#fff" />
-              </LinearGradient>
+          <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: border }]}>
+            <TextInput
+              style={[styles.textInput, { color: text }]}
+              placeholder={isListening ? 'Speak now…' : 'Ask Orion…'}
+              placeholderTextColor={sub}
+              value={displayInput}
+              onChangeText={(t) => {
+                if (!isListening) setInput(t);
+              }}
+              editable={!isListening}
+              returnKeyType="send"
+              onSubmitEditing={() => void sendMessage(displayInput)}
+            />
+            {Voice ? (
+              <TouchableOpacity
+                onPress={() => void handleMicPress()}
+                style={[
+                  styles.iconBtn,
+                  { backgroundColor: isListening ? 'rgba(239,68,68,0.2)' : `${primary}18` },
+                ]}
+                accessibilityLabel={isListening ? 'Stop dictation and send' : 'Start voice input'}
+              >
+                <Ionicons name={isListening ? 'stop-circle' : 'mic'} size={22} color={isListening ? '#EF4444' : primary} />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity onPress={() => void sendMessage(displayInput)} style={[styles.iconBtn, { backgroundColor: `${primary}22` }]} accessibilityLabel="Send message">
+              <Ionicons name="send" size={20} color={primary} />
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -193,29 +403,34 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
   );
 }
 
-const s = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#0D0D0F', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%', shadowColor: '#000', shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.5, shadowRadius: 40 },
-  handle: { width: 36, height: 4, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 2, alignSelf: 'center', marginTop: 8 },
+const styles = StyleSheet.create({
+  backdrop: { flex: 1, justifyContent: 'flex-end' },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%', borderTopWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(148,163,184,0.2)' },
+  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 8 },
   header: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingTop: 12 },
   avatar: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  headerSub: { color: 'rgba(255,255,255,0.4)', fontSize: 12 },
+  headerTitle: { fontSize: 17, fontWeight: '700' },
+  headerSub: { fontSize: 12, marginTop: 2 },
   closeBtn: { padding: 8 },
-  bubble: { marginBottom: 8, maxWidth: '80%' },
-  userBubble: { alignSelf: 'flex-end' },
-  assistantBubble: { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 18, borderTopLeftRadius: 4, padding: 12 },
-  userGrad: { borderRadius: 18, borderTopRightRadius: 4, padding: 12 },
-  bubbleText: { color: '#fff', fontSize: 14, lineHeight: 20 },
-  typingRow: { flexDirection: 'row', gap: 4, paddingLeft: 24, paddingBottom: 8 },
-  typingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#7C3AED' },
+  bubble: { marginBottom: 8, maxWidth: '82%', borderRadius: 18, padding: 12 },
+  userGrad: { borderRadius: 18, padding: 12 },
+  bubbleTextUser: { color: '#fff', fontSize: 14, lineHeight: 20 },
+  bubbleTextAsst: { fontSize: 14, lineHeight: 20 },
+  typingRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 20, paddingBottom: 10 },
   suggestRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
-  suggestChip: { backgroundColor: 'rgba(124,58,237,0.15)', borderWidth: 1, borderColor: 'rgba(124,58,237,0.3)', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
-  suggestText: { color: '#A78BFA', fontSize: 12, fontWeight: '500' },
-  inputRow: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 8, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 20, paddingHorizontal: 14 },
-  textInput: { flex: 1, color: '#fff', fontSize: 15, paddingVertical: 12 },
-  sendBtn: { padding: 8 },
-  micRow: { alignItems: 'center', paddingBottom: 32 },
-  micBtn: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 8 },
-  micBtnListening: { shadowColor: '#FF3B30', shadowOpacity: 0.6 },
+  suggestChip: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: StyleSheet.hairlineWidth },
+  suggestText: { fontSize: 12, fontWeight: '600' },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 4,
+    borderRadius: 22,
+    paddingLeft: 14,
+    paddingRight: 6,
+    paddingVertical: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  textInput: { flex: 1, fontSize: 15, paddingVertical: 12, minHeight: 44 },
+  iconBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginLeft: 4 },
 });

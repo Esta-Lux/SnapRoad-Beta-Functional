@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useFocusEffect, useRoute, useNavigation, useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,7 +9,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../hooks/useLocation';
 import { api } from '../api/client';
-import type { Challenge, Badge, Offer, Trip, WeeklyInsights } from '../types';
+import type { Challenge, Badge, Offer } from '../types';
 import RewardsHeader from '../components/rewards/RewardsHeader';
 import RewardsTabs from '../components/rewards/RewardsTabs';
 import {
@@ -19,8 +19,6 @@ import {
   BadgesPreview,
   OffersPreview,
   GemActivityList,
-  TripsList,
-  WeeklyInsightsSection,
   LeaderboardPreview,
 } from '../components/rewards/RewardsSections';
 import {
@@ -30,8 +28,6 @@ import {
   ChallengeHistoryModal,
 } from '../components/rewards/RewardsModals';
 import { rewardsStyles } from '../components/rewards/styles';
-import TripAnalytics from '../components/gamification/TripAnalytics';
-import RouteHistory from '../components/gamification/RouteHistory';
 import ChallengeModal from '../components/gamification/ChallengeModal';
 import type {
   RewardsTab,
@@ -42,13 +38,7 @@ import type {
   LeaderboardEntry,
 } from '../components/rewards/types';
 
-export type RewardsMainParams = {
-  openTripAnalytics?: boolean;
-  openRouteHistory?: boolean;
-};
-
 export default function RewardsScreen() {
-  const route = useRoute();
   const navigation = useNavigation();
   const rewardsFocused = useIsFocused();
   const { colors, isLight, shadow } = useTheme();
@@ -75,8 +65,6 @@ export default function RewardsScreen() {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [badges, setBadges] = useState<Badge[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [insights, setInsights] = useState<WeeklyInsights | null>(null);
   const [selectedBadge, setSelectedBadge] = useState<Badge | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [rewardsTab, setRewardsTab] = useState<RewardsTab>('offers');
@@ -93,8 +81,6 @@ export default function RewardsScreen() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [myRank, setMyRank] = useState(0);
   const [leaderboardTf, setLeaderboardTf] = useState<'all_time' | 'weekly' | 'monthly' | 'all'>('weekly');
-  const [showTripAnalytics, setShowTripAnalytics] = useState(false);
-  const [showRouteHistory, setShowRouteHistory] = useState(false);
   const [challengeTarget, setChallengeTarget] = useState<{ id: string; name: string } | null>(null);
 
   const leaderboardTfRef = useRef(leaderboardTf);
@@ -139,17 +125,6 @@ export default function RewardsScreen() {
       const bData = unwrap(bRes);
       setBadges(Array.isArray(bData) ? bData : (bData?.badges ?? []));
       setOffers(Array.isArray(unwrap(oRes)) ? unwrap(oRes) : []);
-      const rawTrips: unknown = unwrap(tRes);
-      let tripList: Trip[] = [];
-      if (Array.isArray(rawTrips)) {
-        tripList = rawTrips;
-      } else if (rawTrips && typeof rawTrips === 'object' && 'items' in rawTrips) {
-        const items = (rawTrips as { items?: unknown }).items;
-        if (Array.isArray(items)) tripList = items as Trip[];
-      }
-      setTrips(tripList);
-      const iData = iRes?.data?.data ?? iRes?.data;
-      setInsights(iData && typeof iData === 'object' ? iData as WeeklyInsights : null);
       const gData = gRes?.data?.data ?? gRes?.data;
       const tx = Array.isArray(gData?.recent_transactions) ? gData.recent_transactions : [];
       setGemTx(tx.slice(0, 6).map((t: any, i: number) => ({
@@ -246,15 +221,6 @@ export default function RewardsScreen() {
     lastOfferGrid.current = rewardsLocGrid;
     void refreshNearbyOffers(location.lat, location.lng);
   }, [rewardsLocGrid, location.lat, location.lng, loadFull, refreshNearbyOffers]);
-
-  /** Map hamburger → nested tab navigate opens these modals */
-  useEffect(() => {
-    const p = route.params as RewardsMainParams | undefined;
-    if (!p?.openTripAnalytics && !p?.openRouteHistory) return;
-    if (p.openTripAnalytics) setShowTripAnalytics(true);
-    if (p.openRouteHistory) setShowRouteHistory(true);
-    navigation.setParams({ openTripAnalytics: undefined, openRouteHistory: undefined } as never);
-  }, [route.params, navigation]);
 
   useFocusEffect(
     useCallback(() => {
@@ -434,7 +400,7 @@ export default function RewardsScreen() {
             </LinearGradient>
             <View style={{ flex: 1 }}>
               <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Upgrade to Premium</Text>
-              <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>2× gems, richer offers, deeper analytics, and priority perks.</Text>
+              <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>2× gems, richer offers, deeper insights in Profile, and priority perks.</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.primary} />
           </LinearGradient>
@@ -504,49 +470,6 @@ export default function RewardsScreen() {
 
       <SectionTitle title="Recent Gem Activity" text={text} accent={colors.primary} />
       <GemActivityList loading={initialLoading} gemTx={gemTx} {...rt} />
-
-      <SectionTitle title="Recent Trips" text={text} accent={colors.primary} />
-      <TripsList loading={initialLoading} trips={trips} {...rt} />
-
-      {insights && (
-        <>
-          <SectionTitle title="This Week" text={text} accent={colors.primary} />
-          <WeeklyInsightsSection insights={insights} {...rt} />
-        </>
-      )}
-
-      {/* Quick action buttons */}
-      <SectionTitle title="Insights & history" text={text} accent={colors.primary} />
-      <View style={{ flexDirection: 'row', gap: 12, marginHorizontal: 16, marginBottom: 16, marginTop: 4 }}>
-        <TouchableOpacity
-          style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.border, ...shadow(4) }}
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowTripAnalytics(true); }}
-          activeOpacity={0.75}
-        >
-          <LinearGradient colors={[`${colors.primary}22`, `${colors.primary}08`]} style={{ width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
-            <Ionicons name="analytics-outline" size={20} color={colors.primary} />
-          </LinearGradient>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: text, fontSize: 14, fontWeight: '800' }}>Trip Analytics</Text>
-            <Text style={{ color: sub, fontSize: 11, marginTop: 2, fontWeight: '600' }}>Miles, safety, savings</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={sub} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={{ flex: 1, backgroundColor: cardBg, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.border, ...shadow(4) }}
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowRouteHistory(true); }}
-          activeOpacity={0.75}
-        >
-          <LinearGradient colors={[`${colors.success}28`, `${colors.success}0d`]} style={{ width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
-            <Ionicons name="time-outline" size={20} color={colors.success} />
-          </LinearGradient>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: text, fontSize: 14, fontWeight: '800' }}>Route History</Text>
-            <Text style={{ color: sub, fontSize: 11, marginTop: 2, fontWeight: '600' }}>Past drives & scores</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={sub} />
-        </TouchableOpacity>
-      </View>
 
       <SectionTitle title="Rank & Leaderboard" text={text} accent={colors.primary} />
       <LeaderboardPreview
@@ -620,8 +543,6 @@ export default function RewardsScreen() {
       />
       </ScrollView>
 
-      <TripAnalytics visible={showTripAnalytics} onClose={() => setShowTripAnalytics(false)} />
-      <RouteHistory visible={showRouteHistory} onClose={() => setShowRouteHistory(false)} />
       <ChallengeModal visible={!!challengeTarget} onClose={() => setChallengeTarget(null)} targetFriend={challengeTarget} />
     </SafeAreaView>
   );
