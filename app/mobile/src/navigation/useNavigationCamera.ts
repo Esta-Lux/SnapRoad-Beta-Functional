@@ -80,7 +80,8 @@ const MODE_CONFIG: Record<
     turnApproachPadBoost: 55,
     turnApproachMeters: 180,
     /** ~GPS/nav updates arrive ~1 Hz; shorter ease reduces mushy lag vs puck */
-    transitionMs: 700,
+    /** Slightly longer ease so zoom/pitch changes do not fight the location puck. */
+    transitionMs: 900,
   },
   adaptive: {
     basePitch: 56,
@@ -93,7 +94,7 @@ const MODE_CONFIG: Record<
     padTopSpeed: 65,
     turnApproachPadBoost: 48,
     turnApproachMeters: 180,
-    transitionMs: 520,
+    transitionMs: 720,
   },
   sport: {
     basePitch: 60,
@@ -106,7 +107,7 @@ const MODE_CONFIG: Record<
     padTopSpeed: 55,
     turnApproachPadBoost: 42,
     turnApproachMeters: 180,
-    transitionMs: 320,
+    transitionMs: 500,
   },
 };
 

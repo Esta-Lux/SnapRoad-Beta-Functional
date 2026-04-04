@@ -35,6 +35,10 @@ export interface User {
     milesPts: number;
     gemsPts: number;
   };
+  /** Admin-granted time-boxed access (see GET /api/user/profile) */
+  promotion_access_until?: string;
+  promotion_plan?: string;
+  promotion_active?: boolean;
 }
 
 export interface ApiUser {

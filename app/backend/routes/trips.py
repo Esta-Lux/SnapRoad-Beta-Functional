@@ -17,6 +17,7 @@ from config import ENVIRONMENT
 from services.llm_client import chat_completion_model, get_sync_openai_client
 from database import get_supabase
 from services.supabase_service import sb_update_profile, sb_get_profile
+from services.premium_access import require_premium_user
 
 _trips_log = logging.getLogger(__name__)
 
@@ -337,6 +338,7 @@ def get_weekly_insights(user: OptionalUser):
     if ENVIRONMENT == "production":
         if not user:
             raise HTTPException(status_code=401, detail="Authentication required")
+        require_premium_user(user)
         return _weekly_insights_supabase(user)
     _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")

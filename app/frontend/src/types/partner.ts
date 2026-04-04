@@ -83,6 +83,10 @@ export interface PartnerProfile {
   location_count: number
   max_locations: number
   can_add_location: boolean
+  /** Admin time-boxed plan boost */
+  promotion_access_until?: string
+  promotion_plan?: string
+  promotion_active?: boolean
 }
 
 export interface BoostConfig {

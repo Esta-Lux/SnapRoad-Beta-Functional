@@ -8,6 +8,8 @@ interface Props {
   isLight?: boolean;
   isNavigating?: boolean;
   activeStyleURL?: string;
+  /** Inserts 3D buildings below this style layer so road/POI labels and the puck read cleanly on top. */
+  belowLayerID?: string;
 }
 
 // Building extrusion colour palettes per mode
@@ -17,8 +19,8 @@ const CALM_COLORS = {
 };
 
 const SPORT_COLORS = {
-  explore:  { low: '#1e2650', mid: '#252f66', high: '#2c387a', opacity: 0.65 },
-  navigate: { low: '#1a2248', mid: '#20295e', high: '#273075', opacity: 0.75 },
+  explore:  { low: '#2a2438', mid: '#3d3550', high: '#524668', opacity: 0.72 },
+  navigate: { low: '#252038', mid: '#38304d', high: '#4c4262', opacity: 0.8 },
 };
 
 const ADAPTIVE_COLORS = { low: '#d4d4d8', mid: '#c0c0c8', high: '#b0b0b8', opacity: 0.75 };
@@ -60,6 +62,7 @@ export default React.memo(function BuildingsLayer({
   isLight = true,
   isNavigating = false,
   activeStyleURL = '',
+  belowLayerID,
 }: Props) {
   if (!isMapAvailable() || !MapboxGL) return null;
   if (!hasCompositeSource(activeStyleURL)) return null;
@@ -79,7 +82,7 @@ export default React.memo(function BuildingsLayer({
   }
 
   const nightEffects = shouldUseMapboxBuildingNightEffects(activeStyleURL, drivingMode, isLight);
-  const opacityCap = nightEffects ? 0.52 : 0.4;
+  const opacityCap = nightEffects ? (isSport ? 0.66 : 0.52) : 0.4;
   const opacity = isClassic ? Math.min(colors.opacity, opacityCap) : colors.opacity;
 
   const baseStyle = {
@@ -107,13 +110,13 @@ export default React.memo(function BuildingsLayer({
     ? {
         // Slight edge radius unlocks wall AO when flat lights are active (Mapbox GL).
         fillExtrusionEdgeRadius: 0.9,
-        fillExtrusionEmissiveStrength: isSport ? 0.45 : 0.38,
-        fillExtrusionFloodLightColor: isSport ? '#FFB877' : '#A8BCE8',
-        fillExtrusionFloodLightIntensity: isSport ? 0.24 : 0.19,
-        fillExtrusionFloodLightWallRadius: 30,
-        fillExtrusionFloodLightGroundRadius: 42,
-        fillExtrusionFloodLightGroundAttenuation: 0.7,
-        fillExtrusionAmbientOcclusionIntensity: isSport ? 0.34 : 0.28,
+        fillExtrusionEmissiveStrength: isSport ? 0.58 : 0.38,
+        fillExtrusionFloodLightColor: isSport ? '#FFC78A' : '#A8BCE8',
+        fillExtrusionFloodLightIntensity: isSport ? 0.34 : 0.19,
+        fillExtrusionFloodLightWallRadius: 34,
+        fillExtrusionFloodLightGroundRadius: 48,
+        fillExtrusionFloodLightGroundAttenuation: isSport ? 0.62 : 0.7,
+        fillExtrusionAmbientOcclusionIntensity: isSport ? 0.38 : 0.28,
         fillExtrusionAmbientOcclusionWallRadius: 3.2,
         fillExtrusionAmbientOcclusionGroundRadius: 22,
         fillExtrusionAmbientOcclusionGroundAttenuation: 0.55,
@@ -127,6 +130,7 @@ export default React.memo(function BuildingsLayer({
         existing={false}
         sourceID="composite"
         sourceLayerID="building"
+        belowLayerID={belowLayerID}
         filter={['==', ['get', 'extrude'], 'true']}
         minZoomLevel={14.5}
         maxZoomLevel={22}

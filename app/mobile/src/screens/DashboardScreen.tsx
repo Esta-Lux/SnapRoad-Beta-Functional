@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { api } from '../api/client';
 import Skeleton from '../components/common/Skeleton';
@@ -142,6 +143,7 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
 
 export default function DashboardScreen() {
   const { isLight, colors } = useTheme();
+  const { user } = useAuth();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
@@ -389,6 +391,41 @@ export default function DashboardScreen() {
   );
 
   const listKeyExtractor = useCallback((item: (typeof friendListData)[0]) => item.friend.id, []);
+
+  if (!user?.isPremium) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingTop: 6, paddingBottom: insets.bottom + 28 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={{ color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }}>Social</Text>
+          <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 10, lineHeight: 21 }}>
+            Friends, live location, convoy meetups, and friend search are included with SnapRoad Premium. Your trips, miles,
+            and gems stay on the Rewards and Profile tabs on the free plan.
+          </Text>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => navigation.navigate('Profile')}
+            style={{ marginTop: 22 }}
+          >
+            <LinearGradient
+              colors={['#2563EB', '#4F46E5']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ borderRadius: 16, paddingVertical: 16, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+            >
+              <Ionicons name="diamond" size={20} color="#fff" />
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>Upgrade to Premium</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+          <Text style={{ color: colors.textTertiary, fontSize: 12, marginTop: 20, lineHeight: 18 }}>
+            The Family tab preview (coming soon) will ship with the Family plan. Premium unlocks friend driving today.
+          </Text>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>

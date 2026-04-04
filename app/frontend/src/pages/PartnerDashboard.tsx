@@ -4,6 +4,7 @@ import {
   Plus, Gift, TrendingUp, BarChart3,
   Bell, Settings, LogOut, HelpCircle,
   Rocket, Store, CreditCard, Share2, BadgeCheck, QrCode, Receipt,
+  Menu, X,
 } from 'lucide-react'
 import { NotificationCenter, useNotifications, notificationService } from '@/components/NotificationSystem'
 import SettingsModal from '@/components/SettingsModal'
@@ -12,6 +13,7 @@ import { partnerApi } from '@/services/partnerApi'
 import type { Offer, PartnerProfile, Analytics, PartnerFeeSummary, PartnerRedemption } from '@/types/partner'
 
 import OnboardingWalkthrough from '@/components/partner/OnboardingWalkthrough'
+import PromotionWelcomeModal from '@/components/partner/PromotionWelcomeModal'
 import ImageGeneratorModal from '@/components/partner/ImageGeneratorModal'
 import BoostModal from '@/components/partner/BoostModal'
 import CreateOfferModal from '@/components/partner/CreateOfferModal'
@@ -76,8 +78,15 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
   const [partnerProfile, setPartnerProfile] = useState<PartnerProfile | null>(null)
   const [editingOffer, setEditingOffer] = useState<Offer | null>(null)
   const [deletingOffer, setDeletingOffer] = useState<Offer | null>(null)
+  const [showPromotionWelcome, setShowPromotionWelcome] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   const { sendNotification } = useNotifications()
+
+  const navigateTab = useCallback((id: TabId) => {
+    setActiveTab(id)
+    setMobileNavOpen(false)
+  }, [])
 
   useLayoutEffect(() => {
     document.title = `SnapRoad Partner · ${TAB_META[activeTab].title}`
@@ -107,7 +116,64 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
   }, [])
   useEffect(() => {
     setActiveTab(initialTab)
+    setMobileNavOpen(false)
   }, [initialTab])
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const closeIfDesktop = () => {
+      if (mq.matches) setMobileNavOpen(false)
+    }
+    mq.addEventListener('change', closeIfDesktop)
+    closeIfDesktop()
+    return () => mq.removeEventListener('change', closeIfDesktop)
+  }, [])
+
+  useEffect(() => {
+    if (!mobileNavOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileNavOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mobileNavOpen])
+
+  useEffect(() => {
+    if (!mobileNavOpen) return
+    const mq = window.matchMedia('(max-width: 767px)')
+    if (!mq.matches) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [mobileNavOpen])
+
+  useEffect(() => {
+    if (!partnerProfile?.promotion_active || !partnerProfile.promotion_access_until) {
+      setShowPromotionWelcome(false)
+      return
+    }
+    if (showOnboarding) {
+      setShowPromotionWelcome(false)
+      return
+    }
+    const until = String(partnerProfile.promotion_access_until)
+    const ack = localStorage.getItem('partner_promo_ack_until') || ''
+    if (ack === until) {
+      setShowPromotionWelcome(false)
+      return
+    }
+    const t = window.setTimeout(() => setShowPromotionWelcome(true), 400)
+    return () => window.clearTimeout(t)
+  }, [partnerProfile?.promotion_active, partnerProfile?.promotion_access_until, showOnboarding])
+
+  const acknowledgePartnerPromo = useCallback(() => {
+    if (partnerProfile?.promotion_access_until) {
+      localStorage.setItem('partner_promo_ack_until', String(partnerProfile.promotion_access_until))
+    }
+    setShowPromotionWelcome(false)
+  }, [partnerProfile?.promotion_access_until])
 
   const handlePartnerAuthError = (error: unknown) => {
     const message = error instanceof Error ? error.message : ''
@@ -352,6 +418,17 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <PromotionWelcomeModal
+        open={showPromotionWelcome}
+        theme="dark"
+        promotionPlan={partnerProfile?.promotion_plan}
+        promotionAccessUntil={partnerProfile?.promotion_access_until}
+        onClose={acknowledgePartnerPromo}
+        onViewPlans={() => {
+          acknowledgePartnerPromo()
+          navigateTab('pricing')
+        }}
+      />
       {showOnboarding && <OnboardingWalkthrough onComplete={handleOnboardingComplete} onSkip={handleOnboardingComplete} />}
       {showBoostModal && <BoostModal offer={showBoostModal} onClose={() => setShowBoostModal(null)} onBoost={async (boostType) => {
         try {
@@ -374,7 +451,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
           onCreate={handleCreateOffer}
           onOpenImageGenerator={() => setShowImageGenerator(true)}
           onClearImage={() => setNewOfferImage(null)}
-          onSwitchToLocations={() => setActiveTab('locations')}
+          onSwitchToLocations={() => navigateTab('locations')}
         />
       )}
 
@@ -403,24 +480,44 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl" />
       </div>
 
+      {/* Mobile drawer backdrop */}
+      <button
+        type="button"
+        aria-label="Close navigation menu"
+        className={`fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] transition-opacity duration-300 md:hidden ${mobileNavOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        onClick={() => setMobileNavOpen(false)}
+      />
+
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 bottom-0 w-72 bg-slate-900/50 backdrop-blur-xl border-r border-white/5 flex flex-col">
-        <div className="p-6 border-b border-white/5">
+      <aside
+        className={`fixed left-0 top-0 bottom-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-white/5 bg-slate-900/50 backdrop-blur-xl transition-transform duration-300 ease-out md:translate-x-0 ${mobileNavOpen ? 'translate-x-0 shadow-2xl shadow-black/40' : '-translate-x-full'}`}
+      >
+        <div className="border-b border-white/5 p-6">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl overflow-hidden shadow-lg shadow-emerald-500/20 border border-white/10 bg-slate-950 shrink-0">
-              <img src="/snaproad-logo.svg" alt="" className="w-full h-full object-cover" width={48} height={48} />
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-lg shadow-emerald-500/20">
+                <img src="/snaproad-logo.svg" alt="" className="h-full w-full object-cover" width={48} height={48} />
+              </div>
+              <div className="min-w-0">
+                <span className="text-lg font-bold text-white">SnapRoad</span>
+                <span className="block text-xs font-medium text-emerald-400">Partner Portal</span>
+              </div>
             </div>
-            <div>
-              <span className="text-white font-bold text-lg">SnapRoad</span>
-              <span className="text-emerald-400 text-xs block font-medium">Partner Portal</span>
-            </div>
+            <button
+              type="button"
+              className="shrink-0 rounded-xl p-2 text-slate-400 hover:bg-white/10 hover:text-white md:hidden"
+              aria-label="Close menu"
+              onClick={() => setMobileNavOpen(false)}
+            >
+              <X size={22} />
+            </button>
           </div>
         </div>
 
-        <nav className="flex-1 min-h-0 overflow-y-auto p-4">
+        <nav className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="space-y-2">
             {NAV_ITEMS.map(item => (
-              <button key={item.id} onClick={() => setActiveTab(item.id)} data-testid={`nav-${item.id}`}
+              <button key={item.id} onClick={() => navigateTab(item.id)} data-testid={`nav-${item.id}`}
                 className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all ${activeTab === item.id ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
                 <item.icon size={20} />
                 <span className="font-medium flex-1 text-left">{item.label}</span>
@@ -429,21 +526,21 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
             ))}
           </div>
 
-          <div className="mt-8 pt-8 border-t border-white/5 space-y-2">
-            <button onClick={() => setShowHelp(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5">
+          <div className="mt-8 space-y-2 border-t border-white/5 pt-8">
+            <button type="button" onClick={() => { setShowHelp(true); setMobileNavOpen(false) }} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 hover:bg-white/5 hover:text-white">
               <HelpCircle size={20} /><span className="font-medium">Help & Tour</span>
             </button>
-            <button onClick={() => setShowSettings(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5">
+            <button type="button" onClick={() => { setShowSettings(true); setMobileNavOpen(false) }} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 hover:bg-white/5 hover:text-white">
               <Settings size={20} /><span className="font-medium">Settings</span>
             </button>
-            <button onClick={() => setShowNotifications(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5">
+            <button type="button" onClick={() => { setShowNotifications(true); setMobileNavOpen(false) }} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 hover:bg-white/5 hover:text-white">
               <Bell size={20} /><span className="font-medium">Notifications</span>
             </button>
           </div>
         </nav>
 
-        <div className="shrink-0 p-4 border-t border-white/5 bg-slate-900/80">
-          <button onClick={() => { partnerApi.logout(); navigate('/portal/partner/welcome') }} data-testid="logout-btn" className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10">
+        <div className="shrink-0 border-t border-white/5 bg-slate-900/80 p-4">
+          <button type="button" onClick={() => { setMobileNavOpen(false); partnerApi.logout(); navigate('/portal/partner/welcome') }} data-testid="logout-btn" className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-red-400 hover:bg-red-500/10">
             <LogOut size={20} /><span className="font-medium">Sign Out</span>
           </button>
         </div>
@@ -455,7 +552,22 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} appType="partner" />
 
       {/* Main Content */}
-      <main className="ml-72 p-8">
+      <main className="ml-0 min-w-0 p-4 sm:p-6 md:ml-72 md:p-8">
+        <div className="mb-4 flex items-center gap-3 md:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            className="shrink-0 rounded-xl p-2.5 text-white hover:bg-white/10"
+            aria-label="Open navigation menu"
+          >
+            <Menu size={22} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-white">{TAB_META[activeTab].title}</p>
+            <p className="truncate text-xs text-slate-500">Partner Portal</p>
+          </div>
+        </div>
+
         {needsPlanCheckout && (
           <div
             className="mb-6 flex flex-col gap-3 rounded-2xl border border-emerald-500/35 bg-emerald-500/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
@@ -469,20 +581,21 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
             </div>
             <button
               type="button"
-              onClick={() => setActiveTab('pricing')}
+              onClick={() => navigateTab('pricing')}
               className="shrink-0 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:from-emerald-400 hover:to-teal-500"
             >
               View plans
             </button>
           </div>
         )}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-white mb-1">{TAB_META[activeTab].title}</h1>
-            <p className="text-slate-400">{TAB_META[activeTab].subtitle}</p>
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 md:block">
+            <h1 className="mb-1 hidden text-3xl font-bold text-white md:block">{TAB_META[activeTab].title}</h1>
+            <p className="hidden text-slate-400 md:block">{TAB_META[activeTab].subtitle}</p>
+            <p className="text-slate-400 md:hidden">{TAB_META[activeTab].subtitle}</p>
           </div>
           {activeTab === 'offers' && (
-            <button onClick={() => setShowCreateModal(true)} className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-semibold px-6 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-500/25">
+            <button type="button" onClick={() => setShowCreateModal(true)} className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-3 font-semibold text-white shadow-lg shadow-emerald-500/25 hover:from-emerald-400 hover:to-teal-400 sm:px-6">
               <Plus size={20} />Create Offer
             </button>
           )}
@@ -504,7 +617,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
                 onUpdate={handleUpdateLocation}
                 onDelete={handleDeleteLocation}
                 onSetPrimary={handleSetPrimaryLocation}
-                onUpgradePlan={() => setActiveTab('pricing')}
+                onUpgradePlan={() => navigateTab('pricing')}
               />
             )}
             {activeTab === 'boosts' && <BoostsTab offers={offers} onBoost={setShowBoostModal} />}
@@ -514,7 +627,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
                 redemptions={redemptions}
                 feeInfo={feeInfo}
                 onExportCsv={exportRedemptionsCsv}
-                onOpenScanner={() => setActiveTab('team-links')}
+                onOpenScanner={() => navigateTab('team-links')}
               />
             )}
             {activeTab === 'referrals' && <ReferralsTab partnerId={partnerProfile?.id} />}

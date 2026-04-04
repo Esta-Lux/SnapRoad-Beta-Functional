@@ -1,17 +1,30 @@
 import * as Speech from 'expo-speech';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import type { DrivingMode } from '../types';
 import { DRIVING_MODES } from '../constants/modes';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
-const MIN_GAP_MS = 3000;
+/** Shorten gap slightly so stacked prompts (reroute + turn) are less likely to drop the second cue. */
+const MIN_GAP_MS = 2200;
 
 /**
- * Reserved for future native audio session config. Avoid static `expo-audio` import:
- * it crashes on binaries built without that native module.
+ * Sets iOS/Android audio session so turn-by-turn is audible in silent mode and ducks background music.
  */
 export async function configureAudioSession(): Promise<void> {
-  /* no-op */
+  try {
+    await Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      allowsRecordingIOS: false,
+      interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+      staysActiveInBackground: false,
+    });
+  } catch {
+    /* native module missing or session busy */
+  }
 }
 
 export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', mode: DrivingMode = 'adaptive') {
@@ -23,10 +36,12 @@ export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', mo
   lastSpokenPhrase = normalized;
   lastSpokenAt = now;
 
+  void configureAudioSession();
+
   const cfg = DRIVING_MODES[mode];
   if (priority === 'high') Speech.stop();
   Speech.speak(phrase, {
-    rate: cfg?.speechRate ?? 1.05,
+    rate: cfg?.speechRate ?? 1.02,
     pitch: cfg?.speechPitch ?? 1.0,
     language: 'en-US',
   });

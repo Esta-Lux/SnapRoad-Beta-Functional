@@ -18,6 +18,7 @@ from services.supabase_service import (
     sb_update_profile,
     sb_soft_delete_profile,
     sb_delete_auth_user,
+    promotion_access_active,
 )
 from services.snap_road_score import compute_snap_road_fields
 
@@ -136,6 +137,16 @@ def get_user_profile(auth_user: CurrentUser):
     meta = _username_change_meta_from_row(row)
     payload["can_change_username"] = meta["can_change_username"]
     payload["username_change_available_at"] = meta["username_change_available_at"]
+    if row and isinstance(row, dict):
+        pu = row.get("promotion_access_until")
+        pp = row.get("promotion_plan")
+        if pu is not None and str(pu).strip():
+            payload["promotion_access_until"] = pu
+        if pp is not None and str(pp).strip():
+            payload["promotion_plan"] = str(pp).strip().lower()
+        payload["promotion_active"] = promotion_access_active(row)
+    else:
+        payload["promotion_active"] = False
     return {"success": True, "data": payload}
 
 

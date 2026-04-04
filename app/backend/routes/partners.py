@@ -15,6 +15,7 @@ from services.offer_utils import calculate_auto_gems, calculate_free_discount, g
 from services.fee_calculator import get_monthly_fee_summary, get_partner_fee_history
 from services.offer_analytics import summarize_offer_analytics
 from services.supabase_service import (
+    promotion_access_active,
     sb_get_partner, sb_get_partners, sb_update_partner, sb_create_partner,
     sb_get_partner_locations, sb_create_partner_location,
     sb_update_partner_location, sb_delete_partner_location,
@@ -141,23 +142,28 @@ def get_partner_profile(user: CurrentPartner, partner_id: str = "default_partner
     plan = _plan_info(plan_key)
     locations = sb_get_partner_locations(owned_partner_id)
     max_locs = PLAN_LOCATION_LIMITS.get(plan_key, 5)
-    return {
-        "success": True,
-        "data": {
-            "id": partner["id"],
-            "business_name": partner.get("business_name", ""),
-            "email": partner.get("email", ""),
-            "plan": plan_key,
-            "plan_info": plan,
-            "is_founders": partner.get("is_founders", False),
-            "subscription_status": partner.get("subscription_status") or "active",
-            "locations": locations,
-            "location_count": len(locations),
-            "max_locations": max_locs,
-            "can_add_location": len(locations) < max_locs,
-            "created_at": partner.get("created_at", ""),
-        },
+    pu = partner.get("promotion_access_until")
+    ppromo = partner.get("promotion_plan")
+    data = {
+        "id": partner["id"],
+        "business_name": partner.get("business_name", ""),
+        "email": partner.get("email", ""),
+        "plan": plan_key,
+        "plan_info": plan,
+        "is_founders": partner.get("is_founders", False),
+        "subscription_status": partner.get("subscription_status") or "active",
+        "locations": locations,
+        "location_count": len(locations),
+        "max_locations": max_locs,
+        "can_add_location": len(locations) < max_locs,
+        "created_at": partner.get("created_at", ""),
     }
+    if pu is not None and str(pu).strip():
+        data["promotion_access_until"] = pu
+    if ppromo is not None and str(ppromo).strip():
+        data["promotion_plan"] = str(ppromo).strip().lower()
+    data["promotion_active"] = promotion_access_active(partner)
+    return {"success": True, "data": data}
 
 
 @router.put("/partner/profile", responses={403: {"description": "Partner access denied"}})

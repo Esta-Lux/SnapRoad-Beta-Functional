@@ -20,6 +20,12 @@ from services.supabase_service import (
     sb_get_challenges,
     merge_profile_promotion_entitlements,
 )
+from services.premium_access import (
+    MSG_PREMIUM_REQUIRED,
+    profile_row_is_premium,
+    user_id_is_premium,
+    require_premium_user,
+)
 from config import ENVIRONMENT
 import uuid
 
@@ -289,6 +295,7 @@ def get_leaderboard(
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
     time_filter: str = "weekly",
 ):
+    require_premium_user(user)
     user_id = str(user.get("id") or current_user_id)
     tf = (time_filter or "weekly").lower()
 
@@ -497,25 +504,18 @@ def get_gem_history(user: CurrentUser):
         return {"success": True, "data": {"current_balance": u.get("gems", 0), "total_earned": 0, "total_spent": 0, "recent_transactions": []}}
 
 
-def _profile_is_premium(profile: dict) -> bool:
-    if not profile:
-        return False
-    if bool(profile.get("is_premium")):
-        return True
-    plan = str(profile.get("plan") or "").lower()
-    return plan in ("premium", "family")
-
-
 # ==================== DRIVING SCORE ====================
 @router.get("/driving-score")
 def get_driving_score(user: CurrentUser):
     user_id = str(user.get("id") or current_user_id)
+    if not user_id_is_premium(user_id):
+        raise HTTPException(status_code=403, detail=MSG_PREMIUM_REQUIRED)
     tip_templates = {"speed": "Try cruise control on highways.", "braking": "Start braking earlier for smoother stops.", "acceleration": "Ease into the gas pedal.", "following": "The 3-second rule is your friend!", "turns": "Keep signaling even when no one's around.", "focus": "Mount your phone for hands-free navigation!"}
     try:
         sb = get_supabase()
         profile = sb_get_profile(user_id) or {}
         base_score = int(profile.get("safety_score", 0))
-        is_premium = _profile_is_premium(profile)
+        is_premium = profile_row_is_premium(profile)
 
         trips = sb.table("trips").select("safety_score, hard_braking_events, speeding_events, created_at").eq("profile_id", user_id).order("created_at", desc=True).limit(50).execute()
         rows = trips.data or []
@@ -601,10 +601,12 @@ def get_weekly_recap(
     end: Annotated[Optional[str], Query(description="ISO8601 end")] = None,
 ):
     user_id = str(user.get("id") or current_user_id)
+    if not user_id_is_premium(user_id):
+        raise HTTPException(status_code=403, detail=MSG_PREMIUM_REQUIRED)
     try:
         sb = get_supabase()
         profile = sb_get_profile(user_id) or {}
-        is_premium = _profile_is_premium(profile)
+        is_premium = profile_row_is_premium(profile)
 
         if start and end:
             trip_q = (

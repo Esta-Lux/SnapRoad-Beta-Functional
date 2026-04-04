@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   SlideInDown, SlideOutDown,
@@ -104,31 +104,39 @@ export default function PlaceCard({
       >
         <View style={[styles.handle, { backgroundColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }]} />
 
-        <View style={styles.row}>
-          <View style={[styles.iconCircle, { backgroundColor: iconBg }]}>
-            <Ionicons name={icon} size={20} color="#3B82F6" />
-          </View>
-          <View style={styles.info}>
-            <Text style={[styles.name, { color: nameColor }]} numberOfLines={2}>{name}</Text>
-            {address ? <Text style={[styles.address, { color: addrColor }]} numberOfLines={2}>{address}</Text> : null}
-            <View style={styles.metaRow}>
-              {dist && (
-                <View style={styles.metaChip}>
-                  <Ionicons name="navigate-outline" size={11} color={metaColor} />
-                  <Text style={[styles.metaText, { color: metaColor }]}>{dist}</Text>
-                </View>
-              )}
-              {catLabel && (
-                <View style={[styles.catChip, { backgroundColor: chipBg }]}>
-                  <Text style={[styles.catText, { color: chipText }]}>{catLabel}</Text>
-                </View>
-              )}
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+        >
+          <View style={styles.row}>
+            <View style={[styles.iconCircle, { backgroundColor: iconBg }]}>
+              <Ionicons name={icon} size={20} color="#3B82F6" />
             </View>
+            <View style={styles.info}>
+              <Text style={[styles.name, { color: nameColor }]} numberOfLines={3}>{name}</Text>
+              {address ? <Text style={[styles.address, { color: addrColor }]} numberOfLines={3}>{address}</Text> : null}
+              <View style={styles.metaRow}>
+                {dist && (
+                  <View style={styles.metaChip}>
+                    <Ionicons name="navigate-outline" size={11} color={metaColor} />
+                    <Text style={[styles.metaText, { color: metaColor }]}>{dist}</Text>
+                  </View>
+                )}
+                {catLabel && (
+                  <View style={[styles.catChip, { backgroundColor: chipBg }]}>
+                    <Text style={[styles.catText, { color: chipText }]}>{catLabel}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+            <TouchableOpacity onPress={onDismiss} style={[styles.closeBtn, { backgroundColor: chipBg }]} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="close" size={16} color={addrColor} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={onDismiss} style={[styles.closeBtn, { backgroundColor: chipBg }]} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="close" size={16} color={addrColor} />
-          </TouchableOpacity>
-        </View>
+        </ScrollView>
 
         <View style={styles.actions}>
           <TouchableOpacity style={styles.dirBtn} onPress={onDirections} activeOpacity={0.8}>
@@ -153,6 +161,8 @@ export default function PlaceCard({
   );
 }
 
+const PLACE_CARD_MAX_H = Dimensions.get('window').height * 0.52;
+
 const styles = StyleSheet.create({
   container: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -160,12 +170,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 12,
     zIndex: 30,
     borderTopWidth: 1,
+    maxHeight: PLACE_CARD_MAX_H,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.2, shadowRadius: 20 },
       android: { elevation: 16 },
     }),
   },
   handle: { width: 40, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: 14 },
+  scroll: { flexGrow: 0, maxHeight: Dimensions.get('window').height * 0.34 },
+  scrollContent: { flexGrow: 0 },
   row: { flexDirection: 'row', alignItems: 'flex-start' },
   iconCircle: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 12, marginTop: 2 },
   info: { flex: 1 },
@@ -177,7 +190,7 @@ const styles = StyleSheet.create({
   catChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   catText: { fontSize: 11, fontWeight: '600' },
   closeBtn: { width: 30, height: 30, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
-  actions: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 16, flexShrink: 0 },
   dirBtn: {
     flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: '#3B82F6', borderRadius: 14, paddingVertical: 14,

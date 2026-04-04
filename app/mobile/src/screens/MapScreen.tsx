@@ -120,11 +120,17 @@ const MAP_STYLES = [
 
 // Calm: warm golden morning — airy, peaceful, sunrise feel
 // Adaptive: clear daylight, balanced commute sky
-// Sport: blue-hour dusk — intense but visible, performance driving feel
+// Sport: golden-hour sunset — warm horizon, slight stars; pairs with lit 3D buildings + dark-v11 basemap
 const ATMOSPHERE: Record<DrivingMode, { color: string; highColor: string; horizonBlend: number; spaceColor: string; starIntensity: number }> = {
   calm: { color: 'rgb(255, 228, 196)', highColor: 'rgb(255, 200, 150)', horizonBlend: 0.08, spaceColor: 'rgb(220, 235, 250)', starIntensity: 0 },
   adaptive: { color: 'rgb(186, 210, 235)', highColor: 'rgb(36, 92, 223)', horizonBlend: 0.04, spaceColor: 'rgb(187, 214, 237)', starIntensity: 0 },
-  sport: { color: 'rgb(60, 50, 70)', highColor: 'rgb(40, 35, 55)', horizonBlend: 0.08, spaceColor: 'rgb(25, 20, 40)', starIntensity: 0.3 },
+  sport: {
+    color: 'rgb(255, 154, 102)',
+    highColor: 'rgb(120, 72, 120)',
+    horizonBlend: 0.22,
+    spaceColor: 'rgb(32, 24, 48)',
+    starIntensity: 0.18,
+  },
 };
 
 /** Android RNMBXCameraManager.setFollowPadding calls asMap() — undefined breaks Fabric (ClassCastException). */
@@ -217,8 +223,23 @@ export default function MapScreen() {
   const [drivingMode, setDrivingMode] = useState<DrivingMode>('adaptive');
   const modeConfig = DRIVING_MODES[drivingMode];
 
+  const [navVoiceMuted, setNavVoiceMuted] = useState(false);
+  useEffect(() => {
+    const v = storage.getString('snaproad_nav_voice_muted');
+    setNavVoiceMuted(v === '1');
+  }, []);
+  useEffect(() => {
+    storage.set('snaproad_nav_voice_muted', navVoiceMuted ? '1' : '0');
+  }, [navVoiceMuted]);
+
   // ── Navigation hook ──
-  const nav = useNav({ userLocation: location, speed, heading, drivingMode });
+  const nav = useNav({
+    userLocation: location,
+    speed,
+    heading,
+    drivingMode,
+    voiceMuted: navVoiceMuted,
+  });
   const navFetchRef = useRef(nav.fetchDirections);
   const navSetDestRef = useRef(nav.setSelectedDestination);
   useEffect(() => {
@@ -343,7 +364,6 @@ export default function MapScreen() {
   const [trafficSafetyHint, setTrafficSafetyHint] = useState<string | null>(null);
   const [selectedPhotoReport, setSelectedPhotoReport] = useState<PhotoReport | null>(null);
   const [categoryExplore, setCategoryExplore] = useState<CategoryExploreState | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
   const [showPhotoReport, setShowPhotoReport] = useState(false);
   const [showGemOverlay, setShowGemOverlay] = useState(false);
   const [gemOverlayAmount, setGemOverlayAmount] = useState(0);
@@ -369,27 +389,42 @@ export default function MapScreen() {
 
   // ─── Derived values ────────────────────────────────────────────────────────
 
-  // Calm → streets-v12 (shows everything: labels, POIs, cameras, road features, building names)
-  // Sport → same base map as calm/adaptive when exploring (dusk comes from MapView atmosphere); night style only while navigating
+  // Calm → streets-v12 (full daylight labels / POIs)
+  // Sport → dark-v11 (night roads + labels, lit 3D extrusions + sunset atmosphere)
   // Adaptive → standard (default)
   // styleOverride 0 means "mode default"; higher indexes are explicit user picks
-  const activeStyleURL = (() => {
-    if (styleOverride !== 0) return MAP_STYLES[styleOverride]?.url ?? MAP_STYLES[0].url;
-    if (drivingMode === 'calm') return 'mapbox://styles/mapbox/streets-v12';
-    if (drivingMode === 'sport') return 'mapbox://styles/mapbox/streets-v12';
-    return MAP_STYLES[0].url;
-  })();
-
+  const darkStyleIndex = useMemo(
+    () => Math.max(0, MAP_STYLES.findIndex((ms) => ms.url.includes('dark-v'))),
+    [],
+  );
   const streetsStyleIndex = useMemo(
     () => Math.max(0, MAP_STYLES.findIndex((ms) => ms.url.includes('streets-v12'))),
     [],
   );
+  const activeStyleURL = (() => {
+    if (styleOverride !== 0) return MAP_STYLES[styleOverride]?.url ?? MAP_STYLES[0].url;
+    if (drivingMode === 'calm') return 'mapbox://styles/mapbox/streets-v12';
+    if (drivingMode === 'sport') return 'mapbox://styles/mapbox/dark-v11';
+    return MAP_STYLES[0].url;
+  })();
+
   /** Highlight the tile that matches the *effective* basemap (mode default ≠ index 0 for calm/sport). */
   const mapStylePickerHighlightIndex = useMemo(() => {
     if (styleOverride !== 0) return styleOverride;
-    if (drivingMode === 'calm' || drivingMode === 'sport') return streetsStyleIndex;
+    if (drivingMode === 'calm') return streetsStyleIndex;
+    if (drivingMode === 'sport') return darkStyleIndex;
     return 0;
-  }, [styleOverride, drivingMode, streetsStyleIndex]);
+  }, [styleOverride, drivingMode, streetsStyleIndex, darkStyleIndex]);
+
+  /** Keeps 3D extrusions under label layers; LocationPuck is last in the MapView tree. */
+  const buildingsBelowLayerId = useMemo(() => {
+    const u = activeStyleURL;
+    if (u.includes('dark-v')) return 'road-label-simple';
+    if (u.includes('streets-v')) return 'road-label';
+    if (u.includes('navigation-night')) return 'road-label-navigation';
+    if (u.includes('light-v')) return 'road-label';
+    return undefined;
+  }, [activeStyleURL]);
 
   /** streets-v12 and navigation-night-v1 support heading indicator; Standard omits it. */
   const atmosphereStyle = ATMOSPHERE[drivingMode];
@@ -499,14 +534,18 @@ export default function MapScreen() {
   // Fix 6: Persist driving mode on change
   useEffect(() => { storage.set('snaproad_driving_mode', drivingMode); }, [drivingMode]);
 
-  // Fetch saved places + friends on mount
+  // Fetch saved places + friends on mount (friends require Premium; API enforces too)
   useEffect(() => {
     refreshSavedPlaces();
+    if (!user?.isPremium) {
+      setFriendLocations([]);
+      return;
+    }
     api.get<any>('/api/friends/list').then((r) => {
       const d = (r.data as any)?.data ?? r.data;
       setFriendLocations(mapFriendsApiToLocations(d));
     }).catch(() => {});
-  }, [refreshSavedPlaces]);
+  }, [refreshSavedPlaces, user?.isPremium]);
 
   // Fix 8: Offers refresh on significant location change (~1km)
   useEffect(() => {
@@ -774,6 +813,7 @@ export default function MapScreen() {
   }, [location.lat, location.lng, heading]);
 
   useEffect(() => {
+    if (!user?.isPremium) return;
     const sharingOn = storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
     if (!sharingOn) return;
     const rLat = Math.round(location.lat * 1000);
@@ -810,7 +850,7 @@ export default function MapScreen() {
       }
     })();
     return () => { cancelled = true; };
-  }, [location.lat, location.lng, heading, speed, nav.isNavigating, nav.selectedDestination?.name]);
+  }, [user?.isPremium, location.lat, location.lng, heading, speed, nav.isNavigating, nav.selectedDestination?.name]);
 
   // Fix 1: Reset exploring state + traffic banner + camera lock when nav starts
   useEffect(() => {
@@ -1240,6 +1280,7 @@ export default function MapScreen() {
         friendFollowRerouteBusyRef.current = false;
       }
       setSelectedPlace(null);
+      setSelectedPlaceId(null);
       nav.setSelectedDestination({ name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng });
       const routeResult = await nav.fetchDirections(
         { name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng },
@@ -1626,7 +1667,7 @@ export default function MapScreen() {
             centerCoordinate={nav.isNavigating || isExploring || compassMode ? undefined : stableCenter}
             zoomLevel={nav.isNavigating || compassMode ? undefined : modeConfig.exploreZoom}
             pitch={nav.isNavigating || compassMode ? undefined : modeConfig.explorePitch}
-            animationMode="easeTo"
+            animationMode={nav.isNavigating && cameraLocked ? 'linearTo' : 'easeTo'}
             animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
             followUserLocation={(nav.isNavigating && cameraLocked) || compassMode}
             followUserMode={
@@ -1645,9 +1686,9 @@ export default function MapScreen() {
             <MapboxGL.Light
               style={{
                 anchor: 'viewport',
-                position: isSport ? [1.2, 205, 42] : [1.2, 198, 36],
-                color: isSport ? '#DCE4FF' : '#C8D4F0',
-                intensity: isSport ? 0.4 : 0.33,
+                position: isSport ? [-52, 88, 38] : [1.2, 198, 36],
+                color: isSport ? '#FFDCA8' : '#C8D4F0',
+                intensity: isSport ? 0.52 : 0.33,
               }}
             />
           ) : null}
@@ -1668,6 +1709,7 @@ export default function MapScreen() {
             isLight={isLight}
             isNavigating={nav.isNavigating}
             activeStyleURL={activeStyleURL}
+            belowLayerID={buildingsBelowLayerId}
           />
           {showTraffic && <TrafficLayer />}
           <IncidentHeatmap incidents={nearbyIncidents} visible={showIncidents} />
@@ -1742,14 +1784,6 @@ export default function MapScreen() {
             }}
           />
 
-          {/* Native puck: course while actively following route; device heading when browsing */}
-          <MapboxGL.LocationPuck
-            visible
-            puckBearingEnabled
-            puckBearing={nav.isNavigating && cameraLocked ? 'course' : 'heading'}
-            androidRenderMode={nav.isNavigating && cameraLocked ? 'gps' : 'compass'}
-          />
-
           {MapboxGL.Atmosphere && <MapboxGL.Atmosphere style={atmosphereStyle} />}
 
           {(nav.selectedDestination || selectedPlace) && (
@@ -1767,6 +1801,15 @@ export default function MapScreen() {
               </View>
             </MapboxGL.MarkerView>
           )}
+
+          {/* Last in tree so the location indicator stacks above custom layers + markers when the native stack allows */}
+          <MapboxGL.LocationPuck
+            visible
+            puckBearingEnabled
+            puckBearing={nav.isNavigating && cameraLocked ? 'course' : 'heading'}
+            androidRenderMode={nav.isNavigating && cameraLocked ? 'gps' : 'compass'}
+            scale={isSport ? 1.08 : 1}
+          />
         </MapboxGL.MapView>
       ) : (
         <View style={[s.map, s.placeholder]}>
@@ -1896,7 +1939,12 @@ export default function MapScreen() {
                   <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
                 </TouchableOpacity>
               ) : (
-                <TouchableOpacity onPress={() => setShowOrion(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <TouchableOpacity
+                  onPress={() => setShowOrion(true)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ marginLeft: 10, paddingLeft: 4 }}
+                  accessibilityLabel="Open Orion"
+                >
                   <Ionicons name="mic-outline" size={16} color={colors.textTertiary} />
                 </TouchableOpacity>
               )}
@@ -2069,8 +2117,13 @@ export default function MapScreen() {
               primaryInstruction={primary}
               secondaryInstruction={secondary}
               maneuverForIcon={maneuverIconKey}
-              isMuted={isMuted}
-              onMutePress={() => { setIsMuted((m) => !m); if (!isMuted) stopSpeaking(); }}
+              isMuted={navVoiceMuted}
+              onMutePress={() => {
+                setNavVoiceMuted((m) => {
+                  if (!m) stopSpeaking();
+                  return !m;
+                });
+              }}
               lanesJson={currentStep.lanes}
               step={currentStep}
               roadDisambiguationLabel={disambigName}
@@ -2272,6 +2325,13 @@ export default function MapScreen() {
           isRerouting={nav.isRerouting}
           onEndNavigation={nav.stopNavigation}
           bottomInset={insets.bottom}
+          voiceMuted={navVoiceMuted}
+          onVoiceToggle={() => {
+            setNavVoiceMuted((m) => {
+              if (!m) stopSpeaking();
+              return !m;
+            });
+          }}
         />
       )}
 
@@ -2461,9 +2521,55 @@ export default function MapScreen() {
 
       {/* ═══ FLOATING BUTTONS ═════════════════════════════════════════════ */}
 
-      {!nav.showRoutePreview && !nav.tripSummary && !selectedPlace && !selectedPlaceId && (
+      {nav.isNavigating && !nav.showRoutePreview && !nav.tripSummary && (
+        <View
+          style={{
+            position: 'absolute',
+            right: 16,
+            bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 6,
+            zIndex: 12,
+            gap: 10,
+            alignItems: 'flex-end',
+          }}
+        >
+          <TouchableOpacity
+            style={[s.reportFab, {
+              position: 'relative',
+              bottom: 0,
+              right: 0,
+              backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
+              borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
+            }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setShowReportPicker(true);
+            }}
+            accessibilityLabel="Report incident"
+          >
+            <Ionicons name="warning-outline" size={20} color="#F59E0B" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.reportFab, {
+              position: 'relative',
+              bottom: 0,
+              right: 0,
+              backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
+              borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
+            }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setShowPhotoReport(true);
+            }}
+            accessibilityLabel="Photo report"
+          >
+            <Ionicons name="camera-outline" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {!nav.isNavigating && !nav.showRoutePreview && !nav.tripSummary && !selectedPlace && !selectedPlaceId && (
         <TouchableOpacity style={[s.reportFab, {
-          bottom: (nav.isNavigating ? MAP_NAV_BOTTOM_INSET : 40) + insets.bottom,
+          bottom: 40 + insets.bottom,
           right: 16,
           backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
           borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
@@ -2496,7 +2602,7 @@ export default function MapScreen() {
       )}
 
       {!nav.isNavigating && !nav.showRoutePreview && (
-        <TouchableOpacity style={[s.orionFab, { top: insets.top + 210 }]} onPress={() => {
+        <TouchableOpacity style={[s.orionFab, { top: insets.top + 236, right: 20 }]} onPress={() => {
           if (user?.isPremium) { setShowOrion(true); }
           else { Alert.alert('Premium Feature', 'Orion AI co-pilot is available with SnapRoad Premium. Upgrade to unlock.', [{ text: 'Later' }, { text: 'Upgrade', onPress: () => rnNav.navigate('Profile' as never) }]); }
         }} activeOpacity={0.8}>
@@ -2760,8 +2866,22 @@ export default function MapScreen() {
               params: { openPlaceAlerts: true },
             });
           } else if (screen === 'Convoy') {
+            if (!user?.isPremium) {
+              Alert.alert('Premium feature', 'Convoy and friend meetups require SnapRoad Premium.', [
+                { text: 'Not now', style: 'cancel' },
+                { text: 'Upgrade', onPress: () => rnNav.navigate('Profile' as never) },
+              ]);
+              return;
+            }
             setShowConvoy(true);
           } else if (screen === 'Social') {
+            if (!user?.isPremium) {
+              Alert.alert('Premium feature', 'Friends and live location require SnapRoad Premium.', [
+                { text: 'Not now', style: 'cancel' },
+                { text: 'Upgrade', onPress: () => rnNav.navigate('Profile' as never) },
+              ]);
+              return;
+            }
             rnNav.navigate('Dashboards' as never);
           }
         }}

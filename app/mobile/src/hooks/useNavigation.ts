@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect } from 'react';
 import type { Coordinate, DrivingMode } from '../types';
 import type { DirectionsResult, DirectionsStep, GeocodeResult } from '../lib/directions';
 import { getMapboxRouteOptions, isMapboxDirectionsConfigured } from '../lib/directions';
@@ -60,8 +60,23 @@ export function useNavigation(params: {
   speed: number;
   heading: number;
   drivingMode: DrivingMode;
+  /** When true, suppress turn-by-turn speech (user preference; persists in MapScreen). */
+  voiceMuted?: boolean;
 }) {
-  const { userLocation, speed, heading, drivingMode } = params;
+  const { userLocation, speed, heading, drivingMode, voiceMuted = false } = params;
+  const voiceMutedRef = useRef(voiceMuted);
+  useLayoutEffect(() => {
+    voiceMutedRef.current = voiceMuted;
+  }, [voiceMuted]);
+
+  const navSpeak = useCallback(
+    (phrase: string, priority: 'high' | 'normal' = 'normal', mode: DrivingMode = drivingMode) => {
+      if (voiceMutedRef.current || !phrase.trim()) return;
+      void configureAudioSession();
+      speak(phrase, priority, mode);
+    },
+    [drivingMode],
+  );
   const { user, updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
   const updateUserRef = useRef(updateUser);
   const refreshUserFromServerRef = useRef(refreshUserFromServer);
@@ -196,14 +211,14 @@ export function useNavigation(params: {
     const firstStep = navigationData.steps?.[0];
     const firstInstr = firstStep?.instruction ? ` ${firstStep.instruction}.` : '';
     if (drivingMode === 'sport') {
-      speak(`${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
+      navSpeak(`${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
     } else if (drivingMode === 'calm') {
       const etaStr = etaMin < 60 ? `about ${etaMin} minutes` : `about ${Math.floor(etaMin / 60)} hours`;
-      speak(`Navigating to ${dest}, ${etaStr} away.${firstInstr}`, 'high', drivingMode);
+      navSpeak(`Navigating to ${dest}, ${etaStr} away.${firstInstr}`, 'high', drivingMode);
     } else {
-      speak(`Starting navigation to ${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
+      navSpeak(`Starting navigation to ${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
     }
-  }, [navigationData, drivingMode]);
+  }, [navigationData, drivingMode, navSpeak]);
 
   const stopNavigation = useCallback(() => {
     const sessionAge = Date.now() - navSessionStartRef.current;
@@ -281,7 +296,7 @@ export function useNavigation(params: {
     if (!qualifies) {
       setTimeout(
         () =>
-          speak(
+          navSpeak(
             'Trip summary saved. Drive at least about two tenths of a mile for forty seconds to earn gems next time.',
             'normal',
             drivingMode,
@@ -291,7 +306,7 @@ export function useNavigation(params: {
       return;
     }
 
-    setTimeout(() => speak(`Trip ended. You drove ${roundedDist} miles.`, 'normal', drivingMode), 500);
+    setTimeout(() => navSpeak(`Trip ended. You drove ${roundedDist} miles.`, 'normal', drivingMode), 500);
 
     const startedAt = tripStartMs
       ? new Date(tripStartMs).toISOString()
@@ -326,7 +341,7 @@ export function useNavigation(params: {
       await refreshUserFromServerRef.current();
       bumpStatsVersionRef.current();
     }).catch(() => { /* offline — summary already shown */ });
-  }, [navigationData, drivingMode, userLocation, user?.isPremium]);
+  }, [navigationData, drivingMode, userLocation, user?.isPremium, navSpeak]);
 
   const dismissTripSummary = useCallback(() => setTripSummary(null), []);
 
@@ -399,12 +414,12 @@ export function useNavigation(params: {
     if (!phrase) return;
 
     if (stepIndex === 0) {
-      setTimeout(() => speak(phrase, 'normal', drivingMode), 2500);
+      setTimeout(() => navSpeak(phrase, 'normal', drivingMode), 2500);
     } else {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      speak(phrase, 'normal', drivingMode);
+      navSpeak(phrase, 'normal', drivingMode);
     }
-  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation]);
+  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation, navSpeak]);
 
   // --- Early turn warnings (500ft and 150ft before next step) ---
   const earlyWarningRef = useRef<{ stepIdx: number; spoke500: boolean; spoke150: boolean }>({ stepIdx: -1, spoke500: false, spoke150: false });
@@ -430,13 +445,13 @@ export function useNavigation(params: {
     if (distToNext <= FEET_500 && distToNext > FEET_150 && !w.spoke500) {
       w.spoke500 = true;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      speak(`In 500 feet, ${nextStep.instruction}`, 'normal', drivingMode);
+      navSpeak(`In five hundred feet, ${nextStep.instruction}`, 'high', drivingMode);
     } else if (distToNext <= FEET_150 && !w.spoke150) {
       w.spoke150 = true;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      speak(nextStep.instruction, 'normal', drivingMode);
+      navSpeak(nextStep.instruction, 'high', drivingMode);
     }
-  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation]);
+  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation, navSpeak]);
 
   // --- Arrival announcement ---
   const hasAnnouncedArrival = useRef(false);
@@ -454,8 +469,8 @@ export function useNavigation(params: {
       : drivingMode === 'sport'
         ? `You've arrived at ${dest}.`
         : `You've arrived at ${dest}. Have a great day!`;
-    speak(arrivalMsg, 'high', drivingMode);
-  }, [isNavigating, liveEta?.distanceMiles, navigationData?.destination, drivingMode]);
+    navSpeak(arrivalMsg, 'high', drivingMode);
+  }, [isNavigating, liveEta?.distanceMiles, navigationData?.destination, drivingMode, navSpeak]);
 
   // --- ETA from route-snapped remaining distance ---
   useEffect(() => {
@@ -514,7 +529,7 @@ export function useNavigation(params: {
     lastRerouteAtRef.current = now;
     setIsRerouting(true);
     const rerouteMsg = drivingMode === 'calm' ? 'Let me find you a new route.' : 'Rerouting.';
-    speak(rerouteMsg, 'high', drivingMode);
+    navSpeak(rerouteMsg, 'high', drivingMode);
 
     const reroute = async () => {
       try {
@@ -529,11 +544,11 @@ export function useNavigation(params: {
       }
     };
     reroute();
-  }, [userLocation.lat, userLocation.lng, speed, isNavigating, navigationData?.destination, navigationData?.polyline, drivingMode, fetchDirections]);
+  }, [userLocation.lat, userLocation.lng, speed, isNavigating, navigationData?.destination, navigationData?.polyline, drivingMode, fetchDirections, navSpeak]);
 
   const addWaypoint = useCallback(async (waypoint: Coordinate & { name?: string }) => {
     if (!isNavigatingRef.current || !navigationData?.destination) return;
-    speak('Adding a stop. Rerouting.', 'high', drivingMode);
+    navSpeak('Adding a stop. Rerouting.', 'high', drivingMode);
     setIsRerouting(true);
     try {
       const coords = `${userLocation.lng},${userLocation.lat};${waypoint.lng},${waypoint.lat};${navigationData.destination.lng},${navigationData.destination.lat}`;
@@ -577,7 +592,7 @@ export function useNavigation(params: {
     } finally {
       setIsRerouting(false);
     }
-  }, [navigationData, userLocation, drivingMode]);
+  }, [navigationData, userLocation, drivingMode, navSpeak]);
 
   return {
     navigationData,

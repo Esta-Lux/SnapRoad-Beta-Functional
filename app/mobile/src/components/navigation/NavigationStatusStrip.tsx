@@ -30,6 +30,9 @@ type Props = {
   bottomInset: number;
   /** Optional line above ETA (e.g. friend live-follow). */
   contextLine?: string | null;
+  /** Turn-by-turn speech mute (persisted on MapScreen). */
+  voiceMuted?: boolean;
+  onVoiceToggle?: () => void;
 };
 
 export default React.memo(function NavigationStatusStrip({
@@ -42,6 +45,8 @@ export default React.memo(function NavigationStatusStrip({
   onEndNavigation,
   bottomInset,
   contextLine,
+  voiceMuted = false,
+  onVoiceToggle,
 }: Props) {
   const [calmExpanded, setCalmExpanded] = useState(false);
 
@@ -150,7 +155,23 @@ export default React.memo(function NavigationStatusStrip({
           },
         ]}
       >
-        <Text style={styles.primaryLine} numberOfLines={1}>
+        {onVoiceToggle ? (
+          <TouchableOpacity
+            style={styles.voiceBtn}
+            onPress={onVoiceToggle}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel={voiceMuted ? 'Unmute voice guidance' : 'Mute voice guidance'}
+            activeOpacity={0.75}
+          >
+            <Ionicons
+              name={voiceMuted ? 'volume-mute' : 'volume-high'}
+              size={20}
+              color={voiceMuted ? textSec : etaAccent}
+            />
+          </TouchableOpacity>
+        ) : null}
+        <Text style={[styles.primaryLine, onVoiceToggle ? styles.primaryLineWithVoice : null]} numberOfLines={1}>
           <Text style={[styles.primaryEmphasis, { color: etaAccent }]}>{timeLabel}</Text>
           <Text style={[styles.bullet, { color: textSec }]}> · </Text>
           <Text style={[styles.primaryMid, { color: textPrimary }]}>{distLabel}</Text>
@@ -221,11 +242,22 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  voiceBtn: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    zIndex: 2,
+    padding: 6,
+    borderRadius: 12,
+  },
   primaryLine: {
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: -0.2,
     textAlign: 'center',
+  },
+  primaryLineWithVoice: {
+    paddingHorizontal: 40,
   },
   primaryEmphasis: { fontWeight: '900', fontSize: 28, letterSpacing: -0.6 },
   primaryMid: { fontWeight: '800', fontSize: 24, letterSpacing: -0.5 },

@@ -34,10 +34,10 @@ export default function DriverSnapshotModal({ visible, onClose, user, weeklyReca
     `SnapRoad — ${user?.name ?? 'Driver'}`,
     `Safety score: ${score}`,
     `Gems ${user?.gems ?? 0} · Trips ${user?.totalTrips ?? 0} · Miles ${(user?.totalMiles ?? 0).toFixed(1)}`,
-    weeklyRecap.totalTrips > 0
+    user?.isPremium && weeklyRecap.totalTrips > 0
       ? `This week: ${weeklyRecap.totalTrips} trips, ${weeklyRecap.totalMiles.toFixed(1)} mi, avg safety ${weeklyRecap.avgSafetyScore}`
       : null,
-    myRank > 0 ? `Weekly rank #${myRank}` : null,
+    user?.isPremium && myRank > 0 ? `Weekly rank #${myRank}` : null,
   ]
     .filter(Boolean)
     .join('\n');

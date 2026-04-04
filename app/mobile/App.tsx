@@ -29,6 +29,7 @@ import WelcomeScreen from './src/screens/WelcomeScreen';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
 import AppTour from './src/components/gamification/AppTour';
+import DriverPromotionWelcomeSheet from './src/components/gamification/DriverPromotionWelcomeSheet';
 import LegalConsentGate from './src/components/legal/LegalConsentGate';
 import { storage } from './src/utils/storage';
 import {
@@ -188,6 +189,7 @@ function RootNavigator() {
   const { colors } = useTheme();
   const [showSplash, setShowSplash] = React.useState(true);
   const [showTour, setShowTour] = React.useState(false);
+  const [showDriverPromoWelcome, setShowDriverPromoWelcome] = React.useState(false);
   const lastHandledUrlRef = React.useRef<string | null>(null);
   const lastPushTokenRef = React.useRef<string | null>(null);
 
@@ -219,6 +221,33 @@ function RootNavigator() {
       setShowTour(true);
     }
   }, [isAuthenticated]);
+
+  /** Admin promotion welcome — after tour (or if tour already done), once per promo window. */
+  React.useEffect(() => {
+    if (!isAuthenticated || !user?.promotion_active || !user.promotion_access_until) {
+      setShowDriverPromoWelcome(false);
+      return;
+    }
+    if (showTour) {
+      setShowDriverPromoWelcome(false);
+      return;
+    }
+    const until = String(user.promotion_access_until);
+    const ack = storage.getString('snaproad_promo_ack_until') || '';
+    if (ack === until) {
+      setShowDriverPromoWelcome(false);
+      return;
+    }
+    const t = setTimeout(() => setShowDriverPromoWelcome(true), 500);
+    return () => clearTimeout(t);
+  }, [isAuthenticated, user?.promotion_active, user?.promotion_access_until, showTour]);
+
+  const acknowledgeDriverPromo = React.useCallback(() => {
+    if (user?.promotion_access_until) {
+      storage.set('snaproad_promo_ack_until', String(user.promotion_access_until));
+    }
+    setShowDriverPromoWelcome(false);
+  }, [user?.promotion_access_until]);
 
   const handleIncomingUrl = React.useCallback(async (url: string) => {
     const normalizedUrl = url.trim();
@@ -426,6 +455,19 @@ function RootNavigator() {
           <MainTabs />
           <LegalConsentGate />
           <AppTour visible={showTour} onComplete={() => { setShowTour(false); storage.set('snaproad_tour_done', '1'); }} />
+          <DriverPromotionWelcomeSheet
+            visible={showDriverPromoWelcome}
+            promotionPlan={user?.promotion_plan}
+            promotionAccessUntil={user?.promotion_access_until}
+            onMaybeLater={acknowledgeDriverPromo}
+            onViewPlans={() => {
+              acknowledgeDriverPromo();
+              requestAnimationFrame(() => {
+                if (!rootNavigationRef.isReady()) return;
+                rootNavigationRef.dispatch(CommonActions.navigate({ name: 'Profile' }));
+              });
+            }}
+          />
         </>
       ) : (
         <PublicStack.Navigator screenOptions={{ headerShown: false }}>

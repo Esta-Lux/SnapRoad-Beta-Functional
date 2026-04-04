@@ -176,14 +176,25 @@ export default function ProfileScreen() {
       const safeGet = async (url: string) => {
         try { return await api.get<any>(url); } catch { return { success: false, data: null }; }
       };
-      const [profileRes, locRes, routeRes, commuteRes, notifRes, weeklyRes, leaderRes, tripsHistoryRes, gemsRes, badgesRes, fuelStatsRes, fuelTrendsRes] = await Promise.all([
-        api.getProfile().catch(() => ({ success: false, data: null })),
+      const profileRes = await api.getProfile().catch(() => ({ success: false, data: null }));
+      const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
+      const pp = profilePayload as Record<string, unknown>;
+      const planStr = typeof pp.plan === 'string' ? pp.plan : '';
+      const planLowerEarly = planStr.toLowerCase();
+      const premiumByPlanEarly = planLowerEarly === 'premium' || planLowerEarly === 'family';
+      const premiumByFlagEarly = pp.is_premium != null && Boolean(pp.is_premium);
+      const isPremiumUser = premiumByPlanEarly || premiumByFlagEarly;
+      const weeklyPromise = isPremiumUser ? safeGet('/api/weekly-recap') : Promise.resolve({ success: false, data: null });
+      const leaderPromise = isPremiumUser
+        ? safeGet('/api/leaderboard?time_filter=weekly&limit=10')
+        : Promise.resolve({ success: false, data: null });
+      const [locRes, routeRes, commuteRes, notifRes, weeklyRes, leaderRes, tripsHistoryRes, gemsRes, badgesRes, fuelStatsRes, fuelTrendsRes] = await Promise.all([
         safeGet('/api/locations'),
         safeGet('/api/routes'),
         safeGet('/api/commute-routes'),
         safeGet('/api/settings/notifications'),
-        safeGet('/api/weekly-recap'),
-        safeGet('/api/leaderboard?time_filter=weekly&limit=10'),
+        weeklyPromise,
+        leaderPromise,
         safeGet('/api/trips/history/recent?limit=100'),
         safeGet('/api/gems/history'),
         safeGet('/api/badges'),
@@ -191,9 +202,6 @@ export default function ProfileScreen() {
         safeGet('/api/fuel/trends'),
       ]);
       const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
-      const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
-      const pp = profilePayload as Record<string, unknown>;
-      const planStr = typeof pp.plan === 'string' ? pp.plan : '';
       const emailLower = String(pp.email ?? '').trim().toLowerCase();
       const rawName =
         typeof pp.name === 'string' && pp.name.trim()
@@ -228,6 +236,19 @@ export default function ProfileScreen() {
       if (pp.gem_multiplier != null) {
         userPatch.gem_multiplier = Number(pp.gem_multiplier);
       }
+      const pub = pp.promotion_access_until;
+      if (typeof pub === 'string' && pub.trim()) {
+        userPatch.promotion_access_until = pub.trim();
+      } else {
+        userPatch.promotion_access_until = undefined;
+      }
+      const pplan = pp.promotion_plan;
+      if (typeof pplan === 'string' && pplan.trim()) {
+        userPatch.promotion_plan = pplan.trim().toLowerCase();
+      } else {
+        userPatch.promotion_plan = undefined;
+      }
+      userPatch.promotion_active = pp.promotion_active === true;
       applySnapRoadFromProfilePayload(userPatch, pp);
       const statsBody = (fuelStatsRes?.data as any)?.data ?? fuelStatsRes?.data ?? {};
       const trendsBody = (fuelTrendsRes?.data as any)?.data ?? fuelTrendsRes?.data ?? {};
@@ -269,36 +290,52 @@ export default function ProfileScreen() {
       setFriendRequests(Boolean(push.friend_activity ?? true));
       setOfferAlerts(Boolean(push.offers ?? true));
       setSpeedAlerts(Boolean(push.safety_alerts ?? true));
-      const weekly = weeklyRes?.data?.data ?? weeklyRes?.data ?? {};
-      const beh = weekly.behavior;
-      setWeeklyRecap({
-        totalTrips: Number(weekly.total_trips ?? weekly.trips_this_week ?? 0),
-        totalMiles: Number(weekly.total_miles ?? weekly.miles_this_week ?? 0),
-        gemsEarnedWeek: Number(weekly.gems_earned ?? weekly.gems_earned_week ?? 0),
-        avgSafetyScore: Number(weekly.safety_score_avg ?? weekly.avg_safety_score ?? 0),
-        aiTip: '',
-        highlights: Array.isArray(weekly.highlights) ? weekly.highlights.map((x: unknown) => String(x)) : [],
-        orionCommentary: typeof weekly.orion_commentary === 'string' ? weekly.orion_commentary : null,
-        behavior:
-          beh && typeof beh === 'object'
-            ? {
-                hard_braking_events_total: Number((beh as any).hard_braking_events_total ?? 0),
-                speeding_events_total: Number((beh as any).speeding_events_total ?? 0),
-              }
-            : { hard_braking_events_total: 0, speeding_events_total: 0 },
-      });
-      const lb = leaderRes?.data?.data ?? leaderRes?.data ?? {};
-      const rows = Array.isArray(lb.leaderboard) ? lb.leaderboard : [];
-      setLeaderboardRows(rows.map((r: any, i: number) => ({
-        rank: Number(r.rank ?? i + 1),
-        name: String(r.name ?? 'Driver'),
-        safetyScore: Number(r.safety_score ?? 0),
-        level: Number(r.level ?? 1),
-        gems: Number(r.gems ?? 0),
-      })));
-      const rankNum = Number(lb.my_rank ?? 0);
-      setMyRank(rankNum);
-      userPatch.rank = rankNum;
+      if (!isPremiumUser) {
+        setWeeklyRecap({
+          totalTrips: 0,
+          totalMiles: 0,
+          gemsEarnedWeek: 0,
+          avgSafetyScore: 0,
+          aiTip: '',
+          highlights: [],
+          orionCommentary: null,
+          behavior: { hard_braking_events_total: 0, speeding_events_total: 0 },
+        });
+        setLeaderboardRows([]);
+        setMyRank(0);
+        userPatch.rank = 0;
+      } else {
+        const weekly = weeklyRes?.data?.data ?? weeklyRes?.data ?? {};
+        const beh = weekly.behavior;
+        setWeeklyRecap({
+          totalTrips: Number(weekly.total_trips ?? weekly.trips_this_week ?? 0),
+          totalMiles: Number(weekly.total_miles ?? weekly.miles_this_week ?? 0),
+          gemsEarnedWeek: Number(weekly.gems_earned ?? weekly.gems_earned_week ?? 0),
+          avgSafetyScore: Number(weekly.safety_score_avg ?? weekly.avg_safety_score ?? 0),
+          aiTip: '',
+          highlights: Array.isArray(weekly.highlights) ? weekly.highlights.map((x: unknown) => String(x)) : [],
+          orionCommentary: typeof weekly.orion_commentary === 'string' ? weekly.orion_commentary : null,
+          behavior:
+            beh && typeof beh === 'object'
+              ? {
+                  hard_braking_events_total: Number((beh as any).hard_braking_events_total ?? 0),
+                  speeding_events_total: Number((beh as any).speeding_events_total ?? 0),
+                }
+              : { hard_braking_events_total: 0, speeding_events_total: 0 },
+        });
+        const lb = leaderRes?.data?.data ?? leaderRes?.data ?? {};
+        const rows = Array.isArray(lb.leaderboard) ? lb.leaderboard : [];
+        setLeaderboardRows(rows.map((r: any, i: number) => ({
+          rank: Number(r.rank ?? i + 1),
+          name: String(r.name ?? 'Driver'),
+          safetyScore: Number(r.safety_score ?? 0),
+          level: Number(r.level ?? 1),
+          gems: Number(r.gems ?? 0),
+        })));
+        const rankNum = Number(lb.my_rank ?? 0);
+        setMyRank(rankNum);
+        userPatch.rank = rankNum;
+      }
       const vtRaw = pp.vehicle_type;
       if (vtRaw === 'motorcycle' || vtRaw === 'car') {
         userPatch.vehicle_type = vtRaw;
@@ -592,8 +629,10 @@ export default function ProfileScreen() {
       key: 'achievements',
       icon: 'trophy-outline',
       label: 'Achievements',
-      value: `${badgeRows.filter((b) => b.earned).length}/${badgeTotal} badges · open Insights for full list`,
-      onPress: () => setShowInsightsDashboard(true),
+      value: user?.isPremium
+        ? `${badgeRows.filter((b) => b.earned).length}/${badgeTotal} badges · open Insights for full list`
+        : `${badgeRows.filter((b) => b.earned).length}/${badgeTotal} badges · Insights is Premium`,
+      onPress: () => (user?.isPremium ? setShowInsightsDashboard(true) : setShowPlanModal(true)),
     },
     {
       key: 'incidents',
@@ -606,15 +645,23 @@ export default function ProfileScreen() {
       key: 'dashboards',
       icon: 'people-outline',
       label: 'Dashboards',
-      value: 'Friends · Family',
-      onPress: () => navigation.getParent()?.navigate('Dashboards'),
+      value: user?.isPremium ? 'Friends · Family' : 'Premium — Friends & family hub',
+      badgeText: user?.isPremium ? undefined : 'LOCKED',
+      onPress: () => {
+        if (user?.isPremium) navigation.getParent()?.navigate('Dashboards');
+        else setShowPlanModal(true);
+      },
     },
     {
       key: 'friends',
       icon: 'people-circle-outline',
       label: 'Friends',
-      value: 'Manage connections',
-      onPress: () => navigation.getParent()?.navigate('Dashboards'),
+      value: user?.isPremium ? 'Manage connections' : 'Live location & convoy — Premium',
+      badgeText: user?.isPremium ? undefined : 'LOCKED',
+      onPress: () => {
+        if (user?.isPremium) navigation.getParent()?.navigate('Dashboards');
+        else setShowPlanModal(true);
+      },
     },
   ];
   return (
@@ -638,7 +685,15 @@ export default function ProfileScreen() {
           text={text}
           sub={sub}
           gems={user?.gems ?? 0}
-          rank={user?.rank ?? '--'}
+          rank={
+            user?.isPremium
+              ? myRank > 0
+                ? myRank
+                : user?.rank && user.rank > 0
+                  ? user.rank
+                  : 0
+              : '—'
+          }
           trips={user?.totalTrips ?? 0}
           miles={Math.round(user?.totalMiles ?? 0)}
         />
@@ -657,13 +712,16 @@ export default function ProfileScreen() {
             <MyCarRow cardBg={cardBg} text={text} sub={sub} accent={colors.primary} />
             <TouchableOpacity
               activeOpacity={0.92}
-              onPress={() => setShowInsightsDashboard(true)}
+              onPress={() => {
+                if (user?.isPremium) setShowInsightsDashboard(true);
+                else setShowPlanModal(true);
+              }}
               style={{ marginHorizontal: 16, marginBottom: 12, borderRadius: 16, overflow: 'hidden' }}
               accessibilityRole="button"
-              accessibilityLabel="Open Insights and Recap dashboard"
+              accessibilityLabel={user?.isPremium ? 'Open Insights and Recap dashboard' : 'Upgrade to unlock Insights and Recap'}
             >
               <LinearGradient
-                colors={['#1D4ED8', '#3B82F6']}
+                colors={user?.isPremium ? ['#1D4ED8', '#3B82F6'] : ['#475569', '#64748B']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={{ paddingVertical: 16, paddingHorizontal: 16 }}
@@ -671,17 +729,19 @@ export default function ProfileScreen() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <View style={{ flex: 1, paddingRight: 12 }}>
                     <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 }}>
-                      INSIGHTS & RECAP
+                      INSIGHTS & RECAP {user?.isPremium ? '' : '· PREMIUM'}
                     </Text>
                     <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900', marginTop: 6 }}>
-                      Your tracking dashboard
+                      {user?.isPremium ? 'Your tracking dashboard' : 'Unlock with Premium'}
                     </Text>
                     <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: 13, marginTop: 6 }}>
-                      Trips · Safety · Gems · Fuel · Badges · Orion (Premium)
+                      {user?.isPremium
+                        ? 'Trips · Safety · Gems · Fuel · Badges · Orion'
+                        : 'Weekly recap, coaching, fuel trends, and badges explorer — upgrade to view.'}
                     </Text>
                   </View>
                   <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, padding: 10 }}>
-                    <Ionicons name="stats-chart" size={26} color="#fff" />
+                    <Ionicons name={user?.isPremium ? 'stats-chart' : 'lock-closed'} size={26} color="#fff" />
                   </View>
                 </View>
               </LinearGradient>

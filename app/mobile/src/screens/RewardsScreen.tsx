@@ -91,18 +91,23 @@ export default function RewardsScreen() {
     else if (mode === 'refresh') setRefreshing(true);
     setErrorMsg(null);
     try {
+      const isPremium = Boolean(user?.isPremium);
       const safeGet = async (url: string) => {
         try { return await api.get<any>(url); } catch { return { success: false, data: null }; }
       };
-      const [profileRes, cRes, bRes, oRes, tRes, iRes, gRes, lRes] = await Promise.all([
+      const insightsPromise = isPremium ? safeGet('/api/trips/weekly-insights') : Promise.resolve({ success: false, data: null });
+      const leaderboardPromise = isPremium
+        ? safeGet(`/api/leaderboard?time_filter=${encodeURIComponent(leaderboardTfRef.current)}&limit=10`)
+        : Promise.resolve({ success: false, data: null });
+      const [profileRes, cRes, bRes, oRes, tRes, _iRes, gRes, lRes] = await Promise.all([
         api.getProfile().catch(() => ({ success: false, data: null })),
         safeGet('/api/challenges'),
         safeGet('/api/badges'),
         safeGet(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=5`),
         safeGet('/api/trips?limit=10'),
-        safeGet('/api/trips/weekly-insights'),
+        insightsPromise,
         safeGet('/api/gems/history'),
-        safeGet(`/api/leaderboard?time_filter=${encodeURIComponent(leaderboardTfRef.current)}&limit=10`),
+        leaderboardPromise,
       ]);
       const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
       const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
@@ -134,29 +139,41 @@ export default function RewardsScreen() {
         source: String(t.source ?? 'Transaction'),
         date: String(t.date ?? ''),
       })));
-      const lData = lRes?.data?.data ?? lRes?.data ?? {};
-      const rows = Array.isArray(lData?.leaderboard) ? lData.leaderboard : [];
-      setLeaderboard(rows.map((r: any, idx: number) => ({
-        rank: Number(r.rank ?? idx + 1),
-        id: String(r.id ?? idx),
-        name: String(r.name ?? 'Driver'),
-        safety_score: Number(r.safety_score ?? 0),
-        level: Number(r.level ?? 1),
-        gems: Number(r.gems ?? 0),
-        state: String(r.state ?? ''),
-        is_premium: Boolean(r.is_premium),
-      })));
-      setMyRank(Number(lData?.my_rank ?? 0));
-      updateUser({ rank: Number(lData?.my_rank ?? 0) });
+      if (!isPremium) {
+        setLeaderboard([]);
+        setMyRank(0);
+        updateUser({ rank: 0 });
+      } else {
+        const lData = lRes?.data?.data ?? lRes?.data ?? {};
+        const rows = Array.isArray(lData?.leaderboard) ? lData.leaderboard : [];
+        setLeaderboard(rows.map((r: any, idx: number) => ({
+          rank: Number(r.rank ?? idx + 1),
+          id: String(r.id ?? idx),
+          name: String(r.name ?? 'Driver'),
+          safety_score: Number(r.safety_score ?? 0),
+          level: Number(r.level ?? 1),
+          gems: Number(r.gems ?? 0),
+          state: String(r.state ?? ''),
+          is_premium: Boolean(r.is_premium),
+        })));
+        const mr = Number(lData?.my_rank ?? 0);
+        setMyRank(mr);
+        updateUser({ rank: mr });
+      }
     } catch {
       setErrorMsg('Could not refresh rewards data. Pull to retry.');
     } finally {
       if (mode === 'initial') setInitialLoading(false);
       else setRefreshing(false);
     }
-  }, [updateUser]);
+  }, [updateUser, user?.isPremium]);
 
   const fetchLeaderboardOnly = useCallback(async (tf: typeof leaderboardTf) => {
+    if (!user?.isPremium) {
+      setLeaderboard([]);
+      setMyRank(0);
+      return;
+    }
     try {
       const res = await api.get<any>(`/api/leaderboard?time_filter=${encodeURIComponent(tf)}&limit=10`);
       if (!res.success) return;
@@ -178,7 +195,7 @@ export default function RewardsScreen() {
     } catch {
       /* keep prior leaderboard */
     }
-  }, [updateUser]);
+  }, [updateUser, user?.isPremium]);
 
   const skipLeaderboardChipEffect = useRef(true);
   useEffect(() => {
@@ -356,8 +373,12 @@ export default function RewardsScreen() {
               <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.primary}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
                 <Ionicons name="trophy" size={22} color={colors.primary} />
               </View>
-              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{myRank ? `#${myRank}` : '—'}</Text>
-              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Rank</Text>
+              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>
+                {user?.isPremium ? (myRank ? `#${myRank}` : '—') : '—'}
+              </Text>
+              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                {user?.isPremium ? 'Rank' : 'Rank · Premium'}
+              </Text>
             </LinearGradient>
           </View>
         </View>
@@ -472,27 +493,60 @@ export default function RewardsScreen() {
       <GemActivityList loading={initialLoading} gemTx={gemTx} {...rt} />
 
       <SectionTitle title="Rank & Leaderboard" text={text} accent={colors.primary} />
-      <LeaderboardPreview
-        loading={initialLoading}
-        entries={leaderboard}
-        myRank={myRank}
-        myGems={user?.gems ?? 0}
-        text={text}
-        sub={sub}
-        cardBg={cardBg}
-        border={colors.border}
-        primary={colors.primary}
-        success={colors.success}
-        danger={colors.danger}
-        warning={colors.warning}
-        headerGradient={[colors.leaderboardGradientStart, colors.leaderboardGradientEnd]}
-        gemsAccent={colors.primary}
-        timeFilter={leaderboardTf}
-        onTimeFilterChange={(t) => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setLeaderboardTf(t);
-        }}
-      />
+      {user?.isPremium ? (
+        <LeaderboardPreview
+          loading={initialLoading}
+          entries={leaderboard}
+          myRank={myRank}
+          myGems={user?.gems ?? 0}
+          text={text}
+          sub={sub}
+          cardBg={cardBg}
+          border={colors.border}
+          primary={colors.primary}
+          success={colors.success}
+          danger={colors.danger}
+          warning={colors.warning}
+          headerGradient={[colors.leaderboardGradientStart, colors.leaderboardGradientEnd]}
+          gemsAccent={colors.primary}
+          timeFilter={leaderboardTf}
+          onTimeFilterChange={(t) => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setLeaderboardTf(t);
+          }}
+        />
+      ) : (
+        <TouchableOpacity
+          activeOpacity={0.88}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            (navigation as { navigate: (n: string) => void }).navigate('Profile');
+          }}
+          style={{
+            marginHorizontal: 16,
+            marginBottom: 12,
+            padding: 18,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: cardBg,
+            ...shadow(6),
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: `${colors.primary}18`, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="lock-closed" size={22} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Leaderboard is Premium-only</Text>
+              <Text style={{ color: sub, fontSize: 12, marginTop: 4, lineHeight: 17 }}>
+                See how you rank against other drivers with SnapRoad Premium.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </View>
+        </TouchableOpacity>
+      )}
 
       <View style={{ height: insets.bottom + 20 }} />
 

@@ -93,10 +93,7 @@ interface Props {
 }
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
-const SNAP_FULL = 60;
-const SNAP_MID = SCREEN_H * 0.42;
-const SNAP_DISMISS = SCREEN_H * 0.72;
-const SPRING = { damping: 32, stiffness: 280, mass: 0.85 };
+const SPRING = { damping: 34, stiffness: 320, mass: 0.82 };
 const PHOTO_HEIGHT = 220;
 
 const FOOD_PLACE_TYPES = new Set([
@@ -282,14 +279,21 @@ export default function PlaceDetailSheet({
   const green = '#22C55E';
   const handleColor = isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.2)';
 
-  const translateY = useSharedValue(SNAP_MID);
+  /** Default “half sheet” leaves the map (and right-side Orion FAB) visible; full expand on drag up. */
+  const DETENT_EXPANDED = Math.max(52, Math.round(insets.top + 14));
+  const DETENT_HALF = Math.round(SCREEN_H * 0.48);
+  const DETENT_DISMISS = Math.round(SCREEN_H * 0.82);
+
+  const translateY = useSharedValue(DETENT_HALF);
   const backdropOpacity = useSharedValue(0);
   const startY = useSharedValue(0);
 
   useEffect(() => {
-    translateY.value = withSpring(SNAP_FULL, SPRING);
-    backdropOpacity.value = withTiming(0.5, { duration: 280 });
-  }, [translateY, backdropOpacity]);
+    translateY.value = DETENT_HALF;
+    backdropOpacity.value = 0;
+    translateY.value = withSpring(DETENT_HALF, SPRING);
+    backdropOpacity.value = withTiming(0.42, { duration: 300 });
+  }, [placeId, DETENT_HALF, DETENT_EXPANDED]);
 
   useEffect(() => {
     setSaved(false);
@@ -342,16 +346,17 @@ export default function PlaceDetailSheet({
     .onStart(() => { startY.value = translateY.value; })
     .onUpdate((e) => {
       const next = startY.value + e.translationY;
-      translateY.value = Math.max(SNAP_FULL - 20, next);
+      translateY.value = Math.max(DETENT_EXPANDED - 28, next);
     })
     .onEnd((e) => {
-      if (e.velocityY > 600 || translateY.value > SNAP_DISMISS) {
+      const mid = (DETENT_HALF + DETENT_EXPANDED) / 2;
+      if (e.velocityY > 650 || translateY.value > DETENT_DISMISS) {
         translateY.value = withTiming(SCREEN_H, { duration: 260 });
         backdropOpacity.value = withTiming(0, { duration: 220 }, () => { runOnJS(onClose)(); });
-      } else if (translateY.value < SNAP_MID) {
-        translateY.value = withSpring(SNAP_FULL, SPRING);
+      } else if (translateY.value < mid) {
+        translateY.value = withSpring(DETENT_EXPANDED, SPRING);
       } else {
-        translateY.value = withSpring(SNAP_MID, SPRING);
+        translateY.value = withSpring(DETENT_HALF, SPRING);
       }
     });
 

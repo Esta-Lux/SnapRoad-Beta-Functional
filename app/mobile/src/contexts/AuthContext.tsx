@@ -102,6 +102,23 @@ function mapApiUserToContext(apiUser: Record<string, unknown>): User {
     gem_multiplier:
       apiUser.gem_multiplier != null ? Number(apiUser.gem_multiplier) : undefined,
   };
+  user.promotion_active = apiUser.promotion_active === true;
+  const pu = apiUser.promotion_access_until;
+  if (typeof pu === 'string' && pu.trim()) {
+    user.promotion_access_until = pu.trim();
+  } else {
+    delete user.promotion_access_until;
+  }
+  const pplan = apiUser.promotion_plan;
+  if (typeof pplan === 'string' && pplan.trim()) {
+    user.promotion_plan = pplan.trim().toLowerCase();
+  } else {
+    delete user.promotion_plan;
+  }
+  if (!user.promotion_active) {
+    delete user.promotion_access_until;
+    delete user.promotion_plan;
+  }
   applySnapRoadFromProfilePayload(user, apiUser);
   return user;
 }

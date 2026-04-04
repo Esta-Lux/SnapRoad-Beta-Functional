@@ -247,6 +247,52 @@ export default function ProfileInsightsDashboard({
     </TouchableOpacity>
   );
 
+  if (visible && !isPremium) {
+    return (
+      <SheetModal visible={visible} onClose={onClose} scrollable={false}>
+        <View style={{ paddingVertical: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md }}>
+            <Text style={[typography.h2, { color: colors.text, flex: 1 }]}>Insights & Recap</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Text style={{ fontSize: 17, fontWeight: '600', color: colors.primary }}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+            <Ionicons name="lock-closed" size={40} color={colors.primary} />
+            <Text style={{ color: colors.text, fontSize: 17, fontWeight: '800', marginTop: 16, textAlign: 'center' }}>
+              Premium only
+            </Text>
+            <Text
+              style={{
+                color: colors.textSecondary,
+                fontSize: 14,
+                marginTop: 10,
+                textAlign: 'center',
+                lineHeight: 20,
+                paddingHorizontal: 8,
+              }}
+            >
+              Weekly recap, leaderboard, range filters, and Orion coaching are part of SnapRoad Premium. You still keep
+              your trips, miles, and gems on the free plan.
+            </Text>
+            <TouchableOpacity
+              onPress={onUpgrade}
+              style={{
+                marginTop: 22,
+                backgroundColor: colors.primary,
+                borderRadius: 14,
+                paddingVertical: 14,
+                paddingHorizontal: 28,
+              }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Upgrade to Premium</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SheetModal>
+    );
+  }
+
   const kpiTile = (icon: keyof typeof Ionicons.glyphMap, val: string, lbl: string) => (
     <View
       key={lbl}

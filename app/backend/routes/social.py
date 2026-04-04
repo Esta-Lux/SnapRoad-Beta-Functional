@@ -19,6 +19,7 @@ from routes.gamification import add_xp_to_user, check_community_badges
 from middleware.auth import get_current_user
 from database import get_supabase
 from config import ENVIRONMENT
+from services.premium_access import require_premium_user
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ def get_friends(
 def search_friends(current_user: CurrentUser, q: str = "", user_id: str = ""):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     query = (q or user_id).strip()
     if len(query) > 100:
@@ -111,6 +113,7 @@ def get_my_friend_code(current_user: CurrentUser):
     """Return the current user's 6-character friend code for sharing."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     supabase = get_supabase()
     res = supabase.table("profiles").select("friend_code").eq("id", uid).limit(1).execute()
@@ -122,6 +125,7 @@ def get_my_friend_code(current_user: CurrentUser):
 def add_friend(request: FriendRequest, current_user: CurrentUser):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     friend_id = request.user_id
     if not friend_id or friend_id == uid:
@@ -143,6 +147,7 @@ def add_friend(request: FriendRequest, current_user: CurrentUser):
 def remove_friend(friend_id: str, current_user: CurrentUser):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     supabase = get_supabase()
     # Delete row where (user_id_1=uid, user_id_2=friend_id) or (user_id_1=friend_id, user_id_2=uid)
@@ -159,6 +164,7 @@ def get_friends_list(
     """List friends with friend_id and status for location sharing."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     supabase = get_supabase()
     res = supabase.table("friendships").select(
@@ -219,6 +225,7 @@ def get_friend_requests(
     """Pending friend requests (incoming)."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     supabase = get_supabase()
     res = supabase.table("friendships").select(
@@ -256,6 +263,7 @@ def get_outgoing_friend_requests(
     """Pending friend requests you sent (waiting on the other person)."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     supabase = get_supabase()
     res = supabase.table("friendships").select(
@@ -288,6 +296,7 @@ def reject_friend_request(body: dict, current_user: CurrentUser):
     """Decline an incoming request (body.friendship_id = row id)."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     friendship_id = body.get("friendship_id")
     if not friendship_id:
@@ -304,6 +313,7 @@ def accept_friend_request(body: dict, current_user: CurrentUser):
     """Accept a friend request (body.friendship_id = row id)."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     friendship_id = body.get("friendship_id")
     if not friendship_id:
@@ -320,6 +330,7 @@ def get_my_location_sharing(current_user: CurrentUser):
     """Current user's location sharing preference (false if no live_locations row yet)."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     try:
         from database import get_supabase
@@ -345,6 +356,7 @@ def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
     )
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     try:
         from database import get_supabase
@@ -385,6 +397,7 @@ def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
     """Turn location sharing on or off. Upserts a row when enabling sharing if none exists."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     try:
         from database import get_supabase
@@ -419,6 +432,7 @@ def send_location_tag(body: LocationTagBody, current_user: CurrentUser):
     """Send a location tag to a friend."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = current_user["id"]
     try:
         from database import get_supabase
@@ -442,6 +456,7 @@ def convoy_start(body: ConvoyStartBody, current_user: CurrentUser):
     """Persist a convoy session; navigation still happens client-side from destination."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
     uid = str(current_user["id"])
     sb = get_supabase()
     member_ids_clean = [

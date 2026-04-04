@@ -13,6 +13,20 @@ interface CameraParams {
   safeAreaBottom: number;
 }
 
+/** Coarse buckets so zoom/pitch/padding do not churn every GPS tick (stabilizes follow puck). */
+function speedMphBucket(mph: number): number {
+  const m = Math.max(0, mph);
+  return Math.round(m / 5) * 5;
+}
+
+function maneuverDistanceBucket(meters: number): number {
+  if (!Number.isFinite(meters) || meters <= 0) return 400;
+  const m = Math.min(2000, meters);
+  if (m < 70) return Math.round(m / 12) * 12;
+  if (m < 200) return Math.round(m / 25) * 25;
+  return Math.round(m / 45) * 45;
+}
+
 export interface CameraSettings {
   followZoomLevel: number;
   followPitch: number;
@@ -35,29 +49,32 @@ export function useCameraController({
   safeAreaTop,
   safeAreaBottom,
 }: CameraParams): CameraSettings | null {
+  const speedB = speedMphBucket(speedMph);
+  const maneuverB = maneuverDistanceBucket(nextManeuverDistanceMeters);
+
   return useMemo(() => {
     if (!isNavigating || !cameraLocked) return null;
 
     const preset = getCameraPreset({
       mode: drivingMode,
-      speedMps: Math.max(0, speedMph) * MPH_TO_MPS,
-      nextManeuverDistanceMeters,
+      speedMps: Math.max(0, speedB) * MPH_TO_MPS,
+      nextManeuverDistanceMeters: maneuverB,
       safeAreaTop,
       safeAreaBottom,
     });
 
     return {
-      followZoomLevel: Math.round(preset.zoom * 10) / 10,
+      followZoomLevel: Math.round(preset.zoom * 4) / 4,
       followPitch: Math.round(preset.pitch),
       followPadding: preset.padding,
       animationDuration: preset.animationDuration,
     };
   }, [
-    speedMph,
+    speedB,
+    maneuverB,
     drivingMode,
     isNavigating,
     cameraLocked,
-    nextManeuverDistanceMeters,
     safeAreaTop,
     safeAreaBottom,
   ]);
