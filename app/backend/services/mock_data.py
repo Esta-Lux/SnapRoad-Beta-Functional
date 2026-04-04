@@ -213,6 +213,8 @@ PARTNER_PLANS = {
     "starter": {"name": "Starter", "price_founders": 20.99, "price_public": 34.99, "max_locations": 5, "features": ["Up to 5 locations", "Gem placement on map", "Offer creation & tracking", "Foot traffic insights", "Business support"]},
     "growth": {"name": "Growth", "price_founders": 49.99, "price_public": 79.99, "max_locations": 25, "features": ["Everything in Starter", "Up to 25 locations", "Advanced analytics", "Featured placement", "Team access"]},
     "enterprise": {"name": "Enterprise", "price_founders": None, "price_public": None, "max_locations": 999999, "features": ["Unlimited locations", "Everything in Growth", "Quarterly reviews", "Full API access", "Dedicated account manager"]},
+    # Admin-assigned only; excluded from public GET /partner/plans
+    "internal": {"name": "Internal / Complimentary", "price_founders": 0, "price_public": 0, "max_locations": 999999, "features": ["Full portal access (admin-granted)", "Upgrade to paid tier anytime"]},
 }
 
 partners_db = {

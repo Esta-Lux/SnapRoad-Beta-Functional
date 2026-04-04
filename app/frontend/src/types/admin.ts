@@ -121,6 +121,8 @@ export interface Partner {
   is_approved: boolean
   is_founders: boolean
   subscription_status: string
+  /** Admin-granted complimentary access (no Stripe) */
+  is_internal_complimentary?: boolean
   total_redemptions: number
   phone: string
   address: string

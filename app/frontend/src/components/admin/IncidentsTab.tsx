@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Search, AlertTriangle, MapPin, Clock } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
 import type { AdminIncident } from '@/types/admin'
+import { adminApiErrorMessage } from '@/lib/adminApiError'
 
 interface IncidentsTabProps {
   theme: 'dark' | 'light'
@@ -26,6 +27,7 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
   const [severityFilter, setSeverityFilter] = useState('All Severity')
   const [incidents, setIncidents] = useState<AdminIncident[]>([])
   const [loading, setLoading] = useState(false)
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   useEffect(() => {
     loadIncidents()
@@ -40,6 +42,7 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
       }
     } catch (error) {
       console.error('Failed to load incidents:', error)
+      setFeedback({ type: 'error', message: adminApiErrorMessage(error, 'Failed to load incidents') })
     } finally {
       setLoading(false)
     }
@@ -49,10 +52,14 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
     try {
       const res = await adminApi.moderateIncident(incidentId, outcome)
       if (res.success) {
+        setFeedback({ type: 'success', message: 'Moderation saved' })
         loadIncidents()
+      } else {
+        setFeedback({ type: 'error', message: res.message || 'Could not save moderation' })
       }
     } catch (error) {
       console.error('Failed to moderate incident:', error)
+      setFeedback({ type: 'error', message: adminApiErrorMessage(error, 'Failed to moderate incident') })
     }
   }
 
@@ -104,8 +111,19 @@ export default function IncidentsTab({ theme }: IncidentsTabProps) {
 
   return (
     <div className="space-y-6">
+      {feedback && (
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            feedback.type === 'success'
+              ? 'border-green-500/30 bg-green-500/10 text-green-300'
+              : 'border-red-500/30 bg-red-500/10 text-red-300'
+          }`}
+        >
+          {feedback.message}
+        </div>
+      )}
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         <div className={`p-4 rounded-xl border ${card}`}>
           <div className={`text-2xl font-bold ${textPrimary}`}>{incidents.length}</div>
           <div className={`text-xs ${textSecondary}`}>Total Reports</div>

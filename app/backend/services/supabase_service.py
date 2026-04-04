@@ -476,7 +476,7 @@ def sb_get_partners(limit: int = 50) -> list:
     try:
         result = _sb().table("partners").select(
             "id,business_name,business_type,email,plan,status,"
-            "is_approved,is_founders,subscription_status,"
+            "is_approved,is_founders,subscription_status,is_internal_complimentary,"
             "created_at,updated_at,total_redemptions,phone,address,"
             "promotion_access_until,promotion_plan"
         ).limit(limit).execute()

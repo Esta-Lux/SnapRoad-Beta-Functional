@@ -7,6 +7,7 @@ import {
   SlidersHorizontal
 } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
+import { adminApiErrorMessage } from '@/lib/adminApiError'
 import { Incident, IncidentTab, AIModerationTabProps } from '@/types/admin'
 import type { AdminIncident } from '@/types/admin'
 
@@ -55,6 +56,7 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
   const [wsStatus, setWsStatus] = useState<'live' | 'connecting' | 'offline'>('offline')
   const [adminCount, setAdminCount] = useState(1)
   const [liveToast, setLiveToast] = useState<string | null>(null)
+  const [modError, setModError] = useState<string | null>(null)
   
   const wsRef = useRef<WebSocket | null>(null)
   const pingRef = useRef<number | null>(null)
@@ -220,8 +222,12 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
         </div>
       )}
 
+      {modError && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{modError}</div>
+      )}
+
       {/* Header Row with Live Badge + Controls */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           {/* WebSocket Status Badge */}
           <div data-testid="ws-status-badge"
@@ -249,7 +255,7 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 lg:gap-4">
         {(['new', 'blurred', 'review', 'approved', 'rejected'] as IncidentTab[]).map(tab => {
           const count = incidents.filter(i => tab === 'blurred' ? i.blurred : i.status === tab).length
           const colors: Record<string, string> = { new: '#0084FF', blurred: '#8B5CF6', review: '#F59E0B', approved: '#00FFD7', rejected: '#FF5A5A' }

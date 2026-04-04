@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Search, Plus, Gift, Users, Calendar, Edit2, Trash2, Star } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
 import type { Reward } from '@/types/admin'
+import { adminApiErrorMessage } from '@/lib/adminApiError'
 
 interface RewardsTabProps {
   theme: 'dark' | 'light'
@@ -27,13 +28,17 @@ export default function RewardsTab({ theme }: RewardsTabProps) {
 
   const loadRewards = async () => {
     setLoading(true)
+    setListError(null)
     try {
       const res = await adminApi.getRewards()
       if (res.success && res.data) {
         setRewards(res.data)
+      } else {
+        setListError(res.message || 'Failed to load rewards')
       }
     } catch (error) {
       console.error('Failed to load rewards:', error)
+      setListError(adminApiErrorMessage(error, 'Failed to load rewards'))
     } finally {
       setLoading(false)
     }
@@ -122,8 +127,11 @@ export default function RewardsTab({ theme }: RewardsTabProps) {
 
   return (
     <div className="space-y-6">
+      {listError && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{listError}</div>
+      )}
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         <div className={`p-4 rounded-xl border ${card}`}>
           <div className="flex items-center gap-3">
             <Gift className="text-purple-400" size={20} />
@@ -164,8 +172,8 @@ export default function RewardsTab({ theme }: RewardsTabProps) {
 
       {/* Filters */}
       <div className={`p-4 rounded-xl border ${card}`}>
-        <div className="flex items-center gap-4">
-          <div className="flex-1 relative">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={18} />
             <input
               type="text"

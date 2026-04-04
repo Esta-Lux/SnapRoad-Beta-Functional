@@ -74,6 +74,10 @@ export interface PartnerProfile {
   plan: string
   /** From Supabase partners.subscription_status — pending until Stripe checkout completes */
   subscription_status?: string
+  /** Admin-granted $0 access (see sql/034_partner_internal_complimentary.sql) */
+  is_internal_complimentary?: boolean
+  /** Server-computed: false when billing incomplete and not internal */
+  has_full_portal_access?: boolean
   plan_info: {
     name: string
     max_locations: number

@@ -94,8 +94,8 @@ export default function RedemptionsTab({ redemptions, feeInfo, onExportCsv, onOp
       </div>
 
       <div className="bg-slate-800/50 border border-white/5 rounded-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between">
-          <div>
+        <div className="px-4 py-4 border-b border-white/5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="min-w-0">
             <h3 className="text-white font-semibold">Recent Redemptions</h3>
             <p className="text-slate-400 text-sm mt-1">Verified scans and direct redemptions recorded for your offers.</p>
           </div>
@@ -116,26 +116,26 @@ export default function RedemptionsTab({ redemptions, feeInfo, onExportCsv, onOp
             <table className="w-full text-sm">
               <thead className="bg-white/[0.02] text-slate-400">
                 <tr>
-                  <th className="text-left px-6 py-3 font-medium">When</th>
-                  <th className="text-left px-6 py-3 font-medium">Offer</th>
-                  <th className="text-left px-6 py-3 font-medium">Customer</th>
-                  <th className="text-left px-6 py-3 font-medium">Discount</th>
-                  <th className="text-left px-6 py-3 font-medium">Fee</th>
-                  <th className="text-left px-6 py-3 font-medium">Tier</th>
+                  <th className="text-left px-3 py-3 font-medium sm:px-6">When</th>
+                  <th className="text-left px-3 py-3 font-medium sm:px-6">Offer</th>
+                  <th className="text-left px-3 py-3 font-medium sm:px-6">Customer</th>
+                  <th className="text-left px-3 py-3 font-medium sm:px-6">Discount</th>
+                  <th className="text-left px-3 py-3 font-medium sm:px-6">Fee</th>
+                  <th className="text-left px-3 py-3 font-medium sm:px-6">Tier</th>
                 </tr>
               </thead>
               <tbody>
                 {redemptions.map((row, idx) => (
                   <tr key={`${row.offer_id}-${row.redeemed_at || row.created_at || idx}`} className="border-t border-white/5 text-slate-200">
-                    <td className="px-6 py-4">{formatWhen(row.redeemed_at || row.created_at)}</td>
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-white">{row.offer_name || row.business_name || `Offer ${row.offer_id}`}</div>
+                    <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap">{formatWhen(row.redeemed_at || row.created_at)}</td>
+                    <td className="px-3 py-3 sm:px-6 sm:py-4 min-w-[140px]">
+                      <div className="font-medium text-white break-words">{row.offer_name || row.business_name || `Offer ${row.offer_id}`}</div>
                       <div className="text-xs text-slate-500">Offer #{row.offer_id}</div>
                     </td>
-                    <td className="px-6 py-4">{row.user_name || row.customer_id || 'Driver'}</td>
-                    <td className="px-6 py-4 text-emerald-300">{row.discount_applied ? `${row.discount_applied}%` : '—'}</td>
-                    <td className="px-6 py-4 text-amber-300">{formatMoney(row.fee_amount, row.fee_cents)}</td>
-                    <td className="px-6 py-4">{row.fee_tier ? `Tier ${row.fee_tier}` : '—'}</td>
+                    <td className="px-3 py-3 sm:px-6 sm:py-4 max-w-[120px] truncate sm:max-w-none">{row.user_name || row.customer_id || 'Driver'}</td>
+                    <td className="px-3 py-3 sm:px-6 sm:py-4 text-emerald-300">{row.discount_applied ? `${row.discount_applied}%` : '—'}</td>
+                    <td className="px-3 py-3 sm:px-6 sm:py-4 text-amber-300 whitespace-nowrap">{formatMoney(row.fee_amount, row.fee_cents)}</td>
+                    <td className="px-3 py-3 sm:px-6 sm:py-4">{row.fee_tier ? `Tier ${row.fee_tier}` : '—'}</td>
                   </tr>
                 ))}
               </tbody>

@@ -82,7 +82,21 @@ PLAN_LOCATION_LIMITS = {
     "starter": 5,
     "growth": 25,
     "enterprise": 999999,
+    "internal": 999999,
 }
+
+
+def _partner_has_full_portal_access(partner: dict) -> bool:
+    """Paid checkout complete, or admin internal / complimentary grant."""
+    if not partner:
+        return False
+    if partner.get("is_internal_complimentary") is True:
+        return str(partner.get("subscription_status") or "").lower() == "active"
+    plan = str(partner.get("plan") or "").strip().lower()
+    if plan == "internal":
+        return str(partner.get("subscription_status") or "").lower() == "active"
+    sub = str(partner.get("subscription_status") or "").lower()
+    return sub not in ("pending", "incomplete")
 
 
 def _plan_info(plan_key: str) -> dict:
@@ -128,7 +142,8 @@ def _assert_partner_resource_owner(
 # ==================== PARTNER PLANS ====================
 @router.get("/partner/plans")
 def get_partner_plans():
-    return {"success": True, "data": {"plans": PARTNER_PLANS, "is_founders_active": True}}
+    public = {k: v for k, v in PARTNER_PLANS.items() if k != "internal"}
+    return {"success": True, "data": {"plans": public, "is_founders_active": True}}
 
 
 # ==================== PARTNER PROFILE ====================
@@ -188,6 +203,8 @@ def update_partner_profile(
 @router.post("/partner/plan", responses={403: {"description": "Partner access denied"}})
 def update_partner_plan(plan_update: PartnerPlanUpdate, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
+    if plan_update.plan == "internal":
+        return {"success": False, "message": "Internal plan can only be assigned by SnapRoad admin."}
     if plan_update.plan not in PARTNER_PLANS:
         return {"success": False, "message": "Invalid plan"}
     sb_update_partner(owned_partner_id, {"plan": plan_update.plan})

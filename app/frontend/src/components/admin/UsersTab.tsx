@@ -6,6 +6,7 @@ import { Search, Users, Edit2, Trash2, Shield, TrendingUp, Download, Gift } from
 import { adminApi } from '@/services/adminApi'
 import type { AdminUser } from '@/types/admin'
 import GrantPromotionModal from '@/components/admin/GrantPromotionModal'
+import { adminApiErrorMessage } from '@/lib/adminApiError'
 
 interface UsersTabProps {
   theme: 'dark' | 'light'
@@ -69,6 +70,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
       }
     } catch (error) {
       console.error('Failed to load users:', error)
+      showFeedback('error', adminApiErrorMessage(error, 'Failed to load users'))
     } finally {
       setLoading(false)
     }
@@ -99,7 +101,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
         loadUsers()
       }
     } catch (error) {
-      showFeedback('error', 'Failed to activate user')
+      showFeedback('error', adminApiErrorMessage(error, 'Failed to activate user'))
     }
   }
 
@@ -112,7 +114,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
         loadUsers()
       }
     } catch (error) {
-      showFeedback('error', 'Failed to delete user')
+      showFeedback('error', adminApiErrorMessage(error, 'Failed to delete user'))
     }
   }
 
@@ -126,8 +128,8 @@ export default function UsersTab({ theme }: UsersTabProps) {
         showFeedback('success', `User plan updated to ${plan}`)
         void loadUsers()
       }
-    } catch {
-      showFeedback('error', 'Failed to update user plan')
+    } catch (e) {
+      showFeedback('error', adminApiErrorMessage(e, 'Failed to update user plan'))
     }
   }
 
@@ -144,8 +146,8 @@ export default function UsersTab({ theme }: UsersTabProps) {
       } else {
         showFeedback('error', 'Failed to update user')
       }
-    } catch {
-      showFeedback('error', 'Failed to update user')
+    } catch (e) {
+      showFeedback('error', adminApiErrorMessage(e, 'Failed to update user'))
     } finally {
       setEditBusy(false)
     }
@@ -225,7 +227,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         <div className={`p-4 rounded-xl border ${card}`}>
           <div className={`text-2xl font-bold ${textPrimary}`}>{users.length}</div>
           <div className={`text-xs ${textSecondary}`}>Total Users</div>

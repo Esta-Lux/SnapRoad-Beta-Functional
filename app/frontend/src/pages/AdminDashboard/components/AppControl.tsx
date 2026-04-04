@@ -101,11 +101,10 @@ export default function AppControl({ theme = 'dark', onNavigate }: AppControlPro
         adminApi.getAppUsageTelemetry(500).catch(() => ({ success: false, data: null })),
       ])
       setHealthCheckedAt(new Date())
+      const sr = statsRes as { success?: boolean; data?: Record<string, unknown> | null }
       const statsPayload =
-        (statsRes as { data?: { data?: Record<string, unknown> } }).data?.data
-        ?? (statsRes as { data?: Record<string, unknown> | null }).data
-        ?? null
-      setStats(statsPayload && typeof statsPayload === 'object' ? statsPayload : null)
+        sr.success && sr.data && typeof sr.data === 'object' ? sr.data : null
+      setStats(statsPayload)
 
       const liveList =
         (usersRes as { data?: { users?: Record<string, unknown>[] } }).data?.users

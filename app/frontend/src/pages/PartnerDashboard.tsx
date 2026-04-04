@@ -85,9 +85,17 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
   const { sendNotification } = useNotifications()
 
   const planIncomplete = useMemo(() => {
+    if (partnerProfile?.has_full_portal_access === true) return false
+    if (partnerProfile?.is_internal_complimentary) return false
+    if ((partnerProfile?.plan || '').toLowerCase() === 'internal') return false
     const s = (partnerProfile?.subscription_status || '').toLowerCase()
     return s === 'pending' || s === 'incomplete'
-  }, [partnerProfile?.subscription_status])
+  }, [
+    partnerProfile?.has_full_portal_access,
+    partnerProfile?.is_internal_complimentary,
+    partnerProfile?.plan,
+    partnerProfile?.subscription_status,
+  ])
 
   useEffect(() => {
     if (!planIncomplete) return
@@ -663,7 +671,13 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
             )}
             {activeTab === 'referrals' && <ReferralsTab partnerId={partnerProfile?.id} />}
             {activeTab === 'team-links' && <TeamLinksTab partnerId={partnerProfile?.id || ''} />}
-            {activeTab === 'pricing' && <PricingTab currentPlan={partnerProfile?.plan || 'starter'} onUpgrade={(planId) => handlePlanUpgrade(planId)} />}
+            {activeTab === 'pricing' && (
+              <PricingTab
+                currentPlan={partnerProfile?.plan || 'starter'}
+                isInternalComplimentary={partnerProfile?.is_internal_complimentary}
+                onUpgrade={(planId) => handlePlanUpgrade(planId)}
+              />
+            )}
           </>
         )}
       </main>

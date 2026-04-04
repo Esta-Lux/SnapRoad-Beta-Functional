@@ -124,8 +124,8 @@ export default function FinanceTab({ theme }: FinanceTabProps) {
     const s = finance.summary
     const stamp = new Date().toISOString().slice(0, 10)
     // No per-invoice aging in API yet — export current buckets as "current" only.
-    downloadCsv(`snaproad-aging-placeholder-${stamp}.csv`, [
-      ['Aging-style export (Phase A — no receivables detail in API)', '', '', ''],
+    downloadCsv(`snaproad-finance-current-buckets-${stamp}.csv`, [
+      ['Finance export (current summary buckets — no receivables aging detail in API yet)', '', '', ''],
       ['Category', 'Amount (USD)', 'Age bucket', 'Notes'],
       ['User plans MRR', s.mrr_user_plans, 'Current', 'From GET /admin/finance summary'],
       ['Partners MRR', s.mrr_partners, 'Current', ''],
@@ -171,7 +171,7 @@ export default function FinanceTab({ theme }: FinanceTabProps) {
   return (
     <div className="space-y-6">
       {/* MRR Stat Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         <div className={`p-4 rounded-xl border ${card}`}>
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 ${greenBg} rounded-lg flex items-center justify-center`}>

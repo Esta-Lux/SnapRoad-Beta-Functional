@@ -6,6 +6,7 @@ import { Search, Building2, Plus, Edit2, Check, X, Gift } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
 import type { Partner } from '@/types/admin'
 import GrantPromotionModal from '@/components/admin/GrantPromotionModal'
+import { adminApiErrorMessage } from '@/lib/adminApiError'
 
 interface PartnersTabProps {
   theme: 'dark' | 'light'
@@ -51,6 +52,7 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
       }
     } catch (error) {
       console.error('Failed to load partners:', error)
+      showFeedback('error', adminApiErrorMessage(error, 'Failed to load partners'))
     } finally {
       setLoading(false)
     }
@@ -101,15 +103,61 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
 
   const handleSetPartnerPlan = async (partnerId: string, plan: string) => {
     try {
-      const res = await adminApi.updatePartner(partnerId, { plan, status: 'active' })
+      const res = await adminApi.updatePartner(partnerId, {
+        plan,
+        status: 'active',
+        subscription_status: 'active',
+        is_approved: true,
+        is_internal_complimentary: false,
+      })
       if (res.success) {
         showFeedback('success', `Partner plan updated to ${plan}`)
         loadPartners()
       } else {
-        showFeedback('error', 'Failed to update partner plan')
+        showFeedback('error', res.message || 'Failed to update partner plan')
       }
-    } catch {
-      showFeedback('error', 'Network error while updating partner plan')
+    } catch (e) {
+      showFeedback('error', adminApiErrorMessage(e, 'Could not update partner plan'))
+    }
+  }
+
+  const handleGrantInternalAccess = async (partnerId: string) => {
+    if (!confirm('Grant complimentary (internal) access? Partner gets full portal without Stripe.')) return
+    try {
+      const res = await adminApi.updatePartner(partnerId, {
+        plan: 'internal',
+        subscription_status: 'active',
+        status: 'active',
+        is_approved: true,
+        is_internal_complimentary: true,
+      })
+      if (res.success) {
+        showFeedback('success', 'Internal / complimentary access granted')
+        loadPartners()
+      } else {
+        showFeedback('error', res.message || 'Update failed')
+      }
+    } catch (e) {
+      showFeedback('error', adminApiErrorMessage(e, 'Could not grant internal access'))
+    }
+  }
+
+  const handleRevokeInternalAccess = async (partnerId: string) => {
+    if (!confirm('Revoke complimentary access? Partner will need to complete paid checkout (incomplete).')) return
+    try {
+      const res = await adminApi.updatePartner(partnerId, {
+        is_internal_complimentary: false,
+        subscription_status: 'incomplete',
+        plan: 'starter',
+      })
+      if (res.success) {
+        showFeedback('success', 'Complimentary access revoked — partner must complete billing')
+        loadPartners()
+      } else {
+        showFeedback('error', res.message || 'Update failed')
+      }
+    } catch (e) {
+      showFeedback('error', adminApiErrorMessage(e, 'Could not revoke internal access'))
     }
   }
 
@@ -239,7 +287,7 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         <div className={`p-4 rounded-xl border ${card}`}>
           <div className={`text-2xl font-bold ${textPrimary}`}>{partners.length}</div>
           <div className={`text-xs ${textSecondary}`}>Total Partners</div>
@@ -262,8 +310,8 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
 
       {/* Filters */}
       <div className={`p-4 rounded-xl border ${card}`}>
-        <div className="flex items-center gap-4">
-          <div className="flex-1 relative">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+          <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={18} />
             <input
               type="text"
@@ -278,7 +326,7 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className={`px-4 py-2 rounded-lg border ${
+            className={`w-full shrink-0 px-4 py-2 rounded-lg border lg:w-auto ${
               isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
             }`}
           >
@@ -298,7 +346,7 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
           </button>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-400 hover:to-pink-400"
+            className="flex w-full items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-400 hover:to-pink-400 lg:w-auto"
           >
             <Plus size={18} />
             Add Partner
@@ -339,9 +387,16 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
                 <span className={textSecondary}>Business Type</span>
                 <span className={`${textPrimary} capitalize`}>{partner.business_type || 'N/A'}</span>
               </div>
-              <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center justify-between text-sm gap-2">
                 <span className={textSecondary}>Plan</span>
-                <span className={`${textPrimary} capitalize`}>{partner.plan || 'starter'}</span>
+                <span className={`${textPrimary} capitalize text-right`}>{partner.plan || 'starter'}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm gap-2">
+                <span className={textSecondary}>Billing</span>
+                <span className={`${textPrimary} text-right text-xs`}>
+                  {(partner.subscription_status || '—').toLowerCase()}
+                  {partner.is_internal_complimentary ? ' · internal' : ''}
+                </span>
               </div>
               {partner.promotion_access_until && (
                 <div className={`text-xs ${textSecondary}`}>
@@ -388,10 +443,30 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
               <button
                 onClick={() => handleSetPartnerPlan(partner.id, partner.plan === 'growth' ? 'starter' : 'growth')}
                 className="flex items-center justify-center gap-1 px-3 py-2 bg-purple-500/20 text-purple-300 rounded-lg hover:bg-purple-500/30 text-sm"
-                title="Toggle business plan"
+                title="Toggle paid plan tier"
               >
                 {partner.plan === 'growth' ? 'Starter' : 'Growth'}
               </button>
+              {!partner.is_internal_complimentary && (
+                <button
+                  type="button"
+                  onClick={() => handleGrantInternalAccess(partner.id)}
+                  className="flex items-center justify-center gap-1 px-3 py-2 bg-teal-500/20 text-teal-300 rounded-lg hover:bg-teal-500/30 text-sm"
+                  title="Grant $0 internal access"
+                >
+                  +Internal
+                </button>
+              )}
+              {partner.is_internal_complimentary && (
+                <button
+                  type="button"
+                  onClick={() => handleRevokeInternalAccess(partner.id)}
+                  className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-500/20 text-slate-300 rounded-lg hover:bg-slate-500/30 text-sm"
+                  title="Revoke internal access"
+                >
+                  −Internal
+                </button>
+              )}
               {partner.status === 'active' && (
                 <button
                   onClick={() => handleSuspend(partner.id)}

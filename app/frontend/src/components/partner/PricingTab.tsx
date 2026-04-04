@@ -12,6 +12,9 @@ interface PlanData {
 
 interface Props {
   currentPlan: string
+  /** Admin-granted complimentary access */
+  isInternalComplimentary?: boolean
+  hasFullPortalAccess?: boolean
   onUpgrade: (planId: string) => void
 }
 
@@ -30,14 +33,19 @@ const PLAN_ADDONS: Record<string, string[]> = {
   ],
 }
 
-const PLAN_ORDER = ['starter', 'growth', 'enterprise']
+/** Paid tiers only — `internal` is admin-assigned and never listed here */
+const PAID_PLAN_ORDER = ['starter', 'growth', 'enterprise'] as const
 const PLAN_COLORS: Record<string, string> = {
   starter: '#0084FF',
   growth: '#00DFA2',
   enterprise: '#A855F7',
 }
 
-export default function PricingTab({ currentPlan, onUpgrade }: Props) {
+export default function PricingTab({
+  currentPlan,
+  isInternalComplimentary,
+  onUpgrade,
+}: Props) {
   const [plans, setPlans] = useState<Record<string, PlanData>>({})
   const [loading, setLoading] = useState(true)
 
@@ -64,21 +72,36 @@ export default function PricingTab({ currentPlan, onUpgrade }: Props) {
     )
   }
 
+  const showInternalBanner =
+    isInternalComplimentary === true || currentPlan.toLowerCase() === 'internal'
+
   return (
-    <div className="space-y-6">
-      <div className="text-center mb-8">
-        <p className="text-slate-400 text-sm">
+    <div className="space-y-6 min-w-0">
+      {showInternalBanner && (
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 sm:px-5 text-left">
+          <p className="text-emerald-200 text-sm font-medium">Complimentary / internal access</p>
+          <p className="text-slate-400 text-xs mt-1">
+            Your portal is active without a paid subscription. You can move to a paid plan anytime below.
+          </p>
+        </div>
+      )}
+
+      <div className="text-center mb-6 sm:mb-8 px-1">
+        <p className="text-slate-400 text-sm break-words">
           Current plan: <span className="text-white font-semibold capitalize">{currentPlan}</span>
           {' · '}
-          <span
-            className="text-[#0084FF] cursor-pointer hover:underline"
+          <button
+            type="button"
+            className="text-[#0084FF] hover:underline"
             onClick={() => window.open('mailto:billing@snaproad.co?subject=Billing%20Inquiry', '_blank')}
-          >Manage billing</span>
+          >
+            Manage billing
+          </button>
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {PLAN_ORDER.map((planId) => {
+      <div className="grid grid-cols-1 min-w-0 gap-4 sm:gap-6 md:grid-cols-3">
+        {PAID_PLAN_ORDER.map((planId) => {
           const plan = plans[planId]
           if (!plan) return null
           const isActive = planId === currentPlan
@@ -90,7 +113,7 @@ export default function PricingTab({ currentPlan, onUpgrade }: Props) {
           return (
             <div
               key={planId}
-              className={`relative rounded-2xl border p-6 flex flex-col transition-all ${
+              className={`relative rounded-2xl border p-4 sm:p-6 flex flex-col min-w-0 transition-all ${
                 isPopular
                   ? 'border-[#0084FF] ring-2 ring-[#0084FF]/20'
                   : 'border-white/10 hover:border-white/20'
