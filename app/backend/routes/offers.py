@@ -698,7 +698,8 @@ def accept_offer_via_voice(offer_id: str, add_as_stop: bool = True):
 
 @router.post("/offers/{offer_id}/favorite")
 @limiter.limit("120/minute")
-def favorite_offer(offer_id: str, auth_user: CurrentUser):
+def favorite_offer(request: Request, offer_id: str, auth_user: CurrentUser):
+    _ = request
     offer = _resolve_offer_by_id(offer_id)
     if not offer:
         raise HTTPException(status_code=404, detail="Offer not found")
