@@ -1,5 +1,8 @@
 node_modules
 .expo
+dist-export-test
+dist-export-*
+**/dist-export-*
 .eas-inspect-archive
 android/.gradle
 android/build
