@@ -125,6 +125,8 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
           "SnapRoad uses your camera to take photos of road hazards and incidents for community safety reports.",
         NSMicrophoneUsageDescription:
           "SnapRoad uses your microphone for voice commands with the Orion driving assistant.",
+        NSSpeechRecognitionUsageDescription:
+          "SnapRoad uses speech recognition to turn your voice into text for destination search and hands-free Orion commands while driving.",
         UIBackgroundModes: ["audio", "location", "fetch"],
         ITSAppUsesNonExemptEncryption: false,
         ...(_prod ? {} : {
