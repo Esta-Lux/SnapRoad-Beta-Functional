@@ -5,6 +5,11 @@ const MAPBOX_TOKEN =
   process.env.EXPO_PUBLIC_MAPBOX_TOKEN ||
   (Constants.expoConfig?.extra?.mapboxPublicToken as string) ||
   '';
+
+/** True when Mapbox Directions / Geocoding can run (token present in env or Expo extra). */
+export function isMapboxDirectionsConfigured(): boolean {
+  return typeof MAPBOX_TOKEN === 'string' && MAPBOX_TOKEN.trim().length >= 12;
+}
 const DIRECTIONS_BASE = 'https://api.mapbox.com/directions/v5/mapbox';
 const GEOCODING_BASE = 'https://api.mapbox.com/geocoding/v5/mapbox.places';
 
@@ -412,57 +417,53 @@ export async function getMapboxRouteOptions(
   destination: Coordinate,
   options?: { maxHeightMeters?: number; mode?: DrivingMode },
 ): Promise<DirectionsResult[]> {
+  if (!isMapboxDirectionsConfigured()) {
+    throw new Error('Mapbox access token is not configured. Set EXPO_PUBLIC_MAPBOX_TOKEN (or Expo extra mapboxPublicToken).');
+  }
+
   const modeConfig = getModeDirectionsConfig(options?.mode ?? 'adaptive');
   const maxHeightParam =
     typeof options?.maxHeightMeters === 'number' && Number.isFinite(options.maxHeightMeters)
       ? `&max_height=${Math.max(0, Math.min(10, options.maxHeightMeters))}`
       : '';
-  const excludeParam = modeConfig.exclude ? `&exclude=${modeConfig.exclude}` : '';
-  const results: DirectionsResult[] = [];
+  const excludeParam = modeConfig.exclude ? `&exclude=${encodeURIComponent(modeConfig.exclude)}` : '';
+  const tokenQS = `access_token=${encodeURIComponent(MAPBOX_TOKEN)}`;
+  const commonQS =
+    `${tokenQS}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
+  const coordsPath = `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
+
+  const trafficUrl = `${DIRECTIONS_BASE}/${modeConfig.profile}/${coordsPath}?${commonQS}&alternatives=false`;
+  const trafficRes = await fetch(trafficUrl);
+  const trafficJson = (await trafficRes.json().catch(() => ({}))) as { routes?: RawRoute[]; message?: string };
+  if (!trafficRes.ok) {
+    const msg = trafficJson?.message || `HTTP ${trafficRes.status}`;
+    throw new Error(`Mapbox Directions: ${msg}`);
+  }
+  const trafficRoutes = (trafficJson.routes ?? []) as RawRoute[];
+  if (!trafficRoutes.length) {
+    throw new Error('No route found between these locations.');
+  }
+
+  const results: DirectionsResult[] = [parseRoute(trafficRoutes[0], 'best')];
 
   try {
-    const commonQS = `access_token=${MAPBOX_TOKEN}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
-    const [drivingRes, trafficRes] = await Promise.all([
-      fetch(
-        `${DIRECTIONS_BASE}/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?${commonQS}&alternatives=true`,
-      ).then((r) => (r.ok ? r.json() : { routes: [] })),
-      fetch(
-        `${DIRECTIONS_BASE}/${modeConfig.profile}/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?${commonQS}&alternatives=false`,
-      ).then((r) => (r.ok ? r.json() : { routes: [] })),
-    ]);
-
-    const drivingRoutes = (drivingRes.routes ?? []) as RawRoute[];
-    const trafficRoutes = (trafficRes.routes ?? []) as RawRoute[];
-
-    if (trafficRoutes.length > 0) {
-      results.push(parseRoute(trafficRoutes[0], 'best'));
-    }
-    if (drivingRoutes.length > 0) {
-      const byDist = [...drivingRoutes].sort((a, b) => a.distance - b.distance);
-      const candidate = byDist[0];
-      const existing = results.find((r) => r.duration === candidate.duration && r.distance === candidate.distance);
-      if (!existing) {
-        results.push(parseRoute(candidate, 'eco'));
+    const drivingUrl = `${DIRECTIONS_BASE}/driving/${coordsPath}?${commonQS}&alternatives=true`;
+    const drivingRes = await fetch(drivingUrl);
+    if (drivingRes.ok) {
+      const drivingJson = (await drivingRes.json()) as { routes?: RawRoute[] };
+      const drivingRoutes = (drivingJson.routes ?? []) as RawRoute[];
+      if (drivingRoutes.length > 0) {
+        const byDist = [...drivingRoutes].sort((a, b) => a.distance - b.distance);
+        const candidate = byDist[0];
+        const existing = results.find((r) => r.duration === candidate.duration && r.distance === candidate.distance);
+        if (!existing) {
+          results.push(parseRoute(candidate, 'eco'));
+        }
       }
     }
   } catch {
-    const single = await getMapboxDirections(origin, destination, {
-      profile: modeConfig.profile,
-      maxHeightMeters: options?.maxHeightMeters,
-      exclude: modeConfig.exclude,
-    });
-    single.routeType = 'best';
-    return [single];
+    /* Eco alternative is optional */
   }
 
-  if (results.length === 0) {
-    const single = await getMapboxDirections(origin, destination, {
-      profile: modeConfig.profile,
-      maxHeightMeters: options?.maxHeightMeters,
-      exclude: modeConfig.exclude,
-    });
-    single.routeType = 'best';
-    return [single];
-  }
   return results.slice(0, 2);
 }

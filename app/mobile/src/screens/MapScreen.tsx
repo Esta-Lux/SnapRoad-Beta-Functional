@@ -843,7 +843,11 @@ export default function MapScreen() {
   // Fix 5: Reroute when driving mode changes during active nav
   useEffect(() => {
     if (!nav.isNavigating || !nav.selectedDestination) return;
-    nav.fetchDirections(nav.selectedDestination);
+    void nav.fetchDirections(nav.selectedDestination).then((r) => {
+      if (!r.ok && r.reason === 'route_failed') {
+        Alert.alert('Could not refresh route', r.message ?? 'Driving mode changed but directions failed. Try stopping navigation and starting again.');
+      }
+    });
   }, [drivingMode]);
 
   // Animate report card timer whenever a new report card shows
@@ -1041,20 +1045,37 @@ export default function MapScreen() {
     storage.set('snaproad_recent_searches', JSON.stringify(updated));
 
     if (result.place_id) {
-      let lat = result.lat;
-      let lng = result.lng;
-      if (!lat || !lng) {
+      let lat = Number(result.lat);
+      let lng = Number(result.lng);
+      const hasCoords = () =>
+        Number.isFinite(lat) &&
+        Number.isFinite(lng) &&
+        (Math.abs(lat) > 1e-6 || Math.abs(lng) > 1e-6);
+      if (!hasCoords()) {
         try {
           const details = await api.get<any>(`/api/places/details/${result.place_id}`);
           const d = details.data?.data ?? details.data;
-          lat = d?.lat ?? 0;
-          lng = d?.lng ?? 0;
-        } catch {}
+          lat = Number(d?.lat ?? d?.geometry?.location?.lat);
+          lng = Number(d?.lng ?? d?.geometry?.location?.lng);
+        } catch {
+          lat = NaN;
+          lng = NaN;
+        }
       }
-      if (lat && lng) {
+      if (hasCoords()) {
         cameraRef.current?.setCamera({ centerCoordinate: [lng, lat], zoomLevel: 16, pitch: 45, animationDuration: 800 });
+      } else {
+        Alert.alert(
+          'Location unavailable',
+          'Could not load coordinates for this place. Try another search result or open the listing again in a moment.',
+        );
       }
-      setSelectedPlace({ name: result.name, address: result.address, lat: lat || 0, lng: lng || 0 });
+      setSelectedPlace({
+        name: result.name,
+        address: result.address,
+        lat: hasCoords() ? lat : 0,
+        lng: hasCoords() ? lng : 0,
+      });
       setSelectedPlaceId(result.place_id);
       return;
     }
@@ -1219,11 +1240,24 @@ export default function MapScreen() {
       }
       setSelectedPlace(null);
       nav.setSelectedDestination({ name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng });
-      await nav.fetchDirections(
+      const routeResult = await nav.fetchDirections(
         { name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng },
         origin,
         { maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined },
       );
+      if (!routeResult.ok) {
+        const detail = routeResult.message ?? 'Try again in a moment.';
+        if (routeResult.reason === 'no_mapbox') {
+          Alert.alert(
+            'Navigation setup',
+            'SnapRoad needs a Mapbox public token to compute routes. Set EXPO_PUBLIC_MAPBOX_TOKEN in app/mobile/.env (or EAS env) and restart Metro / rebuild the app.',
+          );
+        } else if (routeResult.reason === 'invalid_input') {
+          Alert.alert('Directions unavailable', detail);
+        } else {
+          Alert.alert('Could not plan route', detail);
+        }
+      }
     },
     [nav, avoidLowClearances, vehicleHeight, permissionDenied, isLocating],
   );
@@ -2179,7 +2213,11 @@ export default function MapScreen() {
                 onPress={() => {
                   setTrafficBannerDismissed(true);
                   if (nav.navigationData?.destination) {
-                    nav.fetchDirections(nav.navigationData.destination);
+                    void nav.fetchDirections(nav.navigationData.destination).then((r) => {
+                      if (!r.ok) {
+                        Alert.alert('Reroute failed', r.message ?? 'Could not fetch a new route.');
+                      }
+                    });
                   }
                 }}
                 activeOpacity={0.85}

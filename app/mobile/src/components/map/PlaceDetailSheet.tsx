@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Image,
-  Platform, ActivityIndicator, Linking, Dimensions, FlatList, Share,
+  Platform, ActivityIndicator, Linking, Dimensions, FlatList, Share, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
@@ -416,7 +416,12 @@ export default function PlaceDetailSheet({
       (Math.abs(lat) > 1e-5 || Math.abs(lng) > 1e-5)
     ) {
       onDirections({ name: place.name, address: place.address, lat, lng });
+      return;
     }
+    Alert.alert(
+      'Directions unavailable',
+      'This place does not have a map location yet. Pull to refresh or wait for details to finish loading, then try again.',
+    );
   }, [place, lat, lng, onDirections]);
 
   const handleSave = useCallback(async () => {

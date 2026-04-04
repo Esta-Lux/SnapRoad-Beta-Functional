@@ -1,7 +1,11 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { Coordinate, DrivingMode } from '../types';
 import type { DirectionsResult, DirectionsStep, GeocodeResult } from '../lib/directions';
-import { getMapboxRouteOptions } from '../lib/directions';
+import { getMapboxRouteOptions, isMapboxDirectionsConfigured } from '../lib/directions';
+
+export type FetchDirectionsResult =
+  | { ok: true }
+  | { ok: false; reason: 'invalid_input' | 'no_mapbox' | 'route_failed'; message?: string };
 import { distanceToPolyline, haversineMeters, remainingDistanceOnPolyline } from '../utils/distance';
 import { speak, formatTurnInstruction, stopSpeaking, configureAudioSession } from '../utils/voice';
 import { api } from '../api/client';
@@ -94,13 +98,29 @@ export function useNavigation(params: {
     destination: Coordinate & { name?: string; address?: string },
     origin?: Coordinate,
     opts?: { maxHeightMeters?: number },
-  ) => {
+  ): Promise<FetchDirectionsResult> => {
     const o = origin ?? userLocation;
-    if (!Number.isFinite(o.lat) || !Number.isFinite(destination.lat)) return;
+    const destOk =
+      Number.isFinite(destination.lat) &&
+      Number.isFinite(destination.lng) &&
+      (Math.abs(destination.lat) > 1e-6 || Math.abs(destination.lng) > 1e-6);
+    const originOk =
+      Number.isFinite(o.lat) &&
+      Number.isFinite(o.lng) &&
+      (Math.abs(o.lat) > 1e-6 || Math.abs(o.lng) > 1e-6);
+    if (!originOk || !destOk) {
+      return { ok: false, reason: 'invalid_input', message: 'Invalid start or destination coordinates.' };
+    }
+
+    if (!isMapboxDirectionsConfigured()) {
+      return { ok: false, reason: 'no_mapbox', message: 'Add EXPO_PUBLIC_MAPBOX_TOKEN to your environment and rebuild.' };
+    }
 
     try {
       const options = await getMapboxRouteOptions(o, destination, { mode: drivingMode, maxHeightMeters: opts?.maxHeightMeters });
-      if (!options.length || !options[0].polyline.length) return;
+      if (!options.length || !options[0].polyline.length) {
+        return { ok: false, reason: 'route_failed', message: 'No route could be computed.' };
+      }
 
       setAvailableRoutes(options);
       setSelectedRouteIndex(0);
@@ -127,8 +147,11 @@ export function useNavigation(params: {
       } else {
         setShowRoutePreview(true);
       }
+      return { ok: true };
     } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Could not load directions.';
       console.warn('fetchDirections error:', e);
+      return { ok: false, reason: 'route_failed', message: msg };
     }
   }, [userLocation, drivingMode]);
 
