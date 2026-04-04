@@ -18,7 +18,9 @@
       "distribution": "internal",
       "channel": "development",
       "env": {
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
+        "API_URL": "https://api.snaproad.app"
       },
       "ios": {
         "simulator": false
@@ -32,7 +34,9 @@
       "distribution": "internal",
       "channel": "development",
       "env": {
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
+        "API_URL": "https://api.snaproad.app"
       },
       "ios": {
         "simulator": true
@@ -42,7 +46,9 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
+        "API_URL": "https://api.snaproad.app"
       },
       "android": {
         "buildType": "apk"
@@ -53,7 +59,9 @@
       "channel": "production",
       "env": {
         "APP_ENV": "production",
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
+        "API_URL": "https://api.snaproad.app"
       }
     }
   }

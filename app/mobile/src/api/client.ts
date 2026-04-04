@@ -53,7 +53,12 @@ function resolveApiUrl(): string {
     return u;
   }
 
-  // 2. Same Wi‑Fi only: private LAN IP from Metro’s host (never use *.exp.direct / tunnel hostnames as :8001)
+  // 2. iOS Simulator / web: local FastAPI on the Mac (ignore baked-in extra until explicit env above)
+  if (!IS_PRODUCTION && !isPhysicalPhoneOrTablet()) {
+    return 'http://localhost:8001';
+  }
+
+  // 3. Same Wi‑Fi only: private LAN IP from Metro’s host (never use *.exp.direct / tunnel hostnames as :8001)
   const hostUri = Constants.expoConfig?.hostUri ?? '';
   const expoGoHost = (Constants as unknown as { expoGoConfig?: { debuggerHost?: string } }).expoGoConfig
     ?.debuggerHost ?? '';
@@ -63,7 +68,7 @@ function resolveApiUrl(): string {
     return `http://${hostOnly}:8001`;
   }
 
-  // 3. app.json extra fallback (skip localhost on real devices — that points at the phone, not your Mac)
+  // 4. app.json extra fallback — default https://api.snaproad.app when unset (real device + tunnel / off-LAN)
   const extra = Constants.expoConfig?.extra ?? {};
   const extraUrl = (extra.apiUrl as string | undefined)?.trim();
   if (extraUrl && extraUrl.length > 5) {
@@ -75,8 +80,8 @@ function resolveApiUrl(): string {
     }
   }
 
-  // 4. Android emulator → host machine
-  if (!IS_PRODUCTION && Platform.OS === 'android') {
+  // 5. Android emulator only (not physical devices — 10.0.2.2 is the host loopback from the AVD)
+  if (!IS_PRODUCTION && Platform.OS === 'android' && !isPhysicalPhoneOrTablet()) {
     return 'http://10.0.2.2:8001';
   }
 
@@ -84,15 +89,10 @@ function resolveApiUrl(): string {
     throw new Error('Missing production API URL. Set EXPO_PUBLIC_API_URL to an HTTPS endpoint.');
   }
 
-  // 5. iOS Simulator / web dev: localhost is the Mac
-  if (!isPhysicalPhoneOrTablet()) {
-    return 'http://localhost:8001';
-  }
-
-  // 6. Physical device, no env, not on private LAN: must use a tunnel URL (e.g. cloudflared) in EXPO_PUBLIC_API_URL
+  // 6. Physical device, no env, not on private LAN: use production API (override with EXPO_PUBLIC_API_URL for local/tunnel)
   apiMisconfigurationMessage =
-    'Off Wi‑Fi or using Expo tunnel: set EXPO_PUBLIC_API_URL in app/mobile/.env to your HTTPS API URL (run `npm run tunnel:api` from app/mobile, copy the https://….trycloudflare.com URL, restart Metro with `npm run start:dev:tunnel`). Same Wi‑Fi without tunnel: use http://YOUR_MAC_LAN_IP:8001.';
-  return 'http://127.0.0.1:9';
+    'Using cloud API (https://api.snaproad.app). For a Mac backend: same Wi‑Fi → set EXPO_PUBLIC_API_URL to http://YOUR_LAN_IP:8001; or run `npm run tunnel:api` and paste the https URL into app/mobile/.env.';
+  return 'https://api.snaproad.app';
 }
 
 const apiBaseUrl: string = resolveApiUrl();

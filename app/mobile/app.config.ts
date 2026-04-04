@@ -31,8 +31,9 @@ const isProductionBuild = (): boolean => {
   return (process.env.NODE_ENV || "").toLowerCase() === "production";
 };
 
+/** Default API when env is unset: https://api.snaproad.app — override in .env for local backend. */
 const resolveApiUrl = (): string => {
-  const value = envAny(["EXPO_PUBLIC_API_URL", "API_URL"], "http://localhost:8001").trim();
+  const value = envAny(["EXPO_PUBLIC_API_URL", "API_URL"], "https://api.snaproad.app").trim();
   if (isProductionBuild()) {
     if (!/^https:\/\//i.test(value)) {
       throw new Error("Production builds require EXPO_PUBLIC_API_URL to be HTTPS.");
