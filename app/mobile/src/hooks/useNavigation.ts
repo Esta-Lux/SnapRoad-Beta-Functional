@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { Coordinate, DrivingMode } from '../types';
 import type { DirectionsResult, DirectionsStep, GeocodeResult } from '../lib/directions';
 import { getMapboxRouteOptions, isMapboxDirectionsConfigured } from '../lib/directions';
+import { getMapboxPublicToken } from '../lib/mapboxToken';
 
 export type FetchDirectionsResult =
   | { ok: true }
@@ -536,9 +537,9 @@ export function useNavigation(params: {
     setIsRerouting(true);
     try {
       const coords = `${userLocation.lng},${userLocation.lat};${waypoint.lng},${waypoint.lat};${navigationData.destination.lng},${navigationData.destination.lat}`;
-      const token = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '';
+      const token = getMapboxPublicToken();
       const res = await fetch(
-        `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coords}?access_token=${token}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed`,
+        `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coords}?access_token=${encodeURIComponent(token)}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed`,
       );
       const json = await res.json();
       const route = json?.routes?.[0];

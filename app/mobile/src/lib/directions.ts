@@ -1,14 +1,9 @@
-import Constants from 'expo-constants';
 import type { Coordinate, DrivingMode } from '../types';
-
-const MAPBOX_TOKEN =
-  process.env.EXPO_PUBLIC_MAPBOX_TOKEN ||
-  (Constants.expoConfig?.extra?.mapboxPublicToken as string) ||
-  '';
+import { getMapboxPublicToken, isMapboxPublicTokenConfigured } from './mapboxToken';
 
 /** True when Mapbox Directions / Geocoding can run (token present in env or Expo extra). */
 export function isMapboxDirectionsConfigured(): boolean {
-  return typeof MAPBOX_TOKEN === 'string' && MAPBOX_TOKEN.trim().length >= 12;
+  return isMapboxPublicTokenConfigured();
 }
 const DIRECTIONS_BASE = 'https://api.mapbox.com/directions/v5/mapbox';
 const GEOCODING_BASE = 'https://api.mapbox.com/geocoding/v5/mapbox.places';
@@ -290,6 +285,7 @@ export async function forwardGeocode(
   limit = 10,
   opts?: { bbox?: string },
 ): Promise<GeocodeResult[]> {
+  const MAPBOX_TOKEN = getMapboxPublicToken();
   if (!MAPBOX_TOKEN || !query.trim()) return [];
   const params = new URLSearchParams({
     access_token: MAPBOX_TOKEN,
@@ -336,6 +332,7 @@ export async function forwardGeocode(
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult | null> {
+  const MAPBOX_TOKEN = getMapboxPublicToken();
   if (!MAPBOX_TOKEN) return null;
   try {
     const res = await fetch(
@@ -373,6 +370,7 @@ export async function getMapboxDirections(
   options?: DirectionsOptions,
 ): Promise<DirectionsResult> {
   const profile = options?.profile ?? 'driving';
+  const MAPBOX_TOKEN = getMapboxPublicToken();
   const coords = `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
   const params = new URLSearchParams({
     access_token: MAPBOX_TOKEN,
@@ -420,6 +418,7 @@ export async function getMapboxRouteOptions(
   if (!isMapboxDirectionsConfigured()) {
     throw new Error('Mapbox access token is not configured. Set EXPO_PUBLIC_MAPBOX_TOKEN (or Expo extra mapboxPublicToken).');
   }
+  const MAPBOX_TOKEN = getMapboxPublicToken();
 
   const modeConfig = getModeDirectionsConfig(options?.mode ?? 'adaptive');
   const maxHeightParam =

@@ -9,7 +9,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapboxGL, { isMapAvailable } from '../utils/mapbox';
-import Constants from 'expo-constants';
 import * as Battery from 'expo-battery';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -27,6 +26,7 @@ import {
   reverseGeocode,
   type GeocodeResult,
 } from '../lib/directions';
+import { getMapboxPublicToken } from '../lib/mapboxToken';
 import RouteOverlay from '../components/map/RouteOverlay';
 import OfferMarkers from '../components/map/OfferMarkers';
 import ReportMarkers from '../components/map/ReportMarkers';
@@ -83,12 +83,6 @@ import { supabase } from '../lib/supabase';
 import type { DrivingMode, Incident, SavedLocation, Offer, FriendLocation } from '../types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-
-const MAPBOX_TOKEN =
-  process.env.EXPO_PUBLIC_MAPBOX_TOKEN ||
-  (Constants.expoConfig?.extra?.mapboxPublicToken as string) ||
-  '';
-if (MapboxGL && MAPBOX_TOKEN) MapboxGL.setAccessToken(MAPBOX_TOKEN);
 
 const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
 
@@ -234,6 +228,13 @@ export default function MapScreen() {
 
   // Sync nav.isNavigating → useLocation accuracy
   useEffect(() => { setIsNavActive(nav.isNavigating); }, [nav.isNavigating]);
+
+  useEffect(() => {
+    const t = getMapboxPublicToken();
+    if (MapboxGL && t) {
+      MapboxGL.setAccessToken(t);
+    }
+  }, []);
 
   // Stable ref for latest location (avoids re-running interval effects on every GPS tick)
   const locationRef = useRef(location);

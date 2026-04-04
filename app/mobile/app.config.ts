@@ -9,8 +9,11 @@
  * `EAS_BUILD` is set (non-empty) on EAS Build workers.
  */
 if (!process.env.EAS_BUILD) {
+  // Load app/mobile/.env regardless of process.cwd() (repo root vs app/mobile).
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  require("dotenv/config");
+  const path = require("path");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require("dotenv").config({ path: path.join(__dirname, ".env") });
 }
 
 const envAny = (names: string[], fallback = ""): string => {
@@ -20,6 +23,10 @@ const envAny = (names: string[], fallback = ""): string => {
   }
   return fallback;
 };
+
+/** Default Mapbox public token when env is unset. Override with EXPO_PUBLIC_MAPBOX_TOKEN / EAS env; restrict this key in the Mapbox dashboard. */
+const MAPBOX_PUBLIC_TOKEN_DEFAULT =
+  "pk.eyJ1Ijoic25hcHJvYWQiLCJhIjoiY21rdDkxbXR0MTRiODNsb2Q4dDdoaHFraSJ9.gE8IUpGUVsu50hH30SYAtg";
 
 const EAS_PROJECT_ID = "b800018b-79d3-4b8e-bbad-f5d628ee6a60";
 
@@ -190,7 +197,10 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       easBuildProfile: process.env.EAS_BUILD_PROFILE || "",
       apiUrl: resolveApiUrl(),
       // Restrict this token in the Mapbox dashboard: iOS/Android bundle com.snaproad.app; web https://app.snaproad.app
-      mapboxPublicToken: envAny(["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"]),
+      mapboxPublicToken: envAny(
+        ["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"],
+        MAPBOX_PUBLIC_TOKEN_DEFAULT,
+      ),
       supabaseUrl: envAny(["EXPO_PUBLIC_SUPABASE_URL", "SUPABASE_URL"]),
       supabaseAnonKey: envAny(["EXPO_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY"]),
       stripePublishableKey: envAny([
