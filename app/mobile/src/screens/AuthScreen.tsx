@@ -16,9 +16,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, supabaseConfigured } from '../lib/supabase';
-import { friendlySupabaseAuthErrorMessage } from '../utils/deepLinks';
+import { getSupabaseOAuthRedirectTo } from '../lib/oauthRedirect';
+import { friendlySupabaseAuthErrorMessage, parseParamsFromUrl } from '../utils/deepLinks';
 
 function getPasswordStrength(pw: string): { label: string; color: string; level: number } {
   if (pw.length < 6) return { label: 'Weak password', color: '#EF4444', level: 1 };
@@ -56,7 +58,7 @@ const PALETTE = {
 
 export default function AuthScreen({ navigation, route }: Props) {
   const initialMode = route?.params?.mode === 'signup' ? 'signup' : 'signin';
-  const { login, signup, authError, clearAuthError, isLoading, isAuthSubmitting } = useAuth();
+  const { login, signup, authError, clearAuthError, isLoading, isAuthSubmitting, completeOAuthSignIn } = useAuth();
 
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
   const [firstName, setFirstName] = useState('');
@@ -137,18 +139,51 @@ export default function AuthScreen({ navigation, route }: Props) {
       return;
     }
     setGoogleLoading(true);
+    const redirectTo = getSupabaseOAuthRedirectTo();
     try {
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: 'snaproad://auth',
-          skipBrowserRedirect: false,
+          redirectTo,
+          skipBrowserRedirect: true,
         },
       });
       if (oauthError) throw new Error(oauthError.message);
       if (!data?.url) throw new Error('No OAuth URL returned');
-      const { Linking } = require('react-native');
-      await Linking.openURL(data.url);
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+
+      if (result.type !== 'success' || !result.url) {
+        if (result.type === 'cancel' || result.type === 'dismiss') return;
+        throw new Error('Google sign-in did not complete.');
+      }
+
+      const params = parseParamsFromUrl(result.url);
+      if (params.error) {
+        const desc = params.error_description || params.error;
+        throw new Error(desc || params.error);
+      }
+
+      if (params.code) {
+        const { data: exchanged, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(params.code);
+        if (exchangeErr) throw new Error(exchangeErr.message);
+        const session = exchanged?.session;
+        if (session?.access_token && session?.refresh_token) {
+          const fin = await completeOAuthSignIn(session.access_token, session.refresh_token);
+          if (!fin.ok && fin.message) setLocalError(fin.message);
+        }
+        return;
+      }
+
+      const accessToken = params.access_token || '';
+      const refreshToken = params.refresh_token || '';
+      if (accessToken && refreshToken) {
+        const fin = await completeOAuthSignIn(accessToken, refreshToken);
+        if (!fin.ok && fin.message) setLocalError(fin.message);
+        return;
+      }
+
+      throw new Error('Google sign-in returned no authorization code. Check Supabase Redirect URLs include: ' + redirectTo);
     } catch (e: unknown) {
       const raw = String(e instanceof Error ? e.message : e || '');
       let friendly: string;

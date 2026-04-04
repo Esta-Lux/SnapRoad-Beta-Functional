@@ -11,15 +11,41 @@ interface UsersTabProps {
   theme: 'dark' | 'light'
 }
 
+/** Matches backend sb_get_platform_stats premium counting (incl. admin promo merge). */
+function isEffectivePremium(u: AdminUser): boolean {
+  const p = (u.plan || '').toLowerCase()
+  return Boolean(u.is_premium) || p === 'premium' || p === 'family'
+}
+
+function roleBadge(role: string | undefined): { label: string; pill: string } {
+  const r = (role || 'driver').toLowerCase()
+  if (r === 'partner') return { label: 'Partner', pill: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/25' }
+  if (r === 'admin' || r === 'super_admin') return { label: 'Admin', pill: 'bg-amber-500/15 text-amber-300 border-amber-500/25' }
+  return { label: 'Driver', pill: 'bg-slate-500/15 text-slate-300 border-white/10' }
+}
+
+function num(v: unknown, fallback = 0): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
 export default function UsersTab({ theme }: UsersTabProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('All Status')
   const [planFilter, setPlanFilter] = useState('All Plans')
+  const [roleFilter, setRoleFilter] = useState('All roles')
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [promoOpen, setPromoOpen] = useState(false)
+  const [editUser, setEditUser] = useState<AdminUser | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editBusy, setEditBusy] = useState(false)
+  const [planConfirm, setPlanConfirm] = useState<{
+    user: AdminUser
+    next: 'basic' | 'premium' | 'family'
+  } | null>(null)
 
   useEffect(() => {
     loadUsers()
@@ -37,7 +63,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
   const loadUsers = async () => {
     setLoading(true)
     try {
-      const res = await adminApi.getUsers()
+      const res = await adminApi.getUsers(500)
       if (res.success && res.data) {
         setUsers(res.data)
       }
@@ -90,7 +116,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
     }
   }
 
-  const handleSetPlan = async (userId: string, plan: 'basic' | 'premium' | 'family') => {
+  const applyPlanChange = async (userId: string, plan: 'basic' | 'premium' | 'family') => {
     try {
       const res = await adminApi.updateUser(userId, {
         plan,
@@ -98,10 +124,30 @@ export default function UsersTab({ theme }: UsersTabProps) {
       })
       if (res.success) {
         showFeedback('success', `User plan updated to ${plan}`)
-        loadUsers()
+        void loadUsers()
       }
     } catch {
       showFeedback('error', 'Failed to update user plan')
+    }
+  }
+
+  const saveEditUser = async () => {
+    if (!editUser) return
+    setEditBusy(true)
+    try {
+      const trimmed = editName.trim() || editUser.name
+      const res = await adminApi.updateUser(editUser.id, { name: trimmed, full_name: trimmed })
+      if (res.success) {
+        showFeedback('success', 'Profile updated')
+        setEditUser(null)
+        void loadUsers()
+      } else {
+        showFeedback('error', 'Failed to update user')
+      }
+    } catch {
+      showFeedback('error', 'Failed to update user')
+    } finally {
+      setEditBusy(false)
     }
   }
 
@@ -128,9 +174,15 @@ export default function UsersTab({ theme }: UsersTabProps) {
                            (user.email || '').toLowerCase().includes(searchTerm.toLowerCase())
       const matchesPlan = planFilter === 'All Plans' || user.plan === planFilter
       const matchesStatus = statusFilter === 'All Status' || user.status === statusFilter
-      return matchesSearch && matchesPlan && matchesStatus
+      const r = (user.role || 'driver').toLowerCase()
+      const matchesRole =
+        roleFilter === 'All roles' ||
+        (roleFilter === 'driver' && r === 'driver') ||
+        (roleFilter === 'partner' && r === 'partner') ||
+        (roleFilter === 'admin' && (r === 'admin' || r === 'super_admin'))
+      return matchesSearch && matchesPlan && matchesStatus && matchesRole
     })
-  }, [users, searchTerm, planFilter, statusFilter])
+  }, [users, searchTerm, planFilter, statusFilter, roleFilter])
 
   const toggleSelectAllFiltered = useCallback(() => {
     setSelectedIds((prev) => {
@@ -150,9 +202,11 @@ export default function UsersTab({ theme }: UsersTabProps) {
   const textPrimary = isDark ? 'text-white' : 'text-[#0B1220]'
   const textSecondary = isDark ? 'text-slate-400' : 'text-[#4B5C74]'
 
-  const avgSafety = users.length > 0
-    ? Math.round(users.reduce((acc, u) => acc + (u.safety_score || 0), 0) / users.length)
-    : 0
+  const avgSafety =
+    users.length > 0
+      ? Math.round(users.reduce((acc, u) => acc + num(u.safety_score), 0) / users.length)
+      : 0
+  const premiumCount = users.filter(isEffectivePremium).length
 
   const filteredIds = useMemo(() => filteredUsers.map((u) => u.id), [filteredUsers])
   const allFilteredSelected =
@@ -177,8 +231,8 @@ export default function UsersTab({ theme }: UsersTabProps) {
           <div className={`text-xs ${textSecondary}`}>Total Users</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className={`text-2xl font-bold ${textPrimary}`}>{users.filter(u => u.is_premium).length}</div>
-          <div className={`text-xs ${textSecondary}`}>Premium Users</div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{premiumCount}</div>
+          <div className={`text-xs ${textSecondary}`}>Premium / Family (effective)</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
           <div className={`text-2xl font-bold ${textPrimary}`}>{avgSafety}</div>
@@ -216,6 +270,18 @@ export default function UsersTab({ theme }: UsersTabProps) {
             <option value="basic">Basic</option>
             <option value="premium">Premium</option>
             <option value="family">Family</option>
+          </select>
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className={`px-4 py-2 rounded-lg border ${
+              isDark ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+            }`}
+          >
+            <option value="All roles">All roles</option>
+            <option value="driver">Drivers only</option>
+            <option value="partner">Partners only</option>
+            <option value="admin">Admins only</option>
           </select>
           <select
             value={statusFilter}
@@ -263,6 +329,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
                   />
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">User</th>
+                <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Role</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Plan</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Safety Score</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Gems</th>
@@ -284,9 +351,26 @@ export default function UsersTab({ theme }: UsersTabProps) {
                   </td>
                   <td className="px-6 py-4">
                     <div>
-                      <div className={`text-sm font-medium ${textPrimary}`}>{user.name}</div>
+                      <div className={`text-sm font-medium ${textPrimary}`}>{user.name || '—'}</div>
                       <div className={`text-xs ${textSecondary}`}>{user.email}</div>
+                      {user.partner_id ? (
+                        <div className={`text-[10px] mt-0.5 ${textSecondary}`}>
+                          Partner login · business id <code className="opacity-80">{String(user.partner_id).slice(0, 8)}…</code>
+                        </div>
+                      ) : null}
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span
+                      className={`inline-flex px-2 py-0.5 text-xs rounded-md border ${roleBadge(user.role).pill}`}
+                      title={
+                        (user.role || '').toLowerCase() === 'partner'
+                          ? 'Uses partner portal; comp business subscription on Partners tab'
+                          : 'Driver-app profile; comp Premium/Family from this tab'
+                      }
+                    >
+                      {roleBadge(user.role).label}
+                    </span>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-1 text-xs rounded-full ${
@@ -307,24 +391,24 @@ export default function UsersTab({ theme }: UsersTabProps) {
                       <div className={`w-16 rounded-full h-2 ${isDark ? 'bg-slate-700/50' : 'bg-slate-200'}`}>
                         <div
                           className={`h-2 rounded-full ${
-                            (user.safety_score || 0) >= 90 ? 'bg-green-500' :
-                            (user.safety_score || 0) >= 80 ? 'bg-yellow-500' :
+                            num(user.safety_score) >= 90 ? 'bg-green-500' :
+                            num(user.safety_score) >= 80 ? 'bg-yellow-500' :
                             'bg-red-500'
                           }`}
-                          style={{ width: `${user.safety_score || 0}%` }}
+                          style={{ width: `${Math.min(100, Math.max(0, num(user.safety_score)))}%` }}
                         />
                       </div>
-                      <span className={`text-sm ${textPrimary}`}>{user.safety_score || 0}</span>
+                      <span className={`text-sm ${textPrimary}`}>{num(user.safety_score)}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-1">
                       <span className="text-amber-400">💎</span>
-                      <span className={`text-sm ${textPrimary}`}>{(user.gems || 0).toLocaleString()}</span>
+                      <span className={`text-sm ${textPrimary}`}>{num(user.gems).toLocaleString()}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`text-sm ${textPrimary}`}>Level {user.level || 1}</span>
+                    <span className={`text-sm ${textPrimary}`}>Level {num(user.level, 0)}</span>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-1 text-xs rounded-full ${
@@ -336,7 +420,15 @@ export default function UsersTab({ theme }: UsersTabProps) {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
-                      <button className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditUser(user)
+                          setEditName(user.name || '')
+                        }}
+                        className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
+                        title="Edit display name"
+                      >
                         <Edit2 size={16} />
                       </button>
                       {user.status === 'active' ? (
@@ -365,16 +457,28 @@ export default function UsersTab({ theme }: UsersTabProps) {
                       </button>
                       {user.plan !== 'premium' && (
                         <button
-                          onClick={() => handleSetPlan(user.id, 'premium')}
+                          type="button"
+                          onClick={() => setPlanConfirm({ user, next: 'premium' })}
                           className="px-2 py-1 rounded hover:bg-white/10 text-xs text-purple-300"
                           title="Make premium"
                         >
                           Premium
                         </button>
                       )}
+                      {user.plan !== 'family' && (
+                        <button
+                          type="button"
+                          onClick={() => setPlanConfirm({ user, next: 'family' })}
+                          className="px-2 py-1 rounded hover:bg-white/10 text-xs text-blue-300"
+                          title="Set family plan"
+                        >
+                          Family
+                        </button>
+                      )}
                       {user.plan !== 'basic' && (
                         <button
-                          onClick={() => handleSetPlan(user.id, 'basic')}
+                          type="button"
+                          onClick={() => setPlanConfirm({ user, next: 'basic' })}
                           className="px-2 py-1 rounded hover:bg-white/10 text-xs text-slate-300"
                           title="Set basic"
                         >
@@ -415,6 +519,81 @@ export default function UsersTab({ theme }: UsersTabProps) {
           setSelectedIds(new Set())
         }}
       />
+
+      {planConfirm && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60">
+          <div className={`w-full max-w-md rounded-2xl border shadow-xl p-6 ${card}`}>
+            <h3 className={`text-lg font-semibold ${textPrimary}`}>Change plan?</h3>
+            <p className={`text-sm mt-2 ${textSecondary}`}>
+              Set <strong className={textPrimary}>{planConfirm.user.email}</strong> to{' '}
+              <strong className={textPrimary}>{planConfirm.next}</strong>. This updates the driver-app subscription
+              fields on their profile immediately.
+            </p>
+            <div className="flex gap-2 mt-6">
+              <button
+                type="button"
+                onClick={() => setPlanConfirm(null)}
+                className={`flex-1 py-2.5 rounded-xl border text-sm font-medium ${
+                  isDark ? 'border-white/15 text-slate-300' : 'border-[#E6ECF5] text-[#4B5C74]'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { user, next } = planConfirm
+                  setPlanConfirm(null)
+                  void applyPlanChange(user.id, next)
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-semibold"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editUser && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60">
+          <div className={`w-full max-w-md rounded-2xl border shadow-xl p-6 ${card}`}>
+            <h3 className={`text-lg font-semibold ${textPrimary}`}>Edit user</h3>
+            <p className={`text-xs mt-1 ${textSecondary}`}>{editUser.email}</p>
+            <label htmlFor="admin-edit-user-name" className={`block text-xs font-medium mt-4 mb-1 ${textSecondary}`}>
+              Display name
+            </label>
+            <input
+              id="admin-edit-user-name"
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className={`w-full px-3 py-2 rounded-lg border ${
+                isDark ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
+              }`}
+            />
+            <div className="flex gap-2 mt-6">
+              <button
+                type="button"
+                onClick={() => setEditUser(null)}
+                className={`flex-1 py-2.5 rounded-xl border text-sm font-medium ${
+                  isDark ? 'border-white/15 text-slate-300' : 'border-[#E6ECF5] text-[#4B5C74]'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={editBusy}
+                onClick={() => void saveEditUser()}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-semibold disabled:opacity-50"
+              >
+                {editBusy ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -2,7 +2,7 @@
 // =============================================
 
 import { useState, useEffect } from 'react'
-import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, Cloud, CheckCircle, XCircle, Loader2, Mail } from 'lucide-react'
+import { Settings, Shield, Bell, Globe, Database, Save, RefreshCw, Cloud, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { adminApi } from '@/services/adminApi'
 
 /**
@@ -33,41 +33,11 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
   const [supabaseStatus, setSupabaseStatus] = useState<any>(null)
   const [sbLoading, setSbLoading] = useState(false)
   const [migrating, setMigrating] = useState(false)
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRedirectHint, setInviteRedirectHint] = useState('')
-  const [inviteSubmitting, setInviteSubmitting] = useState(false)
-  const [inviteMessage, setInviteMessage] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     loadSettings()
     checkSupabaseStatus()
-    void adminApi.getInviteConfig().then((r) => {
-      if (r.success && r.data?.redirect_to) setInviteRedirectHint(r.data.redirect_to)
-    }).catch(() => { /* offline */ })
   }, [])
-
-  const handleSendAdminInvite = async () => {
-    setInviteMessage(null)
-    const em = inviteEmail.trim()
-    if (!em) return
-    setInviteSubmitting(true)
-    try {
-      const r = await adminApi.inviteAdminUser(em)
-      if (r.success) {
-        setInviteMessage({
-          type: 'ok',
-          text: `Invite sent to ${em}. After they accept, add or update their profiles row: id = auth user id, role = admin.`,
-        })
-        setInviteEmail('')
-      } else {
-        setInviteMessage({ type: 'error', text: (r as { message?: string }).message || 'Invite failed' })
-      }
-    } catch (e) {
-      setInviteMessage({ type: 'error', text: e instanceof Error ? e.message : 'Request failed' })
-    } finally {
-      setInviteSubmitting(false)
-    }
-  }
 
   const checkSupabaseStatus = async () => {
     setSbLoading(true)
@@ -201,50 +171,6 @@ export default function SettingsTab({ theme }: SettingsTabProps) {
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
-      </div>
-
-      {/* Supabase invite with admin redirect_to (Dashboard invite cannot set this) */}
-      <div className={`p-5 rounded-xl border ${card}`}>
-        <div className="flex items-center gap-2 mb-3">
-          <Mail className="text-cyan-400" size={20} />
-          <h3 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-[#0B1220]'}`}>
-            Invite team (admin redirect)
-          </h3>
-        </div>
-        <p className={`text-sm mb-3 ${isDark ? 'text-slate-400' : 'text-[#4B5C74]'}`}>
-          Use this instead of Supabase &quot;Invite user&quot; so the email lands on admin sign-in after they set a password.
-          Set <code className="text-xs">FRONTEND_URL</code> or <code className="text-xs">ADMIN_INVITE_REDIRECT_URL</code> on the API
-          (e.g. <code className="text-xs">https://app.snaproad.app</code>) so the redirect matches production.
-        </p>
-        {inviteRedirectHint ? (
-          <p className={`text-xs mb-4 font-mono break-all ${isDark ? 'text-slate-500' : 'text-slate-600'}`}>
-            redirect_to: {inviteRedirectHint}
-          </p>
-        ) : null}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <input
-            type="email"
-            value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
-            placeholder="teammate@company.com"
-            className={`flex-1 px-3 py-2 rounded-lg border ${
-              isDark ? 'bg-slate-700/50 border-white/10 text-white placeholder:text-slate-500' : 'bg-white border-[#E6ECF5] text-[#0B1220]'
-            }`}
-          />
-          <button
-            type="button"
-            disabled={inviteSubmitting || !inviteEmail.trim()}
-            onClick={() => void handleSendAdminInvite()}
-            className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium disabled:opacity-40 shrink-0"
-          >
-            {inviteSubmitting ? 'Sending…' : 'Send invite'}
-          </button>
-        </div>
-        {inviteMessage ? (
-          <p className={`mt-3 text-sm ${inviteMessage.type === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>
-            {inviteMessage.text}
-          </p>
-        ) : null}
       </div>
 
       {/* Settings Sections */}

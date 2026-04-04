@@ -159,17 +159,6 @@ class AdminApiService {
     })
   }
 
-  async getInviteConfig(): Promise<AdminApiResponse<{ redirect_to: string }>> {
-    return this.request('/api/admin/invite-config')
-  }
-
-  async inviteAdminUser(email: string): Promise<AdminApiResponse<{ email: string; redirect_to: string }>> {
-    return this.request('/api/admin/invite-user', {
-      method: 'POST',
-      body: JSON.stringify({ email: email.trim() }),
-    })
-  }
-
   // ==================== INCIDENTS ====================
 
   async getIncidents(status?: string): Promise<AdminApiResponse<AdminIncident[]>> {

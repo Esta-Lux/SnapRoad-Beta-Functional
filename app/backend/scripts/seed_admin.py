@@ -1,6 +1,16 @@
 """
-Seed the admin user in Supabase Auth + profiles table.
-Run from the backend directory:
+Bootstrap the first admin when you have no admin in production (one-time ops).
+
+1. Set ADMIN_EMAIL / password via env or edit ADMIN_EMAIL below; set SNAPROAD_TEST_PASSWORD in .env.
+2. Requires SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (service role, not anon).
+3. Run from app/backend:
+       py scripts/seed_admin.py --force
+4. Sign in at /portal/admin-sr2025secure/sign-in with that email/password.
+
+Alternatively: create the user in Supabase Auth, insert profiles row (id = auth uid, role = admin),
+then sign in — API verifies Supabase Auth when profiles.password_hash is null.
+
+Run modes:
     py scripts/seed_admin.py          # normal seed
     py scripts/seed_admin.py --force  # reset password & upsert profile
 """

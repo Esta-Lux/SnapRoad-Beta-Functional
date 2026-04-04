@@ -6,6 +6,11 @@
  * Important: for any key defined in BOTH `eas.json` and the dashboard, `eas.json` wins — keep
  * secrets and EXPO_PUBLIC_* you want to manage in the dashboard out of `eas.json` unless intentional.
  *
+ * Google OAuth: EXPO_PUBLIC_SUPABASE_* must be set for the same EAS environment as the build profile;
+ * changing them requires a new native build (not just OTA) so app.config embeds the correct project URL.
+ * Supabase → Auth → Redirect URLs: include `snaproad://auth`, `snaproad://**`, and in dev the exact URL from
+ * expo-linking (often `exp://.../--/auth` or `exp+snaproad://...`).
+ *
  * `EAS_BUILD` is set (non-empty) on EAS Build workers.
  */
 if (!process.env.EAS_BUILD) {
@@ -191,6 +196,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       "expo-font",
       "expo-sensors",
       "expo-secure-store",
+      "expo-web-browser",
     ],
     extra: {
       /** Set by EAS during `eas build` -- used at runtime to treat preview/internal builds as non-store. */

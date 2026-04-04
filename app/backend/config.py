@@ -64,25 +64,6 @@ STRIPE_PARTNER_GROWTH_PRICE_ID = os.environ.get("STRIPE_PARTNER_GROWTH_PRICE_ID"
 # Dev default matches Vite in app/frontend/vite.config.ts (port 3000).
 PARTNER_PORTAL_ORIGIN = (os.environ.get("PARTNER_PORTAL_ORIGIN") or "http://localhost:3000").rstrip("/")
 
-
-def get_admin_invite_redirect_url() -> str:
-    """
-    URL Supabase redirects to after the invitee sets their password (Auth invite / magic link).
-    Must be listed under Supabase → Authentication → URL Configuration → Redirect URLs.
-
-    Set ADMIN_INVITE_REDIRECT_URL for an explicit full URL, or rely on FRONTEND_URL / PARTNER_PORTAL_ORIGIN
-    + /portal/admin-sr2025secure/sign-in (same host as the Vite admin app).
-    """
-    explicit = (os.environ.get("ADMIN_INVITE_REDIRECT_URL") or "").strip()
-    if explicit:
-        return explicit.rstrip("/")
-    base = (
-        (os.environ.get("FRONTEND_URL") or "").strip().rstrip("/")
-        or PARTNER_PORTAL_ORIGIN
-    )
-    return f"{base}/portal/admin-sr2025secure/sign-in"
-
-
 # Cameras / Traffic API - used for auth when calling external cameras or traffic APIs (e.g. /api/map/traffic)
 CAMERAS_API_KEY = os.environ.get("CAMERAS_API_KEY")
 # Optional: base URL for cameras API. If set, GET /api/map/traffic calls it with lat, lng, radius and the key.

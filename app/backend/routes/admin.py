@@ -3,7 +3,7 @@ SnapRoad Admin API Routes
 All endpoints use the Supabase DAO layer (supabase_service.py).
 """
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Body, Depends, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from typing import Annotated, Optional, List
 from datetime import datetime, timedelta, timezone
@@ -66,8 +66,6 @@ from services.supabase_service import (
 )
 
 from services.outbound_email import send_html_email, promotion_email_html
-from services.supabase_invite import supabase_auth_invite_user
-from config import get_admin_invite_redirect_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Admin"], dependencies=[Depends(require_admin)])
@@ -426,6 +424,7 @@ def get_admin_analytics():
             "summary": {
                 "total_users": stats.get("total_users", 0),
                 "premium_users": stats.get("premium_users", 0),
+                "avg_safety_score": stats.get("avg_safety_score", 0),
                 "total_partners": stats.get("total_partners", 0),
                 "active_partners": stats.get("active_partners", 0),
                 "total_offers": stats.get("total_offers", 0),
@@ -1220,7 +1219,7 @@ def claim_reward(reward_id: str, user_data: dict):
 # ==================== USERS CRUD ====================
 
 @router.get("/admin/users")
-def get_users(limit: Annotated[int, Query(ge=1, le=100)] = 100):
+def get_users(limit: Annotated[int, Query(ge=1, le=2000)] = 500):
     data = sb_list_profiles(limit=limit)
     return {"success": True, "source": "supabase", "data": data, "total": len(data)}
 
@@ -1257,45 +1256,6 @@ def activate_user(user_id: str):
     if success:
         return {"success": True, "message": "User activated successfully"}
     return {"success": False, "message": "Failed to activate user"}
-
-
-class AdminInviteUserBody(BaseModel):
-    email: str = Field(..., min_length=3, max_length=320)
-
-
-@router.get("/admin/invite-config")
-def admin_invite_config(_admin: AdminUser):
-    """Show which redirect URL the API uses for Auth invites (must be allowlisted in Supabase)."""
-    return {"success": True, "data": {"redirect_to": get_admin_invite_redirect_url()}}
-
-
-@router.post("/admin/invite-user")
-def admin_invite_user_route(body: AdminInviteUserBody, admin: AdminUser):
-    """
-    Send Supabase invite email with redirect_to = admin sign-in (not the dashboard default Site URL).
-    After accept: ensure profiles.id matches auth user id and set role to admin if needed.
-    """
-    email = (body.email or "").strip().lower()
-    eparts = email.split("@")
-    if len(eparts) != 2 or not eparts[0].strip() or not eparts[1].strip():
-        raise HTTPException(status_code=400, detail="Invalid email address")
-
-    redirect_to = get_admin_invite_redirect_url()
-    ok, msg, _raw = supabase_auth_invite_user(email, redirect_to)
-    actor = str(admin.get("id") or admin.get("user_id") or "admin")
-    if ok:
-        try:
-            sb_create_audit_log("ADMIN_INVITE_SENT", actor, email, redirect_to)
-        except Exception:
-            pass
-        return {
-            "success": True,
-            "message": msg,
-            "data": {"email": email, "redirect_to": redirect_to},
-        }
-    if "not configured" in (msg or "").lower():
-        raise HTTPException(status_code=503, detail=msg)
-    raise HTTPException(status_code=400, detail=msg)
 
 
 _USER_PROMO_PLANS = frozenset({"premium", "family"})

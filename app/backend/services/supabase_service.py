@@ -361,10 +361,12 @@ def sb_list_profiles(limit: int = 100) -> list:
         result = _sb().table("profiles").select(
             "id,email,name,plan,xp,level,gems,safety_score,"
             "total_miles,total_trips,total_savings,is_premium,"
-            "state,city,status,role,created_at,updated_at,"
+            "state,city,status,role,partner_id,created_at,updated_at,"
             "promotion_access_until,promotion_plan"
         ).limit(limit).execute()
-        return result.data or []
+        rows = result.data or []
+        # Merge time-boxed admin promos so plan/is_premium match driver-app entitlements.
+        return [merge_profile_promotion_entitlements(dict(r)) for r in rows]
     except Exception as e:
         if not _table_missing(e):
             logger.error(f"sb_list_profiles: {e}")
@@ -1226,9 +1228,21 @@ def sb_get_platform_stats() -> dict:
     try:
         sb = _sb()
 
-        profiles = sb.table("profiles").select("id,is_premium,gems").execute().data or []
+        raw = (
+            sb.table("profiles")
+            .select("id,is_premium,plan,gems,safety_score,promotion_access_until,promotion_plan")
+            .execute()
+            .data
+            or []
+        )
+        profiles = [merge_profile_promotion_entitlements(dict(p)) for p in raw]
         total_users = len(profiles)
-        premium_users = sum(1 for p in profiles if p.get("is_premium"))
+        premium_users = sum(
+            1
+            for p in profiles
+            if p.get("is_premium")
+            or str(p.get("plan") or "").strip().lower() in ("premium", "family")
+        )
 
         total_partners = _safe_count("partners")
         active_partners = _safe_count("partners", {"status": "active"})
@@ -1236,7 +1250,12 @@ def sb_get_platform_stats() -> dict:
         total_redemptions = _safe_count("redemptions")
 
         trip_stats = sb_get_trips_stats()
-        total_gems = sum(int(p.get("gems", 0)) for p in profiles)
+        total_gems = sum(int(p.get("gems") or 0) for p in profiles)
+
+        if profiles:
+            avg_safety = sum(float(p.get("safety_score") or 0) for p in profiles) / len(profiles)
+        else:
+            avg_safety = 0.0
 
         return {
             "total_users": total_users,
@@ -1247,6 +1266,7 @@ def sb_get_platform_stats() -> dict:
             "total_redemptions": total_redemptions,
             "total_trips": trip_stats.get("total_trips", 0),
             "total_gems": total_gems,
+            "avg_safety_score": round(avg_safety, 1),
         }
     except Exception as e:
         logger.warning(f"sb_get_platform_stats: {e}")

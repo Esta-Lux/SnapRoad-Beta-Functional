@@ -27,6 +27,8 @@ export default function GrantPromotionModal({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resultRef, setResultRef] = useState<string | null>(null)
+  const [emailSent, setEmailSent] = useState<number | null>(null)
+  const [emailErrors, setEmailErrors] = useState<string[]>([])
 
   useEffect(() => {
     if (open) {
@@ -35,6 +37,8 @@ export default function GrantPromotionModal({
       setSendEmail(false)
       setError(null)
       setResultRef(null)
+      setEmailSent(null)
+      setEmailErrors([])
     }
   }, [open, target])
 
@@ -48,6 +52,8 @@ export default function GrantPromotionModal({
   const submit = async () => {
     setError(null)
     setResultRef(null)
+    setEmailSent(null)
+    setEmailErrors([])
     if (selectedIds.length === 0) {
       setError('Select at least one row first.')
       return
@@ -66,6 +72,8 @@ export default function GrantPromotionModal({
         return
       }
       setResultRef(res.data.reference)
+      setEmailSent(typeof res.data.emails_sent === 'number' ? res.data.emails_sent : 0)
+      setEmailErrors(Array.isArray(res.data.email_errors) ? res.data.email_errors : [])
       onSuccess()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Request failed')
@@ -81,7 +89,7 @@ export default function GrantPromotionModal({
           <div className="flex items-center gap-2">
             <Gift className="text-purple-400" size={22} />
             <h3 className={`font-semibold ${textPrimary}`}>
-              Grant promotion ({target === 'users' ? 'drivers' : 'partners'})
+              Grant promotion ({target === 'users' ? 'app users' : 'partner businesses'})
             </h3>
           </div>
           <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-white/10 text-slate-400">
@@ -94,6 +102,19 @@ export default function GrantPromotionModal({
             {selectedIds.length} selected — extends from today (or stacks after any current promo end) by{' '}
             <strong className={textPrimary}>paid-tier benefits</strong> until the new end date.
           </p>
+          {target === 'users' ? (
+            <p className={`text-xs ${textSecondary}`}>
+              Applies to the <strong className={textPrimary}>driver app</strong> profile (Premium/Family). To comp a{' '}
+              <strong className={textPrimary}>partner dashboard</strong> subscription, open the{' '}
+              <strong className={textPrimary}>Partners</strong> tab, select the business row, and grant promotion there.
+            </p>
+          ) : (
+            <p className={`text-xs ${textSecondary}`}>
+              Applies to <strong className={textPrimary}>partner business</strong> records (Starter/Growth/Enterprise),
+              not driver profiles. Same person may have both a user row and a partner row — use the tab that matches
+              what you are comping.
+            </p>
+          )}
 
           <div>
             <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Days</label>
@@ -141,14 +162,33 @@ export default function GrantPromotionModal({
               className="rounded border-slate-500"
             />
             <Mail size={16} className="text-slate-400" />
-            <span className={`text-sm ${textPrimary}`}>Send email notice (requires Resend on API)</span>
+            <span className={`text-sm ${textPrimary}`}>
+              Send email notice (API needs <code className="text-xs opacity-90">RESEND_API_KEY</code> +{' '}
+              <code className="text-xs opacity-90">RESEND_FROM_EMAIL</code> on Railway)
+            </span>
           </label>
 
           {error && <p className="text-sm text-red-400">{error}</p>}
           {resultRef && (
-            <p className={`text-sm ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-              Saved. Reference <code className="text-xs">{resultRef}</code>
-            </p>
+            <div className={`space-y-1 text-sm ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+              <p>
+                Saved. Reference <code className="text-xs">{resultRef}</code>
+              </p>
+              {sendEmail && emailSent !== null && (
+                <p className={isDark ? 'text-slate-300' : 'text-[#4B5C74]'}>
+                  Email: {emailSent} sent
+                  {emailErrors.length > 0 && (
+                    <span className="block mt-1 text-red-400 text-xs">
+                      {emailErrors.slice(0, 4).map((line, i) => (
+                        <span key={`${i}-${line}`} className="block">
+                          {line}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
           )}
 
           <div className="flex gap-2 pt-2">

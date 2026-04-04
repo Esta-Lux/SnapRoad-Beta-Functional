@@ -32,6 +32,7 @@ export interface AdminAnalytics {
   summary: {
     total_users: number
     premium_users: number
+    avg_safety_score?: number
     total_partners: number
     active_partners: number
     total_offers: number
@@ -61,6 +62,7 @@ export interface AdminUser {
   id: string
   email: string
   name: string
+  full_name?: string
   plan: string
   gems: number
   level: number
@@ -71,6 +73,8 @@ export interface AdminUser {
   is_premium: boolean
   status: string
   role: string
+  /** When set, this profile is the partner portal login for this business id. */
+  partner_id?: string | null
   state: string
   city: string
   created_at: string

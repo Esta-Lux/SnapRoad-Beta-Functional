@@ -1,6 +1,10 @@
 import 'react-native-gesture-handler';
 import React from 'react';
+import * as WebBrowser from 'expo-web-browser';
 import { ActivityIndicator, View, Text, Image, ScrollView, Platform, StyleSheet, Linking, Alert } from 'react-native';
+
+/** Lets in-app OAuth (Safari / Chrome Custom Tabs) hand off to `snaproad://auth` cleanly. */
+WebBrowser.maybeCompleteAuthSession();
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
