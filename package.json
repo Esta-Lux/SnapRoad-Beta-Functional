@@ -26,8 +26,11 @@
     "eas:sync-env": "node scripts/sync-eas-env.mjs",
     "eas:android:preview": "node scripts/eas-build-mobile.mjs build --platform android --profile preview --clear-cache --non-interactive",
     "eas:android:production": "node scripts/eas-build-mobile.mjs build --platform android --profile production --clear-cache --non-interactive",
+    "eas:android:development": "node scripts/eas-build-mobile.mjs build --platform android --profile development --clear-cache",
     "eas:ios:preview": "node scripts/eas-build-mobile.mjs build --platform ios --profile preview --non-interactive",
     "eas:ios:production": "node scripts/eas-build-mobile.mjs build --platform ios --profile production --non-interactive",
+    "eas:ios:development": "node scripts/eas-build-mobile.mjs build --platform ios --profile development",
+    "eas:ios:development-simulator": "node scripts/eas-build-mobile.mjs build --platform ios --profile development-simulator",
     "eas:validate": "node scripts/validate-eas-setup.mjs"
   },
   "devDependencies": {

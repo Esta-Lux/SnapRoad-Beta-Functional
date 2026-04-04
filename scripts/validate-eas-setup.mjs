@@ -44,12 +44,12 @@ existsSync(localProps) ? fail("app/mobile/android/local.properties exists — re
 console.log("");
 if (ok) {
   console.log("  ✅  EAS monorepo setup looks correct.\n");
-  console.log("  Build from app/mobile (set env vars so the archive is not git-root-relative):");
-  console.log("    PowerShell:");
-  console.log('      $env:EAS_NO_VCS="1"; $env:EAS_PROJECT_ROOT=(Resolve-Path app\\mobile).Path');
-  console.log("      cd app\\mobile; npx eas-cli build --platform android --profile preview --clear-cache --non-interactive\n");
-  console.log("  Or from repo root (uses EAS_NO_VCS + absolute EAS_PROJECT_ROOT):");
-  console.log("    npm run eas:android:preview\n");
+  console.log("  Preferred — wrapper sets EAS_NO_VCS, EAS_PROJECT_ROOT, clears Windows read-only:");
+  console.log("    Repo root:  npm run eas:android:production");
+  console.log("                npm run eas:android:preview");
+  console.log("    app/mobile: npm run eas:build:prod:android");
+  console.log("  Manual (from repo root, PowerShell — still clear read-only on Windows first):");
+  console.log('      $env:EAS_NO_VCS="1"; $env:EAS_PROJECT_ROOT=(Resolve-Path "app\\mobile").Path; cd app\\mobile; npx eas-cli build --platform android --profile preview\n');
 } else {
   console.error("  ❌  Issues found — fix them before running EAS builds.\n");
   process.exitCode = 1;

@@ -90,6 +90,15 @@ The common `Modal` at `src/components/common/Modal.tsx` already handles:
 
 Use it instead of raw RN `Modal` with inline styles.
 
+### EAS builds (monorepo + Windows)
+
+Do **not** run a bare `eas build` from the **repo root**, or from `app/mobile` without the wrapper, on this project.
+
+- **Why:** (1) Git/VCS packaging uses the repo root and can produce wrong paths on the Linux worker (`expo/eas-cli#2938`). (2) On Windows, read-only bits from copies can make the worker fail with **Permission denied** on extract.
+- **Fix:** `scripts/eas-build-mobile.mjs` sets `EAS_NO_VCS=1`, `EAS_PROJECT_ROOT` to the absolute `app/mobile` path, runs EAS with `cwd` = `app/mobile`, and on Windows clears read-only under `app/mobile` via `attrib`.
+- **Commands:** From **repo root**, `npm run eas:android:production`, `eas:android:preview`, `eas:ios:production`, etc. From **app/mobile**, use `npm run eas:build:prod:android` (and other `eas:build:*` scripts) — they invoke the same wrapper.
+- **Ignore files:** Prefer `app/mobile/.easignore`; root `.easignore` is only a safety net if the archive root is wrong.
+
 ## Backend -- Critical Rules
 
 ### API Port

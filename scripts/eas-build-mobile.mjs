@@ -1,13 +1,24 @@
 #!/usr/bin/env node
 /**
- * Run EAS CLI from app/mobile with EAS_NO_VCS=1 and absolute EAS_PROJECT_ROOT.
+ * Correct EAS entrypoint for this monorepo (always use this or the root npm scripts).
  *
- * When EAS uses the git repo root, archives can contain paths like app/mobile/src/...
- * while the build worker expects the Expo app at workingdir/build/app/mobile — which
- * breaks extraction. Disabling VCS mode makes EAS pack from the app directory only,
- * so tarball entries are package.json, src/, etc. at the correct root.
+ * What breaks without it
+ * - Monorepo / wrong archive root: default git/VCS packaging archives from repo root
+ *   (paths like app/mobile/package.json). The Linux worker layout may not match, causing
+ *   missing package.json or broken paths under build/… . We set EAS_NO_VCS=1 and
+ *   EAS_PROJECT_ROOT=<abs path to app/mobile> so the tarball root is the Expo app.
+ *   @see https://github.com/expo/eas-cli/issues/2938
+ * - Windows read-only: copies (e.g. Robocopy) can leave the read-only bit set. EAS
+ *   preserves attributes; Linux extract then fails with Permission denied. On win32 we
+ *   run `attrib -R … /S /D` on app/mobile before invoking EAS.
  *
- * @see https://github.com/expo/eas-cli/issues/2938
+ * How to run
+ * - From repo root: npm run eas:android:production (or eas:android:preview, etc.)
+ * - From app/mobile: npm run eas:build:prod:android (scripts call this file)
+ * - Do not run plain `eas build` from repo root, or from app/mobile without this wrapper
+ *   on Windows without clearing read-only first.
+ *
+ * .easignore: app/mobile/.easignore is authoritative; root .easignore is a safety net.
  */
 import { spawnSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
