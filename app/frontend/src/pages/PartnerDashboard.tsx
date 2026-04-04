@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useLayoutEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Plus, Gift, TrendingUp, BarChart3,
   Bell, Settings, LogOut, HelpCircle,
@@ -61,6 +61,7 @@ const NAV_ITEMS: { id: TabId; icon: typeof BarChart3; label: string; badgeKey?: 
 
 export default function PartnerDashboard({ initialTab = 'overview' }: { initialTab?: TabId }) {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [offers, setOffers] = useState<Offer[]>([])
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [redemptions, setRedemptions] = useState<PartnerRedemption[]>([])
@@ -83,10 +84,28 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
 
   const { sendNotification } = useNotifications()
 
-  const navigateTab = useCallback((id: TabId) => {
-    setActiveTab(id)
-    setMobileNavOpen(false)
-  }, [])
+  const planIncomplete = useMemo(() => {
+    const s = (partnerProfile?.subscription_status || '').toLowerCase()
+    return s === 'pending' || s === 'incomplete'
+  }, [partnerProfile?.subscription_status])
+
+  useEffect(() => {
+    if (!planIncomplete) return
+    setActiveTab((cur) => (cur === 'pricing' ? cur : 'pricing'))
+  }, [planIncomplete])
+
+  const navigateTab = useCallback(
+    (id: TabId) => {
+      if (planIncomplete && id !== 'pricing') {
+        setActiveTab('pricing')
+        setMobileNavOpen(false)
+        return
+      }
+      setActiveTab(id)
+      setMobileNavOpen(false)
+    },
+    [planIncomplete],
+  )
 
   useLayoutEffect(() => {
     document.title = `SnapRoad Partner · ${TAB_META[activeTab].title}`
@@ -115,9 +134,15 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
     })()
   }, [])
   useEffect(() => {
+    const t = (searchParams.get('tab') || '').toLowerCase()
+    if (t === 'pricing') {
+      setActiveTab('pricing')
+      setMobileNavOpen(false)
+      return
+    }
     setActiveTab(initialTab)
     setMobileNavOpen(false)
-  }, [initialTab])
+  }, [initialTab, searchParams])
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)')
@@ -391,9 +416,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
     return undefined
   }
 
-  const needsPlanCheckout =
-    partnerProfile?.subscription_status === 'pending' ||
-    partnerProfile?.subscription_status === 'incomplete'
+  const needsPlanCheckout = planIncomplete
   const exportRedemptionsCsv = () => {
     const rows = [
       ['Redeemed At', 'Offer', 'Customer', 'Discount', 'Fee', 'Tier'],
@@ -562,6 +585,9 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
           >
             <Menu size={22} />
           </button>
+          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-slate-950">
+            <img src="/snaproad-logo.svg" alt="" className="h-full w-full object-cover" width={40} height={40} />
+          </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-white">{TAB_META[activeTab].title}</p>
             <p className="truncate text-xs text-slate-500">Partner Portal</p>

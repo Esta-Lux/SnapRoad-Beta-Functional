@@ -1,7 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
-  Platform, Keyboard, Alert, Switch, Pressable,
+  Platform, Keyboard, Alert, Switch, Pressable, Image,
 } from 'react-native';
 import Animated, {
   FadeIn, FadeOut, SlideInDown, SlideOutDown,
@@ -74,7 +74,7 @@ import ConvoyMode from '../components/social/ConvoyMode';
 import { formatDistance, haversineMeters } from '../utils/distance';
 import { formatDuration } from '../utils/format';
 import { speak, stopSpeaking } from '../utils/voice';
-import { api } from '../api/client';
+import { api, API_BASE_URL } from '../api/client';
 import OrionChat from '../components/orion/OrionChat';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigatingState } from '../contexts/NavigatingContext';
@@ -87,6 +87,11 @@ import type { DrivingMode, Incident, SavedLocation, Offer, FriendLocation } from
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
+
+function placePhotoThumbUri(photoRef?: string, maxWidth = 96): string | undefined {
+  if (!photoRef || !API_BASE_URL) return undefined;
+  return `${API_BASE_URL}/api/places/photo?ref=${encodeURIComponent(photoRef)}&maxwidth=${maxWidth}`;
+}
 
 function mapFriendsApiToLocations(rows: unknown): FriendLocation[] {
   if (!Array.isArray(rows)) return [];
@@ -199,7 +204,19 @@ function parseCameraViewsFromTraffic(raw: unknown): CameraViewFeed[] | undefined
 type CategoryExploreState = {
   title: string;
   subtitle?: string;
-  results: { name: string; address: string; lat: number; lng: number; place_id?: string; rating?: number; placeType?: string }[];
+  results: {
+    name: string;
+    address: string;
+    lat: number;
+    lng: number;
+    place_id?: string;
+    rating?: number;
+    placeType?: string;
+    photo_reference?: string;
+    open_now?: boolean | null;
+    price_level?: number | null;
+    business_status?: string;
+  }[];
   error: string | null;
   loading: boolean;
 };
@@ -375,6 +392,13 @@ export default function MapScreen() {
   const [trafficSafetyHint, setTrafficSafetyHint] = useState<string | null>(null);
   const [selectedPhotoReport, setSelectedPhotoReport] = useState<PhotoReport | null>(null);
   const [categoryExplore, setCategoryExplore] = useState<CategoryExploreState | null>(null);
+  const exploreRestoreRef = useRef<CategoryExploreState | null>(null);
+  const restoreExploreList = useCallback(() => {
+    if (exploreRestoreRef.current) {
+      setCategoryExplore(exploreRestoreRef.current);
+      exploreRestoreRef.current = null;
+    }
+  }, []);
   const [showPhotoReport, setShowPhotoReport] = useState(false);
   const [showGemOverlay, setShowGemOverlay] = useState(false);
   const [gemOverlayAmount, setGemOverlayAmount] = useState(0);
@@ -1081,6 +1105,9 @@ export default function MapScreen() {
             lng: p.lng ?? 0,
             placeType: p.types?.[0] ?? 'poi',
             place_id: p.place_id,
+            photo_reference: typeof p.photo_reference === 'string' ? p.photo_reference : undefined,
+            open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
+            price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
           }));
           setSearchResults(sortGeocodeByProximity(mapped, loc));
           setIsSearching(false);
@@ -1185,12 +1212,19 @@ export default function MapScreen() {
       nearby: { title: 'Nearby', subtitle: 'Places around your location', radius: 1200, limit: 15 },
       nearby_gas: {
         title: 'Nearby gas',
-        subtitle: 'Closest stations first. Prices aren’t shown here—check signage or a station app.',
+        subtitle:
+          'Closest stations first. Open/closed and price tier ($) come from Google when available — pump prices are not provided; confirm at the pump.',
         type: 'gas_station',
         radius: 15000,
         limit: 20,
       },
-      gas: { title: 'Gas stations', subtitle: 'Nearby fuel', type: 'gas_station', radius: 8000, limit: 18 },
+      gas: {
+        title: 'Gas stations',
+        subtitle: 'Fuel nearby. Tap a row for full details; your list reopens when you close the card.',
+        type: 'gas_station',
+        radius: 8000,
+        limit: 18,
+      },
       food: { title: 'Restaurants', type: 'restaurant', radius: 5000, limit: 18 },
       coffee: { title: 'Coffee & cafés', type: 'cafe', radius: 5000, limit: 18 },
       parking: { title: 'Parking', type: 'parking', radius: 5000, limit: 18 },
@@ -1228,6 +1262,10 @@ export default function MapScreen() {
           place_id: p.place_id != null ? String(p.place_id) : undefined,
           rating: typeof p.rating === 'number' ? p.rating : undefined,
           placeType: Array.isArray(p.types) && p.types[0] ? String(p.types[0]) : undefined,
+          photo_reference: p.photo_reference != null ? String(p.photo_reference) : undefined,
+          open_now: typeof p.open_now === 'boolean' ? p.open_now : null,
+          price_level: typeof p.price_level === 'number' ? p.price_level : null,
+          business_status: p.business_status != null ? String(p.business_status) : undefined,
         }));
         mapped.sort(
           (a, b) => haversineMeters(lat0, lng0, a.lat, a.lng) - haversineMeters(lat0, lng0, b.lat, b.lng),
@@ -1905,7 +1943,10 @@ export default function MapScreen() {
               Alert.alert('Error', 'Could not update favorites.');
             }
           }}
-          onDismiss={() => setSelectedPlace(null)}
+          onDismiss={() => {
+            setSelectedPlace(null);
+            restoreExploreList();
+          }}
         />
       )}
 
@@ -1918,10 +1959,15 @@ export default function MapScreen() {
           isLight={isLight}
           savedPlaces={savedPlaces}
           onFavoritesChange={refreshSavedPlaces}
-          onClose={() => { setSelectedPlaceId(null); setSelectedPlace(null); }}
+          onClose={() => {
+            setSelectedPlaceId(null);
+            setSelectedPlace(null);
+            restoreExploreList();
+          }}
           onDirections={(place) => {
             setSelectedPlaceId(null);
             setSelectedPlace(null);
+            exploreRestoreRef.current = null;
             handleStartDirections(place);
           }}
           onSave={async (p) => {
@@ -2075,14 +2121,28 @@ export default function MapScreen() {
                     const hasCoords = item.lat !== 0 && item.lng !== 0;
                     const dist = hasCoords ? haversineMeters(location.lat, location.lng, item.lat, item.lng) : null;
                     const distText = dist != null ? (dist < 160 ? `${Math.round(dist * 3.281)} ft` : `${(dist / 1609.344).toFixed(1)} mi`) : '';
+                    const suri = placePhotoThumbUri((item as GeocodeResult).photo_reference, 96);
+                    const openHint =
+                      (item as GeocodeResult).open_now === true
+                        ? 'Open now'
+                        : (item as GeocodeResult).open_now === false
+                          ? 'Closed'
+                          : '';
                     return (
                       <TouchableOpacity style={[s.resultRow, { borderBottomColor: colors.border }]} onPress={() => handleSelectResult(item)}>
-                        <View style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: colors.surfaceSecondary, justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
-                          <Ionicons name={icon} size={15} color={colors.primary} />
+                        <View style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: colors.surfaceSecondary, justifyContent: 'center', alignItems: 'center', marginRight: 10, overflow: 'hidden' }}>
+                          {suri ? (
+                            <Image source={{ uri: suri }} style={{ width: 34, height: 34 }} resizeMode="cover" />
+                          ) : (
+                            <Ionicons name={icon} size={15} color={colors.primary} />
+                          )}
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={[s.resultName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                           <Text style={[s.resultAddr, { color: colors.textSecondary }]} numberOfLines={1}>{item.address}</Text>
+                          {openHint ? (
+                            <Text style={{ color: openHint === 'Open now' ? '#22C55E' : colors.textTertiary, fontSize: 11, fontWeight: '600', marginTop: 2 }}>{openHint}</Text>
+                          ) : null}
                         </View>
                         {distText ? <Text style={{ color: colors.textTertiary, fontSize: 11, fontWeight: '600', marginLeft: 8 }}>{distText}</Text> : null}
                       </TouchableOpacity>
@@ -2953,7 +3013,10 @@ export default function MapScreen() {
       {showGemOverlay && <GemOverlay visible={showGemOverlay} gemsEarned={gemOverlayAmount} onDone={() => setShowGemOverlay(false)} />}
       <MapCategoryExploreSheet
         visible={categoryExplore != null}
-        onClose={() => setCategoryExplore(null)}
+        onClose={() => {
+          exploreRestoreRef.current = null;
+          setCategoryExplore(null);
+        }}
         title={categoryExplore?.title ?? ''}
         subtitle={categoryExplore?.subtitle}
         loading={categoryExplore?.loading ?? false}
@@ -2970,6 +3033,7 @@ export default function MapScreen() {
           primary: colors.primary,
         }}
         onPick={(row) => {
+          if (categoryExplore) exploreRestoreRef.current = categoryExplore;
           setCategoryExplore(null);
           void handleSelectResult({
             name: row.name,
@@ -2978,6 +3042,9 @@ export default function MapScreen() {
             lng: row.lng,
             place_id: row.place_id,
             placeType: row.placeType,
+            photo_reference: row.photo_reference,
+            open_now: row.open_now === null || row.open_now === undefined ? undefined : row.open_now,
+            price_level: row.price_level ?? undefined,
           });
         }}
       />

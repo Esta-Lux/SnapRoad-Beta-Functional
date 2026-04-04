@@ -97,6 +97,9 @@ function resolveApiUrl(): string {
 
 const apiBaseUrl: string = resolveApiUrl();
 
+/** Public HTTP origin for builds (place photos, etc.). */
+export const API_BASE_URL = apiBaseUrl;
+
 if (IS_PRODUCTION) {
   const missing: string[] = [];
   if (!process.env.EXPO_PUBLIC_MAPBOX_TOKEN) missing.push('EXPO_PUBLIC_MAPBOX_TOKEN');

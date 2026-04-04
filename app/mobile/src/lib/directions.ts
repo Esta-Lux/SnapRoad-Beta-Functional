@@ -85,6 +85,10 @@ export interface GeocodeResult {
   category?: string;
   maki?: string;
   place_id?: string;
+  /** Google Places photo ref — use `/api/places/_photo?ref=` */
+  photo_reference?: string;
+  open_now?: boolean;
+  price_level?: number;
 }
 
 /** Parsed search box query: strips intent phrases and sets flags for local-first / open-now behavior. */

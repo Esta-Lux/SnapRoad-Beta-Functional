@@ -51,6 +51,7 @@ _CACHE_MAX = 256         # entries
 
 _autocomplete_cache: OrderedDict[str, tuple[float, list]] = OrderedDict()
 _details_cache: OrderedDict[str, tuple[float, dict]] = OrderedDict()
+_textsearch_cache: OrderedDict[str, tuple[float, list]] = OrderedDict()
 
 # Bust in-memory details cache when expanding Google `fields` (see place_details).
 _DETAILS_CACHE_KEY_VER = "pd4"
@@ -162,6 +163,8 @@ async def fetch_text_search_predictions(
         except (TypeError, ValueError):
             dist = None
         oh = item.get("opening_hours") or {}
+        photos = item.get("photos") or []
+        ph0 = photos[0] if photos else {}
         out.append({
             "place_id": item.get("place_id"),
             "name": item.get("name", ""),
@@ -172,6 +175,9 @@ async def fetch_text_search_predictions(
             "lng": float(plng),
             "distance_meters": int(dist) if dist is not None else None,
             "open_now": oh.get("open_now"),
+            "price_level": item.get("price_level"),
+            "business_status": item.get("business_status"),
+            "photo_reference": ph0.get("photo_reference"),
         })
     out.sort(
         key=lambda x: (
@@ -455,6 +461,7 @@ async def nearby_places(
             continue
         photos = p.get("photos", [])
         ref = photos[0].get("photo_reference") if photos else None
+        oh = p.get("opening_hours") or {}
         raw.append({
             "place_id": p.get("place_id"),
             "name": p.get("name", ""),
@@ -464,6 +471,9 @@ async def nearby_places(
             "photo_reference": ref,
             "rating": p.get("rating"),
             "types": p.get("types", []),
+            "open_now": oh.get("open_now"),
+            "price_level": p.get("price_level"),
+            "business_status": p.get("business_status"),
         })
 
     def dist_sq(a: dict, b: dict) -> float:

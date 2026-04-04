@@ -191,14 +191,14 @@ function MainTabs() {
 function RootNavigator() {
   const { isAuthenticated, isLoading, user, completeOAuthSignIn } = useAuth();
   const { colors } = useTheme();
-  const [showSplash, setShowSplash] = React.useState(true);
+  const [splashMinElapsed, setSplashMinElapsed] = React.useState(false);
   const [showTour, setShowTour] = React.useState(false);
   const [showDriverPromoWelcome, setShowDriverPromoWelcome] = React.useState(false);
   const lastHandledUrlRef = React.useRef<string | null>(null);
   const lastPushTokenRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    const t = setTimeout(() => setShowSplash(false), 900);
+    const t = setTimeout(() => setSplashMinElapsed(true), 500);
     return () => clearTimeout(t);
   }, []);
 
@@ -207,9 +207,12 @@ function RootNavigator() {
     let cancelled = false;
     (async () => {
       try {
+        await new Promise<void>((r) => setTimeout(r, 2800));
+        if (cancelled) return;
         const r = await Updates.checkForUpdateAsync();
         if (!r.isAvailable || cancelled) return;
         await Updates.fetchUpdateAsync();
+        if (cancelled) return;
         await Updates.reloadAsync();
       } catch (e) {
         console.warn('[OTA] Update check failed', e);
@@ -434,7 +437,7 @@ function RootNavigator() {
     },
   }), []);
 
-  if (isLoading || showSplash) {
+  if (isLoading || !splashMinElapsed) {
     return (
       <LinearGradient
         colors={[colors.gradientStart, colors.gradientEnd]}
