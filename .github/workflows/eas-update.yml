@@ -46,20 +46,30 @@ jobs:
         working-directory: app/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_NO_VCS: "1"
+          EAS_PROJECT_ROOT: ${{ github.workspace }}/app/mobile
+          CI: "1"
+          APP_ENV: production
+          EXPO_PUBLIC_API_URL: https://api.snaproad.app
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
         run: |
           SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
           if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
-          CMD="CI=1 APP_ENV=production EXPO_PUBLIC_API_URL=https://api.snaproad.app SENTRY_DISABLE_AUTO_UPLOAD=true npm run eas:update:production -- --platform ios --message ${SAFE_MSG}-ios"
-          node ../../scripts/eas-build-mobile.mjs env:exec production "$CMD"
+          npx eas-cli env:exec production "npx eas-cli update --channel production --environment production --platform ios --non-interactive --message ${SAFE_MSG}-ios"
 
       - name: EAS Update (production Android)
         working-directory: app/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_NO_VCS: "1"
+          EAS_PROJECT_ROOT: ${{ github.workspace }}/app/mobile
+          CI: "1"
+          APP_ENV: production
+          EXPO_PUBLIC_API_URL: https://api.snaproad.app
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
         run: |
           SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
           if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
-          CMD="CI=1 APP_ENV=production EXPO_PUBLIC_API_URL=https://api.snaproad.app SENTRY_DISABLE_AUTO_UPLOAD=true npm run eas:update:production -- --platform android --message ${SAFE_MSG}-android"
-          node ../../scripts/eas-build-mobile.mjs env:exec production "$CMD"
+          npx eas-cli env:exec production "npx eas-cli update --channel production --environment production --platform android --non-interactive --message ${SAFE_MSG}-android"
