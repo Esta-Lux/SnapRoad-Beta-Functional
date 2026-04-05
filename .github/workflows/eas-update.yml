@@ -33,14 +33,10 @@ jobs:
       - name: Verify EXPO_TOKEN
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          MAPBOX_TOKEN_FOR_CI: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN || vars.EXPO_PUBLIC_MAPBOX_TOKEN || secrets.MAPBOX_TOKEN || vars.MAPBOX_TOKEN }}
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
             echo "::error::GitHub Actions secret EXPO_TOKEN is missing. Add it: Repo Settings → Secrets and variables → Actions → New repository secret. Create a token at https://expo.dev/accounts/snaproad/settings/access-tokens"
             exit 1
-          fi
-          if [ -z "$MAPBOX_TOKEN_FOR_CI" ]; then
-            echo "::warning::Mapbox token is not set in GitHub Secrets/Variables. Continuing and relying on EAS environment variables (--environment production)."
           fi
 
       - name: Install dependencies
@@ -49,31 +45,21 @@ jobs:
       - name: EAS Update (production iOS)
         working-directory: app/mobile
         env:
-          CI: "1"
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          MAPBOX_TOKEN_FOR_CI: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN || vars.EXPO_PUBLIC_MAPBOX_TOKEN || secrets.MAPBOX_TOKEN || vars.MAPBOX_TOKEN }}
-          APP_ENV: production
-          EXPO_PUBLIC_API_URL: https://api.snaproad.app
-          SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
         run: |
-          if [ -n "$MAPBOX_TOKEN_FOR_CI" ]; then export EXPO_PUBLIC_MAPBOX_TOKEN="$MAPBOX_TOKEN_FOR_CI"; fi
           SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
           if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
-          npm run eas:update:production -- --platform ios --message "${SAFE_MSG}-ios"
+          CMD="CI=1 APP_ENV=production EXPO_PUBLIC_API_URL=https://api.snaproad.app SENTRY_DISABLE_AUTO_UPLOAD=true npm run eas:update:production -- --platform ios --message ${SAFE_MSG}-ios"
+          node ../../scripts/eas-build-mobile.mjs env:exec production "$CMD"
 
       - name: EAS Update (production Android)
         working-directory: app/mobile
         env:
-          CI: "1"
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          MAPBOX_TOKEN_FOR_CI: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN || vars.EXPO_PUBLIC_MAPBOX_TOKEN || secrets.MAPBOX_TOKEN || vars.MAPBOX_TOKEN }}
-          APP_ENV: production
-          EXPO_PUBLIC_API_URL: https://api.snaproad.app
-          SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
         run: |
-          if [ -n "$MAPBOX_TOKEN_FOR_CI" ]; then export EXPO_PUBLIC_MAPBOX_TOKEN="$MAPBOX_TOKEN_FOR_CI"; fi
           SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
           if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
-          npm run eas:update:production -- --platform android --message "${SAFE_MSG}-android"
+          CMD="CI=1 APP_ENV=production EXPO_PUBLIC_API_URL=https://api.snaproad.app SENTRY_DISABLE_AUTO_UPLOAD=true npm run eas:update:production -- --platform android --message ${SAFE_MSG}-android"
+          node ../../scripts/eas-build-mobile.mjs env:exec production "$CMD"
