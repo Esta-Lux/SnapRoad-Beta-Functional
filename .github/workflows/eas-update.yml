@@ -33,9 +33,14 @@ jobs:
       - name: Verify EXPO_TOKEN
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_MAPBOX_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
             echo "::error::GitHub Actions secret EXPO_TOKEN is missing. Add it: Repo Settings → Secrets and variables → Actions → New repository secret. Create a token at https://expo.dev/accounts/snaproad/settings/access-tokens"
+            exit 1
+          fi
+          if [ -z "$EXPO_PUBLIC_MAPBOX_TOKEN" ]; then
+            echo "::error::GitHub Actions secret EXPO_PUBLIC_MAPBOX_TOKEN is missing. Add the Mapbox public token (pk...) so OTA publishes can evaluate app.config.ts in CI."
             exit 1
           fi
 
@@ -47,6 +52,7 @@ jobs:
         env:
           CI: "1"
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_MAPBOX_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}
           APP_ENV: production
           EXPO_PUBLIC_API_URL: https://api.snaproad.app
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
@@ -61,6 +67,7 @@ jobs:
         env:
           CI: "1"
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_MAPBOX_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}
           APP_ENV: production
           EXPO_PUBLIC_API_URL: https://api.snaproad.app
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
