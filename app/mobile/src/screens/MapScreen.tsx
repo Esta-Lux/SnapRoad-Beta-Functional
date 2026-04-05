@@ -2028,7 +2028,7 @@ export default function MapScreen() {
           {showPhotoReports && (
             <PhotoReportMarkers reports={photoReports} onReportTap={(r) => setSelectedPhotoReport(r)} />
           )}
-          {showTrafficSafety && isTrafficSafetyLayerEnabled(location.lat, location.lng) && (
+          {showTrafficSafety && isTrafficSafetyLayerEnabled(location.lat, location.lng) && !nav.isNavigating && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
             <TrafficSafetyLayer
               zones={trafficSafetyZones}
               onZoneTap={(z) =>

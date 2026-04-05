@@ -37,11 +37,11 @@ export default React.memo(function TrafficSafetyLayer({ zones, onZoneTap }: Prop
           <Pressable
             onPress={() => onZoneTap?.(z)}
             style={({ pressed }) => [styles.hit, pressed && styles.hitPressed]}
-            hitSlop={8}
+            hitSlop={6}
           >
             <View style={styles.puck}>
               <View style={styles.puckInner}>
-                <Ionicons name="speedometer-outline" size={15} color="#FFFFFF" />
+                <Ionicons name="speedometer-outline" size={11} color="#FFFFFF" />
               </View>
               {z.maxspeed ? (
                 <View style={styles.badge}>
@@ -62,29 +62,29 @@ const styles = StyleSheet.create({
   hit: { alignItems: 'center', justifyContent: 'center' },
   hitPressed: { opacity: 0.88, transform: [{ scale: 0.96 }] },
   puck: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: 'rgba(217, 119, 6, 0.22)',
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    backgroundColor: 'rgba(217, 119, 6, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.88)',
     ...Platform.select({
       ios: {
         shadowColor: '#b45309',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.4,
-        shadowRadius: 5,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.32,
+        shadowRadius: 3,
       },
-      android: { elevation: 6 },
+      android: { elevation: 4 },
       default: {},
     }),
   },
   puckInner: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 8,
     backgroundColor: '#D97706',
     alignItems: 'center',
     justifyContent: 'center',
@@ -92,8 +92,8 @@ const styles = StyleSheet.create({
   badge: {
     position: 'absolute',
     bottom: -2,
-    right: -4,
-    minWidth: 22,
+    right: -3,
+    minWidth: 18,
     paddingHorizontal: 4,
     paddingVertical: 1,
     borderRadius: 6,
