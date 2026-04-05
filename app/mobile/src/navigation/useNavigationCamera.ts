@@ -26,8 +26,8 @@ type Args = {
 
 type SpeedZoomPoint = { speed: number; zoom: number };
 
-/** Reserved space for turn banner / stats / ETA bar above the puck (matches Apple/Google-style nav UI). */
-export const NAV_UI_HEIGHT = 140;
+/** Reserved top UI space (turn banner / cards) to keep route context visible ahead. */
+export const NAV_UI_HEIGHT = 120;
 
 const SPEED_ZOOM_CURVES: Record<DrivingMode, SpeedZoomPoint[]> = {
   calm: [
@@ -75,12 +75,12 @@ const MODE_CONFIG: Record<
     basePitch: 52,
     minPitch: 42,
     maxPitch: 58,
-    basePadBottom: 365,
-    padTop: 95,
+    basePadBottom: 210,
+    padTop: 230,
     padLeft: 30,
     padRight: 30,
-    padTopSpeed: 75,
-    turnApproachPadBoost: 88,
+    padTopSpeed: 52,
+    turnApproachPadBoost: 18,
     turnApproachMeters: 180,
     /** ~GPS/nav updates arrive ~1 Hz; shorter ease reduces mushy lag vs puck */
     /** Slightly longer ease so zoom/pitch changes do not fight the location puck. */
@@ -90,12 +90,12 @@ const MODE_CONFIG: Record<
     basePitch: 50,
     minPitch: 40,
     maxPitch: 56,
-    basePadBottom: 355,
-    padTop: 90,
+    basePadBottom: 200,
+    padTop: 218,
     padLeft: 28,
     padRight: 28,
-    padTopSpeed: 65,
-    turnApproachPadBoost: 82,
+    padTopSpeed: 48,
+    turnApproachPadBoost: 16,
     turnApproachMeters: 180,
     transitionMs: 720,
   },
@@ -103,12 +103,12 @@ const MODE_CONFIG: Record<
     basePitch: 54,
     minPitch: 42,
     maxPitch: 60,
-    basePadBottom: 345,
-    padTop: 80,
+    basePadBottom: 190,
+    padTop: 205,
     padLeft: 24,
     padRight: 24,
-    padTopSpeed: 55,
-    turnApproachPadBoost: 74,
+    padTopSpeed: 44,
+    turnApproachPadBoost: 14,
     turnApproachMeters: 180,
     transitionMs: 500,
   },
@@ -161,16 +161,18 @@ export function getCameraPreset({
     nextManeuverDistanceMeters < 60 ? -6 : nextManeuverDistanceMeters < 120 ? -4 : 0;
   const pitch = clamp(cfg.basePitch + maneuverPitchAdjustment, cfg.minPitch, cfg.maxPitch);
 
+  // Mapbox follow-padding behavior: larger bottom padding moves the puck UP.
+  // For a lower puck position, bias to larger top padding and moderate bottom padding.
   const overHighway = Math.max(0, mph - cfg.padTopSpeed);
-  const highwayPadReduce = Math.min(36, overHighway * 0.55);
-  let paddingBottom =
-    cfg.basePadBottom + safeAreaBottom + NAV_UI_HEIGHT - highwayPadReduce;
+  const speedTopBoost = Math.min(34, overHighway * 0.45);
+  let paddingTop = cfg.padTop + safeAreaTop + NAV_UI_HEIGHT + speedTopBoost;
+  let paddingBottom = cfg.basePadBottom + safeAreaBottom;
   if (nextManeuverDistanceMeters < cfg.turnApproachMeters) {
-    paddingBottom += cfg.turnApproachPadBoost;
+    paddingTop += cfg.turnApproachPadBoost;
   }
 
   const padding: CameraPadding = {
-    paddingTop: cfg.padTop + safeAreaTop,
+    paddingTop,
     paddingBottom,
     paddingLeft: cfg.padLeft,
     paddingRight: cfg.padRight,

@@ -168,9 +168,9 @@ export default React.memo(function RouteOverlay({
         filter={['==', ['get', 'segment'], 'passed']}
         style={{
           lineColor: passedColor,
-          lineWidth: Math.max(4, routeWidth - 1),
-          lineOpacity: 0.55,
-          lineBlur: 0.35,
+          lineWidth: routeWidth,
+          lineOpacity: 0.72,
+          lineBlur: 0.2,
           lineCap: 'round',
           lineJoin: 'round',
         }}

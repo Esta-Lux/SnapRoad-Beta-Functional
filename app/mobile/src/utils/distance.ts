@@ -262,8 +262,8 @@ export function segmentAndTFromCumAlongPolyline(
   return { segmentIndex: lastSeg, tOnSegment: 1 };
 }
 
-/** Minimum spacing so duplicate vertices don't break LineString validity. */
-const ROUTE_SPLIT_MIN_M = 1.5;
+/** Tiny spacing to remove only near-identical duplicate vertices at split boundaries. */
+const ROUTE_SPLIT_MIN_M = 0.05;
 
 function dedupeCoordRing(coords: [number, number][]): [number, number][] {
   if (coords.length < 2) return coords;
@@ -311,22 +311,14 @@ export function buildRouteSplitRingsFromProgress(
   for (let k = 0; k <= segIdx; k++) {
     passed.push(toPair(polyline[k]!));
   }
-  if (haversineMeters(split.lat, split.lng, pa.lat, pa.lng) >= ROUTE_SPLIT_MIN_M) {
-    passed.push([split.lng, split.lat]);
-  }
+  passed.push([split.lng, split.lat]);
 
   const ahead: [number, number][] = [];
-  const splitNearNextVertex =
-    haversineMeters(split.lat, split.lng, pb.lat, pb.lng) < ROUTE_SPLIT_MIN_M;
-  if (splitNearNextVertex && segIdx + 1 < n) {
-    for (let k = segIdx + 1; k < n; k++) {
-      ahead.push(toPair(polyline[k]!));
-    }
-  } else {
-    ahead.push([split.lng, split.lat]);
-    for (let k = segIdx + 1; k < n; k++) {
-      ahead.push(toPair(polyline[k]!));
-    }
+  // Always include the same split coordinate at the head of the ahead route so
+  // passed/ahead lines share one anchor and cannot open a visual gap at the puck.
+  ahead.push([split.lng, split.lat]);
+  for (let k = segIdx + 1; k < n; k++) {
+    ahead.push(toPair(polyline[k]!));
   }
 
   const passedOut = dedupeCoordRing(passed);

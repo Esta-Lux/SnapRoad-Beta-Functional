@@ -406,7 +406,6 @@ export default function MapScreen() {
   const trackedOfferVisitsRef = useRef<Set<string>>(new Set());
   const confirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reportCardTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const startNavTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigationTripIdRef = useRef<string>('');
   const lastLivePublishRef = useRef(0);
   const [ephemeralTurnHint, setEphemeralTurnHint] = useState<string | null>(null);
@@ -2150,7 +2149,6 @@ export default function MapScreen() {
             visible
             puckBearingEnabled
             puckBearing={nav.isNavigating ? 'course' : 'heading'}
-            pulsing="default"
           />
         </MapboxGL.MapView>
       ) : (
@@ -2858,40 +2856,10 @@ export default function MapScreen() {
             </View>
           )}
           <TouchableOpacity onPress={() => {
-            if (startNavTimeoutRef.current) {
-              clearTimeout(startNavTimeoutRef.current);
-              startNavTimeoutRef.current = null;
-            }
             setSelectedPlaceId(null);
             setSelectedPlace(null);
-            // Start turn-by-turn immediately (voice + steps). Camera animates in parallel — no pre-delay.
+            // Start turn-by-turn immediately; follow camera owns zoom/pitch/padding from this point.
             nav.startNavigation();
-            if (isCalm) {
-              cameraRef.current?.setCamera({
-                centerCoordinate: [location.lng, location.lat],
-                zoomLevel: 12, pitch: 20, heading: 0,
-                animationDuration: 450, animationMode: 'flyTo',
-              });
-              startNavTimeoutRef.current = setTimeout(() => {
-                cameraRef.current?.setCamera({
-                  centerCoordinate: [location.lng, location.lat],
-                  zoomLevel: 16, pitch: 55, heading: headingRef.current,
-                  animationDuration: 650, animationMode: 'easeTo',
-                });
-              }, 380);
-            } else if (isSport) {
-              cameraRef.current?.setCamera({
-                centerCoordinate: [location.lng, location.lat],
-                zoomLevel: 17.5, pitch: 65, heading: headingRef.current,
-                animationDuration: 350, animationMode: 'easeTo',
-              });
-            } else {
-              cameraRef.current?.setCamera({
-                centerCoordinate: [location.lng, location.lat],
-                zoomLevel: 17, pitch: 60, heading: headingRef.current,
-                animationDuration: 400, animationMode: 'easeTo',
-              });
-            }
           }} activeOpacity={0.85}>
             <LinearGradient
               colors={isFastestSel ? ['#2563EB', '#1D4ED8'] : ['#16A34A', '#15803D']}
