@@ -101,5 +101,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.85)',
   },
-  badgeTxt: { color: '#fff', fontSize: 8, fontWeight: '800', textAlign: 'center' },
+  badgeTxt: { color: '#fff', fontSize: 7, fontWeight: '800', textAlign: 'center' },
 });
