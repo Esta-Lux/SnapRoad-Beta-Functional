@@ -9,6 +9,7 @@ export type FetchDirectionsResult =
   | { ok: false; reason: 'invalid_input' | 'no_mapbox' | 'route_failed'; message?: string };
 import { distanceToPolyline, haversineMeters, remainingDistanceOnPolyline } from '../utils/distance';
 import { speak, formatTurnInstruction, stopSpeaking, configureAudioSession } from '../utils/voice';
+import { primaryInstructionText } from '../lib/navigationInstructions';
 import { api } from '../api/client';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../contexts/AuthContext';
@@ -108,6 +109,13 @@ export function useNavigation(params: {
   const rerouteInFlightRef = useRef(false);
   const lastRerouteAtRef = useRef(0);
   const navSessionStartRef = useRef<number>(0);
+  const hasAnnouncedArrivalRef = useRef(false);
+  const liveEtaSmoothRef = useRef<number | null>(null);
+  const earlyWarningRef = useRef<{ stepIdx: number; spoke500: boolean; spoke150: boolean }>({
+    stepIdx: -1,
+    spoke500: false,
+    spoke150: false,
+  });
 
   // --- Fetch directions ---
   const fetchDirections = useCallback(async (
@@ -160,6 +168,10 @@ export function useNavigation(params: {
       if (isNavigatingRef.current) {
         traveledRef.current = 0;
         setTraveledDistanceMeters(0);
+        lastSpokenStepRef.current = -1;
+        hasAnnouncedArrivalRef.current = false;
+        liveEtaSmoothRef.current = null;
+        earlyWarningRef.current = { stepIdx: -1, spoke500: false, spoke150: false };
       } else {
         setShowRoutePreview(true);
       }
@@ -198,18 +210,23 @@ export function useNavigation(params: {
     configureAudioSession();
     stopSpeaking();
     navSessionStartRef.current = Date.now();
+    lastRerouteAtRef.current = 0;
     setIsNavigating(true);
     isNavigatingRef.current = true;
     traveledRef.current = 0;
     setTraveledDistanceMeters(0);
     setCurrentStepIndex(0);
     lastSpokenStepRef.current = -1;
+    hasAnnouncedArrivalRef.current = false;
+    liveEtaSmoothRef.current = null;
+    earlyWarningRef.current = { stepIdx: -1, spoke500: false, spoke150: false };
     tripStartTimeRef.current = Date.now();
     setShowRoutePreview(false);
     const dest = navigationData.destination.name ?? 'your destination';
     const etaMin = Math.round(navigationData.duration / 60);
     const firstStep = navigationData.steps?.[0];
-    const firstInstr = firstStep?.instruction ? ` ${firstStep.instruction}.` : '';
+    const firstLine = firstStep ? primaryInstructionText(firstStep) : '';
+    const firstInstr = firstLine ? ` ${firstLine}.` : '';
     if (drivingMode === 'sport') {
       navSpeak(`${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
     } else if (drivingMode === 'calm') {
@@ -233,6 +250,12 @@ export function useNavigation(params: {
       setLiveEta(null);
       setSelectedDestination(null);
       tripStartTimeRef.current = null;
+      hasAnnouncedArrivalRef.current = false;
+      liveEtaSmoothRef.current = null;
+      earlyWarningRef.current = { stepIdx: -1, spoke500: false, spoke150: false };
+      offRouteSinceRef.current = null;
+      rerouteInFlightRef.current = false;
+      lastRerouteAtRef.current = 0;
       return;
     }
     setIsNavigating(false);
@@ -399,14 +422,15 @@ export function useNavigation(params: {
     if (stepIndex < 0 || stepIndex === lastSpokenStepRef.current) return;
     lastSpokenStepRef.current = stepIndex;
     const step = navigationData.steps[stepIndex];
-    if (!step?.instruction) return;
+    const instructText = primaryInstructionText(step);
+    if (!instructText) return;
     const nextStep = navigationData.steps[stepIndex + 1] ?? null;
     const nextManeuver = navigationData.steps[stepIndex + 1];
     const liveDistToNext = nextManeuver && isFinite(nextManeuver.lat) && isFinite(nextManeuver.lng)
       ? haversineMeters(userLocation.lat, userLocation.lng, nextManeuver.lat, nextManeuver.lng)
       : step.distanceMeters;
     const phrase = formatTurnInstruction(
-      step.instruction,
+      instructText,
       liveDistToNext,
       step.maneuver,
       drivingMode,
@@ -420,7 +444,6 @@ export function useNavigation(params: {
   }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation, navSpeak]);
 
   // --- Early turn warnings (500ft and 150ft before next step) ---
-  const earlyWarningRef = useRef<{ stepIdx: number; spoke500: boolean; spoke150: boolean }>({ stepIdx: -1, spoke500: false, spoke150: false });
   useEffect(() => {
     if (!isNavigating || !navigationData?.steps?.length) return;
     const steps = navigationData.steps;
@@ -432,7 +455,8 @@ export function useNavigation(params: {
     }
     const w = earlyWarningRef.current;
     const nextStep = steps[nextIdx];
-    if (!nextStep?.instruction) return;
+    const nextPrimary = nextStep ? primaryInstructionText(nextStep) : '';
+    if (!nextPrimary?.trim()) return;
     if (!isFinite(nextStep.lat) || !isFinite(nextStep.lng)) return;
 
     const distToNext = haversineMeters(userLocation.lat, userLocation.lng, nextStep.lat, nextStep.lng);
@@ -443,24 +467,23 @@ export function useNavigation(params: {
     if (distToNext <= FEET_500 && distToNext > FEET_150 && !w.spoke500) {
       w.spoke500 = true;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      navSpeak(`In five hundred feet, ${nextStep.instruction}`, 'high', drivingMode);
+      navSpeak(`In five hundred feet, ${nextPrimary}`, 'high', drivingMode);
     } else if (distToNext <= FEET_150 && !w.spoke150) {
       w.spoke150 = true;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      navSpeak(nextStep.instruction, 'high', drivingMode);
+      navSpeak(nextPrimary, 'high', drivingMode);
     }
   }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation, navSpeak]);
 
   // --- Arrival announcement ---
-  const hasAnnouncedArrival = useRef(false);
   useEffect(() => {
     if (!isNavigating || !navigationData?.destination) {
-      hasAnnouncedArrival.current = false;
+      hasAnnouncedArrivalRef.current = false;
       return;
     }
     const remaining = liveEta?.distanceMiles ?? 0;
-    if (remaining > 0.05 || hasAnnouncedArrival.current) return;
-    hasAnnouncedArrival.current = true;
+    if (remaining > 0.05 || hasAnnouncedArrivalRef.current) return;
+    hasAnnouncedArrivalRef.current = true;
     const dest = navigationData.destination.name ?? 'your destination';
     const arrivalMsg = drivingMode === 'calm'
       ? `You've arrived at ${dest}. Hope you had a nice drive.`
@@ -487,12 +510,25 @@ export function useNavigation(params: {
 
     const remainingMiles = Math.max(0, remainingMeters / 1609.34);
     const fraction = Math.min(1, Math.max(0, remainingMeters / totalMeters));
+    /** Route-duration progress is primary; blend a little live speed only at highway-ish speeds. */
     const etaMinutesLinear = (durationSeconds / 60) * fraction;
     const speedMph = Math.max(0, speed);
     const etaFromSpeed = speedMph > 3 ? (remainingMiles / speedMph) * 60 : etaMinutesLinear;
-    const etaMinutes = speedMph > 3
-      ? Math.max(0, Math.round(0.5 * etaMinutesLinear + 0.5 * etaFromSpeed))
-      : Math.max(0, Math.round(etaMinutesLinear));
+    const speedBlend =
+      speedMph >= 28 && remainingMiles > 0.35 ? 0.14 : speedMph >= 18 && remainingMiles > 0.2 ? 0.08 : 0;
+    let etaRaw =
+      etaMinutesLinear * (1 - speedBlend) + Math.min(etaFromSpeed, etaMinutesLinear * 2.2) * speedBlend;
+    etaRaw = Math.max(0, etaRaw);
+
+    const prev = liveEtaSmoothRef.current;
+    const dampedMinutes =
+      prev != null && Number.isFinite(prev)
+        ? prev + Math.max(-2.8, Math.min(2.8, etaRaw - prev))
+        : etaRaw;
+    const clamped = Math.max(0, dampedMinutes);
+    liveEtaSmoothRef.current = clamped;
+    const etaMinutes = Math.max(0, Math.round(clamped));
+
     setLiveEta({ distanceMiles: remainingMiles, etaMinutes });
   }, [isNavigating, navigationData?.distance, navigationData?.duration, navigationData?.polyline, userLocation.lat, userLocation.lng, speed, traveledDistanceMeters]);
 
@@ -504,11 +540,16 @@ export function useNavigation(params: {
       return;
     }
     const speedMps = speed * 0.44704;
-    const threshold = speedMps > 13 ? 85 : speedMps > 7 ? 70 : 58;
+    /** Corridor width: tighter at low speed (urban), wider at highway speed to tolerate GPS drift. */
+    const thresholdM =
+      speedMps > 13 ? 76 + Math.min(14, speedMps * 0.35) : speedMps > 7 ? 60 + speedMps * 0.5 : 46;
     const dist = distanceToPolyline(userLocation, navigationData.polyline);
-    const offRoute = Number.isFinite(dist) && dist > threshold;
+    const offRoute = Number.isFinite(dist) && dist > thresholdM;
+    /** Clear miss: far enough off the line that we should not wait on long debounce. */
+    const severeOffRoute =
+      Number.isFinite(dist) && (dist > thresholdM * 1.42 || dist > 112 || (speedMps > 12 && dist > 95));
 
-    if (!offRoute || speedMps < 1) {
+    if (!offRoute || speedMps < 0.85) {
       offRouteSinceRef.current = null;
       return;
     }
@@ -517,24 +558,25 @@ export function useNavigation(params: {
       offRouteSinceRef.current = now;
       return;
     }
-    const debounce = speedMps > 10 ? 1800 : 2200;
-    if (now - offRouteSinceRef.current < debounce) return;
+    const elapsed = now - offRouteSinceRef.current;
+    const debounceMs = severeOffRoute ? 3400 : speedMps > 10 ? 5800 : 6500;
+    if (elapsed < debounceMs) return;
     if (rerouteInFlightRef.current) return;
-    const cooldown = speedMps > 10 ? 7000 : 9000;
-    if (now - lastRerouteAtRef.current < cooldown) return;
+    const cooldownMs = lastRerouteAtRef.current ? (severeOffRoute ? 4000 : 6500) : 0;
+    if (cooldownMs > 0 && now - lastRerouteAtRef.current < cooldownMs) return;
 
     rerouteInFlightRef.current = true;
-    lastRerouteAtRef.current = now;
     setIsRerouting(true);
     const rerouteMsg = drivingMode === 'calm' ? 'Let me find you a new route.' : 'Rerouting.';
     navSpeak(rerouteMsg, 'high', drivingMode);
 
     const reroute = async () => {
       try {
-        await Promise.race([
-          fetchDirections(navigationData.destination, userLocation),
-          new Promise<void>((resolve) => setTimeout(resolve, 8000)),
-        ]);
+        const dest = navigationData.destination;
+        const res = await fetchDirections(dest, userLocation);
+        if (res.ok) {
+          lastRerouteAtRef.current = Date.now();
+        }
       } finally {
         rerouteInFlightRef.current = false;
         offRouteSinceRef.current = null;

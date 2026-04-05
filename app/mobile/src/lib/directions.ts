@@ -270,6 +270,12 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
       }
     }
   }
+  const edgeCount = Math.max(0, polyline.length - 1);
+  const congestionAligned =
+    allCongestion.length > 0 && edgeCount > 0 && allCongestion.length === edgeCount
+      ? allCongestion
+      : undefined;
+
   return {
     polyline,
     steps,
@@ -278,7 +284,7 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
     distanceText: formatDistance(route.distance),
     durationText: formatDuration(route.duration),
     routeType,
-    congestion: allCongestion.length > 0 ? allCongestion : undefined,
+    congestion: congestionAligned,
     maxspeeds: allMaxspeeds.length > 0 ? allMaxspeeds : undefined,
   };
 }

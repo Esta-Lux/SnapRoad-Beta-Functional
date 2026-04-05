@@ -17,6 +17,8 @@ const UNKNOWN_LOCATION: Coordinate = { lat: 0, lng: 0 };
 const HEADING_SMOOTHING = 0.2;
 const SPEED_SMOOTHING = 0.25;
 const LOW_SPEED_JUMP_METERS = 120;
+/** Max MPH change accepted per ~1s navigation tick (dampens GPS speed spikes). */
+const NAV_SPEED_MAX_STEP_MPH = 18;
 
 function haversineMeters(a: Coordinate, b: Coordinate): number {
   const R = 6371000;
@@ -128,7 +130,8 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       (loc) => {
         const lat = loc.coords.latitude;
         const lng = loc.coords.longitude;
-        const speedMph = Math.max(0, (loc.coords.speed ?? 0) * 2.237);
+        const acc = loc.coords.accuracy;
+        let speedMph = Math.max(0, (loc.coords.speed ?? 0) * 2.237);
         const gpsHeading = loc.coords.heading;
         const nextCoord = { lat, lng };
 
@@ -145,7 +148,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
             speedMph < 8 &&
             movedMeters > LOW_SPEED_JUMP_METERS
           ) {
-            return { ...prev, isLocating: false, accuracy: loc.coords.accuracy ?? prev.accuracy };
+            return { ...prev, isLocating: false, accuracy: acc ?? prev.accuracy };
           }
 
           let newHeading = prev.heading;
@@ -158,12 +161,35 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
             }
             newHeading = smoothedRef.current;
           }
-          const smoothSpeed = prev.speed + (speedMph - prev.speed) * SPEED_SMOOTHING;
+
+          const accuracyPoor = typeof acc === 'number' && acc > 72;
+          const accuracyWeak = typeof acc === 'number' && acc > 42;
+          const alpha =
+            !isNavigating
+              ? SPEED_SMOOTHING
+              : accuracyPoor
+                ? 0.08
+                : accuracyWeak
+                  ? 0.14
+                  : SPEED_SMOOTHING;
+
+          if (isNavigating && accuracyPoor && speedMph > prev.speed + 25) {
+            speedMph = prev.speed + 8;
+          }
+
+          let nextSpeed = prev.speed + (speedMph - prev.speed) * alpha;
+          if (isNavigating && prev.location.lat !== UNKNOWN_LOCATION.lat) {
+            const delta = nextSpeed - prev.speed;
+            const cap = accuracyPoor ? 10 : NAV_SPEED_MAX_STEP_MPH;
+            const clampedDelta = Math.max(-28, Math.min(cap, delta));
+            nextSpeed = Math.max(0, prev.speed + clampedDelta);
+          }
+
           return {
             ...prev,
             location: nextCoord,
-            speed: smoothSpeed,
-            accuracy: loc.coords.accuracy ?? null,
+            speed: nextSpeed,
+            accuracy: acc ?? null,
             isLocating: false,
             heading: newHeading,
           };

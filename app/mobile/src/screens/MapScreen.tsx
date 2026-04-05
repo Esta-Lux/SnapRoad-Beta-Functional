@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
   Platform, Keyboard, Alert, Switch, Pressable, Image,
@@ -26,7 +26,8 @@ import {
   reverseGeocode,
   type GeocodeResult,
 } from '../lib/directions';
-import { getMapboxPublicToken } from '../lib/mapboxToken';
+import { getMapboxPublicToken, isMapboxPublicTokenConfigured } from '../lib/mapboxToken';
+import { getDrivingLightPreset, usesStandardStyleConfiguration } from '../lib/mapboxDrivingStyle';
 import RouteOverlay from '../components/map/RouteOverlay';
 import OfferMarkers from '../components/map/OfferMarkers';
 import ReportMarkers from '../components/map/ReportMarkers';
@@ -39,7 +40,7 @@ import IncidentHeatmap from '../components/map/IncidentHeatmap';
 import PlaceCard from '../components/map/PlaceCard';
 import PlaceDetailSheet from '../components/map/PlaceDetailSheet';
 import OfferRedemptionSheet from '../components/map/OfferRedemptionSheet';
-import BuildingsLayer, { shouldUseMapboxBuildingNightEffects } from '../components/map/BuildingsLayer';
+import BuildingsLayer from '../components/map/BuildingsLayer';
 import PhotoReportMarkers, { type PhotoReport } from '../components/map/PhotoReportMarkers';
 import TrafficSafetyLayer, { type TrafficSafetyZone } from '../components/map/TrafficSafetyLayer';
 import PhotoReportDetailModal from '../components/map/PhotoReportDetailModal';
@@ -131,27 +132,11 @@ const INCIDENT_COLORS: Record<string, string> = {
   construction: '#F59E0B', closure: '#D04040', pothole: '#F97316',
 };
 
+/** Mapbox Standard (+ optional Satellite). Driving modes control lighting via `StyleImport` only — no classic dark/streets URLs. */
 const MAP_STYLES = [
   { key: 'standard', label: 'Standard', url: 'mapbox://styles/mapbox/standard', icon: 'cube-outline' as const },
   { key: 'satellite', label: 'Satellite', url: 'mapbox://styles/mapbox/standard-satellite', icon: 'earth-outline' as const },
-  { key: 'streets', label: 'Streets', url: 'mapbox://styles/mapbox/streets-v12', icon: 'map-outline' as const },
-  { key: 'dark', label: 'Dark', url: 'mapbox://styles/mapbox/dark-v11', icon: 'moon-outline' as const },
 ] as const;
-
-// Calm: warm golden morning — airy, peaceful, sunrise feel
-// Adaptive: clear daylight, balanced commute sky
-// Sport: golden-hour sunset — warm horizon, slight stars; pairs with lit 3D buildings + dark-v11 basemap
-const ATMOSPHERE: Record<DrivingMode, { color: string; highColor: string; horizonBlend: number; spaceColor: string; starIntensity: number }> = {
-  calm: { color: 'rgb(255, 228, 196)', highColor: 'rgb(255, 200, 150)', horizonBlend: 0.08, spaceColor: 'rgb(220, 235, 250)', starIntensity: 0 },
-  adaptive: { color: 'rgb(186, 210, 235)', highColor: 'rgb(36, 92, 223)', horizonBlend: 0.04, spaceColor: 'rgb(187, 214, 237)', starIntensity: 0 },
-  sport: {
-    color: 'rgb(255, 154, 102)',
-    highColor: 'rgb(120, 72, 120)',
-    horizonBlend: 0.22,
-    spaceColor: 'rgb(32, 24, 48)',
-    starIntensity: 0.18,
-  },
-};
 
 /** Android RNMBXCameraManager.setFollowPadding calls asMap() — undefined breaks Fabric (ClassCastException). */
 const MAPBOX_DEFAULT_FOLLOW_PADDING = {
@@ -352,9 +337,12 @@ export default function MapScreen() {
   const ephemeralHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceHintFiredStepRef = useRef<number>(-1);
 
-  // ── Map style ──
+  // ── Map style (index into MAP_STYLES; 0 = default Standard) ──
   const [styleOverride, setStyleOverride] = useState(0);
   const [showStylePicker, setShowStylePicker] = useState(false);
+  useLayoutEffect(() => {
+    if (styleOverride >= MAP_STYLES.length) setStyleOverride(0);
+  }, [styleOverride]);
 
   // ── Data ──
   const [savedPlaces, setSavedPlaces] = useState<SavedLocation[]>([]);
@@ -438,32 +426,16 @@ export default function MapScreen() {
 
   // ─── Derived values ────────────────────────────────────────────────────────
 
-  // Calm → streets-v12 (full daylight labels / POIs)
-  // Sport → dark-v11 (night roads + labels, lit 3D extrusions + sunset atmosphere)
-  // Adaptive → standard (default)
-  // styleOverride 0 means "mode default"; higher indexes are explicit user picks
-  const darkStyleIndex = useMemo(
-    () => Math.max(0, MAP_STYLES.findIndex((ms) => ms.url.includes('dark-v'))),
-    [],
-  );
-  const streetsStyleIndex = useMemo(
-    () => Math.max(0, MAP_STYLES.findIndex((ms) => ms.url.includes('streets-v12'))),
-    [],
-  );
-  const activeStyleURL = (() => {
-    if (styleOverride !== 0) return MAP_STYLES[styleOverride]?.url ?? MAP_STYLES[0].url;
-    if (drivingMode === 'calm') return 'mapbox://styles/mapbox/streets-v12';
-    if (drivingMode === 'sport') return 'mapbox://styles/mapbox/dark-v11';
-    return MAP_STYLES[0].url;
-  })();
+  const mapStyleIndex = Math.min(styleOverride, MAP_STYLES.length - 1);
+  const activeStyleURL = MAP_STYLES[mapStyleIndex]?.url ?? MAP_STYLES[0].url;
+  const mapStylePickerHighlightIndex = mapStyleIndex;
 
-  /** Highlight the tile that matches the *effective* basemap (mode default ≠ index 0 for calm/sport). */
-  const mapStylePickerHighlightIndex = useMemo(() => {
-    if (styleOverride !== 0) return styleOverride;
-    if (drivingMode === 'calm') return streetsStyleIndex;
-    if (drivingMode === 'sport') return darkStyleIndex;
-    return 0;
-  }, [styleOverride, drivingMode, streetsStyleIndex, darkStyleIndex]);
+  /** Calm→dawn, Adaptive→day, Sport→dusk; app dark theme → night (Mapbox Standard basemap). */
+  const mapLightPreset = useMemo(
+    () => getDrivingLightPreset(drivingMode, isLight),
+    [drivingMode, isLight],
+  );
+  const standardStyleImportsEnabled = usesStandardStyleConfiguration(activeStyleURL);
 
   /** Keeps 3D extrusions under label layers; LocationPuck is last in the MapView tree. */
   const buildingsBelowLayerId = useMemo(() => {
@@ -475,22 +447,20 @@ export default function MapScreen() {
     return undefined;
   }, [activeStyleURL]);
 
-  /** streets-v12 and navigation-night-v1 support heading indicator; Standard omits it. */
-  const atmosphereStyle = ATMOSPHERE[drivingMode];
   const isCalm = drivingMode === 'calm';
-  const isAdaptive = drivingMode === 'adaptive';
   const isSport = drivingMode === 'sport';
 
-  /** Flat light + emissive/flood extrusion styling (BuildingsLayer); Sport + dark or navigation-night basemaps only. */
-  const mapboxNightBuildingEffects = useMemo(
-    () => shouldUseMapboxBuildingNightEffects(activeStyleURL, drivingMode, isLight),
-    [activeStyleURL, drivingMode, isLight],
-  );
-  const animDuration = isCalm
-    ? (nav.isNavigating ? 1000 : 1200)         // slow, smooth calm
-    : isSport
-      ? (speed > 25 ? 200 : speed > 10 ? 350 : 600)   // snappy sport
-      : speed > 15 ? 300 : speed > 5 ? 500 : 800;     // adaptive standard
+  /** Smooth ~800ms+ transitions when switching driving modes (explore); nav keeps snappy follow. */
+  const animDuration = nav.isNavigating
+    ? (isCalm
+        ? 1000
+        : isSport
+          ? (speed > 25 ? 200 : speed > 10 ? 350 : 600)
+          : speed > 15 ? 300 : speed > 5 ? 500 : 800)
+    : Math.max(
+        800,
+        isCalm ? 1200 : isSport ? (speed > 25 ? 450 : speed > 10 ? 600 : 700) : speed > 15 ? 500 : 800,
+      );
 
   /** ~500m grid so place cards / detail distance text do not jitter every GPS tick */
   const placeCardLocGridLat = Math.round(location.lat * 200) / 200;
@@ -575,7 +545,9 @@ export default function MapScreen() {
   const confirmUntil = useTurnConfirmationUntil(nav.isNavigating, nav.currentStepIndex, drivingMode);
   const inConfirmWindow = Date.now() < confirmUntil;
   const isAmbient = !nav.isNavigating && speed > 6.7;
-  const mapOk = isMapAvailable() && MapboxGL !== null;
+  const hasNativeMapbox = isMapAvailable() && MapboxGL !== null;
+  /** Native Mapbox without a pk. token often crashes loading styles — gate the MapView. */
+  const mapOk = hasNativeMapbox && isMapboxPublicTokenConfigured();
 
   const mapWeather = useMapWeather(location.lat, location.lng, {
     enabled: mapTabFocused && mapOk,
@@ -1807,14 +1779,23 @@ export default function MapScreen() {
           ref={mapRef}
           style={s.map}
           styleURL={activeStyleURL}
-          // streets-v12, navigation-night-v1, dark-v11, light-v11 are classic styles — use mercator
-          projection={(isCalm || isSport || activeStyleURL.includes('dark-v') || activeStyleURL.includes('navigation-')) ? 'mercator' : 'globe'}
+          projection={activeStyleURL.includes('standard-satellite') ? 'mercator' : 'globe'}
           logoEnabled={false}
           attributionEnabled={false}
           compassEnabled
           onTouchStart={handleMapTouch}
           onPress={handleMapPress}
         >
+          {standardStyleImportsEnabled && MapboxGL.StyleImport ? (
+            <MapboxGL.StyleImport
+              id="basemap"
+              existing
+              config={{
+                lightPreset: mapLightPreset,
+                show3dObjects: 'true',
+              }}
+            />
+          ) : null}
           <MapboxGL.Camera
             ref={cameraRef}
             defaultSettings={{
@@ -1840,23 +1821,8 @@ export default function MapScreen() {
             followPadding={camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING}
           />
 
-          {mapboxNightBuildingEffects && MapboxGL.Light ? (
-            <MapboxGL.Light
-              style={{
-                anchor: 'viewport',
-                position: isSport ? [-52, 88, 38] : [1.2, 198, 36],
-                color: isSport ? '#FFDCA8' : '#C8D4F0',
-                intensity: isSport ? 0.52 : 0.33,
-              }}
-            />
-          ) : null}
-
-          {/* Terrain only on Standard/Satellite — classic styles don't reliably support it */}
-          {MapboxGL.RasterDemSource && MapboxGL.Terrain &&
-           !activeStyleURL.includes('streets-v') &&
-           !activeStyleURL.includes('navigation-') &&
-           !activeStyleURL.includes('dark-v') &&
-           !activeStyleURL.includes('light-v') && (
+          {/* Terrain: Standard + Satellite (classic streets/dark URLs removed). */}
+          {MapboxGL.RasterDemSource && MapboxGL.Terrain && standardStyleImportsEnabled && (
             <MapboxGL.RasterDemSource id="mapbox-dem" url="mapbox://mapbox.mapbox-terrain-dem-v1" tileSize={514} maxZoomLevel={14}>
               <MapboxGL.Terrain style={{ exaggeration: modeConfig.terrainExaggeration }} />
             </MapboxGL.RasterDemSource>
@@ -1943,8 +1909,6 @@ export default function MapScreen() {
             }}
           />
 
-          {MapboxGL.Atmosphere && <MapboxGL.Atmosphere style={atmosphereStyle} />}
-
           {(nav.selectedDestination || selectedPlace) && (
             <MapboxGL.MarkerView
               id="dest-pin"
@@ -1968,13 +1932,31 @@ export default function MapScreen() {
             puckBearing={nav.isNavigating && cameraLocked ? 'course' : 'heading'}
             androidRenderMode={nav.isNavigating && cameraLocked ? 'gps' : 'compass'}
             scale={isSport ? 1.08 : 1}
+            pulsing={
+              nav.isNavigating && cameraLocked
+                ? { isEnabled: false }
+                : 'default'
+            }
           />
         </MapboxGL.MapView>
       ) : (
         <View style={[s.map, s.placeholder]}>
           <Ionicons name="map-outline" size={48} color="#3B82F6" />
-          <Text style={s.phTitle}>Map requires Dev Build</Text>
-          <Text style={s.phSub}>Run: npx expo run:ios / npx expo run:android</Text>
+          {!hasNativeMapbox ? (
+            <>
+              <Text style={s.phTitle}>Map requires Dev Build</Text>
+              <Text style={s.phSub}>Run: npx expo run:ios / npx expo run:android</Text>
+            </>
+          ) : (
+            <>
+              <Text style={s.phTitle}>Mapbox token missing</Text>
+              <Text style={s.phSub}>
+                Add EXPO_PUBLIC_MAPBOX_TOKEN to app/mobile/.env for local dev. For EAS, set the same variable in
+                Expo → Project → Environment variables for each build profile (development / preview / production),
+                then create a new build — tokens are baked in at build time, not only on the server.
+              </Text>
+            </>
+          )}
           <Text style={s.phCoord}>{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</Text>
         </View>
       )}

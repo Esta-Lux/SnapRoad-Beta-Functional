@@ -202,7 +202,16 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       easBuildProfile: process.env.EAS_BUILD_PROFILE || "",
       apiUrl: resolveApiUrl(),
       // Restrict this token in the Mapbox dashboard: iOS/Android bundle com.snaproad.app; web https://app.snaproad.app
-      mapboxPublicToken: envAny(["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"], ""),
+      mapboxPublicToken: (() => {
+        const t = envAny(["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"], "");
+        if (process.env.EAS_BUILD && !t.trim()) {
+          console.warn(
+            "[app.config] EXPO_PUBLIC_MAPBOX_TOKEN is empty during EAS build — maps/directions will not work. " +
+              "Set EXPO_PUBLIC_MAPBOX_TOKEN (or MAPBOX_PUBLIC_TOKEN) in Expo dashboard for this build profile's environment.",
+          );
+        }
+        return t;
+      })(),
       supabaseUrl: envAny(["EXPO_PUBLIC_SUPABASE_URL", "SUPABASE_URL"]),
       supabaseAnonKey: envAny(["EXPO_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY"]),
       stripePublishableKey: envAny([

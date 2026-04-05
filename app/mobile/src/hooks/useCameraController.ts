@@ -22,9 +22,9 @@ function speedMphBucket(mph: number): number {
 function maneuverDistanceBucket(meters: number): number {
   if (!Number.isFinite(meters) || meters <= 0) return 400;
   const m = Math.min(2000, meters);
-  if (m < 70) return Math.round(m / 12) * 12;
-  if (m < 200) return Math.round(m / 25) * 25;
-  return Math.round(m / 45) * 45;
+  if (m < 70) return Math.round(m / 18) * 18;
+  if (m < 200) return Math.round(m / 32) * 32;
+  return Math.round(m / 50) * 50;
 }
 
 export interface CameraSettings {

@@ -100,20 +100,17 @@ export default React.memo(function RouteOverlay({
 
   const useCongestionColor = hasCongestion;
 
+  /** Only moderate+ reads as traffic; low/unknown match the base route (avoids misleading green fragments). */
   const aheadLineColor: any = useCongestionColor
     ? [
         'match',
         ['get', 'congestion'],
-        'low',
-        TRAFFIC_CONGESTION_HEX.low,
         'moderate',
         TRAFFIC_CONGESTION_HEX.moderate,
         'heavy',
         TRAFFIC_CONGESTION_HEX.heavy,
         'severe',
         TRAFFIC_CONGESTION_HEX.severe,
-        'unknown',
-        TRAFFIC_CONGESTION_HEX.unknown,
         routeColor,
       ]
     : routeColor;
@@ -145,7 +142,7 @@ export default React.memo(function RouteOverlay({
         id="sr-route-glow"
         filter={['==', ['get', 'segment'], 'ahead']}
         style={{
-          lineColor: useCongestionColor ? aheadLineColor : effectiveGlowColor,
+          lineColor: effectiveGlowColor,
           lineWidth: routeWidth * 2.8,
           lineOpacity: glowOpacity * (isRerouting ? 0.3 : 1),
           lineBlur: 6,
