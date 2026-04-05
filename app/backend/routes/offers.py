@@ -406,6 +406,104 @@ def create_offer(offer: OfferCreate, user: CurrentUser):
     return {"success": True, "data": created.data[0]}
 
 
+# Static path segments MUST be registered before `/offers/{offer_id}` or Starlette matches
+# e.g. `nearby` as an offer id (GET /offers/nearby → 404 "Offer not found").
+@router.get("/offers/nearby")
+def get_nearby_offers(
+    auth_user: CurrentUser,
+    lat: float = 39.9612,
+    lng: float = -82.9988,
+    radius: Annotated[float, Query(ge=0.1, le=200)] = 10.0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+):
+    cache_lat = round(lat, 2)
+    cache_lng = round(lng, 2)
+    key = f"offers_nearby:{cache_lat}:{cache_lng}:{radius}"
+    user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
+    cached = cache_get(key)
+    if cached:
+        return _finalize_nearby_cached_response(cached, user_id)
+    nearby = []
+    aff_user = user_id or "anonymous"
+    source = _active_offers_source(limit=500)
+    for offer in source:
+        dlat = abs(offer["lat"] - lat)
+        dlng = abs(offer["lng"] - lng)
+        dist_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+        if dist_km <= radius:
+            affinity_score, boosted = _user_offer_affinity(aff_user, offer)
+            nearby.append({
+                **offer,
+                "distance_km": round(dist_km, 2),
+                "offer_type": _offer_type(offer),
+                "boost_multiplier": offer.get("boost_multiplier", 1.0),
+                "boost_expiry": offer.get("boost_expiry"),
+                "allocated_locations": offer.get("allocated_locations", []),
+                "relevance_score": round(affinity_score - dist_km * 2.5, 2),
+                "is_boosted_active": boosted,
+            })
+    nearby.sort(key=lambda x: (x.get("relevance_score", 0), -(x["distance_km"])), reverse=True)
+    result = {"success": True, "data": nearby[:limit], "count": len(nearby[:limit])}
+    cache_set(key, result, ttl=300)
+    return _finalize_nearby_cached_response(result, user_id)
+
+
+@router.get("/offers/on-route")
+def get_offers_on_route(origin_lat: float = 39.9612, origin_lng: float = -82.9988, dest_lat: float = 40.0067, dest_lng: float = -83.0305):
+    route_offers = []
+    mid_lat = (origin_lat + dest_lat) / 2
+    mid_lng = (origin_lng + dest_lng) / 2
+    source = _active_offers_source(limit=500)
+    for offer in source:
+        dlat = abs(offer["lat"] - mid_lat)
+        dlng = abs(offer["lng"] - mid_lng)
+        dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+        if dist <= 5:
+            route_offers.append({**offer, "distance_km": round(dist, 2)})
+    return {"success": True, "data": route_offers}
+
+
+@router.get("/offers/personalized")
+def get_personalized_offers(
+    auth_user: CurrentUser,
+    lat: float = 39.9612,
+    lng: float = -82.9988,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+):
+    user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    user = _get_profile_like(user_id)
+    history = driver_location_history.get(user_id, [])
+    visited_types = {}
+    for visit in history:
+        if visit.get("business_type"):
+            visited_types[visit["business_type"]] = visited_types.get(visit["business_type"], 0) + 1
+    scored = []
+    source = _active_offers_source(limit=500)
+    for offer in source:
+        try:
+            exp_raw = str(offer.get("expires_at") or "")
+            exp = datetime.fromisoformat(exp_raw.replace("Z", "+00:00"))
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp < datetime.now(timezone.utc):
+                continue
+        except Exception:
+            continue
+        dlat = abs(offer["lat"] - lat)
+        dlng = abs(offer["lng"] - lng)
+        dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+        score = 100 - (dist * 10)
+        if offer.get("business_type") in visited_types:
+            score += visited_types[offer["business_type"]] * 5
+        is_prem = bool(user.get("is_premium")) or str(user.get("plan") or "").lower() in ("premium", "family")
+        discount = OFFER_CONFIG["premium_discount_percent"] if is_prem else OFFER_CONFIG["free_discount_percent"]
+        scored.append({**offer, "score": score, "distance_km": round(dist, 2), "discount_percent": discount})
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return {"success": True, "data": scored[:limit], "voice_prompt": f"I found {min(limit, len(scored))} great offers for you nearby!"}
+
+
 @router.post("/offers/{offer_id}/redeem")
 @limiter.limit("30/minute")
 def redeem_offer(request: Request, offer_id: str, auth_user: CurrentUser):
@@ -585,102 +683,6 @@ def track_offer_visit(offer_id: str, body: dict, auth_user: CurrentUser):
         trip_id=body.get("trip_id"),
     )
     return {"success": True, "data": event}
-
-
-@router.get("/offers/nearby")
-def get_nearby_offers(
-    auth_user: CurrentUser,
-    lat: float = 39.9612,
-    lng: float = -82.9988,
-    radius: Annotated[float, Query(ge=0.1, le=200)] = 10.0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 100,
-):
-    cache_lat = round(lat, 2)
-    cache_lng = round(lng, 2)
-    key = f"offers_nearby:{cache_lat}:{cache_lng}:{radius}"
-    user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
-    cached = cache_get(key)
-    if cached:
-        return _finalize_nearby_cached_response(cached, user_id)
-    nearby = []
-    aff_user = user_id or "anonymous"
-    source = _active_offers_source(limit=500)
-    for offer in source:
-        dlat = abs(offer["lat"] - lat)
-        dlng = abs(offer["lng"] - lng)
-        dist_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
-        if dist_km <= radius:
-            affinity_score, boosted = _user_offer_affinity(aff_user, offer)
-            nearby.append({
-                **offer,
-                "distance_km": round(dist_km, 2),
-                "offer_type": _offer_type(offer),
-                "boost_multiplier": offer.get("boost_multiplier", 1.0),
-                "boost_expiry": offer.get("boost_expiry"),
-                "allocated_locations": offer.get("allocated_locations", []),
-                "relevance_score": round(affinity_score - dist_km * 2.5, 2),
-                "is_boosted_active": boosted,
-            })
-    nearby.sort(key=lambda x: (x.get("relevance_score", 0), -(x["distance_km"])), reverse=True)
-    result = {"success": True, "data": nearby[:limit], "count": len(nearby[:limit])}
-    cache_set(key, result, ttl=300)
-    return _finalize_nearby_cached_response(result, user_id)
-
-
-@router.get("/offers/on-route")
-def get_offers_on_route(origin_lat: float = 39.9612, origin_lng: float = -82.9988, dest_lat: float = 40.0067, dest_lng: float = -83.0305):
-    route_offers = []
-    mid_lat = (origin_lat + dest_lat) / 2
-    mid_lng = (origin_lng + dest_lng) / 2
-    source = _active_offers_source(limit=500)
-    for offer in source:
-        dlat = abs(offer["lat"] - mid_lat)
-        dlng = abs(offer["lng"] - mid_lng)
-        dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
-        if dist <= 5:
-            route_offers.append({**offer, "distance_km": round(dist, 2)})
-    return {"success": True, "data": route_offers}
-
-
-@router.get("/offers/personalized")
-def get_personalized_offers(
-    auth_user: CurrentUser,
-    lat: float = 39.9612,
-    lng: float = -82.9988,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
-):
-    user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    user = _get_profile_like(user_id)
-    history = driver_location_history.get(user_id, [])
-    visited_types = {}
-    for visit in history:
-        if visit.get("business_type"):
-            visited_types[visit["business_type"]] = visited_types.get(visit["business_type"], 0) + 1
-    scored = []
-    source = _active_offers_source(limit=500)
-    for offer in source:
-        try:
-            exp_raw = str(offer.get("expires_at") or "")
-            exp = datetime.fromisoformat(exp_raw.replace("Z", "+00:00"))
-            if exp.tzinfo is None:
-                exp = exp.replace(tzinfo=timezone.utc)
-            if exp < datetime.now(timezone.utc):
-                continue
-        except Exception:
-            continue
-        dlat = abs(offer["lat"] - lat)
-        dlng = abs(offer["lng"] - lng)
-        dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
-        score = 100 - (dist * 10)
-        if offer.get("business_type") in visited_types:
-            score += visited_types[offer["business_type"]] * 5
-        is_prem = bool(user.get("is_premium")) or str(user.get("plan") or "").lower() in ("premium", "family")
-        discount = OFFER_CONFIG["premium_discount_percent"] if is_prem else OFFER_CONFIG["free_discount_percent"]
-        scored.append({**offer, "score": score, "distance_km": round(dist, 2), "discount_percent": discount})
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    return {"success": True, "data": scored[:limit], "voice_prompt": f"I found {min(limit, len(scored))} great offers for you nearby!"}
 
 
 @router.post("/offers/{offer_id}/accept-voice")

@@ -445,7 +445,14 @@ class ApiService {
   }
 
   async getOfferById(id: string): Promise<ApiResponse<Offer>> {
-    return this.request<Offer>(`/api/offers/${id}`);
+    const res = await this.request<{ success?: boolean; data?: Offer }>(`/api/offers/${id}`);
+    if (!res.success) return res;
+    const body = res.data as { success?: boolean; data?: Offer } | Offer | undefined;
+    const offer =
+      body && typeof body === 'object' && 'data' in body && (body as { data?: Offer }).data != null
+        ? (body as { data: Offer }).data
+        : (body as Offer);
+    return { success: true, data: offer };
   }
 
   async redeemOffer(offerId: string): Promise<ApiResponse<{ success: boolean; code: string }>> {
