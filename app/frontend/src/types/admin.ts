@@ -82,6 +82,8 @@ export interface AdminUser {
   created_at: string
   promotion_access_until?: string | null
   promotion_plan?: string | null
+  /** admin | stripe | promo — admin-set tiers block in-app downgrades on mobile */
+  plan_entitlement_source?: string | null
 }
 
 export interface AdminIncident {
@@ -130,6 +132,7 @@ export interface Partner {
   credits?: number
   promotion_access_until?: string | null
   promotion_plan?: string | null
+  plan_entitlement_source?: string | null
 }
 
 export interface Campaign {

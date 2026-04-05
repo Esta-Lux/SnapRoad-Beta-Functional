@@ -387,6 +387,11 @@ export default function UsersTab({ theme }: UsersTabProps) {
                         Promo until {String(user.promotion_access_until).slice(0, 10)}
                       </div>
                     )}
+                    {(user.plan_entitlement_source || '').toLowerCase() === 'admin' && (
+                      <div className={`text-[10px] mt-1 text-amber-400/90`}>
+                        Admin-managed tier (in-app downgrade blocked)
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">

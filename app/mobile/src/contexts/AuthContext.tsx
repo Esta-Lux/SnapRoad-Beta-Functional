@@ -115,6 +115,13 @@ function mapApiUserToContext(apiUser: Record<string, unknown>): User {
   } else {
     delete user.promotion_plan;
   }
+  const pes = apiUser.plan_entitlement_source;
+  if (typeof pes === 'string' && pes.trim()) {
+    user.plan_entitlement_source = pes.trim().toLowerCase();
+  } else {
+    delete user.plan_entitlement_source;
+  }
+
   if (!user.promotion_active) {
     delete user.promotion_access_until;
     delete user.promotion_plan;

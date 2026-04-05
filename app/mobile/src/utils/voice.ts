@@ -210,18 +210,39 @@ export function formatTurnInstruction(
   const hasLight = intersections?.some((i) => i.classes?.includes('traffic_signal')) ?? false;
   const hasStop = intersections?.some((i) => i.classes?.includes('stop_sign')) ?? false;
 
-  const i = instruction.trim();
-  const dirMatch = i.match(/\b(left|right|u-turn|straight)\b/i);
-  const turnDir = dirMatch?.[1]?.toLowerCase() ?? null;
-
-  const manL = maneuver?.toLowerCase() ?? '';
+  const manL = (maneuver ?? '').toLowerCase();
+  /** Prefer structured maneuver (Mapbox modifier) so banner copy like "keep right …" cannot flip L/R vs the step. */
   let dir: string | null = null;
-  if (turnDir === 'u-turn') dir = 'u-turn';
-  else if (turnDir === 'left' || manL.includes('left')) dir = 'left';
-  else if (turnDir === 'right' || manL.includes('right')) dir = 'right';
-  else if (turnDir === 'straight' || manL === 'straight') dir = 'straight';
-  else if (manL === 'roundabout') dir = 'roundabout';
-  else if (manL === 'merge') dir = 'merge';
+  let sharpTurn = false;
+  let slightTurn = false;
+  if (manL === 'u-turn' || manL.includes('u-turn')) dir = 'u-turn';
+  else if (manL.includes('roundabout')) dir = 'roundabout';
+  else if (manL.includes('merge')) dir = 'merge';
+  else if (manL === 'straight') dir = 'straight';
+  else if (manL.includes('sharp') && manL.includes('left')) {
+    dir = 'left';
+    sharpTurn = true;
+  } else if (manL.includes('sharp') && manL.includes('right')) {
+    dir = 'right';
+    sharpTurn = true;
+  } else if (manL.includes('slight') && manL.includes('left')) {
+    dir = 'left';
+    slightTurn = true;
+  } else if (manL.includes('slight') && manL.includes('right')) {
+    dir = 'right';
+    slightTurn = true;
+  } else if (/\bleft\b/.test(manL)) dir = 'left';
+  else if (/\bright\b/.test(manL)) dir = 'right';
+
+  const i = instruction.trim();
+  if (!dir) {
+    const dirMatch = i.match(/\b(left|right|u-turn|straight)\b/i);
+    const turnDir = dirMatch?.[1]?.toLowerCase() ?? null;
+    if (turnDir === 'u-turn') dir = 'u-turn';
+    else if (turnDir === 'left') dir = 'left';
+    else if (turnDir === 'right') dir = 'right';
+    else if (turnDir === 'straight') dir = 'straight';
+  }
 
   if (!dir) return i;
 
@@ -231,8 +252,8 @@ export function formatTurnInstruction(
   let nextTurnDir: string | undefined;
   if (nextTurn && typeof nextTurn.distanceMeters === 'number' && nextTurn.distanceMeters < 300) {
     const nm = nextTurn.maneuver?.toLowerCase() ?? '';
-    if (nm.includes('left')) nextTurnDir = 'turn left';
-    else if (nm.includes('right')) nextTurnDir = 'turn right';
+    if (/\bleft\b/.test(nm) && !/\bright\b/.test(nm)) nextTurnDir = 'turn left';
+    else if (/\bright\b/.test(nm) && !/\bleft\b/.test(nm)) nextTurnDir = 'turn right';
   }
 
   let core: string;
@@ -252,7 +273,19 @@ export function formatTurnInstruction(
     return `Continue straight for ${miles} miles.`;
   } else {
     const turnWord = dir === 'left' ? 'left' : 'right';
-    if (hasLight) {
+    if (sharpTurn) {
+      core = hasLight
+        ? `make a sharp ${turnWord} at the light${road}`
+        : hasStop
+          ? `make a sharp ${turnWord} at the stop sign${road}`
+          : `make a sharp ${turnWord}${road}`;
+    } else if (slightTurn) {
+      core = hasLight
+        ? `bear slightly ${turnWord} at the light${road}`
+        : hasStop
+          ? `bear slightly ${turnWord} at the stop sign${road}`
+          : `bear slightly ${turnWord}${road}`;
+    } else if (hasLight) {
       core = `turn ${turnWord} at the light${road}`;
     } else if (hasStop) {
       core = `turn ${turnWord} at the stop sign${road}`;

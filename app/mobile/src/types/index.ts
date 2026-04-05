@@ -39,6 +39,8 @@ export interface User {
   promotion_access_until?: string;
   promotion_plan?: string;
   promotion_active?: boolean;
+  /** When `admin`, in-app downgrade to basic is blocked (admin-set tier). */
+  plan_entitlement_source?: string;
 }
 
 export interface ApiUser {

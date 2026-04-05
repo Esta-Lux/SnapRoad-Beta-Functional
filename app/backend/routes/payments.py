@@ -346,7 +346,11 @@ def _maybe_upgrade_profile(tx: dict, session_user_id: str) -> None:
         sb = get_supabase()
         existing = sb.table("profiles").select("is_premium").eq("id", uid).limit(1).execute()
         if not (existing.data and existing.data[0].get("is_premium")):
-            sb_update_profile(uid, {"plan": plan_id, "is_premium": True})
+            sb_update_profile(uid, {
+                "plan": plan_id,
+                "is_premium": True,
+                "plan_entitlement_source": "stripe",
+            })
     except Exception as e:
         logger.warning("failed to upgrade user profile to premium: %s", e)
 

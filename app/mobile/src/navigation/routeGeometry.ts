@@ -1,6 +1,6 @@
 import type { Feature, FeatureCollection, LineString, Point, Position } from 'geojson';
 import type { DirectionsStep } from '../lib/directions';
-import { metersBetween } from '../utils/distance';
+import { alongRouteDistanceMeters, metersBetween } from '../utils/distance';
 import type { Coordinate } from '../types';
 
 function featureCollection(
@@ -94,10 +94,14 @@ export function getDistanceToUpcomingManeuverMeters(
   steps: DirectionsStep[] | undefined,
   currentStepIndex: number,
   user: Coordinate,
+  polyline?: Coordinate[],
 ): number {
   const step = getUpcomingManeuverStep(steps, currentStepIndex);
   if (!step || !Number.isFinite(step.lng) || !Number.isFinite(step.lat)) {
     return Number.POSITIVE_INFINITY;
+  }
+  if (polyline && polyline.length >= 2) {
+    return alongRouteDistanceMeters(polyline, user, { lat: step.lat, lng: step.lng });
   }
   return metersBetween(user, { lat: step.lat, lng: step.lng });
 }

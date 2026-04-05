@@ -1103,7 +1103,10 @@ def create_partner(partner_data: dict):
 
 @router.put("/admin/partners/{partner_id}")
 def update_partner(partner_id: str, partner_data: dict):
-    success = sb_update_partner(partner_id, partner_data)
+    body = dict(partner_data or {})
+    if "plan" in body and body.get("plan") is not None:
+        body["plan_entitlement_source"] = "admin"
+    success = sb_update_partner(partner_id, body)
     if success:
         return {"success": True, "message": "Partner updated successfully"}
     return {"success": False, "message": "Failed to update partner"}
@@ -1232,7 +1235,29 @@ def get_users(limit: Annotated[int, Query(ge=1, le=2000)] = 500):
 
 @router.put("/admin/users/{user_id}")
 def update_user(user_id: str, user_data: dict):
-    success = sb_update_profile(user_id, user_data)
+    body = dict(user_data or {})
+    if "plan" in body or "is_premium" in body:
+        pl = body.get("plan")
+        pls = str(pl).strip().lower() if pl is not None and str(pl).strip() != "" else None
+        ip = body.get("is_premium")
+        upgrading = ip is True or pls in ("premium", "family")
+        downgrading = ip is False or pls == "basic"
+        if upgrading:
+            body["plan_entitlement_source"] = "admin"
+            if pls in ("premium", "family"):
+                body["plan"] = pls
+            if ip is True and not pls:
+                body.setdefault("plan", "premium")
+            body["is_premium"] = True
+            if body.get("gem_multiplier") is None:
+                body["gem_multiplier"] = 2
+        elif downgrading:
+            body["plan_entitlement_source"] = None
+            body["plan"] = "basic"
+            body["is_premium"] = False
+            if body.get("gem_multiplier") is None:
+                body["gem_multiplier"] = 1
+    success = sb_update_profile(user_id, body)
     if success:
         return {"success": True, "message": "User updated successfully"}
     return {"success": False, "message": "Failed to update user"}

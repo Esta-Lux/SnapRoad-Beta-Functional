@@ -128,7 +128,11 @@ def _handle_checkout_session_completed(session: dict) -> None:
     # Partner subscription (metadata from /partner/v2/subscribe)
     if partner_id and meta.get("plan") and mode == "subscription":
         plan = meta.get("plan")
-        sb_update_partner(partner_id, {"plan": plan, "subscription_status": "active"})
+        sb_update_partner(partner_id, {
+            "plan": plan,
+            "subscription_status": "active",
+            "plan_entitlement_source": "stripe",
+        })
         logger.info("Partner %s subscribed to plan %s", partner_id, plan)
         try:
             from services.referral_rewards import apply_partner_subscription_referral_rewards
@@ -185,6 +189,7 @@ def _handle_checkout_session_completed(session: dict) -> None:
         if plan_id in ("premium", "family") and mode == "subscription":
             profile_updates["plan"] = plan_id
             profile_updates["is_premium"] = True
+            profile_updates["plan_entitlement_source"] = "stripe"
         if profile_updates:
             sb_update_profile(user_id, profile_updates)
             if "plan" in profile_updates:

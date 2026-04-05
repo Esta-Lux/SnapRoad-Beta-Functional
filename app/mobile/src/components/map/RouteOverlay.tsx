@@ -2,13 +2,17 @@ import React, { useMemo } from 'react';
 import MapboxGL from '../../utils/mapbox';
 import type { Coordinate } from '../../types';
 import type { CongestionLevel } from '../../lib/directions';
-import { splitRouteByNearestPoint } from '../../utils/distance';
+import {
+  buildRouteSplitRingsFromProgress,
+  type RouteSplitForOverlay,
+} from '../../utils/distance';
 import { TRAFFIC_CONGESTION_HEX } from '../../constants/trafficCongestion';
 
 interface Props {
   polyline: Coordinate[];
-  userLocation: Coordinate;
   isNavigating: boolean;
+  /** Authoritative split from navigation (segmentIndex + tOnSegment); no GPS / projection in this component. */
+  routeSplit?: RouteSplitForOverlay | null;
   /** From `DRIVING_MODES[drivingMode]` */
   routeColor: string;
   casingColor: string;
@@ -21,10 +25,14 @@ interface Props {
   isRerouting?: boolean;
 }
 
+function lngLatToCoords(ring: [number, number][]): Coordinate[] {
+  return ring.map(([lng, lat]) => ({ lng, lat }));
+}
+
 export default React.memo(function RouteOverlay({
   polyline,
-  userLocation,
   isNavigating,
+  routeSplit = null,
   routeColor,
   casingColor,
   passedColor,
@@ -60,26 +68,54 @@ export default React.memo(function RouteOverlay({
       };
     }
 
-    const { passed, ahead, splitIndex } = splitRouteByNearestPoint(polyline, userLocation);
+    if (!routeSplit) {
+      if (hasCongestion) {
+        return buildCongestionFeatures(polyline, congestion!, 'ahead');
+      }
+      return {
+        type: 'FeatureCollection' as const,
+        features: [
+          {
+            type: 'Feature' as const,
+            properties: { segment: 'ahead', congestion: 'unknown' },
+            geometry: {
+              type: 'LineString' as const,
+              coordinates: polyline.map((p) => [p.lng, p.lat]),
+            },
+          },
+        ],
+      };
+    }
+
+    const rings = buildRouteSplitRingsFromProgress(
+      polyline,
+      routeSplit.segmentIndex,
+      routeSplit.tOnSegment,
+    );
+    if (!rings) {
+      return { type: 'FeatureCollection' as const, features: [] };
+    }
+
     const features: GeoJSON.Feature[] = [];
 
-    if (passed.length >= 2) {
+    if (rings.passedLngLat.length >= 2) {
       features.push({
         type: 'Feature',
         properties: { segment: 'passed', congestion: 'passed' },
-        geometry: { type: 'LineString', coordinates: passed },
+        geometry: { type: 'LineString', coordinates: rings.passedLngLat },
       });
     }
 
-    if (ahead.length >= 2) {
+    if (rings.aheadLngLat.length >= 2) {
+      const firstEdge = rings.firstAheadEdgeIndex;
       if (hasCongestion) {
-        const aheadCoords: Coordinate[] = ahead.map(([lng, lat]) => ({ lng, lat }));
+        const aheadCoords = lngLatToCoords(rings.aheadLngLat);
         const edgeCount = aheadCoords.length - 1;
         const aheadCongestion: CongestionLevel[] = [];
         for (let e = 0; e < edgeCount; e++) {
-          const ci = splitIndex + e;
+          const edgeIdx = firstEdge + e;
           aheadCongestion.push(
-            ci >= 0 && ci < congestion!.length ? congestion![ci]! : 'unknown',
+            edgeIdx >= 0 && edgeIdx < congestion!.length ? congestion![edgeIdx]! : 'unknown',
           );
         }
         const cf = buildCongestionFeatures(aheadCoords, aheadCongestion, 'ahead');
@@ -88,19 +124,18 @@ export default React.memo(function RouteOverlay({
         features.push({
           type: 'Feature',
           properties: { segment: 'ahead', congestion: 'unknown' },
-          geometry: { type: 'LineString', coordinates: ahead },
+          geometry: { type: 'LineString', coordinates: rings.aheadLngLat },
         });
       }
     }
 
     return { type: 'FeatureCollection' as const, features };
-  }, [polyline, userLocation.lat, userLocation.lng, isNavigating, hasCongestion, congestion]);
+  }, [polyline, isNavigating, routeSplit, hasCongestion, congestion, showCongestion]);
 
   if (polyline.length < 2 || !MapboxGL) return null;
 
   const useCongestionColor = hasCongestion;
 
-  /** Only moderate+ reads as traffic; low/unknown match the base route (avoids misleading green fragments). */
   const aheadLineColor: any = useCongestionColor
     ? [
         'match',
@@ -111,6 +146,10 @@ export default React.memo(function RouteOverlay({
         TRAFFIC_CONGESTION_HEX.heavy,
         'severe',
         TRAFFIC_CONGESTION_HEX.severe,
+        'low',
+        routeColor,
+        'unknown',
+        routeColor,
         routeColor,
       ]
     : routeColor;
@@ -124,7 +163,6 @@ export default React.memo(function RouteOverlay({
       shape={geoJSON as GeoJSON.FeatureCollection}
       lineMetrics={false}
     >
-      {/* Draw traveled portion underneath so the active route reads clearly on top */}
       <MapboxGL.LineLayer
         id="sr-route-passed"
         filter={['==', ['get', 'segment'], 'passed']}

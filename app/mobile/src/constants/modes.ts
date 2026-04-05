@@ -71,11 +71,11 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     color: '#6BA4E8',
     icon: 'leaf-outline',
 
-    routeColor: '#4A90D9',
-    routeCasing: '#2E6BB5',
-    passedColor: '#C8D6E5',
+    routeColor: '#6BB0E8',
+    routeCasing: '#3E7FC4',
+    passedColor: '#B8D4EF',
     routeWidth: 7,
-    routeGlowColor: '#4A90D9',
+    routeGlowColor: '#6BB0E8',
     routeGlowOpacity: 0.12,
 
     turnCardGradient: ['#6BA4E8', '#4A7BBF'],
@@ -188,11 +188,11 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     color: '#4A4063',
     icon: 'speedometer-outline',
 
-    routeColor: '#5B7FA5',
-    routeCasing: '#3D5A80',
-    passedColor: '#4A4A4A',
+    routeColor: '#7BC9A6',
+    routeCasing: '#4A9B7A',
+    passedColor: '#A8C9BB',
     routeWidth: 6,
-    routeGlowColor: '#5B7FA5',
+    routeGlowColor: '#7BC9A6',
     routeGlowOpacity: 0.15,
 
     turnCardGradient: ['#4A4063', '#2D2845'],
@@ -220,7 +220,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     endButtonGlowColor: 'rgba(155,77,77,0.3)',
     endButtonBorder: 'rgba(196,149,106,0.2)',
 
-    turnArrowBg: 'rgba(91,127,165,0.85)',
+    turnArrowBg: 'rgba(123,201,166,0.88)',
 
     navPitch: 70,
     navZoom: 17.5,

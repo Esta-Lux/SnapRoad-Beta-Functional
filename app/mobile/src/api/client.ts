@@ -323,7 +323,12 @@ class ApiService {
             : 'Request failed';
         let normalized = detail;
         if (response.status === 401) normalized = 'Session expired. Please sign in again.';
-        else if (response.status === 403) normalized = 'You don\'t have permission to access this feature.';
+        else if (response.status === 403) {
+          normalized =
+            typeof detail === 'string' && detail.trim()
+              ? detail
+              : "You don't have permission to access this feature.";
+        }
         else if (response.status === 404) normalized = 'This feature is not available yet.';
         else if (response.status === 422) normalized = detail || 'Invalid input. Please check your data and try again.';
         else if (response.status === 429) normalized = 'Too many requests. Please wait a moment and try again.';

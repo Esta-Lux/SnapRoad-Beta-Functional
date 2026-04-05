@@ -362,7 +362,7 @@ def sb_list_profiles(limit: int = 100) -> list:
             "id,email,name,plan,xp,level,gems,safety_score,"
             "total_miles,total_trips,total_savings,is_premium,"
             "state,city,status,role,partner_id,created_at,updated_at,"
-            "promotion_access_until,promotion_plan"
+            "promotion_access_until,promotion_plan,plan_entitlement_source"
         ).limit(limit).execute()
         rows = result.data or []
         # Merge time-boxed admin promos so plan/is_premium match driver-app entitlements.
@@ -397,6 +397,18 @@ def sb_get_profile(profile_id: str) -> Optional[dict]:
         return merge_profile_promotion_entitlements(dict(result.data))
     except Exception as e:
         logger.warning(f"sb_get_profile: {e}")
+        return None
+
+
+def sb_get_profile_raw(profile_id: str) -> Optional[dict]:
+    """DB row only (no promo merge). Use for entitlement checks that must not use merged overlays."""
+    try:
+        result = _sb().table("profiles").select("*").eq("id", profile_id).single().execute()
+        if not result.data:
+            return None
+        return dict(result.data)
+    except Exception as e:
+        logger.warning(f"sb_get_profile_raw: {e}")
         return None
 
 
@@ -479,9 +491,10 @@ def sb_get_partners(limit: int = 50) -> list:
             "is_approved,is_founders,subscription_status,is_internal_complimentary,"
             "referral_milestone_tiers_paid,"
             "created_at,updated_at,total_redemptions,phone,address,"
-            "promotion_access_until,promotion_plan"
+            "promotion_access_until,promotion_plan,plan_entitlement_source"
         ).limit(limit).execute()
-        return result.data or []
+        rows = result.data or []
+        return [merge_partner_promotion_entitlements(dict(r)) for r in rows]
     except Exception as e:
         if not _table_missing(e):
             logger.error(f"sb_get_partners: {e}")

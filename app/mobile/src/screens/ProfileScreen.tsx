@@ -519,10 +519,22 @@ export default function ProfileScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (plan === 'basic') {
+      if ((user?.plan_entitlement_source || '').toLowerCase() === 'admin') {
+        Alert.alert(
+          'Plan managed by your team',
+          'Your tier was set by SnapRoad and cannot be switched to Basic from the app. Contact support if you need a change.',
+        );
+        setShowPlanModal(false);
+        return;
+      }
       updateUser({ isPremium: false, isFamilyPlan: false, plan: 'basic', gem_multiplier: 1 });
-      try {
-        await api.post('/api/user/plan', { plan: 'basic' });
-      } catch { /* optimistic */ }
+      const res = await api.post('/api/user/plan', { plan: 'basic' });
+      if (!res.success) {
+        Alert.alert('Cannot change plan', res.error || 'Could not update your plan.');
+        await loadData('silent');
+        setShowPlanModal(false);
+        return;
+      }
       setShowPlanModal(false);
       await loadData('silent');
       return;

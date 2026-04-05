@@ -15,6 +15,7 @@ from services.mock_data import (
 from middleware.auth import get_current_user
 from services.supabase_service import (
     sb_get_profile,
+    sb_get_profile_raw,
     sb_update_profile,
     sb_soft_delete_profile,
     sb_delete_auth_user,
@@ -59,6 +60,19 @@ def _username_change_meta_from_row(row: Optional[Dict[str, Any]]) -> dict:
         return {"can_change_username": True, "username_change_available_at": None}
 
 
+def _profile_row_to_store(user_id: str, email_fallback: str, row: dict) -> dict:
+    return {
+        "id": user_id,
+        "name": row.get("name") or row.get("full_name") or "Driver",
+        "full_name": row.get("full_name") or row.get("name") or "Driver",
+        "email": row.get("email") or email_fallback or "",
+        "plan": row.get("plan") or "basic",
+        "is_premium": bool(row.get("is_premium")),
+        "gem_multiplier": int(row.get("gem_multiplier") or 1),
+        "vehicle_height_meters": row.get("vehicle_height_meters"),
+    }
+
+
 def _get_user_store(user: Optional[Dict[str, Any]]) -> dict:
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -66,23 +80,30 @@ def _get_user_store(user: Optional[Dict[str, Any]]) -> dict:
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid auth context")
     if user_id not in users_db:
-        initial = {
-            "id": user_id,
-            "name": "Driver",
-            "full_name": "Driver",
-            "email": user.get("email", ""),
-            "plan": "basic",
-            "is_premium": False,
-            "gem_multiplier": 1,
-            "vehicle_height_meters": None,
-        }
-        # Ensure first-write is not memory-only in production.
+        row = None
         try:
-            sb_update_profile(user_id, initial)
+            row = sb_get_profile(user_id)
         except Exception:
-            if ENVIRONMENT == "production":
-                raise HTTPException(status_code=503, detail="User profile unavailable")
-        users_db[user_id] = initial
+            row = None
+        if row and isinstance(row, dict) and str(row.get("id") or user_id).strip() == user_id:
+            users_db[user_id] = _profile_row_to_store(user_id, str(user.get("email", "")), row)
+        else:
+            initial = {
+                "id": user_id,
+                "name": "Driver",
+                "full_name": "Driver",
+                "email": user.get("email", ""),
+                "plan": "basic",
+                "is_premium": False,
+                "gem_multiplier": 1,
+                "vehicle_height_meters": None,
+            }
+            try:
+                sb_update_profile(user_id, initial)
+            except Exception:
+                if ENVIRONMENT == "production":
+                    raise HTTPException(status_code=503, detail="User profile unavailable")
+            users_db[user_id] = initial
     users_db[user_id].setdefault("vehicle_height_meters", None)
     return users_db[user_id]
 
@@ -128,6 +149,7 @@ def get_user_profile(auth_user: CurrentUser):
                     "streak",
                     "vehicle_height_meters",
                     "vehicle_type",
+                    "plan_entitlement_source",
                 ):
                     if row.get(k) is not None:
                         user[k] = row[k]

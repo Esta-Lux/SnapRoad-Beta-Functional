@@ -404,6 +404,11 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
                   {partner.promotion_plan ? ` · ${partner.promotion_plan}` : ''}
                 </div>
               )}
+              {(partner.plan_entitlement_source || '').toLowerCase() === 'admin' && (
+                <div className="text-xs text-amber-400/90">
+                  Admin-managed plan (Stripe tier changes blocked until cleared)
+                </div>
+              )}
               <div className="flex items-center justify-between text-sm">
                 <span className={textSecondary}>Member Since</span>
                 <span className={textPrimary}>{partner.created_at ? new Date(partner.created_at).toLocaleDateString() : 'N/A'}</span>

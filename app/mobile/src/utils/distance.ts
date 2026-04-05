@@ -26,17 +26,34 @@ export function formatDistance(miles: number): string {
   return `${miles.toFixed(1)} mi`;
 }
 
+/** Full orthogonal projection of a point onto a route polyline — single source for nav progress, split, and ETA. */
+export type PolylineProjection = {
+  segmentIndex: number;
+  tOnSegment: number;
+  snapCoord: Coordinate;
+  /** Shortest distance from the raw point to the polyline (meters). */
+  distanceToRouteMeters: number;
+  /** Distance along the polyline from the first vertex to the snap point. */
+  cumFromStartMeters: number;
+  /** Distance along the polyline from the snap point to the last vertex. */
+  remainingToEndMeters: number;
+};
+
 /**
- * Project a point onto a polyline and return the minimum distance in meters.
- * Uses flat-earth approximation (accurate enough for distances < 1km).
+ * Project `point` onto `polyline` (closest segment, clamped). All navigation consumers should use this
+ * instead of duplicating flat-earth segment loops.
  */
-export function distanceToPolyline(point: Coordinate, polyline: Coordinate[]): number {
-  if (!polyline.length || polyline.length < 2) return Infinity;
+export function projectOntoPolyline(point: Coordinate, polyline: Coordinate[]): PolylineProjection | null {
+  if (!polyline.length || polyline.length < 2) return null;
+
   const latScale = 111320;
   const lngScale = 111320 * Math.cos((point.lat * Math.PI) / 180);
   const px = point.lng * lngScale;
   const py = point.lat * latScale;
-  let best = Number.POSITIVE_INFINITY;
+
+  let bestDist = Number.POSITIVE_INFINITY;
+  let bestI = 0;
+  let bestT = 0;
 
   for (let i = 0; i < polyline.length - 1; i++) {
     const a = polyline[i];
@@ -48,13 +65,53 @@ export function distanceToPolyline(point: Coordinate, polyline: Coordinate[]): n
     const abx = bx - ax;
     const aby = by - ay;
     const ab2 = abx * abx + aby * aby;
-    const t = ab2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / ab2)) : 0;
+    const t = ab2 > 1e-10 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / ab2)) : 0;
     const qx = ax + abx * t;
     const qy = ay + aby * t;
     const d = Math.hypot(px - qx, py - qy);
-    if (d < best) best = d;
+    if (d < bestDist) {
+      bestDist = d;
+      bestI = i;
+      bestT = t;
+    }
   }
-  return best;
+
+  const a = polyline[bestI];
+  const b = polyline[bestI + 1];
+  const segLen = haversineMeters(a.lat, a.lng, b.lat, b.lng);
+
+  let cumFromStart = bestT * segLen;
+  for (let i = 0; i < bestI; i++) {
+    const p = polyline[i];
+    const q = polyline[i + 1];
+    cumFromStart += haversineMeters(p.lat, p.lng, q.lat, q.lng);
+  }
+
+  let remainingToEnd = (1 - bestT) * segLen;
+  for (let j = bestI + 1; j < polyline.length - 1; j++) {
+    const p = polyline[j];
+    const q = polyline[j + 1];
+    remainingToEnd += haversineMeters(p.lat, p.lng, q.lat, q.lng);
+  }
+
+  const snapCoord: Coordinate = {
+    lat: a.lat + bestT * (b.lat - a.lat),
+    lng: a.lng + bestT * (b.lng - a.lng),
+  };
+
+  return {
+    segmentIndex: bestI,
+    tOnSegment: bestT,
+    snapCoord,
+    distanceToRouteMeters: bestDist,
+    cumFromStartMeters: Math.max(0, cumFromStart),
+    remainingToEndMeters: Math.max(0, remainingToEnd),
+  };
+}
+
+export function distanceToPolyline(point: Coordinate, polyline: Coordinate[]): number {
+  const p = projectOntoPolyline(point, polyline);
+  return p ? p.distanceToRouteMeters : Infinity;
 }
 
 /**
@@ -65,46 +122,14 @@ export function closestPointOnPolyline(
   point: Coordinate,
   polyline: Coordinate[],
 ): { coord: Coordinate; distanceMeters: number } {
-  if (!polyline.length || polyline.length < 2) {
-    return { coord: point, distanceMeters: Number.POSITIVE_INFINITY };
-  }
-  const latScale = 111320;
-  const lngScale = 111320 * Math.cos((point.lat * Math.PI) / 180);
-  const px = point.lng * lngScale;
-  const py = point.lat * latScale;
-  let bestD = Number.POSITIVE_INFINITY;
-  let bestCoord = point;
-
-  for (let i = 0; i < polyline.length - 1; i++) {
-    const a = polyline[i];
-    const b = polyline[i + 1];
-    const ax = a.lng * lngScale;
-    const ay = a.lat * latScale;
-    const bx = b.lng * lngScale;
-    const by = b.lat * latScale;
-    const abx = bx - ax;
-    const aby = by - ay;
-    const ab2 = abx * abx + aby * aby;
-    const t = ab2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / ab2)) : 0;
-    const qx = ax + abx * t;
-    const qy = ay + aby * t;
-    const d = Math.hypot(px - qx, py - qy);
-    if (d < bestD) {
-      bestD = d;
-      bestCoord = { lat: qy / latScale, lng: qx / lngScale };
-    }
-  }
-
-  return {
-    coord: bestCoord,
-    distanceMeters: bestD,
-  };
+  const p = projectOntoPolyline(point, polyline);
+  if (!p) return { coord: point, distanceMeters: Number.POSITIVE_INFINITY };
+  return { coord: p.snapCoord, distanceMeters: p.distanceToRouteMeters };
 }
 
 /**
  * While on-route, snap the user position to the polyline for **display only** (route ahead/behind split).
- * Reduces visual gap between the Mapbox puck (native smoothing) and the React-driven polyline.
- * Navigation logic / off-route detection should keep using raw GPS.
+ * Prefer {@link projectOntoPolyline} / nav `routeProgress` so puck split and progress share one projection.
  */
 export function snapUserToRouteForDisplay(
   user: Coordinate,
@@ -112,9 +137,11 @@ export function snapUserToRouteForDisplay(
   maxDistanceMeters: number,
 ): Coordinate {
   if (!polyline || polyline.length < 2) return user;
-  const { coord, distanceMeters } = closestPointOnPolyline(user, polyline);
-  if (!Number.isFinite(distanceMeters) || distanceMeters > maxDistanceMeters) return user;
-  return coord;
+  const p = projectOntoPolyline(user, polyline);
+  if (!p || !Number.isFinite(p.distanceToRouteMeters) || p.distanceToRouteMeters > maxDistanceMeters) {
+    return user;
+  }
+  return p.snapCoord;
 }
 
 /**
@@ -146,48 +173,93 @@ export function remainingDistanceOnPolyline(
   user: Coordinate,
   polyline: Coordinate[],
 ): number {
-  if (polyline.length < 2) return 0;
+  const p = projectOntoPolyline(user, polyline);
+  return p ? p.remainingToEndMeters : 0;
+}
 
-  const latScale = 111320;
-  const lngScale = 111320 * Math.cos((user.lat * Math.PI) / 180);
-  const px = user.lng * lngScale;
-  const py = user.lat * latScale;
+/**
+ * Distance along the polyline from `from`’s projection to `to`’s projection (meters).
+ * Falls back to haversine if projections reorder (e.g. target behind user along line).
+ */
+export function alongRouteDistanceMeters(
+  polyline: Coordinate[],
+  from: Coordinate,
+  to: Coordinate,
+): number {
+  if (polyline.length < 2) {
+    return haversineMeters(from.lat, from.lng, to.lat, to.lng);
+  }
+  const a = projectOntoPolyline(from, polyline);
+  const b = projectOntoPolyline(to, polyline);
+  if (!a || !b) return haversineMeters(from.lat, from.lng, to.lat, to.lng);
+  const d = b.cumFromStartMeters - a.cumFromStartMeters;
+  if (d >= -2) return Math.max(0, d);
+  return haversineMeters(from.lat, from.lng, to.lat, to.lng);
+}
 
-  let bestDist = Number.POSITIVE_INFINITY;
-  let bestI = 0;
-  let bestT = 0;
+/** Single progress snapshot for turn-by-turn: ties ETA, split, off-route, and maneuver distances together. */
+export type NavigationRouteProgress = PolylineProjection & {
+  remainingRouteMeters: number;
+  traveledRouteMeters: number;
+};
 
-  for (let i = 0; i < polyline.length - 1; i++) {
-    const a = polyline[i];
-    const b = polyline[i + 1];
-    const ax = a.lng * lngScale;
-    const ay = a.lat * latScale;
-    const bx = b.lng * lngScale;
-    const by = b.lat * latScale;
-    const abx = bx - ax;
-    const aby = by - ay;
-    const ab2 = abx * abx + aby * aby;
-    const t = ab2 > 1e-10 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / ab2)) : 0;
-    const qx = ax + abx * t;
-    const qy = ay + aby * t;
-    const d = Math.hypot(px - qx, py - qy);
-    if (d < bestDist) {
-      bestDist = d;
-      bestI = i;
-      bestT = t;
+/**
+ * Combine Mapbox `route.distance` with polyline projection. Traveled/remaining for step indexing follow
+ * `duration`/`distance` totals; split/ETA/voice use the same projection as `remainingToEndMeters`.
+ */
+export function computeNavigationRouteProgress(
+  user: Coordinate,
+  polyline: Coordinate[] | null | undefined,
+  routeDistanceMetersApi: number,
+): NavigationRouteProgress | null {
+  if (!polyline || polyline.length < 2) return null;
+  const base = projectOntoPolyline(user, polyline);
+  if (!base) return null;
+  const total = routeDistanceMetersApi;
+  const traveledRouteMeters =
+    total > 0
+      ? Math.max(0, Math.min(total, total - base.remainingToEndMeters))
+      : base.cumFromStartMeters;
+  return {
+    ...base,
+    remainingRouteMeters: base.remainingToEndMeters,
+    traveledRouteMeters,
+  };
+}
+
+/** Passed into {@link buildRouteSplitRingsFromProgress} from navigation (monotonic cumulative progress). */
+export type RouteSplitForOverlay = {
+  segmentIndex: number;
+  tOnSegment: number;
+};
+
+/**
+ * Map cumulative meters along the polyline to the segment index and interpolation t (same basis as {@link projectOntoPolyline}).
+ */
+export function segmentAndTFromCumAlongPolyline(
+  cumMeters: number,
+  polyline: Coordinate[],
+): { segmentIndex: number; tOnSegment: number } | null {
+  if (polyline.length < 2) return null;
+  const lastSeg = polyline.length - 2;
+  let remaining = Math.max(0, cumMeters);
+  const EPS = 1e-6;
+
+  for (let i = 0; i <= lastSeg; i++) {
+    const p = polyline[i]!;
+    const q = polyline[i + 1]!;
+    const len = haversineMeters(p.lat, p.lng, q.lat, q.lng);
+    if (i === lastSeg) {
+      const t = len > 1e-9 ? Math.min(1, remaining / len) : 1;
+      return { segmentIndex: lastSeg, tOnSegment: t };
     }
+    if (remaining < len - EPS) {
+      const t = len > 1e-9 ? Math.max(0, Math.min(1, remaining / len)) : 0;
+      return { segmentIndex: i, tOnSegment: t };
+    }
+    remaining -= len;
   }
-
-  const a = polyline[bestI];
-  const b = polyline[bestI + 1];
-  const segLen = haversineMeters(a.lat, a.lng, b.lat, b.lng);
-  let remaining = (1 - bestT) * segLen;
-  for (let j = bestI + 1; j < polyline.length - 1; j++) {
-    const p = polyline[j];
-    const q = polyline[j + 1];
-    remaining += haversineMeters(p.lat, p.lng, q.lat, q.lng);
-  }
-  return Math.max(0, remaining);
+  return { segmentIndex: lastSeg, tOnSegment: 1 };
 }
 
 /** Minimum spacing so duplicate vertices don't break LineString validity. */
@@ -206,11 +278,69 @@ function dedupeCoordRing(coords: [number, number][]): [number, number][] {
   return out;
 }
 
+export type RouteSplitRings = {
+  passedLngLat: [number, number][];
+  aheadLngLat: [number, number][];
+  /** Index of the Mapbox congestion entry for ahead edge 0 (aligned to full-route `congestion`). */
+  firstAheadEdgeIndex: number;
+};
+
 /**
- * Split a route into "passed" vs "ahead" for map styling (grey trail + active color).
- * Projects the user onto the closest **segment** (not just the nearest vertex) so the
- * split point moves smoothly along the polyline — matches {@link remainingDistanceOnPolyline}
- * and avoids jumps / half-line popping when GPS moves between dense vertices.
+ * Build passed/ahead LineString rings from authoritative progress (no GPS projection).
+ * Uses the same ring rules as the legacy nearest-point split for visual parity.
+ */
+export function buildRouteSplitRingsFromProgress(
+  polyline: Coordinate[],
+  segmentIndex: number,
+  tOnSegment: number,
+): RouteSplitRings | null {
+  if (polyline.length < 2) return null;
+  const n = polyline.length;
+  const lastSeg = n - 2;
+  const segIdx = Math.min(Math.max(0, segmentIndex), lastSeg);
+  const t = Math.min(1, Math.max(0, tOnSegment));
+  const pa = polyline[segIdx]!;
+  const pb = polyline[segIdx + 1]!;
+  const split: Coordinate = {
+    lat: pa.lat + t * (pb.lat - pa.lat),
+    lng: pa.lng + t * (pb.lng - pa.lng),
+  };
+
+  const toPair = (p: Coordinate): [number, number] => [p.lng, p.lat];
+  const passed: [number, number][] = [];
+  for (let k = 0; k <= segIdx; k++) {
+    passed.push(toPair(polyline[k]!));
+  }
+  if (haversineMeters(split.lat, split.lng, pa.lat, pa.lng) >= ROUTE_SPLIT_MIN_M) {
+    passed.push([split.lng, split.lat]);
+  }
+
+  const ahead: [number, number][] = [];
+  const splitNearNextVertex =
+    haversineMeters(split.lat, split.lng, pb.lat, pb.lng) < ROUTE_SPLIT_MIN_M;
+  if (splitNearNextVertex && segIdx + 1 < n) {
+    for (let k = segIdx + 1; k < n; k++) {
+      ahead.push(toPair(polyline[k]!));
+    }
+  } else {
+    ahead.push([split.lng, split.lat]);
+    for (let k = segIdx + 1; k < n; k++) {
+      ahead.push(toPair(polyline[k]!));
+    }
+  }
+
+  const passedOut = dedupeCoordRing(passed);
+  const aheadOut = dedupeCoordRing(ahead);
+
+  return {
+    passedLngLat: passedOut.length >= 2 ? passedOut : [],
+    aheadLngLat: aheadOut.length >= 2 ? aheadOut : [],
+    firstAheadEdgeIndex: segIdx,
+  };
+}
+
+/**
+ * Split a route into "passed" vs "ahead" for map styling (legacy helper; prefers {@link buildRouteSplitRingsFromProgress} with nav progress in the hook).
  */
 export function splitRouteByNearestPoint(
   pts: Coordinate[],
@@ -219,74 +349,17 @@ export function splitRouteByNearestPoint(
   if (pts.length < 2) {
     return { passed: [], ahead: pts.map((p) => [p.lng, p.lat] as [number, number]), splitIndex: 0 };
   }
-
-  const latScale = 111320;
-  const lngScale = 111320 * Math.cos((user.lat * Math.PI) / 180);
-  const px = user.lng * lngScale;
-  const py = user.lat * latScale;
-
-  let bestDist = Number.POSITIVE_INFINITY;
-  let bestI = 0;
-  let bestT = 0;
-
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i];
-    const b = pts[i + 1];
-    const ax = a.lng * lngScale;
-    const ay = a.lat * latScale;
-    const bx = b.lng * lngScale;
-    const by = b.lat * latScale;
-    const abx = bx - ax;
-    const aby = by - ay;
-    const ab2 = abx * abx + aby * aby;
-    const t = ab2 > 1e-10 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / ab2)) : 0;
-    const qx = ax + abx * t;
-    const qy = ay + aby * t;
-    const d = Math.hypot(px - qx, py - qy);
-    if (d < bestDist) {
-      bestDist = d;
-      bestI = i;
-      bestT = t;
-    }
+  const proj = projectOntoPolyline(user, pts);
+  if (!proj) {
+    return { passed: [], ahead: pts.map((p) => [p.lng, p.lat] as [number, number]), splitIndex: 0 };
   }
-
-  const a = pts[bestI];
-  const b = pts[bestI + 1];
-  const split: Coordinate = {
-    lat: a.lat + bestT * (b.lat - a.lat),
-    lng: a.lng + bestT * (b.lng - a.lng),
-  };
-
-  const toPair = (p: Coordinate): [number, number] => [p.lng, p.lat];
-
-  const passed: [number, number][] = [];
-  for (let k = 0; k <= bestI; k++) {
-    passed.push(toPair(pts[k]));
+  const rings = buildRouteSplitRingsFromProgress(pts, proj.segmentIndex, proj.tOnSegment);
+  if (!rings) {
+    return { passed: [], ahead: pts.map((p) => [p.lng, p.lat] as [number, number]), splitIndex: 0 };
   }
-  if (haversineMeters(split.lat, split.lng, pts[bestI].lat, pts[bestI].lng) >= ROUTE_SPLIT_MIN_M) {
-    passed.push([split.lng, split.lat]);
-  }
-
-  const ahead: [number, number][] = [];
-  const splitNearNextVertex =
-    haversineMeters(split.lat, split.lng, b.lat, b.lng) < ROUTE_SPLIT_MIN_M;
-  if (splitNearNextVertex && bestI + 1 < pts.length) {
-    for (let k = bestI + 1; k < pts.length; k++) {
-      ahead.push(toPair(pts[k]));
-    }
-  } else {
-    ahead.push([split.lng, split.lat]);
-    for (let k = bestI + 1; k < pts.length; k++) {
-      ahead.push(toPair(pts[k]));
-    }
-  }
-
-  const passedOut = dedupeCoordRing(passed);
-  const aheadOut = dedupeCoordRing(ahead);
-
   return {
-    passed: passedOut.length >= 2 ? passedOut : [],
-    ahead: aheadOut.length >= 2 ? aheadOut : [],
-    splitIndex: bestI,
+    passed: rings.passedLngLat,
+    ahead: rings.aheadLngLat,
+    splitIndex: rings.firstAheadEdgeIndex,
   };
 }

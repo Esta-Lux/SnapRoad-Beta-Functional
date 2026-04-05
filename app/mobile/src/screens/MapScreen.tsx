@@ -72,7 +72,7 @@ import TripShare from '../components/gamification/TripShare';
 import HamburgerMenu from '../components/profile/HamburgerMenu';
 import ConvoyMode from '../components/social/ConvoyMode';
 // Crash detection hook removed (no SOS backend); friend locations handled inline via Supabase realtime
-import { formatDistance, haversineMeters, snapUserToRouteForDisplay } from '../utils/distance';
+import { alongRouteDistanceMeters, formatDistance, haversineMeters } from '../utils/distance';
 import { formatDuration } from '../utils/format';
 import { speak, stopSpeaking } from '../utils/voice';
 import { api, API_BASE_URL } from '../api/client';
@@ -369,8 +369,9 @@ export default function MapScreen() {
         nav.navigationData?.steps,
         nav.currentStepIndex,
         location,
+        nav.navigationData?.polyline,
       ),
-    [nav.navigationData?.steps, nav.currentStepIndex, location.lat, location.lng],
+    [nav.navigationData?.steps, nav.navigationData?.polyline, nav.currentStepIndex, location.lat, location.lng],
   );
   const camCtrl = useCameraController({
     speedMph: speed,
@@ -635,13 +636,6 @@ export default function MapScreen() {
     !nav.showRoutePreview &&
     !isExploring &&
     (followMode === 'follow' || followMode === 'heading');
-
-  /** Snap to route for polyline split only — keeps traversed/active line aligned with Mapbox puck across styles/modes. */
-  const routeOverlayUserLocation = useMemo(() => {
-    const poly = nav.navigationData?.polyline;
-    if (!nav.isNavigating || !poly?.length) return location;
-    return snapUserToRouteForDisplay(location, poly, 52);
-  }, [nav.isNavigating, nav.navigationData?.polyline, location.lat, location.lng]);
 
   const mapWeather = useMapWeather(location.lat, location.lng, {
     enabled: mapTabFocused && mapOk,
@@ -2042,8 +2036,8 @@ export default function MapScreen() {
           {nav.navigationData?.polyline && (
             <RouteOverlay
               polyline={nav.navigationData.polyline}
-              userLocation={routeOverlayUserLocation}
               isNavigating={nav.isNavigating}
+              routeSplit={nav.routeSplitForOverlay}
               routeColor={modeConfig.routeColor}
               casingColor={modeConfig.routeCasing}
               passedColor={modeConfig.passedColor}
@@ -2118,9 +2112,9 @@ export default function MapScreen() {
           <MapboxGL.LocationPuck
             visible
             puckBearingEnabled
-            puckBearing={nav.isNavigating && cameraLocked ? 'course' : 'heading'}
+            puckBearing={nav.isNavigating ? 'course' : 'heading'}
             androidRenderMode={
-              nav.isNavigating && cameraLocked
+              nav.isNavigating
                 ? 'gps'
                 : followMode === 'heading' || compassMode
                   ? 'compass'
@@ -2429,9 +2423,13 @@ export default function MapScreen() {
       {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
       {nav.isNavigating && currentStep && (() => {
         const nextManeuverCoord = nextStep;
-        const liveDistMeters = nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-          ? haversineMeters(location.lat, location.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
-          : (currentStep.distanceMeters ?? 0);
+        const poly = nav.navigationData?.polyline;
+        const liveDistMeters =
+          poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
+            ? alongRouteDistanceMeters(poly, location, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
+            : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
+              ? haversineMeters(location.lat, location.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
+              : (currentStep.distanceMeters ?? 0);
 
         const cardState = resolveTurnCardState({
           distanceToNextManeuverM: liveDistMeters,
@@ -2482,6 +2480,10 @@ export default function MapScreen() {
           shouldShowRoadDisambiguation(nextManeuverCoord?.name) ? (nextManeuverCoord?.name ?? null) :
           null;
 
+        /** Banner + lanes for the upcoming maneuver live on `nextStep`; `currentStep` is often “continue” and overrides with the wrong primary. */
+        const bannerStep =
+          cardState === 'confirm' ? currentStep : (nextManeuverCoord ?? currentStep);
+
         return (
           <View style={[s.turnWrap, { top: insets.top }]} key={nav.currentStepIndex}>
             <TurnInstructionCard
@@ -2500,8 +2502,8 @@ export default function MapScreen() {
                   return !m;
                 });
               }}
-              lanesJson={currentStep.lanes}
-              step={currentStep}
+              lanesJson={bannerStep?.lanes ?? currentStep?.lanes}
+              step={bannerStep}
               roadDisambiguationLabel={disambigName}
               isSportBorder={isSport}
               speedMph={speed}
@@ -2906,6 +2908,31 @@ export default function MapScreen() {
                 </View>
               ))}
             </View>
+            {nav.tripSummary.profile_totals &&
+            (nav.tripSummary.profile_totals.total_miles != null ||
+              nav.tripSummary.profile_totals.gems != null) ? (
+              <Text
+                style={{
+                  color: colors.textTertiary,
+                  fontSize: 12,
+                  fontWeight: '600',
+                  textAlign: 'center',
+                  marginTop: 10,
+                  lineHeight: 17,
+                }}
+              >
+                {nav.tripSummary.profile_totals.total_miles != null
+                  ? `Lifetime miles: ${Number(nav.tripSummary.profile_totals.total_miles).toFixed(1)} mi`
+                  : ''}
+                {nav.tripSummary.profile_totals.total_miles != null &&
+                nav.tripSummary.profile_totals.gems != null
+                  ? ' · '
+                  : ''}
+                {nav.tripSummary.profile_totals.gems != null
+                  ? `Gems balance: ${nav.tripSummary.profile_totals.gems}`
+                  : ''}
+              </Text>
+            ) : null}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
               <TouchableOpacity style={[s.tripDone, { backgroundColor: 'rgba(59,130,246,0.12)', flex: 1 }]} onPress={() => setShowTripShare(true)}>
                 <Text style={[s.tripDoneT, { color: colors.primary }]}>Share</Text>
