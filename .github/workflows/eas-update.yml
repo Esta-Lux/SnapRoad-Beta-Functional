@@ -50,4 +50,4 @@ jobs:
           EXPO_PUBLIC_API_URL: https://api.snaproad.app
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
-        run: npx eas-cli update --branch production --non-interactive --message "$UPDATE_MSG"
+        run: npm run eas:update:production -- --non-interactive --message "$UPDATE_MSG"

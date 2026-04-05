@@ -17,6 +17,7 @@
  * a Mapbox outage.
  */
 import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 
 const CANONICAL_ENV_KEY = 'EXPO_PUBLIC_MAPBOX_TOKEN';
 
@@ -88,6 +89,18 @@ export function logMapboxAccessDiagnostics(context: string): void {
   );
 }
 
+let _startupLogged = false;
+
+/** One-line startup probe (safe for production): reports token presence + winning source only, never token bytes. */
+export function logMapboxStartupSourceOnce(context: string): void {
+  if (_startupLogged) return;
+  _startupLogged = true;
+  const { token, source } = resolveMapboxPublicToken();
+  const configured = isPlausibleMapboxPublicToken(token);
+  // eslint-disable-next-line no-console
+  console.log(`[Mapbox startup] ${context}: configured=${configured} source=${source}`);
+}
+
 export function resolveMapboxPublicToken(): MapboxTokenResolution {
   const fromMetro = pickToken(process.env[CANONICAL_ENV_KEY]);
   if (fromMetro) {
@@ -125,3 +138,64 @@ export function getMapboxPublicToken(): string {
 export function isMapboxPublicTokenConfigured(): boolean {
   return isPlausibleMapboxPublicToken(getMapboxPublicToken());
 }
+
+// #region agent log
+/**
+ * Debug ingest: Mapbox resolution + expo-updates context (OTA vs embedded). No secrets — lengths/prefix only.
+ */
+export function emitAgentMapboxOtaSnapshot(params: {
+  hypothesisId?: string;
+  hasNativeMapbox: boolean;
+  mapboxTokenOk: boolean;
+  mapOk: boolean;
+  runId?: string;
+}): void {
+  const res = resolveMapboxPublicToken();
+  const extraRoot = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
+  const extraTok = pickToken(extraRoot?.mapboxPublicToken);
+  const envRaw = process.env[CANONICAL_ENV_KEY];
+  const um = Updates.manifest as { extra?: Record<string, unknown> } | undefined;
+  const updateExtraTok = pickToken(um?.extra?.mapboxPublicToken as unknown);
+  const data = {
+    ...params,
+    tokenSource: res.source,
+    tokenPlausible: isPlausibleMapboxPublicToken(res.token),
+    tokenLength: res.token.length,
+    tokenPrefix: getMapboxTokenPublicPrefix(res.token, 4),
+    envJsType: typeof envRaw,
+    envJsLength: typeof envRaw === 'string' ? envRaw.trim().length : 0,
+    expoConfigExtraHasKey: Boolean(extraRoot && 'mapboxPublicToken' in extraRoot),
+    extraResolvedLength: extraTok ? extraTok.length : 0,
+    extraResolvedPlausible: extraTok ? isPlausibleMapboxPublicToken(extraTok) : false,
+    updatesIsEnabled: Updates.isEnabled,
+    updatesChannel: Updates.channel,
+    updatesRuntimeVersion: Updates.runtimeVersion,
+    updatesUpdateId: Updates.updateId,
+    updatesIsEmbeddedLaunch: Updates.isEmbeddedLaunch,
+    updatesIsEmergencyLaunch: Updates.isEmergencyLaunch,
+    updatesManifestExtraHasMapboxKey: Boolean(um?.extra && 'mapboxPublicToken' in um.extra),
+    updatesManifestExtraLen: updateExtraTok ? updateExtraTok.length : 0,
+    updatesManifestExtraPlausible: updateExtraTok ? isPlausibleMapboxPublicToken(updateExtraTok) : false,
+    manifest2ClientExtraLen: (() => {
+      const m2 = Constants.manifest2 as
+        | { extra?: { expoClient?: { extra?: Record<string, unknown> } } }
+        | null;
+      const t = pickToken(m2?.extra?.expoClient?.extra?.mapboxPublicToken);
+      return t ? t.length : 0;
+    })(),
+  };
+  fetch('http://127.0.0.1:7534/ingest/128fa84f-5250-402d-aabb-51e02305d807', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7cb207' },
+    body: JSON.stringify({
+      sessionId: '7cb207',
+      location: 'mapbox.ts:emitAgentMapboxOtaSnapshot',
+      message: 'Mapbox + Updates snapshot',
+      hypothesisId: params.hypothesisId ?? 'H-OTA-MAPBOX',
+      data,
+      timestamp: Date.now(),
+      runId: params.runId ?? 'pre-fix',
+    }),
+  }).catch(() => {});
+}
+// #endregion

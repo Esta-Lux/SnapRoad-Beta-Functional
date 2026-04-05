@@ -44,11 +44,16 @@ import {
 } from './src/utils/deepLinks';
 import * as Sentry from '@sentry/react-native';
 import MapboxGL from './src/utils/mapbox';
-import { getMapboxPublicToken, logMapboxAccessDiagnostics } from './src/config/mapbox';
+import {
+  getMapboxPublicToken,
+  logMapboxAccessDiagnostics,
+  logMapboxStartupSourceOnce,
+} from './src/config/mapbox';
 
 /** Set before any MapView mounts — `useEffect` in screens runs too late for first paint. */
 (function mapboxEarlyAccessToken(): void {
   try {
+    logMapboxStartupSourceOnce('App.tsx init');
     logMapboxAccessDiagnostics('App.tsx early setAccessToken');
     const token = getMapboxPublicToken();
     if (MapboxGL && token) {
@@ -68,11 +73,20 @@ if (sentryDsn) {
     dsn: sentryDsn,
     // Never send default PII (e.g. email) in production store builds; OK for dev/staging diagnostics.
     sendDefaultPii: !APP_IS_PRODUCTION,
+    /** Sends structured logs to Sentry (requires org feature + compatible SDK). */
     enableLogs: true,
     replaysSessionSampleRate: 0.1,
     replaysOnErrorSampleRate: 1,
-    integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
+    integrations: [
+      Sentry.consoleLoggingIntegration({ levels: ['log', 'warn', 'error'] }),
+      Sentry.mobileReplayIntegration(),
+      Sentry.feedbackIntegration(),
+    ],
   });
+  /** Optional: set EXPO_PUBLIC_SENTRY_LOG_TEST=1 in .env and reload to send one confirmation log. */
+  if (String(process.env.EXPO_PUBLIC_SENTRY_LOG_TEST || '').trim() === '1') {
+    Sentry.logger.info('Sentry logs test', { log_source: 'sentry_test' });
+  }
 }
 
 Notifications.setNotificationHandler({

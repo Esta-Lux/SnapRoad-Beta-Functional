@@ -211,18 +211,20 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
         const t = resolveMapboxPublicTokenForConfig();
         const easProfile = String(process.env.EAS_BUILD_PROFILE || "").toLowerCase();
         const escape = Boolean(envAny(["ALLOW_MISSING_MAPBOX_TOKEN"], "").trim());
-        const prodish = easProfile === "production";
-        if (process.env.EAS_BUILD && !t.trim() && prodish && !escape) {
+        const prodish = easProfile === "production" || _prod;
+        const isCiLikePublish = String(process.env.CI || "").trim().length > 0 || process.env.EAS_BUILD;
+        if (isCiLikePublish && !t.trim() && prodish && !escape) {
           throw new Error(
-            "[app.config] Mapbox public token is empty on the EAS worker (production profile). " +
+            "[app.config] Mapbox public token is empty for a production build/update publish. " +
               "Set EXPO_PUBLIC_MAPBOX_TOKEN in Expo → Environment variables for `production` " +
-              "(Plain text or Sensitive; not Secret). Temporary bypass: ALLOW_MISSING_MAPBOX_TOKEN=1 — not for store.",
+              "(Plain text or Sensitive; not Secret), and publish OTA with `--environment production`. " +
+              "Temporary bypass: ALLOW_MISSING_MAPBOX_TOKEN=1 — not for store.",
           );
         }
-        if (process.env.EAS_BUILD && !t.trim() && (!prodish || escape)) {
+        if (isCiLikePublish && !t.trim() && (!prodish || escape)) {
           console.warn(
-            "[app.config] Mapbox token empty on EAS — build continues; set EXPO_PUBLIC_MAPBOX_TOKEN for a working map. " +
-              `Profile: ${easProfile || "(unset)"}.`,
+            "[app.config] Mapbox token empty for CI build/update publish — process continues; set EXPO_PUBLIC_MAPBOX_TOKEN for a working map. " +
+              `Profile: ${easProfile || "(unset)"} APP_ENV=${process.env.APP_ENV || "(unset)"}.`,
           );
         }
         return t;
