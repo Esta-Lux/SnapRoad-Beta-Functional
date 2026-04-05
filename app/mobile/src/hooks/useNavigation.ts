@@ -143,7 +143,6 @@ export function useNavigation(params: {
 
   /** Monotonic cumulative progress for route overlay; reset per polyline id (true reroute). */
   const routeSplitCumRef = useRef<{ routeKey: string; maxCum: number }>({ routeKey: '', maxCum: 0 });
-  const [routeSplitForOverlay, setRouteSplitForOverlay] = useState<RouteSplitForOverlay | null>(null);
 
   // --- Fetch directions ---
   const fetchDirections = useCallback(async (
@@ -257,7 +256,6 @@ export function useNavigation(params: {
     tripStartTimeRef.current = Date.now();
     setShowRoutePreview(false);
     routeSplitCumRef.current = { routeKey: '', maxCum: 0 };
-    setRouteSplitForOverlay(null);
     const dest = navigationData.destination.name ?? 'your destination';
     const etaMin = Math.round(navigationData.duration / 60);
     const firstStep = navigationData.steps?.[0];
@@ -471,40 +469,27 @@ export function useNavigation(params: {
       ? routeProgress.traveledRouteMeters
       : traveledDistanceMeters;
 
-  // --- Authoritative route split for map overlay (segmentIndex + t from monotonic cum; no overlay projection) ---
-  useEffect(() => {
+  /** Synchronous route split — computed in the same render as routeProgress so the
+   *  passed/ahead boundary never lags behind the native location puck. */
+  const routeSplitForOverlay = useMemo((): RouteSplitForOverlay | null => {
     if (!isNavigating) {
       routeSplitCumRef.current = { routeKey: '', maxCum: 0 };
-      setRouteSplitForOverlay(null);
-      return;
+      return null;
     }
-    if (!routeProgress || !navigationData?.polyline?.length) return;
+    if (!routeProgress || !navigationData?.polyline?.length) return null;
     const poly = navigationData.polyline;
-    if (poly.length < 2) return;
+    if (poly.length < 2) return null;
 
     const key = navRoutePolylineId(poly);
-    let ref = routeSplitCumRef.current;
+    const ref = routeSplitCumRef.current;
     if (key !== ref.routeKey) {
       routeSplitCumRef.current = { routeKey: key, maxCum: 0 };
-      ref = routeSplitCumRef.current;
     }
-    const maxCum = Math.max(ref.maxCum, routeProgress.cumFromStartMeters);
-    ref.maxCum = maxCum;
+    const cur = routeSplitCumRef.current;
+    cur.maxCum = Math.max(cur.maxCum, routeProgress.cumFromStartMeters);
 
-    const st = segmentAndTFromCumAlongPolyline(maxCum, poly);
-    if (!st) return;
-
-    setRouteSplitForOverlay((prev) => {
-      if (
-        prev &&
-        prev.segmentIndex === st.segmentIndex &&
-        Math.abs(prev.tOnSegment - st.tOnSegment) < 0.0005
-      ) {
-        return prev;
-      }
-      return st;
-    });
-  }, [isNavigating, routeProgress?.cumFromStartMeters, navigationData?.polyline]);
+    return segmentAndTFromCumAlongPolyline(cur.maxCum, poly) ?? null;
+  }, [isNavigating, routeProgress, navigationData?.polyline]);
 
   // --- Step index tracking ---
   useEffect(() => {

@@ -307,26 +307,25 @@ export function buildRouteSplitRingsFromProgress(
   };
 
   const toPair = (p: Coordinate): [number, number] => [p.lng, p.lat];
-  const passed: [number, number][] = [];
+  const splitPair: [number, number] = [split.lng, split.lat];
+
+  const passedRaw: [number, number][] = [];
   for (let k = 0; k <= segIdx; k++) {
-    passed.push(toPair(polyline[k]!));
+    passedRaw.push(toPair(polyline[k]!));
   }
-  passed.push([split.lng, split.lat]);
+  const passedDeduped = dedupeCoordRing(passedRaw);
+  passedDeduped.push(splitPair);
 
-  const ahead: [number, number][] = [];
-  // Always include the same split coordinate at the head of the ahead route so
-  // passed/ahead lines share one anchor and cannot open a visual gap at the puck.
-  ahead.push([split.lng, split.lat]);
+  const aheadRaw: [number, number][] = [];
   for (let k = segIdx + 1; k < n; k++) {
-    ahead.push(toPair(polyline[k]!));
+    aheadRaw.push(toPair(polyline[k]!));
   }
-
-  const passedOut = dedupeCoordRing(passed);
-  const aheadOut = dedupeCoordRing(ahead);
+  const aheadDeduped = dedupeCoordRing(aheadRaw);
+  aheadDeduped.unshift(splitPair);
 
   return {
-    passedLngLat: passedOut.length >= 2 ? passedOut : [],
-    aheadLngLat: aheadOut.length >= 2 ? aheadOut : [],
+    passedLngLat: passedDeduped.length >= 2 ? passedDeduped : [],
+    aheadLngLat: aheadDeduped.length >= 2 ? aheadDeduped : [],
     firstAheadEdgeIndex: segIdx,
   };
 }

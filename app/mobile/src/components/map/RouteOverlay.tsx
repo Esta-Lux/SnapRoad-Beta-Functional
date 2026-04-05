@@ -169,8 +169,7 @@ export default React.memo(function RouteOverlay({
         style={{
           lineColor: passedColor,
           lineWidth: routeWidth,
-          lineOpacity: 0.72,
-          lineBlur: 0.2,
+          lineOpacity: 0.85,
           lineCap: 'round',
           lineJoin: 'round',
         }}
