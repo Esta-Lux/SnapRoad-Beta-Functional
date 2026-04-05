@@ -336,7 +336,7 @@ export default function MapScreen() {
 
   const wasNavigatingRef = useRef(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const t = getMapboxPublicToken();
     if (MapboxGL && t) {
       MapboxGL.setAccessToken(t);
@@ -2146,12 +2146,17 @@ export default function MapScreen() {
             <>
               <Text style={s.phTitle}>Mapbox token missing</Text>
               <Text style={s.phSub}>
-                Add EXPO_PUBLIC_MAPBOX_TOKEN to app/mobile/.env for local dev. For EAS, set the same variable in
+                Add EXPO_PUBLIC_MAPBOX_TOKEN (or *_FALLBACK) to app/mobile/.env for local dev. For EAS, set the same variable in
                 Expo → Project → Environment variables for each build profile (development / preview / production),
                 then create a new build — tokens are baked in at build time, not only on the server.
               </Text>
             </>
           )}
+          {typeof __DEV__ !== 'undefined' && __DEV__ ? (
+            <Text style={[s.phSub, { fontSize: 11, opacity: 0.7, marginTop: 4, paddingHorizontal: 16 }]}>
+              dbg: native={hasNativeMapbox ? 'yes' : 'no'} · tokenLen={getMapboxPublicToken().length} · reload Metro after editing .env
+            </Text>
+          ) : null}
           <Text style={s.phCoord}>{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</Text>
         </View>
       )}

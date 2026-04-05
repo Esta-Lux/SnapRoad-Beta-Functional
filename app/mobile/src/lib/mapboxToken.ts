@@ -8,9 +8,12 @@ function pickToken(value: unknown): string | undefined {
 
 /**
  * Mapbox public token for Directions/Geocoding and @rnmapbox/maps.
- * Prefer manifest `extra` (baked at EAS prebuild) over Metro `process.env`, since some builds
- * embed `extra.mapboxPublicToken` reliably while inlined EXPO_PUBLIC_* can be empty if env
- * was not linked to the build profile's EAS environment.
+ *
+ * Production / EAS: prefer `extra.mapboxPublicToken` (baked at prebuild) over Metro, since inlined
+ * EXPO_PUBLIC_* may be empty when env was not linked to the build profile.
+ *
+ * Development: prefer Metro `process.env.EXPO_PUBLIC_*` first so a refreshed JS bundle picks up
+ * `app/mobile/.env` changes even when `Constants.expoConfig.extra` still reflects an older Metro start.
  */
 export function getMapboxPublicToken(): string {
   const extraRoot = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
@@ -29,16 +32,15 @@ export function getMapboxPublicToken(): string {
   const fromFallbackMetro = pickToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN_FALLBACK);
   const fromFallbackAlias = pickToken(process.env.MAPBOX_PUBLIC_TOKEN_FALLBACK);
 
-  return (
-    fromExpoConfig
-    ?? fromLegacyManifest
-    ?? fromManifest2
-    ?? fromMetro
-    ?? fromAlias
-    ?? fromFallbackMetro
-    ?? fromFallbackAlias
-    ?? ''
-  );
+  const fromExtraChain = fromExpoConfig ?? fromLegacyManifest ?? fromManifest2;
+  const fromEnvChain =
+    fromMetro ?? fromAlias ?? fromFallbackMetro ?? fromFallbackAlias;
+
+  const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
+  if (isDev) {
+    return fromEnvChain ?? fromExtraChain ?? '';
+  }
+  return fromExtraChain ?? fromEnvChain ?? '';
 }
 
 export function isMapboxPublicTokenConfigured(): boolean {

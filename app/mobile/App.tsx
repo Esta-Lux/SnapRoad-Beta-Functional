@@ -43,6 +43,20 @@ import {
   parseParamsFromUrl,
 } from './src/utils/deepLinks';
 import * as Sentry from '@sentry/react-native';
+import MapboxGL from './src/utils/mapbox';
+import { getMapboxPublicToken } from './src/lib/mapboxToken';
+
+/** Set before any MapView mounts — `useEffect` in screens runs too late for first paint. */
+(function mapboxEarlyAccessToken(): void {
+  try {
+    const token = getMapboxPublicToken();
+    if (MapboxGL && token) {
+      MapboxGL.setAccessToken(token);
+    }
+  } catch {
+    /* @rnmapbox optional in Expo Go */
+  }
+})();
 
 const APP_IS_PRODUCTION =
   String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
