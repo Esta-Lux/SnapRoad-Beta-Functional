@@ -42,12 +42,28 @@ jobs:
       - name: Install dependencies
         run: cd app/mobile && npm ci
 
-      - name: EAS Update (production)
+      - name: EAS Update (production iOS)
         working-directory: app/mobile
         env:
+          CI: "1"
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           APP_ENV: production
           EXPO_PUBLIC_API_URL: https://api.snaproad.app
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
-        run: npm run eas:update:production -- --non-interactive --message "$UPDATE_MSG"
+        run: |
+          SAFE_MSG="${UPDATE_MSG// /-}"
+          npm run eas:update:production -- --platform ios --message "${SAFE_MSG}-ios"
+
+      - name: EAS Update (production Android)
+        working-directory: app/mobile
+        env:
+          CI: "1"
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APP_ENV: production
+          EXPO_PUBLIC_API_URL: https://api.snaproad.app
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+          UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
+        run: |
+          SAFE_MSG="${UPDATE_MSG// /-}"
+          npm run eas:update:production -- --platform android --message "${SAFE_MSG}-android"
