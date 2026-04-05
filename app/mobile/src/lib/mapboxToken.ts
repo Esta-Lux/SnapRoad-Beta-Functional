@@ -26,6 +26,8 @@ export function getMapboxPublicToken(): string {
 
   const fromMetro = pickToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN);
   const fromAlias = pickToken(process.env.MAPBOX_PUBLIC_TOKEN);
+  const fromFallbackMetro = pickToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN_FALLBACK);
+  const fromFallbackAlias = pickToken(process.env.MAPBOX_PUBLIC_TOKEN_FALLBACK);
 
   return (
     fromExpoConfig
@@ -33,6 +35,8 @@ export function getMapboxPublicToken(): string {
     ?? fromManifest2
     ?? fromMetro
     ?? fromAlias
+    ?? fromFallbackMetro
+    ?? fromFallbackAlias
     ?? ''
   );
 }

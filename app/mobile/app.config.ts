@@ -57,6 +57,16 @@ const _includeDevClient =
   ["development", "development-simulator", "preview"].includes(_profile) ||
   (!_prod && _profile.length === 0);
 
+/** Mapbox pk. token: prefer main env keys; optional *_FALLBACK for temporary preview / dev while Expo env is fixed. */
+function resolveMapboxPublicTokenForConfig(): string {
+  const primary = envAny(["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"], "").trim();
+  if (primary) return primary;
+  return envAny(
+    ["EXPO_PUBLIC_MAPBOX_TOKEN_FALLBACK", "MAPBOX_PUBLIC_TOKEN_FALLBACK"],
+    "",
+  ).trim();
+}
+
 function resolveSentryExpoPlugin(): string | [string, Record<string, string>] {
   if (envAny(["SENTRY_ORG"], "").trim() && envAny(["SENTRY_PROJECT"], "").trim()) {
     return [
@@ -203,14 +213,21 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       apiUrl: resolveApiUrl(),
       // Restrict this token in the Mapbox dashboard: iOS/Android bundle com.snaproad.app; web https://app.snaproad.app
       mapboxPublicToken: (() => {
-        const t = envAny(["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"], "");
-        if (process.env.EAS_BUILD && !t.trim() && !envAny(["ALLOW_MISSING_MAPBOX_TOKEN"], "")) {
+        const t = resolveMapboxPublicTokenForConfig();
+        const easProfile = String(process.env.EAS_BUILD_PROFILE || "").toLowerCase();
+        const escape = Boolean(envAny(["ALLOW_MISSING_MAPBOX_TOKEN"], "").trim());
+        const prodish = easProfile === "production";
+        if (process.env.EAS_BUILD && !t.trim() && prodish && !escape) {
           throw new Error(
-            "[app.config] Mapbox public token is empty on the EAS worker. " +
-              "1) In Expo → snaproad → Environment variables, add EXPO_PUBLIC_MAPBOX_TOKEN for the SAME environment as the build profile " +
-              "(development / preview / production — see eas.json build.<profile>.environment). " +
-              "2) Use Plain text or Sensitive visibility; Secret is NOT embedded in the client bundle. " +
-              "3) Rebuild. Alias MAPBOX_PUBLIC_TOKEN is also read. Optional escape hatch: set ALLOW_MISSING_MAPBOX_TOKEN=1 (not for store builds).",
+            "[app.config] Mapbox public token is empty on the EAS worker (production profile). " +
+              "Set EXPO_PUBLIC_MAPBOX_TOKEN or EXPO_PUBLIC_MAPBOX_TOKEN_FALLBACK in Expo → Environment variables for `production` " +
+              "(Plain text or Sensitive; not Secret). Temporary bypass: ALLOW_MISSING_MAPBOX_TOKEN=1 — not for store.",
+          );
+        }
+        if (process.env.EAS_BUILD && !t.trim() && (!prodish || escape)) {
+          console.warn(
+            "[app.config] Mapbox token empty on EAS — build continues; set EXPO_PUBLIC_MAPBOX_TOKEN or EXPO_PUBLIC_MAPBOX_TOKEN_FALLBACK for a working map. " +
+              `Profile: ${easProfile || "(unset)"}.`,
           );
         }
         return t;
