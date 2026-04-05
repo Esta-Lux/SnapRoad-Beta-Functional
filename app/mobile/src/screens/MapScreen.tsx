@@ -72,7 +72,7 @@ import TripShare from '../components/gamification/TripShare';
 import HamburgerMenu from '../components/profile/HamburgerMenu';
 import ConvoyMode from '../components/social/ConvoyMode';
 // Crash detection hook removed (no SOS backend); friend locations handled inline via Supabase realtime
-import { formatDistance, haversineMeters } from '../utils/distance';
+import { formatDistance, haversineMeters, snapUserToRouteForDisplay } from '../utils/distance';
 import { formatDuration } from '../utils/format';
 import { speak, stopSpeaking } from '../utils/voice';
 import { api, API_BASE_URL } from '../api/client';
@@ -548,6 +548,13 @@ export default function MapScreen() {
   const hasNativeMapbox = isMapAvailable() && MapboxGL !== null;
   /** Native Mapbox without a pk. token often crashes loading styles — gate the MapView. */
   const mapOk = hasNativeMapbox && isMapboxPublicTokenConfigured();
+
+  /** Snap to route for polyline split only — keeps traversed/active line aligned with Mapbox puck across styles/modes. */
+  const routeOverlayUserLocation = useMemo(() => {
+    const poly = nav.navigationData?.polyline;
+    if (!nav.isNavigating || !poly?.length) return location;
+    return snapUserToRouteForDisplay(location, poly, 52);
+  }, [nav.isNavigating, nav.navigationData?.polyline, location.lat, location.lng]);
 
   const mapWeather = useMapWeather(location.lat, location.lng, {
     enabled: mapTabFocused && mapOk,
@@ -1854,7 +1861,7 @@ export default function MapScreen() {
           {nav.navigationData?.polyline && (
             <RouteOverlay
               polyline={nav.navigationData.polyline}
-              userLocation={location}
+              userLocation={routeOverlayUserLocation}
               isNavigating={nav.isNavigating}
               routeColor={modeConfig.routeColor}
               casingColor={modeConfig.routeCasing}

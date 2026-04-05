@@ -58,6 +58,66 @@ export function distanceToPolyline(point: Coordinate, polyline: Coordinate[]): n
 }
 
 /**
+ * Closest point on the polyline (orthogonal projection onto segments) and distance in meters.
+ * Uses the same projection as {@link distanceToPolyline}.
+ */
+export function closestPointOnPolyline(
+  point: Coordinate,
+  polyline: Coordinate[],
+): { coord: Coordinate; distanceMeters: number } {
+  if (!polyline.length || polyline.length < 2) {
+    return { coord: point, distanceMeters: Number.POSITIVE_INFINITY };
+  }
+  const latScale = 111320;
+  const lngScale = 111320 * Math.cos((point.lat * Math.PI) / 180);
+  const px = point.lng * lngScale;
+  const py = point.lat * latScale;
+  let bestD = Number.POSITIVE_INFINITY;
+  let bestCoord = point;
+
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i];
+    const b = polyline[i + 1];
+    const ax = a.lng * lngScale;
+    const ay = a.lat * latScale;
+    const bx = b.lng * lngScale;
+    const by = b.lat * latScale;
+    const abx = bx - ax;
+    const aby = by - ay;
+    const ab2 = abx * abx + aby * aby;
+    const t = ab2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / ab2)) : 0;
+    const qx = ax + abx * t;
+    const qy = ay + aby * t;
+    const d = Math.hypot(px - qx, py - qy);
+    if (d < bestD) {
+      bestD = d;
+      bestCoord = { lat: qy / latScale, lng: qx / lngScale };
+    }
+  }
+
+  return {
+    coord: bestCoord,
+    distanceMeters: bestD,
+  };
+}
+
+/**
+ * While on-route, snap the user position to the polyline for **display only** (route ahead/behind split).
+ * Reduces visual gap between the Mapbox puck (native smoothing) and the React-driven polyline.
+ * Navigation logic / off-route detection should keep using raw GPS.
+ */
+export function snapUserToRouteForDisplay(
+  user: Coordinate,
+  polyline: Coordinate[] | null | undefined,
+  maxDistanceMeters: number,
+): Coordinate {
+  if (!polyline || polyline.length < 2) return user;
+  const { coord, distanceMeters } = closestPointOnPolyline(user, polyline);
+  if (!Number.isFinite(distanceMeters) || distanceMeters > maxDistanceMeters) return user;
+  return coord;
+}
+
+/**
  * Find the nearest vertex on a polyline to a given point.
  * Returns the index and distance.
  */

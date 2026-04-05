@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect } from 'react';
 import type { Coordinate, DrivingMode } from '../types';
 import type { DirectionsResult, DirectionsStep, GeocodeResult } from '../lib/directions';
-import { getMapboxRouteOptions, isMapboxDirectionsConfigured } from '../lib/directions';
+import { getMapboxRouteOptions, isMapboxDirectionsConfigured, mapboxManeuverToSimple } from '../lib/directions';
 import { getMapboxPublicToken } from '../lib/mapboxToken';
 
 export type FetchDirectionsResult =
@@ -9,7 +9,7 @@ export type FetchDirectionsResult =
   | { ok: false; reason: 'invalid_input' | 'no_mapbox' | 'route_failed'; message?: string };
 import { distanceToPolyline, haversineMeters, remainingDistanceOnPolyline } from '../utils/distance';
 import { speak, formatTurnInstruction, stopSpeaking, configureAudioSession } from '../utils/voice';
-import { primaryInstructionText } from '../lib/navigationInstructions';
+import { primaryInstructionText, primaryVoiceAnnouncement } from '../lib/navigationInstructions';
 import { api } from '../api/client';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../contexts/AuthContext';
@@ -225,8 +225,10 @@ export function useNavigation(params: {
     const dest = navigationData.destination.name ?? 'your destination';
     const etaMin = Math.round(navigationData.duration / 60);
     const firstStep = navigationData.steps?.[0];
-    const firstLine = firstStep ? primaryInstructionText(firstStep) : '';
-    const firstInstr = firstLine ? ` ${firstLine}.` : '';
+    const firstCue = firstStep
+      ? (primaryVoiceAnnouncement(firstStep) || primaryInstructionText(firstStep))
+      : '';
+    const firstInstr = firstCue ? ` ${firstCue.replace(/\s+$/, '')}${/[.!?]$/.test(firstCue) ? '' : '.'}` : '';
     if (drivingMode === 'sport') {
       navSpeak(`${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
     } else if (drivingMode === 'calm') {
@@ -601,15 +603,30 @@ export function useNavigation(params: {
       if (route?.geometry?.coordinates?.length) {
         const polyline = route.geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
         const steps = (route.legs ?? []).flatMap((leg: any) =>
-          (leg.steps ?? []).map((s: any) => ({
-            instruction: s.maneuver?.instruction ?? '',
-            distance: `${(s.distance / 1609.34).toFixed(1)} mi`,
-            distanceMeters: s.distance ?? 0,
-            maneuver: s.maneuver?.type ?? 'turn',
-            name: s.name ?? '',
-            intersections: s.intersections,
-            lanes: s.intersections?.[0]?.lanes,
-          })),
+          (leg.steps ?? []).map((s: any) => {
+            const g = s.geometry?.coordinates;
+            const durSec = s.duration ?? 0;
+            return {
+              instruction: s.maneuver?.instruction ?? '',
+              distance: `${(s.distance / 1609.34).toFixed(1)} mi`,
+              distanceMeters: s.distance ?? 0,
+              duration: durSec < 3600 ? `${Math.max(1, Math.round(durSec / 60))} min` : `${Math.floor(durSec / 3600)} hr ${Math.round((durSec % 3600) / 60)} min`,
+              maneuver: mapboxManeuverToSimple(s.maneuver?.modifier, s.maneuver?.type),
+              name: typeof s.name === 'string' ? s.name : '',
+              lat: s.maneuver?.location?.[1] ?? 0,
+              lng: s.maneuver?.location?.[0] ?? 0,
+              geometryCoordinates: Array.isArray(g) && g.length >= 2 ? g : undefined,
+              intersections: Array.isArray(s.intersections)
+                ? s.intersections.map((int: unknown) => {
+                    const intRec = int as { classes?: string[] };
+                    return { classes: Array.isArray(intRec.classes) ? intRec.classes : [] };
+                  })
+                : undefined,
+              bannerInstructions: s.bannerInstructions ?? s.banner_instructions ?? [],
+              voiceInstructions: s.voiceInstructions ?? s.voice_instructions ?? [],
+              lanes: s.intersections?.[0]?.lanes ? JSON.stringify(s.intersections[0].lanes) : undefined,
+            };
+          }),
         );
         traveledRef.current = 0;
         setTraveledDistanceMeters(0);

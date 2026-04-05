@@ -179,7 +179,7 @@ function formatDuration(seconds: number): string {
   return rem > 0 ? `${hrs} hr ${rem} min` : `${hrs} hr`;
 }
 
-function mapboxManeuverToSimple(modifier?: string, type?: string): string {
+export function mapboxManeuverToSimple(modifier?: string, type?: string): string {
   if (type === 'arrive') return 'arrive';
   if (type === 'depart') return 'depart';
   if (type === 'roundabout' || type === 'rotary') return 'roundabout';
