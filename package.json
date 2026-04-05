@@ -31,6 +31,7 @@
     "eas:ios:production": "node scripts/eas-build-mobile.mjs build --platform ios --profile production --non-interactive",
     "eas:ios:development": "node scripts/eas-build-mobile.mjs build --platform ios --profile development",
     "eas:ios:development-simulator": "node scripts/eas-build-mobile.mjs build --platform ios --profile development-simulator",
+    "eas:update:production": "node scripts/eas-build-mobile.mjs update --channel production --environment production",
     "eas:validate": "node scripts/validate-eas-setup.mjs"
   },
   "devDependencies": {

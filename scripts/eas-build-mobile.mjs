@@ -15,6 +15,8 @@
  * How to run
  * - From repo root: npm run eas:android:production (or eas:android:preview, etc.)
  * - From app/mobile: npm run eas:build:prod:android (scripts call this file)
+ * - OTA / `eas update`: same wrapper — `npm run eas:update:production` (repo root) so the
+ *   archive root stays `app/mobile` (monorepo) and behavior matches `eas build`.
  * - Do not run plain `eas build` from repo root, or from app/mobile without this wrapper
  *   on Windows without clearing read-only first.
  *

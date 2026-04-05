@@ -132,6 +132,8 @@ export function useNavigation(params: {
   const lastRerouteAtRef = useRef(0);
   const navSessionStartRef = useRef<number>(0);
   const hasAnnouncedArrivalRef = useRef(false);
+  /** Prevents double auto-end when arrival conditions flicker on successive GPS ticks. */
+  const autoEndNavTriggeredRef = useRef(false);
   const liveEtaSmoothRef = useRef<number | null>(null);
   const earlyWarningRef = useRef<{ stepIdx: number; spoke500: boolean; spoke150: boolean }>({
     stepIdx: -1,
@@ -200,6 +202,7 @@ export function useNavigation(params: {
         setTraveledDistanceMeters(0);
         lastSpokenStepRef.current = -1;
         hasAnnouncedArrivalRef.current = false;
+        autoEndNavTriggeredRef.current = false;
         liveEtaSmoothRef.current = null;
         earlyWarningRef.current = { stepIdx: -1, spoke500: false, spoke150: false };
       } else {
@@ -248,6 +251,7 @@ export function useNavigation(params: {
     setCurrentStepIndex(0);
     lastSpokenStepRef.current = -1;
     hasAnnouncedArrivalRef.current = false;
+    autoEndNavTriggeredRef.current = false;
     liveEtaSmoothRef.current = null;
     earlyWarningRef.current = { stepIdx: -1, spoke500: false, spoke150: false };
     tripStartTimeRef.current = Date.now();
@@ -289,6 +293,7 @@ export function useNavigation(params: {
       setSelectedDestination(null);
       tripStartTimeRef.current = null;
       hasAnnouncedArrivalRef.current = false;
+      autoEndNavTriggeredRef.current = false;
       liveEtaSmoothRef.current = null;
       earlyWarningRef.current = { stepIdx: -1, spoke500: false, spoke150: false };
       offRouteSinceRef.current = null;
@@ -319,8 +324,13 @@ export function useNavigation(params: {
       polyMiles = drivenMeters / 1609.34;
     }
     const gpsMiles = traveledRef.current / 1609.34;
-    // Credit the lower of route progress and GPS odometry (tiny slack for drift)
-    const distMiles = Math.max(0, Math.min(polyMiles, gpsMiles + 0.03));
+    const totalRouteMi = (navigationData?.distance ?? 0) / 1609.34;
+    // Use the better of polyline progress vs GPS odometry (min() under-credited real drives).
+    const blendedMi = Math.max(polyMiles, gpsMiles);
+    const distMiles =
+      totalRouteMi > 0
+        ? Math.max(0, Math.min(blendedMi, totalRouteMi + 0.12))
+        : Math.max(0, blendedMi);
     const roundedDist = Math.max(0, Math.round(distMiles * 100) / 100);
 
     const originName = navigationData?.origin?.name ?? 'Start';
@@ -445,6 +455,16 @@ export function useNavigation(params: {
       navigationData.distance ?? 0,
     );
   }, [isNavigating, navigationData?.polyline, navigationData?.distance, userLocation.lat, userLocation.lng]);
+
+  /** Keep odometry in sync with monotonic route progress (GPS integration can lag in urban canyons). */
+  useEffect(() => {
+    if (!isNavigating || !routeProgress) return;
+    const rt = routeProgress.traveledRouteMeters;
+    if (rt > traveledRef.current) {
+      traveledRef.current = rt;
+      setTraveledDistanceMeters(rt);
+    }
+  }, [isNavigating, routeProgress?.traveledRouteMeters]);
 
   const progressAlongRouteMeters =
     isNavigating && routeProgress
@@ -583,17 +603,32 @@ export function useNavigation(params: {
       hasAnnouncedArrivalRef.current = false;
       return;
     }
-    const remaining = liveEta?.distanceMiles ?? 0;
-    if (remaining > 0.05 || hasAnnouncedArrivalRef.current) return;
+    if (hasAnnouncedArrivalRef.current) return;
+    const dest = navigationData.destination;
+    const rm = liveEta?.distanceMiles;
+    const crow =
+      Number.isFinite(dest.lat) && Number.isFinite(dest.lng)
+        ? haversineMeters(userLocation.lat, userLocation.lng, dest.lat, dest.lng)
+        : Number.POSITIVE_INFINITY;
+    const near = (rm != null && rm <= 0.05) || crow <= 55;
+    if (!near) return;
     hasAnnouncedArrivalRef.current = true;
-    const dest = navigationData.destination.name ?? 'your destination';
+    const destLabel = dest.name ?? 'your destination';
     const arrivalMsg = drivingMode === 'calm'
-      ? `You've arrived at ${dest}. Hope you had a nice drive.`
+      ? `You've arrived at ${destLabel}. Hope you had a nice drive.`
       : drivingMode === 'sport'
-        ? `You've arrived at ${dest}.`
-        : `You've arrived at ${dest}. Have a great day!`;
+        ? `You've arrived at ${destLabel}.`
+        : `You've arrived at ${destLabel}. Have a great day!`;
     navSpeak(arrivalMsg, 'high', drivingMode);
-  }, [isNavigating, liveEta?.distanceMiles, navigationData?.destination, drivingMode, navSpeak]);
+  }, [
+    isNavigating,
+    liveEta?.distanceMiles,
+    navigationData?.destination,
+    userLocation.lat,
+    userLocation.lng,
+    drivingMode,
+    navSpeak,
+  ]);
 
   // --- ETA from route-snapped remaining distance ---
   useEffect(() => {
@@ -647,8 +682,40 @@ export function useNavigation(params: {
     navigationData?.duration,
     navigationData?.polyline,
     routeProgress?.remainingRouteMeters,
+    userLocation.lat,
+    userLocation.lng,
     speed,
     traveledDistanceMeters,
+  ]);
+
+  // --- Auto end at destination: arrival voice did not call stopNavigation before; users were stuck "navigating". ---
+  useEffect(() => {
+    if (!isNavigating || !navigationData?.destination) return;
+    if (autoEndNavTriggeredRef.current) return;
+    const dest = navigationData.destination;
+    if (!Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) return;
+
+    const crow = haversineMeters(userLocation.lat, userLocation.lng, dest.lat, dest.lng);
+    const remainMi = liveEta?.distanceMiles;
+    const withinRoute = remainMi != null && remainMi <= 0.1;
+    const withinCrow = crow <= 55;
+    if (!withinRoute && !withinCrow) return;
+
+    const sessionAge = Date.now() - navSessionStartRef.current;
+    if (sessionAge < 4000) return;
+
+    autoEndNavTriggeredRef.current = true;
+    queueMicrotask(() => {
+      stopNavigation();
+    });
+  }, [
+    isNavigating,
+    navigationData?.destination?.lat,
+    navigationData?.destination?.lng,
+    userLocation.lat,
+    userLocation.lng,
+    liveEta?.distanceMiles,
+    stopNavigation,
   ]);
 
   // --- Off-route detection + auto-reroute ---
@@ -760,6 +827,7 @@ export function useNavigation(params: {
         setTraveledDistanceMeters(0);
         setCurrentStepIndex(0);
         lastSpokenStepRef.current = -1;
+        autoEndNavTriggeredRef.current = false;
         const totalDuration = route.duration ?? 0;
         const totalDistance = route.distance ?? 0;
         setNavigationData({

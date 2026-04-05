@@ -989,13 +989,14 @@ export default function MapScreen() {
 
   // Fix 14: GPS feed with jitter threshold (route progress uses lat/lng only — do not spam on heading noise).
   useEffect(() => {
-    const moved = haversineMeters(lastCameraUpdate.current.lat, lastCameraUpdate.current.lng, location.lat, location.lng) > 1.5;
+    const moveThresholdM = nav.isNavigating ? 0.45 : 1.5;
+    const moved = haversineMeters(lastCameraUpdate.current.lat, lastCameraUpdate.current.lng, location.lat, location.lng) > moveThresholdM;
     const turned = Math.abs(heading - lastCameraUpdate.current.heading) > 1;
     if (moved || turned) {
       lastCameraUpdate.current = { lat: location.lat, lng: location.lng, heading };
       if (moved) nav.updatePosition(location.lat, location.lng);
     }
-  }, [location.lat, location.lng, heading, nav.updatePosition]);
+  }, [location.lat, location.lng, heading, nav.isNavigating, nav.updatePosition]);
 
   useEffect(() => {
     if (!user?.isPremium) return;
@@ -2130,24 +2131,12 @@ export default function MapScreen() {
           )}
 
           {/* Last in tree so the location indicator stacks above custom layers + markers when the native stack allows */}
-          {/* Single user indicator: Mapbox LocationPuck only (no custom MarkerView puck). */}
+          {/* Mapbox default LocationPuck (SDK styling) for every map mode / style — no custom scale or Android renderMode overrides. */}
           <MapboxGL.LocationPuck
             visible
             puckBearingEnabled
             puckBearing={nav.isNavigating ? 'course' : 'heading'}
-            androidRenderMode={
-              nav.isNavigating
-                ? 'gps'
-                : followMode === 'heading' || compassMode
-                  ? 'compass'
-                  : 'normal'
-            }
-            scale={isSport ? 1.08 : 1}
-            pulsing={
-              nav.isNavigating && cameraLocked
-                ? { isEnabled: false }
-                : 'default'
-            }
+            pulsing="default"
           />
         </MapboxGL.MapView>
       ) : (
