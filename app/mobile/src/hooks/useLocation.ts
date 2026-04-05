@@ -15,6 +15,8 @@ interface LocationState {
 
 const UNKNOWN_LOCATION: Coordinate = { lat: 0, lng: 0 };
 const HEADING_SMOOTHING = 0.2;
+/** Nav + slow: stronger compass damping to prevent spin/wobble (< ~5 mph). */
+const HEADING_SMOOTHING_SLOW_NAV = 0.1;
 const SPEED_SMOOTHING = 0.25;
 const LOW_SPEED_JUMP_METERS = 120;
 /** Max MPH change accepted per ~1s navigation tick (dampens GPS speed spikes). */
@@ -32,11 +34,11 @@ function haversineMeters(a: Coordinate, b: Coordinate): number {
   return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
-function smoothHeading(current: number, raw: number): number {
+function smoothHeading(current: number, raw: number, alpha = HEADING_SMOOTHING): number {
   let delta = raw - current;
   if (delta > 180) delta -= 360;
   if (delta < -180) delta += 360;
-  let result = current + delta * HEADING_SMOOTHING;
+  let result = current + delta * alpha;
   if (result < 0) result += 360;
   if (result >= 360) result -= 360;
   return result;
@@ -138,7 +140,9 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
 
         persistCachedLocation(lat, lng);
 
-        const useGpsCourse = typeof gpsHeading === 'number' && gpsHeading >= 0 && speedMph > 3;
+        /** Above ~5 mph, course-over-ground is usually stabler than magnetometer for map bearing. */
+        const useGpsCourse =
+          typeof gpsHeading === 'number' && Number.isFinite(gpsHeading) && gpsHeading >= 0 && speedMph > 5;
 
         setState((prev) => {
           const movedMeters = haversineMeters(prev.location, nextCoord);
@@ -154,13 +158,18 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
 
           let newHeading = prev.heading;
           if (useGpsCourse) {
+            const hAlpha =
+              speedMph < 12 ? 0.22 : speedMph < 35 ? 0.32 : 0.42;
             if (!hasHeadingRef.current) {
               smoothedRef.current = gpsHeading;
               hasHeadingRef.current = true;
             } else {
-              smoothedRef.current = smoothHeading(smoothedRef.current, gpsHeading);
+              smoothedRef.current = smoothHeading(smoothedRef.current, gpsHeading, hAlpha);
             }
             newHeading = smoothedRef.current;
+          } else if (isNavigating && prev.speed < 5) {
+            /** Below course-lock speed: keep last bearing; magnetometer updates heading subscription only. */
+            newHeading = prev.heading;
           }
 
           const accuracyPoor = typeof acc === 'number' && acc > 72;
@@ -207,12 +216,19 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
       if (typeof deg !== 'number' || !Number.isFinite(deg)) return;
       setState((prev) => {
-        if (prev.speed > 3) return prev;
+        /** Same threshold as GPS course: above this, COG drives bearing; ignore compass jitter. */
+        if (prev.speed > 5) return prev;
+        const compassAlpha =
+          isNavigating && prev.speed < 2.5
+            ? 0.07
+            : isNavigating && prev.speed < 5
+              ? HEADING_SMOOTHING_SLOW_NAV
+              : HEADING_SMOOTHING;
         if (!hasHeadingRef.current) {
           smoothedRef.current = deg;
           hasHeadingRef.current = true;
         } else {
-          smoothedRef.current = smoothHeading(smoothedRef.current, deg);
+          smoothedRef.current = smoothHeading(smoothedRef.current, deg, compassAlpha);
         }
         return { ...prev, heading: smoothedRef.current };
       });

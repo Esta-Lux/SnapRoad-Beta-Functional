@@ -109,7 +109,7 @@ export default function PlaceCard({
 
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           nestedScrollEnabled

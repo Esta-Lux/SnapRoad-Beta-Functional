@@ -26,6 +26,9 @@ type Args = {
 
 type SpeedZoomPoint = { speed: number; zoom: number };
 
+/** Reserved space for turn banner / stats / ETA bar above the puck (matches Apple/Google-style nav UI). */
+export const NAV_UI_HEIGHT = 140;
+
 const SPEED_ZOOM_CURVES: Record<DrivingMode, SpeedZoomPoint[]> = {
   calm: [
     { speed: 0, zoom: 18.2 },
@@ -69,43 +72,43 @@ const MODE_CONFIG: Record<
   }
 > = {
   calm: {
-    basePitch: 58,
-    minPitch: 48,
-    maxPitch: 64,
-    basePadBottom: 250,
+    basePitch: 52,
+    minPitch: 42,
+    maxPitch: 58,
+    basePadBottom: 365,
     padTop: 95,
     padLeft: 30,
     padRight: 30,
     padTopSpeed: 75,
-    turnApproachPadBoost: 55,
+    turnApproachPadBoost: 88,
     turnApproachMeters: 180,
     /** ~GPS/nav updates arrive ~1 Hz; shorter ease reduces mushy lag vs puck */
     /** Slightly longer ease so zoom/pitch changes do not fight the location puck. */
     transitionMs: 900,
   },
   adaptive: {
-    basePitch: 56,
-    minPitch: 44,
-    maxPitch: 62,
-    basePadBottom: 235,
+    basePitch: 50,
+    minPitch: 40,
+    maxPitch: 56,
+    basePadBottom: 355,
     padTop: 90,
     padLeft: 28,
     padRight: 28,
     padTopSpeed: 65,
-    turnApproachPadBoost: 48,
+    turnApproachPadBoost: 82,
     turnApproachMeters: 180,
     transitionMs: 720,
   },
   sport: {
-    basePitch: 60,
-    minPitch: 46,
-    maxPitch: 66,
-    basePadBottom: 220,
+    basePitch: 54,
+    minPitch: 42,
+    maxPitch: 60,
+    basePadBottom: 345,
     padTop: 80,
     padLeft: 24,
     padRight: 24,
     padTopSpeed: 55,
-    turnApproachPadBoost: 42,
+    turnApproachPadBoost: 74,
     turnApproachMeters: 180,
     transitionMs: 500,
   },
@@ -161,7 +164,7 @@ export function getCameraPreset({
   const overHighway = Math.max(0, mph - cfg.padTopSpeed);
   const highwayPadReduce = Math.min(36, overHighway * 0.55);
   let paddingBottom =
-    cfg.basePadBottom + safeAreaBottom - highwayPadReduce;
+    cfg.basePadBottom + safeAreaBottom + NAV_UI_HEIGHT - highwayPadReduce;
   if (nextManeuverDistanceMeters < cfg.turnApproachMeters) {
     paddingBottom += cfg.turnApproachPadBoost;
   }

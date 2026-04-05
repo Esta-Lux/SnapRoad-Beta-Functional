@@ -1,5 +1,5 @@
 import type { Coordinate, DrivingMode } from '../types';
-import { getMapboxPublicToken, isMapboxPublicTokenConfigured } from './mapboxToken';
+import { getMapboxPublicToken, isMapboxPublicTokenConfigured } from '../config/mapbox';
 
 /** True when Mapbox Directions / Geocoding can run (token present in env or Expo extra). */
 export function isMapboxDirectionsConfigured(): boolean {
@@ -426,7 +426,7 @@ export async function getMapboxRouteOptions(
   options?: { maxHeightMeters?: number; mode?: DrivingMode },
 ): Promise<DirectionsResult[]> {
   if (!isMapboxDirectionsConfigured()) {
-    throw new Error('Mapbox access token is not configured. Set EXPO_PUBLIC_MAPBOX_TOKEN (or Expo extra mapboxPublicToken).');
+    throw new Error('Mapbox access token is not configured. Set EXPO_PUBLIC_MAPBOX_TOKEN (bundle or Expo extra mapboxPublicToken).');
   }
   const MAPBOX_TOKEN = getMapboxPublicToken();
 

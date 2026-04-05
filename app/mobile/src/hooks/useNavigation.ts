@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect } fr
 import type { Coordinate, DrivingMode } from '../types';
 import type { DirectionsResult, DirectionsStep, GeocodeResult } from '../lib/directions';
 import { getMapboxRouteOptions, isMapboxDirectionsConfigured, mapboxManeuverToSimple } from '../lib/directions';
-import { getMapboxPublicToken } from '../lib/mapboxToken';
+import { getMapboxPublicToken } from '../config/mapbox';
 
 export type FetchDirectionsResult =
   | { ok: true }
@@ -163,7 +163,11 @@ export function useNavigation(params: {
     }
 
     if (!isMapboxDirectionsConfigured()) {
-      return { ok: false, reason: 'no_mapbox', message: 'Add EXPO_PUBLIC_MAPBOX_TOKEN to your environment and rebuild.' };
+      return {
+        ok: false,
+        reason: 'no_mapbox',
+        message: 'Add EXPO_PUBLIC_MAPBOX_TOKEN (.env / EAS env) or rebuild so extra.mapboxPublicToken is set.',
+      };
     }
 
     try {

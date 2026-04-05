@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import type { ApiResponse, AuthResponse, LoginRequest, SignupRequest } from '../types';
 import { supabase } from '../lib/supabase';
-import { isMapboxPublicTokenConfigured } from '../lib/mapboxToken';
+import { isMapboxPublicTokenConfigured } from '../config/mapbox';
 
 const TOKEN_KEY = 'snaproad_token';
 const IS_PRODUCTION = String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -104,7 +104,9 @@ export const API_BASE_URL = apiBaseUrl;
 if (IS_PRODUCTION) {
   const missing: string[] = [];
   // Mapbox is baked in app.config → extra.mapboxPublicToken on EAS; `process.env` may be empty in JS yet token works.
-  if (!isMapboxPublicTokenConfigured()) missing.push('EXPO_PUBLIC_MAPBOX_TOKEN (or app.config extra.mapboxPublicToken)');
+  if (!isMapboxPublicTokenConfigured()) {
+    missing.push('EXPO_PUBLIC_MAPBOX_TOKEN (js bundle or app.config extra.mapboxPublicToken)');
+  }
   if (!process.env.EXPO_PUBLIC_SUPABASE_URL) missing.push('EXPO_PUBLIC_SUPABASE_URL');
   if (!process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) missing.push('EXPO_PUBLIC_SUPABASE_ANON_KEY');
   if (!process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY) missing.push('EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY');

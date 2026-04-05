@@ -44,11 +44,12 @@ import {
 } from './src/utils/deepLinks';
 import * as Sentry from '@sentry/react-native';
 import MapboxGL from './src/utils/mapbox';
-import { getMapboxPublicToken } from './src/lib/mapboxToken';
+import { getMapboxPublicToken, logMapboxAccessDiagnostics } from './src/config/mapbox';
 
 /** Set before any MapView mounts — `useEffect` in screens runs too late for first paint. */
 (function mapboxEarlyAccessToken(): void {
   try {
+    logMapboxAccessDiagnostics('App.tsx early setAccessToken');
     const token = getMapboxPublicToken();
     if (MapboxGL && token) {
       MapboxGL.setAccessToken(token);

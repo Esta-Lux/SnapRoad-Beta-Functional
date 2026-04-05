@@ -57,14 +57,9 @@ const _includeDevClient =
   ["development", "development-simulator", "preview"].includes(_profile) ||
   (!_prod && _profile.length === 0);
 
-/** Mapbox pk. token: prefer main env keys; optional *_FALLBACK for temporary preview / dev while Expo env is fixed. */
+/** Mapbox pk. token: canonical EXPO_PUBLIC_MAPBOX_TOKEN only (embedded into extra.mapboxPublicToken at build time). */
 function resolveMapboxPublicTokenForConfig(): string {
-  const primary = envAny(["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"], "").trim();
-  if (primary) return primary;
-  return envAny(
-    ["EXPO_PUBLIC_MAPBOX_TOKEN_FALLBACK", "MAPBOX_PUBLIC_TOKEN_FALLBACK"],
-    "",
-  ).trim();
+  return envAny(["EXPO_PUBLIC_MAPBOX_TOKEN"], "").trim();
 }
 
 function resolveSentryExpoPlugin(): string | [string, Record<string, string>] {
@@ -220,13 +215,13 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
         if (process.env.EAS_BUILD && !t.trim() && prodish && !escape) {
           throw new Error(
             "[app.config] Mapbox public token is empty on the EAS worker (production profile). " +
-              "Set EXPO_PUBLIC_MAPBOX_TOKEN or EXPO_PUBLIC_MAPBOX_TOKEN_FALLBACK in Expo → Environment variables for `production` " +
+              "Set EXPO_PUBLIC_MAPBOX_TOKEN in Expo → Environment variables for `production` " +
               "(Plain text or Sensitive; not Secret). Temporary bypass: ALLOW_MISSING_MAPBOX_TOKEN=1 — not for store.",
           );
         }
         if (process.env.EAS_BUILD && !t.trim() && (!prodish || escape)) {
           console.warn(
-            "[app.config] Mapbox token empty on EAS — build continues; set EXPO_PUBLIC_MAPBOX_TOKEN or EXPO_PUBLIC_MAPBOX_TOKEN_FALLBACK for a working map. " +
+            "[app.config] Mapbox token empty on EAS — build continues; set EXPO_PUBLIC_MAPBOX_TOKEN for a working map. " +
               `Profile: ${easProfile || "(unset)"}.`,
           );
         }

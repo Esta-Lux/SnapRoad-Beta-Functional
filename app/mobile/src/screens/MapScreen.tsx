@@ -26,8 +26,14 @@ import {
   reverseGeocode,
   type GeocodeResult,
 } from '../lib/directions';
-import { getMapboxPublicToken, isMapboxPublicTokenConfigured } from '../lib/mapboxToken';
+import {
+  getMapboxPublicToken,
+  getMapboxTokenPublicPrefix,
+  isMapboxPublicTokenConfigured,
+  logMapboxAccessDiagnostics,
+} from '../config/mapbox';
 import { getDrivingLightPreset, usesStandardStyleConfiguration } from '../lib/mapboxDrivingStyle';
+import { clampStepTowardDeg } from '../navigation/bearingSmoothing';
 import RouteOverlay from '../components/map/RouteOverlay';
 import OfferMarkers from '../components/map/OfferMarkers';
 import ReportMarkers from '../components/map/ReportMarkers';
@@ -337,6 +343,7 @@ export default function MapScreen() {
   const wasNavigatingRef = useRef(false);
 
   useLayoutEffect(() => {
+    logMapboxAccessDiagnostics('MapScreen mount');
     const t = getMapboxPublicToken();
     if (MapboxGL && t) {
       MapboxGL.setAccessToken(t);
@@ -597,6 +604,10 @@ export default function MapScreen() {
   const [stableCenter, setStableCenter] = useState<[number, number]>([location.lng, location.lat]);
   const headingRef = useRef(heading);
   useEffect(() => { headingRef.current = heading; }, [heading]);
+  const speedRef = useRef(speed);
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+  /** Explore compass: damped bearing so Mapbox camera does not spin on noisy magnetometer. */
+  const compassSmoothedHeadingRef = useRef(heading);
   useEffect(() => {
     const [prevLng, prevLat] = stableCenterRef.current;
     const dLat = location.lat - prevLat;
@@ -608,16 +619,26 @@ export default function MapScreen() {
     }
   }, [location.lat, location.lng]);
 
-  // Compass mode: heading follow (~8fps) — lighter than 12fps+ for battery/GPU while staying smooth
+  useEffect(() => {
+    if (compassMode && !nav.isNavigating && !isExploring) {
+      compassSmoothedHeadingRef.current = headingRef.current;
+    }
+  }, [compassMode, nav.isNavigating, isExploring]);
+
+  // Compass mode: clamped-step bearing toward device heading (not raw 8fps feed — avoids wobble/spin).
   useEffect(() => {
     if (!compassMode || nav.isNavigating || isExploring) return;
     const id = setInterval(() => {
+      const raw = headingRef.current;
+      const mph = speedRef.current;
+      const maxStep = mph < 2.5 ? 2.2 : mph < 12 ? 5.5 : mph < 45 ? 9 : 14;
+      compassSmoothedHeadingRef.current = clampStepTowardDeg(compassSmoothedHeadingRef.current, raw, maxStep);
       cameraRef.current?.setCamera({
-        heading: headingRef.current,
-        animationDuration: 120,
+        heading: compassSmoothedHeadingRef.current,
+        animationDuration: mph < 4 ? 240 : 160,
         animationMode: 'easeTo',
       });
-    }, 120);
+    }, 175);
     return () => clearInterval(id);
   }, [compassMode, nav.isNavigating, isExploring]);
 
@@ -627,8 +648,9 @@ export default function MapScreen() {
   const inConfirmWindow = Date.now() < confirmUntil;
   const isAmbient = !nav.isNavigating && speed > 6.7;
   const hasNativeMapbox = isMapAvailable() && MapboxGL !== null;
-  /** Native Mapbox without a pk. token often crashes loading styles — gate the MapView. */
-  const mapOk = hasNativeMapbox && isMapboxPublicTokenConfigured();
+  const mapboxTokenOk = isMapboxPublicTokenConfigured();
+  /** Native Mapbox without a plausibly valid pk. token often crashes loading styles — gate the MapView. */
+  const mapOk = hasNativeMapbox && mapboxTokenOk;
 
   /** Explore: green “locate” = north-up follow; blue compass = rotate with heading (same as Mapbox tracking modes). */
   const exploreTracksUser =
@@ -965,15 +987,15 @@ export default function MapScreen() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // Fix 14: GPS feed with jitter threshold
+  // Fix 14: GPS feed with jitter threshold (route progress uses lat/lng only — do not spam on heading noise).
   useEffect(() => {
     const moved = haversineMeters(lastCameraUpdate.current.lat, lastCameraUpdate.current.lng, location.lat, location.lng) > 1.5;
     const turned = Math.abs(heading - lastCameraUpdate.current.heading) > 1;
     if (moved || turned) {
       lastCameraUpdate.current = { lat: location.lat, lng: location.lng, heading };
-      nav.updatePosition(location.lat, location.lng);
+      if (moved) nav.updatePosition(location.lat, location.lng);
     }
-  }, [location.lat, location.lng, heading]);
+  }, [location.lat, location.lng, heading, nav.updatePosition]);
 
   useEffect(() => {
     if (!user?.isPremium) return;
@@ -2140,15 +2162,17 @@ export default function MapScreen() {
             <>
               <Text style={s.phTitle}>Mapbox token missing</Text>
               <Text style={s.phSub}>
-                Add EXPO_PUBLIC_MAPBOX_TOKEN (or *_FALLBACK) to app/mobile/.env for local dev. For EAS, set the same variable in
-                Expo → Project → Environment variables for each build profile (development / preview / production),
-                then create a new build — tokens are baked in at build time, not only on the server.
+                Set EXPO_PUBLIC_MAPBOX_TOKEN in app/mobile/.env and restart Metro, or in Expo → Environment variables for your
+                EAS profile. Native builds embed extra.mapboxPublicToken; OTA updates use the token from the update bundle env
+                if set, otherwise the value from the last store/binary build. Map style/load errors are separate — if the map
+                stays blank with a valid pk. token, check the device logs, not this screen.
               </Text>
             </>
           )}
           {typeof __DEV__ !== 'undefined' && __DEV__ ? (
             <Text style={[s.phSub, { fontSize: 11, opacity: 0.7, marginTop: 4, paddingHorizontal: 16 }]}>
-              dbg: native={hasNativeMapbox ? 'yes' : 'no'} · tokenLen={getMapboxPublicToken().length} · reload Metro after editing .env
+              dbg: native={hasNativeMapbox ? 'yes' : 'no'} · token={getMapboxTokenPublicPrefix(getMapboxPublicToken())} ·
+              reload Metro after editing .env
             </Text>
           ) : null}
           <Text style={s.phCoord}>{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</Text>

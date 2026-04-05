@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import type { DrivingMode } from '../types';
 import { getCameraPreset } from '../navigation/useNavigationCamera';
 
@@ -36,6 +36,30 @@ export interface CameraSettings {
 
 const MPH_TO_MPS = 0.44704;
 
+const STEP_PITCH_EPS = 1.5;
+const STEP_PAD_EPS = 10;
+
+function paddingNear(
+  a: CameraSettings['followPadding'],
+  b: CameraSettings['followPadding'],
+  eps: number,
+): boolean {
+  return (
+    Math.abs(a.paddingBottom - b.paddingBottom) < eps &&
+    Math.abs(a.paddingTop - b.paddingTop) < eps &&
+    Math.abs(a.paddingLeft - b.paddingLeft) < 1 &&
+    Math.abs(a.paddingRight - b.paddingRight) < 1
+  );
+}
+
+function nearlySameCamera(a: CameraSettings, b: CameraSettings): boolean {
+  return (
+    Math.abs(a.followZoomLevel - b.followZoomLevel) < 0.11 &&
+    Math.abs(a.followPitch - b.followPitch) < STEP_PITCH_EPS &&
+    paddingNear(a.followPadding, b.followPadding, STEP_PAD_EPS)
+  );
+}
+
 /**
  * Follow-camera zoom / pitch / symmetric padding while navigating, using mode presets
  * and distance-to-upcoming-maneuver adaptation.
@@ -51,8 +75,9 @@ export function useCameraController({
 }: CameraParams): CameraSettings | null {
   const speedB = speedMphBucket(speedMph);
   const maneuverB = maneuverDistanceBucket(nextManeuverDistanceMeters);
+  const stableRef = useRef<CameraSettings | null>(null);
 
-  return useMemo(() => {
+  const computed = useMemo(() => {
     if (!isNavigating || !cameraLocked) return null;
 
     const preset = getCameraPreset({
@@ -78,4 +103,17 @@ export function useCameraController({
     safeAreaTop,
     safeAreaBottom,
   ]);
+
+  return useMemo(() => {
+    if (!computed) {
+      stableRef.current = null;
+      return null;
+    }
+    const prev = stableRef.current;
+    if (prev && nearlySameCamera(prev, computed)) {
+      return prev;
+    }
+    stableRef.current = computed;
+    return computed;
+  }, [computed]);
 }

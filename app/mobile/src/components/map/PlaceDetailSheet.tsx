@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, Image,
+  View, Text, TouchableOpacity, StyleSheet, Image,
   Platform, ActivityIndicator, Linking, Dimensions, FlatList, Share, Alert,
 } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS,
@@ -95,8 +96,8 @@ interface Props {
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 const SPRING = { damping: 34, stiffness: 320, mass: 0.82 };
 const PHOTO_HEIGHT = 220;
-/** Bottom bar (Directions) is absolutely positioned; keep scroll content clear of the overlap. */
-const SCROLL_BOTTOM_PAD_EXTRA = 100;
+/** Sticky Directions bar + home indicator — scroll must clear the overlay so favorites/share stay reachable. */
+const SCROLL_BOTTOM_PAD_EXTRA = 148;
 
 const FOOD_PLACE_TYPES = new Set([
   'restaurant', 'meal_delivery', 'meal_takeaway', 'cafe', 'bakery', 'bar', 'food',
@@ -286,23 +287,27 @@ export default function PlaceDetailSheet({
   const handleColor = isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.2)';
 
   /**
-   * translateY offsets the full-height sheet downward. Visible height = SCREEN_H - translateY.
-   * Half = ~50% screen; expanded = ~70% screen; drag down past dismiss threshold to close.
+   * translateY pushes the full-height sheet down. Smaller translateY = more sheet visible (expanded).
+   * Drag handle only drives pan so vertical scroll does not fight the drawer.
    */
-  const DETENT_EXPANDED = Math.round(SCREEN_H * 0.3);
-  const DETENT_HALF = Math.round(SCREEN_H * 0.5);
-  const DETENT_DISMISS = Math.round(SCREEN_H * 0.88);
+  const DETENTS = useMemo(
+    () => ({
+      expanded: Math.round(SCREEN_H * 0.2),
+      half: Math.round(SCREEN_H * 0.46),
+      dismiss: Math.round(SCREEN_H * 0.9),
+    }),
+    [],
+  );
 
-  const translateY = useSharedValue(DETENT_HALF);
+  const translateY = useSharedValue(DETENTS.expanded);
   const backdropOpacity = useSharedValue(0);
   const startY = useSharedValue(0);
 
   useEffect(() => {
-    translateY.value = DETENT_HALF;
     backdropOpacity.value = 0;
-    translateY.value = withSpring(DETENT_HALF, SPRING);
+    translateY.value = withSpring(DETENTS.expanded, SPRING);
     backdropOpacity.value = withTiming(0.42, { duration: 300 });
-  }, [placeId, DETENT_HALF]);
+  }, [placeId, DETENTS.expanded]);
 
   useEffect(() => {
     setSaved(false);
@@ -355,19 +360,20 @@ export default function PlaceDetailSheet({
     .onStart(() => { startY.value = translateY.value; })
     .onUpdate((e) => {
       const next = startY.value + e.translationY;
-      const minY = DETENT_EXPANDED - 20;
-      const maxY = SCREEN_H * 0.95;
+      const minY = DETENTS.expanded - 28;
+      const maxY = SCREEN_H * 0.96;
       translateY.value = Math.min(maxY, Math.max(minY, next));
     })
     .onEnd((e) => {
-      const mid = (DETENT_HALF + DETENT_EXPANDED) / 2;
-      if (e.velocityY > 650 || translateY.value > DETENT_DISMISS) {
+      const { expanded, half, dismiss } = DETENTS;
+      const mid = (expanded + half) / 2;
+      if (e.velocityY > 720 || translateY.value > dismiss) {
         translateY.value = withTiming(SCREEN_H, { duration: 260 });
         backdropOpacity.value = withTiming(0, { duration: 220 }, () => { runOnJS(onClose)(); });
       } else if (translateY.value < mid) {
-        translateY.value = withSpring(DETENT_EXPANDED, SPRING);
+        translateY.value = withSpring(expanded, SPRING);
       } else {
-        translateY.value = withSpring(DETENT_HALF, SPRING);
+        translateY.value = withSpring(half, SPRING);
       }
     });
 
@@ -538,9 +544,12 @@ export default function PlaceDetailSheet({
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={dismissSheet} />
       </Animated.View>
 
-      <GestureDetector gesture={panGesture}>
-        <Animated.View style={[S.container, { backgroundColor: bg, paddingBottom: insets.bottom + 8 }, sheetStyle]}>
-          <View style={[S.handleBar, { backgroundColor: handleColor }]} />
+      <Animated.View style={[S.container, { backgroundColor: bg }, sheetStyle]}>
+          <GestureDetector gesture={panGesture}>
+            <View style={S.sheetDragHeader} collapsable={false}>
+              <View style={[S.handleBar, { backgroundColor: handleColor }]} />
+            </View>
+          </GestureDetector>
 
           {loading ? (
             <View style={S.loadingWrap}>
@@ -602,11 +611,9 @@ export default function PlaceDetailSheet({
                 style={S.scrollFlex}
                 showsVerticalScrollIndicator
                 bounces
-                nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{
                   paddingBottom: insets.bottom + SCROLL_BOTTOM_PAD_EXTRA,
-                  flexGrow: 1,
                 }}
               >
                 <View style={S.header}>
@@ -909,8 +916,7 @@ export default function PlaceDetailSheet({
             </View>
             </>
           )}
-        </Animated.View>
-      </GestureDetector>
+      </Animated.View>
     </View>
   );
 }
@@ -928,7 +934,13 @@ const S = StyleSheet.create({
       android: { elevation: 20 },
     }),
   },
-  handleBar: { width: 40, height: 5, borderRadius: 3, alignSelf: 'center', marginTop: 10, marginBottom: 4 },
+  sheetDragHeader: {
+    paddingTop: 10,
+    paddingBottom: 12,
+    alignItems: 'center',
+    width: '100%',
+  },
+  handleBar: { width: 40, height: 5, borderRadius: 3, alignSelf: 'center' },
   loadingWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
   loadingText: { fontSize: 14, fontWeight: '500' },
 
