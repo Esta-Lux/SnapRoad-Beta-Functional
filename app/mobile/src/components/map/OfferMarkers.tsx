@@ -17,11 +17,11 @@ function markerSize(offer: Offer): { disc: number; glow: number; icon: number } 
   const boost = Math.max(1, Number(offer.boost_multiplier || 1))
   const locationScale = Array.isArray(offer.allocated_locations) ? Math.min(3, offer.allocated_locations.length) : 1
   const redemptionScale = offer.redemption_count ? Math.min(4, Math.floor(offer.redemption_count / 25)) : 0
-  const disc = Math.min(46, 28 + (boost - 1) * 3 + locationScale * 2 + redemptionScale)
+  const disc = Math.min(38, 22 + (boost - 1) * 2 + locationScale * 2 + redemptionScale)
   return {
     disc,
-    glow: disc + 10,
-    icon: Math.max(14, Math.round(disc * 0.5)),
+    glow: disc + 8,
+    icon: Math.max(11, Math.round(disc * 0.48)),
   }
 }
 

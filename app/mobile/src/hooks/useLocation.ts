@@ -112,11 +112,12 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       }));
     } catch {}
 
+    /** Non-nav used Balanced + 5s — speed readout lagged vs dashboard; High + 2s matches nav feel better. */
     const accuracy = isNavigating
       ? Location.Accuracy.BestForNavigation
-      : Location.Accuracy.Balanced;
-    const timeInterval = isNavigating ? 1000 : 5000;
-    const distanceInterval = isNavigating ? 2 : 20;
+      : Location.Accuracy.Highest;
+    const timeInterval = isNavigating ? 1000 : 2000;
+    const distanceInterval = isNavigating ? 2 : 8;
 
     watchRef.current = await Location.watchPositionAsync(
       {
@@ -178,10 +179,15 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
           }
 
           let nextSpeed = prev.speed + (speedMph - prev.speed) * alpha;
-          if (isNavigating && prev.location.lat !== UNKNOWN_LOCATION.lat) {
+          if (prev.location.lat !== UNKNOWN_LOCATION.lat) {
             const delta = nextSpeed - prev.speed;
-            const cap = accuracyPoor ? 10 : NAV_SPEED_MAX_STEP_MPH;
-            const clampedDelta = Math.max(-28, Math.min(cap, delta));
+            const cap = isNavigating
+              ? (accuracyPoor ? 10 : NAV_SPEED_MAX_STEP_MPH)
+              : accuracyPoor
+                ? 12
+                : 24;
+            const maxSlow = isNavigating ? -28 : -32;
+            const clampedDelta = Math.max(maxSlow, Math.min(cap, delta));
             nextSpeed = Math.max(0, prev.speed + clampedDelta);
           }
 

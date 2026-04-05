@@ -95,6 +95,8 @@ interface Props {
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 const SPRING = { damping: 34, stiffness: 320, mass: 0.82 };
 const PHOTO_HEIGHT = 220;
+/** Bottom bar (Directions) is absolutely positioned; keep scroll content clear of the overlap. */
+const SCROLL_BOTTOM_PAD_EXTRA = 100;
 
 const FOOD_PLACE_TYPES = new Set([
   'restaurant', 'meal_delivery', 'meal_takeaway', 'cafe', 'bakery', 'bar', 'food',
@@ -160,6 +162,10 @@ function StarRating({ rating, size = 14, color = '#F59E0B' }: { rating: number; 
 
 function isFoodPlace(types?: string[]): boolean {
   return types?.some((t) => FOOD_PLACE_TYPES.has(t)) ?? false;
+}
+
+function isGasStation(types?: string[]): boolean {
+  return types?.some((t) => t === 'gas_station') ?? false;
 }
 
 function buildPhotoUrls(photos: unknown[], baseUrl: string): string[] {
@@ -594,11 +600,14 @@ export default function PlaceDetailSheet({
 
               <ScrollView
                 style={S.scrollFlex}
-                showsVerticalScrollIndicator={false}
+                showsVerticalScrollIndicator
                 bounces
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ paddingBottom: insets.bottom + 24, flexGrow: 1 }}
+                contentContainerStyle={{
+                  paddingBottom: insets.bottom + SCROLL_BOTTOM_PAD_EXTRA,
+                  flexGrow: 1,
+                }}
               >
                 <View style={S.header}>
                   <Text style={[S.placeName, { color: text1 }]} numberOfLines={2}>{place.name}</Text>
@@ -1000,6 +1009,7 @@ const S = StyleSheet.create({
   reviewAuthor: { fontSize: 14, fontWeight: '700' },
   reviewTime: { fontSize: 11 },
   reviewText: { fontSize: 13, lineHeight: 20 },
+  fuelNote: { fontSize: 13, lineHeight: 20, padding: 16 },
   showMoreBtn: { borderRadius: 12, borderWidth: 1, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   showMoreText: { fontSize: 13, fontWeight: '700' },
 

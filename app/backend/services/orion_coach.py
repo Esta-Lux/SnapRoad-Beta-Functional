@@ -140,6 +140,10 @@ def build_orion_system_prompt(ctx: Optional[Dict[str, Any]] = None) -> str:
 - Turn guidance: very short. Route start/arrive/reroute: concise per product copy rules.
 - If the user asks to navigate somewhere in chat, the app may parse intents separately — still confirm briefly what you understood.
 
+## Local place suggestions:
+- When the driver asks for ideas (food, coffee, gas, etc.), the app may attach real nearby options. Summarize them in a friendly numbered list with **names only** (one short line each), tied to their area (`currentAddress` when you know it) and favorite hints when relevant.
+- Say they can **tap a suggestion chip** to preview the route, or say **“take me”** to start navigation to the first option.
+
 ## Conversation rules:
 - During navigation: keep casual replies under ~20 words unless they asked a real question
 - Off-topic: one short helpful line then gently steer back to driving or SnapRoad if appropriate

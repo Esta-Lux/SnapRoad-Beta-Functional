@@ -29,9 +29,9 @@ export default React.memo(function FriendMarkers({ friends, onFriendTap }: Props
         >
           <Pressable onPress={() => onFriendTap?.(f)} style={styles.wrap} hitSlop={4}>
             {f.sosActive && <View style={styles.sosRing} pointerEvents="none" />}
-            <View style={[styles.puck, f.isFamilyMember && styles.puckFamily]}>
-              <Ionicons name={f.isFamilyMember ? 'people' : 'person'} size={20} color="#fff" />
-            </View>
+              <View style={[styles.puck, f.isFamilyMember && styles.puckFamily]}>
+                <Ionicons name={f.isFamilyMember ? 'people' : 'person'} size={15} color="#fff" />
+              </View>
             <Text style={styles.name} numberOfLines={1}>
               {(f.name ?? '').split(' ')[0]}
             </Text>
@@ -50,20 +50,20 @@ const styles = StyleSheet.create({
   sosRing: {
     position: 'absolute',
     top: -2,
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    borderWidth: 3,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
     borderColor: '#EF4444',
   },
   puck: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 12,
     backgroundColor: '#8B5CF6',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2.5,
+    borderWidth: 2,
     borderColor: '#fff',
     ...Platform.select({
       ios: {

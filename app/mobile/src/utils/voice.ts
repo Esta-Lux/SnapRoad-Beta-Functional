@@ -44,6 +44,26 @@ export async function restoreDefaultAudioSession(): Promise<void> {
   }
 }
 
+/**
+ * Orion voice-input: allow the mic while avoiding fighting navigation TTS session.
+ * Call before `Voice.start()`; after dictation stops or before nav `speak()`, use playback or restore.
+ */
+export async function configureAudioSessionForVoiceInput(): Promise<void> {
+  try {
+    await Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      allowsRecordingIOS: true,
+      interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+      staysActiveInBackground: false,
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Orion and navigation share the same Speech settings. */
 const ORION_SPEECH_RATE = 0.96;
 const ORION_SPEECH_PITCH = 1.0;

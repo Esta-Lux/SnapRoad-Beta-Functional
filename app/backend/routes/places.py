@@ -10,7 +10,7 @@ import os
 import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from typing import Annotated, Optional
+from typing import Annotated, Dict, Optional
 
 from fastapi import APIRouter, Query, Request, Response
 import httpx
@@ -424,6 +424,144 @@ async def place_details(place_id: str):
     return {"success": True, "data": detail}
 
 
+def _nearby_rows_from_google_results(results: list, *, limit_slice: int = 20) -> list:
+    raw: list = []
+    for p in results[:limit_slice]:
+        geo = p.get("geometry", {}).get("location", {})
+        plat = geo.get("lat")
+        plng = geo.get("lng")
+        if plat is None or plng is None:
+            continue
+        photos = p.get("photos", [])
+        ref = photos[0].get("photo_reference") if photos else None
+        oh = p.get("opening_hours") or {}
+        vicinity = p.get("vicinity") or ""
+        addr = p.get("formatted_address", "") or vicinity
+        raw.append({
+            "place_id": p.get("place_id"),
+            "name": p.get("name", ""),
+            "address": addr,
+            "lat": plat,
+            "lng": plng,
+            "photo_reference": ref,
+            "rating": p.get("rating"),
+            "types": p.get("types", []),
+            "open_now": oh.get("open_now"),
+            "price_level": p.get("price_level"),
+            "business_status": p.get("business_status"),
+        })
+    return raw
+
+
+async def fetch_nearby_places_list(
+    lat: float,
+    lng: float,
+    *,
+    radius: int = 5000,
+    place_type: Optional[str] = None,
+    limit: int = 10,
+    keyword: Optional[str] = None,
+) -> list:
+    """Google Nearby Search (internal callers: Orion, tests). Sorted nearest-first. Empty if API key missing."""
+    key = _KEY()
+    if not key:
+        return []
+
+    params = {
+        "location": f"{lat},{lng}",
+        "radius": min(int(radius), 50000),
+        "key": key,
+        "language": "en",
+    }
+    if place_type and str(place_type).strip():
+        params["type"] = str(place_type).strip()
+    if keyword and str(keyword).strip():
+        params["keyword"] = str(keyword).strip()
+    r = await _get_http().get(f"{_BASE}/nearbysearch/json", params=params)
+    data = r.json()
+
+    raw = _nearby_rows_from_google_results(data.get("results", []) or [])
+
+    def dist_sq(a: dict, b: dict) -> float:
+        return (a.get("lat", 0) - b.get("lat", 0)) ** 2 + (a.get("lng", 0) - b.get("lng", 0)) ** 2
+
+    click_point = {"lat": lat, "lng": lng}
+    take = min(max(limit, 1), 30)
+    return sorted(raw, key=lambda row: dist_sq(row, click_point))[:take]
+
+
+async def fetch_ev_charging_combined(lat: float, lng: float, radius: int, limit: int) -> list:
+    """Combine Nearby + Text Search — type-only EV results are often incomplete."""
+    rad = min(max(int(radius), 1000), 50000)
+    nearby = await fetch_nearby_places_list(
+        lat, lng, radius=rad, place_type="electric_vehicle_charging_station", limit=30, keyword="charger",
+    )
+    text_hits = await fetch_text_search_predictions(
+        "electric vehicle charging station", lat, lng, rad, False,
+    )
+
+    def _row_from_ts(item: dict) -> dict:
+        return {
+            "place_id": item.get("place_id"),
+            "name": item.get("name", ""),
+            "address": item.get("address") or item.get("description", ""),
+            "lat": item.get("lat"),
+            "lng": item.get("lng"),
+            "photo_reference": item.get("photo_reference"),
+            "rating": item.get("rating"),
+            "types": item.get("types", []),
+            "open_now": item.get("open_now"),
+            "price_level": item.get("price_level"),
+            "business_status": item.get("business_status"),
+        }
+
+    merged_by_id: Dict[str, dict] = {}
+    for row in nearby:
+        pid = row.get("place_id")
+        if pid:
+            merged_by_id[str(pid)] = row
+    for item in text_hits:
+        row = _row_from_ts(item)
+        pid = row.get("place_id")
+        if not pid or row.get("lat") is None or row.get("lng") is None:
+            continue
+        k = str(pid)
+        if k not in merged_by_id:
+            merged_by_id[k] = row
+        else:
+            if len(str(row.get("address") or "")) > len(str(merged_by_id[k].get("address") or "")):
+                merged_by_id[k]["address"] = row.get("address")
+
+    def dist_sq(a: dict, b: dict) -> float:
+        return (a.get("lat", 0) - b.get("lat", 0)) ** 2 + (a.get("lng", 0) - b.get("lng", 0)) ** 2
+
+    click_point = {"lat": lat, "lng": lng}
+    combined = list(merged_by_id.values())
+    take = min(max(limit, 1), 30)
+    filtered: list = []
+    for row in combined:
+        types = row.get("types") or []
+        if not isinstance(types, list):
+            types = []
+        tl = " ".join(str(t) for t in types).lower()
+        nm = str(row.get("name") or "").lower()
+        charging = (
+            "electric_vehicle_charging_station" in tl
+            or "charging" in nm
+            or nm.startswith("ev ")
+            or " ev " in nm
+            or "charger" in nm
+            or "tesla" in nm
+            or "chargepoint" in nm
+            or "electrify" in nm
+        )
+        if charging:
+            filtered.append(row)
+    if len(filtered) < max(4, take // 2):
+        filtered = combined
+    return sorted(filtered, key=lambda r: dist_sq(r, click_point))[:take]
+
+
 @router.get("/nearby")
 async def nearby_places(
     lat: Annotated[float, Query(..., ge=-90, le=90)],
@@ -436,53 +574,16 @@ async def nearby_places(
     ] = None,
 ):
     """Return places near a point (for map click). Uses Google Places Nearby Search."""
-    key = _KEY()
-    if not key:
+    if not _KEY():
         return {"success": False, "error": MSG_GOOGLE_PLACES_KEY_NOT_CONFIGURED, "data": []}
 
-    params = {
-        "location": f"{lat},{lng}",
-        "radius": min(radius, 50000),
-        "key": key,
-        "language": "en",
-    }
-    if place_type and place_type.strip():
-        params["type"] = place_type.strip()
-    r = await _get_http().get(f"{_BASE}/nearbysearch/json", params=params)
-    data = r.json()
-
-    raw = []
-    # First page returns at most ~20 POIs
-    for p in data.get("results", [])[:20]:
-        geo = p.get("geometry", {}).get("location", {})
-        plat = geo.get("lat")
-        plng = geo.get("lng")
-        if plat is None or plng is None:
-            continue
-        photos = p.get("photos", [])
-        ref = photos[0].get("photo_reference") if photos else None
-        oh = p.get("opening_hours") or {}
-        raw.append({
-            "place_id": p.get("place_id"),
-            "name": p.get("name", ""),
-            "address": p.get("vicinity", ""),
-            "lat": plat,
-            "lng": plng,
-            "photo_reference": ref,
-            "rating": p.get("rating"),
-            "types": p.get("types", []),
-            "open_now": oh.get("open_now"),
-            "price_level": p.get("price_level"),
-            "business_status": p.get("business_status"),
-        })
-
-    def dist_sq(a: dict, b: dict) -> float:
-        return (a.get("lat", 0) - b.get("lat", 0)) ** 2 + (a.get("lng", 0) - b.get("lng", 0)) ** 2
-
-    click_point = {"lat": lat, "lng": lng}
-    take = min(max(limit, 1), 30)
-    results = sorted(raw, key=lambda r: dist_sq(r, click_point))[:take]
-
+    pt = (place_type or "").strip()
+    if pt == "electric_vehicle_charging_station":
+        results = await fetch_ev_charging_combined(lat, lng, radius, limit)
+    else:
+        results = await fetch_nearby_places_list(
+            lat, lng, radius=radius, place_type=place_type, limit=limit,
+        )
     return {"success": True, "data": results}
 
 

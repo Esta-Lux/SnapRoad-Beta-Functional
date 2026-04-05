@@ -13,6 +13,8 @@ interface Props {
   address?: string;
   category?: string;
   maki?: string;
+  /** e.g. fuel / price disclosure for gas stations */
+  detailHint?: string;
   distanceMeters?: number;
   onDirections: () => void;
   /** Favorites: heart toggle (preferred over onSave). */
@@ -56,6 +58,7 @@ export default function PlaceCard({
   address,
   category,
   maki,
+  detailHint,
   distanceMeters,
   onDirections,
   isFavorite = false,
@@ -185,6 +188,7 @@ const styles = StyleSheet.create({
   name: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3, lineHeight: 22 },
   address: { fontSize: 13, marginTop: 3, lineHeight: 17 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  detailHint: { fontSize: 11, fontWeight: '600', marginTop: 8, lineHeight: 15 },
   metaChip: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 12, fontWeight: '600' },
   catChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },

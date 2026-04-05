@@ -70,7 +70,7 @@ export default React.memo(function ReportMarkers({ incidents, onIncidentTap }: P
             >
               <View style={[styles.puckOuter, { borderColor: `${fill}55` }]}>
                 <View style={[styles.puckInner, { backgroundColor: fill }]}>
-                  <Ionicons name={icon} size={16} color="#FFFFFF" />
+                  <Ionicons name={icon} size={12} color="#FFFFFF" />
                 </View>
               </View>
             </Pressable>
@@ -85,28 +85,28 @@ const styles = StyleSheet.create({
   hit: { alignItems: 'center', justifyContent: 'center' },
   hitPressed: { opacity: 0.88, transform: [{ scale: 0.95 }] },
   puckOuter: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    borderWidth: 2,
+    width: 30,
+    height: 30,
+    borderRadius: 11,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.92)',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.18,
+        shadowRadius: 3,
       },
-      android: { elevation: 5 },
+      android: { elevation: 4 },
       default: {},
     }),
   },
   puckInner: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },

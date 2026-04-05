@@ -21,8 +21,8 @@ interface Props {
 }
 
 const MARKER_VIEW_MAX = 60;
-/** Match road-report marker outer puck (~40px). */
-const PIN_OUTER = 40;
+/** Compact thumbnail / icon tile (matches scaled incident markers). */
+const PIN_OUTER = 30;
 const PURPLE = '#8B5CF6';
 const PURPLE_DEEP = '#6D28D9';
 
@@ -72,7 +72,7 @@ export default React.memo(function PhotoReportMarkers({ reports, onReportTap }: 
               ) : (
                 <View style={styles.iconOuter}>
                   <View style={styles.iconInner}>
-                    <Ionicons name="camera" size={16} color="#FFFFFF" />
+                    <Ionicons name="camera" size={12} color="#FFFFFF" />
                   </View>
                 </View>
               )}
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
     height: PIN_OUTER,
     borderRadius: PIN_OUTER / 2,
     overflow: 'hidden',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: '#fff',
     ...Platform.select({
       ios: {
@@ -127,9 +127,9 @@ const styles = StyleSheet.create({
     }),
   },
   iconInner: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 8,
     backgroundColor: PURPLE,
     alignItems: 'center',
     justifyContent: 'center',

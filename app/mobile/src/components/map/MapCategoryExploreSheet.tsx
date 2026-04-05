@@ -117,6 +117,7 @@ export default function MapCategoryExploreSheet({
               item.open_now === true ? 'Open now' : item.open_now === false ? 'Likely closed' : null;
             const price = priceDots(item.price_level);
             const icon = placeIcon(item.placeType);
+            const isGas = (item.placeType || '').toLowerCase().includes('gas');
             return (
               <TouchableOpacity
                 style={[styles.row, { borderBottomColor: colors.border }]}
@@ -156,6 +157,11 @@ export default function MapCategoryExploreSheet({
                     ) : null}
                     {price ? (
                       <Text style={[styles.meta, { color: colors.textSecondary }]}>{price}</Text>
+                    ) : null}
+                    {isGas ? (
+                      <Text style={[styles.meta, { color: colors.textTertiary, flexBasis: '100%', marginTop: 2 }]} numberOfLines={2}>
+                        $/gal not listed — verify at pump
+                      </Text>
                     ) : null}
                   </View>
                 </View>

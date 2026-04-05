@@ -1,6 +1,7 @@
 import logging
+import re
 
-from typing import Annotated, List
+from typing import Annotated, Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, Depends
 from starlette.requests import Request
@@ -112,6 +113,104 @@ async def _navigation_actions_from_message(ctx: dict, last_raw: str) -> List[dic
     return actions
 
 
+_SUGGEST_INTENT_RE = re.compile(
+    r"\b(suggest|recommend|recommendation|options|ideas|what should|where should|where can i|"
+    r"good place|best place|somewhere to|any good|show me places|places to eat|place to eat|"
+    r"where to eat|hungry|coffee|gas station|fuel up)\b",
+    re.I,
+)
+
+
+def _nearby_type_from_message(low: str) -> str:
+    if any(x in low for x in ("coffee", "cafe", "café", "espresso", "latte")):
+        return "cafe"
+    if any(x in low for x in ("gas", "fuel", "shell", "chevron", "exxon")) and "police" not in low:
+        return "gas_station"
+    if any(x in low for x in ("grocery", "supermarket", "kroger", "safeway", "trader")):
+        return "supermarket"
+    if "pharmacy" in low or "drugstore" in low or "cvs" in low or "walgreens" in low:
+        return "pharmacy"
+    if "parking" in low:
+        return "parking"
+    if any(x in low for x in ("restaurant", "food", "eat", "dinner", "lunch", "burger", "pizza", "sushi", "taco")):
+        return "restaurant"
+    return "restaurant"
+
+
+async def _orion_place_suggestions(ctx: dict, user_text: str) -> List[dict]:
+    """Real nearby POIs when the driver asks for ideas (used for chips + 'take me')."""
+    low = user_text.lower().strip()
+    if not _SUGGEST_INTENT_RE.search(low):
+        return []
+    olat, olng = ctx.get("lat"), ctx.get("lng")
+    try:
+        lat_f = float(olat) if olat is not None else None
+        lng_f = float(olng) if olng is not None else None
+    except (TypeError, ValueError):
+        return []
+    if lat_f is None or lng_f is None or (abs(lat_f) < 1e-5 and abs(lng_f) < 1e-5):
+        return []
+
+    try:
+        from routes.places import fetch_nearby_places_list
+
+        place_type = _nearby_type_from_message(low)
+        radius = 12000 if place_type == "gas_station" else 8500
+        raw = await fetch_nearby_places_list(
+            lat_f, lng_f, radius=radius, place_type=place_type, limit=6,
+        )
+        out: List[dict] = []
+        for row in raw:
+            pid = row.get("place_id")
+            la = row.get("lat")
+            ln = row.get("lng")
+            if la is None or ln is None:
+                continue
+            out.append({
+                "name": row.get("name") or "Place",
+                "address": row.get("address") or "",
+                "lat": float(la),
+                "lng": float(ln),
+                **({"place_id": pid} if pid else {}),
+            })
+        return out
+    except Exception as e:
+        logger.warning("orion suggestions: %s", e)
+        return []
+
+
+_TAKE_ME_QUICK_RE = re.compile(
+    r"^\s*(take me(\s+there)?|"
+    r"start(\s+the)?\s+navigation|navigate(\s+there)?|"
+    r"let\'?s go|drive there|go there)\s*[\.\!\?]*\s*$",
+    re.I,
+)
+
+
+async def _take_me_from_pending(ctx: dict, last_raw: str) -> List[dict]:
+    pending = ctx.get("pendingOrionSuggestions") or []
+    if not isinstance(pending, list) or not pending:
+        return []
+    if not _TAKE_ME_QUICK_RE.match(last_raw.strip()):
+        return []
+    first = pending[0]
+    if not isinstance(first, dict):
+        return []
+    la = first.get("lat")
+    ln = first.get("lng")
+    if la is None or ln is None:
+        return []
+    try:
+        return [{
+            "type": "navigate",
+            "name": first.get("name") or "Destination",
+            "lat": float(la),
+            "lng": float(ln),
+        }]
+    except (TypeError, ValueError):
+        return []
+
+
 @router.post("/ai/generate-image")
 @limiter.limit("10/minute")
 async def generate_image_compat(request: Request, body: ImageGenerateRequest, _user: CurrentUser):
@@ -141,8 +240,15 @@ async def orion_completions(
     ctx = body.context or {}
     last_raw = body.messages[-1].content if body.messages else ""
     actions = await _navigation_actions_from_message(ctx, last_raw)
+    take_me = await _take_me_from_pending(ctx, last_raw)
+    if take_me:
+        actions = take_me + actions
 
-    return {"content": content, "actions": actions}
+    suggestions: List[Dict[str, Any]] = await _orion_place_suggestions(ctx, last_raw)
+    # Avoid huge payloads
+    suggestions = suggestions[:6]
+
+    return {"content": content, "actions": actions, "suggestions": suggestions}
 
 
 @router.post("/orion/completions/stream")

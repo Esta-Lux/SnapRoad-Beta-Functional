@@ -11,6 +11,7 @@ import {
   Platform,
   ActivityIndicator,
   PermissionsAndroid,
+  ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
@@ -19,7 +20,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../api/client';
-import { configureAudioSession, restoreDefaultAudioSession } from '../../utils/voice';
+import {
+  configureAudioSession,
+  configureAudioSessionForVoiceInput,
+  restoreDefaultAudioSession,
+  stopSpeaking,
+} from '../../utils/voice';
 
 type VoiceType = {
   destroy: () => Promise<void>;
@@ -54,7 +60,16 @@ interface Message {
   content: string;
 }
 
+export type OrionPlaceSuggestion = {
+  name: string;
+  lat: number;
+  lng: number;
+  place_id?: string;
+  address?: string;
+};
+
 const SUGGESTIONS = [
+  'Suggest a good dinner spot near me',
   'Take me to the nearest gas station',
   'How many trips have I logged?',
   'How can I improve my safety score?',
@@ -94,6 +109,8 @@ export interface OrionContext {
   nearbyOffers?: Array<{ id?: number | string; title?: string; partner_name?: string; lat?: number; lng?: number }>;
   /** Short conditions string from `/api/weather/current` for coach grounding */
   weather?: string;
+  /** Filled by the app from the last Orion `suggestions` payload — powers “take me” for the first pick */
+  pendingOrionSuggestions?: OrionPlaceSuggestion[];
 }
 
 interface Props {
@@ -101,10 +118,11 @@ interface Props {
   onClose: () => void;
   isPremium: boolean;
   context?: OrionContext;
-  onAction?: (action: { type: string; name?: string; lat?: number; lng?: number }) => void;
+  onSuggestions?: (items: OrionPlaceSuggestion[]) => void;
+  onAction?: (action: { type: string; name?: string; lat?: number; lng?: number; address?: string }) => void;
 }
 
-export default function OrionChat({ visible, onClose, isPremium, context, onAction }: Props) {
+export default function OrionChat({ visible, onClose, isPremium, context, onSuggestions, onAction }: Props) {
   const { colors, isLight } = useTheme();
   const insets = useSafeAreaInsets();
   const card = colors.card;
@@ -117,23 +135,34 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
   const assistantBg = isLight ? colors.surfaceSecondary : 'rgba(255,255,255,0.08)';
 
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'assistant', content: "Hey! I'm Orion, your SnapRoad co-pilot. Ask about nav, your stats, or say “take me to …”." },
+    { id: '1', role: 'assistant', content: "Hey! I'm Orion, your SnapRoad co-pilot. Ask for place ideas, say “take me to …”, or tap a suggestion chip to start directions." },
   ]);
+  const [suggestionChips, setSuggestionChips] = useState<OrionPlaceSuggestion[]>([]);
   const [input, setInput] = useState('');
   const [partialTranscript, setPartialTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const listRef = useRef<FlatList>(null);
   const messagesRef = useRef(messages);
+  /** Ignore stale STT results while Orion TTS is playing (avoids nav/Orion speech feeding the mic). */
+  const orionSpeakingRef = useRef(false);
 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
 
   const speakReply = useCallback((reply: string) => {
-    const finish = () => { void restoreDefaultAudioSession(); };
+    const finish = () => {
+      orionSpeakingRef.current = false;
+      void restoreDefaultAudioSession();
+    };
     try {
+      void Voice?.cancel().catch(() => {});
+      setIsListening(false);
+      setPartialTranscript('');
       Speech.stop();
+      stopSpeaking();
+      orionSpeakingRef.current = true;
       void configureAudioSession();
       Speech.speak(reply, {
         rate: 0.96,
@@ -144,6 +173,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
         onError: finish,
       });
     } catch {
+      orionSpeakingRef.current = false;
       void restoreDefaultAudioSession();
     }
   }, []);
@@ -181,6 +211,23 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
         const actions = (raw?.actions ?? inner?.actions) as
           | Array<{ type: string; name?: string; lat?: number; lng?: number }>
           | undefined;
+        const suggestionsRaw = (raw?.suggestions ?? inner?.suggestions) as OrionPlaceSuggestion[] | undefined;
+        let cleanedSuggestions: OrionPlaceSuggestion[] = [];
+        if (Array.isArray(suggestionsRaw)) {
+          cleanedSuggestions = suggestionsRaw
+            .filter(
+              (s) =>
+                s &&
+                typeof s.name === 'string' &&
+                typeof s.lat === 'number' &&
+                typeof s.lng === 'number' &&
+                Number.isFinite(s.lat) &&
+                Number.isFinite(s.lng),
+            )
+            .slice(0, 6);
+        }
+        setSuggestionChips(cleanedSuggestions);
+        onSuggestions?.(cleanedSuggestions);
         const assistantMsg: Message = { id: String(Date.now() + 1), role: 'assistant', content: reply };
         setMessages((prev) => [...prev, assistantMsg]);
         speakReply(reply);
@@ -202,7 +249,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
         setIsTyping(false);
       }
     },
-    [context, onAction, speakReply],
+    [context, onAction, speakReply, onSuggestions],
   );
 
   const micTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -216,6 +263,8 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
       void Voice.cancel().catch(() => {});
       setIsListening(false);
       setPartialTranscript('');
+      orionSpeakingRef.current = false;
+      setSuggestionChips([]);
     }
   }, [visible]);
 
@@ -225,10 +274,12 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
       setPartialTranscript('');
     };
     Voice.onSpeechPartialResults = (e) => {
+      if (orionSpeakingRef.current) return;
       const t = e?.value?.[0];
       if (t) setPartialTranscript(t);
     };
     Voice.onSpeechResults = (e) => {
+      if (orionSpeakingRef.current) return;
       const t = e?.value?.[0]?.trim();
       if (t) {
         setInput(t);
@@ -279,6 +330,9 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
     }
     setPartialTranscript('');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    stopSpeaking();
+    Speech.stop();
+    await configureAudioSessionForVoiceInput();
     setIsListening(true);
     try {
       await Voice.start('en-US');
@@ -291,13 +345,13 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
     if (!Voice) return;
     if (isListening) {
       await stopListening();
-      const toSend = (input.trim() || partialTranscript.trim());
-      if (toSend) await sendMessage(toSend);
+      const combined = (partialTranscript.trim() || input.trim());
+      if (combined) setInput(combined);
       setPartialTranscript('');
-    } else {
-      await startListening();
+      return;
     }
-  }, [Voice, isListening, stopListening, startListening, input, partialTranscript, sendMessage]);
+    await startListening();
+  }, [Voice, isListening, stopListening, startListening, input, partialTranscript]);
 
   const displayInput = isListening ? (partialTranscript || input) : input;
 
@@ -397,7 +451,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onActi
                   styles.iconBtn,
                   { backgroundColor: isListening ? 'rgba(239,68,68,0.2)' : `${primary}18` },
                 ]}
-                accessibilityLabel={isListening ? 'Stop dictation and send' : 'Start voice input'}
+                accessibilityLabel={isListening ? 'Stop dictation' : 'Start voice input'}
               >
                 <Ionicons name={isListening ? 'stop-circle' : 'mic'} size={22} color={isListening ? '#EF4444' : primary} />
               </TouchableOpacity>
@@ -429,6 +483,17 @@ const styles = StyleSheet.create({
   suggestRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
   suggestChip: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: StyleSheet.hairlineWidth },
   suggestText: { fontSize: 12, fontWeight: '600' },
+  suggestionChipsRow: { flexDirection: 'row', flexWrap: 'nowrap', gap: 8, paddingHorizontal: 16, paddingBottom: 4 },
+  placeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: 220,
+  },
+  placeChipText: { fontSize: 13, fontWeight: '700', flexShrink: 1 },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',

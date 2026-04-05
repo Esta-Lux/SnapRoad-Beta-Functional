@@ -76,7 +76,7 @@ import { formatDistance, haversineMeters, snapUserToRouteForDisplay } from '../u
 import { formatDuration } from '../utils/format';
 import { speak, stopSpeaking } from '../utils/voice';
 import { api, API_BASE_URL } from '../api/client';
-import OrionChat from '../components/orion/OrionChat';
+import OrionChat, { type OrionPlaceSuggestion } from '../components/orion/OrionChat';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigatingState } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
@@ -90,6 +90,53 @@ import type { DrivingMode, Incident, SavedLocation, Offer, FriendLocation } from
 
 const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
 
+function dedupeGeocodeResults(rows: GeocodeResult[]): GeocodeResult[] {
+  const seen = new Set<string>();
+  const out: GeocodeResult[] = [];
+  for (const r of rows) {
+    const pid = r.place_id;
+    const k = pid
+      ? `pid:${pid}`
+      : `xy:${(r.name || '').toLowerCase()}:${Number(r.lat).toFixed(4)}:${Number(r.lng).toFixed(4)}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  return out;
+}
+
+/** Saved places + recent searches matching the query (shown before remote autocomplete). */
+function localMatchesForSearchQuery(
+  q: string,
+  savedPlaces: SavedLocation[],
+  recent: GeocodeResult[],
+): GeocodeResult[] {
+  const ql = q.trim().toLowerCase();
+  if (ql.length < 2) return [];
+  const fromSaved: GeocodeResult[] = [];
+  for (const p of savedPlaces) {
+    if (p.lat == null || p.lng == null) continue;
+    const nm = (p.name || '').toLowerCase();
+    const ad = (p.address || '').toLowerCase();
+    if (!nm.includes(ql) && !ad.includes(ql)) continue;
+    fromSaved.push({
+      name: p.name,
+      address: p.address || '',
+      lat: Number(p.lat),
+      lng: Number(p.lng),
+      placeType: p.category,
+    });
+  }
+  const fromRecent: GeocodeResult[] = [];
+  for (const r of recent) {
+    const nm = (r.name || '').toLowerCase();
+    const ad = (r.address || '').toLowerCase();
+    if (!nm.includes(ql) && !ad.includes(ql)) continue;
+    fromRecent.push({ ...r });
+  }
+  return dedupeGeocodeResults([...fromSaved, ...fromRecent]);
+}
+
 function placePhotoThumbUri(photoRef?: string, maxWidth = 96): string | undefined {
   if (!photoRef || !API_BASE_URL) return undefined;
   return `${API_BASE_URL}/api/places/photo?ref=${encodeURIComponent(photoRef)}&maxwidth=${maxWidth}`;
@@ -99,13 +146,33 @@ function searchResultPriceHint(item: GeocodeResult): string | null {
   const raw = `${item.placeType || ''}`.toLowerCase();
   const isGas = raw.includes('gas') || raw.includes('fuel');
   if (isGas) {
-    return 'Live $/gal needs a fuel-price data API — check prices at the pump';
+    if (typeof item.price_level === 'number' && item.price_level >= 1 && item.price_level <= 4) {
+      return `Typical cost tier ${'$'.repeat(item.price_level)} · $/gal not shown — confirm at pump`;
+    }
+    return '$/gal not shown — confirm at pump or station signage';
   }
   if (typeof item.price_level === 'number' && item.price_level >= 1 && item.price_level <= 4) {
     return 'Typical cost: ' + '$'.repeat(item.price_level);
   }
   return null;
 }
+
+function placeCardFuelHint(place: {
+  category?: string;
+  maki?: string;
+  placeType?: string;
+  price_level?: number;
+}): string | undefined {
+  const t = `${place.category || ''} ${place.maki || ''} ${place.placeType || ''}`.toLowerCase();
+  if (!t.includes('gas') && !t.includes('fuel')) return undefined;
+  if (typeof place.price_level === 'number' && place.price_level >= 1 && place.price_level <= 4) {
+    return `Typical cost tier ${'$'.repeat(place.price_level)}. Live $/gal not shown — confirm at pump.`;
+  }
+  return 'Live $/gal not shown — confirm at pump before fueling.';
+}
+
+/** Traffic cams hide when zoomed out (less map clutter). */
+const TRAFFIC_CAM_MIN_ZOOM = 13.75;
 
 function mapFriendsApiToLocations(rows: unknown): FriendLocation[] {
   if (!Array.isArray(rows)) return [];
@@ -366,7 +433,19 @@ export default function MapScreen() {
 
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
-  const [selectedPlace, setSelectedPlace] = useState<{ name: string; address?: string; category?: string; maki?: string; lat: number; lng: number } | null>(null);
+  const [selectedPlace, setSelectedPlace] = useState<{
+    name: string;
+    address?: string;
+    category?: string;
+    maki?: string;
+    placeType?: string;
+    price_level?: number;
+    open_now?: boolean;
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [mapZoomLevel, setMapZoomLevel] = useState(15);
+  const mapZoomDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   useEffect(() => {
     if (nav.isNavigating && !wasNavigatingRef.current) {
@@ -377,6 +456,7 @@ export default function MapScreen() {
   }, [nav.isNavigating]);
   const handledRedeemRouteRef = useRef<string | null>(null);
   const [showOrion, setShowOrion] = useState(false);
+  const [orionPendingSuggestions, setOrionPendingSuggestions] = useState<OrionPlaceSuggestion[]>([]);
   const [showMenu, setShowMenu] = useState(false);
   const [showConvoy, setShowConvoy] = useState(false);
   const [currentAddress, setCurrentAddress] = useState<string>('');
@@ -548,6 +628,13 @@ export default function MapScreen() {
   const hasNativeMapbox = isMapAvailable() && MapboxGL !== null;
   /** Native Mapbox without a pk. token often crashes loading styles — gate the MapView. */
   const mapOk = hasNativeMapbox && isMapboxPublicTokenConfigured();
+
+  /** Explore: green “locate” = north-up follow; blue compass = rotate with heading (same as Mapbox tracking modes). */
+  const exploreTracksUser =
+    !nav.isNavigating &&
+    !nav.showRoutePreview &&
+    !isExploring &&
+    (followMode === 'follow' || followMode === 'heading');
 
   /** Snap to route for polyline split only — keeps traversed/active line aligned with Mapbox puck across styles/modes. */
   const routeOverlayUserLocation = useMemo(() => {
@@ -1140,6 +1227,7 @@ export default function MapScreen() {
       const loc = locationRef.current;
       const hasLoc = Math.abs(loc.lat) > 1e-5 || Math.abs(loc.lng) > 1e-5;
       const prep = prepareMapSearchQuery(text.trim());
+      const localFirst = localMatchesForSearchQuery(prep.query, savedPlaces, recentSearches);
       if (prep.query.length < 2) {
         setSearchResults([]);
         setIsSearching(false);
@@ -1172,7 +1260,8 @@ export default function MapScreen() {
             open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
             price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
           }));
-          setSearchResults(sortGeocodeByProximity(mapped, loc));
+          const merged = dedupeGeocodeResults([...localFirst, ...mapped]);
+          setSearchResults(sortGeocodeByProximity(merged, loc));
           setIsSearching(false);
           return;
         }
@@ -1184,10 +1273,36 @@ export default function MapScreen() {
         hasLoc
           ? mbResults.filter((r) => haversineMeters(loc.lat, loc.lng, r.lat, r.lng) <= 50000)
           : mbResults;
-      setSearchResults(sortGeocodeByProximity(filtered, loc));
+      const merged = dedupeGeocodeResults([...localFirst, ...filtered]);
+      setSearchResults(sortGeocodeByProximity(merged, loc));
       setIsSearching(false);
     }, 200);
-  }, [sortGeocodeByProximity]);
+  }, [sortGeocodeByProximity, savedPlaces, recentSearches]);
+
+  const openSearchResultsSheet = useCallback(() => {
+    const q = searchQuery.trim();
+    if (!q || searchResults.length === 0) return;
+    const mapped = searchResults.map((r) => ({
+      name: r.name,
+      address: r.address || '',
+      lat: r.lat,
+      lng: r.lng,
+      place_id: r.place_id,
+      placeType: r.placeType,
+      photo_reference: r.photo_reference,
+      open_now: r.open_now === undefined ? null : r.open_now,
+      price_level: r.price_level ?? null,
+    }));
+    setCategoryExplore({
+      title: `“${q}”`,
+      subtitle: `${mapped.length} place${mapped.length === 1 ? '' : 's'} — tap one for full details and directions.`,
+      results: mapped,
+      error: null,
+      loading: false,
+    });
+    Keyboard.dismiss();
+    setIsSearchFocused(false);
+  }, [searchQuery, searchResults]);
 
   const handleSelectResult = useCallback(async (result: GeocodeResult & { place_id?: string }) => {
     Keyboard.dismiss();
@@ -1231,12 +1346,26 @@ export default function MapScreen() {
         address: result.address,
         lat: hasCoords() ? lat : 0,
         lng: hasCoords() ? lng : 0,
+        placeType: result.placeType,
+        category: result.placeType ?? result.category,
+        price_level: result.price_level,
+        open_now: result.open_now,
       });
       setSelectedPlaceId(result.place_id);
       return;
     }
 
-    setSelectedPlace({ name: result.name, address: result.address, category: result.category, maki: result.maki, lat: result.lat, lng: result.lng });
+    setSelectedPlace({
+      name: result.name,
+      address: result.address,
+      category: result.category,
+      maki: result.maki,
+      placeType: result.placeType,
+      price_level: result.price_level,
+      open_now: result.open_now,
+      lat: result.lat,
+      lng: result.lng,
+    });
     cameraRef.current?.setCamera({
       centerCoordinate: [result.lng, result.lat],
       zoomLevel: 16,
@@ -1276,14 +1405,15 @@ export default function MapScreen() {
       nearby_gas: {
         title: 'Nearby gas',
         subtitle:
-          'Closest stations first. Open/closed and price tier ($) come from Google when available — pump prices are not provided; confirm at the pump.',
+          'Closest stations first. Typical cost tier ($–$$$) when Google provides it. Live $/gal is not available here — confirm on the pump.',
         type: 'gas_station',
         radius: 15000,
         limit: 20,
       },
       gas: {
         title: 'Gas stations',
-        subtitle: 'Fuel nearby. Tap a row for full details; your list reopens when you close the card.',
+        subtitle:
+          'Fuel nearby. Typical cost tier may show on rows; $/gal is not listed in SnapRoad — verify at the station.',
         type: 'gas_station',
         radius: 8000,
         limit: 18,
@@ -1291,7 +1421,13 @@ export default function MapScreen() {
       food: { title: 'Restaurants', type: 'restaurant', radius: 5000, limit: 18 },
       coffee: { title: 'Coffee & cafés', type: 'cafe', radius: 5000, limit: 18 },
       parking: { title: 'Parking', type: 'parking', radius: 5000, limit: 18 },
-      ev: { title: 'EV charging', type: 'electric_vehicle_charging_station', radius: 15000, limit: 18 },
+      ev: {
+        title: 'EV charging',
+        subtitle: 'Nearby + text search combined for real public chargers. Tap a row for details.',
+        type: 'electric_vehicle_charging_station',
+        radius: 15000,
+        limit: 18,
+      },
       grocery: { title: 'Grocery stores', type: 'supermarket', radius: 8000, limit: 18 },
     };
     const cfg = EXPLORE[chipKey];
@@ -1575,6 +1711,16 @@ export default function MapScreen() {
     nav.setShowRoutePreview(false);
   }, [nav]);
 
+  const handleMapCameraChanged = useCallback((state: { properties?: { zoom?: number } }) => {
+    const z = state?.properties?.zoom;
+    if (typeof z !== 'number' || !isFinite(z)) return;
+    if (mapZoomDebounceRef.current) clearTimeout(mapZoomDebounceRef.current);
+    mapZoomDebounceRef.current = setTimeout(() => {
+      mapZoomDebounceRef.current = null;
+      setMapZoomLevel(z);
+    }, 120);
+  }, []);
+
   const autoRelockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleMapTouch = useCallback(() => {
     if (nav.isNavigating) {
@@ -1729,7 +1875,15 @@ export default function MapScreen() {
           const dy = (pLng - tapLng) * 111320 * Math.cos(tapLat * Math.PI / 180);
           const distM = Math.sqrt(dx * dx + dy * dy);
           if (distM < 60) {
-            setSelectedPlace({ name: p.name, address: p.address ?? p.vicinity ?? '', lat: pLat, lng: pLng });
+            setSelectedPlace({
+              name: p.name,
+              address: p.address ?? p.vicinity ?? '',
+              lat: pLat,
+              lng: pLng,
+              placeType: Array.isArray(p.types) && p.types[0] ? String(p.types[0]) : undefined,
+              price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
+              open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
+            });
             if (p.place_id) setSelectedPlaceId(p.place_id);
             return;
           }
@@ -1790,6 +1944,7 @@ export default function MapScreen() {
           logoEnabled={false}
           attributionEnabled={false}
           compassEnabled
+          onCameraChanged={handleMapCameraChanged}
           onTouchStart={handleMapTouch}
           onPress={handleMapPress}
         >
@@ -1810,21 +1965,47 @@ export default function MapScreen() {
               zoomLevel: modeConfig.exploreZoom,
               pitch: modeConfig.explorePitch,
             }}
-            centerCoordinate={nav.isNavigating || isExploring || compassMode ? undefined : stableCenter}
-            zoomLevel={nav.isNavigating || compassMode ? undefined : modeConfig.exploreZoom}
-            pitch={nav.isNavigating || compassMode ? undefined : modeConfig.explorePitch}
+            centerCoordinate={
+              nav.isNavigating || isExploring || compassMode || exploreTracksUser ? undefined : stableCenter
+            }
+            zoomLevel={
+              nav.isNavigating || compassMode || exploreTracksUser ? undefined : modeConfig.exploreZoom
+            }
+            pitch={
+              nav.isNavigating || compassMode || exploreTracksUser ? undefined : modeConfig.explorePitch
+            }
             animationMode={nav.isNavigating && cameraLocked ? 'linearTo' : 'easeTo'}
             animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
-            followUserLocation={(nav.isNavigating && cameraLocked) || compassMode}
+            followUserLocation={
+              (nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser
+            }
             followUserMode={
               nav.isNavigating && cameraLocked
                 ? MapboxGL.UserTrackingMode.FollowWithCourse
-                : compassMode
+                : compassMode || followMode === 'heading'
                   ? MapboxGL.UserTrackingMode.FollowWithHeading
-                  : undefined
+                  : exploreTracksUser && followMode === 'follow'
+                    ? MapboxGL.UserTrackingMode.Follow
+                    : undefined
             }
-            followPitch={camCtrl ? camCtrl.followPitch : compassMode ? 45 : undefined}
-            followZoomLevel={camCtrl ? camCtrl.followZoomLevel : compassMode ? 15 : undefined}
+            followPitch={
+              camCtrl
+                ? camCtrl.followPitch
+                : exploreTracksUser
+                  ? modeConfig.explorePitch
+                  : compassMode
+                    ? 45
+                    : undefined
+            }
+            followZoomLevel={
+              camCtrl
+                ? camCtrl.followZoomLevel
+                : exploreTracksUser
+                  ? modeConfig.exploreZoom
+                  : compassMode
+                    ? 15
+                    : undefined
+            }
             followPadding={camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING}
           />
 
@@ -1892,7 +2073,7 @@ export default function MapScreen() {
             if (inc.type === 'construction') return showConstruction;
             return true;
           })} onIncidentTap={setActiveReportCard} />}
-          {user?.isPremium && showCameras && !nav.isNavigating && (
+          {user?.isPremium && showCameras && !nav.isNavigating && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
             <CameraMarkers cameras={cameraLocations} onCameraTap={(cam) => setSelectedTrafficCamera(cam)} />
           )}
           <FriendMarkers
@@ -1933,11 +2114,18 @@ export default function MapScreen() {
           )}
 
           {/* Last in tree so the location indicator stacks above custom layers + markers when the native stack allows */}
+          {/* Single user indicator: Mapbox LocationPuck only (no custom MarkerView puck). */}
           <MapboxGL.LocationPuck
             visible
             puckBearingEnabled
             puckBearing={nav.isNavigating && cameraLocked ? 'course' : 'heading'}
-            androidRenderMode={nav.isNavigating && cameraLocked ? 'gps' : 'compass'}
+            androidRenderMode={
+              nav.isNavigating && cameraLocked
+                ? 'gps'
+                : followMode === 'heading' || compassMode
+                  ? 'compass'
+                  : 'normal'
+            }
             scale={isSport ? 1.08 : 1}
             pulsing={
               nav.isNavigating && cameraLocked
@@ -1983,6 +2171,7 @@ export default function MapScreen() {
           address={selectedPlace.address}
           category={selectedPlace.category}
           maki={selectedPlace.maki}
+          detailHint={placeCardFuelHint(selectedPlace)}
           distanceMeters={placeCardDistanceMeters}
           isLight={isLight}
           isFavorite={selectedPlaceFavoriteMatch.isFavorite}
@@ -2537,6 +2726,27 @@ export default function MapScreen() {
           <Text style={[s.previewTitle, { color: colors.text }]} numberOfLines={1}>
             {nav.navigationData!.destination.name ?? 'Destination'}
           </Text>
+          <View style={{ marginBottom: 14, gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+              <Ionicons name="navigate-circle-outline" size={16} color={colors.primary} style={{ marginTop: 2 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={[s.previewRouteLbl, { color: colors.textTertiary }]}>From</Text>
+                <Text style={[s.previewRouteVal, { color: colors.textSecondary }]} numberOfLines={2}>
+                  {currentAddress || 'Current location'}
+                </Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+              <Ionicons name="flag" size={16} color="#22C55E" style={{ marginTop: 2 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={[s.previewRouteLbl, { color: colors.textTertiary }]}>To</Text>
+                <Text style={[s.previewRouteVal, { color: colors.textSecondary }]} numberOfLines={3}>
+                  {nav.navigationData!.destination.name ?? 'Destination'}
+                  {nav.selectedDestination?.address ? ` · ${nav.selectedDestination.address}` : ''}
+                </Text>
+              </View>
+            </View>
+          </View>
 
           {/* ── Fastest / Eco route cards ── */}
           <View style={s.routeOpts}>
@@ -3167,11 +3377,24 @@ export default function MapScreen() {
             lng: o.lng,
           })),
           weather: mapWeather.summary ?? undefined,
+          pendingOrionSuggestions: orionPendingSuggestions,
         }}
-        onAction={(action) => {
+        onSuggestions={(items) => setOrionPendingSuggestions(items)}
+        onAction={(action: {
+          type: string;
+          name?: string;
+          lat?: number;
+          lng?: number;
+          address?: string;
+        }) => {
           if (action.type === 'navigate' && action.lat != null && action.lng != null) {
             setShowOrion(false);
-            const dest = { name: action.name ?? 'Destination', address: '', lat: action.lat, lng: action.lng };
+            const dest = {
+              name: action.name ?? 'Destination',
+              address: typeof action.address === 'string' ? action.address : '',
+              lat: action.lat,
+              lng: action.lng,
+            };
             handleStartDirections(dest);
           } else if (action.type === 'add_stop' && action.lat && action.lng) {
             setShowOrion(false);
@@ -3358,7 +3581,9 @@ const s = StyleSheet.create({
   // ─── Route preview ───────────────────────────────────────────────────────
   preview: { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, borderTopWidth: 1, ...shadow(20, 0.18) },
   handle: { width: 40, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: 14 },
-  previewTitle: { fontSize: 19, fontWeight: '800', marginBottom: 16, letterSpacing: -0.3 },
+  previewTitle: { fontSize: 19, fontWeight: '800', marginBottom: 8, letterSpacing: -0.3 },
+  previewRouteLbl: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
+  previewRouteVal: { fontSize: 14, fontWeight: '600', marginTop: 2, lineHeight: 19 },
   routeOpts: { flexDirection: 'row', gap: 12, marginBottom: 14 },
   // Legacy routeBtn kept for compatibility
   routeBtn: { flex: 1, padding: 14, borderRadius: 16, alignItems: 'center', borderWidth: 1 },
@@ -3472,25 +3697,6 @@ const s = StyleSheet.create({
   etaAdaptiveSecLbl: { fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
   etaAdaptiveSecVal: { fontSize: 16, fontWeight: '700', marginTop: 2 },
   endBtnAdaptive: { borderRadius: 14, marginLeft: 14 },
-
-  // ─── Calm user location puck ────────────────────────────────────────────
-  calmPuckOuter: { width: 52, height: 52, alignItems: 'center', justifyContent: 'center' },
-  calmPuckRing: {
-    position: 'absolute',
-    width: 48, height: 48, borderRadius: 24,
-    borderWidth: 2.5, borderColor: 'rgba(74,222,128,0.55)',
-    backgroundColor: 'rgba(74,222,128,0.12)',
-  },
-  calmPuckArrow: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: '#22C55E',
-    alignItems: 'center', justifyContent: 'center',
-    ...Platform.select({
-      ios: { shadowColor: '#16A34A', shadowOpacity: 0.55, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
-      android: { elevation: 8 },
-      default: {},
-    }),
-  },
 
   // ─── Calm turn card ─────────────────────────────────────────────────────
   turnCardCalmWrap: {

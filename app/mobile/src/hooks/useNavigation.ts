@@ -237,6 +237,10 @@ export function useNavigation(params: {
     } else {
       navSpeak(`Starting navigation to ${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
     }
+    /** Match route-preview stats on first frame (polyline projection can_clip the first segment). */
+    const initialMiles = navigationData.distance / 1609.34;
+    liveEtaSmoothRef.current = etaMin;
+    setLiveEta({ distanceMiles: Math.max(0, initialMiles), etaMinutes: etaMin });
     // Skip duplicate step-0 cue from the step-change effect (already covered above).
     lastSpokenStepRef.current = 0;
   }, [navigationData, drivingMode, navSpeak]);
@@ -510,14 +514,23 @@ export function useNavigation(params: {
       remainingMeters = Math.max(0, totalMeters - traveledDistanceMeters);
     }
 
+    const sessionAgeMs = Date.now() - navSessionStartRef.current;
+    /** Early GPS often projects onto the first leg, understating distance vs route preview. */
+    if (sessionAgeMs < 30000 && remainingMeters < totalMeters * 0.9) {
+      remainingMeters = Math.max(remainingMeters, totalMeters * 0.965);
+    }
+
     const remainingMiles = Math.max(0, remainingMeters / 1609.34);
     const fraction = Math.min(1, Math.max(0, remainingMeters / totalMeters));
     /** Route-duration progress is primary; blend a little live speed only at highway-ish speeds. */
     const etaMinutesLinear = (durationSeconds / 60) * fraction;
     const speedMph = Math.max(0, speed);
     const etaFromSpeed = speedMph > 3 ? (remainingMiles / speedMph) * 60 : etaMinutesLinear;
-    const speedBlend =
+    let speedBlend =
       speedMph >= 28 && remainingMiles > 0.35 ? 0.14 : speedMph >= 18 && remainingMiles > 0.2 ? 0.08 : 0;
+    if (sessionAgeMs < 25000) {
+      speedBlend = Math.min(speedBlend, 0.04);
+    }
     let etaRaw =
       etaMinutesLinear * (1 - speedBlend) + Math.min(etaFromSpeed, etaMinutesLinear * 2.2) * speedBlend;
     etaRaw = Math.max(0, etaRaw);
