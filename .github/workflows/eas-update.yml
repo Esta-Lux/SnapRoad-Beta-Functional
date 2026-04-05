@@ -52,7 +52,8 @@ jobs:
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
         run: |
-          SAFE_MSG="${UPDATE_MSG// /-}"
+          SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
+          if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
           npm run eas:update:production -- --platform ios --message "${SAFE_MSG}-ios"
 
       - name: EAS Update (production Android)
@@ -65,5 +66,6 @@ jobs:
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
         run: |
-          SAFE_MSG="${UPDATE_MSG// /-}"
+          SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
+          if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
           npm run eas:update:production -- --platform android --message "${SAFE_MSG}-android"
