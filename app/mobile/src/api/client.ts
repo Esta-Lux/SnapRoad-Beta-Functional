@@ -331,7 +331,16 @@ class ApiService {
               ? detail
               : "You don't have permission to access this feature.";
         }
-        else if (response.status === 404) normalized = 'This feature is not available yet.';
+        else if (response.status === 404) {
+          // Auth 404 usually means API base URL points at the wrong host/app (for example web app instead of backend API).
+          if (endpoint.startsWith('/api/auth/')) {
+            normalized =
+              `Authentication endpoint not found (${endpoint}). ` +
+              `Check EXPO_PUBLIC_API_URL points to your backend API (current: ${apiBaseUrl}).`;
+          } else {
+            normalized = 'This feature is not available yet.';
+          }
+        }
         else if (response.status === 422) normalized = detail || 'Invalid input. Please check your data and try again.';
         else if (response.status === 429) normalized = 'Too many requests. Please wait a moment and try again.';
         else if (response.status >= 500) {

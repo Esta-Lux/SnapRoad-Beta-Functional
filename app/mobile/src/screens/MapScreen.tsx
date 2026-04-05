@@ -27,6 +27,7 @@ import {
   type GeocodeResult,
 } from '../lib/directions';
 import {
+  emitAgentMapboxOtaSnapshot,
   getMapboxPublicToken,
   getMapboxTokenPublicPrefix,
   isMapboxPublicTokenConfigured,
@@ -651,6 +652,19 @@ export default function MapScreen() {
   const mapboxTokenOk = isMapboxPublicTokenConfigured();
   /** Native Mapbox without a plausibly valid pk. token often crashes loading styles — gate the MapView. */
   const mapOk = hasNativeMapbox && mapboxTokenOk;
+
+  const agentMapboxOtaLoggedRef = useRef(false);
+  useEffect(() => {
+    if (agentMapboxOtaLoggedRef.current) return;
+    agentMapboxOtaLoggedRef.current = true;
+    emitAgentMapboxOtaSnapshot({
+      hypothesisId: 'H-OTA-MAPBOX',
+      hasNativeMapbox,
+      mapboxTokenOk,
+      mapOk,
+      runId: 'pre-fix',
+    });
+  }, [hasNativeMapbox, mapboxTokenOk, mapOk]);
 
   /** Explore: green “locate” = north-up follow; blue compass = rotate with heading (same as Mapbox tracking modes). */
   const exploreTracksUser =
