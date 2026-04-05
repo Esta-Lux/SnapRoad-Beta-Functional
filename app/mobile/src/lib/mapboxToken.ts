@@ -1,31 +1,44 @@
 import Constants from 'expo-constants';
 
+function pickToken(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const t = value.trim();
+  return t.length > 0 ? t : undefined;
+}
+
 /**
  * Mapbox public token for Directions/Geocoding and @rnmapbox/maps.
- * Resolve at call time (not module load) so dev client manifest + Metro-inlined env are available.
+ * Prefer manifest `extra` (baked at EAS prebuild) over Metro `process.env`, since some builds
+ * embed `extra.mapboxPublicToken` reliably while inlined EXPO_PUBLIC_* can be empty if env
+ * was not linked to the build profile's EAS environment.
  */
 export function getMapboxPublicToken(): string {
-  const fromMetro = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
-  if (typeof fromMetro === 'string' && fromMetro.trim().length > 0) {
-    return fromMetro.trim();
-  }
-
-  const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
-  const fromExtra = extra?.mapboxPublicToken;
-  if (typeof fromExtra === 'string' && fromExtra.trim().length > 0) {
-    return fromExtra.trim();
-  }
+  const extraRoot = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
+  const fromExpoConfig = pickToken(extraRoot?.mapboxPublicToken);
 
   const manifest = Constants.manifest as { extra?: Record<string, unknown> } | null;
-  const fromManifest = manifest?.extra?.mapboxPublicToken;
-  if (typeof fromManifest === 'string' && fromManifest.trim().length > 0) {
-    return fromManifest.trim();
-  }
+  const fromLegacyManifest = pickToken(manifest?.extra?.mapboxPublicToken);
 
-  return '';
+  const m2 = Constants.manifest2 as
+    | { extra?: { expoClient?: { extra?: Record<string, unknown> } } }
+    | null;
+  const fromManifest2 = pickToken(m2?.extra?.expoClient?.extra?.mapboxPublicToken);
+
+  const fromMetro = pickToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN);
+  const fromAlias = pickToken(process.env.MAPBOX_PUBLIC_TOKEN);
+
+  return (
+    fromExpoConfig
+    ?? fromLegacyManifest
+    ?? fromManifest2
+    ?? fromMetro
+    ?? fromAlias
+    ?? ''
+  );
 }
 
 export function isMapboxPublicTokenConfigured(): boolean {
   const t = getMapboxPublicToken();
+  /** pk.* tokens are typically 100+ chars; keep a low floor for tests. */
   return t.length >= 12;
 }

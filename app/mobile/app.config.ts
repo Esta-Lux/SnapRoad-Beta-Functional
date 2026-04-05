@@ -206,8 +206,11 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
         const t = envAny(["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"], "");
         if (process.env.EAS_BUILD && !t.trim()) {
           console.warn(
-            "[app.config] EXPO_PUBLIC_MAPBOX_TOKEN is empty during EAS build — maps/directions will not work. " +
-              "Set EXPO_PUBLIC_MAPBOX_TOKEN (or MAPBOX_PUBLIC_TOKEN) in Expo dashboard for this build profile's environment.",
+            "[app.config] Mapbox public token is empty on the EAS worker. " +
+              "1) Add EXPO_PUBLIC_MAPBOX_TOKEN in Expo → Environment variables for the same environment as your build profile " +
+              "(eas.json now sets environment: development | preview | production per profile). " +
+              "2) Use visibility Plain text or Sensitive for EXPO_PUBLIC_* (Secret is not embedded in the client bundle). " +
+              "3) Rebuild — MAPBOX_PUBLIC_TOKEN is also read as an alias.",
           );
         }
         return t;

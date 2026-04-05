@@ -14,6 +14,9 @@ playwright/.cache/
 .env
 .env.e2e
 app/frontend/.env.e2e
+app/mobile/.env
+app/mobile/.env.*
+!app/mobile/.env.example
 .env.local
 .env.development
 .env.production
