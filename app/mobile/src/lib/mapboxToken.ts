@@ -9,11 +9,12 @@ function pickToken(value: unknown): string | undefined {
 /**
  * Mapbox public token for Directions/Geocoding and @rnmapbox/maps.
  *
- * Production / EAS: prefer `extra.mapboxPublicToken` (baked at prebuild) over Metro, since inlined
- * EXPO_PUBLIC_* may be empty when env was not linked to the build profile.
+ * Always prefer Metro-inlined `process.env.EXPO_PUBLIC_*` first (EAS/babel embeds at bundle time).
+ * Fall back to `Constants.expoConfig.extra` / legacy manifests after that.
  *
- * Development: prefer Metro `process.env.EXPO_PUBLIC_*` first so a refreshed JS bundle picks up
- * `app/mobile/.env` changes even when `Constants.expoConfig.extra` still reflects an older Metro start.
+ * Why env first on iOS TestFlight / release: with `expo-updates`, embedded or cached manifests can
+ * omit or carry a stale `extra` while the JS bundle still has the correct inlined token — if we
+ * preferred `extra` first, a bad or empty embedded value could block the good inlined one.
  */
 export function getMapboxPublicToken(): string {
   const extraRoot = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
@@ -32,15 +33,16 @@ export function getMapboxPublicToken(): string {
   const fromFallbackMetro = pickToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN_FALLBACK);
   const fromFallbackAlias = pickToken(process.env.MAPBOX_PUBLIC_TOKEN_FALLBACK);
 
-  const fromExtraChain = fromExpoConfig ?? fromLegacyManifest ?? fromManifest2;
-  const fromEnvChain =
-    fromMetro ?? fromAlias ?? fromFallbackMetro ?? fromFallbackAlias;
-
-  const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
-  if (isDev) {
-    return fromEnvChain ?? fromExtraChain ?? '';
-  }
-  return fromExtraChain ?? fromEnvChain ?? '';
+  return (
+    fromMetro
+    ?? fromAlias
+    ?? fromFallbackMetro
+    ?? fromFallbackAlias
+    ?? fromExpoConfig
+    ?? fromLegacyManifest
+    ?? fromManifest2
+    ?? ''
+  );
 }
 
 export function isMapboxPublicTokenConfigured(): boolean {
