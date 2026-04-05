@@ -188,12 +188,12 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     color: '#4A4063',
     icon: 'speedometer-outline',
 
-    routeColor: '#7BC9A6',
-    routeCasing: '#4A9B7A',
-    passedColor: '#A8C9BB',
+    routeColor: '#E8A84C',
+    routeCasing: '#B8792E',
+    passedColor: '#A89070',
     routeWidth: 6,
-    routeGlowColor: '#7BC9A6',
-    routeGlowOpacity: 0.15,
+    routeGlowColor: '#E8A84C',
+    routeGlowOpacity: 0.18,
 
     turnCardGradient: ['#4A4063', '#2D2845'],
     turnCardRadius: 16,

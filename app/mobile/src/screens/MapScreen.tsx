@@ -2069,6 +2069,45 @@ export default function MapScreen() {
             />
           )}
 
+          {nav.showRoutePreview && !nav.isNavigating && MapboxGL && (() => {
+            const MGL = MapboxGL!;
+            return nav.availableRoutes.map((route, idx) => {
+              if (idx === nav.selectedRouteIndex) return null;
+              if (!route.polyline || route.polyline.length < 2) return null;
+              const geo: GeoJSON.FeatureCollection = {
+                type: 'FeatureCollection',
+                features: [{
+                  type: 'Feature',
+                  properties: {},
+                  geometry: {
+                    type: 'LineString',
+                    coordinates: route.polyline.map((p) => [p.lng, p.lat]),
+                  },
+                }],
+              };
+              return (
+                <MGL.ShapeSource
+                  key={`alt-route-${idx}`}
+                  id={`alt-route-${idx}`}
+                  shape={geo}
+                  onPress={() => nav.handleRouteSelect(idx)}
+                  hitbox={{ width: 30, height: 30 }}
+                >
+                  <MGL.LineLayer
+                    id={`alt-route-line-${idx}`}
+                    style={{
+                      lineColor: '#9CA3AF',
+                      lineWidth: 5,
+                      lineOpacity: 0.5,
+                      lineCap: 'round',
+                      lineJoin: 'round',
+                    }}
+                  />
+                </MGL.ShapeSource>
+              );
+            });
+          })()}
+
           {nav.navigationData?.polyline && (
             <RouteOverlay
               polyline={nav.navigationData.polyline}
@@ -2740,21 +2779,35 @@ export default function MapScreen() {
 
       {/* ═══ ROUTE PREVIEW ════════════════════════════════════════════════ */}
       {nav.showRoutePreview && nav.navigationData && !nav.isNavigating && (() => {
-        const fastestRoute = nav.availableRoutes.find((r) => r.routeType === 'best') ?? nav.availableRoutes[0];
-        const ecoRoute     = nav.availableRoutes.find((r) => r.routeType === 'eco')  ?? nav.availableRoutes[nav.availableRoutes.length - 1];
-        const fastestTraffic = fastestRoute ? analyzeCongestion(fastestRoute.congestion) : null;
-        const ecoTraffic     = ecoRoute     ? analyzeCongestion(ecoRoute.congestion)     : null;
-        const selectedRoute  = nav.availableRoutes[nav.selectedRouteIndex];
-        const isFastestSel   = selectedRoute?.routeType === 'best';
+        const selectedRoute = nav.availableRoutes[nav.selectedRouteIndex];
+        const selType = selectedRoute?.routeType ?? 'best';
 
-        const timeSaving = (fastestRoute && ecoRoute)
-          ? Math.max(0, Math.round((ecoRoute.duration - fastestRoute.duration) / 60))
-          : 0;
+        const routeLabel = (rt?: 'best' | 'eco' | 'alt', idx?: number): string => {
+          if (rt === 'best') return 'Fastest';
+          if (rt === 'eco') return 'Eco';
+          return `Route ${(idx ?? 0) + 1}`;
+        };
+        const routeIcon = (rt?: 'best' | 'eco' | 'alt'): 'flash' | 'leaf' | 'navigate' => {
+          if (rt === 'best') return 'flash';
+          if (rt === 'eco') return 'leaf';
+          return 'navigate';
+        };
+        const routeAccent = (rt?: 'best' | 'eco' | 'alt'): string => {
+          if (rt === 'best') return '#2563EB';
+          if (rt === 'eco') return '#16A34A';
+          return '#8B5CF6';
+        };
+        const routeAccentBg = (rt?: 'best' | 'eco' | 'alt'): string => {
+          if (rt === 'best') return '#EFF6FF';
+          if (rt === 'eco') return '#F0FDF4';
+          return '#F5F3FF';
+        };
+
+        const startGrad: [string, string] = selType === 'eco' ? ['#16A34A', '#15803D'] : selType === 'best' ? ['#2563EB', '#1D4ED8'] : ['#7C3AED', '#6D28D9'];
 
         return (
         <Animated.View entering={SlideInDown.duration(320).easing(Easing.out(Easing.cubic))} exiting={SlideOutDown.duration(220)} style={[s.preview, { paddingBottom: Math.max(insets.bottom, 20) + 16, backgroundColor: isLight ? 'rgba(255,255,255,0.97)' : 'rgba(15,23,42,0.97)', borderColor: colors.border }]}>
           <View style={[s.handle, { backgroundColor: colors.border }]} />
-          {/* Destination header */}
           <Text style={[s.previewTitle, { color: colors.text }]} numberOfLines={1}>
             {nav.navigationData!.destination.name ?? 'Destination'}
           </Text>
@@ -2780,73 +2833,51 @@ export default function MapScreen() {
             </View>
           </View>
 
-          {/* ── Fastest / Eco route cards ── */}
-          <View style={s.routeOpts}>
-            {/* FASTEST card */}
-            {fastestRoute && (
-              <TouchableOpacity
-                style={[s.routeCardNew, isFastestSel && s.routeCardNewSel, { backgroundColor: colors.surfaceSecondary, borderColor: isFastestSel ? '#3B82F6' : colors.border }]}
-                onPress={() => nav.handleRouteSelect('best')}
-                activeOpacity={0.85}
-              >
-                <View style={s.routeCardHeader}>
-                  <View style={[s.routeCardIcon, { backgroundColor: '#EFF6FF' }]}>
-                    <Ionicons name="flash" size={16} color="#2563EB" />
+          {/* ── Route cards (scrollable up to 3) ── */}
+          <FlatList
+            horizontal
+            data={nav.availableRoutes}
+            keyExtractor={(_r, i) => `rc-${i}`}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 10, paddingHorizontal: 2 }}
+            style={{ marginBottom: 14 }}
+            renderItem={({ item: route, index: idx }) => {
+              const isSel = idx === nav.selectedRouteIndex;
+              const accent = routeAccent(route.routeType);
+              const traffic = modeConfig.showTrafficBadge ? analyzeCongestion(route.congestion) : null;
+              return (
+                <TouchableOpacity
+                  style={[s.routeCardNew, isSel && s.routeCardNewSel, { backgroundColor: colors.surfaceSecondary, borderColor: isSel ? accent : colors.border, minWidth: 140 }]}
+                  onPress={() => nav.handleRouteSelect(idx)}
+                  activeOpacity={0.85}
+                >
+                  <View style={s.routeCardHeader}>
+                    <View style={[s.routeCardIcon, { backgroundColor: routeAccentBg(route.routeType) }]}>
+                      <Ionicons name={routeIcon(route.routeType)} size={16} color={accent} />
+                    </View>
+                    <Text style={[s.routeCardType, { color: isSel ? accent : colors.textSecondary }]}>{routeLabel(route.routeType, idx)}</Text>
+                    {isSel && <View style={[s.routeCardCheck, { backgroundColor: accent }]}><Ionicons name="checkmark" size={12} color="#fff" /></View>}
                   </View>
-                  <Text style={[s.routeCardType, { color: isFastestSel ? '#2563EB' : colors.textSecondary }]}>Fastest</Text>
-                  {isFastestSel && <View style={s.routeCardCheck}><Ionicons name="checkmark" size={12} color="#fff" /></View>}
-                </View>
-                <Text style={[s.routeCardDuration, { color: colors.text }]}>{fastestRoute.durationText}</Text>
-                <Text style={[s.routeCardDist, { color: colors.textSecondary }]}>{fastestRoute.distanceText}</Text>
-                {modeConfig.showTrafficBadge && fastestTraffic && fastestTraffic.level !== 'low' && (
-                  <View style={[s.routeTrafficBadge, { backgroundColor: fastestTraffic.level === 'heavy' ? '#FEF2F2' : '#FFFBEB' }]}>
-                    <Ionicons name="warning" size={10} color={fastestTraffic.level === 'heavy' ? '#DC2626' : '#D97706'} />
-                    <Text style={[s.routeTrafficTxt, { color: fastestTraffic.level === 'heavy' ? '#DC2626' : '#D97706' }]}>
-                      {fastestTraffic.level === 'heavy' ? 'Heavy' : 'Moderate'} traffic
-                      {fastestTraffic.delayMin > 0 ? ` +${fastestTraffic.delayMin} min` : ''}
-                    </Text>
-                  </View>
-                )}
-                {modeConfig.showTrafficBadge && (!fastestTraffic || fastestTraffic.level === 'low') && (
-                  <View style={[s.routeTrafficBadge, { backgroundColor: '#F0FDF4' }]}>
-                    <Ionicons name="checkmark-circle" size={10} color="#16A34A" />
-                    <Text style={[s.routeTrafficTxt, { color: '#16A34A' }]}>Clear roads</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
-
-            {/* ECO card */}
-            {ecoRoute && ecoRoute !== fastestRoute && (
-              <TouchableOpacity
-                style={[s.routeCardNew, !isFastestSel && s.routeCardNewSel, { backgroundColor: colors.surfaceSecondary, borderColor: !isFastestSel ? '#16A34A' : colors.border }]}
-                onPress={() => nav.handleRouteSelect('eco')}
-                activeOpacity={0.85}
-              >
-                <View style={s.routeCardHeader}>
-                  <View style={[s.routeCardIcon, { backgroundColor: '#F0FDF4' }]}>
-                    <Ionicons name="leaf" size={16} color="#16A34A" />
-                  </View>
-                  <Text style={[s.routeCardType, { color: !isFastestSel ? '#16A34A' : colors.textSecondary }]}>Eco Save</Text>
-                  {!isFastestSel && <View style={[s.routeCardCheck, { backgroundColor: '#16A34A' }]}><Ionicons name="checkmark" size={12} color="#fff" /></View>}
-                </View>
-                <Text style={[s.routeCardDuration, { color: colors.text }]}>{ecoRoute.durationText}</Text>
-                <Text style={[s.routeCardDist, { color: colors.textSecondary }]}>{ecoRoute.distanceText}</Text>
-                <View style={[s.routeTrafficBadge, { backgroundColor: '#F0FDF4' }]}>
-                  <Ionicons name="leaf" size={10} color="#16A34A" />
-                  <Text style={[s.routeTrafficTxt, { color: '#16A34A' }]}>
-                    Saves fuel{timeSaving > 0 ? ` · ${timeSaving} min longer` : ''}
-                  </Text>
-                </View>
-                {modeConfig.showTrafficBadge && ecoTraffic && ecoTraffic.level !== 'low' && (
-                  <View style={[s.routeTrafficBadge, { backgroundColor: '#FFFBEB', marginTop: 3 }]}>
-                    <Ionicons name="warning" size={10} color="#D97706" />
-                    <Text style={[s.routeTrafficTxt, { color: '#D97706' }]}>{ecoTraffic.level === 'heavy' ? 'Heavy' : 'Moderate'} traffic</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
+                  <Text style={[s.routeCardDuration, { color: colors.text }]}>{route.durationText}</Text>
+                  <Text style={[s.routeCardDist, { color: colors.textSecondary }]}>{route.distanceText}</Text>
+                  {traffic && traffic.level !== 'low' && (
+                    <View style={[s.routeTrafficBadge, { backgroundColor: traffic.level === 'heavy' ? '#FEF2F2' : '#FFFBEB' }]}>
+                      <Ionicons name="warning" size={10} color={traffic.level === 'heavy' ? '#DC2626' : '#D97706'} />
+                      <Text style={[s.routeTrafficTxt, { color: traffic.level === 'heavy' ? '#DC2626' : '#D97706' }]}>
+                        {traffic.level === 'heavy' ? 'Heavy' : 'Moderate'} traffic
+                      </Text>
+                    </View>
+                  )}
+                  {(!traffic || traffic.level === 'low') && (
+                    <View style={[s.routeTrafficBadge, { backgroundColor: '#F0FDF4' }]}>
+                      <Ionicons name="checkmark-circle" size={10} color="#16A34A" />
+                      <Text style={[s.routeTrafficTxt, { color: '#16A34A' }]}>Clear roads</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
 
           {hasTallVehicle && (
             <View style={s.truckRow}>
@@ -2858,17 +2889,16 @@ export default function MapScreen() {
           <TouchableOpacity onPress={() => {
             setSelectedPlaceId(null);
             setSelectedPlace(null);
-            // Start turn-by-turn immediately; follow camera owns zoom/pitch/padding from this point.
             nav.startNavigation();
           }} activeOpacity={0.85}>
             <LinearGradient
-              colors={isFastestSel ? ['#2563EB', '#1D4ED8'] : ['#16A34A', '#15803D']}
+              colors={startGrad}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={s.startBtn}
             >
-              <Ionicons name={isFastestSel ? 'flash-outline' : 'leaf-outline'} size={18} color="#fff" />
+              <Ionicons name={routeIcon(selType) === 'flash' ? 'flash-outline' : routeIcon(selType) === 'leaf' ? 'leaf-outline' : 'navigate-outline'} size={18} color="#fff" />
               <Text style={s.startBtnT}>
-                Start {isFastestSel ? 'Fastest' : 'Eco'} Route
+                Start {routeLabel(selType, nav.selectedRouteIndex)}
               </Text>
             </LinearGradient>
           </TouchableOpacity>

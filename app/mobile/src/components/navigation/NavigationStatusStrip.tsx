@@ -171,13 +171,16 @@ export default React.memo(function NavigationStatusStrip({
             />
           </TouchableOpacity>
         ) : null}
-        <Text style={[styles.primaryLine, onVoiceToggle ? styles.primaryLineWithVoice : null]} numberOfLines={1}>
-          <Text style={[styles.primaryEmphasis, { color: etaAccent }]}>{timeLabel}</Text>
-          <Text style={[styles.bullet, { color: textSec }]}> · </Text>
-          <Text style={[styles.primaryMid, { color: textPrimary }]}>{distLabel}</Text>
-          <Text style={[styles.bullet, { color: textSec }]}> · </Text>
-          <Text style={[styles.primaryArrive, { color: arriveColor }]}>Arrive {arrivalTime}</Text>
-        </Text>
+        <View style={onVoiceToggle ? styles.primaryLineWithVoice : undefined}>
+          <Text style={styles.primaryLine} numberOfLines={1}>
+            <Text style={[styles.primaryEmphasis, { color: etaAccent }]}>{timeLabel}</Text>
+            <Text style={[styles.bullet, { color: textSec }]}> · </Text>
+            <Text style={[styles.primaryMid, { color: textPrimary }]}>{distLabel}</Text>
+          </Text>
+          <Text style={styles.arriveLine} numberOfLines={1}>
+            <Text style={[styles.primaryArrive, { color: arriveColor }]}>Arrive {arrivalTime}</Text>
+          </Text>
+        </View>
         <View style={styles.secondaryRow}>{secondaryWrap}</View>
       </View>
 
@@ -255,6 +258,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.2,
     textAlign: 'center',
+  },
+  arriveLine: {
+    textAlign: 'center',
+    marginTop: 2,
+    fontSize: 16,
+    fontWeight: '800',
   },
   primaryLineWithVoice: {
     paddingHorizontal: 40,

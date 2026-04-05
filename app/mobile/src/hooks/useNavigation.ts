@@ -215,11 +215,11 @@ export function useNavigation(params: {
     }
   }, [userLocation, drivingMode]);
 
-  // --- Route select (best/eco) ---
-  const handleRouteSelect = useCallback((routeType: 'best' | 'eco') => {
+  const handleRouteSelect = useCallback((routeTypeOrIndex: 'best' | 'eco' | 'alt' | number) => {
     if (!availableRoutes.length || !navigationData) return;
-    const taggedIdx = availableRoutes.findIndex((r) => r.routeType === routeType);
-    const index = taggedIdx >= 0 ? taggedIdx : 0;
+    const index = typeof routeTypeOrIndex === 'number'
+      ? Math.max(0, Math.min(routeTypeOrIndex, availableRoutes.length - 1))
+      : Math.max(0, availableRoutes.findIndex((r) => r.routeType === routeTypeOrIndex));
     setSelectedRouteIndex(index);
     const r = availableRoutes[index];
     if (!r?.polyline?.length || !navigationData) return;

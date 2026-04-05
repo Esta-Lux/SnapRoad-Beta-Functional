@@ -71,7 +71,7 @@ export interface DirectionsResult {
   duration: number;
   distanceText: string;
   durationText: string;
-  routeType?: 'best' | 'eco';
+  routeType?: 'best' | 'eco' | 'alt';
   congestion?: CongestionLevel[];
   maxspeeds?: (number | null)[];
 }
@@ -441,7 +441,7 @@ export async function getMapboxRouteOptions(
     `${tokenQS}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
   const coordsPath = `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
 
-  const trafficUrl = `${DIRECTIONS_BASE}/${modeConfig.profile}/${coordsPath}?${commonQS}&alternatives=false`;
+  const trafficUrl = `${DIRECTIONS_BASE}/${modeConfig.profile}/${coordsPath}?${commonQS}&alternatives=true`;
   const trafficRes = await fetch(trafficUrl);
   const trafficJson = (await trafficRes.json().catch(() => ({}))) as { routes?: RawRoute[]; message?: string };
   if (!trafficRes.ok) {
@@ -454,25 +454,32 @@ export async function getMapboxRouteOptions(
   }
 
   const results: DirectionsResult[] = [parseRoute(trafficRoutes[0], 'best')];
-
-  try {
-    const drivingUrl = `${DIRECTIONS_BASE}/driving/${coordsPath}?${commonQS}&alternatives=true`;
-    const drivingRes = await fetch(drivingUrl);
-    if (drivingRes.ok) {
-      const drivingJson = (await drivingRes.json()) as { routes?: RawRoute[] };
-      const drivingRoutes = (drivingJson.routes ?? []) as RawRoute[];
-      if (drivingRoutes.length > 0) {
-        const byDist = [...drivingRoutes].sort((a, b) => a.distance - b.distance);
-        const candidate = byDist[0];
-        const existing = results.find((r) => r.duration === candidate.duration && r.distance === candidate.distance);
-        if (!existing) {
-          results.push(parseRoute(candidate, 'eco'));
-        }
-      }
-    }
-  } catch {
-    /* Eco alternative is optional */
+  for (let i = 1; i < trafficRoutes.length && results.length < 3; i++) {
+    results.push(parseRoute(trafficRoutes[i], 'alt'));
   }
 
-  return results.slice(0, 2);
+  if (results.length < 3) {
+    try {
+      const drivingUrl = `${DIRECTIONS_BASE}/driving/${coordsPath}?${commonQS}&alternatives=true`;
+      const drivingRes = await fetch(drivingUrl);
+      if (drivingRes.ok) {
+        const drivingJson = (await drivingRes.json()) as { routes?: RawRoute[] };
+        const drivingRoutes = (drivingJson.routes ?? []) as RawRoute[];
+        if (drivingRoutes.length > 0) {
+          const byDist = [...drivingRoutes].sort((a, b) => a.distance - b.distance);
+          for (const candidate of byDist) {
+            if (results.length >= 3) break;
+            const dup = results.find((r) => Math.abs(r.duration - candidate.duration) < 30 && Math.abs(r.distance - candidate.distance) < 200);
+            if (!dup) {
+              results.push(parseRoute(candidate, 'eco'));
+            }
+          }
+        }
+      }
+    } catch {
+      /* Eco alternative is optional */
+    }
+  }
+
+  return results.slice(0, 3);
 }
