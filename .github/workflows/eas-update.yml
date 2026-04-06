@@ -1,7 +1,8 @@
-# OTA on GitHub: only EXPO_TOKEN is required in repo secrets. We run
-# `eas env:pull production` to sync Expo → Environment variables (production) into
-# app/mobile/.env, then source it so EXPO_PUBLIC_* are in the shell for the bundler.
-# Optional: set repository secret EXPO_PUBLIC_MAPBOX_TOKEN to override the pulled value.
+# OTA on GitHub: only EXPO_TOKEN is required in repo secrets (renew if you see
+# "bearer token is invalid" — https://expo.dev/accounts/snaproad/settings/access-tokens ).
+# We run `eas env:pull production` to sync Expo → Environment variables (production)
+# into app/mobile/.env, then source it for the bundler.
+# Optional: repository secret EXPO_PUBLIC_MAPBOX_TOKEN overrides the pulled Mapbox token.
 # https://docs.expo.dev/eas/environment-variables/
 name: EAS Update
 
@@ -46,6 +47,18 @@ jobs:
 
       - name: Install dependencies
         run: cd app/mobile && npm ci
+
+      - name: Validate EXPO_TOKEN with Expo (fail fast if expired or revoked)
+        working-directory: app/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if ! npx eas-cli whoami >/tmp/eas-whoami.txt 2>&1; then
+            cat /tmp/eas-whoami.txt
+            echo "::error::EXPO_TOKEN is invalid or expired (bearer token invalid). Create a new token at https://expo.dev/accounts/snaproad/settings/access-tokens and update the EXPO_TOKEN repository secret."
+            exit 1
+          fi
+          echo "Expo auth OK: $(cat /tmp/eas-whoami.txt)"
 
       - name: Pull Expo production env (Mapbox, Supabase, etc.)
         working-directory: app/mobile
