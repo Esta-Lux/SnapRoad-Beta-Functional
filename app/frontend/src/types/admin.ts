@@ -77,6 +77,12 @@ export interface AdminUser {
   role: string
   /** When set, this profile is the partner portal login for this business id. */
   partner_id?: string | null
+  /** Partner business tier from `partners.plan` (Starter / Growth / …); set when `partner_id` is linked. */
+  partner_plan?: string | null
+  partner_subscription_status?: string | null
+  partner_plan_entitlement_source?: string | null
+  partner_promotion_access_until?: string | null
+  partner_is_internal_complimentary?: boolean
   state: string
   city: string
   created_at: string

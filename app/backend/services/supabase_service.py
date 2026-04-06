@@ -519,6 +519,31 @@ def sb_get_partner(partner_id: str) -> Optional[dict]:
         return None
 
 
+def sb_get_partners_plan_fields_by_ids(partner_ids: list) -> dict:
+    """Map partner id -> merged partner row fragments for admin user list (business plan + billing)."""
+    if not partner_ids:
+        return {}
+    uniq = list({str(x) for x in partner_ids if x is not None and str(x).strip()})
+    if not uniq:
+        return {}
+    try:
+        result = _sb().table("partners").select(
+            "id,plan,subscription_status,promotion_access_until,promotion_plan,"
+            "plan_entitlement_source,is_internal_complimentary"
+        ).in_("id", uniq).execute()
+        out = {}
+        for r in result.data or []:
+            row = merge_partner_promotion_entitlements(dict(r))
+            pid = str(row.get("id") or "")
+            if pid:
+                out[pid] = row
+        return out
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_get_partners_plan_fields_by_ids: {e}")
+        return {}
+
+
 def sb_update_partner(partner_id: str, updates: dict) -> bool:
     try:
         _sb().table("partners").update(updates).eq("id", partner_id).execute()

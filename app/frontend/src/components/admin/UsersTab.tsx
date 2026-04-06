@@ -25,6 +25,19 @@ function roleBadge(role: string | undefined): { label: string; pill: string } {
   return { label: 'Driver', pill: 'bg-slate-500/15 text-slate-300 border-white/10' }
 }
 
+function formatPlanWord(slug: string | undefined | null): string {
+  if (!slug) return '—'
+  return slug.charAt(0).toUpperCase() + slug.slice(1).toLowerCase()
+}
+
+function partnerPlanPillClass(plan: string | null | undefined): string {
+  const p = (plan || '').toLowerCase()
+  if (p === 'growth') return 'bg-emerald-500/20 text-emerald-400'
+  if (p === 'enterprise') return 'bg-violet-500/20 text-violet-400'
+  if (p === 'starter') return 'bg-slate-500/20 text-slate-400'
+  return 'bg-cyan-500/15 text-cyan-300'
+}
+
 function num(v: unknown, fallback = 0): number {
   const n = Number(v)
   return Number.isFinite(n) ? n : fallback
@@ -174,7 +187,15 @@ export default function UsersTab({ theme }: UsersTabProps) {
     return users.filter(user => {
       const matchesSearch = (user.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                            (user.email || '').toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesPlan = planFilter === 'All Plans' || user.plan === planFilter
+      const matchesPlan = (() => {
+        if (planFilter === 'All Plans') return true
+        const pf = planFilter.toLowerCase()
+        const driverPlan = (user.plan || 'basic').toLowerCase()
+        const partnerPlan = (user.partner_plan || '').toLowerCase()
+        if (['basic', 'premium', 'family'].includes(pf)) return driverPlan === pf
+        if (['starter', 'growth', 'enterprise'].includes(pf)) return partnerPlan === pf
+        return false
+      })()
       const matchesStatus = statusFilter === 'All Status' || user.status === statusFilter
       const r = (user.role || 'driver').toLowerCase()
       const matchesRole =
@@ -247,8 +268,8 @@ export default function UsersTab({ theme }: UsersTabProps) {
       </div>
 
       <p className={`text-xs ${textSecondary} px-1`}>
-        Plan column is the <strong className={textPrimary}>driver app</strong> subscription (Basic / Premium / Family).
-        Partner billing (Starter / Growth) is managed under <strong className={textPrimary}>Partners</strong>; changing a user here also syncs an active subscription to their linked partner account when they have a partner ID.
+        For accounts with a linked business, the Plan column shows <strong className={textPrimary}>Partner</strong> tier (Starter / Growth / …) from the Partners table, plus a <strong className={textPrimary}>Driver app</strong> line for the mobile subscription.
+        Plan filters: <strong className={textPrimary}>Basic / Premium / Family</strong> match the driver profile; <strong className={textPrimary}>Starter / Growth / Enterprise</strong> match the partner business tier.
       </p>
 
       {/* Filters */}
@@ -274,9 +295,16 @@ export default function UsersTab({ theme }: UsersTabProps) {
             }`}
           >
             <option value="All Plans">All Plans</option>
-            <option value="basic">Basic</option>
-            <option value="premium">Premium</option>
-            <option value="family">Family</option>
+            <optgroup label="Driver app">
+              <option value="basic">Basic</option>
+              <option value="premium">Premium</option>
+              <option value="family">Family</option>
+            </optgroup>
+            <optgroup label="Partner business">
+              <option value="starter">Starter</option>
+              <option value="growth">Growth</option>
+              <option value="enterprise">Enterprise</option>
+            </optgroup>
           </select>
           <select
             value={roleFilter}
@@ -380,22 +408,71 @@ export default function UsersTab({ theme }: UsersTabProps) {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      user.plan === 'premium' ? 'bg-purple-500/20 text-purple-400' :
-                      user.plan === 'family' ? 'bg-blue-500/20 text-blue-400' :
-                      'bg-slate-500/20 text-slate-400'
-                    }`}>
-                      {user.plan ? user.plan.charAt(0).toUpperCase() + user.plan.slice(1) : 'Basic'}
-                    </span>
-                    {user.promotion_access_until && (
-                      <div className={`text-[10px] mt-1 ${textSecondary}`}>
-                        Promo until {String(user.promotion_access_until).slice(0, 10)}
+                    {user.partner_id ? (
+                      <div className="flex flex-col gap-1 max-w-[14rem]">
+                        <span
+                          className={`inline-flex w-fit items-center gap-1 px-2 py-1 text-xs rounded-full ${partnerPlanPillClass(user.partner_plan)}`}
+                          title="Partner portal / business subscription"
+                        >
+                          Partner · {formatPlanWord(user.partner_plan)}
+                          {user.partner_is_internal_complimentary ? ' · Internal' : ''}
+                        </span>
+                        {(user.partner_subscription_status || '').toLowerCase() === 'past_due' && (
+                          <div className="text-[10px] text-amber-400/90">Partner billing past due</div>
+                        )}
+                        {user.partner_promotion_access_until && (
+                          <div className={`text-[10px] ${textSecondary}`}>
+                            Partner promo until {String(user.partner_promotion_access_until).slice(0, 10)}
+                          </div>
+                        )}
+                        {(user.partner_plan_entitlement_source || '').toLowerCase() === 'admin' && (
+                          <div className="text-[10px] text-amber-400/90">
+                            Admin-managed partner tier (Stripe changes blocked)
+                          </div>
+                        )}
+                        <div className={`text-[10px] ${textSecondary}`}>
+                          Driver app:{' '}
+                          <span
+                            className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] ${
+                              user.plan === 'premium' ? 'bg-purple-500/20 text-purple-400' :
+                              user.plan === 'family' ? 'bg-blue-500/20 text-blue-400' :
+                              'bg-slate-500/20 text-slate-400'
+                            }`}
+                          >
+                            {formatPlanWord(user.plan || 'basic')}
+                          </span>
+                        </div>
+                        {user.promotion_access_until && (
+                          <div className={`text-[10px] ${textSecondary}`}>
+                            Driver promo until {String(user.promotion_access_until).slice(0, 10)}
+                          </div>
+                        )}
+                        {(user.plan_entitlement_source || '').toLowerCase() === 'admin' && (
+                          <div className="text-[10px] text-amber-400/90">
+                            Admin-managed driver tier (in-app downgrade blocked)
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {(user.plan_entitlement_source || '').toLowerCase() === 'admin' && (
-                      <div className={`text-[10px] mt-1 text-amber-400/90`}>
-                        Admin-managed tier (in-app downgrade blocked)
-                      </div>
+                    ) : (
+                      <>
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          user.plan === 'premium' ? 'bg-purple-500/20 text-purple-400' :
+                          user.plan === 'family' ? 'bg-blue-500/20 text-blue-400' :
+                          'bg-slate-500/20 text-slate-400'
+                        }`}>
+                          {user.plan ? user.plan.charAt(0).toUpperCase() + user.plan.slice(1) : 'Basic'}
+                        </span>
+                        {user.promotion_access_until && (
+                          <div className={`text-[10px] mt-1 ${textSecondary}`}>
+                            Promo until {String(user.promotion_access_until).slice(0, 10)}
+                          </div>
+                        )}
+                        {(user.plan_entitlement_source || '').toLowerCase() === 'admin' && (
+                          <div className={`text-[10px] mt-1 text-amber-400/90`}>
+                            Admin-managed tier (in-app downgrade blocked)
+                          </div>
+                        )}
+                      </>
                     )}
                   </td>
                   <td className="px-6 py-4">

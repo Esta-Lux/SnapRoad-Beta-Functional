@@ -35,7 +35,7 @@ from services.supabase_service import (
     sb_get_profile_promotion_until_raw,
     sb_get_partner_promotion_until_raw,
     sb_suspend_profile, sb_activate_profile, sb_delete_profile,
-    sb_get_partners, sb_get_partner, sb_create_partner,
+    sb_get_partners, sb_get_partner, sb_get_partners_plan_fields_by_ids, sb_create_partner,
     sb_delete_partner,
     sb_get_partner_locations,
     sb_get_partner_locations_for_admin_map,
@@ -1239,6 +1239,20 @@ def claim_reward(reward_id: str, user_data: dict):
 @router.get("/admin/users")
 def get_users(limit: Annotated[int, Query(ge=1, le=2000)] = 500):
     data = sb_list_profiles(limit=limit)
+    pids = [str(u["partner_id"]) for u in data if u.get("partner_id")]
+    pmap = sb_get_partners_plan_fields_by_ids(pids) if pids else {}
+    for u in data:
+        pid = u.get("partner_id")
+        if not pid:
+            continue
+        pr = pmap.get(str(pid))
+        if not pr:
+            continue
+        u["partner_plan"] = pr.get("plan")
+        u["partner_subscription_status"] = pr.get("subscription_status")
+        u["partner_plan_entitlement_source"] = pr.get("plan_entitlement_source")
+        u["partner_promotion_access_until"] = pr.get("promotion_access_until")
+        u["partner_is_internal_complimentary"] = bool(pr.get("is_internal_complimentary"))
     return {"success": True, "source": "supabase", "data": data, "total": len(data)}
 
 
