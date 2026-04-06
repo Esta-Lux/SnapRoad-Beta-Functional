@@ -246,6 +246,11 @@ export default function UsersTab({ theme }: UsersTabProps) {
         </div>
       </div>
 
+      <p className={`text-xs ${textSecondary} px-1`}>
+        Plan column is the <strong className={textPrimary}>driver app</strong> subscription (Basic / Premium / Family).
+        Partner billing (Starter / Growth) is managed under <strong className={textPrimary}>Partners</strong>; changing a user here also syncs an active subscription to their linked partner account when they have a partner ID.
+      </p>
+
       {/* Filters */}
       <div className={`p-4 rounded-xl border ${card}`}>
         <div className="flex items-center gap-4">

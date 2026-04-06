@@ -29,7 +29,7 @@ from services.offer_analytics import (
 )
 from services.telemetry_service import telemetry_service
 from services.supabase_service import (
-    sb_list_profiles, sb_get_profile, sb_update_profile,
+    sb_list_profiles, sb_get_profile, sb_get_profile_raw, sb_update_profile,
     sb_update_partner,
     compute_extended_promotion_until_iso,
     sb_get_profile_promotion_until_raw,
@@ -575,18 +575,23 @@ def _road_report_row_to_admin_item(row: dict) -> dict:
             loc = f"{float(lat):.5f}, {float(lng):.5f}"
     except (TypeError, ValueError):
         loc = ""
+    mod = str(row.get("moderation_status") or "approved").lower()
+    # AIModerationTab maps `status` via mapStatus (pending → new). Row `status` is row lifecycle, not moderation.
+    queue_status = mod if mod in ("pending", "approved", "rejected") else "approved"
     return {
         "id": str(row.get("id")),
         "type": t,
         "description": row.get("description") or "",
         "location": loc,
         "severity": sev,
-        "status": str(row.get("status") or "active"),
-        "moderation_status": str(row.get("moderation_status") or "approved"),
+        "status": queue_status,
+        "moderation_status": mod,
         "created_at": row.get("created_at"),
         "reported_by": str(row.get("user_id") or ""),
         "source": "road_reports",
         "image_url": None,
+        # AIModerationTab filters by confidence (default threshold 80); driver reports have no ML score.
+        "confidence": 0.9,
     }
 
 
@@ -1106,6 +1111,10 @@ def update_partner(partner_id: str, partner_data: dict):
     body = dict(partner_data or {})
     if "plan" in body and body.get("plan") is not None:
         body["plan_entitlement_source"] = "admin"
+        pl = str(body.get("plan") or "").strip().lower()
+        # Admin-assigned partner tiers should unlock the portal without Stripe checkout.
+        if pl in ("starter", "growth", "enterprise", "internal") and "subscription_status" not in body:
+            body["subscription_status"] = "active"
     success = sb_update_partner(partner_id, body)
     if success:
         return {"success": True, "message": "Partner updated successfully"}
@@ -1259,6 +1268,24 @@ def update_user(user_id: str, user_data: dict):
                 body["gem_multiplier"] = 1
     success = sb_update_profile(user_id, body)
     if success:
+        # Users tab edits driver profile plan only. Partner portal entitlement lives on `partners`.
+        # If this account is linked to a partner row, keep subscription active when admin changes plan tier.
+        try:
+            prof = sb_get_profile_raw(user_id) or {}
+            pid = str(prof.get("partner_id") or "").strip()
+            if pid and ("plan" in body or "is_premium" in body):
+                prow = sb_get_partner(pid)
+                if prow:
+                    pu: dict = {
+                        "subscription_status": "active",
+                        "plan_entitlement_source": "admin",
+                    }
+                    pl = str(prow.get("plan") or "").strip().lower()
+                    if pl in ("", "unselected", "none"):
+                        pu["plan"] = "starter"
+                    sb_update_partner(pid, pu)
+        except Exception as e:
+            logger.warning("partner sync after admin user update failed: %s", e)
         return {"success": True, "message": "User updated successfully"}
     return {"success": False, "message": "Failed to update user"}
 

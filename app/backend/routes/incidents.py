@@ -94,7 +94,8 @@ def _to_road_report_payload(report: IncidentReportCompat, user_id: str, now: dat
         "lng": float(report.lng or 0),
         "upvotes": 0,
         "status": "active",
-        "moderation_status": "pending",
+        # Show on driver map immediately; nearby query allows approved or null. Pre-moderation hid reports.
+        "moderation_status": "approved",
         "expires_at": (now + timedelta(hours=_expiry_hours_for(r_type))).isoformat(),
         "created_at": now.isoformat(),
     }

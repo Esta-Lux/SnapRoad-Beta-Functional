@@ -202,7 +202,7 @@ export default function AIModerationTab({ theme }: AIModerationTabProps) {
     return incidents.filter(i => {
       if (activeModTab === 'blurred') return i.blurred
       return i.status === activeModTab
-    }).filter(i => i.confidence >= confidenceThreshold)
+    }).filter(i => (Number.isFinite(i.confidence) ? i.confidence : 100) >= confidenceThreshold)
   }, [incidents, activeModTab, confidenceThreshold])
 
   const isDark = theme === 'dark'

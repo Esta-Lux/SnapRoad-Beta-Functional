@@ -89,6 +89,16 @@ PLAN_LOCATION_LIMITS = {
 # Self-serve Stripe checkout — Starter and Growth only (see PricingTab).
 SELF_SERVE_PARTNER_PLANS = frozenset({"starter", "growth"})
 
+# Driver / consumer plan slugs must not gate partner portal (DB mix-ups with profiles.promotion_plan, etc.).
+_DRIVER_PLAN_SLUGS_ON_PARTNER = frozenset({"premium", "family", "basic", "free"})
+
+
+def _normalize_partner_plan_key(raw: Optional[str]) -> str:
+    p = str(raw or "unselected").strip().lower() or "unselected"
+    if p in _DRIVER_PLAN_SLUGS_ON_PARTNER:
+        return "unselected"
+    return p
+
 
 def _partner_has_full_portal_access(partner: dict) -> bool:
     """Paid subscription active, admin internal/complimentary, or active promotion window (admin)."""
@@ -98,7 +108,7 @@ def _partner_has_full_portal_access(partner: dict) -> bool:
         return True
     if partner.get("is_internal_complimentary") is True:
         return str(partner.get("subscription_status") or "").lower() == "active"
-    plan = str(partner.get("plan") or "").strip().lower()
+    plan = _normalize_partner_plan_key(partner.get("plan"))
     if plan == "internal":
         return str(partner.get("subscription_status") or "").lower() == "active"
     if plan in ("unselected", "", "none"):
@@ -181,7 +191,7 @@ def get_partner_profile(user: CurrentPartner, partner_id: str = "default_partner
     partner = sb_get_partner(owned_partner_id)
     if not partner:
         raise HTTPException(status_code=404, detail=MSG_PARTNER_NOT_FOUND)
-    plan_key = str(partner.get("plan") or "unselected").strip().lower() or "unselected"
+    plan_key = _normalize_partner_plan_key(partner.get("plan"))
     plan = _plan_info(plan_key)
     locations = sb_get_partner_locations(owned_partner_id)
     max_locs = PLAN_LOCATION_LIMITS.get(plan_key, 5)

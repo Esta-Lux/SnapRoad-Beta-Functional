@@ -70,14 +70,20 @@ def merge_profile_promotion_entitlements(row: dict) -> dict:
     return out
 
 
+# Driver / consumer tiers — must never overwrite partners.plan (confuses partner portal + billing UI).
+_DRIVER_PLAN_SLUGS = frozenset({"premium", "family", "basic", "free"})
+_PARTNER_PROMO_PLAN_SLUGS = frozenset({"starter", "growth", "enterprise"})
+
+
 def merge_partner_promotion_entitlements(row: dict) -> dict:
     """Partner row with subscription treated as active during promotion window."""
     out = dict(row)
     if not promotion_access_active(out):
         return out
     out["subscription_status"] = "active"
-    pp = str(out.get("promotion_plan") or "").strip()
-    if pp:
+    pp = str(out.get("promotion_plan") or "").strip().lower()
+    # Only overlay plan when promotion is a partner tier (not premium/family from driver promos).
+    if pp and pp in _PARTNER_PROMO_PLAN_SLUGS:
         out["plan"] = pp
     return out
 

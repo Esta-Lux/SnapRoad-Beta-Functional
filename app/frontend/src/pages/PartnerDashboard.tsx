@@ -86,7 +86,8 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
 
   const { sendNotification } = useNotifications()
 
-  /** Paid checkout, admin internal/complimentary, or active promotion (admin) */
+  /** Paid checkout, admin internal/complimentary, or active promotion (admin).
+   *  Align with backend: driver-tier slugs (premium/family/…) on partners must not unlock the portal. */
   const canAccessPortal = useMemo(() => {
     if (!partnerProfile) return false
     if (partnerProfile.has_full_portal_access === true) return true
@@ -94,7 +95,8 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
     if (partnerProfile.is_internal_complimentary) return true
     if ((partnerProfile.plan || '').toLowerCase() === 'internal') return true
     const s = (partnerProfile.subscription_status || '').toLowerCase()
-    const p = (partnerProfile.plan || '').toLowerCase()
+    const raw = (partnerProfile.plan || '').toLowerCase()
+    const p = ['premium', 'family', 'basic', 'free'].includes(raw) ? 'unselected' : raw
     if (p === 'unselected' || p === 'none' || p === '') return false
     return s !== 'pending' && s !== 'incomplete'
   }, [partnerProfile])
