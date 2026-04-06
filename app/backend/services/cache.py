@@ -48,3 +48,23 @@ def cache_delete(key: str):
         r.delete(key)
     except Exception as e:
         logger.warning("failed to delete cache key %s: %s", key, e)
+
+
+def cache_delete_pattern(pattern: str) -> int:
+    """Delete all Redis keys matching *pattern* (e.g. ``offers_nearby:*``). Returns count deleted."""
+    r = get_redis()
+    if not r:
+        return 0
+    n = 0
+    try:
+        for key in r.scan_iter(match=pattern, count=200):
+            r.delete(key)
+            n += 1
+    except Exception as e:
+        logger.warning("failed to delete cache pattern %s: %s", pattern, e)
+    return n
+
+
+def invalidate_offers_nearby_cache() -> int:
+    """Bust cached responses for ``GET /api/offers/nearby`` after offer create/update/delete."""
+    return cache_delete_pattern("offers_nearby:*")

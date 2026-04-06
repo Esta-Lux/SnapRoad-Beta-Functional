@@ -10,7 +10,7 @@ from services.mock_data import (
 from models.schemas import ImageGenerateRequest, LocationVisit
 from services.supabase_service import _sb, sb_get_profile, _table_missing
 from services.offer_utils import calculate_free_discount
-from services.cache import cache_get, cache_set, cache_delete
+from services.cache import cache_get, cache_set, cache_delete, invalidate_offers_nearby_cache
 from services.fee_calculator import record_redemption_fee
 from services.offer_analytics import record_offer_event
 from middleware.auth import get_current_user, get_current_user_optional
@@ -403,6 +403,10 @@ def create_offer(offer: OfferCreate, user: CurrentUser):
     created = sb.table("offers").insert(payload).execute()
     if not created.data:
         raise HTTPException(status_code=503, detail="Failed to create offer")
+    try:
+        invalidate_offers_nearby_cache()
+    except Exception:
+        pass
     return {"success": True, "data": created.data[0]}
 
 

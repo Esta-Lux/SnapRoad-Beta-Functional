@@ -30,6 +30,32 @@ interface PlaceSuggestion {
   description: string
 }
 
+async function tryGeocodeAddressFromText(address: string): Promise<{ lat: number; lng: number; address: string } | null> {
+  const q = address.trim()
+  if (q.length < 5) return null
+  try {
+    const base = getApiBaseUrl()
+    const res = await fetch(`${base}/api/places/autocomplete?q=${encodeURIComponent(q)}`)
+    const data = await res.json()
+    if (!data.success || !Array.isArray(data.data) || data.data.length === 0) return null
+    const first = data.data[0] as { place_id?: string }
+    if (!first.place_id) return null
+    const det = await fetch(`${base}/api/places/details/${first.place_id}`)
+    if (!det.ok) return null
+    const json = await det.json()
+    if (json.success && json.data?.lat != null && json.data?.lng != null) {
+      return {
+        address: json.data.address || json.data.name || q,
+        lat: json.data.lat,
+        lng: json.data.lng,
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
 function LocationModal({
   location, onClose, onSave, maxLocations: _maxLocations, currentCount,
 }: {
@@ -39,6 +65,9 @@ function LocationModal({
   maxLocations?: number
   currentCount: number
 }) {
+  const [savingCoords, setSavingCoords] = useState(false)
+  /** False until quick-pick, map suggestion, or Place details resolve — then we trust lat/lng on save. */
+  const [addressCoordsResolved, setAddressCoordsResolved] = useState(!!location)
   const [formData, setFormData] = useState<LocationFormData>({
     name: location?.name || '',
     address: location?.address || '',
@@ -164,6 +193,7 @@ function LocationModal({
                       onClick={() => {
                         setFormData(prev => ({ ...prev, address: addr.address, lat: addr.lat, lng: addr.lng }))
                         setAddressQuery(addr.address)
+                        setAddressCoordsResolved(true)
                       }}
                       className={`text-left px-3 py-2 rounded-lg border text-sm transition-all ${
                         formData.address === addr.address
@@ -188,6 +218,7 @@ function LocationModal({
                       const v = e.target.value
                       setAddressQuery(v)
                       setFormData(prev => ({ ...prev, address: v }))
+                      setAddressCoordsResolved(false)
                     }}
                     onFocus={() => addressSuggestions.length > 0 && setAddressDropdownOpen(true)}
                     className="w-full bg-slate-700/50 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white placeholder-slate-500"
@@ -216,6 +247,7 @@ function LocationModal({
                                   lng: resolved.lng,
                                 }))
                                 setAddressQuery(resolved.address)
+                                setAddressCoordsResolved(true)
                                 return
                               }
                             }
@@ -248,13 +280,19 @@ function LocationModal({
                       <div>
                         <label className="text-slate-400 text-xs mb-1 block">Latitude</label>
                         <input type="number" step="0.0001" value={formData.lat}
-                          onChange={(e) => setFormData(prev => ({ ...prev, lat: parseFloat(e.target.value) || 0 }))}
+                          onChange={(e) => {
+                            setAddressCoordsResolved(true)
+                            setFormData(prev => ({ ...prev, lat: parseFloat(e.target.value) || 0 }))
+                          }}
                           className="w-full bg-slate-700/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" />
                       </div>
                       <div>
                         <label className="text-slate-400 text-xs mb-1 block">Longitude</label>
                         <input type="number" step="0.0001" value={formData.lng}
-                          onChange={(e) => setFormData(prev => ({ ...prev, lng: parseFloat(e.target.value) || 0 }))}
+                          onChange={(e) => {
+                            setAddressCoordsResolved(true)
+                            setFormData(prev => ({ ...prev, lng: parseFloat(e.target.value) || 0 }))
+                          }}
                           className="w-full bg-slate-700/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm" />
                       </div>
                     </div>
@@ -274,10 +312,28 @@ function LocationModal({
 
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={onClose} className="flex-1 bg-slate-700/50 text-white py-3 rounded-xl hover:bg-slate-700">Cancel</button>
-                <button type="button" onClick={() => onSave(formData)} disabled={!formData.name || !formData.address}
-                  className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl hover:from-emerald-400 hover:to-teal-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    let data: LocationFormData = { ...formData }
+                    if (!useManualCoords && !addressCoordsResolved) {
+                      setSavingCoords(true)
+                      try {
+                        const guessed = await tryGeocodeAddressFromText(data.address)
+                        if (guessed) {
+                          data = { ...data, lat: guessed.lat, lng: guessed.lng, address: guessed.address }
+                        }
+                      } finally {
+                        setSavingCoords(false)
+                      }
+                    }
+                    onSave(data)
+                  }}
+                  disabled={!formData.name || !formData.address || savingCoords}
+                  className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl hover:from-emerald-400 hover:to-teal-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
                   <Check size={18} />
-                  {location ? 'Update Location' : 'Add Location'}
+                  {savingCoords ? 'Resolving address…' : location ? 'Update Location' : 'Add Location'}
                 </button>
               </div>
             </div>

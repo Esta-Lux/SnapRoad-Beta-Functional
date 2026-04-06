@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import HTTPException
 from database import get_supabase
+from services.cache import invalidate_offers_nearby_cache
 from passlib.context import CryptContext
 
 logger = logging.getLogger(__name__)
@@ -684,6 +685,10 @@ def sb_create_offer(data: dict) -> Optional[dict]:
         ins = sb.table("offers").insert(data).execute()
         rows = ins.data if ins.data else []
         if rows:
+            try:
+                invalidate_offers_nearby_cache()
+            except Exception:
+                pass
             return rows[0]
         pid = data.get("partner_id")
         if pid:
@@ -697,6 +702,10 @@ def sb_create_offer(data: dict) -> Optional[dict]:
             )
             got = sel.data or []
             if got:
+                try:
+                    invalidate_offers_nearby_cache()
+                except Exception:
+                    pass
                 return got[0]
         return None
     except Exception as e:
@@ -710,6 +719,10 @@ def sb_update_offer(offer_id: str, updates: dict) -> bool:
         if not payload:
             return True
         _sb().table("offers").update(payload).eq("id", offer_id).execute()
+        try:
+            invalidate_offers_nearby_cache()
+        except Exception:
+            pass
         return True
     except Exception as e:
         logger.warning(f"sb_update_offer: {e}")
@@ -719,6 +732,10 @@ def sb_update_offer(offer_id: str, updates: dict) -> bool:
 def sb_delete_offer(offer_id: str) -> bool:
     try:
         _sb().table("offers").delete().eq("id", offer_id).execute()
+        try:
+            invalidate_offers_nearby_cache()
+        except Exception:
+            pass
         return True
     except Exception as e:
         logger.warning(f"sb_delete_offer: {e}")
