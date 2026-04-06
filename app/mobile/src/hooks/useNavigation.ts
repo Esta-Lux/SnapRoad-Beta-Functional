@@ -167,8 +167,6 @@ export function useNavigation(params: {
     isNavigating,
     polyline: navigationData?.polyline,
   });
-  const navUserLocation = isNavigating ? fusedNavLocation.displayCoord : userLocation;
-  const navUserHeading = isNavigating ? fusedNavLocation.displayHeading : heading;
 
   // --- Fetch directions ---
   const fetchDirections = useCallback(async (
@@ -176,7 +174,7 @@ export function useNavigation(params: {
     origin?: Coordinate,
     opts?: { maxHeightMeters?: number },
   ): Promise<FetchDirectionsResult> => {
-    const o = origin ?? navUserLocation;
+    const o = origin ?? userLocation;
     const destOk =
       Number.isFinite(destination.lat) &&
       Number.isFinite(destination.lng) &&
@@ -239,7 +237,7 @@ export function useNavigation(params: {
       console.warn('fetchDirections error:', e);
       return { ok: false, reason: 'route_failed', message: msg };
     }
-  }, [navUserLocation, drivingMode]);
+  }, [userLocation, drivingMode]);
 
   const handleRouteSelect = useCallback((routeTypeOrIndex: 'best' | 'eco' | 'alt' | number) => {
     if (!availableRoutes.length || !navigationData) return;
@@ -343,7 +341,7 @@ export function useNavigation(params: {
 
     let polyMiles = 0;
     if (navigationData?.polyline && navigationData.polyline.length >= 2) {
-      const remainMeters = remainingDistanceOnPolyline(navUserLocation, navigationData.polyline);
+      const remainMeters = remainingDistanceOnPolyline(userLocation, navigationData.polyline);
       const drivenMeters = Math.max(0, (navigationData.distance ?? 0) - remainMeters);
       polyMiles = drivenMeters / 1609.34;
     }
@@ -452,7 +450,7 @@ export function useNavigation(params: {
       await refreshUserFromServerRef.current();
       bumpStatsVersionRef.current();
     }).catch(() => { /* offline — summary already shown */ });
-  }, [navigationData, drivingMode, navUserLocation, user?.isPremium, navSpeak]);
+  }, [navigationData, drivingMode, userLocation, user?.isPremium, navSpeak]);
 
   const dismissTripSummary = useCallback(() => setTripSummary(null), []);
 
@@ -474,11 +472,11 @@ export function useNavigation(params: {
   const routeProgress = useMemo((): NavigationRouteProgress | null => {
     if (!isNavigating || !navigationData?.polyline || navigationData.polyline.length < 2) return null;
     return computeNavigationRouteProgress(
-      navUserLocation,
+      userLocation,
       navigationData.polyline,
       navigationData.distance ?? 0,
     );
-  }, [isNavigating, navigationData?.polyline, navigationData?.distance, navUserLocation.lat, navUserLocation.lng]);
+  }, [isNavigating, navigationData?.polyline, navigationData?.distance, userLocation.lat, userLocation.lng]);
 
   /** Keep odometry in sync with monotonic route progress (GPS integration can lag in urban canyons). */
   useEffect(() => {
@@ -518,9 +516,9 @@ export function useNavigation(params: {
   }, [fusedNavLocation.displayCoord, isNavigating]);
 
   const navDisplayHeading = useMemo((): number => {
-    if (!isNavigating) return navUserHeading;
+    if (!isNavigating) return heading;
     return fusedNavLocation.displayHeading;
-  }, [fusedNavLocation.displayHeading, isNavigating, navUserHeading]);
+  }, [fusedNavLocation.displayHeading, heading, isNavigating]);
 
   // --- Step index tracking (polyline-aligned; matches Mapbox geometry + turn cards) ---
   useEffect(() => {
@@ -552,7 +550,7 @@ export function useNavigation(params: {
     const followingStep = navigationData.steps[stepIndex + 1] ?? null;
     const liveDistToThisManeuver =
       isFinite(step.lat) && isFinite(step.lng)
-        ? haversineMeters(navUserLocation.lat, navUserLocation.lng, step.lat, step.lng)
+        ? haversineMeters(userLocation.lat, userLocation.lng, step.lat, step.lng)
         : (step.distanceMeters ?? 400);
 
     const phrase = voiceCue
@@ -569,7 +567,7 @@ export function useNavigation(params: {
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navSpeak(phrase, 'normal', drivingMode);
-  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, navUserLocation, navSpeak]);
+  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation, navSpeak]);
 
   // --- Early turn warnings (500ft and 150ft before next step) ---
   useEffect(() => {
@@ -591,8 +589,8 @@ export function useNavigation(params: {
     const poly = navigationData.polyline;
     const distToNext =
       poly && poly.length >= 2
-        ? alongRouteDistanceMeters(poly, navUserLocation, { lat: nextStep.lat, lng: nextStep.lng })
-        : haversineMeters(navUserLocation.lat, navUserLocation.lng, nextStep.lat, nextStep.lng);
+        ? alongRouteDistanceMeters(poly, userLocation, { lat: nextStep.lat, lng: nextStep.lng })
+        : haversineMeters(userLocation.lat, userLocation.lng, nextStep.lat, nextStep.lng);
 
     const FEET_500 = 152;
     const FEET_150 = 46;
@@ -607,7 +605,7 @@ export function useNavigation(params: {
       const nowCue = nextVoice || nextBanner;
       if (nowCue) navSpeak(nowCue, 'high', drivingMode);
     }
-  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, navUserLocation, navSpeak]);
+  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation, navSpeak]);
 
   // --- Arrival announcement ---
   useEffect(() => {
@@ -620,7 +618,7 @@ export function useNavigation(params: {
     const rm = liveEta?.distanceMiles;
     const crow =
       Number.isFinite(dest.lat) && Number.isFinite(dest.lng)
-        ? haversineMeters(navUserLocation.lat, navUserLocation.lng, dest.lat, dest.lng)
+        ? haversineMeters(userLocation.lat, userLocation.lng, dest.lat, dest.lng)
         : Number.POSITIVE_INFINITY;
     const near = (rm != null && rm <= 0.05) || crow <= 55;
     if (!near) return;
@@ -636,8 +634,8 @@ export function useNavigation(params: {
     isNavigating,
     liveEta?.distanceMiles,
     navigationData?.destination,
-    navUserLocation.lat,
-    navUserLocation.lng,
+    userLocation.lat,
+    userLocation.lng,
     drivingMode,
     navSpeak,
   ]);
@@ -652,7 +650,7 @@ export function useNavigation(params: {
     const polyline = navigationData.polyline;
     let remainingMeters: number;
     if (polyline && polyline.length >= 2) {
-      remainingMeters = remainingDistanceOnPolyline(navUserLocation, polyline);
+      remainingMeters = remainingDistanceOnPolyline(userLocation, polyline);
     } else {
       remainingMeters = Math.max(0, totalMeters - traveledDistanceMeters);
     }
@@ -694,8 +692,8 @@ export function useNavigation(params: {
     navigationData?.duration,
     navigationData?.polyline,
     routeProgress?.remainingRouteMeters,
-    navUserLocation.lat,
-    navUserLocation.lng,
+    userLocation.lat,
+    userLocation.lng,
     speed,
     traveledDistanceMeters,
   ]);
@@ -707,7 +705,7 @@ export function useNavigation(params: {
     const dest = navigationData.destination;
     if (!Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) return;
 
-    const crow = haversineMeters(navUserLocation.lat, navUserLocation.lng, dest.lat, dest.lng);
+    const crow = haversineMeters(userLocation.lat, userLocation.lng, dest.lat, dest.lng);
     const remainMi = liveEta?.distanceMiles;
     const withinRoute = remainMi != null && remainMi <= 0.1;
     const withinCrow = crow <= 55;
@@ -724,8 +722,8 @@ export function useNavigation(params: {
     isNavigating,
     navigationData?.destination?.lat,
     navigationData?.destination?.lng,
-    navUserLocation.lat,
-    navUserLocation.lng,
+    userLocation.lat,
+    userLocation.lng,
     liveEta?.distanceMiles,
     stopNavigation,
   ]);
@@ -787,7 +785,7 @@ export function useNavigation(params: {
     const reroute = async () => {
       try {
         const dest = navigationData.destination;
-        const res = await fetchDirections(dest, navUserLocation);
+        const res = await fetchDirections(dest, userLocation);
         if (res.ok) {
           lastRerouteAtRef.current = Date.now();
         }
@@ -799,8 +797,8 @@ export function useNavigation(params: {
     };
     reroute();
   }, [
-    navUserLocation.lat,
-    navUserLocation.lng,
+    userLocation.lat,
+    userLocation.lng,
     speed,
     isNavigating,
     navigationData?.destination,
@@ -816,7 +814,7 @@ export function useNavigation(params: {
     navSpeak('Adding a stop. Rerouting.', 'high', drivingMode);
     setIsRerouting(true);
     try {
-      const coords = `${navUserLocation.lng},${navUserLocation.lat};${waypoint.lng},${waypoint.lat};${navigationData.destination.lng},${navigationData.destination.lat}`;
+      const coords = `${userLocation.lng},${userLocation.lat};${waypoint.lng},${waypoint.lat};${navigationData.destination.lng},${navigationData.destination.lat}`;
       const token = getMapboxPublicToken();
       const res = await fetch(
         `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coords}?access_token=${encodeURIComponent(token)}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed`,
@@ -873,7 +871,7 @@ export function useNavigation(params: {
     } finally {
       setIsRerouting(false);
     }
-  }, [navigationData, navUserLocation, drivingMode, navSpeak]);
+  }, [navigationData, userLocation, drivingMode, navSpeak]);
 
   useEffect(() => {
     if (!isNavigating || !navigationData?.distance || !routeProgress) return;

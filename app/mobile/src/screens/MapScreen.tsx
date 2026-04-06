@@ -2216,23 +2216,13 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
-          {nav.isNavigating ? (
-            <MapboxGL.MarkerView
-              id="nav-fused-puck"
-              coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
-              anchor={{ x: 0.5, y: 0.5 }}
-            >
-              <View style={[s.navPuck, { backgroundColor: modeConfig.puckColor }]}>
-                <View style={s.navPuckInner} />
-              </View>
-            </MapboxGL.MarkerView>
-          ) : null}
-
-          {/* Default Mapbox user-location puck outside active navigation. */}
+          {/* Default Mapbox user-location puck across the app. */}
           <MapboxGL.LocationPuck
-            visible={!nav.isNavigating}
+            visible
+            androidRenderMode="normal"
             puckBearingEnabled
             puckBearing={nav.isNavigating ? 'course' : 'heading'}
+            pulsing={{ isEnabled: false }}
           />
         </MapboxGL.MapView>
       ) : (
@@ -4006,16 +3996,6 @@ const s = StyleSheet.create({
   destPinWrap: { alignItems: 'center' },
   destPin: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#DC2626', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff', ...shadow(12, 0.5) },
   destPinTail: { width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#DC2626', marginTop: -1 },
-  navPuck: {
-    width: 22, height: 22, borderRadius: 11,
-    borderWidth: 3, borderColor: '#ffffff',
-    justifyContent: 'center' as const, alignItems: 'center' as const,
-    ...shadow(6, 0.45),
-  },
-  navPuckInner: {
-    width: 8, height: 8, borderRadius: 4,
-    backgroundColor: '#ffffff',
-  },
 
   // Sheets
   overlay: { ...StyleSheet.absoluteFillObject, zIndex: 50, justifyContent: 'flex-end' },

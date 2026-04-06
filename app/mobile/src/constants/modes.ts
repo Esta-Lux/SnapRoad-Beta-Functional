@@ -55,7 +55,7 @@ export interface ModeConfig {
 
   buildingOpacity: number;
 
-  /** Active-navigation puck tint when MapScreen renders the fused MarkerView puck. */
+  /** Reserved for future puck theming; navigation uses the default Mapbox LocationPuck. */
   puckColor: string;
 
   directionsProfile: DirectionsProfile;
