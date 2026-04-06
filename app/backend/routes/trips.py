@@ -462,17 +462,29 @@ def _build_trip_row(
 def _persist_trip_and_update_profile(
     trip_row: dict, user_id: str, gems: int, xp: int, distance: float,
 ) -> None:
-    sb = get_supabase()
-    sb.table("trips").insert(trip_row).execute()
-    profile = sb.table("profiles").select("gems, xp, total_trips, total_miles").eq("id", user_id).limit(1).execute()
-    if profile.data:
-        p = profile.data[0]
-        sb.table("profiles").update({
-            "gems": (p.get("gems") or 0) + gems,
-            "xp": (p.get("xp") or 0) + xp,
-            "total_trips": (p.get("total_trips") or 0) + 1,
-            "total_miles": round((p.get("total_miles") or 0) + distance, 2),
-        }).eq("id", user_id).execute()
+    from database import reset_supabase_client
+
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            sb = get_supabase()
+            sb.table("trips").insert(trip_row).execute()
+            profile = sb.table("profiles").select("gems, xp, total_trips, total_miles").eq("id", user_id).limit(1).execute()
+            if profile.data:
+                p = profile.data[0]
+                sb.table("profiles").update({
+                    "gems": (p.get("gems") or 0) + gems,
+                    "xp": (p.get("xp") or 0) + xp,
+                    "total_trips": (p.get("total_trips") or 0) + 1,
+                    "total_miles": round((p.get("total_miles") or 0) + distance, 2),
+                }).eq("id", user_id).execute()
+            return
+        except Exception as exc:
+            last_exc = exc
+            if attempt == 0:
+                _trips_log.warning("Trip persist attempt 1 failed (%s), resetting client and retrying", exc)
+                reset_supabase_client()
+    raise last_exc  # type: ignore[misc]
 
 
 def _read_profile_totals_after_trip(user_id: str) -> Optional[Dict[str, Any]]:
@@ -527,7 +539,11 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
     try:
         _persist_trip_and_update_profile(trip_row, user_id, gems_earned, xp_earned, distance)
     except Exception as exc:
-        _trips_log.error("Supabase trip write failed: %s", exc)
+        _trips_log.error(
+            "Supabase trip write failed for user=%s trip=%s distance=%.2f duration=%ds: %s",
+            user_id, trip_id, distance, body.duration_seconds, exc,
+            exc_info=True,
+        )
         if ENVIRONMENT == "production":
             raise HTTPException(status_code=503, detail="Trip storage unavailable")
 
@@ -1421,15 +1437,10 @@ if ENVIRONMENT == "production":
     # Remove legacy/dev-only endpoints from the production API surface.
     # Route objects store paths relative to the router (without the /api prefix).
     _LEGACY_PROD_DISABLED = {
-        "/trips",
-        "/trips/{trip_id}",
         "/trips/start",
-        "/trips/history",
         "/trips/{trip_id}/end",
-        "/trips/complete",
         "/trips/complete-with-safety",
         "/trips/history/detailed",
-        "/trips/weekly-insights",
         "/trips/{trip_id}/share",
         "/incidents/report-legacy",
         "/routes/history-3d",
