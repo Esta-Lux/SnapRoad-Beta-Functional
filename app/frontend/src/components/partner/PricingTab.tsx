@@ -102,21 +102,27 @@ export default function PricingTab({
         </div>
       )}
 
-      <div className="text-center mb-6 sm:mb-8 px-1">
-        <p className="text-slate-400 text-sm break-words">
-          Current plan: <span className="text-white font-semibold capitalize">{currentPlan}</span>
-          {' · '}
+      <div className="mb-6 sm:mb-8 px-0.5">
+        <div className="flex flex-col items-stretch gap-2 sm:items-center sm:flex-row sm:justify-center sm:flex-wrap sm:gap-x-2 sm:gap-y-1 text-center text-slate-400 text-sm">
+          <span className="break-words">
+            Current plan:{' '}
+            <span className="text-white font-semibold capitalize">{currentPlan}</span>
+          </span>
+          <span className="hidden sm:inline text-slate-600" aria-hidden>
+            ·
+          </span>
           <button
             type="button"
-            className="text-[#0084FF] hover:underline"
+            className="text-[#0084FF] hover:underline font-medium py-1 min-h-[44px] sm:min-h-0 inline-flex items-center justify-center sm:inline"
             onClick={() => window.open('mailto:billing@snaproad.co?subject=Billing%20Inquiry', '_blank')}
           >
             Manage billing
           </button>
-        </p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 min-w-0 gap-4 sm:gap-6 md:grid-cols-3">
+      {/* Two paid tiers: single column on phones, two columns from sm; centered max width so cards don’t look stretched */}
+      <div className="grid grid-cols-1 min-w-0 gap-4 sm:grid-cols-2 sm:gap-5 lg:gap-6 max-w-4xl mx-auto w-full pt-2 sm:pt-1">
         {PAID_PLAN_ORDER.map((planId) => {
           const plan = plans[planId]
           if (!plan) return null
@@ -129,22 +135,22 @@ export default function PricingTab({
           return (
             <div
               key={planId}
-              className={`relative rounded-2xl border p-4 sm:p-6 flex flex-col min-w-0 transition-all ${
+              className={`relative rounded-2xl border p-4 sm:p-6 flex flex-col min-w-0 transition-all overflow-visible mt-4 sm:mt-3 ${
                 isPopular
                   ? 'border-[#0084FF] ring-2 ring-[#0084FF]/20'
                   : 'border-white/10 hover:border-white/20'
               } ${isActive ? 'bg-white/[0.04]' : 'bg-slate-800/30'}`}
             >
               {isPopular && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-[#0084FF] text-white text-xs font-bold uppercase tracking-wide">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 max-w-[calc(100%-1rem)] px-3 py-1 sm:px-4 rounded-full bg-[#0084FF] text-white text-[10px] sm:text-xs font-bold uppercase tracking-wide text-center whitespace-nowrap shadow-lg">
                   Most Popular
                 </div>
               )}
 
               {hasFoundersBonus && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold flex items-center gap-1">
-                  <Star size={12} fill="white" />
-                  Founders Bonus
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 max-w-[calc(100%-1rem)] px-3 py-1 sm:px-4 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[10px] sm:text-xs font-bold flex items-center justify-center gap-1 shadow-lg">
+                  <Star size={12} className="shrink-0" fill="white" />
+                  <span className="truncate">Founders Bonus</span>
                 </div>
               )}
 
@@ -155,34 +161,34 @@ export default function PricingTab({
                 >
                   <BadgeCheck size={20} style={{ color }} />
                 </div>
-                <h3 className="text-white text-xl font-bold">{plan.name}</h3>
+                <h3 className="text-white text-lg sm:text-xl font-bold leading-tight">{plan.name}</h3>
                 <p className="text-slate-400 text-sm mt-1">
                   Up to {plan.max_locations >= 50 ? '50+' : plan.max_locations} locations
                 </p>
               </div>
 
               {/* Pricing */}
-              <div className="mb-6">
+              <div className="mb-6 min-w-0">
                 {plan.price_founders != null ? (
                   <>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-bold text-white">
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
+                      <span className="text-3xl sm:text-4xl font-bold text-white tabular-nums">
                         ${plan.price_founders.toFixed(2)}
                       </span>
                       <span className="text-slate-400 text-sm">/mo</span>
                     </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-slate-500 text-sm line-through">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2">
+                      <span className="text-slate-500 text-sm line-through tabular-nums">
                         ${plan.price_public?.toFixed(2)}/mo
                       </span>
-                      <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full font-medium">
+                      <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full font-medium shrink-0">
                         Founders price
                       </span>
                     </div>
                   </>
                 ) : (
                   <div className="flex items-baseline gap-2">
-                    <span className="text-4xl font-bold text-white">Custom</span>
+                    <span className="text-3xl sm:text-4xl font-bold text-white">Custom</span>
                   </div>
                 )}
               </div>
@@ -191,9 +197,9 @@ export default function PricingTab({
               <div className="space-y-3 flex-1 mb-4">
                 <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Includes</p>
                 {plan.features.map((feature, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <CheckCircle size={16} style={{ color }} className="shrink-0" />
-                    <span className="text-slate-300 text-sm">{feature}</span>
+                  <div key={i} className="flex items-start gap-2.5">
+                    <CheckCircle size={16} style={{ color }} className="shrink-0 mt-0.5" />
+                    <span className="text-slate-300 text-sm leading-snug break-words">{feature}</span>
                   </div>
                 ))}
               </div>
@@ -220,12 +226,12 @@ export default function PricingTab({
                 onClick={() => onUpgrade(planId)}
                 data-testid={`plan-btn-${planId}`}
                 disabled={isActive}
-                className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${
+                className={`w-full min-h-[48px] py-3 px-3 rounded-xl font-semibold text-sm transition-all touch-manipulation ${
                   isActive
                     ? 'bg-white/10 text-slate-400 cursor-default'
                     : isPopular
-                      ? 'bg-[#0084FF] text-white hover:opacity-90'
-                      : 'bg-white/10 text-white hover:bg-white/15'
+                      ? 'bg-[#0084FF] text-white hover:opacity-90 active:opacity-95'
+                      : 'bg-white/10 text-white hover:bg-white/15 active:bg-white/20'
                 }`}
               >
                 {isActive ? 'Current Plan' : 'Subscribe now'}
@@ -237,23 +243,29 @@ export default function PricingTab({
         })}
       </div>
 
-      <div className="bg-gradient-to-r from-slate-800/50 to-slate-900/50 border border-white/5 rounded-2xl p-6 text-center">
-        <p className="text-slate-400 text-sm">
-          Need a custom solution?{' '}
-          <span
-            className="text-[#0084FF] cursor-pointer hover:underline font-medium"
-            onClick={() => window.open('mailto:sales@snaproad.co?subject=Custom%20Solution%20Inquiry', '_blank')}
-          >
-            Contact our sales team
-          </span>{' '}
-          or view our{' '}
-          <span
-            className="text-[#0084FF] cursor-pointer hover:underline font-medium"
-            onClick={() => window.open('https://snaproad.co/pricing', '_blank')}
-          >
-            full feature comparison
-          </span>
-        </p>
+      <div className="bg-gradient-to-r from-slate-800/50 to-slate-900/50 border border-white/5 rounded-2xl p-4 sm:p-6">
+        <div className="flex flex-col gap-3 sm:gap-2 text-center max-w-lg mx-auto">
+          <p className="text-slate-400 text-sm leading-relaxed">Need a custom solution?</p>
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:justify-center sm:items-center gap-2 sm:gap-x-2">
+            <button
+              type="button"
+              className="text-[#0084FF] hover:underline font-medium py-3 px-2 rounded-lg sm:py-0 sm:px-0 min-h-[48px] sm:min-h-0 inline-flex items-center justify-center text-sm touch-manipulation active:bg-white/5 sm:active:bg-transparent"
+              onClick={() => window.open('mailto:sales@snaproad.co?subject=Custom%20Solution%20Inquiry', '_blank')}
+            >
+              Contact our sales team
+            </button>
+            <span className="text-slate-500 text-xs sm:text-sm hidden sm:inline select-none" aria-hidden>
+              ·
+            </span>
+            <button
+              type="button"
+              className="text-[#0084FF] hover:underline font-medium py-3 px-2 rounded-lg sm:py-0 sm:px-0 min-h-[48px] sm:min-h-0 inline-flex items-center justify-center text-sm touch-manipulation active:bg-white/5 sm:active:bg-transparent"
+              onClick={() => window.open('https://snaproad.co/pricing', '_blank')}
+            >
+              View full feature comparison
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

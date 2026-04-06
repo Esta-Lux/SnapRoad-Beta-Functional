@@ -725,7 +725,7 @@ export default function MapScreen() {
     const rLng = Math.round(location.lng * 100);
     if (rLat === 0 && rLng === 0) return;
     api
-      .get<any>(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}&radius=5`)
+      .get<any>(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}&radius=40`)
       .then((r) => {
         if (!r.success) {
           logMapDataIssue('GET /api/offers/nearby', r.error);

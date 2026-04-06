@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { X, Gift as GiftIcon, Check, MapPin, Gem } from 'lucide-react'
 import type { Offer, PartnerProfile } from '@/types/partner'
 import { calculateAutoGems, calculateFreeDiscount } from '@/lib/offer-pricing'
@@ -18,6 +18,11 @@ interface Props {
   }) => Promise<void>
 }
 
+function normalizeLocationId(loc: unknown): string {
+  if (loc === undefined || loc === null) return ''
+  return String(loc).trim()
+}
+
 export default function EditOfferModal({ offer, partnerProfile, onClose, onUpdate }: Props) {
   const [formData, setFormData] = useState({
     title: offer.title,
@@ -25,9 +30,22 @@ export default function EditOfferModal({ offer, partnerProfile, onClose, onUpdat
     discount_percent: offer.discount_percent,
     gems_reward: offer.gems_reward,
     is_free_item: (offer as any).is_free_item || false,
-    location_id: String(offer.location_id || ''),
+    location_id: normalizeLocationId(offer.location_id),
     expires_days: 7,
   })
+
+  /** Match offer.location_id to profile locations when types differ (number vs string). */
+  const resolvedLocationId = useMemo(() => {
+    const want = normalizeLocationId(offer.location_id)
+    if (!want || !partnerProfile?.locations?.length) return want
+    const hit = partnerProfile.locations.find((loc) => normalizeLocationId(loc.id) === want)
+    return hit ? normalizeLocationId(hit.id) : want
+  }, [offer.location_id, partnerProfile?.locations])
+
+  useEffect(() => {
+    if (!resolvedLocationId) return
+    setFormData((f) => (f.location_id === resolvedLocationId ? f : { ...f, location_id: resolvedLocationId }))
+  }, [resolvedLocationId])
 
   const autoGems = calculateAutoGems(formData.discount_percent, formData.is_free_item)
   const freeDiscount = calculateFreeDiscount(formData.discount_percent)
@@ -132,7 +150,7 @@ export default function EditOfferModal({ offer, partnerProfile, onClose, onUpdat
                   >
                     <option value="">Select a location</option>
                     {partnerProfile?.locations.map((loc) => (
-                      <option key={loc.id} value={loc.id}>
+                      <option key={String(loc.id)} value={String(loc.id)}>
                         {loc.name} - {loc.address}
                       </option>
                     ))}

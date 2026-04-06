@@ -296,6 +296,46 @@ def complete_offer_redemption(
     }
 
 
+def _coord_ok(lat: object, lng: object) -> bool:
+    try:
+        la = float(lat)  # type: ignore[arg-type]
+        lo = float(lng)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return False
+    if abs(la) < 1e-7 and abs(lo) < 1e-7:
+        return False
+    return abs(la) <= 90 and abs(lo) <= 180
+
+
+def _hydrate_offer_coordinates_from_locations(offers: list[dict]) -> None:
+    """Fill lat/lng from partner_locations when the offer row is missing coordinates (common for legacy/admin rows)."""
+    need: list[str] = []
+    for o in offers:
+        lid = o.get("location_id")
+        if not lid:
+            continue
+        if _coord_ok(o.get("lat"), o.get("lng")):
+            continue
+        need.append(str(lid))
+    if not need:
+        return
+    uniq = list(dict.fromkeys(need))
+    try:
+        res = _sb().table("partner_locations").select("id,lat,lng").in_("id", uniq).execute()
+        loc_map = {str(r.get("id")): r for r in (res.data or [])}
+    except Exception as e:
+        logger.warning("partner_locations hydrate for nearby offers: %s", e)
+        return
+    for o in offers:
+        lid = o.get("location_id")
+        if not lid or _coord_ok(o.get("lat"), o.get("lng")):
+            continue
+        row = loc_map.get(str(lid))
+        if row and _coord_ok(row.get("lat"), row.get("lng")):
+            o["lat"] = row["lat"]
+            o["lng"] = row["lng"]
+
+
 def _active_offers_source(limit: int = 500) -> list[dict]:
     try:
         rows = _sb().table("offers").select("*").eq("status", "active").limit(limit).execute()
@@ -430,9 +470,14 @@ def get_nearby_offers(
     nearby = []
     aff_user = user_id or "anonymous"
     source = _active_offers_source(limit=500)
+    _hydrate_offer_coordinates_from_locations(source)
     for offer in source:
-        dlat = abs(offer["lat"] - lat)
-        dlng = abs(offer["lng"] - lng)
+        if not _coord_ok(offer.get("lat"), offer.get("lng")):
+            continue
+        o_lat = float(offer["lat"])
+        o_lng = float(offer["lng"])
+        dlat = abs(o_lat - lat)
+        dlng = abs(o_lng - lng)
         dist_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
         if dist_km <= radius:
             affinity_score, boosted = _user_offer_affinity(aff_user, offer)
@@ -458,9 +503,14 @@ def get_offers_on_route(origin_lat: float = 39.9612, origin_lng: float = -82.998
     mid_lat = (origin_lat + dest_lat) / 2
     mid_lng = (origin_lng + dest_lng) / 2
     source = _active_offers_source(limit=500)
+    _hydrate_offer_coordinates_from_locations(source)
     for offer in source:
-        dlat = abs(offer["lat"] - mid_lat)
-        dlng = abs(offer["lng"] - mid_lng)
+        if not _coord_ok(offer.get("lat"), offer.get("lng")):
+            continue
+        o_lat = float(offer["lat"])
+        o_lng = float(offer["lng"])
+        dlat = abs(o_lat - mid_lat)
+        dlng = abs(o_lng - mid_lng)
         dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
         if dist <= 5:
             route_offers.append({**offer, "distance_km": round(dist, 2)})
@@ -485,6 +535,7 @@ def get_personalized_offers(
             visited_types[visit["business_type"]] = visited_types.get(visit["business_type"], 0) + 1
     scored = []
     source = _active_offers_source(limit=500)
+    _hydrate_offer_coordinates_from_locations(source)
     for offer in source:
         try:
             exp_raw = str(offer.get("expires_at") or "")
@@ -495,8 +546,12 @@ def get_personalized_offers(
                 continue
         except Exception:
             continue
-        dlat = abs(offer["lat"] - lat)
-        dlng = abs(offer["lng"] - lng)
+        if not _coord_ok(offer.get("lat"), offer.get("lng")):
+            continue
+        o_lat = float(offer["lat"])
+        o_lng = float(offer["lng"])
+        dlat = abs(o_lat - lat)
+        dlng = abs(o_lng - lng)
         dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
         score = 100 - (dist * 10)
         if offer.get("business_type") in visited_types:

@@ -27,9 +27,14 @@ function markerSize(offer: Offer): { disc: number; glow: number; icon: number } 
 
 export default React.memo(function OfferMarkers({ offers, onOfferTap }: Props) {
   const markers = useMemo(
-    () => offers
-      .filter((o) => o.lat != null && o.lng != null)
-      .slice(0, 120),
+    () =>
+      offers
+        .filter((o) => {
+          const la = Number(o.lat);
+          const lo = Number(o.lng);
+          return Number.isFinite(la) && Number.isFinite(lo) && !(Math.abs(la) < 1e-7 && Math.abs(lo) < 1e-7);
+        })
+        .slice(0, 120),
     [offers],
   );
 
@@ -47,6 +52,7 @@ export default React.memo(function OfferMarkers({ offers, onOfferTap }: Props) {
             id={`sr-offer-${offer.id}`}
             coordinate={[offer.lng!, offer.lat!]}
             anchor={{ x: 0.5, y: 0.5 }}
+            allowOverlap
           >
             <TouchableOpacity
               activeOpacity={0.88}

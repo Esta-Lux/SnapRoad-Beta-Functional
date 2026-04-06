@@ -443,6 +443,11 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: Current
         "base_gems": auto_gems,
         "image_url": offer.image_url,
         "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
+        # Persist store linkage + map coords (was missing — UI looked like location never saved).
+        "location_id": location["id"],
+        "lat": location["lat"],
+        "lng": location["lng"],
+        "address": (location.get("address") or partner.get("address") or "") or None,
     }
     ok = sb_update_offer(offer_id, updates)
     if not ok:

@@ -272,7 +272,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
       if (offersRes.success && offersRes.data) {
         setOffers(offersRes.data.map((o: any) => ({
           id: o.id,
-          title: o.title || '',
+          title: o.title || o.business_name || '',
           description: o.description || '',
           discount_percent: o.discount_percent || 0,
           gems_reward: o.base_gems || 0,
@@ -551,9 +551,9 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
         onClick={() => setMobileNavOpen(false)}
       />
 
-      {/* Sidebar */}
+      {/* Sidebar: when closed on mobile, disable pointer-events so it cannot block taps on main content (fixed + translate still overlaps the viewport in some browsers). */}
       <aside
-        className={`fixed left-0 top-0 bottom-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-white/5 bg-slate-900/50 backdrop-blur-xl transition-transform duration-300 ease-out md:translate-x-0 ${mobileNavOpen ? 'translate-x-0 shadow-2xl shadow-black/40' : '-translate-x-full'}`}
+        className={`fixed left-0 top-0 bottom-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-white/5 bg-slate-900/50 backdrop-blur-xl transition-transform duration-300 ease-out md:pointer-events-auto md:translate-x-0 ${mobileNavOpen ? 'translate-x-0 pointer-events-auto shadow-2xl shadow-black/40' : '-translate-x-full pointer-events-none'}`}
       >
         <div className="border-b border-white/5 p-6">
           <div className="flex items-center gap-3">
@@ -619,8 +619,8 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
         onReplayTour={() => setShowOnboarding(true)}
       />
 
-      {/* Main Content */}
-      <main className="ml-0 min-w-0 overflow-x-hidden p-4 pb-24 sm:p-6 md:ml-72 md:pb-8 md:p-8">
+      {/* Main Content — relative z-10 so it stacks above decorative layers; full width on mobile (drawer is overlay). */}
+      <main className="relative z-10 ml-0 min-w-0 overflow-x-hidden p-4 pb-24 sm:p-6 md:ml-72 md:pb-8 md:p-8">
         {dataLoadBanner && (
           <div
             className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-amber-100"

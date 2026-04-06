@@ -2231,7 +2231,13 @@ function AdminLiveMapTab({
   useEffect(() => {
     if (!token || !containerRef.current) return
 
-    markersRef.current.forEach((m) => m.remove())
+    markersRef.current.forEach((m) => {
+      try {
+        m.remove()
+      } catch {
+        /* ignore */
+      }
+    })
     markersRef.current = []
 
     mapboxgl.accessToken = token
@@ -2244,90 +2250,126 @@ function AdminLiveMapTab({
     })
     map.addControl(new mapboxgl.NavigationControl(), 'top-right')
 
-    const allPoints: [number, number][] = []
+    const onMapReady = () => {
+      try {
+        map.resize()
+      } catch {
+        /* ignore */
+      }
 
-    const valid: { lng: number; lat: number; u: Record<string, unknown> }[] = []
-    for (const u of users) {
-      const lat = Number(u.lat)
-      const lng = Number(u.lng)
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
-      valid.push({ lat, lng, u })
+      const allPoints: [number, number][] = []
+
+      const valid: { lng: number; lat: number; u: Record<string, unknown> }[] = []
+      for (const u of users) {
+        const lat = Number(u.lat)
+        const lng = Number(u.lng)
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
+        valid.push({ lat, lng, u })
+      }
+
+      for (const { lat, lng, u } of valid) {
+        allPoints.push([lng, lat])
+        const el = document.createElement('div')
+        el.style.width = '14px'
+        el.style.height = '14px'
+        el.style.borderRadius = '50%'
+        el.style.background = u.is_navigating ? '#3b82f6' : '#22c55e'
+        el.style.border = '2px solid #fff'
+        el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.35)'
+        const name = String(u.name ?? 'Driver').replace(/</g, '&lt;').replace(/&/g, '&amp;')
+        const nav = u.is_navigating ? `Navigating · ${Math.round(Number(u.speed_mph) || 0)} mph` : 'Online'
+        const popup = new mapboxgl.Popup({ offset: 14 }).setHTML(
+          `<div style="font-family:system-ui,sans-serif;font-size:13px"><strong>${name}</strong><br/><span style="opacity:.8">${nav}</span></div>`,
+        )
+        const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).setPopup(popup).addTo(map)
+        markersRef.current.push(marker)
+      }
+
+      for (const r of reports) {
+        const lat = Number(r.lat)
+        const lng = Number(r.lng)
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
+        allPoints.push([lng, lat])
+        const el = document.createElement('div')
+        el.style.width = '0'
+        el.style.height = '0'
+        el.style.borderLeft = '7px solid transparent'
+        el.style.borderRight = '7px solid transparent'
+        el.style.borderBottom = '12px solid #f97316'
+        el.style.filter = 'drop-shadow(0 1px 2px rgba(0,0,0,0.4))'
+        const typ = String(r.type ?? 'report').replace(/</g, '&lt;').replace(/&/g, '&amp;')
+        const votes = String(r.upvotes ?? '0')
+        const desc = String(r.description ?? '').slice(0, 120).replace(/</g, '&lt;').replace(/&/g, '&amp;')
+        const popup = new mapboxgl.Popup({ offset: 12 }).setHTML(
+          `<div style="font-family:system-ui,sans-serif;font-size:13px"><strong>Road report</strong> · ${typ}<br/><span style="opacity:.85">Votes ${votes}</span>${desc ? `<br/><span style="opacity:.75;font-size:12px">${desc}</span>` : ''}</div>`,
+        )
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' }).setLngLat([lng, lat]).setPopup(popup).addTo(map)
+        markersRef.current.push(marker)
+      }
+
+      for (const pl of partnerLocations) {
+        const lat = Number(pl.lat)
+        const lng = Number(pl.lng)
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
+        allPoints.push([lng, lat])
+        const el = document.createElement('div')
+        el.style.width = '12px'
+        el.style.height = '12px'
+        el.style.borderRadius = '3px'
+        el.style.background = '#a855f7'
+        el.style.border = '2px solid #fff'
+        el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.35)'
+        const locName = String(pl.name ?? 'Location').replace(/</g, '&lt;').replace(/&/g, '&amp;')
+        const biz = String(pl.partner_business_name ?? '').replace(/</g, '&lt;').replace(/&/g, '&amp;')
+        const addr = String(pl.address ?? '').slice(0, 100).replace(/</g, '&lt;').replace(/&/g, '&amp;')
+        const popup = new mapboxgl.Popup({ offset: 12 }).setHTML(
+          `<div style="font-family:system-ui,sans-serif;font-size:13px"><strong>Partner</strong>${biz ? ` · ${biz}` : ''}<br/><span style="opacity:.9">${locName}</span>${addr ? `<br/><span style="opacity:.75;font-size:12px">${addr}</span>` : ''}</div>`,
+        )
+        const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).setPopup(popup).addTo(map)
+        markersRef.current.push(marker)
+      }
+
+      try {
+        if (allPoints.length >= 2) {
+          const bounds = new mapboxgl.LngLatBounds()
+          allPoints.forEach(([lng, lat]) => bounds.extend([lng, lat]))
+          map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 0 })
+        } else if (allPoints.length === 1) {
+          map.flyTo({ center: allPoints[0], zoom: 12, duration: 0 })
+        }
+      } catch {
+        map.setCenter([-82.9988, 39.9612])
+      }
+
+      requestAnimationFrame(() => {
+        try {
+          map.resize()
+        } catch {
+          /* ignore */
+        }
+      })
     }
 
-    for (const { lat, lng, u } of valid) {
-      allPoints.push([lng, lat])
-      const el = document.createElement('div')
-      el.style.width = '14px'
-      el.style.height = '14px'
-      el.style.borderRadius = '50%'
-      el.style.background = u.is_navigating ? '#3b82f6' : '#22c55e'
-      el.style.border = '2px solid #fff'
-      el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.35)'
-      const name = String(u.name ?? 'Driver').replace(/</g, '&lt;').replace(/&/g, '&amp;')
-      const nav = u.is_navigating ? `Navigating · ${Math.round(Number(u.speed_mph) || 0)} mph` : 'Online'
-      const popup = new mapboxgl.Popup({ offset: 14 }).setHTML(
-        `<div style="font-family:system-ui,sans-serif;font-size:13px"><strong>${name}</strong><br/><span style="opacity:.8">${nav}</span></div>`,
-      )
-      const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).setPopup(popup).addTo(map)
-      markersRef.current.push(marker)
-    }
-
-    for (const r of reports) {
-      const lat = Number(r.lat)
-      const lng = Number(r.lng)
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
-      allPoints.push([lng, lat])
-      const el = document.createElement('div')
-      el.style.width = '0'
-      el.style.height = '0'
-      el.style.borderLeft = '7px solid transparent'
-      el.style.borderRight = '7px solid transparent'
-      el.style.borderBottom = '12px solid #f97316'
-      el.style.filter = 'drop-shadow(0 1px 2px rgba(0,0,0,0.4))'
-      const typ = String(r.type ?? 'report').replace(/</g, '&lt;').replace(/&/g, '&amp;')
-      const votes = String(r.upvotes ?? '0')
-      const desc = String(r.description ?? '').slice(0, 120).replace(/</g, '&lt;').replace(/&/g, '&amp;')
-      const popup = new mapboxgl.Popup({ offset: 12 }).setHTML(
-        `<div style="font-family:system-ui,sans-serif;font-size:13px"><strong>Road report</strong> · ${typ}<br/><span style="opacity:.85">Votes ${votes}</span>${desc ? `<br/><span style="opacity:.75;font-size:12px">${desc}</span>` : ''}</div>`,
-      )
-      const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' }).setLngLat([lng, lat]).setPopup(popup).addTo(map)
-      markersRef.current.push(marker)
-    }
-
-    for (const pl of partnerLocations) {
-      const lat = Number(pl.lat)
-      const lng = Number(pl.lng)
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
-      allPoints.push([lng, lat])
-      const el = document.createElement('div')
-      el.style.width = '12px'
-      el.style.height = '12px'
-      el.style.borderRadius = '3px'
-      el.style.background = '#a855f7'
-      el.style.border = '2px solid #fff'
-      el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.35)'
-      const locName = String(pl.name ?? 'Location').replace(/</g, '&lt;').replace(/&/g, '&amp;')
-      const biz = String(pl.partner_business_name ?? '').replace(/</g, '&lt;').replace(/&/g, '&amp;')
-      const addr = String(pl.address ?? '').slice(0, 100).replace(/</g, '&lt;').replace(/&/g, '&amp;')
-      const popup = new mapboxgl.Popup({ offset: 12 }).setHTML(
-        `<div style="font-family:system-ui,sans-serif;font-size:13px"><strong>Partner</strong>${biz ? ` · ${biz}` : ''}<br/><span style="opacity:.9">${locName}</span>${addr ? `<br/><span style="opacity:.75;font-size:12px">${addr}</span>` : ''}</div>`,
-      )
-      const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).setPopup(popup).addTo(map)
-      markersRef.current.push(marker)
-    }
-
-    if (allPoints.length >= 2) {
-      const bounds = new mapboxgl.LngLatBounds()
-      allPoints.forEach(([lng, lat]) => bounds.extend([lng, lat]))
-      map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 0 })
-    } else if (allPoints.length === 1) {
-      map.flyTo({ center: allPoints[0], zoom: 12, duration: 0 })
+    if (map.loaded()) {
+      onMapReady()
+    } else {
+      map.once('load', onMapReady)
     }
 
     return () => {
-      markersRef.current.forEach((m) => m.remove())
+      markersRef.current.forEach((m) => {
+        try {
+          m.remove()
+        } catch {
+          /* ignore */
+        }
+      })
       markersRef.current = []
-      map.remove()
+      try {
+        map.remove()
+      } catch {
+        /* ignore */
+      }
     }
   }, [users, reports, partnerLocations, isDark, token])
 
