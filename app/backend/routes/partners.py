@@ -2,7 +2,8 @@ import logging
 import os
 import re
 import json
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, Header, Request
+import uuid
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, Header, Request, File, UploadFile
 from typing import Annotated, Optional
 from datetime import datetime, timedelta, timezone
 from models.schemas import (
@@ -31,6 +32,8 @@ from services.mock_data import PARTNER_PLANS, BOOST_PRICING
 from middleware.auth import create_access_token, require_partner
 from config import PARTNER_PORTAL_ORIGIN
 from limiter import limiter
+from database import get_supabase
+from services.photo_report_processing import ALLOWED_IMAGE_TYPES, PUBLIC_PHOTO_BUCKET, detect_image_type
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +54,8 @@ RESP_PARTNER_REGISTER_503 = {
 }
 
 CurrentPartner = Annotated[dict, Depends(require_partner)]
+PARTNER_OFFER_IMAGE_PREFIX = "partner-offers/"
+MAX_OFFER_IMAGE_BYTES = 10 * 1024 * 1024
 
 # Allow browser to pass ?portal_origin= so dev works on any local port; production uses PARTNER_PORTAL_ORIGIN.
 _DEV_PORTAL_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?/?$")
@@ -144,6 +149,48 @@ def _require_owned_partner_id(user: dict, partner_id: Optional[str] = None) -> s
     if partner_id and str(partner_id) != token_partner_id:
         raise HTTPException(status_code=403, detail="Partner access denied")
     return token_partner_id
+
+
+def _require_uploaded_storefront_image(image_url: Optional[str]) -> str:
+    url = str(image_url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="A storefront photo is required before publishing an offer.")
+    if "/storage/v1/object/public/" not in url or f"/{PARTNER_OFFER_IMAGE_PREFIX}" not in url:
+        raise HTTPException(status_code=400, detail="Offer image must be an uploaded storefront photo.")
+    return url
+
+
+@router.post("/partner/offers/upload-image", responses={403: {"description": "Partner access denied"}})
+async def upload_partner_offer_image(
+    user: CurrentPartner,
+    partner_id: str = "default_partner",
+    file: UploadFile = File(...),
+):
+    owned_partner_id = _require_partner_portal_entitled(user, partner_id)
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Empty upload")
+    if len(payload) > MAX_OFFER_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="Image too large")
+    inferred = detect_image_type(payload[:512])
+    if inferred not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid image format")
+
+    ext = "png" if inferred == "image/png" else "jpg"
+    path = f"{PARTNER_OFFER_IMAGE_PREFIX}{owned_partner_id}/{uuid.uuid4().hex}.{ext}"
+    supabase = get_supabase()
+    try:
+        supabase.storage.from_(PUBLIC_PHOTO_BUCKET).upload(
+            path,
+            payload,
+            file_options={"content-type": inferred},
+        )
+        url = supabase.storage.from_(PUBLIC_PHOTO_BUCKET).get_public_url(path)
+    except Exception as exc:
+        logger.exception("partner offer image upload failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Offer image upload unavailable") from exc
+
+    return {"success": True, "data": {"image_url": url, "path": path}}
 
 
 def _assert_partner_resource_owner(
@@ -359,9 +406,12 @@ def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partne
         return {"success": False, "message": "Location not found"}
 
     auto_gems = calculate_auto_gems(offer.discount_percent, offer.is_free_item)
-    if offer.gems_reward is not None and int(offer.gems_reward) > 0:
+    if offer.gem_cost is not None and int(offer.gem_cost) > 0:
+        auto_gems = int(offer.gem_cost)
+    elif offer.gems_reward is not None and int(offer.gems_reward) > 0:
         auto_gems = int(offer.gems_reward)
     free_discount = calculate_free_discount(offer.discount_percent)
+    image_url = _require_uploaded_storefront_image(offer.image_url)
 
     business_name = (
         (partner.get("business_name") or "").strip()
@@ -386,7 +436,7 @@ def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partne
         "lng": location["lng"],
         "address": (location.get("address") or partner.get("address") or "") or None,
         "status": "active",
-        "image_url": offer.image_url,
+        "image_url": image_url,
         "created_by": owned_partner_id,
         "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
     })
@@ -424,8 +474,11 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: Current
         return {"success": False, "message": "Location not found"}
     
     auto_gems = calculate_auto_gems(offer.discount_percent, offer.is_free_item)
+    if offer.gem_cost is not None and int(offer.gem_cost) > 0:
+        auto_gems = int(offer.gem_cost)
     premium_discount = offer.discount_percent
     free_discount = calculate_free_discount(premium_discount)
+    image_url = _require_uploaded_storefront_image(offer.image_url)
 
     fallback_bn = (
         (partner.get("business_name") or "").strip()
@@ -441,7 +494,7 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: Current
         "free_discount_percent": free_discount,
         "is_free_item": offer.is_free_item,
         "base_gems": auto_gems,
-        "image_url": offer.image_url,
+        "image_url": image_url,
         "expires_at": (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat(),
         # Persist store linkage + map coords (was missing — UI looked like location never saved).
         "location_id": location["id"],

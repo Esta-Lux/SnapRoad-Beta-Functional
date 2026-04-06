@@ -800,12 +800,13 @@ export default function MapScreen() {
         return;
       }
 
-      const gemsEarned = Number((res.data as any)?.data?.gems_earned ?? 0);
+      const gemCost = Number((res.data as any)?.data?.gem_cost ?? offer.gem_cost ?? offer.gems_reward ?? 0);
+      const newGemTotal = Number((res.data as any)?.data?.new_gem_total ?? NaN);
       setNearbyOffers((prev) => prev.map((item) => (item.id === offer.id ? { ...item, redeemed: true } : item)));
       setSelectedOffer((prev) => (prev?.id === offer.id ? { ...offer, redeemed: true } : prev));
-      if (user) updateUser({ gems: user.gems + gemsEarned });
+      if (user) updateUser({ gems: Number.isFinite(newGemTotal) ? newGemTotal : Math.max(0, user.gems - gemCost) });
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Offer Redeemed', 'Your offer has been redeemed successfully.');
+      Alert.alert('Offer Redeemed', `Your offer has been redeemed for ${gemCost} gems.`);
     } catch {
       Alert.alert('Redeem Offer', 'Could not redeem this offer right now.');
     }

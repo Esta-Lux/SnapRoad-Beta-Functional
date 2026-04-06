@@ -172,7 +172,7 @@ export function useNavigation(params: {
   const fetchDirections = useCallback(async (
     destination: Coordinate & { name?: string; address?: string },
     origin?: Coordinate,
-    opts?: { maxHeightMeters?: number },
+    opts?: { maxHeightMeters?: number; fastSingleRoute?: boolean },
   ): Promise<FetchDirectionsResult> => {
     const o = origin ?? userLocation;
     const destOk =
@@ -196,7 +196,11 @@ export function useNavigation(params: {
     }
 
     try {
-      const options = await getMapboxRouteOptions(o, destination, { mode: drivingMode, maxHeightMeters: opts?.maxHeightMeters });
+      const options = await getMapboxRouteOptions(o, destination, {
+        mode: drivingMode,
+        maxHeightMeters: opts?.maxHeightMeters,
+        fastSingleRoute: opts?.fastSingleRoute,
+      });
       if (!options.length || !options[0].polyline.length) {
         return { ok: false, reason: 'route_failed', message: 'No route could be computed.' };
       }
@@ -755,10 +759,10 @@ export function useNavigation(params: {
       return;
     }
     const elapsed = now - offRouteSinceRef.current;
-    const debounceMs = severeOffRoute ? 2400 : speedMps > 10 ? 4800 : 5200;
+    const debounceMs = severeOffRoute ? 1300 : speedMps > 10 ? 2200 : 2800;
     if (elapsed < debounceMs) return;
     if (rerouteInFlightRef.current) return;
-    const cooldownMs = lastRerouteAtRef.current ? (severeOffRoute ? 3200 : 5500) : 0;
+    const cooldownMs = lastRerouteAtRef.current ? (severeOffRoute ? 1600 : 2600) : 0;
     if (cooldownMs > 0 && now - lastRerouteAtRef.current < cooldownMs) return;
 
     rerouteInFlightRef.current = true;
@@ -785,7 +789,13 @@ export function useNavigation(params: {
     const reroute = async () => {
       try {
         const dest = navigationData.destination;
-        const res = await fetchDirections(dest, userLocation);
+        const timeout = new Promise<FetchDirectionsResult>((resolve) =>
+          setTimeout(() => resolve({ ok: false, reason: 'route_failed', message: 'Reroute timed out.' }), 8000),
+        );
+        const res = await Promise.race([
+          fetchDirections(dest, userLocation, { fastSingleRoute: true }),
+          timeout,
+        ]);
         if (res.ok) {
           lastRerouteAtRef.current = Date.now();
         }

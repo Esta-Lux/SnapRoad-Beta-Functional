@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Skeleton from '../common/Skeleton';
@@ -75,8 +75,18 @@ export function OfferDetailModal({
       <TouchableOpacity style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]} activeOpacity={1} onPress={onClose}>
         <View style={[rewardsStyles.modalSheet, { backgroundColor: cardBg, borderTopWidth: 1, borderColor: `${primary}22` }]} onStartShouldSetResponder={() => true}>
           <View style={[rewardsStyles.modalHandle, { backgroundColor: sub }]} />
+          {selectedOffer?.image_url ? (
+            <View style={{ width: '100%', height: 148, borderRadius: 16, overflow: 'hidden', marginBottom: 16 }}>
+              <Image source={{ uri: selectedOffer.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            </View>
+          ) : null}
           <Text style={[rewardsStyles.modalTitle, { color: text }]}>{selectedOffer?.business_name}</Text>
           <Text style={{ color: sub, fontSize: 14, marginBottom: 16, lineHeight: 20 }}>{selectedOffer?.description ?? `${selectedOffer?.discount_percent}% off`}</Text>
+          {selectedOffer?.address ? <Text style={{ color: sub, fontSize: 12, marginBottom: 14 }}>{selectedOffer.address}</Text> : null}
+          <View style={{ alignItems: 'center', marginBottom: 14 }}>
+            <Text style={{ color: primary, fontSize: 22, fontWeight: '900' }}>{selectedOffer?.gem_cost ?? selectedOffer?.gems_reward ?? 0} gems</Text>
+            <Text style={{ color: sub, fontSize: 12, fontWeight: '700' }}>Redeem cost</Text>
+          </View>
           {!selectedOffer?.redeemed && (
             <TouchableOpacity
               disabled={redeemingOfferId === selectedOffer?.id}
@@ -90,7 +100,7 @@ export function OfferDetailModal({
                 end={{ x: 1, y: 0.5 }}
                 style={{ borderRadius: 14, paddingVertical: 15, alignItems: 'center' }}
               >
-                <Text style={rewardsStyles.navBtnText}>{redeemingOfferId === selectedOffer?.id ? 'Redeeming...' : 'Redeem Offer'}</Text>
+                <Text style={rewardsStyles.navBtnText}>{redeemingOfferId === selectedOffer?.id ? 'Redeeming...' : 'Redeem For Gems'}</Text>
               </LinearGradient>
             </TouchableOpacity>
           )}
@@ -146,6 +156,11 @@ export function AllOffersModal({
             )}
             {offers.map((o) => (
               <TouchableOpacity key={o.id} style={[rewardsStyles.offerCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]} onPress={() => onSelectOffer(o)} activeOpacity={0.82}>
+                {o.image_url ? (
+                  <View style={{ width: 56, height: 56, borderRadius: 14, overflow: 'hidden', marginRight: 12 }}>
+                    <Image source={{ uri: o.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                  </View>
+                ) : null}
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <View style={{ backgroundColor: `${primary}20`, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
@@ -154,11 +169,12 @@ export function AllOffersModal({
                     <Text style={[rewardsStyles.offerBiz, { color: text, flex: 1 }]} numberOfLines={1}>{o.business_name}</Text>
                   </View>
                   <Text style={{ color: sub, fontSize: 12 }} numberOfLines={2}>{o.description ?? `${o.discount_percent}% off`}</Text>
+                  {o.address ? <Text style={{ color: sub, fontSize: 11, marginTop: 4 }} numberOfLines={1}>{o.address}</Text> : null}
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 4 }}>
                   <Ionicons name={o.redeemed ? 'checkmark-done' : 'diamond-outline'} size={18} color={o.redeemed ? success : primary} />
                   <Text style={{ color: o.redeemed ? success : primary, fontSize: 12, fontWeight: '800' }}>
-                    {o.redeemed ? 'Redeemed' : `+${o.gems_reward ?? 0}`}
+                    {o.redeemed ? 'Redeemed' : `${o.gem_cost ?? o.gems_reward ?? 0} gems`}
                   </Text>
                 </View>
               </TouchableOpacity>

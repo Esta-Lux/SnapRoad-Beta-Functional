@@ -229,6 +229,30 @@ class PartnerApiService {
     })
   }
 
+  async uploadOfferImage(file: File): Promise<any> {
+    const token = this.getToken()
+    const form = new FormData()
+    form.append('file', file)
+    const response = await fetch(`${getApiBaseUrl()}/api/partner/offers/upload-image?partner_id=${this.partnerId}`, {
+      method: 'POST',
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: form,
+    })
+    if (!response.ok) {
+      let detail = ''
+      try {
+        const payload = await response.clone().json()
+        detail = messageFromHttpJson(payload, response.status)
+      } catch {
+        detail = messageFromHttpJson(null, response.status)
+      }
+      throw new Error(detail || `Upload failed (${response.status})`)
+    }
+    return response.json()
+  }
+
   async deleteOffer(offerId: string): Promise<any> {
     return this.request(`/api/partner/offers/${offerId}?partner_id=${this.partnerId}`, {
       method: 'DELETE',

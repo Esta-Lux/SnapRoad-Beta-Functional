@@ -210,6 +210,16 @@ def complete_offer_redemption(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
 ) -> dict:
+    from services.runtime_config import require_enabled
+
+    require_enabled(
+        "offer_redemptions_enabled",
+        "Offer redemptions are temporarily disabled.",
+    )
+    require_enabled(
+        "gems_rewards_enabled",
+        "Offer redemptions are temporarily unavailable.",
+    )
     sb = _sb()
     existing_redemption = (
         sb.table("redemptions")
@@ -227,16 +237,25 @@ def complete_offer_redemption(
     premium_disc = offer.get("premium_discount_percent") or offer.get("discount_percent", 0)
     free_disc = offer.get("free_discount_percent") or calculate_free_discount(premium_disc)
     discount = premium_disc if is_premium else free_disc
-    gem_reward = int(offer.get("base_gems") or offer.get("gems_reward") or 25)
+    gem_cost = int(offer.get("base_gems") or offer.get("gem_cost") or offer.get("gems_reward") or 25)
+    current_gems = int(user_profile.get("gems") or 0)
+    if current_gems < gem_cost:
+        return {
+            "success": False,
+            "message": f"You need {gem_cost} gems to redeem this offer.",
+            "data": {
+                "gem_cost": gem_cost,
+                "current_gems": current_gems,
+            },
+        }
 
     try:
-        sb.rpc("increment_gems", {"uid": user_id, "amount": gem_reward}).execute()
+        sb.rpc("increment_gems", {"uid": user_id, "amount": -gem_cost}).execute()
     except Exception:
         try:
-            current = int(user_profile.get("gems") or 0)
-            sb.table("profiles").update({"gems": current + gem_reward}).eq("id", user_id).execute()
+            sb.table("profiles").update({"gems": max(0, current_gems - gem_cost)}).eq("id", user_id).execute()
         except Exception as exc:
-            logger.warning("Gem update failed for user %s: %s", user_id, exc)
+            logger.warning("Gem debit failed for user %s: %s", user_id, exc)
 
     fee_record = record_redemption_fee(offer.get("partner_id"))
     redeemed_at = datetime.now(timezone.utc).isoformat()
@@ -256,7 +275,7 @@ def complete_offer_redemption(
         "offer_id": offer.get("id"),
         "user_id": user_id,
         "partner_id": offer.get("partner_id"),
-        "gems_earned": gem_reward,
+        "gems_earned": -gem_cost,
         "discount_applied": discount,
         "fee_amount": fee_record["fee_amount"],
         "fee_cents": fee_record["fee_cents"],
@@ -286,7 +305,8 @@ def complete_offer_redemption(
         "success": True,
         "data": {
             "discount_percent": discount,
-            "gems_earned": gem_reward,
+            "gem_cost": gem_cost,
+            "gems_earned": -gem_cost,
             "new_gem_total": _next_gem_total(user_id),
             "is_free_item": offer.get("is_free_item", False),
             "fee_cents": fee_record["fee_cents"],
@@ -371,9 +391,11 @@ def get_offers(
                 "premium_discount_percent": premium_disc,
                 "free_discount_percent": free_disc,
                 "is_free_item": offer.get("is_free_item", False),
+                "gem_cost": offer.get("base_gems", 0),
                 "gems_reward": offer.get("base_gems", 0),
                 "base_gems": offer.get("base_gems", 0),
                 "address": offer.get("address"),
+                "image_url": offer.get("image_url"),
                 "lat": offer.get("lat", 0),
                 "lng": offer.get("lng", 0),
                 "offer_url": offer.get("offer_url"),
@@ -483,6 +505,7 @@ def get_nearby_offers(
             affinity_score, boosted = _user_offer_affinity(aff_user, offer)
             nearby.append({
                 **offer,
+                "gem_cost": offer.get("base_gems", 0),
                 "distance_km": round(dist_km, 2),
                 "offer_type": _offer_type(offer),
                 "boost_multiplier": offer.get("boost_multiplier", 1.0),

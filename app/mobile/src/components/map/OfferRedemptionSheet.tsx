@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import * as ScreenCapture from 'expo-screen-capture';
 import { api } from '../../api/client';
 import type { Offer } from '../../types';
+import { useTheme } from '../../contexts/ThemeContext';
 
 let QRCode: any = null;
 try { QRCode = require('react-native-qrcode-svg').default; } catch {}
@@ -25,6 +26,7 @@ function gemColor(discount: number): string {
 }
 
 export default function OfferRedemptionSheet({ offer, onDismiss, onRedeem, onNavigate, userLocation }: Props) {
+  const { colors, isLight } = useTheme();
   const color = gemColor(offer.discount_percent);
   const [showQR, setShowQR] = useState(false);
   const [qrToken, setQrToken] = useState('');
@@ -92,59 +94,68 @@ export default function OfferRedemptionSheet({ offer, onDismiss, onRedeem, onNav
   })();
 
   return (
-    <Animated.View entering={SlideInDown.springify().damping(18)} exiting={SlideOutDown.duration(200)} style={styles.container}>
-      <View style={styles.handle} />
+    <Animated.View entering={SlideInDown.springify().damping(18)} exiting={SlideOutDown.duration(200)} style={[styles.container, {
+      backgroundColor: isLight ? 'rgba(255,255,255,0.98)' : 'rgba(15,23,42,0.94)',
+      borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
+    }]}>
+      <View style={[styles.handle, { backgroundColor: isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)' }]} />
       {showQR ? (
         <View style={styles.qrSection}>
-          <Text style={styles.qrTitle}>Show this to redeem</Text>
-          <Text style={styles.qrCountdown}>{countdownText || 'Generating secure QR...'}</Text>
-          <View style={styles.qrBox}>
+          <Text style={[styles.qrTitle, { color: colors.text }]}>Show this to redeem</Text>
+          <Text style={[styles.qrCountdown, { color: colors.primary }]}>{countdownText || 'Generating secure QR...'}</Text>
+          <View style={[styles.qrBox, { backgroundColor: isLight ? colors.surfaceSecondary : 'rgba(255,255,255,0.06)' }]}>
             {qrLoading ? (
-              <ActivityIndicator color="#f8fafc" />
+              <ActivityIndicator color={colors.text} />
             ) : qrError ? (
-              <Text style={styles.qrFallback}>{qrError}</Text>
+              <Text style={[styles.qrFallback, { color: colors.textSecondary }]}>{qrError}</Text>
             ) : QRCode && qrToken ? (
-              <QRCode value={qrToken} size={180} backgroundColor="transparent" color="#f8fafc" />
+              <QRCode value={qrToken} size={180} backgroundColor="transparent" color={colors.text} />
             ) : (
-              <Text style={styles.qrFallback}>{qrToken || 'QR unavailable right now.'}</Text>
+              <Text style={[styles.qrFallback, { color: colors.textSecondary }]}>{qrToken || 'QR unavailable right now.'}</Text>
             )}
           </View>
-          <Text style={styles.qrBusiness}>{offer.business_name}</Text>
-          <Text style={styles.qrDiscount}>{offer.discount_percent > 0 ? `${offer.discount_percent}% off` : 'Free item'}</Text>
-          <TouchableOpacity style={styles.qrDone} onPress={() => { setShowQR(false); onDismiss(); }}>
+          <Text style={[styles.qrBusiness, { color: colors.text }]}>{offer.business_name}</Text>
+          <Text style={[styles.qrDiscount, { color }]}>{offer.discount_percent > 0 ? `${offer.discount_percent}% off` : 'Free item'}</Text>
+          <TouchableOpacity style={[styles.qrDone, { backgroundColor: colors.primary }]} onPress={() => { setShowQR(false); onDismiss(); }}>
             <Text style={styles.qrDoneText}>Done</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <>
+          {offer.image_url ? (
+            <View style={styles.heroImageWrap}>
+              <Image source={{ uri: offer.image_url }} style={styles.heroImage} resizeMode="cover" />
+            </View>
+          ) : null}
           <View style={styles.header}>
             <View style={[styles.gemBadge, { backgroundColor: color }]}>
               <Text style={styles.gemIcon}>💎</Text>
             </View>
             <View style={{ flex: 1, marginLeft: 14 }}>
-              <Text style={styles.business}>{offer.business_name}</Text>
-              <Text style={styles.discount}>{offer.discount_percent > 0 ? `${offer.discount_percent}% off` : 'Free item'}</Text>
-              {offer.description ? <Text style={styles.desc} numberOfLines={2}>{offer.description}</Text> : null}
+              <Text style={[styles.business, { color: colors.text }]}>{offer.business_name}</Text>
+              <Text style={[styles.discount, { color }]}>{offer.discount_percent > 0 ? `${offer.discount_percent}% off` : 'Free item'}</Text>
+              {offer.address ? <Text style={[styles.address, { color: colors.textSecondary }]} numberOfLines={2}>{offer.address}</Text> : null}
+              {offer.description ? <Text style={[styles.desc, { color: colors.textSecondary }]} numberOfLines={2}>{offer.description}</Text> : null}
             </View>
-            <TouchableOpacity onPress={onDismiss} style={styles.closeBtn}>
-              <Ionicons name="close" size={18} color="#94a3b8" />
+            <TouchableOpacity onPress={onDismiss} style={[styles.closeBtn, { backgroundColor: isLight ? colors.surfaceSecondary : 'rgba(255,255,255,0.08)' }]}>
+              <Ionicons name="close" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
-          <View style={styles.rewardRow}>
+          <View style={[styles.rewardRow, { backgroundColor: isLight ? `${color}12` : 'rgba(245,158,11,0.1)' }]}>
             <Text style={styles.rewardIcon}>✨</Text>
-            <Text style={styles.rewardText}>Earn {offer.gems_reward ?? 0} gems</Text>
+            <Text style={[styles.rewardText, { color }]}>{offer.gem_cost ?? offer.gems_reward ?? 0} gem redeem cost</Text>
           </View>
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.redeemBtn} onPress={() => onRedeem(offer)}>
-              <Text style={styles.redeemText}>Redeem Now</Text>
+            <TouchableOpacity style={[styles.redeemBtn, { backgroundColor: color }]} onPress={() => onRedeem(offer)}>
+              <Text style={styles.redeemText}>Redeem For Gems</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.qrBtn} onPress={() => setShowQR(true)}>
-              <Ionicons name="qr-code-outline" size={16} color="#f8fafc" />
-              <Text style={styles.qrBtnText}>Show QR</Text>
+            <TouchableOpacity style={[styles.qrBtn, { backgroundColor: isLight ? colors.surfaceSecondary : 'rgba(255,255,255,0.08)', borderColor: isLight ? colors.border : 'rgba(255,255,255,0.08)' }]} onPress={() => setShowQR(true)}>
+              <Ionicons name="qr-code-outline" size={16} color={colors.text} />
+              <Text style={[styles.qrBtnText, { color: colors.text }]}>Show QR</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.dirBtn} onPress={() => (onNavigate ? onNavigate(offer) : onDismiss())}>
-              <Ionicons name="navigate" size={16} color="#60a5fa" />
-              <Text style={styles.dirText}>Directions</Text>
+            <TouchableOpacity style={[styles.dirBtn, { backgroundColor: isLight ? `${colors.primary}12` : 'rgba(59,130,246,0.12)', borderColor: isLight ? `${colors.primary}25` : 'rgba(59,130,246,0.2)' }]} onPress={() => (onNavigate ? onNavigate(offer) : onDismiss())}>
+              <Ionicons name="navigate" size={16} color={colors.primary} />
+              <Text style={[styles.dirText, { color: colors.primary }]}>Directions</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -167,11 +178,14 @@ const styles = StyleSheet.create({
     }),
   },
   handle: { width: 40, height: 5, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3, alignSelf: 'center', marginBottom: 18 },
+  heroImageWrap: { width: '100%', height: 140, borderRadius: 18, overflow: 'hidden', marginBottom: 16 },
+  heroImage: { width: '100%', height: '100%' },
   header: { flexDirection: 'row', alignItems: 'flex-start' },
   gemBadge: { width: 52, height: 52, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
   gemIcon: { fontSize: 24 },
   business: { fontSize: 18, fontWeight: '800', color: '#f8fafc', letterSpacing: -0.3 },
   discount: { fontSize: 15, fontWeight: '700', color: '#F59E0B', marginTop: 2 },
+  address: { fontSize: 12, marginTop: 3, lineHeight: 17 },
   desc: { fontSize: 13, color: '#94a3b8', marginTop: 4, lineHeight: 18 },
   closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.08)', justifyContent: 'center', alignItems: 'center' },
   rewardRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, backgroundColor: 'rgba(245,158,11,0.1)', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 },

@@ -3,6 +3,7 @@ export interface Offer {
   title: string
   description: string
   discount_percent: number
+  gem_cost: number
   gems_reward: number
   redemption_count: number
   views: number
@@ -11,6 +12,7 @@ export interface Offer {
   created_at: string
   expires_at: string
   image_url?: string
+  address?: string
   location_id?: string
   location_name?: string
   is_boosted?: boolean

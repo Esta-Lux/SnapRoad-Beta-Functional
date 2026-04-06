@@ -3,6 +3,7 @@ import { TouchableOpacity, View, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import type { Offer } from '../../types';
+import MapPinMarker from './MapPinMarker';
 
 interface Props { offers: Offer[]; onOfferTap?: (offer: Offer) => void; }
 
@@ -11,6 +12,13 @@ function tierFill(d: number): string {
   if (d >= 10) return '#6D28D9';
   if (d >= 5) return '#1D4ED8';
   return '#166534';
+}
+
+function tierGradient(d: number): [string, string] {
+  if (d >= 20) return ['#F59E0B', '#B45309'];
+  if (d >= 10) return ['#8B5CF6', '#6D28D9'];
+  if (d >= 5) return ['#3B82F6', '#1D4ED8'];
+  return ['#22C55E', '#166534'];
 }
 
 function markerSize(offer: Offer): { disc: number; glow: number; icon: number } {
@@ -54,17 +62,14 @@ export default React.memo(function OfferMarkers({ offers, onOfferTap }: Props) {
             anchor={{ x: 0.5, y: 0.5 }}
             allowOverlap
           >
-            <TouchableOpacity
-              activeOpacity={0.88}
+            <MapPinMarker
+              compact
               onPress={() => onOfferTap?.(offer)}
-              style={[styles.hit, { width: size.disc + 16, height: size.disc + 16 }]}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              gradientColors={tierGradient(offer.discount_percent)}
+              glowColor={`${fill}55`}
             >
-              <View style={[styles.glow, { width: size.glow, height: size.glow, borderRadius: size.glow / 2, backgroundColor: fill, opacity: 0.22 }]} />
-              <View style={[styles.disc, { width: size.disc, height: size.disc, borderRadius: size.disc / 2, backgroundColor: fill }]}>
-                <MaterialCommunityIcons name="diamond-stone" size={size.icon} color="#fff" />
-              </View>
-            </TouchableOpacity>
+              <MaterialCommunityIcons name="storefront-outline" size={size.icon} color="#fff" />
+            </MapPinMarker>
           </MB.MarkerView>
         );
       })}
@@ -76,24 +81,5 @@ const styles = StyleSheet.create({
   hit: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  glow: {
-    position: 'absolute',
-  },
-  disc: {
-    borderWidth: 2.5,
-    borderColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.22,
-        shadowRadius: 2.5,
-        shadowOffset: { width: 0, height: 1 },
-      },
-      android: { elevation: 3 },
-      default: {},
-    }),
   },
 });

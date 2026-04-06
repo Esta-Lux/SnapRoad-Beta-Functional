@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { X, MapPin, Plus, Check, Image, Gem, Gift, Loader2 } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { X, MapPin, Plus, Check, Gem, Gift, Loader2, Upload } from 'lucide-react'
 import type { PartnerProfile } from '@/types/partner'
 import { calculateAutoGems, calculateFreeDiscount } from '@/lib/offer-pricing'
 
@@ -7,7 +7,7 @@ interface NewOfferData {
   title: string
   description: string
   discount_percent: number
-  gems_reward: number
+  gem_cost: number
   is_free_item: boolean
   location_id: string
   expires_days: number
@@ -16,27 +16,29 @@ interface NewOfferData {
 interface Props {
   partnerProfile: PartnerProfile | null
   newOfferImage: string | null
+  uploadingImage?: boolean
   onClose: () => void
   onCreate: (data: NewOfferData, image: string | null) => Promise<void>
-  onOpenImageGenerator: () => void
+  onUploadImage: (file: File) => Promise<void>
   onClearImage: () => void
   onSwitchToLocations: () => void
 }
 
 export default function CreateOfferModal({
   partnerProfile, newOfferImage, onClose, onCreate,
-  onOpenImageGenerator, onClearImage, onSwitchToLocations,
+  uploadingImage = false, onUploadImage, onClearImage, onSwitchToLocations,
 }: Props) {
   const [data, setData] = useState<NewOfferData>({
     title: '',
     description: '',
     discount_percent: 15,
-    gems_reward: 0,
+    gem_cost: 0,
     is_free_item: false,
     location_id: partnerProfile?.locations[0]?.id || '',
     expires_days: 7,
   })
   const [submitting, setSubmitting] = useState(false)
+  const fileRef = useRef<HTMLInputElement | null>(null)
 
   const autoGems = calculateAutoGems(data.discount_percent, data.is_free_item)
   const freeDiscount = calculateFreeDiscount(data.discount_percent)
@@ -44,7 +46,7 @@ export default function CreateOfferModal({
   const handleCreate = async () => {
     setSubmitting(true)
     try {
-      await onCreate({ ...data, gems_reward: autoGems }, newOfferImage)
+      await onCreate({ ...data, gem_cost: autoGems }, newOfferImage)
     } finally {
       setSubmitting(false)
     }
@@ -66,10 +68,23 @@ export default function CreateOfferModal({
                   <button onClick={onClearImage} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full"><X size={14} /></button>
                 </div>
               )}
-              <button type="button" onClick={onOpenImageGenerator} className="w-full border-2 border-dashed border-purple-500/30 rounded-xl p-4 text-purple-400 hover:border-purple-500/50 hover:bg-purple-500/5 flex items-center justify-center gap-2">
-                <Image size={20} />
-                {newOfferImage ? 'Change Image' : 'Generate AI Image'}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  await onUploadImage(file)
+                  e.currentTarget.value = ''
+                }}
+              />
+              <button type="button" onClick={() => fileRef.current?.click()} className="w-full border-2 border-dashed border-emerald-500/30 rounded-xl p-4 text-emerald-300 hover:border-emerald-500/50 hover:bg-emerald-500/5 flex items-center justify-center gap-2">
+                {uploadingImage ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+                {newOfferImage ? 'Replace Storefront Photo' : 'Upload Storefront Photo'}
               </button>
+              <p className="text-xs text-slate-400 -mt-2">Required: upload a real photo of the front of the store.</p>
 
               <div>
                 <label className="text-slate-400 text-sm mb-1 block flex items-center gap-2">
@@ -140,7 +155,7 @@ export default function CreateOfferModal({
                 )}
                 <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-3 flex items-center justify-between">
                   <span className="text-slate-300 text-sm flex items-center gap-2">
-                    <Gem size={16} className="text-cyan-400" /> Auto Gem Reward
+                    <Gem size={16} className="text-cyan-400" /> Redeem Cost
                   </span>
                   <span className="text-cyan-400 font-bold text-lg">{autoGems} gems</span>
                 </div>
@@ -158,7 +173,7 @@ export default function CreateOfferModal({
               </div>
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={onClose} disabled={submitting} className="flex-1 bg-slate-700/50 text-white py-3 rounded-xl hover:bg-slate-700 disabled:opacity-50">Cancel</button>
-                <button type="button" onClick={handleCreate} disabled={!data.title || !data.location_id || submitting}
+                <button type="button" onClick={handleCreate} disabled={!data.title || !data.location_id || !newOfferImage || submitting || uploadingImage}
                   className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl hover:from-emerald-400 hover:to-teal-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                   {submitting ? <><Loader2 size={18} className="animate-spin" /> Creating...</> : 'Create Offer'}
                 </button>

@@ -423,7 +423,7 @@ export function getModeDirectionsConfig(mode: DrivingMode): { profile: Direction
 export async function getMapboxRouteOptions(
   origin: Coordinate,
   destination: Coordinate,
-  options?: { maxHeightMeters?: number; mode?: DrivingMode },
+  options?: { maxHeightMeters?: number; mode?: DrivingMode; fastSingleRoute?: boolean },
 ): Promise<DirectionsResult[]> {
   if (!isMapboxDirectionsConfigured()) {
     throw new Error('Mapbox access token is not configured. Set EXPO_PUBLIC_MAPBOX_TOKEN (bundle or Expo extra mapboxPublicToken).');
@@ -441,7 +441,7 @@ export async function getMapboxRouteOptions(
     `${tokenQS}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
   const coordsPath = `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
 
-  const trafficUrl = `${DIRECTIONS_BASE}/${modeConfig.profile}/${coordsPath}?${commonQS}&alternatives=true`;
+  const trafficUrl = `${DIRECTIONS_BASE}/${modeConfig.profile}/${coordsPath}?${commonQS}&alternatives=${options?.fastSingleRoute ? 'false' : 'true'}`;
   const trafficRes = await fetch(trafficUrl);
   const trafficJson = (await trafficRes.json().catch(() => ({}))) as { routes?: RawRoute[]; message?: string };
   if (!trafficRes.ok) {
@@ -454,11 +454,11 @@ export async function getMapboxRouteOptions(
   }
 
   const results: DirectionsResult[] = [parseRoute(trafficRoutes[0], 'best')];
-  for (let i = 1; i < trafficRoutes.length && results.length < 3; i++) {
+  for (let i = 1; i < trafficRoutes.length && !options?.fastSingleRoute && results.length < 3; i++) {
     results.push(parseRoute(trafficRoutes[i], 'alt'));
   }
 
-  if (results.length < 3) {
+  if (!options?.fastSingleRoute && results.length < 3) {
     try {
       const drivingUrl = `${DIRECTIONS_BASE}/driving/${coordsPath}?${commonQS}&alternatives=true`;
       const drivingRes = await fetch(drivingUrl);

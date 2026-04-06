@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Skeleton from '../common/Skeleton';
@@ -220,6 +220,11 @@ export function OffersPreview({
           activeOpacity={0.82}
         >
           <LinearGradient colors={[`${success}35`, `${success}08`]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: 16, borderBottomLeftRadius: 16 }} />
+          {o.image_url ? (
+            <View style={{ width: 58, height: 58, borderRadius: 14, overflow: 'hidden', marginRight: 12, backgroundColor: border }}>
+              <Image source={{ uri: o.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            </View>
+          ) : null}
           <View style={{ flex: 1, paddingLeft: 6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <View style={{ backgroundColor: `${primary}20`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
@@ -228,14 +233,15 @@ export function OffersPreview({
               <Text style={[rewardsStyles.offerBiz, { color: text, flex: 1 }]} numberOfLines={1}>{o.business_name}</Text>
             </View>
             <Text style={{ color: sub, fontSize: 12 }} numberOfLines={2}>{o.description ?? `${o.discount_percent}% off`}</Text>
+            {o.address ? <Text style={{ color: sub, fontSize: 11, marginTop: 4 }} numberOfLines={1}>{o.address}</Text> : null}
             {o.distance_km != null && <Text style={{ color: sub, fontSize: 11, marginTop: 4, fontWeight: '600' }}>{Number(o.distance_km).toFixed(1)} km away</Text>}
           </View>
           <View style={{ alignItems: 'flex-end', gap: 6, justifyContent: 'center' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: `${success}18`, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 }}>
               <Ionicons name="diamond-outline" size={14} color={success} />
-              <Text style={{ color: success, fontSize: 13, fontWeight: '800' }}>+{o.gems_reward ?? 0}</Text>
+              <Text style={{ color: success, fontSize: 13, fontWeight: '800' }}>{o.gem_cost ?? o.gems_reward ?? 0}</Text>
             </View>
-            <Text style={{ color: o.redeemed ? success : sub, fontSize: 11, fontWeight: '700' }}>{o.redeemed ? 'Redeemed' : 'Tap to view'}</Text>
+            <Text style={{ color: o.redeemed ? success : sub, fontSize: 11, fontWeight: '700' }}>{o.redeemed ? 'Redeemed' : 'Tap to view cost'}</Text>
           </View>
         </TouchableOpacity>
       ))}

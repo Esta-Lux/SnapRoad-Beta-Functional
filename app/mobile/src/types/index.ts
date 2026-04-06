@@ -158,7 +158,10 @@ export interface Offer {
   business_name: string;
   description?: string;
   discount_percent: number;
+  gem_cost?: number;
   gems_reward: number;
+  address?: string;
+  image_url?: string;
   lat?: number;
   lng?: number;
   business_type?: string;

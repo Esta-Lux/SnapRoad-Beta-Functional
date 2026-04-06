@@ -227,6 +227,7 @@ class PartnerOfferCreate(BaseModel):
     title: str
     description: str
     discount_percent: int
+    gem_cost: Optional[int] = None
     gems_reward: Optional[int] = None
     is_free_item: bool = False
     # Some clients send numeric IDs; coerce to string in routes.

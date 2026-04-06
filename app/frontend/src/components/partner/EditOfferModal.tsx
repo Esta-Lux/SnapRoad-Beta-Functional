@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react'
-import { X, Gift as GiftIcon, Check, MapPin, Gem } from 'lucide-react'
+import { useRef, useState, useMemo, useEffect } from 'react'
+import { X, Gift as GiftIcon, Check, MapPin, Gem, Loader2, Upload } from 'lucide-react'
 import type { Offer, PartnerProfile } from '@/types/partner'
 import { calculateAutoGems, calculateFreeDiscount } from '@/lib/offer-pricing'
 
@@ -11,11 +11,15 @@ interface Props {
     title: string
     description: string
     discount_percent: number
-    gems_reward: number
+    gem_cost: number
     is_free_item: boolean
     location_id: string
     expires_days: number
-  }) => Promise<void>
+  }, imageUrl: string | null) => Promise<void>
+  offerImage: string | null
+  uploadingImage?: boolean
+  onUploadImage: (file: File) => Promise<void>
+  onClearImage: () => void
 }
 
 function normalizeLocationId(loc: unknown): string {
@@ -23,12 +27,21 @@ function normalizeLocationId(loc: unknown): string {
   return String(loc).trim()
 }
 
-export default function EditOfferModal({ offer, partnerProfile, onClose, onUpdate }: Props) {
+export default function EditOfferModal({
+  offer,
+  partnerProfile,
+  onClose,
+  onUpdate,
+  offerImage,
+  uploadingImage = false,
+  onUploadImage,
+  onClearImage,
+}: Props) {
   const [formData, setFormData] = useState({
     title: offer.title,
     description: offer.description,
     discount_percent: offer.discount_percent,
-    gems_reward: offer.gems_reward,
+    gem_cost: offer.gem_cost || offer.gems_reward,
     is_free_item: (offer as any).is_free_item || false,
     location_id: normalizeLocationId(offer.location_id),
     expires_days: 7,
@@ -50,6 +63,7 @@ export default function EditOfferModal({ offer, partnerProfile, onClose, onUpdat
   const autoGems = calculateAutoGems(formData.discount_percent, formData.is_free_item)
   const freeDiscount = calculateFreeDiscount(formData.discount_percent)
   const [loading, setLoading] = useState(false)
+  const fileRef = useRef<HTMLInputElement | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -57,7 +71,7 @@ export default function EditOfferModal({ offer, partnerProfile, onClose, onUpdat
 
     setLoading(true)
     try {
-      await onUpdate(String(offer.id), { ...formData, gems_reward: autoGems })
+      await onUpdate(String(offer.id), { ...formData, gem_cost: autoGems }, offerImage)
     } finally {
       setLoading(false)
     }
@@ -82,6 +96,30 @@ export default function EditOfferModal({ offer, partnerProfile, onClose, onUpdat
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
+              {offerImage && (
+                <div className="relative">
+                  <img src={offerImage} alt="Storefront" className="w-full h-36 object-cover rounded-xl" />
+                  <button type="button" onClick={onClearImage} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full"><X size={14} /></button>
+                </div>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  await onUploadImage(file)
+                  e.currentTarget.value = ''
+                }}
+              />
+              <button type="button" onClick={() => fileRef.current?.click()} className="w-full border-2 border-dashed border-emerald-500/30 rounded-xl p-4 text-emerald-300 hover:border-emerald-500/50 hover:bg-emerald-500/5 flex items-center justify-center gap-2">
+                {uploadingImage ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+                {offerImage ? 'Replace Storefront Photo' : 'Upload Storefront Photo'}
+              </button>
+              <p className="text-xs text-slate-400 -mt-2">Required: upload a real photo of the front of the store.</p>
+
               <div>
                 <label className="text-slate-400 text-sm mb-1.5 block">
                   Offer Title <span className="text-red-400">*</span>
@@ -130,7 +168,7 @@ export default function EditOfferModal({ offer, partnerProfile, onClose, onUpdat
                 )}
                 <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-3 flex items-center justify-between">
                   <span className="text-slate-300 text-sm flex items-center gap-2">
-                    <Gem size={16} className="text-cyan-400" /> Auto Gem Reward
+                    <Gem size={16} className="text-cyan-400" /> Redeem Cost
                   </span>
                   <span className="text-cyan-400 font-bold text-lg">{autoGems} gems</span>
                 </div>
@@ -179,7 +217,7 @@ export default function EditOfferModal({ offer, partnerProfile, onClose, onUpdat
                 </button>
                 <button
                   type="submit"
-                  disabled={loading || !formData.title || !formData.location_id}
+                  disabled={loading || !formData.title || !formData.location_id || !offerImage || uploadingImage}
                   className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl hover:from-emerald-400 hover:to-teal-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {loading ? (

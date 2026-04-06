@@ -445,8 +445,10 @@ class ApiService {
   }
 
   async getOfferById(id: string): Promise<ApiResponse<Offer>> {
-    const res = await this.request<{ success?: boolean; data?: Offer }>(`/api/offers/${id}`);
-    if (!res.success) return res;
+    const res = await this.request<unknown>(`/api/offers/${id}`);
+    if (!res.success) {
+      return { success: false, error: res.error, message: res.message };
+    }
     const body = res.data as { success?: boolean; data?: Offer } | Offer | undefined;
     const offer =
       body && typeof body === 'object' && 'data' in body && (body as { data?: Offer }).data != null

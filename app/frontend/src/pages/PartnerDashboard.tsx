@@ -14,7 +14,6 @@ import type { Offer, PartnerProfile, Analytics, PartnerFeeSummary, PartnerRedemp
 
 import OnboardingWalkthrough from '@/components/partner/OnboardingWalkthrough'
 import PromotionWelcomeModal from '@/components/partner/PromotionWelcomeModal'
-import ImageGeneratorModal from '@/components/partner/ImageGeneratorModal'
 import BoostModal from '@/components/partner/BoostModal'
 import CreateOfferModal from '@/components/partner/CreateOfferModal'
 import EditOfferModal from '@/components/partner/EditOfferModal'
@@ -71,8 +70,9 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showBoostModal, setShowBoostModal] = useState<Offer | null>(null)
-  const [showImageGenerator, setShowImageGenerator] = useState(false)
   const [newOfferImage, setNewOfferImage] = useState<string | null>(null)
+  const [editingOfferImage, setEditingOfferImage] = useState<string | null>(null)
+  const [uploadingOfferImage, setUploadingOfferImage] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
@@ -317,13 +317,15 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
           title: o.title || o.business_name || '',
           description: o.description || '',
           discount_percent: o.discount_percent || 0,
-          gems_reward: o.base_gems || 0,
+          gem_cost: o.gem_cost || o.base_gems || 0,
+          gems_reward: o.gem_cost || o.base_gems || 0,
           redemption_count: o.redemption_count || 0,
           views: o.views || 0,
           status: o.status || 'active',
           created_at: o.created_at || '',
           expires_at: o.expires_at || '',
           image_url: o.image_url,
+          address: o.address,
           location_id: o.location_id,
           location_name: o.location_name,
         })))
@@ -420,9 +422,26 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
     } catch { sendNotification('system', 'Error', 'Failed to start checkout') }
   }
 
-  const handleCreateOffer = async (offerData: { title: string; description: string; discount_percent: number; gems_reward: number; is_free_item?: boolean; location_id: string; expires_days: number }, image: string | null) => {
-    if (!offerData.title || !offerData.location_id) {
-      sendNotification('system', 'Error', 'Please fill in all required fields and select a location.')
+  const handleUploadOfferImage = async (file: File, mode: 'create' | 'edit') => {
+    setUploadingOfferImage(true)
+    try {
+      const result = await partnerApi.uploadOfferImage(file)
+      const url = result?.data?.image_url || null
+      if (!url) throw new Error(result?.message || 'Could not upload storefront photo.')
+      if (mode === 'create') setNewOfferImage(url)
+      else setEditingOfferImage(url)
+      sendNotification('system', 'Storefront Photo Uploaded', 'Your storefront image is ready for this offer.')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not upload storefront photo.'
+      sendNotification('system', 'Upload failed', msg)
+    } finally {
+      setUploadingOfferImage(false)
+    }
+  }
+
+  const handleCreateOffer = async (offerData: { title: string; description: string; discount_percent: number; gem_cost: number; is_free_item?: boolean; location_id: string; expires_days: number }, image: string | null) => {
+    if (!offerData.title || !offerData.location_id || !image) {
+      sendNotification('system', 'Error', 'Please fill in all required fields, select a location, and upload a storefront photo.')
       return
     }
     try {
@@ -430,7 +449,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
         title: offerData.title,
         description: offerData.description,
         discount_percent: offerData.discount_percent,
-        gems_reward: offerData.gems_reward,
+        gem_cost: offerData.gem_cost,
         is_free_item: offerData.is_free_item ?? false,
         location_id: offerData.location_id,
         expires_hours: offerData.expires_days * 24,
@@ -452,18 +471,27 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
 
   const handleEditOffer = async (offerId: string) => {
     const offer = offers.find(o => String(o.id) === offerId)
-    if (offer) setEditingOffer(offer)
+    if (offer) {
+      setEditingOffer(offer)
+      setEditingOfferImage(offer.image_url || null)
+    }
   }
 
-  const handleUpdateOffer = async (offerId: string, offerData: { title: string; description: string; discount_percent: number; gems_reward: number; location_id: string; expires_days: number }) => {
+  const handleUpdateOffer = async (offerId: string, offerData: { title: string; description: string; discount_percent: number; gem_cost: number; is_free_item?: boolean; location_id: string; expires_days: number }, imageUrl: string | null) => {
+    if (!imageUrl) {
+      sendNotification('system', 'Offer not updated', 'A storefront photo is required for every offer.')
+      return
+    }
     try {
       const data = await partnerApi.updateOffer(offerId, {
         ...offerData,
         expires_hours: offerData.expires_days * 24,
+        image_url: imageUrl,
       })
       if (data.success) {
         sendNotification('offer', 'Offer Updated', 'Your offer has been updated successfully!')
         setEditingOffer(null)
+        setEditingOfferImage(null)
         loadData()
       } else {
         sendNotification('system', 'Offer not updated', data.message || 'Something went wrong. Please try again.')
@@ -547,14 +575,14 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
           await loadData()
         } catch { sendNotification('system', 'Error', 'Failed to apply boost'); setShowBoostModal(null) }
       }} />}
-      {showImageGenerator && <ImageGeneratorModal onClose={() => setShowImageGenerator(false)} onGenerate={(url) => setNewOfferImage(url)} />}
       {showCreateModal && (
         <CreateOfferModal
           partnerProfile={partnerProfile}
           newOfferImage={newOfferImage}
+          uploadingImage={uploadingOfferImage}
           onClose={() => setShowCreateModal(false)}
           onCreate={handleCreateOffer}
-          onOpenImageGenerator={() => setShowImageGenerator(true)}
+          onUploadImage={(file) => handleUploadOfferImage(file, 'create')}
           onClearImage={() => setNewOfferImage(null)}
           onSwitchToLocations={() => navigateTab('locations')}
         />
@@ -564,8 +592,15 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
         <EditOfferModal
           offer={editingOffer}
           partnerProfile={partnerProfile}
-          onClose={() => setEditingOffer(null)}
+          offerImage={editingOfferImage}
+          uploadingImage={uploadingOfferImage}
+          onClose={() => {
+            setEditingOffer(null)
+            setEditingOfferImage(null)
+          }}
           onUpdate={handleUpdateOffer}
+          onUploadImage={(file) => handleUploadOfferImage(file, 'edit')}
+          onClearImage={() => setEditingOfferImage(null)}
         />
       )}
 
