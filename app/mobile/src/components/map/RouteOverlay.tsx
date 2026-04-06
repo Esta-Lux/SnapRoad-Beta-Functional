@@ -45,43 +45,36 @@ export default React.memo(function RouteOverlay({
 }: Props) {
   const hasCongestion = showCongestion && congestion && congestion.length > 0;
 
+  const fullCoords = useMemo(
+    () => polyline.map((p): [number, number] => [p.lng, p.lat]),
+    [polyline],
+  );
+
   const geoJSON = useMemo(() => {
     if (polyline.length < 2)
       return { type: 'FeatureCollection' as const, features: [] };
 
-    if (!isNavigating) {
-      if (hasCongestion) {
-        return buildCongestionFeatures(polyline, congestion!, 'ahead');
-      }
-      return {
-        type: 'FeatureCollection' as const,
-        features: [
-          {
-            type: 'Feature' as const,
-            properties: { segment: 'ahead', congestion: 'unknown' },
-            geometry: {
-              type: 'LineString' as const,
-              coordinates: polyline.map((p) => [p.lng, p.lat]),
-            },
-          },
-        ],
-      };
-    }
+    // Always include the full route as a 'base' feature so glow/casing are continuous.
+    const baseLine: GeoJSON.Feature = {
+      type: 'Feature',
+      properties: { segment: 'base', congestion: 'unknown' },
+      geometry: { type: 'LineString', coordinates: fullCoords },
+    };
 
-    if (!routeSplit) {
+    if (!isNavigating || !routeSplit) {
       if (hasCongestion) {
-        return buildCongestionFeatures(polyline, congestion!, 'ahead');
+        const cf = buildCongestionFeatures(polyline, congestion!, 'ahead');
+        cf.features.unshift(baseLine);
+        return cf;
       }
       return {
         type: 'FeatureCollection' as const,
         features: [
+          baseLine,
           {
             type: 'Feature' as const,
             properties: { segment: 'ahead', congestion: 'unknown' },
-            geometry: {
-              type: 'LineString' as const,
-              coordinates: polyline.map((p) => [p.lng, p.lat]),
-            },
+            geometry: { type: 'LineString' as const, coordinates: fullCoords },
           },
         ],
       };
@@ -96,7 +89,7 @@ export default React.memo(function RouteOverlay({
       return { type: 'FeatureCollection' as const, features: [] };
     }
 
-    const features: GeoJSON.Feature[] = [];
+    const features: GeoJSON.Feature[] = [baseLine];
 
     if (rings.passedLngLat.length >= 2) {
       features.push({
@@ -130,7 +123,7 @@ export default React.memo(function RouteOverlay({
     }
 
     return { type: 'FeatureCollection' as const, features };
-  }, [polyline, isNavigating, routeSplit, hasCongestion, congestion, showCongestion]);
+  }, [polyline, fullCoords, isNavigating, routeSplit, hasCongestion, congestion, showCongestion]);
 
   if (polyline.length < 2 || !MapboxGL) return null;
 
@@ -163,21 +156,10 @@ export default React.memo(function RouteOverlay({
       shape={geoJSON as GeoJSON.FeatureCollection}
       lineMetrics={false}
     >
-      <MapboxGL.LineLayer
-        id="sr-route-passed"
-        filter={['==', ['get', 'segment'], 'passed']}
-        style={{
-          lineColor: passedColor,
-          lineWidth: routeWidth,
-          lineOpacity: 0.85,
-          lineCap: 'round',
-          lineJoin: 'round',
-        }}
-      />
-
+      {/* Continuous glow on the full-route base feature — no split seam */}
       <MapboxGL.LineLayer
         id="sr-route-glow"
-        filter={['==', ['get', 'segment'], 'ahead']}
+        filter={['==', ['get', 'segment'], 'base']}
         style={{
           lineColor: effectiveGlowColor,
           lineWidth: routeWidth * 2.8,
@@ -186,12 +168,12 @@ export default React.memo(function RouteOverlay({
           lineCap: 'round',
           lineJoin: 'round',
         }}
-        aboveLayerID="sr-route-passed"
       />
 
+      {/* Continuous casing on the full-route base feature */}
       <MapboxGL.LineLayer
         id="sr-route-casing"
-        filter={['==', ['get', 'segment'], 'ahead']}
+        filter={['==', ['get', 'segment'], 'base']}
         style={{
           lineColor: casingColor,
           lineWidth: routeWidth + 3,
@@ -202,6 +184,21 @@ export default React.memo(function RouteOverlay({
         aboveLayerID="sr-route-glow"
       />
 
+      {/* Passed (gray) route on top of casing */}
+      <MapboxGL.LineLayer
+        id="sr-route-passed"
+        filter={['==', ['get', 'segment'], 'passed']}
+        style={{
+          lineColor: passedColor,
+          lineWidth: routeWidth,
+          lineOpacity: 0.85,
+          lineCap: 'round',
+          lineJoin: 'round',
+        }}
+        aboveLayerID="sr-route-casing"
+      />
+
+      {/* Ahead (colored) route on top of passed */}
       <MapboxGL.LineLayer
         id="sr-route-ahead"
         filter={['==', ['get', 'segment'], 'ahead']}
@@ -212,7 +209,7 @@ export default React.memo(function RouteOverlay({
           lineCap: 'round',
           lineJoin: 'round',
         }}
-        aboveLayerID="sr-route-casing"
+        aboveLayerID="sr-route-passed"
       />
     </MapboxGL.ShapeSource>
   );

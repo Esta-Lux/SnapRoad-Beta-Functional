@@ -326,17 +326,19 @@ export function buildRouteSplitRingsFromProgress(
   const passedDeduped = dedupeCoordRing(passedRaw);
   passedDeduped.push(splitPair);
 
-  const aheadRaw: [number, number][] = [];
+  // Ahead ring starts one vertex BEFORE the split so glow/casing
+  // overlaps the passed line end — eliminates the visible seam.
+  const aheadRaw: [number, number][] = [toPair(polyline[segIdx]!)];
+  aheadRaw.push(splitPair);
   for (let k = segIdx + 1; k < n; k++) {
     aheadRaw.push(toPair(polyline[k]!));
   }
   const aheadDeduped = dedupeCoordRing(aheadRaw);
-  aheadDeduped.unshift(splitPair);
 
   return {
     passedLngLat: passedDeduped.length >= 2 ? passedDeduped : [],
     aheadLngLat: aheadDeduped.length >= 2 ? aheadDeduped : [],
-    firstAheadEdgeIndex: segIdx,
+    firstAheadEdgeIndex: Math.max(0, segIdx - 1),
   };
 }
 
