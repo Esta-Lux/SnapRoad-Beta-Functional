@@ -1,7 +1,8 @@
-# OTA runs on GitHub runners — app.config.ts needs EXPO_PUBLIC_* at bundle time.
-# Add repository secrets (same values as Expo → Environment variables → production):
-#   EXPO_PUBLIC_MAPBOX_TOKEN (required; Expo dashboard alone does not inject into CI)
-# See: https://docs.expo.dev/eas/environment-variables/
+# OTA on GitHub: only EXPO_TOKEN is required in repo secrets. We run
+# `eas env:pull production` to sync Expo → Environment variables (production) into
+# app/mobile/.env, then source it so EXPO_PUBLIC_* are in the shell for the bundler.
+# Optional: set repository secret EXPO_PUBLIC_MAPBOX_TOKEN to override the pulled value.
+# https://docs.expo.dev/eas/environment-variables/
 name: EAS Update
 
 on:
@@ -43,17 +44,23 @@ jobs:
             exit 1
           fi
 
-      - name: Verify EXPO_PUBLIC_MAPBOX_TOKEN (required for OTA bundle on CI)
-        env:
-          EXPO_PUBLIC_MAPBOX_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}
-        run: |
-          if [ -z "$EXPO_PUBLIC_MAPBOX_TOKEN" ]; then
-            echo "::error::Add repository secret EXPO_PUBLIC_MAPBOX_TOKEN (same public Mapbox token as Expo → Environment variables → production). GitHub runs \`eas update\` locally; app.config.ts reads EXPO_PUBLIC_MAPBOX_TOKEN during bundling. Setting the token only in Expo is not enough for this workflow unless eas env:exec injects it (often flaky with nested CLI)."
-            exit 1
-          fi
-
       - name: Install dependencies
         run: cd app/mobile && npm ci
+
+      - name: Pull Expo production env (Mapbox, Supabase, etc.)
+        working-directory: app/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli env:pull production --non-interactive --path .env
+          if [ ! -f .env ]; then
+            echo "::error::eas env:pull did not create .env. Check EXPO_TOKEN and EAS project access."
+            exit 1
+          fi
+          if ! grep -q '^EXPO_PUBLIC_MAPBOX_TOKEN=' .env; then
+            echo "::error::EXPO_PUBLIC_MAPBOX_TOKEN is missing from Expo → Environment variables → production. Add the Mapbox public (pk.) token there (Plain text or Sensitive), then re-run."
+            exit 1
+          fi
 
       - name: EAS Update (production iOS)
         working-directory: app/mobile
@@ -64,10 +71,15 @@ jobs:
           CI: "1"
           APP_ENV: production
           EXPO_PUBLIC_API_URL: https://api.snaproad.app
-          EXPO_PUBLIC_MAPBOX_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
         run: |
+          set -a
+          [ -f .env ] && . ./.env
+          set +a
+          if [ -n "${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}" ]; then
+            export EXPO_PUBLIC_MAPBOX_TOKEN="${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}"
+          fi
           SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
           if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
           npx eas-cli update --channel production --environment production --platform ios --non-interactive --message "${SAFE_MSG}-ios"
@@ -81,10 +93,15 @@ jobs:
           CI: "1"
           APP_ENV: production
           EXPO_PUBLIC_API_URL: https://api.snaproad.app
-          EXPO_PUBLIC_MAPBOX_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
         run: |
+          set -a
+          [ -f .env ] && . ./.env
+          set +a
+          if [ -n "${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}" ]; then
+            export EXPO_PUBLIC_MAPBOX_TOKEN="${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}"
+          fi
           SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
           if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
           npx eas-cli update --channel production --environment production --platform android --non-interactive --message "${SAFE_MSG}-android"

@@ -218,7 +218,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
             "[app.config] Mapbox public token is empty for a production build/update publish. " +
               "Set EXPO_PUBLIC_MAPBOX_TOKEN in Expo → Environment variables for `production` " +
               "(Plain text or Sensitive; not Secret), and publish OTA with `--environment production`. " +
-              "For GitHub Actions OTA, also add repository secret EXPO_PUBLIC_MAPBOX_TOKEN (CI bundles on the runner). " +
+              "For GitHub Actions OTA, ensure Expo production env has this key, or add repo secret EXPO_PUBLIC_MAPBOX_TOKEN. " +
               "Temporary bypass: ALLOW_MISSING_MAPBOX_TOKEN=1 — not for store.",
           );
         }
