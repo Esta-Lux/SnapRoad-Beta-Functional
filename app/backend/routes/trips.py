@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import logging
 import math
+import time
 from models.schemas import TripResult, FuelLogCreate
 from middleware.auth import get_current_user, get_current_user_optional
 from pydantic import BaseModel
@@ -436,55 +437,98 @@ def _compute_trip_rewards(
     return gems, xp
 
 
+def _int_for_pg(v: Any, *, lo: Optional[int] = None, hi: Optional[int] = None) -> int:
+    """Integer for PostgREST/Postgres INTEGER columns. JSON must not send 85.0 (float) or PG errors (see Sentry PYTHON-35)."""
+    n = int(round(float(v)))
+    if lo is not None:
+        n = max(lo, n)
+    if hi is not None:
+        n = min(hi, n)
+    return n
+
+
 def _build_trip_row(
     trip_id: str, user_id: str, body: "TripCompleteBody",
     distance: float, safety: float, gems: int, xp: int,
 ) -> dict:
     now_iso = datetime.now(timezone.utc).isoformat()
+    # INTEGER columns: use real Python int so JSON is 85 not 85.0 (invalid input for integer in Postgres).
     return {
         "id": trip_id,
         "user_id": user_id,
         "profile_id": user_id,
-        "distance_miles": round(distance, 2),
-        "duration_seconds": body.duration_seconds,
-        "safety_score": round(safety, 1),
-        "gems_earned": gems,
-        "xp_earned": xp,
+        "distance_miles": round(float(distance), 2),
+        "duration_seconds": _int_for_pg(body.duration_seconds),
+        "safety_score": _int_for_pg(safety, lo=0, hi=100),
+        "gems_earned": _int_for_pg(gems),
+        "xp_earned": _int_for_pg(xp),
         "started_at": body.started_at or now_iso,
         "ended_at": body.ended_at or now_iso,
-        "hard_braking_events": body.hard_braking_events,
-        "speeding_events": body.speeding_events,
-        "incidents_reported": body.incidents_reported,
+        "hard_braking_events": _int_for_pg(body.hard_braking_events),
+        "speeding_events": _int_for_pg(body.speeding_events),
+        "incidents_reported": _int_for_pg(body.incidents_reported),
         "created_at": now_iso,
+        "status": "completed",
     }
+
+
+def _is_duplicate_key_error(exc: BaseException) -> bool:
+    """Postgres unique_violation (23505) or PostgREST duplicate wording."""
+    code = getattr(exc, "code", None)
+    if code in ("23505", 23505):
+        return True
+    msg = str(exc).lower()
+    return "duplicate key" in msg or "unique constraint" in msg or "already exists" in msg
 
 
 def _persist_trip_and_update_profile(
     trip_row: dict, user_id: str, gems: int, xp: int, distance: float,
 ) -> None:
+    """Insert trip row then bump profile counters. Retries are split so a successful insert is not re-inserted."""
     from database import reset_supabase_client
 
     last_exc: Exception | None = None
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             sb = get_supabase()
             sb.table("trips").insert(trip_row).execute()
+            break
+        except Exception as exc:
+            last_exc = exc
+            if _is_duplicate_key_error(exc):
+                _trips_log.warning("Trip insert idempotent skip (duplicate id=%s): %s", trip_row.get("id"), exc)
+                break
+            if attempt < 2:
+                _trips_log.warning("Trip insert attempt %s failed (%s), resetting client and retrying", attempt + 1, exc)
+                reset_supabase_client()
+                time.sleep(0.08 * (attempt + 1))
+            else:
+                raise last_exc  # type: ignore[misc]
+
+    last_prof: Exception | None = None
+    for attempt in range(3):
+        try:
+            sb = get_supabase()
             profile = sb.table("profiles").select("gems, xp, total_trips, total_miles").eq("id", user_id).limit(1).execute()
             if profile.data:
                 p = profile.data[0]
                 sb.table("profiles").update({
-                    "gems": (p.get("gems") or 0) + gems,
-                    "xp": (p.get("xp") or 0) + xp,
-                    "total_trips": (p.get("total_trips") or 0) + 1,
-                    "total_miles": round((p.get("total_miles") or 0) + distance, 2),
+                    "gems": int(p.get("gems") or 0) + int(gems),
+                    "xp": int(p.get("xp") or 0) + int(xp),
+                    "total_trips": int(p.get("total_trips") or 0) + 1,
+                    "total_miles": round(float(p.get("total_miles") or 0) + float(distance), 2),
                 }).eq("id", user_id).execute()
+            else:
+                _trips_log.warning("No profile row for user_id=%s after trip insert; skipping counter update", user_id)
             return
         except Exception as exc:
-            last_exc = exc
-            if attempt == 0:
-                _trips_log.warning("Trip persist attempt 1 failed (%s), resetting client and retrying", exc)
+            last_prof = exc
+            if attempt < 2:
+                _trips_log.warning("Profile update after trip attempt %s failed (%s), resetting client and retrying", attempt + 1, exc)
                 reset_supabase_client()
-    raise last_exc  # type: ignore[misc]
+                time.sleep(0.08 * (attempt + 1))
+            else:
+                raise last_prof  # type: ignore[misc]
 
 
 def _read_profile_totals_after_trip(user_id: str) -> Optional[Dict[str, Any]]:

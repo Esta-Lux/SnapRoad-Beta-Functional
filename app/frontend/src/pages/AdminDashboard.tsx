@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, AlertTriangle, Eye, Gift, Building2, BarChart3,
   Bell, TrendingUp, DollarSign, Scale, Settings, FileText, LogOut,
-  Moon, Sun, Crown, LayoutGrid, Menu, X,
+  Moon, Sun, Crown, LayoutGrid, Menu, X, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 
 import { adminApi } from '@/services/adminApi'
@@ -53,6 +53,21 @@ export default function AdminDashboard({ initialTab = 'dashboard', initialOffers
   const [navBadges, setNavBadges] = useState<Record<string, string>>({})
   const [isConnected, setIsConnected] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [desktopNavCollapsed, setDesktopNavCollapsed] = useState(() => {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem('snaproad-admin-sidebar-collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('snaproad-admin-sidebar-collapsed', desktopNavCollapsed ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [desktopNavCollapsed])
 
   const goTab = useCallback((id: string) => {
     setActiveTab(id)
@@ -187,25 +202,37 @@ export default function AdminDashboard({ initialTab = 'dashboard', initialOffers
       <button
         type="button"
         aria-label="Close menu"
-        className={`fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] transition-opacity duration-300 md:hidden ${mobileNavOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`fixed inset-0 z-30 bg-black/50 backdrop-blur-[1px] transition-opacity duration-300 md:hidden ${mobileNavOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
         onClick={() => setMobileNavOpen(false)}
       />
 
       <div className="flex md:h-full">
         <aside
-          className={`fixed bottom-0 left-0 top-0 z-50 flex w-72 max-w-[88vw] flex-col border-r transition-colors duration-300 ease-out md:sticky md:top-0 md:h-screen md:max-w-none md:translate-x-0 ${
+          className={`fixed bottom-0 left-0 top-0 z-40 flex w-72 max-w-[88vw] flex-col border-r transition-[width,transform,colors] duration-300 ease-out md:sticky md:top-0 md:h-screen md:max-w-none md:translate-x-0 ${
+            desktopNavCollapsed ? 'md:w-[4.5rem]' : 'md:w-72'
+          } ${
             darkMode ? 'border-white/10 bg-[#0D0D10]' : 'border-gray-200 bg-white'
-          } ${mobileNavOpen ? 'translate-x-0 shadow-2xl shadow-black/40' : '-translate-x-full md:translate-x-0'}`}
+          } ${mobileNavOpen ? 'translate-x-0 pointer-events-auto shadow-2xl shadow-black/40' : '-translate-x-full pointer-events-none md:translate-x-0 md:pointer-events-auto'}`}
         >
-          <div className={`shrink-0 border-b p-5 transition-colors duration-200 ${darkMode ? 'border-white/10' : 'border-gray-200'}`}>
-            <div className="flex items-center gap-3">
-              <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-gray-950/80">
-                <img src="/snaproad-logo.svg" alt="" className="h-full w-full object-cover" width={44} height={44} />
+          <div className={`shrink-0 border-b p-5 transition-colors duration-200 ${darkMode ? 'border-white/10' : 'border-gray-200'} ${desktopNavCollapsed ? 'md:p-3' : ''}`}>
+            <div className="flex items-center gap-2">
+              <div className={`flex min-w-0 flex-1 items-center gap-3 ${desktopNavCollapsed ? 'md:justify-center' : ''}`}>
+                <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-gray-950/80">
+                  <img src="/snaproad-logo.svg" alt="" className="h-full w-full object-cover" width={44} height={44} />
+                </div>
+                <div className={`min-w-0 flex-1 ${desktopNavCollapsed ? 'md:hidden' : ''}`}>
+                  <h1 className={`font-bold transition-colors duration-200 ${darkMode ? 'text-white' : 'text-gray-900'}`}>SnapRoad</h1>
+                  <p className={`text-xs transition-colors duration-200 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Admin Console</p>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <h1 className={`font-bold transition-colors duration-200 ${darkMode ? 'text-white' : 'text-gray-900'}`}>SnapRoad</h1>
-                <p className={`text-xs transition-colors duration-200 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Admin Console</p>
-              </div>
+              <button
+                type="button"
+                className={`hidden shrink-0 rounded-lg p-2 md:flex ${darkMode ? 'text-gray-400 hover:bg-white/10' : 'text-gray-600 hover:bg-gray-100'}`}
+                aria-label={desktopNavCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                onClick={() => setDesktopNavCollapsed((c) => !c)}
+              >
+                {desktopNavCollapsed ? <ChevronRight size={22} /> : <ChevronLeft size={22} />}
+              </button>
               <button
                 type="button"
                 className={`shrink-0 rounded-lg p-2 md:hidden ${darkMode ? 'text-gray-400 hover:bg-white/10' : 'text-gray-600 hover:bg-gray-100'}`}
@@ -222,8 +249,11 @@ export default function AdminDashboard({ initialTab = 'dashboard', initialOffers
               <button
                 key={item.id}
                 type="button"
+                title={desktopNavCollapsed ? item.label : undefined}
                 onClick={() => goTab(item.id)}
                 className={`mb-1 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-all duration-200 ${
+                  desktopNavCollapsed ? 'md:justify-center md:px-2' : ''
+                } ${
                   activeTab === item.id
                     ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400'
                     : darkMode
@@ -232,8 +262,8 @@ export default function AdminDashboard({ initialTab = 'dashboard', initialOffers
                 }`}
               >
                 <item.icon size={20} />
-                <span className="min-w-0 flex-1 text-sm font-medium">{item.label}</span>
-                {item.badge ? (
+                <span className={`min-w-0 flex-1 text-sm font-medium ${desktopNavCollapsed ? 'md:hidden' : ''}`}>{item.label}</span>
+                {item.badge && !desktopNavCollapsed ? (
                   <span
                     className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${
                       activeTab === item.id
@@ -249,11 +279,13 @@ export default function AdminDashboard({ initialTab = 'dashboard', initialOffers
           </nav>
 
           <div className={`shrink-0 border-t p-4 transition-colors duration-200 ${darkMode ? 'border-white/10' : 'border-gray-200'}`}>
-            <div className={`flex items-center gap-3 rounded-xl p-3 transition-colors duration-200 ${darkMode ? 'bg-white/5' : 'bg-gray-50'}`}>
+            <div
+              className={`flex items-center gap-3 rounded-xl p-3 transition-colors duration-200 ${darkMode ? 'bg-white/5' : 'bg-gray-50'} ${desktopNavCollapsed ? 'md:flex-col md:justify-center md:gap-2 md:p-2' : ''}`}
+            >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500">
                 <Crown size={18} className="text-white" />
               </div>
-              <div className="min-w-0 flex-1">
+              <div className={`min-w-0 flex-1 ${desktopNavCollapsed ? 'md:hidden' : ''}`}>
                 <p className={`text-sm font-semibold transition-colors duration-200 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Super Admin</p>
                 <p className={`text-xs transition-colors duration-200 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Full Access</p>
               </div>
@@ -269,6 +301,7 @@ export default function AdminDashboard({ initialTab = 'dashboard', initialOffers
             </div>
             <button
               type="button"
+              title={desktopNavCollapsed ? 'Sign out' : undefined}
               onClick={() => {
                 setMobileNavOpen(false)
                 logout()
@@ -277,10 +310,10 @@ export default function AdminDashboard({ initialTab = 'dashboard', initialOffers
               }}
               className={`mt-3 flex w-full items-center gap-2 rounded-xl px-4 py-3 transition-colors duration-200 ${
                 darkMode ? 'text-red-400 hover:bg-red-500/10' : 'text-red-500 hover:bg-red-50'
-              }`}
+              } ${desktopNavCollapsed ? 'md:justify-center md:px-2' : ''}`}
             >
               <LogOut size={18} />
-              <span className="text-sm font-medium">Sign Out</span>
+              <span className={`text-sm font-medium ${desktopNavCollapsed ? 'md:hidden' : ''}`}>Sign Out</span>
             </button>
           </div>
         </aside>
