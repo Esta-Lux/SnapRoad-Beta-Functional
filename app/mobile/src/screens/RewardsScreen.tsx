@@ -103,7 +103,7 @@ export default function RewardsScreen() {
         api.getProfile().catch(() => ({ success: false, data: null })),
         safeGet('/api/challenges'),
         safeGet('/api/badges'),
-        safeGet(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=5`),
+        safeGet(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=40`),
         safeGet('/api/trips?limit=10'),
         insightsPromise,
         safeGet('/api/gems/history'),
@@ -208,7 +208,7 @@ export default function RewardsScreen() {
 
   const refreshNearbyOffers = useCallback(async (lat: number, lng: number) => {
     try {
-      const res = await api.get<any>(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=5`);
+      const res = await api.get<any>(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=40`);
       const raw = res?.data?.data ?? res?.data ?? [];
       setOffers(Array.isArray(raw) ? raw : []);
     } catch {

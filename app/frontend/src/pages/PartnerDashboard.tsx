@@ -4,7 +4,7 @@ import {
   Plus, Gift, TrendingUp, BarChart3,
   Bell, Settings, LogOut, HelpCircle,
   Rocket, Store, CreditCard, Share2, BadgeCheck, QrCode, Receipt,
-  Menu, X,
+  Menu, X, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { NotificationCenter, useNotifications, notificationService } from '@/components/NotificationSystem'
 import SettingsModal from '@/components/SettingsModal'
@@ -81,8 +81,50 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
   const [deletingOffer, setDeletingOffer] = useState<Offer | null>(null)
   const [showPromotionWelcome, setShowPromotionWelcome] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [desktopNavCollapsed, setDesktopNavCollapsed] = useState(() => {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem('snaproad-partner-sidebar-collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
   /** Non-blocking API issues (partner v2) so operators see why tiles look empty. */
   const [dataLoadBanner, setDataLoadBanner] = useState<string | null>(null)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('snaproad-partner-sidebar-collapsed', desktopNavCollapsed ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [desktopNavCollapsed])
+
+  /** Full-screen modals must sit above the fixed sidebar; also close the mobile drawer when a modal opens. */
+  useEffect(() => {
+    const anyModal =
+      showCreateModal ||
+      !!editingOffer ||
+      !!deletingOffer ||
+      !!showBoostModal ||
+      showImageGenerator ||
+      showNotifications ||
+      showSettings ||
+      showHelp ||
+      showOnboarding ||
+      showPromotionWelcome
+    if (anyModal) setMobileNavOpen(false)
+  }, [
+    showCreateModal,
+    editingOffer,
+    deletingOffer,
+    showBoostModal,
+    showImageGenerator,
+    showNotifications,
+    showSettings,
+    showHelp,
+    showOnboarding,
+    showPromotionWelcome,
+  ])
 
   const { sendNotification } = useNotifications()
 
@@ -543,29 +585,37 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl" />
       </div>
 
-      {/* Mobile drawer backdrop */}
+      {/* Mobile drawer backdrop — below sidebar so it does not cover desktop chrome */}
       <button
         type="button"
         aria-label="Close navigation menu"
-        className={`fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] transition-opacity duration-300 md:hidden ${mobileNavOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        className={`fixed inset-0 z-30 bg-black/50 backdrop-blur-[1px] transition-opacity duration-300 md:hidden ${mobileNavOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
         onClick={() => setMobileNavOpen(false)}
       />
 
-      {/* Sidebar: when closed on mobile, disable pointer-events so it cannot block taps on main content (fixed + translate still overlaps the viewport in some browsers). */}
+      {/* Sidebar: z-40 so partner modals (z-[100]) always stack above. Collapsible on md+ to free horizontal space. */}
       <aside
-        className={`fixed left-0 top-0 bottom-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-white/5 bg-slate-900/50 backdrop-blur-xl transition-transform duration-300 ease-out md:pointer-events-auto md:translate-x-0 ${mobileNavOpen ? 'translate-x-0 pointer-events-auto shadow-2xl shadow-black/40' : '-translate-x-full pointer-events-none'}`}
+        className={`fixed left-0 top-0 bottom-0 z-40 flex w-72 max-w-[85vw] flex-col border-r border-white/5 bg-slate-900/50 backdrop-blur-xl transition-[transform,width] duration-300 ease-out md:pointer-events-auto md:translate-x-0 md:max-w-none ${desktopNavCollapsed ? 'md:w-[4.5rem]' : 'md:w-72'} ${mobileNavOpen ? 'translate-x-0 pointer-events-auto shadow-2xl shadow-black/40' : '-translate-x-full pointer-events-none'}`}
       >
-        <div className="border-b border-white/5 p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-3">
+        <div className={`border-b border-white/5 ${desktopNavCollapsed ? 'p-4 md:p-3' : 'p-6'}`}>
+          <div className="flex items-center gap-2">
+            <div className={`flex min-w-0 flex-1 items-center gap-3 ${desktopNavCollapsed ? 'md:justify-center' : ''}`}>
               <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-lg shadow-emerald-500/20">
                 <img src="/snaproad-logo.svg" alt="" className="h-full w-full object-cover" width={48} height={48} />
               </div>
-              <div className="min-w-0">
+              <div className={`min-w-0 ${desktopNavCollapsed ? 'md:hidden' : ''}`}>
                 <span className="text-lg font-bold text-white">SnapRoad</span>
                 <span className="block text-xs font-medium text-emerald-400">Partner Portal</span>
               </div>
             </div>
+            <button
+              type="button"
+              className="hidden shrink-0 rounded-xl p-2 text-slate-400 hover:bg-white/10 hover:text-white md:flex"
+              aria-label={desktopNavCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              onClick={() => setDesktopNavCollapsed(c => !c)}
+            >
+              {desktopNavCollapsed ? <ChevronRight size={22} /> : <ChevronLeft size={22} />}
+            </button>
             <button
               type="button"
               className="shrink-0 rounded-xl p-2 text-slate-400 hover:bg-white/10 hover:text-white md:hidden"
@@ -580,31 +630,64 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
         <nav className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="space-y-2">
             {NAV_ITEMS.map(item => (
-              <button key={item.id} onClick={() => navigateTab(item.id)} data-testid={`nav-${item.id}`}
-                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all ${activeTab === item.id ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+              <button
+                key={item.id}
+                type="button"
+                title={desktopNavCollapsed ? item.label : undefined}
+                onClick={() => navigateTab(item.id)}
+                data-testid={`nav-${item.id}`}
+                className={`w-full flex items-center gap-3 rounded-xl px-4 py-3.5 transition-all ${desktopNavCollapsed ? 'md:justify-center md:px-2' : ''} ${activeTab === item.id ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
                 <item.icon size={20} />
-                <span className="font-medium flex-1 text-left">{item.label}</span>
-                {getBadge(item.badgeKey) && <span className="bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{getBadge(item.badgeKey)}</span>}
+                <span className={`font-medium flex-1 text-left ${desktopNavCollapsed ? 'md:hidden' : ''}`}>{item.label}</span>
+                {getBadge(item.badgeKey) && !desktopNavCollapsed && (
+                  <span className="bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{getBadge(item.badgeKey)}</span>
+                )}
               </button>
             ))}
           </div>
 
           <div className="mt-8 space-y-2 border-t border-white/5 pt-8">
-            <button type="button" onClick={() => { setShowHelp(true); setMobileNavOpen(false) }} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 hover:bg-white/5 hover:text-white">
-              <HelpCircle size={20} /><span className="font-medium">Help & Tour</span>
+            <button
+              type="button"
+              title={desktopNavCollapsed ? 'Help & Tour' : undefined}
+              onClick={() => { setShowHelp(true); setMobileNavOpen(false) }}
+              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 hover:bg-white/5 hover:text-white ${desktopNavCollapsed ? 'md:justify-center md:px-2' : ''}`}
+            >
+              <HelpCircle size={20} />
+              <span className={`font-medium ${desktopNavCollapsed ? 'md:hidden' : ''}`}>Help & Tour</span>
             </button>
-            <button type="button" onClick={() => { setShowSettings(true); setMobileNavOpen(false) }} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 hover:bg-white/5 hover:text-white">
-              <Settings size={20} /><span className="font-medium">Settings</span>
+            <button
+              type="button"
+              title={desktopNavCollapsed ? 'Settings' : undefined}
+              onClick={() => { setShowSettings(true); setMobileNavOpen(false) }}
+              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 hover:bg-white/5 hover:text-white ${desktopNavCollapsed ? 'md:justify-center md:px-2' : ''}`}
+            >
+              <Settings size={20} />
+              <span className={`font-medium ${desktopNavCollapsed ? 'md:hidden' : ''}`}>Settings</span>
             </button>
-            <button type="button" onClick={() => { setShowNotifications(true); setMobileNavOpen(false) }} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 hover:bg-white/5 hover:text-white">
-              <Bell size={20} /><span className="font-medium">Notifications</span>
+            <button
+              type="button"
+              title={desktopNavCollapsed ? 'Notifications' : undefined}
+              onClick={() => { setShowNotifications(true); setMobileNavOpen(false) }}
+              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 hover:bg-white/5 hover:text-white ${desktopNavCollapsed ? 'md:justify-center md:px-2' : ''}`}
+            >
+              <Bell size={20} />
+              <span className={`font-medium ${desktopNavCollapsed ? 'md:hidden' : ''}`}>Notifications</span>
             </button>
           </div>
         </nav>
 
         <div className="shrink-0 border-t border-white/5 bg-slate-900/80 p-4">
-          <button type="button" onClick={() => { setMobileNavOpen(false); partnerApi.logout(); navigate('/portal/partner/welcome') }} data-testid="logout-btn" className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-red-400 hover:bg-red-500/10">
-            <LogOut size={20} /><span className="font-medium">Sign Out</span>
+          <button
+            type="button"
+            title={desktopNavCollapsed ? 'Sign out' : undefined}
+            onClick={() => { setMobileNavOpen(false); partnerApi.logout(); navigate('/portal/partner/welcome') }}
+            data-testid="logout-btn"
+            className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-red-400 hover:bg-red-500/10 ${desktopNavCollapsed ? 'md:justify-center md:px-2' : ''}`}
+          >
+            <LogOut size={20} />
+            <span className={`font-medium ${desktopNavCollapsed ? 'md:hidden' : ''}`}>Sign Out</span>
           </button>
         </div>
       </aside>
@@ -620,7 +703,9 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
       />
 
       {/* Main Content — relative z-10 so it stacks above decorative layers; full width on mobile (drawer is overlay). */}
-      <main className="relative z-10 ml-0 min-w-0 overflow-x-hidden p-4 pb-24 sm:p-6 md:ml-72 md:pb-8 md:p-8">
+      <main
+        className={`relative z-10 ml-0 min-w-0 overflow-x-hidden p-4 pb-24 sm:p-6 md:pb-8 md:p-8 ${desktopNavCollapsed ? 'md:ml-[4.5rem]' : 'md:ml-72'}`}
+      >
         {dataLoadBanner && (
           <div
             className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-amber-100"

@@ -139,6 +139,11 @@ export function AllOffersModal({
             <TouchableOpacity onPress={onClose} hitSlop={12}><Ionicons name="close" size={24} color={sub} /></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={{ paddingBottom: 24, paddingTop: 8 }}>
+            {offers.length === 0 && (
+              <Text style={[rewardsStyles.offerBiz, { color: sub, textAlign: 'center', paddingVertical: 28, paddingHorizontal: 16 }]}>
+                No offers in range yet. Pull to refresh on Rewards, or move closer to a partner location (offers use your last known area).
+              </Text>
+            )}
             {offers.map((o) => (
               <TouchableOpacity key={o.id} style={[rewardsStyles.offerCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]} onPress={() => onSelectOffer(o)} activeOpacity={0.82}>
                 <View style={{ flex: 1 }}>
