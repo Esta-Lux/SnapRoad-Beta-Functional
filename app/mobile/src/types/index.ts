@@ -153,8 +153,10 @@ export interface MapFocusFriendParams {
 }
 
 export interface Offer {
-  id: number;
+  id: number | string;
   business_name: string;
+  /** Promo / offer headline when set (partner dashboard). */
+  title?: string;
   description?: string;
   discount_percent: number;
   gem_cost?: number;

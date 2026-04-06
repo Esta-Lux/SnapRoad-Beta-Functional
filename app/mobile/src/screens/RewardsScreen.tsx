@@ -42,6 +42,18 @@ import type {
   OffersRewardsView,
 } from '../components/rewards/types';
 
+/** Product filter chips (slugs match backend `offer_categories`). `nearby` = ≤ 8 km. */
+const REWARDS_OFFER_FILTER_DEFS: { slug: string | null; label: string }[] = [
+  { slug: null, label: 'All' },
+  { slug: 'nearby', label: 'Nearby' },
+  { slug: 'gas', label: 'Gas' },
+  { slug: 'restaurant', label: 'Food' },
+  { slug: 'coffee', label: 'Coffee' },
+  { slug: 'grocery', label: 'Groceries' },
+  { slug: 'retail', label: 'Retail' },
+  { slug: 'services', label: 'Services' },
+];
+
 function parseMyRedemptionsResponse(raw: unknown): UserOfferRedemption[] {
   const arr = Array.isArray(raw) ? raw : [];
   const out: UserOfferRedemption[] = [];
@@ -105,7 +117,7 @@ export default function RewardsScreen() {
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [rewardsTab, setRewardsTab] = useState<RewardsTab>('offers');
   const [claimingChallengeId, setClaimingChallengeId] = useState<string | null>(null);
-  const [redeemingOfferId, setRedeemingOfferId] = useState<number | null>(null);
+  const [redeemingOfferId, setRedeemingOfferId] = useState<string | null>(null);
   const [gemTx, setGemTx] = useState<GemTx[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showAllOffers, setShowAllOffers] = useState(false);
@@ -166,14 +178,24 @@ export default function RewardsScreen() {
         setMyRedemptions(parseMyRedemptionsResponse(unwrap(mineRes)));
       }
       const gData = gRes?.data?.data ?? gRes?.data;
+      const ledgerBal = gData?.current_balance;
+      if (ledgerBal != null && ledgerBal !== '' && Number.isFinite(Number(ledgerBal))) {
+        updateUser({ gems: Number(ledgerBal) });
+      }
       const tx = Array.isArray(gData?.recent_transactions) ? gData.recent_transactions : [];
-      setGemTx(tx.slice(0, 6).map((t: any, i: number) => ({
-        id: String(t.id ?? i),
-        type: t.type === 'earned' || t.type === 'spent' ? t.type : 'unknown',
-        amount: Number(t.amount ?? 0),
-        source: String(t.source ?? 'Transaction'),
-        date: String(t.date ?? ''),
-      })));
+      setGemTx(
+        tx.slice(0, 20).map((t: any, i: number) => ({
+          id: String(t.id ?? `tx-${i}`),
+          type: t.type === 'earned' || t.type === 'spent' ? t.type : 'unknown',
+          amount: Number(t.amount ?? 0),
+          source: String(t.source ?? 'Transaction'),
+          date: String(t.date ?? ''),
+          tx_type: t.tx_type != null ? String(t.tx_type) : undefined,
+          reference_type: t.reference_type != null ? String(t.reference_type) : null,
+          reference_id: t.reference_id != null ? String(t.reference_id) : null,
+          balance_after: t.balance_after != null && t.balance_after !== '' ? Number(t.balance_after) : null,
+        })),
+      );
     } catch {
       setErrorMsg('Could not refresh rewards data. Pull to retry.');
     } finally {
@@ -249,18 +271,6 @@ export default function RewardsScreen() {
   const earnedBadges = badges.filter((b) => b.earned).length;
   const multiplier = user?.isPremium ? '2x' : '1x';
 
-  const offerCategoryChoices = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const o of offers) {
-      const slug = String((o as Offer).business_type || 'other');
-      const rawLabel = (o as Offer).category_label?.trim();
-      const lbl = rawLabel || slug.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-      if (!m.has(slug)) m.set(slug, lbl);
-    }
-    const rest = [...m.entries()].map(([slug, label]) => ({ slug, label })).sort((a, b) => a.label.localeCompare(b.label));
-    return [{ slug: null as string | null, label: 'All' }, ...rest];
-  }, [offers]);
-
   const redemptionCategoryChoices = useMemo(() => {
     const m = new Map<string, string>();
     for (const r of myRedemptions) {
@@ -294,6 +304,9 @@ export default function RewardsScreen() {
 
   const allOffersForModal = useMemo(() => {
     if (!offerCategoryFilter) return offers;
+    if (offerCategoryFilter === 'nearby') {
+      return offers.filter((o) => Number(o.distance_km ?? 999) <= 8);
+    }
     return offers.filter((o) => String(o.business_type || 'other') === offerCategoryFilter);
   }, [offers, offerCategoryFilter]);
 
@@ -316,7 +329,7 @@ export default function RewardsScreen() {
   }, [updateUser, user]);
 
   const handleRedeemOffer = useCallback(async (offer: Offer) => {
-    setRedeemingOfferId(offer.id);
+    setRedeemingOfferId(String(offer.id));
     setErrorMsg(null);
     try {
       const res = await api.post<any>(`/api/offers/${offer.id}/redeem`);
@@ -524,7 +537,7 @@ export default function RewardsScreen() {
           {offersRewardsView === 'nearby' ? (
             <>
               <OfferCategoryChips
-                choices={offerCategoryChoices}
+                choices={REWARDS_OFFER_FILTER_DEFS}
                 selectedSlug={offerCategoryFilter}
                 onSelect={setOfferCategoryFilter}
                 {...rt}

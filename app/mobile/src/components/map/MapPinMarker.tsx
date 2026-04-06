@@ -16,14 +16,16 @@ type Props = {
   children: React.ReactNode;
   /** Slightly smaller for dense layers (e.g. offers) */
   compact?: boolean;
+  /** Extra scale (1 = default). Below 1 shrinks the pin (e.g. dense offer markers). */
+  sizeScale?: number;
 };
 
 /**
  * Premium map pin for MarkerView: gradient capsule, halo, white ring, tail.
  * Anchor MarkerView at { x: 0.5, y: 1 } so the tip sits on the coordinate.
  */
-export default function MapPinMarker({ onPress, gradientColors, glowColor, children, compact }: Props) {
-  const scale = compact ? 0.88 : 1;
+export default function MapPinMarker({ onPress, gradientColors, glowColor, children, compact, sizeScale = 1 }: Props) {
+  const scale = (compact ? 0.88 : 1) * sizeScale;
   const ring = Math.round(RING * scale);
   const pad = Math.max(2, Math.round(PAD * scale));
   const face = Math.max(24, ring - pad * 2);

@@ -416,9 +416,29 @@ class TripCompleteBody(BaseModel):
     speeding_events: int = 0
     incidents_reported: int = 0
 
-# Keep in sync with mobile `useNavigation.stopNavigation` qualifying gates.
-_MIN_TRIP_MILES = 0.12
-_MIN_TRIP_SECONDS = 42
+# Keep in sync with mobile passive + navigation trip gates (~0.15 mi, 45s, real movement).
+_MIN_TRIP_MILES = 0.15
+_MIN_TRIP_SECONDS = 45
+
+
+def _trip_gems_today_utc(user_id: str) -> int:
+    """Sum of gems_earned from trips starting UTC midnight (profile_id)."""
+    if not user_id:
+        return 0
+    try:
+        sb = get_supabase()
+        start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        r = (
+            sb.table("trips")
+            .select("gems_earned")
+            .eq("profile_id", user_id)
+            .gte("created_at", start)
+            .execute()
+        )
+        return sum(int(x.get("gems_earned") or 0) for x in (r.data or []))
+    except Exception as exc:
+        _trips_log.warning("trip gems today query failed: %s", exc)
+        return 0
 
 
 def _compute_trip_rewards(
@@ -426,13 +446,17 @@ def _compute_trip_rewards(
     safety: float,
     user: dict,
     duration_seconds: float,
+    *,
+    profile_id: str,
 ) -> tuple[int, int]:
     """Return (gems_earned, xp_earned) for a qualifying trip."""
-    from services.gem_economy import trip_gems_from_duration_minutes
+    from services.gem_economy import apply_trip_gem_daily_cap, trip_gems_from_duration_minutes
 
     is_premium = user.get("is_premium") or user.get("plan", "basic") not in ("basic", "free", "")
     duration_min = max(0.0, float(duration_seconds)) / 60.0
     gems = trip_gems_from_duration_minutes(duration_min, bool(is_premium))
+    if profile_id:
+        gems = apply_trip_gem_daily_cap(gems, _trip_gems_today_utc(profile_id))
     xp = max(10, int(distance * 100)) + (100 if safety > 90 else 0)
     return gems, xp
 
@@ -483,27 +507,32 @@ def _is_duplicate_key_error(exc: BaseException) -> bool:
 
 def _persist_trip_and_update_profile(
     trip_row: dict, user_id: str, gems: int, xp: int, distance: float,
-) -> None:
-    """Insert trip row then bump profile counters. Retries are split so a successful insert is not re-inserted."""
+) -> bool:
+    """Insert trip row then bump profile counters. Returns True if a new trip row was inserted."""
     from database import reset_supabase_client
 
+    inserted = False
     last_exc: Exception | None = None
     for attempt in range(3):
         try:
             sb = get_supabase()
             sb.table("trips").insert(trip_row).execute()
+            inserted = True
             break
         except Exception as exc:
             last_exc = exc
             if _is_duplicate_key_error(exc):
                 _trips_log.warning("Trip insert idempotent skip (duplicate id=%s): %s", trip_row.get("id"), exc)
-                break
+                return False
             if attempt < 2:
                 _trips_log.warning("Trip insert attempt %s failed (%s), resetting client and retrying", attempt + 1, exc)
                 reset_supabase_client()
                 time.sleep(0.08 * (attempt + 1))
             else:
                 raise last_exc  # type: ignore[misc]
+
+    if not inserted:
+        return False
 
     last_prof: Exception | None = None
     for attempt in range(3):
@@ -520,7 +549,7 @@ def _persist_trip_and_update_profile(
                 }).eq("id", user_id).execute()
             else:
                 _trips_log.warning("No profile row for user_id=%s after trip insert; skipping counter update", user_id)
-            return
+            return True
         except Exception as exc:
             last_prof = exc
             if attempt < 2:
@@ -529,6 +558,7 @@ def _persist_trip_and_update_profile(
                 time.sleep(0.08 * (attempt + 1))
             else:
                 raise last_prof  # type: ignore[misc]
+    return True
 
 
 def _read_profile_totals_after_trip(user_id: str) -> Optional[Dict[str, Any]]:
@@ -576,12 +606,14 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
     safety = max(0, min(100, body.safety_score))
     prof = sb_get_profile(str(user_id)) if user_id else None
     reward_user = {**user, **(prof or {})}
-    gems_earned, xp_earned = _compute_trip_rewards(distance, safety, reward_user, body.duration_seconds)
+    gems_earned, xp_earned = _compute_trip_rewards(
+        distance, safety, reward_user, body.duration_seconds, profile_id=user_id
+    )
     trip_id = str(uuid4())
     trip_row = _build_trip_row(trip_id, user_id, body, distance, safety, gems_earned, xp_earned)
 
     try:
-        _persist_trip_and_update_profile(trip_row, user_id, gems_earned, xp_earned, distance)
+        inserted = _persist_trip_and_update_profile(trip_row, user_id, gems_earned, xp_earned, distance)
     except Exception as exc:
         _trips_log.error(
             "Supabase trip write failed for user=%s trip=%s distance=%.2f duration=%ds: %s",
@@ -590,8 +622,44 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
         )
         if ENVIRONMENT == "production":
             raise HTTPException(status_code=503, detail="Trip storage unavailable")
+        inserted = False
+
+    if not inserted:
+        return {
+            "success": True,
+            "data": {
+                "trip_id": None,
+                "counted": False,
+                "gems_earned": 0,
+                "xp_earned": 0,
+                "safety_score": round(safety, 1),
+                "distance_miles": round(distance, 2),
+                "message": "Trip was not stored (duplicate or storage conflict).",
+            },
+        }
 
     profile_totals = _read_profile_totals_after_trip(user_id)
+    if gems_earned > 0 and profile_totals:
+        try:
+            from services.wallet_ledger import record_wallet_transaction
+
+            sb = get_supabase()
+            bal = int(profile_totals.get("gems") or 0)
+            record_wallet_transaction(
+                sb,
+                user_id=user_id,
+                tx_type="trip_drive",
+                direction="credit",
+                amount=int(gems_earned),
+                balance_before=bal - int(gems_earned),
+                balance_after=bal,
+                reference_type="trip",
+                reference_id=trip_id,
+                metadata={"distance_miles": round(distance, 2), "duration_seconds": body.duration_seconds},
+            )
+        except Exception:
+            _trips_log.debug("trip wallet ledger skipped", exc_info=True)
+
     payload = {
         "trip_id": trip_id,
         "counted": True,

@@ -11,7 +11,7 @@ from models.schemas import ImageGenerateRequest, LocationVisit
 from services.supabase_service import _sb, sb_get_profile, _table_missing
 from services.offer_utils import calculate_free_discount
 from services.cache import cache_get, cache_set, cache_delete, invalidate_offers_nearby_cache
-from services.fee_calculator import record_redemption_fee
+from services.fee_calculator import calculate_redemption_fee, record_redemption_fee
 from services.offer_categories import attach_offer_category_fields, public_category_list
 from services.offer_analytics import record_offer_event
 from middleware.auth import get_current_user, get_current_user_optional
@@ -202,6 +202,14 @@ def validate_qr_token(raw_token: str, *, consume_nonce: bool) -> dict:
     }
 
 
+def _is_unique_violation(exc: BaseException) -> bool:
+    code = getattr(exc, "code", None)
+    if code in ("23505", 23505):
+        return True
+    msg = str(exc).lower()
+    return "unique" in msg and "violat" in msg
+
+
 def complete_offer_redemption(
     *,
     offer: dict,
@@ -250,28 +258,72 @@ def complete_offer_redemption(
             },
         }
 
-    try:
-        sb.rpc("increment_gems", {"uid": user_id, "amount": -gem_cost}).execute()
-    except Exception:
-        try:
-            sb.table("profiles").update({"gems": max(0, current_gems - gem_cost)}).eq("id", user_id).execute()
-        except Exception as exc:
-            logger.warning("Gem debit failed for user %s: %s", user_id, exc)
+    if offer.get("partner_id"):
+        fee_preview = calculate_redemption_fee(str(offer.get("partner_id")))
+    else:
+        fee_preview = {
+            "fee_amount": 0.0,
+            "fee_cents": 0,
+            "fee_tier": 1,
+        }
+
+    rpc_payload = _try_redeem_offer_atomic(sb, user_id=user_id, offer=offer, fee_preview=fee_preview)
+    if rpc_payload is not None:
+        if rpc_payload.get("ok") is True:
+            try:
+                if offer.get("partner_id"):
+                    record_redemption_fee(offer.get("partner_id"))
+            except Exception:
+                logger.warning("record_redemption_fee after atomic redeem failed", exc_info=True)
+            redeemed_at = str(rpc_payload.get("redeemed_at") or datetime.now(timezone.utc).isoformat())
+            record_offer_event(
+                offer=offer,
+                event_type="redeem",
+                partner_id=offer.get("partner_id"),
+                user_id=user_id,
+                lat=lat,
+                lng=lng,
+            )
+            rid = str(rpc_payload.get("redemption_id") or "")
+            gc = int(rpc_payload.get("gem_cost") or gem_cost)
+            disc = int(rpc_payload.get("discount_percent") or discount)
+            new_total = int(rpc_payload.get("new_gem_total") or _next_gem_total(user_id))
+            return {
+                "success": True,
+                "data": {
+                    "discount_percent": disc,
+                    "gem_cost": gc,
+                    "gems_earned": -gc,
+                    "new_gem_total": new_total,
+                    "is_free_item": offer.get("is_free_item", False),
+                    "fee_cents": int(fee_preview.get("fee_cents") or 0),
+                    "fee_tier": int(fee_preview.get("fee_tier") or 1),
+                    "fee_amount": float(fee_preview.get("fee_amount") or 0),
+                    "redeemed_at": redeemed_at,
+                    "redemption_id": rid,
+                },
+            }
+        err = str(rpc_payload.get("error") or "redeem_failed")
+        if err == "already_redeemed":
+            return {"success": False, "message": "Offer already redeemed"}
+        if err == "insufficient_gems":
+            return {
+                "success": False,
+                "message": f"You need {int(rpc_payload.get('gem_cost') or gem_cost)} gems to redeem this offer.",
+                "data": {
+                    "gem_cost": int(rpc_payload.get("gem_cost") or gem_cost),
+                    "current_gems": int(rpc_payload.get("current_gems") or current_gems),
+                },
+            }
+        if err == "offer_not_found":
+            return {"success": False, "message": "Offer not found"}
+        if err in ("offer_inactive", "offer_expired"):
+            return {"success": False, "message": "This offer is no longer available"}
+        logger.warning("redeem_offer_atomic returned error=%s payload=%s", err, rpc_payload)
+        return {"success": False, "message": "Could not complete redemption"}
 
     fee_record = record_redemption_fee(offer.get("partner_id"))
     redeemed_at = datetime.now(timezone.utc).isoformat()
-
-    if offer.get("partner_id"):
-        try:
-            partner_res = sb.table("partners").select("total_redemptions,total_fees_owed").eq("id", offer.get("partner_id")).maybe_single().execute()
-            partner_row = partner_res.data or {}
-            sb.table("partners").update({
-                "total_redemptions": int(partner_row.get("total_redemptions") or 0) + 1,
-                "total_fees_owed": round(float(partner_row.get("total_fees_owed") or 0) + fee_record["fee_amount"], 2),
-            }).eq("id", offer.get("partner_id")).execute()
-        except Exception as exc:
-            logger.warning("Partner fee aggregate update failed: %s", exc)
-
     redemption_payload = {
         "offer_id": offer.get("id"),
         "user_id": user_id,
@@ -286,7 +338,64 @@ def complete_offer_redemption(
         "qr_nonce": qr_nonce,
         "redeemed_at": redeemed_at,
     }
-    sb.table("redemptions").insert(redemption_payload).execute()
+    redemption_id: Optional[str] = None
+    try:
+        ins = sb.table("redemptions").insert(redemption_payload).execute()
+        rows = ins.data or []
+        if rows:
+            redemption_id = str(rows[0].get("id")) if rows[0].get("id") is not None else None
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            return {"success": False, "message": "Offer already redeemed"}
+        logger.exception("redemption insert failed")
+        return {"success": False, "message": "Could not complete redemption"}
+
+    if not redemption_id:
+        try:
+            r2 = (
+                sb.table("redemptions")
+                .select("id")
+                .eq("user_id", user_id)
+                .eq("offer_id", offer.get("id"))
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if r2.data:
+                redemption_id = str(r2.data[0].get("id"))
+        except Exception:
+            redemption_id = None
+    if not redemption_id:
+        return {"success": False, "message": "Could not complete redemption"}
+
+    debited = False
+    try:
+        sb.rpc("increment_gems", {"uid": user_id, "amount": -gem_cost}).execute()
+        debited = True
+    except Exception:
+        try:
+            sb.table("profiles").update({"gems": max(0, current_gems - gem_cost)}).eq("id", user_id).execute()
+            debited = True
+        except Exception as exc:
+            logger.warning("Gem debit failed for user %s: %s", user_id, exc)
+
+    if not debited:
+        try:
+            sb.table("redemptions").delete().eq("id", redemption_id).execute()
+        except Exception:
+            logger.warning("rollback redemption delete failed for %s", redemption_id)
+        return {"success": False, "message": "Could not deduct gems"}
+
+    if offer.get("partner_id"):
+        try:
+            partner_res = sb.table("partners").select("total_redemptions,total_fees_owed").eq("id", offer.get("partner_id")).maybe_single().execute()
+            partner_row = partner_res.data or {}
+            sb.table("partners").update({
+                "total_redemptions": int(partner_row.get("total_redemptions") or 0) + 1,
+                "total_fees_owed": round(float(partner_row.get("total_fees_owed") or 0) + fee_record["fee_amount"], 2),
+            }).eq("id", offer.get("partner_id")).execute()
+        except Exception as exc:
+            logger.warning("Partner fee aggregate update failed: %s", exc)
 
     try:
         sb.table("offers").update({"redemption_count": int(offer.get("redemption_count") or 0) + 1}).eq("id", offer.get("id")).execute()
@@ -302,17 +411,37 @@ def complete_offer_redemption(
         lng=lng,
     )
 
+    new_total = _next_gem_total(user_id)
+    try:
+        from services.wallet_ledger import record_wallet_transaction
+
+        record_wallet_transaction(
+            sb,
+            user_id=user_id,
+            tx_type="offer_redeem",
+            direction="debit",
+            amount=int(gem_cost),
+            balance_before=int(current_gems),
+            balance_after=int(new_total),
+            reference_type="redemption",
+            reference_id=redemption_id,
+            metadata={"offer_id": str(offer.get("id")), "gem_cost": int(gem_cost)},
+        )
+    except Exception:
+        logger.debug("wallet ledger redeem skipped", exc_info=True)
+
     return {
         "success": True,
         "data": {
             "discount_percent": discount,
             "gem_cost": gem_cost,
             "gems_earned": -gem_cost,
-            "new_gem_total": _next_gem_total(user_id),
+            "new_gem_total": new_total,
             "is_free_item": offer.get("is_free_item", False),
             "fee_cents": fee_record["fee_cents"],
             "fee_tier": fee_record["fee_tier"],
             "redeemed_at": redeemed_at,
+            "redemption_id": redemption_id,
         },
     }
 
@@ -386,6 +515,7 @@ def get_offers(
             offers.append({
                 "id": offer.get("id"),
                 "business_name": offer.get("business_name", ""),
+                "title": offer.get("title"),
                 "business_type": offer.get("business_type", "retail"),
                 "description": offer.get("description", ""),
                 "discount_percent": premium_disc,

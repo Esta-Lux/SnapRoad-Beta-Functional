@@ -34,6 +34,11 @@ export type GemTx = {
   amount: number;
   source: string;
   date: string;
+  /** From wallet_transactions when migrated. */
+  tx_type?: string;
+  reference_type?: string | null;
+  reference_id?: string | null;
+  balance_after?: number | null;
 };
 
 export type ChallengeHistoryItem = {

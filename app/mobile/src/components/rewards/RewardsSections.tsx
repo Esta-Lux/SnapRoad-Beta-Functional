@@ -468,34 +468,44 @@ export function OffersPreview({
         >
           <LinearGradient colors={[`${success}35`, `${success}08`]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: 18, borderBottomLeftRadius: 18 }} />
           {o.image_url ? (
-            <View style={{ width: 64, height: 64, borderRadius: 16, overflow: 'hidden', marginRight: 12, backgroundColor: border }}>
+            <View style={{ width: 80, height: 80, borderRadius: 18, overflow: 'hidden', marginRight: 12, backgroundColor: border, borderWidth: 1, borderColor: `${border}88` }}>
               <Image source={{ uri: o.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
             </View>
           ) : (
-            <View style={{ width: 64, height: 64, borderRadius: 16, backgroundColor: `${primary}14`, marginRight: 12, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="storefront-outline" size={26} color={primary} />
+            <View style={{ width: 80, height: 80, borderRadius: 18, backgroundColor: `${primary}14`, marginRight: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${primary}28` }}>
+              <Ionicons name="storefront-outline" size={30} color={primary} />
             </View>
           )}
-          <View style={{ flex: 1, paddingLeft: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+          <View style={{ flex: 1, paddingLeft: 4 }}>
+            <Text style={{ color: sub, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4 }} numberOfLines={1}>
+              {o.business_name}
+            </Text>
+            <Text style={[rewardsStyles.offerBiz, { color: text, marginTop: 2 }]} numberOfLines={2}>
+              {o.title?.trim() || o.description || `${o.discount_percent}% off at partner`}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
               <View style={{ backgroundColor: `${primary}20`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
-                <Text style={{ color: primary, fontSize: 11, fontWeight: '900' }}>{o.discount_percent ?? 0}%</Text>
+                <Text style={{ color: primary, fontSize: 11, fontWeight: '900' }}>{o.discount_percent ?? 0}% off</Text>
               </View>
               <View style={{ backgroundColor: `${sub}14`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
                 <Text style={{ color: sub, fontSize: 10, fontWeight: '800' }} numberOfLines={1}>{displayOfferCategory(o)}</Text>
               </View>
-              <Text style={[rewardsStyles.offerBiz, { color: text, flex: 1, minWidth: 120 }]} numberOfLines={1}>{o.business_name}</Text>
             </View>
-            <Text style={{ color: sub, fontSize: 12 }} numberOfLines={2}>{o.description ?? `${o.discount_percent}% off`}</Text>
-            {o.address ? <Text style={{ color: sub, fontSize: 11, marginTop: 4 }} numberOfLines={1}>{o.address}</Text> : null}
-            {o.distance_km != null && <Text style={{ color: sub, fontSize: 11, marginTop: 4, fontWeight: '600' }}>{Number(o.distance_km).toFixed(1)} km away</Text>}
+            {o.address ? <Text style={{ color: sub, fontSize: 11, marginTop: 6 }} numberOfLines={1}>{o.address}</Text> : null}
+            {o.distance_km != null && (
+              <Text style={{ color: sub, fontSize: 11, marginTop: 4, fontWeight: '600' }}>
+                {(Number(o.distance_km) * 0.621371).toFixed(1)} mi away
+              </Text>
+            )}
           </View>
           <View style={{ alignItems: 'flex-end', gap: 6, justifyContent: 'center' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: `${success}18`, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 }}>
               <Ionicons name="diamond-outline" size={14} color={success} />
               <Text style={{ color: success, fontSize: 13, fontWeight: '800' }}>{o.gem_cost ?? o.gems_reward ?? 0}</Text>
             </View>
-            <Text style={{ color: o.redeemed ? success : sub, fontSize: 11, fontWeight: '700' }}>{o.redeemed ? 'Redeemed' : 'Tap to view cost'}</Text>
+            <Text style={{ color: o.redeemed ? success : primary, fontSize: 11, fontWeight: '800' }}>
+              {o.redeemed ? 'Redeemed' : 'Available'}
+            </Text>
           </View>
         </TouchableOpacity>
       ))}
@@ -540,6 +550,12 @@ export function GemActivityList({
             <View style={{ flex: 1 }}>
               <Text style={[rewardsStyles.tripRoute, { color: text }]} numberOfLines={1}>{tx.source}</Text>
               <Text style={{ color: sub, fontSize: 11, fontWeight: '600' }}>{tx.date ? new Date(tx.date).toLocaleString() : 'Recently'}</Text>
+              {tx.reference_type && tx.reference_id ? (
+                <Text style={{ color: sub, fontSize: 10, fontWeight: '600', marginTop: 3 }} numberOfLines={1}>
+                  {tx.reference_type} · {tx.reference_id.slice(0, 8)}
+                  {tx.reference_id.length > 8 ? '…' : ''}
+                </Text>
+              ) : null}
             </View>
           </View>
           <Text style={{ color: tx.type === 'spent' ? danger : success, fontWeight: '900', fontSize: 16 }}>

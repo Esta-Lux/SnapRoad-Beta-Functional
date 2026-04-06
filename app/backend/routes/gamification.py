@@ -367,32 +367,124 @@ def get_trip_gem_summary(trip_id: str):
 
 @router.get("/gems/history")
 def get_gem_history(user: CurrentUser):
-    user_id = str(user.get("id") or current_user_id)
+    user_id = str(user.get("user_id") or user.get("id") or current_user_id).strip()
     try:
         sb = get_supabase()
         profile = sb_get_profile(user_id)
         balance = int((profile or {}).get("gems", 0))
+
+        ledger_rows: list = []
+        try:
+            from services.wallet_ledger import fetch_recent_ledger
+
+            ledger_rows = fetch_recent_ledger(sb, user_id, limit=30)
+        except Exception:
+            ledger_rows = []
 
         earned_rows = sb.table("trips").select("gems_earned, created_at").eq("profile_id", user_id).gt("gems_earned", 0).order("created_at", desc=True).limit(20).execute()
         # NOTE: production schema uses `redemptions.gems_earned` (legacy) rather than `gems_cost`.
         # Selecting a non-existent column causes PostgREST to throw; keep this query compatible.
         spent_rows = sb.table("redemptions").select("gems_earned, created_at, offer_id").eq("user_id", user_id).order("created_at", desc=True).limit(20).execute()
 
+        # Driver app no longer surfaces a global leaderboard; hide legacy ledger rows.
+        _LEDGER_SKIP_TYPES = frozenset({"leaderboard", "weekly_leaderboard", "global_leaderboard"})
+
+        def _ledger_credit_source(tx_type: str) -> str:
+            if tx_type == "trip_drive":
+                return "Trip reward"
+            if tx_type == "challenge_reward":
+                return "Challenge reward"
+            if tx_type in ("referral", "referral_bonus"):
+                return "Referral bonus"
+            return tx_type.replace("_", " ").strip().title() or "Gems earned"
+
+        def _ledger_debit_source(tx_type: str) -> str:
+            if tx_type == "offer_redeem":
+                return "Offer redemption"
+            return tx_type.replace("_", " ").strip().title() or "Gems spent"
+
         transactions = []
-        for r in (earned_rows.data or []):
-            transactions.append({"type": "earned", "amount": int(r.get("gems_earned", 0)), "source": "Trip completion", "date": r.get("created_at", "")})
-        for r in (spent_rows.data or []):
-            transactions.append({"type": "spent", "amount": int(r.get("gems_earned", 0)), "source": "Offer redemption", "date": r.get("created_at", "")})
+        activity_source = "wallet_transactions" if ledger_rows else "trips_and_redemptions"
+        if ledger_rows:
+            for row in ledger_rows:
+                tx_type = str(row.get("tx_type") or "").strip()
+                if tx_type in _LEDGER_SKIP_TYPES:
+                    continue
+                direction = str(row.get("direction") or "")
+                amt = int(row.get("amount") or 0)
+                rid = str(row.get("id") or "")
+                base_tx = {
+                    "id": rid,
+                    "tx_type": tx_type,
+                    "reference_type": row.get("reference_type"),
+                    "reference_id": str(row.get("reference_id") or "") if row.get("reference_id") is not None else None,
+                    "balance_before": row.get("balance_before"),
+                    "balance_after": row.get("balance_after"),
+                    "date": row.get("created_at", ""),
+                }
+                if direction == "credit":
+                    transactions.append({**base_tx, "type": "earned", "amount": amt, "source": _ledger_credit_source(tx_type)})
+                elif direction == "debit":
+                    transactions.append({**base_tx, "type": "spent", "amount": amt, "source": _ledger_debit_source(tx_type)})
+        else:
+            for r in (earned_rows.data or []):
+                ca = r.get("created_at", "")
+                transactions.append({
+                    "id": f"trip-{ca}",
+                    "type": "earned",
+                    "amount": int(r.get("gems_earned", 0)),
+                    "source": "Trip completion",
+                    "date": ca,
+                    "tx_type": "trip_drive",
+                    "reference_type": "trip",
+                    "reference_id": None,
+                    "balance_before": None,
+                    "balance_after": None,
+                })
+            for r in (spent_rows.data or []):
+                raw = int(r.get("gems_earned", 0))
+                ca = r.get("created_at", "")
+                oid = r.get("offer_id")
+                transactions.append({
+                    "id": f"redeem-{ca}-{oid}",
+                    "type": "spent",
+                    "amount": abs(raw),
+                    "source": "Offer redemption",
+                    "date": ca,
+                    "tx_type": "offer_redeem",
+                    "reference_type": "offer",
+                    "reference_id": str(oid) if oid is not None else None,
+                    "balance_before": None,
+                    "balance_after": None,
+                })
         transactions.sort(key=lambda x: x.get("date", ""), reverse=True)
 
         total_earned = sum(t["amount"] for t in transactions if t["type"] == "earned")
         total_spent = sum(t["amount"] for t in transactions if t["type"] == "spent")
-        return {"success": True, "data": {"current_balance": balance, "total_earned": total_earned, "total_spent": total_spent, "recent_transactions": transactions[:20]}}
+        return {
+            "success": True,
+            "data": {
+                "current_balance": balance,
+                "total_earned": total_earned,
+                "total_spent": total_spent,
+                "recent_transactions": transactions[:20],
+                "activity_source": activity_source,
+            },
+        }
     except Exception:
         if ENVIRONMENT == "production":
             raise
         u = _user_state(user_id)
-        return {"success": True, "data": {"current_balance": u.get("gems", 0), "total_earned": 0, "total_spent": 0, "recent_transactions": []}}
+        return {
+            "success": True,
+            "data": {
+                "current_balance": u.get("gems", 0),
+                "total_earned": 0,
+                "total_spent": 0,
+                "recent_transactions": [],
+                "activity_source": "demo_fallback",
+            },
+        }
 
 
 # ==================== DRIVING SCORE ====================

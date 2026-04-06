@@ -13,7 +13,7 @@ from models.schemas import (
     CreditUseRequest, QRRedemptionRequest, BoostRequest, BoostCreditsRequest,
 )
 from services.offer_utils import calculate_auto_gems, calculate_free_discount, get_fee_tier_info
-from services.offer_categories import normalize_offer_category
+from services.offer_categories import normalize_offer_category, attach_offer_category_fields
 from services.fee_calculator import get_monthly_fee_summary, get_partner_fee_history
 from services.offer_analytics import summarize_offer_analytics
 from services.supabase_service import (
@@ -1038,6 +1038,58 @@ def validate_scan(payload: dict, authorization: Annotated[Optional[str], Header(
     }
 
 
+def _enrich_partner_redemptions(rows: list[dict]) -> list[dict]:
+    """Attach live offer snapshot (name, image, category) and partner-facing flags."""
+    if not rows:
+        return []
+    oids: list[str] = []
+    seen: set[str] = set()
+    for r in rows:
+        oid = r.get("offer_id")
+        if oid is None:
+            continue
+        s = str(oid)
+        if s not in seen:
+            seen.add(s)
+            oids.append(s)
+    offers_map: dict[str, dict] = {}
+    if oids:
+        try:
+            off_res = _sb().table("offers").select("*").in_("id", oids).execute()
+            for o in off_res.data or []:
+                if o.get("id") is None:
+                    continue
+                od = dict(o)
+                attach_offer_category_fields(od)
+                offers_map[str(o["id"])] = od
+        except Exception:
+            logger.warning("partner redemption offer join failed", exc_info=True)
+    out: list[dict] = []
+    for r in rows:
+        item = dict(r)
+        oid_raw = item.get("offer_id")
+        oid = str(oid_raw) if oid_raw is not None else ""
+        o = offers_map.get(oid, {})
+        if o:
+            item["offer_snapshot"] = {
+                "id": o.get("id"),
+                "business_name": o.get("business_name"),
+                "title": o.get("title"),
+                "image_url": o.get("image_url"),
+                "category_label": o.get("category_label"),
+                "business_type": o.get("business_type"),
+                "discount_percent": o.get("discount_percent"),
+                "address": o.get("address"),
+                "lat": o.get("lat"),
+                "lng": o.get("lng"),
+                "status": o.get("status"),
+            }
+        scanned = item.get("scanned_by_user_id")
+        item["used_in_store"] = scanned is not None and str(scanned).strip() != ""
+        out.append(item)
+    return out
+
+
 @router.get("/partner/v2/redemptions/{partner_id}", responses={403: {"description": "Partner access denied"}})
 def get_recent_redemptions(
     partner_id: str,
@@ -1045,7 +1097,7 @@ def get_recent_redemptions(
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
 ):
     _require_owned_partner_id(user, partner_id)
-    redemptions = sb_get_redemptions_by_partner(partner_id, limit)
+    redemptions = _enrich_partner_redemptions(sb_get_redemptions_by_partner(partner_id, limit))
     return {"success": True, "data": redemptions, "count": len(redemptions)}
 
 

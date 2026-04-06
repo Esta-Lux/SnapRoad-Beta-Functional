@@ -694,12 +694,7 @@ def sb_create_partner_referral(data: dict) -> Optional[dict]:
 def sb_get_offers(status: str = "active", limit: int = 50) -> list:
     try:
         # Omit `title` — some production DBs predate that column (use business_name for display).
-        query = _sb().table("offers").select(
-            "id,partner_id,location_id,description,business_name,"
-            "business_type,discount_percent,base_gems,lat,lng,status,"
-            "redemption_count,views,image_url,created_at,expires_at,"
-            "created_by,address,offer_url,is_admin_offer"
-        ).limit(limit)
+        query = _sb().table("offers").select("*").limit(limit)
         if status != "all":
             query = query.eq("status", status)
         result = query.execute()

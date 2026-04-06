@@ -63,7 +63,7 @@ export function OfferDetailModal({
   onRedeem,
 }: {
   selectedOffer: Offer | null;
-  redeemingOfferId: number | null;
+  redeemingOfferId: string | null;
   onClose: () => void;
   onRedeem: (offer: Offer) => void;
   primary: string;
@@ -76,44 +76,62 @@ export function OfferDetailModal({
       <TouchableOpacity style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]} activeOpacity={1} onPress={onClose}>
         <View style={[rewardsStyles.modalSheet, { backgroundColor: cardBg, borderTopWidth: 1, borderColor: `${primary}22` }]} onStartShouldSetResponder={() => true}>
           <View style={[rewardsStyles.modalHandle, { backgroundColor: sub }]} />
-          {selectedOffer?.image_url ? (
-            <View style={{ width: '100%', height: 148, borderRadius: 16, overflow: 'hidden', marginBottom: 16 }}>
-              <Image source={{ uri: selectedOffer.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ maxHeight: '82%' }}>
+            {selectedOffer?.image_url ? (
+              <View style={{ width: '100%', height: 168, borderRadius: 16, overflow: 'hidden', marginBottom: 14 }}>
+                <Image source={{ uri: selectedOffer.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+              </View>
+            ) : null}
+            <Text style={{ color: sub, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 }}>{selectedOffer?.business_name}</Text>
+            <Text style={[rewardsStyles.modalTitle, { color: text, marginTop: 6, textAlign: 'left' }]}>
+              {selectedOffer?.title?.trim() || selectedOffer?.description?.split('.')[0] || `${selectedOffer?.discount_percent}% off`}
+            </Text>
+            <View style={{ alignSelf: 'flex-start', marginVertical: 10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: `${sub}18` }}>
+              <Text style={{ color: sub, fontSize: 12, fontWeight: '800' }}>{displayOfferCategory(selectedOffer ?? {})}</Text>
             </View>
-          ) : null}
-          <Text style={[rewardsStyles.modalTitle, { color: text }]}>{selectedOffer?.business_name}</Text>
-          <View style={{ alignSelf: 'flex-start', marginBottom: 10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: `${sub}18` }}>
-            <Text style={{ color: sub, fontSize: 12, fontWeight: '800' }}>{displayOfferCategory(selectedOffer ?? {})}</Text>
-          </View>
-          <Text style={{ color: sub, fontSize: 14, marginBottom: 16, lineHeight: 20 }}>{selectedOffer?.description ?? `${selectedOffer?.discount_percent}% off`}</Text>
-          {selectedOffer?.address ? <Text style={{ color: sub, fontSize: 12, marginBottom: 14 }}>{selectedOffer.address}</Text> : null}
-          <View style={{ alignItems: 'center', marginBottom: 14 }}>
-            <Text style={{ color: primary, fontSize: 22, fontWeight: '900' }}>{selectedOffer?.gem_cost ?? selectedOffer?.gems_reward ?? 0} gems</Text>
-            <Text style={{ color: sub, fontSize: 12, fontWeight: '700' }}>Redeem cost</Text>
-          </View>
-          {!selectedOffer?.redeemed && (
-            <TouchableOpacity
-              disabled={redeemingOfferId === selectedOffer?.id}
-              onPress={() => selectedOffer && onRedeem(selectedOffer)}
-              activeOpacity={0.85}
-              style={{ opacity: redeemingOfferId === selectedOffer?.id ? 0.65 : 1 }}
-            >
-              <LinearGradient
-                colors={[primary, `${primary}dd`]}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={{ borderRadius: 14, paddingVertical: 15, alignItems: 'center' }}
+            <Text style={{ color: sub, fontSize: 14, marginBottom: 12, lineHeight: 21 }}>{selectedOffer?.description ?? `${selectedOffer?.discount_percent}% off at this partner.`}</Text>
+            {selectedOffer?.address ? (
+              <Text style={{ color: text, fontSize: 13, marginBottom: 12, fontWeight: '600' }}>{selectedOffer.address}</Text>
+            ) : null}
+            {selectedOffer?.distance_km != null ? (
+              <Text style={{ color: sub, fontSize: 12, marginBottom: 12 }}>
+                {(Number(selectedOffer.distance_km) * 0.621371).toFixed(1)} mi away · show staff your QR after redeeming
+              </Text>
+            ) : null}
+            <View style={{ paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, backgroundColor: `${sub}10`, marginBottom: 16 }}>
+              <Text style={{ color: sub, fontSize: 11, fontWeight: '800', marginBottom: 6 }}>Terms</Text>
+              <Text style={{ color: sub, fontSize: 12, lineHeight: 18 }}>
+                Discount applies at participating location. Subject to partner policies. SnapRoad gems are non-transferable.
+              </Text>
+            </View>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ color: primary, fontSize: 24, fontWeight: '900' }}>{selectedOffer?.gem_cost ?? selectedOffer?.gems_reward ?? 0} gems</Text>
+              <Text style={{ color: sub, fontSize: 12, fontWeight: '700' }}>Redeem cost</Text>
+            </View>
+            {!selectedOffer?.redeemed && (
+              <TouchableOpacity
+                disabled={redeemingOfferId === selectedOffer?.id}
+                onPress={() => selectedOffer && onRedeem(selectedOffer)}
+                activeOpacity={0.85}
+                style={{ opacity: redeemingOfferId !== null && redeemingOfferId === String(selectedOffer?.id) ? 0.65 : 1 }}
               >
-                <Text style={rewardsStyles.navBtnText}>{redeemingOfferId === selectedOffer?.id ? 'Redeeming...' : 'Redeem For Gems'}</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          )}
-          {selectedOffer?.redeemed && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 }}>
-              <Ionicons name="checkmark-circle" size={22} color={success} />
-              <Text style={{ color: success, fontSize: 15, fontWeight: '800' }}>Already redeemed</Text>
-            </View>
-          )}
+                <LinearGradient
+                  colors={[primary, `${primary}dd`]}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={{ borderRadius: 14, paddingVertical: 15, alignItems: 'center' }}
+                >
+                  <Text style={rewardsStyles.navBtnText}>{redeemingOfferId !== null && redeemingOfferId === String(selectedOffer?.id) ? 'Redeeming...' : 'Redeem For Gems'}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+            {selectedOffer?.redeemed && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 }}>
+                <Ionicons name="checkmark-circle" size={22} color={success} />
+                <Text style={{ color: success, fontSize: 15, fontWeight: '800' }}>Redeemed — open My redemptions for QR</Text>
+              </View>
+            )}
+          </ScrollView>
         </View>
       </TouchableOpacity>
     </Modal>

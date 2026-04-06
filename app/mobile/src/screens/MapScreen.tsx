@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useLocation } from '../hooks/useLocation';
 import { useNavigation as useNav } from '../hooks/useNavigation';
+import { usePassiveDriveGems } from '../hooks/usePassiveDriveGems';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useMapLayers } from '../hooks/useMapLayers';
@@ -47,6 +48,7 @@ import IncidentHeatmap from '../components/map/IncidentHeatmap';
 import PlaceCard from '../components/map/PlaceCard';
 import PlaceDetailSheet from '../components/map/PlaceDetailSheet';
 import OfferRedemptionSheet from '../components/map/OfferRedemptionSheet';
+import NearbyOffersPickerSheet from '../components/map/NearbyOffersPickerSheet';
 import BuildingsLayer from '../components/map/BuildingsLayer';
 import PhotoReportMarkers, { type PhotoReport } from '../components/map/PhotoReportMarkers';
 import TrafficSafetyLayer, { type TrafficSafetyZone } from '../components/map/TrafficSafetyLayer';
@@ -308,7 +310,7 @@ export default function MapScreen() {
   });
   const { isLight, colors } = useTheme();
   const route = useRoute<any>();
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
 
   // ── Driving mode ──
   const [drivingMode, setDrivingMode] = useState<DrivingMode>('adaptive');
@@ -341,6 +343,18 @@ export default function MapScreen() {
     navFetchRef.current = nav.fetchDirections;
     navSetDestRef.current = nav.setSelectedDestination;
   }, [nav.fetchDirections, nav.setSelectedDestination]);
+
+  usePassiveDriveGems({
+    enabled: Boolean(user?.id),
+    mapFocused: mapTabFocused,
+    isNavigating: nav.isNavigating,
+    location,
+    speedMph: speed,
+    user,
+    updateUser,
+    refreshUserFromServer,
+    bumpStatsVersion,
+  });
 
   // Sync nav.isNavigating → useLocation accuracy
   useEffect(() => { setIsNavActive(nav.isNavigating); }, [nav.isNavigating]);
@@ -459,6 +473,7 @@ export default function MapScreen() {
   const [mapZoomLevel, setMapZoomLevel] = useState(15);
   const mapZoomDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
+  const [nearbyOffersPickerOpen, setNearbyOffersPickerOpen] = useState(false);
   useEffect(() => {
     if (nav.isNavigating && !wasNavigatingRef.current) {
       setSelectedPlaceId(null);
@@ -2172,7 +2187,9 @@ export default function MapScreen() {
             />
           )}
 
-          {!nav.isNavigating && <OfferMarkers offers={nearbyOffers} onOfferTap={setSelectedOffer} />}
+          {!nav.isNavigating && (
+            <OfferMarkers offers={nearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
+          )}
           {showIncidents && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
             if ((inc.upvotes ?? 0) < 0) return false;
             if (inc.type === 'construction') return showConstruction;
@@ -2361,6 +2378,15 @@ export default function MapScreen() {
           onNavigate={(o) => { setSelectedOffer(null); if (o.lat && o.lng) handleSelectResult({ name: o.business_name, address: '', lat: o.lat, lng: o.lng }); }}
         />
       )}
+
+      <NearbyOffersPickerSheet
+        visible={nearbyOffersPickerOpen}
+        offers={nearbyOffers}
+        userLat={location.lat}
+        userLng={location.lng}
+        onClose={() => setNearbyOffersPickerOpen(false)}
+        onSelectOffer={(o) => setSelectedOffer(o)}
+      />
 
       <TrafficCameraSheet
         visible={Boolean(user?.isPremium && selectedTrafficCamera)}
@@ -3120,10 +3146,27 @@ export default function MapScreen() {
       )}
 
       {!nav.isNavigating && !nav.showRoutePreview && !selectedPlace && !selectedPlaceId && nearbyOffers.length > 0 && (
-        <View style={[s.offerPill, { bottom: 50 + insets.bottom, backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(30,30,46,0.92)', borderColor: colors.border }]}>
-          <Text style={{ fontSize: 14 }}>💎</Text><Text style={[s.offerPillT, { color: colors.text }]}>{nearbyOffers.length} offers nearby</Text>
-          <View style={[s.offerBadge, { backgroundColor: colors.success }]}><Text style={s.offerBadgeT}>{nearbyOffers.length}</Text></View>
-        </View>
+        <TouchableOpacity
+          style={[s.offerPill, { bottom: 50 + insets.bottom, backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(30,30,46,0.92)', borderColor: colors.border }]}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            if (nearbyOffers.length === 1) {
+              setSelectedOffer(nearbyOffers[0]);
+            } else {
+              setNearbyOffersPickerOpen(true);
+            }
+          }}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel={`${nearbyOffers.length} offers nearby, open list`}
+        >
+          <Text style={{ fontSize: 14 }}>💎</Text>
+          <Text style={[s.offerPillT, { color: colors.text }]}>{nearbyOffers.length} offers nearby</Text>
+          <View style={[s.offerBadge, { backgroundColor: colors.success }]}>
+            <Text style={s.offerBadgeT}>{nearbyOffers.length}</Text>
+          </View>
+          <Ionicons name="chevron-up" size={16} color={colors.textSecondary} style={{ marginLeft: 2 }} />
+        </TouchableOpacity>
       )}
 
       {!nav.isNavigating && !nav.showRoutePreview && !selectedPlace && !selectedPlaceId && (
