@@ -106,7 +106,6 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
       !!editingOffer ||
       !!deletingOffer ||
       !!showBoostModal ||
-      showImageGenerator ||
       showNotifications ||
       showSettings ||
       showHelp ||
@@ -118,7 +117,6 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
     editingOffer,
     deletingOffer,
     showBoostModal,
-    showImageGenerator,
     showNotifications,
     showSettings,
     showHelp,
