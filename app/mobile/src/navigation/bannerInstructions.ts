@@ -43,6 +43,14 @@ export function getLaneData(step: StepLike): string | undefined {
   return step?.lanes;
 }
 
+export function isActionableGuidanceStep(step: StepLike, allowArrival = false): boolean {
+  if (!step || !Number.isFinite(step.lat) || !Number.isFinite(step.lng)) return false;
+  if (step.maneuver === 'depart') return false;
+  if (step.maneuver === 'arrive') return allowArrival;
+  if (step.maneuver === 'straight') return !!getLaneData(step);
+  return true;
+}
+
 /** Sub / secondary for “then” row: banner first, else null (caller merges turnCardModel secondary). */
 export function getBannerThenLine(step: StepLike): string | null {
   return getSubBannerText(step) || getSecondaryBannerText(step);
@@ -60,10 +68,10 @@ export function pickGuidanceStep(
   if (cardState === 'confirm') return current ?? undefined;
   const n = next;
   const c = current;
-  if (n?.bannerInstructions?.length) return n;
-  if (getLaneData(n)) return n;
-  if (c?.bannerInstructions?.length && (c.maneuver === 'straight' || c.maneuver === 'depart')) return c;
-  if (getLaneData(c)) return c;
+  if (isActionableGuidanceStep(n, true) && n?.bannerInstructions?.length) return n;
+  if (isActionableGuidanceStep(n, true) && getLaneData(n)) return n;
+  if (isActionableGuidanceStep(c, true) && c?.bannerInstructions?.length) return c;
+  if (isActionableGuidanceStep(c, true) && getLaneData(c)) return c;
   return n ?? c;
 }
 

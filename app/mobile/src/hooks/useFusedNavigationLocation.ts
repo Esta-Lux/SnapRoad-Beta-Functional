@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Coordinate } from '../types';
 import {
   bearingDeg,
@@ -50,6 +50,18 @@ function angleDeltaDeg(a: number, b: number): number {
   return Math.abs(((a - b + 540) % 360) - 180);
 }
 
+function lerpCoord(from: Coordinate, to: Coordinate, t: number): Coordinate {
+  return {
+    lat: from.lat + (to.lat - from.lat) * t,
+    lng: from.lng + (to.lng - from.lng) * t,
+  };
+}
+
+function lerpHeading(from: number, to: number, t: number): number {
+  const delta = ((to - from + 540) % 360) - 180;
+  return (from + delta * t + 360) % 360;
+}
+
 function destinationPoint(from: Coordinate, headingDeg: number, distanceMeters: number): Coordinate {
   const R = 6371000;
   const bearing = (headingDeg * Math.PI) / 180;
@@ -88,8 +100,17 @@ export function useFusedNavigationLocation({
   const lastTrustedRef = useRef<TrustedNavState | null>(null);
   const lastMatchRef = useRef<HysteresisMatchState | null>(null);
   const lastRawRef = useRef<{ coord: Coordinate; atMs: number } | null>(null);
+  const [smoothedFused, setSmoothedFused] = useState<FusedNavigationLocation>({
+    rawCoord,
+    displayCoord: rawCoord,
+    displayHeading: rawHeading,
+    confidence: isValidCoord(rawCoord) ? 1 : 0,
+    isSnapped: false,
+    qualityState: 'raw_only',
+  });
+  const smoothedRef = useRef(smoothedFused);
 
-  const fused = useMemo((): FusedNavigationLocation => {
+  const targetFused = useMemo((): FusedNavigationLocation => {
     const now = Date.now();
     const prevTrusted = lastTrustedRef.current;
     const prevRaw = lastRawRef.current;
@@ -223,6 +244,10 @@ export function useFusedNavigationLocation({
   }, [accuracyM, isNavigating, polyline, rawCoord, rawHeading, speedMph]);
 
   useEffect(() => {
+    smoothedRef.current = smoothedFused;
+  }, [smoothedFused]);
+
+  useEffect(() => {
     const now = Date.now();
     lastRawRef.current = { coord: rawCoord, atMs: now };
     if (!isNavigating) {
@@ -230,10 +255,10 @@ export function useFusedNavigationLocation({
       lastMatchRef.current = null;
       return;
     }
-    if (fused.isSnapped) {
-      const match = projectOntoPolylineWithHysteresis(fused.displayCoord, polyline ?? [], {
+    if (targetFused.isSnapped) {
+      const match = projectOntoPolylineWithHysteresis(targetFused.displayCoord, polyline ?? [], {
         prevMatch: lastMatchRef.current,
-        headingDeg: fused.displayHeading,
+        headingDeg: targetFused.displayHeading,
         maxBackwardMeters: 8,
         hysteresisMeters: 6,
         segmentWindow: 8,
@@ -244,18 +269,69 @@ export function useFusedNavigationLocation({
           cumFromStartMeters: match.cumFromStartMeters,
         };
       }
-    } else if (fused.qualityState === 'off_route') {
+    } else if (targetFused.qualityState === 'off_route') {
       lastMatchRef.current = null;
     }
-    if (fused.qualityState === 'good' || fused.qualityState === 'weak_gps' || fused.qualityState === 'dead_reckoning') {
+    if (targetFused.qualityState === 'good' || targetFused.qualityState === 'weak_gps' || targetFused.qualityState === 'dead_reckoning') {
       lastTrustedRef.current = {
-        coord: fused.displayCoord,
-        heading: fused.displayHeading,
+        coord: targetFused.displayCoord,
+        heading: targetFused.displayHeading,
         speedMph,
         atMs: now,
       };
     }
-  }, [fused, isNavigating, polyline, rawCoord, speedMph]);
+  }, [targetFused, isNavigating, polyline, rawCoord, speedMph]);
 
-  return fused;
+  useEffect(() => {
+    if (!isNavigating) {
+      setSmoothedFused(targetFused);
+      return;
+    }
+
+    const prev = smoothedRef.current;
+    const distance = haversineMeters(
+      prev.displayCoord.lat,
+      prev.displayCoord.lng,
+      targetFused.displayCoord.lat,
+      targetFused.displayCoord.lng,
+    );
+    const headingDelta = angleDeltaDeg(prev.displayHeading, targetFused.displayHeading);
+    const shouldAnimate =
+      targetFused.qualityState !== 'off_route' &&
+      targetFused.qualityState !== 'raw_only' &&
+      (distance > 0.8 || headingDelta > 2);
+
+    if (!shouldAnimate) {
+      setSmoothedFused(targetFused);
+      return;
+    }
+
+    const durationMs = Math.round(
+      Math.min(
+        speedMph > 45 ? 220 : 320,
+        Math.max(90, distance * (speedMph > 35 ? 14 : speedMph > 14 ? 20 : 28)),
+      ),
+    );
+    const startAt = Date.now();
+    const startState = prev;
+    let frame = 0;
+
+    const tick = () => {
+      const elapsed = Date.now() - startAt;
+      const linear = Math.max(0, Math.min(1, elapsed / Math.max(1, durationMs)));
+      const eased = 1 - (1 - linear) * (1 - linear);
+      setSmoothedFused({
+        ...targetFused,
+        displayCoord: lerpCoord(startState.displayCoord, targetFused.displayCoord, eased),
+        displayHeading: lerpHeading(startState.displayHeading, targetFused.displayHeading, eased),
+        confidence: startState.confidence + (targetFused.confidence - startState.confidence) * eased,
+      });
+      if (linear < 1) frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isNavigating, speedMph, targetFused]);
+
+  return smoothedFused;
 }

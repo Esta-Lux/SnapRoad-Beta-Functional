@@ -55,10 +55,10 @@ import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config
 import MapCategoryExploreSheet from '../components/map/MapCategoryExploreSheet';
 import PhotoReportSheet from '../components/map/PhotoReportSheet';
 import ManeuverHighlightLayers from '../components/map/ManeuverHighlightLayers';
-import { getDistanceToUpcomingManeuverMeters } from '../navigation/routeGeometry';
+import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
-import { getPrimaryBannerText, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
+import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
 import { isLiveShareFresh } from '../lib/friendPresence';
 import type { NavigateToFriendParams } from '../types';
 import {
@@ -646,7 +646,10 @@ export default function MapScreen() {
   }, [compassMode, nav.isNavigating, isExploring]);
 
   const currentStep = nav.navigationData?.steps?.[nav.currentStepIndex];
-  const nextStep = nav.navigationData?.steps?.[nav.currentStepIndex + 1];
+  const upcomingGuidanceStep = useMemo(
+    () => getUpcomingManeuverStep(nav.navigationData?.steps, nav.currentStepIndex),
+    [nav.navigationData?.steps, nav.currentStepIndex],
+  );
   const confirmUntil = useTurnConfirmationUntil(nav.isNavigating, nav.currentStepIndex, drivingMode);
   const inConfirmWindow = Date.now() < confirmUntil;
   const isAmbient = !nav.isNavigating && speed > 6.7;
@@ -2528,13 +2531,13 @@ export default function MapScreen() {
 
       {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
       {nav.isNavigating && currentStep && (() => {
-        const nextManeuverCoord = nextStep;
+        const nextManeuverCoord = upcomingGuidanceStep;
         const poly = nav.navigationData?.polyline;
         const liveDistMeters =
           poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-            ? alongRouteDistanceMeters(poly, location, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
+            ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
             : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-              ? haversineMeters(location.lat, location.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
+              ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
               : (currentStep.distanceMeters ?? 0);
 
         const cardState = resolveTurnCardState({
@@ -2588,6 +2591,8 @@ export default function MapScreen() {
 
         /** Align banner/lanes/icons with Mapbox step geometry (see `currentStepIndexAlongRoute`). */
         const guidanceStep = pickGuidanceStep(cardState, currentStep, nextManeuverCoord);
+        const actionableGuidanceStep =
+          isActionableGuidanceStep(guidanceStep, true) ? guidanceStep : (isActionableGuidanceStep(nextManeuverCoord, true) ? nextManeuverCoord : undefined);
 
         return (
           <View style={[s.turnWrap, { top: insets.top }]} key={nav.currentStepIndex}>
@@ -2607,8 +2612,8 @@ export default function MapScreen() {
                   return !m;
                 });
               }}
-              lanesJson={mergeLaneSources(guidanceStep, nextManeuverCoord, currentStep)}
-              step={guidanceStep ?? nextManeuverCoord ?? currentStep}
+              lanesJson={mergeLaneSources(actionableGuidanceStep, nextManeuverCoord, cardState === 'confirm' ? currentStep : undefined)}
+              step={actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? currentStep : undefined)}
               roadDisambiguationLabel={disambigName}
               isSportBorder={isSport}
               speedMph={speed}

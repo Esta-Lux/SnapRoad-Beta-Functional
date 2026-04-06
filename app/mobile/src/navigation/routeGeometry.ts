@@ -3,6 +3,23 @@ import type { DirectionsStep } from '../lib/directions';
 import { alongRouteDistanceMeters, metersBetween } from '../utils/distance';
 import type { Coordinate } from '../types';
 
+function hasLaneGuidance(step: DirectionsStep | null | undefined): boolean {
+  const banner = step?.bannerInstructions?.[0];
+  const sub = banner?.sub;
+  return !!(
+    step?.lanes ||
+    (Array.isArray(sub?.components) && sub.components.some((c) => c?.type === 'lane'))
+  );
+}
+
+function isActionableGuidanceStep(step: DirectionsStep | null | undefined, allowArrival = false): boolean {
+  if (!step || !Number.isFinite(step.lat) || !Number.isFinite(step.lng)) return false;
+  if (step.maneuver === 'depart') return false;
+  if (step.maneuver === 'arrive') return allowArrival;
+  if (step.maneuver === 'straight') return hasLaneGuidance(step);
+  return true;
+}
+
 function featureCollection(
   features: Array<Feature<LineString | Point>>,
 ): FeatureCollection {
@@ -38,14 +55,10 @@ export function getUpcomingManeuverStep(
 ): DirectionsStep | null {
   if (!steps?.length) return null;
   const rest = steps.slice(currentStepIndex + 1);
-  const step = rest.find(
-    (s) =>
-      s.maneuver !== 'arrive' &&
-      s.maneuver !== 'depart' &&
-      Number.isFinite(s.lat) &&
-      Number.isFinite(s.lng),
-  );
-  return step ?? null;
+  const actionable = rest.find((s) => isActionableGuidanceStep(s, false));
+  if (actionable) return actionable;
+  const arrival = rest.find((s) => isActionableGuidanceStep(s, true));
+  return arrival ?? null;
 }
 
 function bearingBetween(a: Position, b: Position): number {
