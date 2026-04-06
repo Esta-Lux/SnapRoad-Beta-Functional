@@ -24,7 +24,6 @@ import type { ProfileOverviewActionItem } from './types';
 export type {
   ProfileBadgeItem,
   ProfileGemTxItem,
-  ProfileLeaderboardEntry,
   ProfileOverviewActionItem,
   ProfileTripHistoryItem,
   ProfileWeeklyRecap,
@@ -32,7 +31,6 @@ export type {
 export {
   AddPlaceModal,
   IncidentReportModal,
-  LeaderboardModal,
   LevelProgressModal,
   PlanModal,
 } from './ProfileModals';

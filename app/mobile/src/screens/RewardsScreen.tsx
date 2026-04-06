@@ -18,12 +18,15 @@ import {
   ChallengesPreview,
   BadgesPreview,
   OffersPreview,
+  OffersRewardsSegment,
+  MyRedemptionsSection,
   GemActivityList,
-  LeaderboardPreview,
+  OfferCategoryChips,
 } from '../components/rewards/RewardsSections';
 import {
   BadgeDetailModal,
   OfferDetailModal,
+  RedemptionDetailModal,
   AllOffersModal,
   ChallengeHistoryModal,
 } from '../components/rewards/RewardsModals';
@@ -35,8 +38,41 @@ import type {
   ChallengeHistoryItem,
   ChallengeHistoryStats,
   ChallengeModalTab,
-  LeaderboardEntry,
+  UserOfferRedemption,
+  OffersRewardsView,
 } from '../components/rewards/types';
+
+function parseMyRedemptionsResponse(raw: unknown): UserOfferRedemption[] {
+  const arr = Array.isArray(raw) ? raw : [];
+  const out: UserOfferRedemption[] = [];
+  for (const row of arr) {
+    if (!row || typeof row !== 'object') continue;
+    const o = row as Record<string, unknown>;
+    const redemption_id = String(o.redemption_id ?? '');
+    if (!redemption_id) continue;
+    out.push({
+      redemption_id,
+      offer_id: String(o.offer_id ?? ''),
+      redeemed_at: o.redeemed_at != null ? String(o.redeemed_at) : null,
+      status: String(o.status ?? 'verified'),
+      used_in_store: Boolean(o.used_in_store),
+      gem_cost: Number(o.gem_cost ?? 0),
+      discount_applied: Number(o.discount_applied ?? 0),
+      business_name: String(o.business_name ?? 'Partner offer'),
+      title: o.title != null ? String(o.title) : null,
+      description: o.description != null ? String(o.description) : null,
+      image_url: o.image_url != null ? String(o.image_url) : null,
+      address: o.address != null ? String(o.address) : null,
+      discount_percent: Number(o.discount_percent ?? o.discount_applied ?? 0),
+      lat: o.lat != null ? Number(o.lat) : null,
+      lng: o.lng != null ? Number(o.lng) : null,
+      is_free_item: Boolean(o.is_free_item),
+      business_type: o.business_type != null ? String(o.business_type) : undefined,
+      category_label: o.category_label != null ? String(o.category_label) : undefined,
+    });
+  }
+  return out;
+}
 
 export default function RewardsScreen() {
   const navigation = useNavigation();
@@ -78,13 +114,11 @@ export default function RewardsScreen() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [challengeHistoryItems, setChallengeHistoryItems] = useState<ChallengeHistoryItem[]>([]);
   const [challengeHistoryStats, setChallengeHistoryStats] = useState<ChallengeHistoryStats | null>(null);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [myRank, setMyRank] = useState(0);
-  const [leaderboardTf, setLeaderboardTf] = useState<'all_time' | 'weekly' | 'monthly' | 'all'>('weekly');
+  const [offerCategoryFilter, setOfferCategoryFilter] = useState<string | null>(null);
   const [challengeTarget, setChallengeTarget] = useState<{ id: string; name: string } | null>(null);
-
-  const leaderboardTfRef = useRef(leaderboardTf);
-  leaderboardTfRef.current = leaderboardTf;
+  const [offersRewardsView, setOffersRewardsView] = useState<OffersRewardsView>('nearby');
+  const [myRedemptions, setMyRedemptions] = useState<UserOfferRedemption[]>([]);
+  const [selectedRedemption, setSelectedRedemption] = useState<UserOfferRedemption | null>(null);
 
   const loadFull = useCallback(async (mode: 'initial' | 'refresh' | 'silent', lat: number, lng: number) => {
     if (mode === 'initial') setInitialLoading(true);
@@ -96,10 +130,7 @@ export default function RewardsScreen() {
         try { return await api.get<any>(url); } catch { return { success: false, data: null }; }
       };
       const insightsPromise = isPremium ? safeGet('/api/trips/weekly-insights') : Promise.resolve({ success: false, data: null });
-      const leaderboardPromise = isPremium
-        ? safeGet(`/api/leaderboard?time_filter=${encodeURIComponent(leaderboardTfRef.current)}&limit=10`)
-        : Promise.resolve({ success: false, data: null });
-      const [profileRes, cRes, bRes, oRes, tRes, _iRes, gRes, lRes] = await Promise.all([
+      const [profileRes, cRes, bRes, oRes, tRes, _iRes, gRes, mineRes] = await Promise.all([
         api.getProfile().catch(() => ({ success: false, data: null })),
         safeGet('/api/challenges'),
         safeGet('/api/badges'),
@@ -107,7 +138,7 @@ export default function RewardsScreen() {
         safeGet('/api/trips?limit=10'),
         insightsPromise,
         safeGet('/api/gems/history'),
-        leaderboardPromise,
+        safeGet('/api/offers/my-redemptions'),
       ]);
       const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
       const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
@@ -116,6 +147,7 @@ export default function RewardsScreen() {
         level: Number(profilePayload.level ?? 1),
         totalMiles: Number(profilePayload.total_miles ?? 0),
         totalTrips: Number(profilePayload.total_trips ?? 0),
+        safetyScore: Number(profilePayload.safety_score ?? 0),
       });
       const rawChallenges = Array.isArray(unwrap(cRes)) ? unwrap(cRes) : [];
       setChallenges(rawChallenges.map((c: any) => ({
@@ -130,6 +162,9 @@ export default function RewardsScreen() {
       const bData = unwrap(bRes);
       setBadges(Array.isArray(bData) ? bData : (bData?.badges ?? []));
       setOffers(Array.isArray(unwrap(oRes)) ? unwrap(oRes) : []);
+      if (mineRes?.success) {
+        setMyRedemptions(parseMyRedemptionsResponse(unwrap(mineRes)));
+      }
       const gData = gRes?.data?.data ?? gRes?.data;
       const tx = Array.isArray(gData?.recent_transactions) ? gData.recent_transactions : [];
       setGemTx(tx.slice(0, 6).map((t: any, i: number) => ({
@@ -139,27 +174,6 @@ export default function RewardsScreen() {
         source: String(t.source ?? 'Transaction'),
         date: String(t.date ?? ''),
       })));
-      if (!isPremium) {
-        setLeaderboard([]);
-        setMyRank(0);
-        updateUser({ rank: 0 });
-      } else {
-        const lData = lRes?.data?.data ?? lRes?.data ?? {};
-        const rows = Array.isArray(lData?.leaderboard) ? lData.leaderboard : [];
-        setLeaderboard(rows.map((r: any, idx: number) => ({
-          rank: Number(r.rank ?? idx + 1),
-          id: String(r.id ?? idx),
-          name: String(r.name ?? 'Driver'),
-          safety_score: Number(r.safety_score ?? 0),
-          level: Number(r.level ?? 1),
-          gems: Number(r.gems ?? 0),
-          state: String(r.state ?? ''),
-          is_premium: Boolean(r.is_premium),
-        })));
-        const mr = Number(lData?.my_rank ?? 0);
-        setMyRank(mr);
-        updateUser({ rank: mr });
-      }
     } catch {
       setErrorMsg('Could not refresh rewards data. Pull to retry.');
     } finally {
@@ -168,44 +182,6 @@ export default function RewardsScreen() {
     }
   }, [updateUser, user?.isPremium]);
 
-  const fetchLeaderboardOnly = useCallback(async (tf: typeof leaderboardTf) => {
-    if (!user?.isPremium) {
-      setLeaderboard([]);
-      setMyRank(0);
-      return;
-    }
-    try {
-      const res = await api.get<any>(`/api/leaderboard?time_filter=${encodeURIComponent(tf)}&limit=10`);
-      if (!res.success) return;
-      const lData = (res.data as any)?.data ?? res.data ?? {};
-      const rows = Array.isArray(lData?.leaderboard) ? lData.leaderboard : [];
-      setLeaderboard(rows.map((r: any, idx: number) => ({
-        rank: Number(r.rank ?? idx + 1),
-        id: String(r.id ?? idx),
-        name: String(r.name ?? 'Driver'),
-        safety_score: Number(r.safety_score ?? 0),
-        level: Number(r.level ?? 1),
-        gems: Number(r.gems ?? 0),
-        state: String(r.state ?? ''),
-        is_premium: Boolean(r.is_premium),
-      })));
-      const mr = Number(lData?.my_rank ?? 0);
-      setMyRank(mr);
-      updateUser({ rank: mr });
-    } catch {
-      /* keep prior leaderboard */
-    }
-  }, [updateUser, user?.isPremium]);
-
-  const skipLeaderboardChipEffect = useRef(true);
-  useEffect(() => {
-    if (skipLeaderboardChipEffect.current) {
-      skipLeaderboardChipEffect.current = false;
-      return;
-    }
-    void fetchLeaderboardOnly(leaderboardTf);
-  }, [leaderboardTf, fetchLeaderboardOnly]);
-
   const refreshNearbyOffers = useCallback(async (lat: number, lng: number) => {
     try {
       const res = await api.get<any>(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=40`);
@@ -213,6 +189,17 @@ export default function RewardsScreen() {
       setOffers(Array.isArray(raw) ? raw : []);
     } catch {
       /* keep existing offers */
+    }
+  }, []);
+
+  const refreshMyRedemptions = useCallback(async () => {
+    try {
+      const res = await api.get<any>('/api/offers/my-redemptions');
+      if (!res.success) return;
+      const raw = (res.data as any)?.data ?? res.data;
+      setMyRedemptions(parseMyRedemptionsResponse(raw));
+    } catch {
+      /* keep list */
     }
   }, []);
 
@@ -262,6 +249,54 @@ export default function RewardsScreen() {
   const earnedBadges = badges.filter((b) => b.earned).length;
   const multiplier = user?.isPremium ? '2x' : '1x';
 
+  const offerCategoryChoices = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const o of offers) {
+      const slug = String((o as Offer).business_type || 'other');
+      const rawLabel = (o as Offer).category_label?.trim();
+      const lbl = rawLabel || slug.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      if (!m.has(slug)) m.set(slug, lbl);
+    }
+    const rest = [...m.entries()].map(([slug, label]) => ({ slug, label })).sort((a, b) => a.label.localeCompare(b.label));
+    return [{ slug: null as string | null, label: 'All' }, ...rest];
+  }, [offers]);
+
+  const redemptionCategoryChoices = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of myRedemptions) {
+      const slug = String(r.business_type || 'other');
+      const rawLabel = r.category_label?.trim();
+      const lbl = rawLabel || slug.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      if (!m.has(slug)) m.set(slug, lbl);
+    }
+    const rest = [...m.entries()].map(([slug, label]) => ({ slug, label })).sort((a, b) => a.label.localeCompare(b.label));
+    return [{ slug: null as string | null, label: 'All' }, ...rest];
+  }, [myRedemptions]);
+
+  const [redemptionCategoryFilter, setRedemptionCategoryFilter] = useState<string | null>(null);
+
+  const filteredNearbyOffers = useMemo(() => {
+    const base = offers.filter((o) => !o.is_admin_offer);
+    if (!offerCategoryFilter) return base;
+    return base.filter((o) => String(o.business_type || 'other') === offerCategoryFilter);
+  }, [offers, offerCategoryFilter]);
+
+  const filteredFeaturedOffers = useMemo(() => {
+    const base = offers.filter((o) => Boolean(o.is_admin_offer));
+    if (!offerCategoryFilter) return base;
+    return base.filter((o) => String(o.business_type || 'other') === offerCategoryFilter);
+  }, [offers, offerCategoryFilter]);
+
+  const filteredRedemptions = useMemo(() => {
+    if (!redemptionCategoryFilter) return myRedemptions;
+    return myRedemptions.filter((r) => String(r.business_type || 'other') === redemptionCategoryFilter);
+  }, [myRedemptions, redemptionCategoryFilter]);
+
+  const allOffersForModal = useMemo(() => {
+    if (!offerCategoryFilter) return offers;
+    return offers.filter((o) => String(o.business_type || 'other') === offerCategoryFilter);
+  }, [offers, offerCategoryFilter]);
+
   const handleClaimChallenge = useCallback(async (challenge: Challenge) => {
     setClaimingChallengeId(challenge.id);
     setErrorMsg(null);
@@ -295,10 +330,11 @@ export default function RewardsScreen() {
       if (user) updateUser({ gems: Number.isFinite(newGemTotal) ? newGemTotal : Math.max(0, user.gems - gemCost) });
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setSelectedOffer(null);
+      void refreshMyRedemptions();
     } finally {
       setRedeemingOfferId(null);
     }
-  }, [updateUser, user]);
+  }, [updateUser, user, refreshMyRedemptions]);
 
   const loadChallengeHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -372,14 +408,12 @@ export default function RewardsScreen() {
           <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
             <LinearGradient colors={[`${colors.primary}28`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
               <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.primary}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                <Ionicons name="trophy" size={22} color={colors.primary} />
+                <Ionicons name="shield-checkmark" size={22} color={colors.primary} />
               </View>
               <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>
-                {user?.isPremium ? (myRank ? `#${myRank}` : '—') : '—'}
+                {user ? Math.round(user.safetyScore ?? 0) : '—'}
               </Text>
-              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                {user?.isPremium ? 'Rank' : 'Rank · Premium'}
-              </Text>
+              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Safety</Text>
             </LinearGradient>
           </View>
         </View>
@@ -394,9 +428,9 @@ export default function RewardsScreen() {
             </LinearGradient>
           </View>
           <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
-            <LinearGradient colors={[`${colors.leaderboardGradientStart}33`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.leaderboardGradientStart}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                <Ionicons name="diamond" size={22} color={colors.leaderboardGradientStart} />
+            <LinearGradient colors={[`${colors.rewardsGradientEnd}33`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.rewardsGradientEnd}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                <Ionicons name="diamond" size={22} color={colors.rewardsGradientEnd} />
               </View>
               <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{multiplier}</Text>
               <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Gem mult.</Text>
@@ -422,7 +456,7 @@ export default function RewardsScreen() {
             </LinearGradient>
             <View style={{ flex: 1 }}>
               <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Upgrade to Premium</Text>
-              <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>2× gems, richer offers, deeper insights in Profile, and priority perks.</Text>
+              <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>2× gems, richer offers, traffic cameras, more place alerts, and deeper Profile insights.</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.primary} />
           </LinearGradient>
@@ -478,13 +512,51 @@ export default function RewardsScreen() {
 
       {rewardsTab === 'offers' && (
         <>
-          <ViewAllButton title="View all offers" onPress={() => setShowAllOffers(true)} {...rt} />
-          <SectionTitle title="Nearby Partner Offers" text={text} accent={colors.primary} />
-          <OffersPreview loading={initialLoading} offers={offers.filter((o: any) => !o.is_admin_offer)} onPressOffer={setSelectedOffer} {...rt} />
-          {offers.some((o: any) => o.is_admin_offer) && (
+          <OffersRewardsSegment
+            view={offersRewardsView}
+            myCount={myRedemptions.length}
+            onChange={(v) => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setOffersRewardsView(v);
+            }}
+            {...rt}
+          />
+          {offersRewardsView === 'nearby' ? (
             <>
-              <SectionTitle title="Featured Deals" text={text} accent={colors.primary} />
-              <OffersPreview loading={initialLoading} offers={offers.filter((o: any) => o.is_admin_offer)} onPressOffer={setSelectedOffer} {...rt} />
+              <OfferCategoryChips
+                choices={offerCategoryChoices}
+                selectedSlug={offerCategoryFilter}
+                onSelect={setOfferCategoryFilter}
+                {...rt}
+              />
+              <ViewAllButton title="View all offers" onPress={() => setShowAllOffers(true)} {...rt} />
+              <SectionTitle title="Nearby Partner Offers" text={text} accent={colors.primary} />
+              <OffersPreview loading={initialLoading} offers={filteredNearbyOffers} onPressOffer={setSelectedOffer} {...rt} />
+              {offers.some((o) => o.is_admin_offer) && (
+                <>
+                  <SectionTitle title="Featured Deals" text={text} accent={colors.primary} />
+                  <OffersPreview loading={initialLoading} offers={filteredFeaturedOffers} onPressOffer={setSelectedOffer} {...rt} />
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <OfferCategoryChips
+                choices={redemptionCategoryChoices}
+                selectedSlug={redemptionCategoryFilter}
+                onSelect={setRedemptionCategoryFilter}
+                {...rt}
+              />
+              <SectionTitle title="Your redemptions" text={text} accent={colors.primary} />
+              <MyRedemptionsSection
+                loading={initialLoading}
+                redemptions={filteredRedemptions}
+                onOpen={(r) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setSelectedRedemption(r);
+                }}
+                {...rt}
+              />
             </>
           )}
         </>
@@ -492,62 +564,6 @@ export default function RewardsScreen() {
 
       <SectionTitle title="Recent Gem Activity" text={text} accent={colors.primary} />
       <GemActivityList loading={initialLoading} gemTx={gemTx} {...rt} />
-
-      <SectionTitle title="Rank & Leaderboard" text={text} accent={colors.primary} />
-      {user?.isPremium ? (
-        <LeaderboardPreview
-          loading={initialLoading}
-          entries={leaderboard}
-          myRank={myRank}
-          myGems={user?.gems ?? 0}
-          text={text}
-          sub={sub}
-          cardBg={cardBg}
-          border={colors.border}
-          primary={colors.primary}
-          success={colors.success}
-          danger={colors.danger}
-          warning={colors.warning}
-          headerGradient={[colors.leaderboardGradientStart, colors.leaderboardGradientEnd]}
-          gemsAccent={colors.primary}
-          timeFilter={leaderboardTf}
-          onTimeFilterChange={(t) => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setLeaderboardTf(t);
-          }}
-        />
-      ) : (
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            (navigation as { navigate: (n: string) => void }).navigate('Profile');
-          }}
-          style={{
-            marginHorizontal: 16,
-            marginBottom: 12,
-            padding: 18,
-            borderRadius: 16,
-            borderWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: cardBg,
-            ...shadow(6),
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: `${colors.primary}18`, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="lock-closed" size={22} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Leaderboard is Premium-only</Text>
-              <Text style={{ color: sub, fontSize: 12, marginTop: 4, lineHeight: 17 }}>
-                See how you rank against other drivers with SnapRoad Premium.
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-          </View>
-        </TouchableOpacity>
-      )}
 
       <View style={{ height: insets.bottom + 20 }} />
 
@@ -564,9 +580,21 @@ export default function RewardsScreen() {
         onClose={() => setSelectedOffer(null)}
         onRedeem={handleRedeemOffer}
       />
+      <RedemptionDetailModal
+        redemption={selectedRedemption}
+        cardBg={cardBg}
+        text={text}
+        sub={sub}
+        primary={colors.primary}
+        success={colors.success}
+        warning={colors.warning}
+        danger={colors.danger}
+        isLight={isLight}
+        onClose={() => setSelectedRedemption(null)}
+      />
       <AllOffersModal
         visible={showAllOffers}
-        offers={offers}
+        offers={allOffersForModal}
         bg={bg}
         cardBg={cardBg}
         text={text}

@@ -20,14 +20,6 @@ export type ProfileWeeklyRecap = {
   behavior?: { hard_braking_events_total: number; speeding_events_total: number };
 };
 
-export type ProfileLeaderboardEntry = {
-  rank: number;
-  name: string;
-  safetyScore: number;
-  level: number;
-  gems: number;
-};
-
 export type ProfileBadgeItem = {
   id: string | number;
   name: string;

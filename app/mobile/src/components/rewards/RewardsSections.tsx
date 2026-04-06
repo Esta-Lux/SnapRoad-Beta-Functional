@@ -1,10 +1,11 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Skeleton from '../common/Skeleton';
 import type { Badge, Challenge, Offer, Trip, WeeklyInsights } from '../../types';
-import type { GemTx, LeaderboardEntry } from './types';
+import type { GemTx, OffersRewardsView, UserOfferRedemption } from './types';
+import { displayOfferCategory } from '../../lib/offerCategories';
 import { rewardsStyles } from './styles';
 
 type ThemeProps = {
@@ -61,6 +62,243 @@ export function SectionTitle({ title, text, accent }: { title: string; text: str
       <View style={{ width: 4, height: 22, borderRadius: 2, backgroundColor: accent }} />
       <Text style={[rewardsStyles.sectionTitle, { color: text, marginTop: 0, marginBottom: 0, paddingHorizontal: 0, flex: 1 }]}>{title}</Text>
     </View>
+  );
+}
+
+export function OfferCategoryChips({
+  choices,
+  selectedSlug,
+  onSelect,
+  cardBg,
+  text,
+  sub: _sub,
+  border,
+  primary,
+  success: _s,
+  danger: _d,
+  warning: _w,
+}: ThemeProps & {
+  choices: { slug: string | null; label: string }[];
+  selectedSlug: string | null;
+  onSelect: (slug: string | null) => void;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 10, flexDirection: 'row', alignItems: 'center' }}
+    >
+      {choices.map((c) => {
+        const active =
+          (c.slug === null && selectedSlug === null) || (c.slug !== null && c.slug === selectedSlug);
+        return (
+          <TouchableOpacity
+            key={c.slug === null ? '__all__' : c.slug}
+            onPress={() => onSelect(c.slug)}
+            activeOpacity={0.82}
+            style={{
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              borderRadius: 12,
+              backgroundColor: active ? `${primary}22` : cardBg,
+              borderWidth: 1,
+              borderColor: active ? `${primary}50` : border,
+            }}
+          >
+            <Text style={{ color: active ? primary : text, fontSize: 12, fontWeight: '800' }}>{c.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+export function OffersRewardsSegment({
+  view,
+  onChange,
+  myCount,
+  cardBg,
+  text,
+  sub,
+  border,
+  primary,
+  success: _success,
+  danger: _d,
+  warning: _w,
+}: ThemeProps & {
+  view: OffersRewardsView;
+  onChange: (v: OffersRewardsView) => void;
+  myCount: number;
+}) {
+  const Tab = ({ id, label, icon, count }: { id: OffersRewardsView; label: string; icon: keyof typeof Ionicons.glyphMap; count?: number }) => {
+    const active = view === id;
+    return (
+      <TouchableOpacity
+        onPress={() => onChange(id)}
+        activeOpacity={0.85}
+        style={{
+          flex: 1,
+          borderRadius: 14,
+          paddingVertical: 11,
+          paddingHorizontal: 10,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          backgroundColor: active ? `${primary}22` : 'transparent',
+          borderWidth: 1,
+          borderColor: active ? `${primary}55` : border,
+        }}
+      >
+        <Ionicons name={icon} size={16} color={active ? primary : sub} />
+        <Text style={{ color: active ? primary : sub, fontSize: 12, fontWeight: '800' }} numberOfLines={1}>
+          {label}
+          {count != null && count > 0 ? ` (${count})` : ''}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+  return (
+    <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
+      <View style={{ flexDirection: 'row', gap: 10, backgroundColor: cardBg, borderRadius: 16, padding: 6, borderWidth: 1, borderColor: border }}>
+        <Tab id="nearby" label="Browse nearby" icon="navigate-outline" />
+        <Tab id="my_redemptions" label="My redemptions" icon="receipt-outline" count={myCount} />
+      </View>
+      <Text style={{ color: sub, fontSize: 11, fontWeight: '600', marginTop: 10, lineHeight: 15, paddingHorizontal: 2 }}>
+        {view === 'nearby'
+          ? 'Partner offers near your last location. Redeem with gems, then show your QR at the store when you check out.'
+          : 'Every offer you redeemed and whether the partner scanned your code — gems spent, discount, and date in one place.'}
+      </Text>
+    </View>
+  );
+}
+
+function formatRedemptionWhen(iso: string | null): string {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+}
+
+export function MyRedemptionsSection({
+  loading,
+  redemptions,
+  onOpen,
+  cardBg,
+  text,
+  sub,
+  border,
+  primary,
+  success,
+  danger,
+  warning,
+}: ThemeProps & {
+  loading: boolean;
+  redemptions: UserOfferRedemption[];
+  onOpen: (r: UserOfferRedemption) => void;
+}) {
+  if (loading) {
+    return <View style={{ paddingHorizontal: 16, gap: 8 }}>{[1, 2, 3].map((i) => <Skeleton key={i} width="100%" height={92} borderRadius={16} />)}</View>;
+  }
+  if (redemptions.length === 0) {
+    return (
+      <View style={[rewardsStyles.emptyCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border, marginHorizontal: 16 }]}>
+        <Ionicons name="receipt-outline" size={40} color={sub} style={{ marginBottom: 8 }} />
+        <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>No redemptions yet</Text>
+        <Text style={{ color: sub, fontSize: 13, marginTop: 6, textAlign: 'center', lineHeight: 18 }}>
+          When you redeem an offer with gems, it appears here. After you visit the store, status updates when staff scans your QR.
+        </Text>
+      </View>
+    );
+  }
+  return (
+    <>
+      {redemptions.map((r) => (
+        <TouchableOpacity
+          key={r.redemption_id || r.offer_id}
+          style={[
+            rewardsStyles.offerCard,
+            {
+              marginHorizontal: 16,
+              borderRadius: 18,
+              backgroundColor: cardBg,
+              borderWidth: 1,
+              borderColor: border,
+              overflow: 'hidden',
+              padding: 14,
+            },
+          ]}
+          onPress={() => onOpen(r)}
+          activeOpacity={0.82}
+        >
+          <LinearGradient
+            colors={r.used_in_store ? [`${success}40`, `${success}10`] : [`${warning}38`, `${warning}0c`]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 4,
+              borderTopLeftRadius: 18,
+              borderBottomLeftRadius: 18,
+            }}
+          />
+          {r.image_url ? (
+            <View style={{ width: 64, height: 64, borderRadius: 16, overflow: 'hidden', marginRight: 12, backgroundColor: border }}>
+              <Image source={{ uri: r.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            </View>
+          ) : (
+            <View style={{ width: 64, height: 64, borderRadius: 16, backgroundColor: `${primary}18`, marginRight: 12, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="storefront-outline" size={28} color={primary} />
+            </View>
+          )}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+              <View style={{ backgroundColor: `${primary}18`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                <Text style={{ color: primary, fontSize: 11, fontWeight: '900' }}>{r.discount_percent ?? r.discount_applied ?? 0}%</Text>
+              </View>
+              <View style={{ backgroundColor: `${sub}16`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                <Text style={{ color: sub, fontSize: 10, fontWeight: '800' }} numberOfLines={1}>
+                  {displayOfferCategory(r)}
+                </Text>
+              </View>
+              <View
+                style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 8,
+                  backgroundColor: r.used_in_store ? `${success}22` : `${warning}20`,
+                }}
+              >
+                <Text style={{ color: r.used_in_store ? success : warning, fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                  {r.used_in_store ? 'Used in store' : 'Not scanned yet'}
+                </Text>
+              </View>
+            </View>
+            <Text style={[rewardsStyles.offerBiz, { color: text }]} numberOfLines={1}>{r.business_name}</Text>
+            {r.address ? (
+              <Text style={{ color: sub, fontSize: 11, marginTop: 3 }} numberOfLines={1}>
+                {r.address}
+              </Text>
+            ) : null}
+            <Text style={{ color: sub, fontSize: 11, marginTop: 4, fontWeight: '600' }}>{formatRedemptionWhen(r.redeemed_at)}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: `${danger}14`, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 10 }}>
+              <Ionicons name="diamond-outline" size={14} color={danger} />
+              <Text style={{ color: danger, fontSize: 13, fontWeight: '800' }}>−{r.gem_cost}</Text>
+            </View>
+            <Text style={{ color: sub, fontSize: 10, fontWeight: '700', marginTop: 6 }}>gems</Text>
+          </View>
+        </TouchableOpacity>
+      ))}
+    </>
   );
 }
 
@@ -215,22 +453,38 @@ export function OffersPreview({
       {offers.slice(0, 6).map((o) => (
         <TouchableOpacity
           key={o.id}
-          style={[rewardsStyles.offerCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]}
+          style={[
+            rewardsStyles.offerCard,
+            {
+              backgroundColor: cardBg,
+              borderWidth: 1,
+              borderColor: border,
+              borderRadius: 18,
+              overflow: 'hidden',
+            },
+          ]}
           onPress={() => onPressOffer(o)}
           activeOpacity={0.82}
         >
-          <LinearGradient colors={[`${success}35`, `${success}08`]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: 16, borderBottomLeftRadius: 16 }} />
+          <LinearGradient colors={[`${success}35`, `${success}08`]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: 18, borderBottomLeftRadius: 18 }} />
           {o.image_url ? (
-            <View style={{ width: 58, height: 58, borderRadius: 14, overflow: 'hidden', marginRight: 12, backgroundColor: border }}>
+            <View style={{ width: 64, height: 64, borderRadius: 16, overflow: 'hidden', marginRight: 12, backgroundColor: border }}>
               <Image source={{ uri: o.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
             </View>
-          ) : null}
+          ) : (
+            <View style={{ width: 64, height: 64, borderRadius: 16, backgroundColor: `${primary}14`, marginRight: 12, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="storefront-outline" size={26} color={primary} />
+            </View>
+          )}
           <View style={{ flex: 1, paddingLeft: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
               <View style={{ backgroundColor: `${primary}20`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
                 <Text style={{ color: primary, fontSize: 11, fontWeight: '900' }}>{o.discount_percent ?? 0}%</Text>
               </View>
-              <Text style={[rewardsStyles.offerBiz, { color: text, flex: 1 }]} numberOfLines={1}>{o.business_name}</Text>
+              <View style={{ backgroundColor: `${sub}14`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                <Text style={{ color: sub, fontSize: 10, fontWeight: '800' }} numberOfLines={1}>{displayOfferCategory(o)}</Text>
+              </View>
+              <Text style={[rewardsStyles.offerBiz, { color: text, flex: 1, minWidth: 120 }]} numberOfLines={1}>{o.business_name}</Text>
             </View>
             <Text style={{ color: sub, fontSize: 12 }} numberOfLines={2}>{o.description ?? `${o.discount_percent}% off`}</Text>
             {o.address ? <Text style={{ color: sub, fontSize: 11, marginTop: 4 }} numberOfLines={1}>{o.address}</Text> : null}
@@ -380,138 +634,3 @@ export function WeeklyInsightsSection({
   );
 }
 
-export type LeaderboardTimeFilter = 'all_time' | 'weekly' | 'monthly' | 'all';
-
-export function LeaderboardPreview({
-  loading,
-  entries,
-  myRank,
-  myGems,
-  text,
-  sub,
-  cardBg,
-  border,
-  primary,
-  success: _success,
-  danger: _danger,
-  warning: _warning,
-  timeFilter = 'weekly',
-  onTimeFilterChange,
-  headerGradient,
-  gemsAccent,
-}: {
-  loading: boolean;
-  entries: LeaderboardEntry[];
-  myRank: number;
-  myGems: number;
-  timeFilter?: LeaderboardTimeFilter;
-  onTimeFilterChange?: (t: LeaderboardTimeFilter) => void;
-  headerGradient: readonly [string, string];
-  gemsAccent: string;
-} & ThemeProps) {
-  const subLabels: Record<LeaderboardTimeFilter, string> = {
-    all_time: 'Ranked by lifetime miles',
-    weekly: 'Ranked by safety score',
-    monthly: 'Ranked by level & gems',
-    all: 'Ranked by gems · all states',
-  };
-
-  if (loading && entries.length === 0) {
-    return <View style={{ paddingHorizontal: 16, gap: 8 }}>{[1, 2].map((i) => <Skeleton key={i} width="100%" height={68} borderRadius={14} />)}</View>;
-  }
-  const top3 = entries.slice(0, 3);
-  const rest = entries.slice(3, 10);
-  const first = top3.find((e) => e.rank === 1) || top3[0];
-  const second = top3.find((e) => e.rank === 2);
-  const third = top3.find((e) => e.rank === 3);
-
-  const chips: { key: LeaderboardTimeFilter; label: string }[] = [
-    { key: 'all_time', label: 'All Time' },
-    { key: 'weekly', label: 'Week' },
-    { key: 'monthly', label: 'Month' },
-    { key: 'all', label: 'All' },
-  ];
-
-  const headerColors: [string, string] = [headerGradient[0], headerGradient[1]];
-  return (
-    <>
-      <LinearGradient colors={headerColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={rewardsStyles.leaderboardHeader}>
-        <Text style={rewardsStyles.leaderboardHeaderTitle}>Leaderboard</Text>
-        <Text style={rewardsStyles.leaderboardSub}>{subLabels[timeFilter]}</Text>
-        <View style={rewardsStyles.leaderboardChipRow}>
-          {chips.map((c) => {
-            const active = timeFilter === c.key;
-            return (
-              <TouchableOpacity
-                key={c.key}
-                activeOpacity={0.85}
-                disabled={!onTimeFilterChange}
-                onPress={() => onTimeFilterChange?.(c.key)}
-                style={active ? rewardsStyles.leaderboardChipActive : rewardsStyles.leaderboardChip}
-              >
-                <Text style={rewardsStyles.leaderboardChipText}>{c.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        <View style={rewardsStyles.leaderboardRankRow}>
-          <Text style={rewardsStyles.leaderboardRankText}>Your rank #{myRank || '--'}</Text>
-          <Text style={rewardsStyles.leaderboardRankGems}>{myGems} gems</Text>
-        </View>
-      </LinearGradient>
-      {!!first && (
-        <View style={rewardsStyles.podiumRow}>
-          <View style={rewardsStyles.podiumCol}>
-            {second ? (
-              <>
-                <View style={[rewardsStyles.podiumAvatar, { backgroundColor: '#94A3B8' }]}><Text style={rewardsStyles.podiumLetter}>{second.name.charAt(0).toUpperCase()}</Text></View>
-                <View style={[rewardsStyles.podiumBase, { height: 84, backgroundColor: '#94A3B8' }]}>
-                  <Text style={rewardsStyles.podiumRank}>2</Text>
-                </View>
-                <Text style={[rewardsStyles.podiumName, { color: text }]} numberOfLines={1}>{second.name}</Text>
-              </>
-            ) : <View />}
-          </View>
-          <View style={rewardsStyles.podiumCol}>
-            <View style={[rewardsStyles.podiumAvatar, { backgroundColor: '#EAB308' }]}><Text style={rewardsStyles.podiumLetter}>{first.name.charAt(0).toUpperCase()}</Text></View>
-            <View style={[rewardsStyles.podiumBase, { height: 112, backgroundColor: '#EAB308' }]}>
-              <Text style={rewardsStyles.podiumRank}>1</Text>
-              <Text style={rewardsStyles.podiumPts}>{first.safety_score} pts</Text>
-            </View>
-            <Text style={[rewardsStyles.podiumName, { color: text }]} numberOfLines={1}>{first.name}</Text>
-          </View>
-          <View style={rewardsStyles.podiumCol}>
-            {third ? (
-              <>
-                <View style={[rewardsStyles.podiumAvatar, { backgroundColor: '#B45309' }]}><Text style={rewardsStyles.podiumLetter}>{third.name.charAt(0).toUpperCase()}</Text></View>
-                <View style={[rewardsStyles.podiumBase, { height: 72, backgroundColor: '#B45309' }]}>
-                  <Text style={rewardsStyles.podiumRank}>3</Text>
-                </View>
-                <Text style={[rewardsStyles.podiumName, { color: text }]} numberOfLines={1}>{third.name}</Text>
-              </>
-            ) : <View />}
-          </View>
-        </View>
-      )}
-      {rest.slice(0, 4).map((e) => (
-        <View key={`${e.id}-${e.rank}`} style={[rewardsStyles.leaderboardItem, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <View style={{ minWidth: 36, height: 36, borderRadius: 10, backgroundColor: `${primary}18`, justifyContent: 'center', alignItems: 'center' }}>
-              <Text style={{ color: primary, fontSize: 15, fontWeight: '900' }}>{e.rank}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[rewardsStyles.leaderboardName, { color: text }]}>{e.name}</Text>
-              <Text style={[rewardsStyles.leaderboardMeta, { color: sub }]}>
-                {e.safety_score} safety · Lvl {e.level}{e.state ? ` · ${e.state}` : ''}
-              </Text>
-            </View>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ color: gemsAccent, fontSize: 16, fontWeight: '900' }}>{formatCompactGems(e.gems)}</Text>
-            <Text style={{ color: sub, fontSize: 10, fontWeight: '700' }}>gems</Text>
-          </View>
-        </View>
-      ))}
-    </>
-  );
-}

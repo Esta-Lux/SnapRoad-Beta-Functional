@@ -53,7 +53,7 @@ export function buildSystemPrompt(ctx: OrionContext | undefined): string {
 - Gems can be redeemed at local partner businesses for discounts
 - SnapRoad has zero ads and never sells user data
 - Premium plan includes 2x gem multiplier and detailed driving analytics
-- Features: turn-by-turn navigation, nearby offers, road reports, family tracking, fuel tracker, driving score, weekly recap, leaderboard, badges
+- Features: turn-by-turn navigation, nearby offers, road reports, family tracking, fuel tracker, driving score, weekly recap, badges
 - SnapRoad is launching in Ohio Q3 2026, founded by Ryan A.
 - Privacy-first: all location data is encrypted and never sold
 

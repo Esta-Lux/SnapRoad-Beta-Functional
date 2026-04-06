@@ -5,8 +5,6 @@ import { Ionicons } from '@expo/vector-icons';
 import SheetModal from '../common/Modal';
 import { PLANS } from '../../constants/plans';
 import type { PlanTier } from '../../types';
-import type { ProfileLeaderboardEntry } from './types';
-
 export function LevelProgressModal({
   visible,
   onClose,
@@ -58,45 +56,6 @@ export function LevelProgressModal({
                 <Text style={[styles.infoRowLabel, { color: text }]}>{row.label}</Text>
               </View>
               <Text style={[styles.infoRowValue, { color: row.color }]}>{row.value}</Text>
-            </View>
-          ))}
-        </View>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
-
-export function LeaderboardModal({
-  visible,
-  onClose,
-  cardBg,
-  text,
-  sub,
-  myRank,
-  entries,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  cardBg: string;
-  text: string;
-  sub: string;
-  myRank: number;
-  entries: ProfileLeaderboardEntry[];
-}) {
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[styles.modalSheet, { backgroundColor: cardBg }]} onStartShouldSetResponder={() => true}>
-          <View style={styles.modalHandle} />
-          <Text style={[styles.modalTitle, { color: text, marginBottom: 2 }]}>Rank & Leaderboard</Text>
-          <Text style={{ color: sub, fontSize: 12, textAlign: 'center', marginBottom: 10 }}>{`Current rank #${myRank || '--'}`}</Text>
-          {entries.slice(0, 8).map((e) => (
-            <View key={`${e.rank}-${e.name}`} style={styles.infoRow}>
-              <View style={styles.infoRowLeft}>
-                <Text style={{ color: '#60A5FA', fontWeight: '900', width: 26 }}>{`#${e.rank}`}</Text>
-                <Text style={[styles.infoRowLabel, { color: text }]}>{e.name}</Text>
-              </View>
-              <Text style={{ color: sub, fontSize: 12, fontWeight: '700' }}>{`${e.safetyScore} · L${e.level}`}</Text>
             </View>
           ))}
         </View>

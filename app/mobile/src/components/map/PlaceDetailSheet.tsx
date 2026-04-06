@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { api } from '../../api/client';
-import { getMapboxRouteOptions, isMapboxDirectionsConfigured } from '../../lib/directions';
+import { getMapboxRouteOptions } from '../../lib/directions';
 import { formatTime } from '../../utils/format';
 import { haversineMeters } from '../../utils/distance';
 import type { DrivingMode, SavedLocation } from '../../types';
@@ -562,8 +562,7 @@ export default function PlaceDetailSheet({
       lng == null ||
       !userLocation ||
       !Number.isFinite(userLocation.lat) ||
-      !Number.isFinite(userLocation.lng) ||
-      (!isMapboxDirectionsConfigured())
+      !Number.isFinite(userLocation.lng)
     ) {
       setRouteSummary(null);
       return;

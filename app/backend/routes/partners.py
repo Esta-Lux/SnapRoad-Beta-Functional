@@ -13,6 +13,7 @@ from models.schemas import (
     CreditUseRequest, QRRedemptionRequest, BoostRequest, BoostCreditsRequest,
 )
 from services.offer_utils import calculate_auto_gems, calculate_free_discount, get_fee_tier_info
+from services.offer_categories import normalize_offer_category
 from services.fee_calculator import get_monthly_fee_summary, get_partner_fee_history
 from services.offer_analytics import summarize_offer_analytics
 from services.supabase_service import (
@@ -502,6 +503,8 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: Current
         "lng": location["lng"],
         "address": (location.get("address") or partner.get("address") or "") or None,
     }
+    if offer.category is not None and str(offer.category).strip():
+        updates["business_type"] = normalize_offer_category(offer.category)
     ok = sb_update_offer(offer_id, updates)
     if not ok:
         return {"success": False, "message": "Could not update the offer. Please try again."}

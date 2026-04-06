@@ -118,8 +118,9 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
     const accuracy = isNavigating
       ? Location.Accuracy.BestForNavigation
       : Location.Accuracy.Highest;
-    const timeInterval = isNavigating ? 1000 : 2000;
-    const distanceInterval = isNavigating ? 2 : 8;
+    /** Nav: faster fixes so puck / progress / turn card stay aligned (still OS-throttled). */
+    const timeInterval = isNavigating ? 750 : 2000;
+    const distanceInterval = isNavigating ? 1 : 8;
 
     watchRef.current = await Location.watchPositionAsync(
       {

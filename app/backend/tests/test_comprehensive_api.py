@@ -1,6 +1,6 @@
 """
 Comprehensive API Tests for SnapRoad
-Tests all major endpoints: offers, users, challenges, events, badges, leaderboard
+Tests all major endpoints: offers, users, challenges, events, badges
 """
 import pytest
 import requests
@@ -171,27 +171,10 @@ class TestBadgesEndpoints:
         print(f"✓ Badge categories: {list(data['data'].keys())}")
 
 
-class TestLeaderboardEndpoints:
-    """Leaderboard tests"""
-    
-    def test_get_leaderboard(self):
-        """Test getting leaderboard"""
+class TestLeaderboardRemoved:
+    def test_leaderboard_not_found(self):
         response = requests.get(f"{BASE_URL}/api/leaderboard")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] == True
-        assert "data" in data
-        assert "my_rank" in data
-        assert "states" in data
-        print(f"✓ Leaderboard: {len(data['data'])} users, my rank: #{data['my_rank']}")
-    
-    def test_get_leaderboard_by_state(self):
-        """Test getting leaderboard filtered by state"""
-        response = requests.get(f"{BASE_URL}/api/leaderboard?state=OH")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] == True
-        print(f"✓ Ohio leaderboard: {len(data['data'])} users")
+        assert response.status_code == 404
 
 
 class TestFriendsEndpoints:

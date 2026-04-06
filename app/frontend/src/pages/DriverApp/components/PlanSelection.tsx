@@ -84,7 +84,7 @@ export default function PlanSelection({ onSelectPlan }: PlanSelectionProps) {
     { icon: MapPin, text: 'Opt-in live tracking (13+)' },
     { icon: Shield, text: 'Teen controls & safety settings' },
     { icon: Bell, text: 'SOS + safety alerts' },
-    { icon: Trophy, text: 'Family leaderboard' },
+    { icon: Trophy, text: 'Family driving insights' },
   ]
 
   const bg = isLight ? 'bg-slate-100' : 'bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900'

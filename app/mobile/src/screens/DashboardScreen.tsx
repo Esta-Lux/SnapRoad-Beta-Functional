@@ -120,7 +120,7 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
           { icon: 'locate-outline', label: 'Live Tracking', desc: 'Real-time family locations' },
           { icon: 'shield-checkmark-outline', label: 'Teen Controls', desc: 'Speed limits & curfews' },
           { icon: 'alert-circle-outline', label: 'SOS Alerts', desc: 'Emergency notifications' },
-          { icon: 'trophy-outline', label: 'Leaderboard', desc: 'Family driving scores' },
+          { icon: 'bar-chart-outline', label: 'Trip reports', desc: 'Weekly driving summaries' },
           { icon: 'notifications-outline', label: 'Place Alerts', desc: 'Arrive/leave geofences' },
           { icon: 'bar-chart-outline', label: 'Trip Reports', desc: 'Teen driving insights' },
         ].map((f) => (

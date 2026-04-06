@@ -47,7 +47,7 @@ SUBSCRIPTION_PLANS = {
         "name": "Family",
         "price": 14.99,
         "period": "month", 
-        "features": ["All Premium features", "Up to 6 members", "Real-time location sharing", "Teen driver monitoring", "Family leaderboard", "Emergency SOS"]
+        "features": ["All Premium features", "Up to 6 members", "Real-time location sharing", "Teen driver monitoring", "Emergency SOS"]
     }
 }
 

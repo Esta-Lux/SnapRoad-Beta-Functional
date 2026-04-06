@@ -2,10 +2,12 @@ import { useRef, useState } from 'react'
 import { X, MapPin, Plus, Check, Gem, Gift, Loader2, Upload } from 'lucide-react'
 import type { PartnerProfile } from '@/types/partner'
 import { calculateAutoGems, calculateFreeDiscount } from '@/lib/offer-pricing'
+import { PARTNER_OFFER_CATEGORY_OPTIONS } from '@/lib/offer-categories'
 
 interface NewOfferData {
   title: string
   description: string
+  category: string
   discount_percent: number
   gem_cost: number
   is_free_item: boolean
@@ -31,6 +33,7 @@ export default function CreateOfferModal({
   const [data, setData] = useState<NewOfferData>({
     title: '',
     description: '',
+    category: 'retail',
     discount_percent: 15,
     gem_cost: 0,
     is_free_item: false,
@@ -134,6 +137,19 @@ export default function CreateOfferModal({
                 <textarea placeholder="Describe your offer..." rows={3}
                   value={data.description} onChange={(e) => setData(prev => ({ ...prev, description: e.target.value }))}
                   className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 resize-none" />
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm mb-1 block">Category</label>
+                <select
+                  value={data.category}
+                  onChange={(e) => setData((prev) => ({ ...prev, category: e.target.value }))}
+                  className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none cursor-pointer"
+                >
+                  {PARTNER_OFFER_CATEGORY_OPTIONS.map((o) => (
+                    <option key={o.slug} value={o.slug}>{o.label}</option>
+                  ))}
+                </select>
+                <p className="text-slate-500 text-xs mt-1">Shown to drivers as Gas, Restaurant, and other filters in the app.</p>
               </div>
               <div className="space-y-3">
                 <div className="flex items-center gap-3">

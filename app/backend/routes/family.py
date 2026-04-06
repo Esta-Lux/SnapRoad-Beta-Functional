@@ -33,11 +33,6 @@ async def join_family():
     return _FAMILY_SOON
 
 
-@router.get("/leaderboard")
-async def get_leaderboard():
-    return _FAMILY_SOON
-
-
 @router.post("/sos")
 async def family_sos():
     return _FAMILY_SOON

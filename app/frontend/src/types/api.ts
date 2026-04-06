@@ -161,29 +161,6 @@ export interface Badge {
   requirement?: number;
 }
 
-// ==================== LEADERBOARD TYPES ====================
-export interface LeaderboardEntry {
-  rank: number;
-  userId: string;
-  name: string;
-  avatar?: string;
-  safetyScore: number;
-  gems: number;
-  streak: number;
-  badges: number;
-  carModel?: string;
-  weeklyGems?: number;
-  fuelSaved?: string;
-}
-
-export interface Leaderboard {
-  type: 'global' | 'regional' | 'friends';
-  region?: string;
-  entries: LeaderboardEntry[];
-  userRank?: number;
-  totalParticipants: number;
-}
-
 // ==================== PARTNER TYPES ====================
 export interface Partner {
   id: string;

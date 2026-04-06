@@ -1,7 +1,7 @@
 """
 Test suite for SnapRoad new features:
 - Friends Hub (search by 6-digit ID, add friends)
-- Leaderboard (state filter, safety score ranking)
+- Offer categories (public list)
 - Badges Grid (160 badges, 6 categories)
 - Car Studio (8 cars, 16 skins, purchase with gems)
 """
@@ -76,58 +76,24 @@ class TestFriendsHub:
         assert "success" in data
 
 
-class TestLeaderboard:
-    """Leaderboard - ranked by safety score, filterable by state"""
-    
-    def test_get_leaderboard_all_states(self):
-        """Get leaderboard for all states"""
+class TestLeaderboardRemoved:
+    """Driver leaderboard endpoint was removed."""
+
+    def test_leaderboard_returns_not_found(self):
         response = requests.get(f"{BASE_URL}/api/leaderboard")
+        assert response.status_code == 404
+
+
+class TestOfferCategoriesPublic:
+    def test_list_offer_categories(self):
+        response = requests.get(f"{BASE_URL}/api/offers/categories")
         assert response.status_code == 200
         data = response.json()
-        assert data["success"] == True
-        assert "data" in data
-        assert "my_rank" in data
-        assert "states" in data
-        
-        # Verify leaderboard structure
-        leaderboard = data["data"]
-        assert len(leaderboard) > 0
-        
-        # Check first entry structure
-        entry = leaderboard[0]
-        assert "rank" in entry
-        assert "id" in entry
-        assert "name" in entry
-        assert "safety_score" in entry
-        assert "level" in entry
-        assert "state" in entry
-        assert "badges_count" in entry
-        
-        # Verify sorted by safety score (descending)
-        for i in range(len(leaderboard) - 1):
-            assert leaderboard[i]["safety_score"] >= leaderboard[i+1]["safety_score"]
-    
-    def test_get_leaderboard_by_state(self):
-        """Get leaderboard filtered by state"""
-        response = requests.get(f"{BASE_URL}/api/leaderboard?state=TX")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] == True
-        
-        # All entries should be from TX
-        for entry in data["data"]:
-            assert entry["state"] == "TX"
-    
-    def test_leaderboard_has_states_list(self):
-        """Verify states list is returned"""
-        response = requests.get(f"{BASE_URL}/api/leaderboard")
-        assert response.status_code == 200
-        data = response.json()
-        assert "states" in data
-        assert len(data["states"]) > 0
-        # Check some expected states
-        assert "TX" in data["states"]
-        assert "CA" in data["states"]
+        assert data.get("success") is True
+        rows = data.get("data") or []
+        assert isinstance(rows, list)
+        assert len(rows) >= 3
+        assert all("slug" in x and "label" in x for x in rows)
 
 
 class TestBadgesGrid:

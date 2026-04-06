@@ -407,7 +407,7 @@ export default function WelcomePage() {
               {[
                 { icon: Shield, label: 'Safety Score', desc: 'Track your driving' },
                 { icon: Gem, label: 'Earn Gems', desc: 'Redeem rewards' },
-                { icon: Trophy, label: 'Leaderboards', desc: 'Compete locally' },
+                { icon: Trophy, label: 'Achievements', desc: 'Badges and challenges' },
                 { icon: Zap, label: 'Premium Perks', desc: '2x gem multiplier' },
               ].map((feature) => (
                 <div key={feature.label} className="text-center">

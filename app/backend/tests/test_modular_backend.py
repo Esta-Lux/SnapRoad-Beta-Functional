@@ -193,13 +193,9 @@ class TestGamificationRoutes:
         print(f"Challenges OK: {len(data['data'])} challenges")
     
     def test_get_leaderboard(self):
-        """GET /api/leaderboard - Get leaderboard"""
+        """GET /api/leaderboard — driver leaderboard was removed"""
         response = requests.get(f"{BASE_URL}/api/leaderboard")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-        assert "leaderboard" in data["data"]
-        print(f"Leaderboard OK: {len(data['data']['leaderboard'])} entries")
+        assert response.status_code == 404
     
     def test_get_badges(self):
         """GET /api/badges - Get badges"""

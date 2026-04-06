@@ -148,44 +148,10 @@ class TestChallengeCreation:
         print(f"✓ Challenges endpoint returns list with {len(data['data'])} items")
 
 
-class TestLeaderboardWithChallengeButtons:
-    """Tests for leaderboard with challenge buttons"""
-    
-    def test_leaderboard_returns_users(self):
-        """Test that leaderboard returns user entries"""
+class TestLeaderboardRemoved:
+    def test_leaderboard_not_found(self):
         response = requests.get(f"{BASE_URL}/api/leaderboard?limit=10")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] == True
-        assert len(data["data"]) > 0
-        print(f"✓ Leaderboard returns {len(data['data'])} users")
-    
-    def test_leaderboard_entries_have_required_fields(self):
-        """Test that leaderboard entries have fields needed for challenge buttons"""
-        response = requests.get(f"{BASE_URL}/api/leaderboard?limit=5")
-        data = response.json()
-        
-        for entry in data["data"]:
-            assert "id" in entry
-            assert "name" in entry
-            assert "safety_score" in entry
-            assert "level" in entry
-            # These are needed for ChallengeModal
-            assert isinstance(entry["id"], str)
-            assert isinstance(entry["name"], str)
-            assert isinstance(entry["safety_score"], int)
-            assert isinstance(entry["level"], int)
-        print("✓ Leaderboard entries have all required fields for challenge buttons")
-    
-    def test_leaderboard_includes_current_user(self):
-        """Test that leaderboard includes current user data"""
-        response = requests.get(f"{BASE_URL}/api/leaderboard")
-        data = response.json()
-        
-        assert "my_rank" in data
-        assert "my_data" in data
-        assert data["my_data"] is not None
-        print(f"✓ Current user rank: #{data['my_rank']}")
+        assert response.status_code == 404
 
 
 class TestUserProfile:

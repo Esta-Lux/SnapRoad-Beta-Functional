@@ -90,7 +90,6 @@ export interface OrionContext {
   totalMiles?: number;
   gems?: number;
   level?: number;
-  rank?: number;
   safetyScore?: number;
   snapRoadScore?: number;
   snapRoadTier?: string;

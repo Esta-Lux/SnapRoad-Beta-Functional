@@ -2,6 +2,7 @@ import { useRef, useState, useMemo, useEffect } from 'react'
 import { X, Gift as GiftIcon, Check, MapPin, Gem, Loader2, Upload } from 'lucide-react'
 import type { Offer, PartnerProfile } from '@/types/partner'
 import { calculateAutoGems, calculateFreeDiscount } from '@/lib/offer-pricing'
+import { PARTNER_OFFER_CATEGORY_OPTIONS } from '@/lib/offer-categories'
 
 interface Props {
   offer: Offer
@@ -10,6 +11,7 @@ interface Props {
   onUpdate: (offerId: string, offerData: {
     title: string
     description: string
+    category: string
     discount_percent: number
     gem_cost: number
     is_free_item: boolean
@@ -40,6 +42,7 @@ export default function EditOfferModal({
   const [formData, setFormData] = useState({
     title: offer.title,
     description: offer.description,
+    category: offer.business_type && String(offer.business_type).trim() ? String(offer.business_type) : 'retail',
     discount_percent: offer.discount_percent,
     gem_cost: offer.gem_cost || offer.gems_reward,
     is_free_item: (offer as any).is_free_item || false,
@@ -143,6 +146,19 @@ export default function EditOfferModal({
                   rows={3}
                   placeholder="Describe your offer..."
                 />
+              </div>
+
+              <div>
+                <label className="text-slate-400 text-sm mb-1.5 block">Category</label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                >
+                  {PARTNER_OFFER_CATEGORY_OPTIONS.map((o) => (
+                    <option key={o.slug} value={o.slug}>{o.label}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-3">

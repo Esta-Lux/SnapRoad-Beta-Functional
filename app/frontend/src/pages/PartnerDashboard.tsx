@@ -437,7 +437,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
     }
   }
 
-  const handleCreateOffer = async (offerData: { title: string; description: string; discount_percent: number; gem_cost: number; is_free_item?: boolean; location_id: string; expires_days: number }, image: string | null) => {
+  const handleCreateOffer = async (offerData: { title: string; description: string; category: string; discount_percent: number; gem_cost: number; is_free_item?: boolean; location_id: string; expires_days: number }, image: string | null) => {
     if (!offerData.title || !offerData.location_id || !image) {
       sendNotification('system', 'Error', 'Please fill in all required fields, select a location, and upload a storefront photo.')
       return
@@ -446,6 +446,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
       const data = await partnerApi.createOffer({
         title: offerData.title,
         description: offerData.description,
+        category: offerData.category,
         discount_percent: offerData.discount_percent,
         gem_cost: offerData.gem_cost,
         is_free_item: offerData.is_free_item ?? false,
@@ -475,7 +476,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
     }
   }
 
-  const handleUpdateOffer = async (offerId: string, offerData: { title: string; description: string; discount_percent: number; gem_cost: number; is_free_item?: boolean; location_id: string; expires_days: number }, imageUrl: string | null) => {
+  const handleUpdateOffer = async (offerId: string, offerData: { title: string; description: string; category: string; discount_percent: number; gem_cost: number; is_free_item?: boolean; location_id: string; expires_days: number }, imageUrl: string | null) => {
     if (!imageUrl) {
       sendNotification('system', 'Offer not updated', 'A storefront photo is required for every offer.')
       return

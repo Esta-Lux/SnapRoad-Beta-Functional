@@ -12,6 +12,7 @@ from services.supabase_service import _sb, sb_get_profile, _table_missing
 from services.offer_utils import calculate_free_discount
 from services.cache import cache_get, cache_set, cache_delete, invalidate_offers_nearby_cache
 from services.fee_calculator import record_redemption_fee
+from services.offer_categories import attach_offer_category_fields, public_category_list
 from services.offer_analytics import record_offer_event
 from middleware.auth import get_current_user, get_current_user_optional
 from limiter import limiter
@@ -417,6 +418,7 @@ def get_offers(
                 "yelp_review_count": offer.get("yelp_review_count"),
                 "yelp_image_url": offer.get("yelp_image_url"),
             })
+            attach_offer_category_fields(offers[-1])
         uid = str(auth_user.get("user_id") or auth_user.get("id") or "") if auth_user else ""
         if uid:
             _apply_favorited_to_offers(uid, offers)
@@ -503,7 +505,7 @@ def get_nearby_offers(
         dist_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
         if dist_km <= radius:
             affinity_score, boosted = _user_offer_affinity(aff_user, offer)
-            nearby.append({
+            row = {
                 **offer,
                 "gem_cost": offer.get("base_gems", 0),
                 "distance_km": round(dist_km, 2),
@@ -513,7 +515,9 @@ def get_nearby_offers(
                 "allocated_locations": offer.get("allocated_locations", []),
                 "relevance_score": round(affinity_score - dist_km * 2.5, 2),
                 "is_boosted_active": boosted,
-            })
+            }
+            attach_offer_category_fields(row)
+            nearby.append(row)
     nearby.sort(key=lambda x: (x.get("relevance_score", 0), -(x["distance_km"])), reverse=True)
     result = {"success": True, "data": nearby[:limit], "count": len(nearby[:limit])}
     cache_set(key, result, ttl=300)
@@ -536,7 +540,9 @@ def get_offers_on_route(origin_lat: float = 39.9612, origin_lng: float = -82.998
         dlng = abs(o_lng - mid_lng)
         dist = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
         if dist <= 5:
-            route_offers.append({**offer, "distance_km": round(dist, 2)})
+            ro = {**offer, "distance_km": round(dist, 2)}
+            attach_offer_category_fields(ro)
+            route_offers.append(ro)
     return {"success": True, "data": route_offers}
 
 
@@ -581,7 +587,9 @@ def get_personalized_offers(
             score += visited_types[offer["business_type"]] * 5
         is_prem = bool(user.get("is_premium")) or str(user.get("plan") or "").lower() in ("premium", "family")
         discount = OFFER_CONFIG["premium_discount_percent"] if is_prem else OFFER_CONFIG["free_discount_percent"]
-        scored.append({**offer, "score": score, "distance_km": round(dist, 2), "discount_percent": discount})
+        row = {**offer, "score": score, "distance_km": round(dist, 2), "discount_percent": discount}
+        attach_offer_category_fields(row)
+        scored.append(row)
     scored.sort(key=lambda x: x["score"], reverse=True)
     return {"success": True, "data": scored[:limit], "voice_prompt": f"I found {min(limit, len(scored))} great offers for you nearby!"}
 
@@ -622,12 +630,116 @@ def redeem_offer(request: Request, offer_id: str, auth_user: CurrentUser):
         return {"success": False, "message": "Offer redemption unavailable"}
 
 
+@router.get("/offers/my-redemptions")
+@limiter.limit("60/minute")
+def get_my_offer_redemptions(
+    auth_user: CurrentUser,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+):
+    """Driver: offers redeemed with gems / verified at partner — includes `used_in_store` when staff scanned QR."""
+    user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    sb = _sb()
+    try:
+        red_res = (
+            sb.table("redemptions")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("redeemed_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning("my-redemptions list failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Could not load redemptions") from exc
+
+    rows = list(red_res.data or [])
+    if not rows:
+        return {"success": True, "data": []}
+
+    offer_ids: list[str] = []
+    for r in rows:
+        oid = r.get("offer_id")
+        if oid is not None:
+            offer_ids.append(str(oid))
+    offer_ids = list(dict.fromkeys(offer_ids))
+
+    offers_map: dict[str, dict] = {}
+    if offer_ids:
+        try:
+            off_res = sb.table("offers").select("*").in_("id", offer_ids).execute()
+            for o in off_res.data or []:
+                if o.get("id") is not None:
+                    offers_map[str(o["id"])] = dict(o)
+        except Exception as exc:
+            logger.warning("my-redemptions offers join failed: %s", exc)
+
+    offer_list = list(offers_map.values())
+    _hydrate_offer_coordinates_from_locations(offer_list)
+    for o in offer_list:
+        offers_map[str(o.get("id"))] = o
+
+    out: list[dict] = []
+    for r in rows:
+        oid_raw = r.get("offer_id")
+        oid = str(oid_raw) if oid_raw is not None else ""
+        offer = offers_map.get(oid, {})
+        gems_raw = r.get("gems_earned")
+        try:
+            ge = int(gems_raw) if gems_raw is not None else 0
+        except (TypeError, ValueError):
+            ge = 0
+        gem_cost = abs(ge)
+        scanned_by = r.get("scanned_by_user_id")
+        used_in_store = scanned_by is not None and str(scanned_by).strip() != ""
+        try:
+            disc = r.get("discount_applied")
+            discount_applied = int(disc) if disc is not None else int(offer.get("discount_percent") or 0)
+        except (TypeError, ValueError):
+            discount_applied = int(offer.get("discount_percent") or 0)
+
+        redeemed_at = r.get("redeemed_at") or r.get("created_at")
+        attach_offer_category_fields(offer)
+        out.append(
+            {
+                "redemption_id": str(r.get("id")) if r.get("id") is not None else "",
+                "offer_id": oid,
+                "redeemed_at": redeemed_at,
+                "status": str(r.get("status") or "verified"),
+                "used_in_store": used_in_store,
+                "gem_cost": gem_cost,
+                "discount_applied": discount_applied,
+                "business_name": offer.get("business_name") or offer.get("title") or "Partner offer",
+                "title": offer.get("title"),
+                "description": offer.get("description"),
+                "image_url": offer.get("image_url"),
+                "address": offer.get("address"),
+                "discount_percent": int(offer.get("discount_percent") or discount_applied or 0),
+                "lat": offer.get("lat"),
+                "lng": offer.get("lng"),
+                "is_free_item": bool(offer.get("is_free_item")),
+                "business_type": offer.get("business_type"),
+                "category_label": offer.get("category_label"),
+            }
+        )
+
+    return {"success": True, "data": out}
+
+
+@router.get("/offers/categories")
+@limiter.limit("120/minute")
+def list_offer_categories():
+    return {"success": True, "data": public_category_list()}
+
+
 @router.get("/offers/{offer_id}")
 def get_offer_by_id(offer_id: str, auth_user: OptionalUser = None):
     offer = _resolve_offer_by_id(offer_id)
     if not offer:
         raise HTTPException(status_code=404, detail="Offer not found")
     data = dict(offer)
+    attach_offer_category_fields(data)
     uid = str(auth_user.get("user_id") or auth_user.get("id") or "") if auth_user else ""
     if uid:
         data["favorited"] = str(data.get("id")) in _favorited_offer_ids(uid)

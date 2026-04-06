@@ -4,7 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Skeleton from '../common/Skeleton';
 import type { Badge, Offer } from '../../types';
-import type { ChallengeHistoryItem, ChallengeHistoryStats, ChallengeModalTab } from './types';
+import type { ChallengeHistoryItem, ChallengeHistoryStats, ChallengeModalTab, UserOfferRedemption } from './types';
+import { displayOfferCategory } from '../../lib/offerCategories';
 import { rewardsStyles } from './styles';
 
 type ThemeProps = {
@@ -81,6 +82,9 @@ export function OfferDetailModal({
             </View>
           ) : null}
           <Text style={[rewardsStyles.modalTitle, { color: text }]}>{selectedOffer?.business_name}</Text>
+          <View style={{ alignSelf: 'flex-start', marginBottom: 10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: `${sub}18` }}>
+            <Text style={{ color: sub, fontSize: 12, fontWeight: '800' }}>{displayOfferCategory(selectedOffer ?? {})}</Text>
+          </View>
           <Text style={{ color: sub, fontSize: 14, marginBottom: 16, lineHeight: 20 }}>{selectedOffer?.description ?? `${selectedOffer?.discount_percent}% off`}</Text>
           {selectedOffer?.address ? <Text style={{ color: sub, fontSize: 12, marginBottom: 14 }}>{selectedOffer.address}</Text> : null}
           <View style={{ alignItems: 'center', marginBottom: 14 }}>
@@ -110,6 +114,122 @@ export function OfferDetailModal({
               <Text style={{ color: success, fontSize: 15, fontWeight: '800' }}>Already redeemed</Text>
             </View>
           )}
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+function redemptionWhenLabel(iso: string | null): string {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+export function RedemptionDetailModal({
+  redemption,
+  cardBg,
+  text,
+  sub,
+  primary,
+  success,
+  warning,
+  danger,
+  isLight,
+  onClose,
+}: {
+  redemption: UserOfferRedemption | null;
+  onClose: () => void;
+  primary: string;
+  success: string;
+  warning: string;
+  danger: string;
+  isLight: boolean;
+} & Pick<ThemeProps, 'cardBg' | 'text' | 'sub'>) {
+  const overlay = isLight ? 'rgba(15,23,42,0.45)' : 'rgba(2,6,23,0.72)';
+  const r = redemption;
+  return (
+    <Modal visible={!!r} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]} activeOpacity={1} onPress={onClose}>
+        <View
+          style={[rewardsStyles.modalSheet, { backgroundColor: cardBg, borderTopWidth: 1, borderColor: `${primary}22`, maxHeight: '88%' }]}
+          onStartShouldSetResponder={() => true}
+        >
+          <View style={[rewardsStyles.modalHandle, { backgroundColor: sub }]} />
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {r?.image_url ? (
+              <View style={{ width: '100%', height: 160, borderRadius: 16, overflow: 'hidden', marginBottom: 14 }}>
+                <Image source={{ uri: r.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+              </View>
+            ) : null}
+            <Text style={[rewardsStyles.modalTitle, { color: text, textAlign: 'left' }]}>{r?.business_name ?? 'Offer'}</Text>
+            <View style={{ alignSelf: 'flex-start', marginTop: 8, marginBottom: 10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: `${sub}18` }}>
+              <Text style={{ color: sub, fontSize: 12, fontWeight: '800' }}>{r ? displayOfferCategory(r) : '—'}</Text>
+            </View>
+            <View
+              style={{
+                alignSelf: 'flex-start',
+                marginTop: 8,
+                marginBottom: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 12,
+                backgroundColor: r?.used_in_store ? `${success}22` : `${warning}20`,
+              }}
+            >
+              <Text style={{ color: r?.used_in_store ? success : warning, fontSize: 12, fontWeight: '900', letterSpacing: 0.3 }}>
+                {r?.used_in_store ? 'Used in store — partner scanned your QR' : 'Not scanned yet — show your QR at checkout'}
+              </Text>
+            </View>
+            {r?.description ? <Text style={{ color: sub, fontSize: 14, lineHeight: 20, marginBottom: 12 }}>{r.description}</Text> : null}
+            {r?.address ? (
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                <Ionicons name="location-outline" size={18} color={primary} />
+                <Text style={{ color: sub, fontSize: 13, flex: 1, lineHeight: 18 }}>{r.address}</Text>
+              </View>
+            ) : null}
+            <View style={{ borderRadius: 14, borderWidth: 1, borderColor: `${sub}35`, padding: 14, gap: 10, marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ color: sub, fontSize: 13, fontWeight: '700' }}>Redeemed</Text>
+                <Text style={{ color: text, fontSize: 13, fontWeight: '800' }}>{redemptionWhenLabel(r?.redeemed_at ?? null)}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ color: sub, fontSize: 13, fontWeight: '700' }}>Gems spent</Text>
+                <Text style={{ color: danger, fontSize: 13, fontWeight: '900' }}>−{r?.gem_cost ?? 0}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ color: sub, fontSize: 13, fontWeight: '700' }}>Your discount</Text>
+                <Text style={{ color: text, fontSize: 13, fontWeight: '800' }}>
+                  {r?.discount_percent ?? r?.discount_applied ?? 0}%
+                  {r?.is_free_item ? ' · Free item' : ''}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ color: sub, fontSize: 13, fontWeight: '700' }}>Status</Text>
+                <Text style={{ color: text, fontSize: 13, fontWeight: '800', textTransform: 'capitalize' }}>{r?.status ?? '—'}</Text>
+              </View>
+            </View>
+            <Text style={{ color: sub, fontSize: 12, lineHeight: 17, marginBottom: 20 }}>
+              SnapRoad records when you redeem with gems. When the business scans your code, this list shows “Used in store.” If you redeemed in the app only, complete your visit and ask staff to scan your QR.
+            </Text>
+          </ScrollView>
+          <TouchableOpacity onPress={onClose} activeOpacity={0.85} style={{ marginBottom: 8 }}>
+            <LinearGradient colors={[primary, `${primary}dd`]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
+              <Text style={rewardsStyles.navBtnText}>Done</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     </Modal>

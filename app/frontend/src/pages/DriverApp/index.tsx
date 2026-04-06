@@ -16,7 +16,6 @@ import {
   DollarSign, Droplets, Leaf, Target, Sun, Moon
 } from 'lucide-react'
 import FriendsHub from './components/FriendsHub'
-import Leaderboard from './components/Leaderboard'
 import TripHistory from './components/TripHistory'
 import GemHistory from './components/GemHistory'
 import NotificationSettings from './components/NotificationSettings'
@@ -348,7 +347,6 @@ export default function DriverApp() {
 
   // New modal states
   const [showFriendsHub, setShowFriendsHub] = useState(false)
-  const [showLeaderboard, setShowLeaderboard] = useState(false)
   const [showBadgesGrid, setShowBadgesGrid] = useState(false)
   const [showTripHistory, setShowTripHistory] = useState(false)
   const [showGemHistory, setShowGemHistory] = useState(false)
@@ -2251,7 +2249,7 @@ export default function DriverApp() {
             { icon: Users, label: 'Friends Hub', badge: userData.friends_count, action: () => { setShowFriendsHub(true); setShowMenu(false) } },
             { icon: Users, label: 'Family Mode', action: () => { setShowFamilyDashboard(true); setShowMenu(false) } },
             { icon: Users, label: 'Convoy Mode', action: () => { setShowConvoy(true); setShowMenu(false) } },
-            { icon: BarChart3, label: 'Leaderboard', action: () => { setShowLeaderboard(true); setShowMenu(false) } },
+            { icon: Gem, label: 'Gem History', action: () => { setShowGemHistory(true); setShowMenu(false) } },
           ].map((item, i) => (
             <button key={i} onClick={item.action} data-testid={`menu-${item.label.toLowerCase().replace(' ', '-')}`}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${menuItem}`}>
@@ -4956,20 +4954,21 @@ export default function DriverApp() {
       {/* Offers Sub-tab */}
       {rewardsTab === 'offers' && (
         <div className="p-4">
-          {/* Leaderboard Preview */}
-          <button onClick={() => setShowLeaderboard(true)} data-testid="leaderboard-preview"
-            className="w-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl p-4 mb-4 text-left">
+          {/* Safety snapshot */}
+          <div
+            className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-4 mb-4 text-left"
+            data-testid="rewards-safety-preview"
+          >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white/80 text-xs">Your Rank</p>
-                <p className="text-white text-2xl font-bold">#{userData.rank || 42}</p>
+                <p className="text-white/80 text-xs">Safety score</p>
+                <p className="text-white text-2xl font-bold">{Math.round(Number(userData.safety_score ?? 0))}</p>
               </div>
               <div className="flex items-center gap-2">
-                <Trophy className="text-yellow-300" size={24} />
-                <ChevronRight className="text-white" size={20} />
+                <Shield className="text-white/90" size={24} />
               </div>
             </div>
-          </button>
+          </div>
 
           {/* View All Offers Button */}
           <button onClick={() => setShowOffersModal(true)} data-testid="view-all-offers"
@@ -5496,7 +5495,7 @@ export default function DriverApp() {
         <div className="grid grid-cols-4 gap-2 mt-4">
           {[
             { value: `${((Number(userData.gems) ?? 0) / 1000).toFixed(1)}K`, label: 'Gems', icon: '💎' },
-            { value: `#${userData.rank}`, label: 'Rank', icon: '🏆' },
+            { value: `${Math.round(Number(userData.safety_score ?? 0))}`, label: 'Safety', icon: '🛡️' },
             { value: userData.total_trips, label: 'Trips', icon: '🚗' },
             { value: `${((Number(userData.total_miles) ?? 0) / 1000).toFixed(1)}K`, label: 'Miles', icon: '📍' },
           ].map((s, i) => (
@@ -5529,7 +5528,7 @@ export default function DriverApp() {
           <div style={{ width: 1, height: 48, background: 'rgba(255,255,255,0.1)' }} />
           <div style={{ flex: 1, paddingLeft: 12 }}>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>
-              Ohio rank: #{(userData as any).ohio_rank ?? '--'}
+              Weekly driving trend
             </div>
             <div style={{ height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${snaproadScore / 10}%`, background: '#007AFF', borderRadius: 2 }} />
@@ -6822,12 +6821,6 @@ export default function DriverApp() {
           100% { opacity: 0.55; transform: scale(0.9); }
         }
       `}</style>
-      <Leaderboard
-        isOpen={showLeaderboard} 
-        onClose={() => setShowLeaderboard(false)}
-        userId={userData.id || '123456'}
-        userGems={userData.gems || 0}
-      />
       <Suspense fallback={null}>
         <BadgesGrid 
           isOpen={showBadgesGrid} 
@@ -7145,7 +7138,7 @@ export default function DriverApp() {
                 { icon: Shield, title: 'Drive Safe', desc: 'Earn points for smooth braking and safe driving' },
                 { icon: Fuel, title: 'Track Analytics', desc: 'Monitor fuel, savings, and your driver score' },
                 { icon: Car, title: 'Customize Your Ride', desc: 'Unlock new colors and car styles as you level up' },
-                { icon: Trophy, title: 'Compete & Win', desc: 'Challenge friends and climb the leaderboard' },
+                { icon: Trophy, title: 'Compete & Win', desc: 'Challenge friends and earn bonus gems' },
               ].map((step, i) => (
                 <div key={i} className="flex items-center gap-3 bg-slate-800 rounded-xl p-3">
                   <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0">

@@ -332,8 +332,9 @@ export default function MapScreen() {
     drivingMode,
     voiceMuted: navVoiceMuted,
   });
-  const navDisplayCoord = nav.isNavigating ? nav.fusedNavLocation.displayCoord : location;
-  const navDisplayHeading = nav.isNavigating ? nav.fusedNavLocation.displayHeading : heading;
+  /** Same source as LocationPuck + route progress / ETA / turn distances (no fused offset). */
+  const navDisplayCoord = location;
+  const navDisplayHeading = heading;
   const navFetchRef = useRef(nav.fetchDirections);
   const navSetDestRef = useRef(nav.setSelectedDestination);
   useEffect(() => {
@@ -3466,7 +3467,6 @@ export default function MapScreen() {
           totalMiles: user?.totalMiles,
           gems: user?.gems,
           level: user?.level,
-          rank: user?.rank,
           safetyScore: user?.safetyScore,
           snapRoadScore: user?.snapRoadScore,
           snapRoadTier: user?.snapRoadTier,

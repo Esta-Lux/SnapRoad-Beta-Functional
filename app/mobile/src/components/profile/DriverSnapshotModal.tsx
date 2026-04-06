@@ -14,7 +14,6 @@ type Props = {
   onClose: () => void;
   user: User | null;
   weeklyRecap: ProfileWeeklyRecap;
-  myRank: number;
 };
 
 function formatGems(n: number): string {
@@ -23,7 +22,7 @@ function formatGems(n: number): string {
 }
 
 /** Bottom sheet: preview stats, then system share — matches app sheet + theme tokens. */
-export default function DriverSnapshotModal({ visible, onClose, user, weeklyRecap, myRank }: Props) {
+export default function DriverSnapshotModal({ visible, onClose, user, weeklyRecap }: Props) {
   const cardRef = useRef<View>(null);
   const { colors, spacing, typography } = useTheme();
   const w = Dimensions.get('window').width;
@@ -37,7 +36,6 @@ export default function DriverSnapshotModal({ visible, onClose, user, weeklyReca
     user?.isPremium && weeklyRecap.totalTrips > 0
       ? `This week: ${weeklyRecap.totalTrips} trips, ${weeklyRecap.totalMiles.toFixed(1)} mi, avg safety ${weeklyRecap.avgSafetyScore}`
       : null,
-    user?.isPremium && myRank > 0 ? `Weekly rank #${myRank}` : null,
   ]
     .filter(Boolean)
     .join('\n');
@@ -114,7 +112,7 @@ export default function DriverSnapshotModal({ visible, onClose, user, weeklyReca
           {(
             [
               { icon: 'diamond-outline' as const, val: formatGems(user?.gems ?? 0), lbl: 'Gems' },
-              { icon: 'ribbon-outline' as const, val: myRank > 0 ? `#${myRank}` : '—', lbl: 'Rank' },
+              { icon: 'trending-up-outline' as const, val: String(user?.level ?? 1), lbl: 'Level' },
               { icon: 'car-outline' as const, val: String(user?.totalTrips ?? 0), lbl: 'Trips' },
               {
                 icon: 'location-outline' as const,

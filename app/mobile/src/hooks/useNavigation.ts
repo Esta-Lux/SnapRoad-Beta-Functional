@@ -35,8 +35,6 @@ import {
   trackNavigationQualityEvent,
   trackNavigationQualitySample,
 } from '../utils/navigationQualityTelemetry';
-import { useFusedNavigationLocation } from './useFusedNavigationLocation';
-
 function navRoutePolylineId(poly: Coordinate[]): string {
   if (poly.length < 2) return '';
   const a = poly[0]!;
@@ -158,15 +156,6 @@ export function useNavigation(params: {
 
   /** Monotonic cumulative progress for route overlay; reset per polyline id (true reroute). */
   const routeSplitCumRef = useRef<{ routeKey: string; maxCum: number }>({ routeKey: '', maxCum: 0 });
-
-  const fusedNavLocation = useFusedNavigationLocation({
-    rawCoord: userLocation,
-    rawHeading: heading,
-    speedMph: speed,
-    accuracyM: gpsAccuracy,
-    isNavigating,
-    polyline: navigationData?.polyline,
-  });
 
   // --- Fetch directions ---
   const fetchDirections = useCallback(async (
@@ -514,16 +503,6 @@ export function useNavigation(params: {
     return segmentAndTFromCumAlongPolyline(cur.maxCum, poly) ?? null;
   }, [isNavigating, routeProgress, navigationData?.polyline]);
 
-  const navDisplayCoord = useMemo((): Coordinate | null => {
-    if (!isNavigating) return null;
-    return fusedNavLocation.displayCoord;
-  }, [fusedNavLocation.displayCoord, isNavigating]);
-
-  const navDisplayHeading = useMemo((): number => {
-    if (!isNavigating) return heading;
-    return fusedNavLocation.displayHeading;
-  }, [fusedNavLocation.displayHeading, heading, isNavigating]);
-
   // --- Step index tracking (polyline-aligned; matches Mapbox geometry + turn cards) ---
   useEffect(() => {
     if (!isNavigating || !navigationData?.steps?.length || !navigationData.polyline?.length || !routeProgress) {
@@ -660,10 +639,6 @@ export function useNavigation(params: {
     }
 
     const sessionAgeMs = Date.now() - navSessionStartRef.current;
-    /** Early GPS often projects onto the first leg, understating distance vs route preview. */
-    if (sessionAgeMs < 30000 && remainingMeters < totalMeters * 0.9) {
-      remainingMeters = Math.max(remainingMeters, totalMeters * 0.965);
-    }
 
     const remainingMiles = Math.max(0, remainingMeters / 1609.34);
     const fraction = Math.min(1, Math.max(0, remainingMeters / totalMeters));
@@ -676,18 +651,13 @@ export function useNavigation(params: {
     if (sessionAgeMs < 25000) {
       speedBlend = Math.min(speedBlend, 0.04);
     }
-    let etaRaw =
-      etaMinutesLinear * (1 - speedBlend) + Math.min(etaFromSpeed, etaMinutesLinear * 2.2) * speedBlend;
-    etaRaw = Math.max(0, etaRaw);
+    const etaRaw = Math.max(
+      0,
+      etaMinutesLinear * (1 - speedBlend) + Math.min(etaFromSpeed, etaMinutesLinear * 2.2) * speedBlend,
+    );
 
-    const prev = liveEtaSmoothRef.current;
-    const dampedMinutes =
-      prev != null && Number.isFinite(prev)
-        ? prev + Math.max(-2.8, Math.min(2.8, etaRaw - prev))
-        : etaRaw;
-    const clamped = Math.max(0, dampedMinutes);
-    liveEtaSmoothRef.current = clamped;
-    const etaMinutes = Math.max(0, Math.round(clamped));
+    liveEtaSmoothRef.current = etaRaw;
+    const etaMinutes = Math.max(0, Math.round(etaRaw));
 
     setLiveEta({ distanceMiles: remainingMiles, etaMinutes });
   }, [
@@ -769,21 +739,19 @@ export function useNavigation(params: {
     setIsRerouting(true);
     const rerouteMsg = drivingMode === 'calm' ? 'Let me find you a new route.' : 'Rerouting.';
     navSpeak(rerouteMsg, 'high', drivingMode);
+    const offM = routeProgress?.distanceToRouteMeters;
     trackNavigationQualityEvent({
       event: 'reroute',
       accuracyBand: bucketAccuracyBand(gpsAccuracy),
-      offsetBand: bucketOffsetBand(haversineMeters(
-        userLocation.lat,
-        userLocation.lng,
-        fusedNavLocation.displayCoord.lat,
-        fusedNavLocation.displayCoord.lng,
-      )),
+      offsetBand: bucketOffsetBand(Number.isFinite(offM as number) ? (offM as number) : 999),
       progressBucket: bucketProgress((routeProgress?.traveledRouteMeters ?? 0) / Math.max(1, navigationData?.distance ?? 1)),
       speedBand: bucketSpeedBand(speed),
       osBucket: deviceOsBucket(),
-      qualityState: fusedNavLocation.qualityState,
-      snapped: fusedNavLocation.isSnapped ? 1 : 0,
-      confidenceBucket: bucketConfidence(fusedNavLocation.confidence),
+      qualityState: Number.isFinite(offM as number) && (offM as number) < 40 ? 'on_route' : 'off_route',
+      snapped: Number.isFinite(offM as number) && (offM as number) < 35 ? 1 : 0,
+      confidenceBucket: bucketConfidence(
+        Math.max(0, Math.min(1, 1 - (Number.isFinite(offM as number) ? (offM as number) : 80) / 80)),
+      ),
     });
 
     const reroute = async () => {
@@ -810,10 +778,13 @@ export function useNavigation(params: {
     userLocation.lat,
     userLocation.lng,
     speed,
+    gpsAccuracy,
     isNavigating,
     navigationData?.destination,
     navigationData?.polyline,
     routeProgress?.distanceToRouteMeters,
+    routeProgress?.traveledRouteMeters,
+    navigationData?.distance,
     drivingMode,
     fetchDirections,
     navSpeak,
@@ -891,31 +862,25 @@ export function useNavigation(params: {
     const prev = navQualityEmitRef.current;
     if (progressBucket === prev.progressBucket && now - prev.atMs < 25000) return;
     navQualityEmitRef.current = { atMs: now, progressBucket };
+    const offM = routeProgress.distanceToRouteMeters;
     trackNavigationQualitySample({
       accuracyBand: bucketAccuracyBand(gpsAccuracy),
-      offsetBand: bucketOffsetBand(haversineMeters(
-        userLocation.lat,
-        userLocation.lng,
-        fusedNavLocation.displayCoord.lat,
-        fusedNavLocation.displayCoord.lng,
-      )),
+      offsetBand: bucketOffsetBand(Number.isFinite(offM) ? offM : 999),
       progressBucket,
       speedBand: bucketSpeedBand(speed),
       osBucket: deviceOsBucket(),
-      qualityState: fusedNavLocation.qualityState,
-      snapped: fusedNavLocation.isSnapped ? 1 : 0,
-      confidenceBucket: bucketConfidence(fusedNavLocation.confidence),
+      qualityState: Number.isFinite(offM) && offM < 40 ? 'on_route' : 'off_route',
+      snapped: Number.isFinite(offM) && offM < 35 ? 1 : 0,
+      confidenceBucket: bucketConfidence(
+        Math.max(0, Math.min(1, 1 - (Number.isFinite(offM) ? offM : 80) / 80)),
+      ),
     });
   }, [
-    fusedNavLocation.confidence,
-    fusedNavLocation.displayCoord.lat,
-    fusedNavLocation.displayCoord.lng,
-    fusedNavLocation.isSnapped,
-    fusedNavLocation.qualityState,
     gpsAccuracy,
     isNavigating,
     navigationData?.distance,
     routeProgress?.traveledRouteMeters,
+    routeProgress?.distanceToRouteMeters,
     speed,
     userLocation.lat,
     userLocation.lng,
@@ -932,25 +897,17 @@ export function useNavigation(params: {
     trackNavigationQualityEvent({
       event: 'severe_off_route',
       accuracyBand: bucketAccuracyBand(gpsAccuracy),
-      offsetBand: bucketOffsetBand(haversineMeters(
-        userLocation.lat,
-        userLocation.lng,
-        fusedNavLocation.displayCoord.lat,
-        fusedNavLocation.displayCoord.lng,
-      )),
+      offsetBand: bucketOffsetBand(Number.isFinite(dist) ? dist : 999),
       progressBucket: bucketProgress(routeProgress.traveledRouteMeters / Math.max(1, navigationData?.distance ?? 1)),
       speedBand: bucketSpeedBand(speed),
       osBucket: deviceOsBucket(),
-      qualityState: fusedNavLocation.qualityState,
-      snapped: fusedNavLocation.isSnapped ? 1 : 0,
-      confidenceBucket: bucketConfidence(fusedNavLocation.confidence),
+      qualityState: Number.isFinite(dist) && dist < 40 ? 'on_route' : 'off_route',
+      snapped: Number.isFinite(dist) && dist < 35 ? 1 : 0,
+      confidenceBucket: bucketConfidence(
+        Math.max(0, Math.min(1, 1 - (Number.isFinite(dist) ? dist : 80) / 80)),
+      ),
     });
   }, [
-    fusedNavLocation.confidence,
-    fusedNavLocation.displayCoord.lat,
-    fusedNavLocation.displayCoord.lng,
-    fusedNavLocation.isSnapped,
-    fusedNavLocation.qualityState,
     gpsAccuracy,
     isNavigating,
     navigationData?.distance,
@@ -966,9 +923,6 @@ export function useNavigation(params: {
     isRerouting,
     routeProgress,
     routeSplitForOverlay,
-    navDisplayCoord,
-    navDisplayHeading,
-    fusedNavLocation,
     currentStepIndex,
     traveledDistanceMeters,
     availableRoutes,

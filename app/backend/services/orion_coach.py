@@ -70,7 +70,6 @@ def build_orion_system_prompt(ctx: Optional[Dict[str, Any]] = None) -> str:
     miles = c.get("totalMiles")
     gems = c.get("gems")
     level = c.get("level")
-    rank = c.get("rank")
     safety = c.get("safetyScore")
     snap_score = c.get("snapRoadScore")
     snap_tier = c.get("snapRoadTier")
@@ -86,7 +85,6 @@ def build_orion_system_prompt(ctx: Optional[Dict[str, Any]] = None) -> str:
         f"- Total miles (lifetime): {_fmt_num(miles)}",
         f"- Gems balance: {_fmt_num(gems)}",
         f"- Driver level: {_fmt_num(level)}",
-        f"- Leaderboard rank: {_fmt_num(rank)}",
         f"- Safety score (app): {_fmt_num(safety)}",
     ]
     if snap_score is not None:
@@ -115,7 +113,7 @@ def build_orion_system_prompt(ctx: Optional[Dict[str, Any]] = None) -> str:
 ## SnapRoad product facts (for general questions):
 - Gems reward safe miles, hazard reports, challenges, and partner offers
 - Premium: 2× gem multiplier, deeper analytics, traffic cameras layer, more place alerts, and richer Orion context when available
-- Features: turn-by-turn nav, offers, road reports, live friend locations (Premium), fuel tracker, driving score, weekly recap, leaderboards, badges, place alerts, quick routes, favorites
+- Features: turn-by-turn nav, offers, road reports, live friend locations (Premium), fuel tracker, driving score, weekly recap, badges, place alerts, quick routes, favorites
 - Privacy: encrypted location; data is not sold
 
 ## Driver profile (from the app — treat as source of truth for this user):

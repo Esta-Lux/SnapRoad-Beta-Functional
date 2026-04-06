@@ -8,7 +8,6 @@ import { updateMyLocation } from '@/lib/friendLocation'
 import { getCurrentPositionForFamilySharing } from '@/lib/familyGeolocation'
 import FamilyPrivacyControls from './FamilyPrivacyControls'
 import TeenReportCard from './TeenReportCard'
-import FamilyLeaderboard from './FamilyLeaderboard'
 
 interface FamilyMember {
   id: string
@@ -651,7 +650,6 @@ function MembersScreen({
   onSendSOS,
   onSetLiveTab,
   onSetShowCheckIn,
-  onSetShowFamilyLeaderboard,
   onSetShowPrivacy,
   onOpenReportCard,
   onOpenSettings,
@@ -677,7 +675,6 @@ function MembersScreen({
   onSendSOS: () => void
   onSetLiveTab: (t: 'list' | 'map') => void
   onSetShowCheckIn: (v: boolean) => void
-  onSetShowFamilyLeaderboard: (v: boolean) => void
   onSetShowPrivacy: (v: boolean) => void
   onOpenReportCard: (m: FamilyMember) => void
   onOpenSettings: (m: FamilyMember) => void
@@ -725,7 +722,6 @@ function MembersScreen({
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
         <button onClick={() => onSetShowCheckIn(true)} style={{ flex: 1, padding: '8px 16px', borderRadius: 10, background: 'rgba(0,122,255,0.15)', border: '1px solid rgba(0,122,255,0.25)', color: '#007AFF', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Check-in</button>
-        <button onClick={() => onSetShowFamilyLeaderboard(true)} style={{ flex: 1, padding: '8px 16px', borderRadius: 10, background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.25)', color: '#A78BFA', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Leaderboard</button>
       </div>
 
       {liveTab === 'map' ? (
@@ -780,7 +776,7 @@ function HomeScreen({ isLight, sheetText, muted, onSetScreen }: Readonly<{ isLig
       <div style={{ background: heroBg, border: heroBorder, borderRadius: 16, padding: 16, marginBottom: 20 }}>
         <div style={{ fontSize: 32, marginBottom: 8 }}>👨‍👩‍👧‍👦</div>
         <div style={{ fontSize: 16, fontWeight: 700, color: sheetText, marginBottom: 6 }}>Better than Life360</div>
-        <div style={{ fontSize: 13, color: muted, lineHeight: 1.5 }}>Real-time location sharing, SOS alerts, teen driving reports, curfew mode, speed alerts, and family leaderboards — all in one place.</div>
+        <div style={{ fontSize: 13, color: muted, lineHeight: 1.5 }}>Real-time location sharing, SOS alerts, teen driving reports, curfew mode, and speed alerts — all in one place.</div>
       </div>
       <button onClick={() => onSetScreen('create')} style={{ width: '100%', height: 52, background: '#FF9500', border: 'none', borderRadius: 14, color: 'white', fontSize: 16, fontWeight: 700, cursor: 'pointer', marginBottom: 12 }}>Create Family Group</button>
       <button onClick={() => onSetScreen('join')} style={{ width: '100%', height: 52, background: joinBg, border: joinBorder, borderRadius: 14, color: sheetText, fontSize: 16, fontWeight: 600, cursor: 'pointer' }}>Join with Invite Code</button>
@@ -844,7 +840,6 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Read
   const [showPrivacy, setShowPrivacy] = useState(false)
   const [showReportCard, setShowReportCard] = useState(false)
   const [reportCardMember, setReportCardMember] = useState<FamilyMember | null>(null)
-  const [showFamilyLeaderboard, setShowFamilyLeaderboard] = useState(false)
   const [showCheckIn, setShowCheckIn] = useState(false)
   const [locationConsent, setLocationConsent] = useState(true)
   const [shareLocation, setShareLocation] = useState(true)
@@ -1227,7 +1222,6 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Read
               onSendSOS={sendSOS}
               onSetLiveTab={setLiveTab}
               onSetShowCheckIn={setShowCheckIn}
-              onSetShowFamilyLeaderboard={setShowFamilyLeaderboard}
               onSetShowPrivacy={setShowPrivacy}
               onOpenReportCard={(m) => {
                             setReportCardMember(m)
@@ -1296,13 +1290,6 @@ export default function FamilyDashboard({ isOpen, onClose, currentUserId }: Read
         memberName={reportCardMember?.profiles?.full_name ?? reportCardMember?.profiles?.name ?? 'Member'}
         isAdmin={Boolean(isAdmin)}
       />
-      <FamilyLeaderboard
-        isOpen={showFamilyLeaderboard}
-        onClose={() => setShowFamilyLeaderboard(false)}
-        currentUserId={currentUserId}
-        groupId={groupId ?? ''}
-      />
-
       {showCheckIn && (
         <CheckInDialog isLight={isLight} onClose={() => setShowCheckIn(false)} />
       )}

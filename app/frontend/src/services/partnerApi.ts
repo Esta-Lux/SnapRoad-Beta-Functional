@@ -241,10 +241,9 @@ class PartnerApiService {
       body: form,
     })
     if (!response.ok) {
-      let detail = ''
+      let detail: string
       try {
-        const payload = await response.clone().json()
-        detail = messageFromHttpJson(payload, response.status)
+        detail = messageFromHttpJson(await response.clone().json(), response.status)
       } catch {
         detail = messageFromHttpJson(null, response.status)
       }

@@ -6,7 +6,6 @@ interface UserData {
   total_miles?: number
   total_gems_earned?: number
   hazards_reported?: number
-  ohio_rank?: number
   total_trips?: number
   best_safety_score?: number
 }
@@ -162,11 +161,6 @@ export default function SnapRoadScoreCard({ isOpen, onClose, userData }: Props) 
             <span style={{ fontSize: 16 }}>{tier.icon}</span>
             <span style={{ color: tier.color, fontWeight: 700, fontSize: 14 }}>{tier.name}</span>
           </div>
-          {userData.ohio_rank ? (
-            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 12 }}>
-              Ohio rank #{userData.ohio_rank}
-            </div>
-          ) : null}
           <div
             style={{
               height: 6,

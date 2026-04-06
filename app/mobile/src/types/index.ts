@@ -18,7 +18,6 @@ export interface User {
   totalMiles: number;
   totalTrips: number;
   badges: number;
-  rank: number;
   /** Total XP from profile API */
   xp?: number;
   plan?: string;
@@ -165,6 +164,8 @@ export interface Offer {
   lat?: number;
   lng?: number;
   business_type?: string;
+  /** Normalized category title from API (`attach_offer_category_fields`). */
+  category_label?: string;
   redeemed?: boolean;
   distance_km?: number;
   is_admin_offer?: boolean;

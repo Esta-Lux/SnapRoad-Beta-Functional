@@ -43,6 +43,7 @@ from routes.admin import router as admin_router
 from routes.social import router as social_router
 from routes.navigation import router as navigation_router
 from routes.directions import router as directions_router
+from routes.mapbox_directions import router as mapbox_directions_router
 from routes.places import router as places_router
 from routes.mapkit import router as mapkit_router
 from routes.ai import router as ai_router
@@ -237,6 +238,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(social_router)
     app.include_router(navigation_router)
     app.include_router(directions_router)
+    app.include_router(mapbox_directions_router)
     app.include_router(places_router)
     app.include_router(mapkit_router)
     app.include_router(ai_router)

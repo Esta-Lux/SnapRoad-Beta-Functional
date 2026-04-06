@@ -16,7 +16,6 @@ import type {
   Offer,
   Challenge,
   Badge,
-  Leaderboard,
   Partner,
   PartnerAnalytics,
   AdminStats,
@@ -469,12 +468,6 @@ class ApiService {
 
   async getBadges(): Promise<ApiResponse<Badge[]>> {
     return this.request<Badge[]>('/api/badges');
-  }
-
-  // ==================== LEADERBOARD ====================
-  async getLeaderboard(type: 'global' | 'regional' | 'friends' = 'global', region?: string): Promise<ApiResponse<Leaderboard>> {
-    const query = region ? `?type=${type}&region=${region}` : `?type=${type}`;
-    return this.request<Leaderboard>(`/api/leaderboard${query}`);
   }
 
   // ==================== FUEL ====================

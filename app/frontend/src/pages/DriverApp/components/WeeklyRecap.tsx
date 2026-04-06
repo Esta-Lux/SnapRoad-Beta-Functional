@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { 
-  X, Trophy, Gem, Shield, TrendingUp, Flame, Car, 
-  Zap, Star, ChevronRight, Award, Target, MapPin
+  X, Trophy, Gem, Shield, Flame, Car, 
+  Zap, Star, ChevronRight, Award, MapPin
 } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
@@ -14,14 +14,11 @@ interface WeeklyStats {
   gems_earned: number
   xp_earned: number
   safety_score_avg: number
-  safety_score_change: number
-  challenges_won: number
-  challenges_lost: number
   offers_redeemed: number
-  reports_posted: number
   streak_days: number
-  rank_change: number
   highlights: string[]
+  orion_commentary?: string | null
+  behavior?: { hard_braking_events_total: number; speeding_events_total: number }
 }
 
 interface WeeklyRecapProps {
@@ -54,7 +51,26 @@ export default function WeeklyRecap({ isOpen, onClose, isPremium }: WeeklyRecapP
       const res = await fetch(`${API_URL}/api/weekly-recap`)
       const data = await res.json()
       if (data.success) {
-        setStats(data.data)
+        const d = data.data
+        setStats({
+          total_trips: Number(d.total_trips) || 0,
+          total_miles: Number(d.total_miles) || 0,
+          total_time_minutes: Number(d.total_time_minutes) || 0,
+          gems_earned: Number(d.gems_earned) || 0,
+          xp_earned: Number(d.xp_earned) || 0,
+          safety_score_avg: Number(d.safety_score_avg) || 0,
+          offers_redeemed: Number(d.offers_redeemed) || 0,
+          streak_days: Number(d.streak_days) || 0,
+          highlights: Array.isArray(d.highlights) ? d.highlights : [],
+          orion_commentary: d.orion_commentary ?? null,
+          behavior:
+            d.behavior && typeof d.behavior === 'object'
+              ? {
+                  hard_braking_events_total: Number(d.behavior.hard_braking_events_total) || 0,
+                  speeding_events_total: Number(d.behavior.speeding_events_total) || 0,
+                }
+              : { hard_braking_events_total: 0, speeding_events_total: 0 },
+        })
       }
     } catch {
       setStats(null)
@@ -152,45 +168,32 @@ export default function WeeklyRecap({ isOpen, onClose, isPremium }: WeeklyRecapP
               <span className="text-4xl font-bold text-white">{stats.safety_score_avg}</span>
             </div>
           </div>
-          <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full ${
-            stats.safety_score_change >= 0 ? 'bg-emerald-500/30 text-emerald-200' : 'bg-red-500/30 text-red-200'
-          }`}>
-            <TrendingUp size={14} className={stats.safety_score_change < 0 ? 'rotate-180' : ''} />
-            <span className="text-sm font-medium">
-              {stats.safety_score_change >= 0 ? '+' : ''}{stats.safety_score_change} from last week
-            </span>
-          </div>
+          <p className="text-emerald-100/90 text-sm mt-4">Based on trips recorded this period.</p>
         </div>
       )
     },
-    // Slide 3: Challenges & Achievements
+    // Slide 3: Rewards & streak
     {
       bg: 'from-orange-500 to-red-500',
       content: (
         <div className="text-center">
-          <Trophy className="text-yellow-300 mx-auto mb-4" size={48} />
-          <p className="text-orange-200 text-sm">Challenge Results</p>
+          <Gem className="text-yellow-200 mx-auto mb-4" size={48} />
+          <p className="text-orange-200 text-sm">Rewards</p>
           <div className="flex justify-center gap-6 my-6">
             <div>
-              <p className="text-4xl font-bold text-white">{stats.challenges_won}</p>
-              <p className="text-orange-200 text-xs">Won</p>
+              <p className="text-4xl font-bold text-white">{stats.offers_redeemed}</p>
+              <p className="text-orange-200 text-xs">Offers redeemed</p>
             </div>
             <div className="w-px bg-white/20" />
             <div>
-              <p className="text-4xl font-bold text-white">{stats.challenges_lost}</p>
-              <p className="text-orange-200 text-xs">Lost</p>
+              <p className="text-4xl font-bold text-white">+{stats.gems_earned.toLocaleString()}</p>
+              <p className="text-orange-200 text-xs">Gems from trips</p>
             </div>
           </div>
           {stats.streak_days > 0 && (
             <div className="inline-flex items-center gap-2 bg-white/10 px-4 py-2 rounded-full">
               <Flame className="text-orange-300" size={18} />
-              <span className="text-white font-medium">{stats.streak_days} Day Streak!</span>
-            </div>
-          )}
-          {stats.rank_change !== 0 && (
-            <div className="mt-4 text-orange-200 text-sm">
-              <TrendingUp size={14} className="inline mr-1" />
-              Moved up {stats.rank_change} spots in rankings!
+              <span className="text-white font-medium">{stats.streak_days} day safe-drive streak</span>
             </div>
           )}
         </div>
@@ -204,44 +207,52 @@ export default function WeeklyRecap({ isOpen, onClose, isPremium }: WeeklyRecapP
           <Star className="text-yellow-300 mx-auto mb-4" size={48} />
           <p className="text-blue-200 text-sm mb-4">Weekly Highlights</p>
           <div className="space-y-3 text-left">
-            {stats.highlights.map((highlight, i) => (
-              <div key={i} className="bg-white/10 rounded-xl p-3 flex items-center gap-3">
-                <div className="w-8 h-8 bg-yellow-500/20 rounded-lg flex items-center justify-center">
-                  <Award className="text-yellow-300" size={16} />
+            {stats.highlights.length > 0 ? (
+              stats.highlights.map((highlight, i) => (
+                <div key={i} className="bg-white/10 rounded-xl p-3 flex items-center gap-3">
+                  <div className="w-8 h-8 bg-yellow-500/20 rounded-lg flex items-center justify-center">
+                    <Award className="text-yellow-300" size={16} />
+                  </div>
+                  <p className="text-white text-sm flex-1">{highlight}</p>
                 </div>
-                <p className="text-white text-sm flex-1">{highlight}</p>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-blue-100/90 text-sm text-center px-2">
+                Drive this week to unlock personalized highlights.
+              </p>
+            )}
           </div>
         </div>
       )
     },
-    // Slide 5: Community Impact
+    // Slide 5: Behavior snapshot
     {
       bg: 'from-cyan-600 to-blue-600',
       content: (
         <div className="text-center">
-          <Target className="text-white mx-auto mb-4" size={48} />
-          <p className="text-cyan-200 text-sm">Community Impact</p>
-          <div className="my-6">
-            <p className="text-5xl font-bold text-white">{stats.reports_posted}</p>
-            <p className="text-cyan-200 text-sm mt-1">Road Reports Posted</p>
-          </div>
-          <div className="bg-white/10 rounded-xl p-4">
-            <p className="text-cyan-100 text-sm">
-              Your reports helped keep the roads safer for everyone! 🛣️
-            </p>
-          </div>
-          <div className="mt-4 flex justify-center gap-4">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">{stats.offers_redeemed}</p>
-              <p className="text-cyan-200 text-xs">Offers Redeemed</p>
+          <Shield className="text-white mx-auto mb-4" size={48} />
+          <p className="text-cyan-200 text-sm">Driving behavior</p>
+          <div className="mt-6 flex justify-center gap-8">
+            <div>
+              <p className="text-4xl font-bold text-white">{stats.behavior?.hard_braking_events_total ?? 0}</p>
+              <p className="text-cyan-200 text-xs mt-1">Hard braking events</p>
             </div>
+            <div>
+              <p className="text-4xl font-bold text-white">{stats.behavior?.speeding_events_total ?? 0}</p>
+              <p className="text-cyan-200 text-xs mt-1">Speeding events</p>
+            </div>
+          </div>
+          <div className="mt-6 flex justify-center gap-4">
             <div className="text-center">
               <p className="text-2xl font-bold text-white">{Math.round(stats.total_time_minutes / 60)}h</p>
-              <p className="text-cyan-200 text-xs">Drive Time</p>
+              <p className="text-cyan-200 text-xs">Time on road</p>
             </div>
           </div>
+          {stats.orion_commentary ? (
+            <div className="bg-white/10 rounded-xl p-4 mt-6 text-left">
+              <p className="text-cyan-100 text-sm">{stats.orion_commentary}</p>
+            </div>
+          ) : null}
         </div>
       )
     }

@@ -18,7 +18,6 @@ from services.supabase_service import (
     sb_update_profile,
     sb_create_challenge,
     sb_get_challenges,
-    merge_profile_promotion_entitlements,
 )
 from services.premium_access import (
     MSG_PREMIUM_REQUIRED,
@@ -219,114 +218,6 @@ def get_community_badges(user: CurrentUser):
     earned_ids = set(user.get("community_badges", []))
     badges = [{**b, "earned": b["id"] in earned_ids} for b in COMMUNITY_BADGES]
     return {"success": True, "data": badges, "earned_count": len(earned_ids), "total_count": len(COMMUNITY_BADGES)}
-
-
-# ==================== LEADERBOARD ====================
-# Top 10 by state; weekly default. Ranked by safety_score (primary), then gems (secondary).
-# Each entry includes challenges_participated and badges_count (show on click).
-
-_LIFETIME_FILTERS = ("all_time", "alltime", "lifetime")
-_MONTHLY_FILTERS = ("month", "monthly")
-
-
-def _apply_leaderboard_order(query, tf: str):
-    """Apply the correct ORDER BY to a Supabase leaderboard query."""
-    if tf in _LIFETIME_FILTERS:
-        return query.order("total_miles", desc=True).order("gems", desc=True)
-    if tf in _MONTHLY_FILTERS:
-        return query.order("level", desc=True).order("gems", desc=True)
-    if tf == "all":
-        return query.order("gems", desc=True).order("safety_score", desc=True)
-    return query.order("safety_score", desc=True).order("gems", desc=True)
-
-
-def _leaderboard_sort_key(tf: str):
-    """Return a sort-key function for in-memory leaderboard fallback."""
-    if tf in _LIFETIME_FILTERS:
-        return lambda x: (x.get("total_miles", 0), x.get("gems", 0))
-    if tf in _MONTHLY_FILTERS:
-        return lambda x: (x.get("level", 0), x.get("gems", 0))
-    if tf == "all":
-        return lambda x: (x.get("gems", 0), x.get("safety_score", 0))
-    return lambda x: (x.get("safety_score", 0), x.get("gems", 0))
-
-
-def _build_leaderboard_entry(rank: int, u: dict) -> dict:
-    return {
-        "rank": rank,
-        "id": str(u.get("id", "")),
-        "name": u.get("name") or "Driver",
-        "safety_score": u.get("safety_score") or 0,
-        "level": u.get("level") or 1,
-        "gems": u.get("gems") or 0,
-        "total_miles": u.get("total_miles") or 0,
-        "state": u.get("state") or "",
-        "is_premium": bool(u.get("is_premium")),
-    }
-
-
-def _leaderboard_response(
-    leaderboard: list, my_data: dict, user_id: str, total_drivers: int,
-) -> dict:
-    my_rank = next((e["rank"] for e in leaderboard if str(e["id"]) == user_id), len(leaderboard) + 1)
-    return {
-        "success": True,
-        "data": {
-            "leaderboard": leaderboard,
-            "my_rank": my_rank,
-            "my_score": my_data.get("safety_score", 0),
-            "total_drivers": total_drivers,
-            "my_data": {
-                "name": my_data.get("name", "Driver"),
-                "safety_score": my_data.get("safety_score", 0),
-                "gems": my_data.get("gems", 0),
-                "level": my_data.get("level", 1),
-                "state": my_data.get("state", ""),
-            },
-            "states": [],
-        },
-    }
-
-
-@router.get("/leaderboard")
-def get_leaderboard(
-    user: CurrentUser,
-    state: str = "all",
-    limit: Annotated[int, Query(ge=1, le=100)] = 10,
-    time_filter: str = "weekly",
-):
-    require_premium_user(user)
-    user_id = str(user.get("id") or current_user_id)
-    tf = (time_filter or "weekly").lower()
-
-    try:
-        sb = get_supabase()
-        query = sb.table("profiles").select(
-            "id,name,safety_score,level,gems,total_miles,is_premium,state,"
-            "promotion_access_until,promotion_plan"
-        )
-        if state and state.lower() != "all":
-            query = query.eq("state", state.upper())
-        query = _apply_leaderboard_order(query, tf)
-        res = query.limit(limit).execute()
-        if res.data:
-            leaderboard = [
-                _build_leaderboard_entry(i + 1, merge_profile_promotion_entitlements(dict(u)))
-                for i, u in enumerate(res.data)
-            ]
-            my_profile = sb.table("profiles").select("name,safety_score,gems,level,state").eq("id", user_id).limit(1).execute()
-            my_data = my_profile.data[0] if my_profile.data else {}
-            return _leaderboard_response(leaderboard, my_data, user_id, len(leaderboard))
-    except Exception as e:
-        logger.warning("failed to fetch leaderboard from Supabase: %s", e)
-
-    all_users = list(users_db.values())
-    if state and state.lower() != "all":
-        all_users = [u for u in all_users if (u.get("state") or "").upper() == state.upper()]
-    sorted_users = sorted(all_users, key=_leaderboard_sort_key(tf), reverse=True)[:limit]
-    leaderboard = [_build_leaderboard_entry(i + 1, u) for i, u in enumerate(sorted_users)]
-    current_user = _user_state(user_id)
-    return _leaderboard_response(leaderboard, current_user, user_id, len(all_users))
 
 
 # ==================== CHALLENGES ====================

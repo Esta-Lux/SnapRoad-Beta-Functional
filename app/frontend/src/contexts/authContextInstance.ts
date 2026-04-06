@@ -14,7 +14,6 @@ export interface User {
   totalMiles: number
   totalTrips: number
   badges: number
-  rank: number
 }
 
 /** API login/signup response user shape (id, email, name or full_name) */

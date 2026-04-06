@@ -1,5 +1,6 @@
 import type { Coordinate, DrivingMode } from '../types';
 import { getMapboxPublicToken, isMapboxPublicTokenConfigured } from '../config/mapbox';
+import { api } from '../api/client';
 
 /** True when Mapbox Directions / Geocoding can run (token present in env or Expo extra). */
 export function isMapboxDirectionsConfigured(): boolean {
@@ -195,6 +196,7 @@ export function mapboxManeuverToSimple(modifier?: string, type?: string): string
   return type || 'straight';
 }
 
+/** Raw Mapbox `routes[]` entry — shared by client and `/api/navigation/mapbox-routes` proxy. */
 interface RawRoute {
   geometry: { coordinates: [number, number][] };
   legs: Array<{
@@ -420,45 +422,88 @@ export function getModeDirectionsConfig(mode: DrivingMode): { profile: Direction
   }
 }
 
+type MapboxDirectionsJson = { routes?: RawRoute[]; message?: string };
+
+/** Prefer backend proxy (MAPBOX_ACCESS_TOKEN on API) so preview + active nav share identical geometry. */
+async function fetchMapboxTrafficRoutesFromBackend(
+  origin: Coordinate,
+  destination: Coordinate,
+  options?: { maxHeightMeters?: number; mode?: DrivingMode; fastSingleRoute?: boolean },
+): Promise<RawRoute[] | null> {
+  try {
+    const modeConfig = getModeDirectionsConfig(options?.mode ?? 'adaptive');
+    const res = await api.post<MapboxDirectionsJson>('/api/navigation/mapbox-routes', {
+      origin_lat: origin.lat,
+      origin_lng: origin.lng,
+      dest_lat: destination.lat,
+      dest_lng: destination.lng,
+      profile: modeConfig.profile,
+      exclude: modeConfig.exclude ?? undefined,
+      max_height_m:
+        typeof options?.maxHeightMeters === 'number' && Number.isFinite(options.maxHeightMeters)
+          ? Math.max(0, Math.min(10, options.maxHeightMeters))
+          : undefined,
+      alternatives: !options?.fastSingleRoute,
+    });
+    const routes = res.success && res.data && Array.isArray(res.data.routes) ? res.data.routes : null;
+    if (!routes?.length) return null;
+    return routes as RawRoute[];
+  } catch {
+    return null;
+  }
+}
+
 export async function getMapboxRouteOptions(
   origin: Coordinate,
   destination: Coordinate,
   options?: { maxHeightMeters?: number; mode?: DrivingMode; fastSingleRoute?: boolean },
 ): Promise<DirectionsResult[]> {
-  if (!isMapboxDirectionsConfigured()) {
-    throw new Error('Mapbox access token is not configured. Set EXPO_PUBLIC_MAPBOX_TOKEN (bundle or Expo extra mapboxPublicToken).');
-  }
-  const MAPBOX_TOKEN = getMapboxPublicToken();
-
   const modeConfig = getModeDirectionsConfig(options?.mode ?? 'adaptive');
   const maxHeightParam =
     typeof options?.maxHeightMeters === 'number' && Number.isFinite(options.maxHeightMeters)
       ? `&max_height=${Math.max(0, Math.min(10, options.maxHeightMeters))}`
       : '';
   const excludeParam = modeConfig.exclude ? `&exclude=${encodeURIComponent(modeConfig.exclude)}` : '';
-  const tokenQS = `access_token=${encodeURIComponent(MAPBOX_TOKEN)}`;
-  const commonQS =
-    `${tokenQS}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
   const coordsPath = `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
 
-  const trafficUrl = `${DIRECTIONS_BASE}/${modeConfig.profile}/${coordsPath}?${commonQS}&alternatives=${options?.fastSingleRoute ? 'false' : 'true'}`;
-  const trafficRes = await fetch(trafficUrl);
-  const trafficJson = (await trafficRes.json().catch(() => ({}))) as { routes?: RawRoute[]; message?: string };
-  if (!trafficRes.ok) {
-    const msg = trafficJson?.message || `HTTP ${trafficRes.status}`;
-    throw new Error(`Mapbox Directions: ${msg}`);
-  }
-  const trafficRoutes = (trafficJson.routes ?? []) as RawRoute[];
+  let trafficRoutes =
+    (await fetchMapboxTrafficRoutesFromBackend(origin, destination, options)) ?? [];
+
   if (!trafficRoutes.length) {
-    throw new Error('No route found between these locations.');
+    if (!isMapboxDirectionsConfigured()) {
+      throw new Error(
+        'No route source available. Configure MAPBOX_ACCESS_TOKEN on the API, or set EXPO_PUBLIC_MAPBOX_TOKEN in the app.',
+      );
+    }
+    const MAPBOX_TOKEN = getMapboxPublicToken();
+    const tokenQS = `access_token=${encodeURIComponent(MAPBOX_TOKEN)}`;
+    const commonQS =
+      `${tokenQS}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
+    const trafficUrl = `${DIRECTIONS_BASE}/${modeConfig.profile}/${coordsPath}?${commonQS}&alternatives=${options?.fastSingleRoute ? 'false' : 'true'}`;
+    const trafficRes = await fetch(trafficUrl);
+    const trafficJson = (await trafficRes.json().catch(() => ({}))) as MapboxDirectionsJson;
+    if (!trafficRes.ok) {
+      const msg = trafficJson?.message || `HTTP ${trafficRes.status}`;
+      throw new Error(`Mapbox Directions: ${msg}`);
+    }
+    trafficRoutes = (trafficJson.routes ?? []) as RawRoute[];
+    if (!trafficRoutes.length) {
+      throw new Error('No route found between these locations.');
+    }
   }
 
-  const results: DirectionsResult[] = [parseRoute(trafficRoutes[0], 'best')];
+  const MAPBOX_TOKEN = isMapboxDirectionsConfigured() ? getMapboxPublicToken() : '';
+  const tokenQS = MAPBOX_TOKEN ? `access_token=${encodeURIComponent(MAPBOX_TOKEN)}` : '';
+  const commonQS =
+    tokenQS &&
+    `${tokenQS}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
+
+  const results: DirectionsResult[] = [parseRoute(trafficRoutes[0]!, 'best')];
   for (let i = 1; i < trafficRoutes.length && !options?.fastSingleRoute && results.length < 3; i++) {
-    results.push(parseRoute(trafficRoutes[i], 'alt'));
+    results.push(parseRoute(trafficRoutes[i]!, 'alt'));
   }
 
-  if (!options?.fastSingleRoute && results.length < 3) {
+  if (!options?.fastSingleRoute && results.length < 3 && commonQS) {
     try {
       const drivingUrl = `${DIRECTIONS_BASE}/driving/${coordsPath}?${commonQS}&alternatives=true`;
       const drivingRes = await fetch(drivingUrl);
@@ -469,7 +514,10 @@ export async function getMapboxRouteOptions(
           const byDist = [...drivingRoutes].sort((a, b) => a.distance - b.distance);
           for (const candidate of byDist) {
             if (results.length >= 3) break;
-            const dup = results.find((r) => Math.abs(r.duration - candidate.duration) < 30 && Math.abs(r.distance - candidate.distance) < 200);
+            const dup = results.find(
+              (r) =>
+                Math.abs(r.duration - candidate.duration) < 30 && Math.abs(r.distance - candidate.distance) < 200,
+            );
             if (!dup) {
               results.push(parseRoute(candidate, 'eco'));
             }

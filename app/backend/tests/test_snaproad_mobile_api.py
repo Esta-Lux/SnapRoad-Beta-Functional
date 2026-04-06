@@ -375,46 +375,10 @@ class TestBadges:
         print(f"✓ Badge categories: {list(data['data'].keys())}")
 
 
-class TestLeaderboard:
-    """Leaderboard endpoint tests - used by Leaderboard Modal"""
-    
-    def test_get_leaderboard(self):
-        """Test getting leaderboard"""
+class TestLeaderboardRemoved:
+    def test_leaderboard_not_found(self):
         response = requests.get(f"{BASE_URL}/api/leaderboard")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] == True
-        assert "data" in data
-        assert isinstance(data["data"], list)
-        assert "my_rank" in data
-        assert "total_users" in data
-        assert "states" in data
-        print(f"✓ Leaderboard: {len(data['data'])} users, my rank #{data['my_rank']}")
-    
-    def test_leaderboard_entry_structure(self):
-        """Verify leaderboard entry structure"""
-        response = requests.get(f"{BASE_URL}/api/leaderboard")
-        data = response.json()
-        
-        if len(data["data"]) > 0:
-            entry = data["data"][0]
-            required_fields = ["rank", "id", "name", "safety_score", "gems",
-                             "level", "state", "badges_count", "is_premium"]
-            for field in required_fields:
-                assert field in entry, f"Missing field in leaderboard entry: {field}"
-            print(f"✓ Leaderboard entry verified: #{entry['rank']} {entry['name']}")
-    
-    def test_leaderboard_filter_by_state(self):
-        """Test filtering leaderboard by state"""
-        response = requests.get(f"{BASE_URL}/api/leaderboard?state=OH")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] == True
-        
-        # All entries should be from Ohio
-        for entry in data["data"]:
-            assert entry["state"] == "OH"
-        print(f"✓ Ohio leaderboard: {len(data['data'])} users")
+        assert response.status_code == 404
 
 
 class TestFriends:

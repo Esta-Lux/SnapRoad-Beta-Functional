@@ -27,7 +27,6 @@ export type DriverUserData = {
   total_miles: number
   total_trips: number
   badges_earned_count: number
-  rank: number
   is_premium: boolean
   member_since: string
   friends_count: number
@@ -52,7 +51,6 @@ export function emptyDriverUserData(initialName: string): DriverUserData {
     total_miles: 0,
     total_trips: 0,
     badges_earned_count: 0,
-    rank: 0,
     is_premium: false,
     member_since: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
     friends_count: 0,

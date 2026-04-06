@@ -51,7 +51,6 @@ function mapApiUserToContext(apiUser: Record<string, unknown>): User {
     totalMiles: Number(apiUser.total_miles ?? 0),
     totalTrips: Number(apiUser.total_trips ?? 0),
     badges: Number(apiUser.badges ?? 0),
-    rank: 0,
   }
 }
 

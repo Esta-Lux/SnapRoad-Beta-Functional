@@ -84,9 +84,9 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
     owner: "snaproad",
     slug: "snaproad",
     scheme: "snaproad",
-    version: "1.0.0",
+    version: "1.0.1",
     // Bare workflow: `policy` runtime versions are invalid; keep in sync with `version` for OTA.
-    runtimeVersion: "1.0.0",
+    runtimeVersion: "1.0.1",
     updates: { url: `https://u.expo.dev/${EAS_PROJECT_ID}` },
     orientation: "portrait",
     icon: "./assets/icon.png",

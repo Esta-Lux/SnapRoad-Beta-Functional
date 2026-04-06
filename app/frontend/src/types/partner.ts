@@ -2,6 +2,8 @@ export interface Offer {
   id: number
   title: string
   description: string
+  /** Category slug (gas, restaurant, …) — matches mobile map / rewards filtering. */
+  business_type?: string
   discount_percent: number
   gem_cost: number
   gems_reward: number

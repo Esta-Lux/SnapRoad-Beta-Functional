@@ -1,18 +1,32 @@
 import type { Badge, Challenge, Offer } from '../../types';
 
 export type RewardsTab = 'offers' | 'challenges' | 'badges';
-export type ChallengeModalTab = 'history' | 'badges';
 
-export type LeaderboardEntry = {
-  rank: number;
-  id: string;
-  name: string;
-  safety_score: number;
-  level: number;
-  gems: number;
-  state: string;
-  is_premium?: boolean;
+/** Driver redemption ledger (GET /api/offers/my-redemptions). */
+export type UserOfferRedemption = {
+  redemption_id: string;
+  offer_id: string;
+  redeemed_at: string | null;
+  status: string;
+  /** Staff scanned QR in store — completed checkout with partner. */
+  used_in_store: boolean;
+  gem_cost: number;
+  discount_applied: number;
+  business_name: string;
+  title?: string | null;
+  description?: string | null;
+  image_url?: string | null;
+  address?: string | null;
+  discount_percent: number;
+  lat?: number | null;
+  lng?: number | null;
+  is_free_item?: boolean;
+  business_type?: string;
+  category_label?: string;
 };
+
+export type OffersRewardsView = 'nearby' | 'my_redemptions';
+export type ChallengeModalTab = 'history' | 'badges';
 
 export type GemTx = {
   id: string;

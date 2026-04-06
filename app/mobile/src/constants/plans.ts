@@ -69,7 +69,7 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
       'Opt-in live tracking (13+)',
       'Teen controls & safety settings',
       'SOS + safety alerts',
-      'Family leaderboard',
+      'Family trip insights',
     ],
   },
 };

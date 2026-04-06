@@ -17,22 +17,19 @@ type StatsProps = {
   text: string;
   sub: string;
   gems: number;
-  /** Leaderboard rank; use string (e.g. "—") when premium or rank unavailable */
-  rank: number | string;
+  safetyScore: number;
   trips: number;
   miles: number;
 };
 
-function formatRank(rank: number | string): string {
-  if (typeof rank === 'string') return rank;
-  if (rank > 0) return `#${rank}`;
-  return '—';
-}
-
-export const ProfileStatsStrip = React.memo(function ProfileStatsStrip({ cardBg, text, sub, gems, rank, trips, miles }: StatsProps) {
+export const ProfileStatsStrip = React.memo(function ProfileStatsStrip({ cardBg, text, sub, gems, safetyScore, trips, miles }: StatsProps) {
   const cols = [
     { icon: 'diamond-outline' as const, val: formatGemsCompact(gems), lbl: 'Gems' },
-    { icon: 'trophy-outline' as const, val: formatRank(rank), lbl: 'Rank' },
+    {
+      icon: 'shield-checkmark-outline' as const,
+      val: safetyScore > 0 ? String(Math.round(safetyScore)) : '—',
+      lbl: 'Safety',
+    },
     { icon: 'car-outline' as const, val: String(trips), lbl: 'Trips' },
     { icon: 'location-outline' as const, val: `${formatMilesCompact(miles)}`, lbl: 'Miles' },
   ];

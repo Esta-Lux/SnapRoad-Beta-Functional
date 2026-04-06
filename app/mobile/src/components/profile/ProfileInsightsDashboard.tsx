@@ -100,10 +100,8 @@ type Props = {
   gemTxRows: ProfileGemTxItem[];
   badgeRows: ProfileBadgeItem[];
   fuelSummary: FuelSummary;
-  myRank: number;
   isPremium: boolean;
   onUpgrade: () => void;
-  onOpenLeaderboard: () => void;
   onOpenFuelTracker: () => void;
 };
 
@@ -115,10 +113,8 @@ export default function ProfileInsightsDashboard({
   gemTxRows,
   badgeRows,
   fuelSummary,
-  myRank,
   isPremium,
   onUpgrade,
-  onOpenLeaderboard,
   onOpenFuelTracker,
 }: Props) {
   const { colors, spacing, typography, radius } = useTheme();
@@ -272,7 +268,7 @@ export default function ProfileInsightsDashboard({
                 paddingHorizontal: 8,
               }}
             >
-              Weekly recap, leaderboard, range filters, and Orion coaching are part of SnapRoad Premium. You still keep
+              Weekly recap, range filters, and Orion coaching are part of SnapRoad Premium. You still keep
               your trips, miles, and gems on the free plan.
             </Text>
             <TouchableOpacity
@@ -395,23 +391,6 @@ export default function ProfileInsightsDashboard({
           {kpiTile('shield-checkmark-outline', kpis.trips > 0 ? kpis.avgSafety.toFixed(0) : '—', 'Avg safety')}
           {kpiTile('diamond-outline', String(kpis.gemsFromTrips), 'Gems (trips)')}
         </View>
-
-        <TouchableOpacity
-          onPress={onOpenLeaderboard}
-          style={[
-            styles.leaderStrip,
-            { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
-          ]}
-        >
-          <Ionicons name="ribbon-outline" size={22} color={colors.primary} />
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={{ color: colors.text, fontWeight: '800' }}>Leaderboard</Text>
-            <Text style={{ color: colors.textSecondary, fontSize: 12 }}>
-              Your rank #{myRank > 0 ? myRank : '—'} · tap for top drivers
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-        </TouchableOpacity>
 
         {weeklyRecap.highlights && weeklyRecap.highlights.length > 0 ? (
           <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}>

@@ -68,8 +68,6 @@ export interface ThemeColors {
   searchBar: string;
   rewardsGradientStart: string;
   rewardsGradientEnd: string;
-  leaderboardGradientStart: string;
-  leaderboardGradientEnd: string;
 }
 
 const DARK: ThemeColors = {
@@ -94,8 +92,6 @@ const DARK: ThemeColors = {
   searchBar: '#1a1a24',
   rewardsGradientStart: '#3730a3',
   rewardsGradientEnd: '#7c3aed',
-  leaderboardGradientStart: '#9333ea',
-  leaderboardGradientEnd: '#ec4899',
 };
 
 const LIGHT: ThemeColors = {
@@ -120,8 +116,6 @@ const LIGHT: ThemeColors = {
   searchBar: '#f0f0f2',
   rewardsGradientStart: '#4338ca',
   rewardsGradientEnd: '#9333ea',
-  leaderboardGradientStart: '#9333ea',
-  leaderboardGradientEnd: '#ec4899',
 };
 
 interface ThemeContextType {

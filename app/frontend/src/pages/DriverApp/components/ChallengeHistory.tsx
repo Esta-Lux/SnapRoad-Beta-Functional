@@ -195,7 +195,7 @@ export default function ChallengeHistory({ isOpen, onClose }: ChallengeHistoryPr
                 <div className="text-center py-8 bg-white rounded-xl mx-2">
                   <Swords className="text-slate-300 mx-auto mb-2" size={32} />
                   <p className="text-slate-600 text-sm">No challenges yet</p>
-                  <p className="text-slate-500 text-xs">Challenge friends from the Leaderboard!</p>
+                  <p className="text-slate-500 text-xs">Challenge friends from Friends Hub.</p>
                 </div>
               ) : (
                 challenges.map(challenge => (

@@ -28,7 +28,6 @@ import {
   DeleteAccountButton,
   IncidentReportModal,
   LevelProgressModal,
-  LeaderboardModal,
   NotificationsCard,
   PlacesCard,
   PlanCard,
@@ -36,7 +35,6 @@ import {
   ProfileHeader,
   ProfileBadgeItem,
   ProfileGemTxItem,
-  ProfileLeaderboardEntry,
   ProfileTripHistoryItem,
   ProfileWeeklyRecap,
   ProfileOverviewSection,
@@ -115,7 +113,6 @@ export default function ProfileScreen() {
   const [usernameChangeAvailableAt, setUsernameChangeAvailableAt] = useState<string | null>(null);
   const [showLevelProgress, setShowLevelProgress] = useState(false);
   const [showInsightsDashboard, setShowInsightsDashboard] = useState(false);
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showIncidentReport, setShowIncidentReport] = useState(false);
   const [showFuelTracker, setShowFuelTracker] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -133,8 +130,6 @@ export default function ProfileScreen() {
     orionCommentary: null,
     behavior: { hard_braking_events_total: 0, speeding_events_total: 0 },
   });
-  const [leaderboardRows, setLeaderboardRows] = useState<ProfileLeaderboardEntry[]>([]);
-  const [myRank, setMyRank] = useState(0);
   const [tripHistoryRows, setTripHistoryRows] = useState<ProfileTripHistoryItem[]>([]);
   const [gemTxRows, setGemTxRows] = useState<ProfileGemTxItem[]>([]);
   const [badgeRows, setBadgeRows] = useState<ProfileBadgeItem[]>([]);
@@ -185,16 +180,12 @@ export default function ProfileScreen() {
       const premiumByFlagEarly = pp.is_premium != null && Boolean(pp.is_premium);
       const isPremiumUser = premiumByPlanEarly || premiumByFlagEarly;
       const weeklyPromise = isPremiumUser ? safeGet('/api/weekly-recap') : Promise.resolve({ success: false, data: null });
-      const leaderPromise = isPremiumUser
-        ? safeGet('/api/leaderboard?time_filter=weekly&limit=10')
-        : Promise.resolve({ success: false, data: null });
-      const [locRes, routeRes, commuteRes, notifRes, weeklyRes, leaderRes, tripsHistoryRes, gemsRes, badgesRes, fuelStatsRes, fuelTrendsRes] = await Promise.all([
+      const [locRes, routeRes, commuteRes, notifRes, weeklyRes, tripsHistoryRes, gemsRes, badgesRes, fuelStatsRes, fuelTrendsRes] = await Promise.all([
         safeGet('/api/locations'),
         safeGet('/api/routes'),
         safeGet('/api/commute-routes'),
         safeGet('/api/settings/notifications'),
         weeklyPromise,
-        leaderPromise,
         safeGet('/api/trips/history/recent?limit=100'),
         safeGet('/api/gems/history'),
         safeGet('/api/badges'),
@@ -301,9 +292,6 @@ export default function ProfileScreen() {
           orionCommentary: null,
           behavior: { hard_braking_events_total: 0, speeding_events_total: 0 },
         });
-        setLeaderboardRows([]);
-        setMyRank(0);
-        userPatch.rank = 0;
       } else {
         const weekly = weeklyRes?.data?.data ?? weeklyRes?.data ?? {};
         const beh = weekly.behavior;
@@ -323,18 +311,6 @@ export default function ProfileScreen() {
                 }
               : { hard_braking_events_total: 0, speeding_events_total: 0 },
         });
-        const lb = leaderRes?.data?.data ?? leaderRes?.data ?? {};
-        const rows = Array.isArray(lb.leaderboard) ? lb.leaderboard : [];
-        setLeaderboardRows(rows.map((r: any, i: number) => ({
-          rank: Number(r.rank ?? i + 1),
-          name: String(r.name ?? 'Driver'),
-          safetyScore: Number(r.safety_score ?? 0),
-          level: Number(r.level ?? 1),
-          gems: Number(r.gems ?? 0),
-        })));
-        const rankNum = Number(lb.my_rank ?? 0);
-        setMyRank(rankNum);
-        userPatch.rank = rankNum;
       }
       const vtRaw = pp.vehicle_type;
       if (vtRaw === 'motorcycle' || vtRaw === 'car') {
@@ -697,15 +673,7 @@ export default function ProfileScreen() {
           text={text}
           sub={sub}
           gems={user?.gems ?? 0}
-          rank={
-            user?.isPremium
-              ? myRank > 0
-                ? myRank
-                : user?.rank && user.rank > 0
-                  ? user.rank
-                  : 0
-              : '—'
-          }
+          safetyScore={user?.safetyScore ?? 0}
           trips={user?.totalTrips ?? 0}
           miles={Math.round(user?.totalMiles ?? 0)}
         />
@@ -1078,36 +1046,21 @@ export default function ProfileScreen() {
         gemTxRows={gemTxRows}
         badgeRows={badgeRows}
         fuelSummary={fuelSummary}
-        myRank={myRank}
         isPremium={Boolean(user?.isPremium)}
         onUpgrade={() => {
           setShowInsightsDashboard(false);
           setShowPlanModal(true);
-        }}
-        onOpenLeaderboard={() => {
-          setShowInsightsDashboard(false);
-          setShowLeaderboard(true);
         }}
         onOpenFuelTracker={() => {
           setShowInsightsDashboard(false);
           setShowFuelTracker(true);
         }}
       />
-      <LeaderboardModal
-        visible={showLeaderboard}
-        onClose={() => setShowLeaderboard(false)}
-        cardBg={cardBg}
-        text={text}
-        sub={sub}
-        myRank={myRank}
-        entries={leaderboardRows}
-      />
       <DriverSnapshotModal
         visible={showDriverSnapshot}
         onClose={() => setShowDriverSnapshot(false)}
         user={user}
         weeklyRecap={weeklyRecap}
-        myRank={myRank}
       />
       <IncidentReportModal
         visible={showIncidentReport}

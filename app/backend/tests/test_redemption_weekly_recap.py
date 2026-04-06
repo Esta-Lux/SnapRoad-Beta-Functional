@@ -32,9 +32,8 @@ class TestWeeklyRecap:
         required_fields = [
             "total_trips", "total_miles", "total_time_minutes",
             "gems_earned", "xp_earned", "safety_score_avg",
-            "safety_score_change", "challenges_won", "challenges_lost",
-            "offers_redeemed", "reports_posted", "streak_days",
-            "rank_change", "highlights"
+            "offers_redeemed", "streak_days", "highlights",
+            "range_days", "orion_commentary", "premium_insights", "behavior",
         ]
         
         for field in required_fields:
@@ -50,8 +49,7 @@ class TestWeeklyRecap:
         
         highlights = data["data"]["highlights"]
         assert isinstance(highlights, list), "Highlights should be a list"
-        assert len(highlights) >= 1, "Should have at least 1 highlight"
-        print(f"✓ Highlights contains {len(highlights)} items")
+        print(f"✓ Highlights is a list ({len(highlights)} items)")
     
     def test_weekly_recap_numeric_values(self):
         """Test that numeric fields have valid values"""

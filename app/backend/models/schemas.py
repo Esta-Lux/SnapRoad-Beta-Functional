@@ -234,6 +234,7 @@ class PartnerOfferCreate(BaseModel):
     location_id: str | int
     expires_hours: int = 168
     image_url: Optional[str] = None
+    category: Optional[str] = None  # slug (gas, restaurant, …) → offers.business_type
 
 class PartnerLoginRequest(BaseModel):
     email: str
