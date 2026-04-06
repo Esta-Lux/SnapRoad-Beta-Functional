@@ -35,7 +35,20 @@ function partnerPlanPillClass(plan: string | null | undefined): string {
   if (p === 'growth') return 'bg-emerald-500/20 text-emerald-400'
   if (p === 'enterprise') return 'bg-violet-500/20 text-violet-400'
   if (p === 'starter') return 'bg-slate-500/20 text-slate-400'
+  if (p === 'unselected' || p === 'none' || !p) return 'bg-amber-500/15 text-amber-200/90'
   return 'bg-cyan-500/15 text-cyan-300'
+}
+
+/** Partner portal login: FK set, or role partner (partners.id = profile id when self-registered). */
+function isPartnerPortalAccount(u: AdminUser): boolean {
+  if (u.partner_id) return true
+  return (u.role || '').toLowerCase() === 'partner'
+}
+
+function formatPartnerPlanDisplay(plan: string | null | undefined): string {
+  const p = (plan || '').toLowerCase()
+  if (!p || p === 'unselected' || p === 'none') return 'Unselected'
+  return formatPlanWord(plan)
 }
 
 function num(v: unknown, fallback = 0): number {
@@ -191,9 +204,13 @@ export default function UsersTab({ theme }: UsersTabProps) {
         if (planFilter === 'All Plans') return true
         const pf = planFilter.toLowerCase()
         const driverPlan = (user.plan || 'basic').toLowerCase()
-        const partnerPlan = (user.partner_plan || '').toLowerCase()
         if (['basic', 'premium', 'family'].includes(pf)) return driverPlan === pf
-        if (['starter', 'growth', 'enterprise'].includes(pf)) return partnerPlan === pf
+        if (['starter', 'growth', 'enterprise'].includes(pf)) {
+          if (!isPartnerPortalAccount(user)) return false
+          const raw = (user.partner_plan || '').toLowerCase()
+          const norm = raw === 'unselected' || raw === '' || raw === 'none' ? 'starter' : raw
+          return norm === pf
+        }
         return false
       })()
       const matchesStatus = statusFilter === 'All Status' || user.status === statusFilter
@@ -388,9 +405,12 @@ export default function UsersTab({ theme }: UsersTabProps) {
                     <div>
                       <div className={`text-sm font-medium ${textPrimary}`}>{user.name || '—'}</div>
                       <div className={`text-xs ${textSecondary}`}>{user.email}</div>
-                      {user.partner_id ? (
+                      {isPartnerPortalAccount(user) ? (
                         <div className={`text-[10px] mt-0.5 ${textSecondary}`}>
-                          Partner login · business id <code className="opacity-80">{String(user.partner_id).slice(0, 8)}…</code>
+                          Partner login · business id{' '}
+                          <code className="opacity-80">
+                            {String(user.partner_id || user.id).slice(0, 8)}…
+                          </code>
                         </div>
                       ) : null}
                     </div>
@@ -408,13 +428,13 @@ export default function UsersTab({ theme }: UsersTabProps) {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    {user.partner_id ? (
+                    {isPartnerPortalAccount(user) ? (
                       <div className="flex flex-col gap-1 max-w-[14rem]">
                         <span
                           className={`inline-flex w-fit items-center gap-1 px-2 py-1 text-xs rounded-full ${partnerPlanPillClass(user.partner_plan)}`}
                           title="Partner portal / business subscription"
                         >
-                          Partner · {formatPlanWord(user.partner_plan)}
+                          Partner · {formatPartnerPlanDisplay(user.partner_plan)}
                           {user.partner_is_internal_complimentary ? ' · Internal' : ''}
                         </span>
                         {(user.partner_subscription_status || '').toLowerCase() === 'past_due' && (

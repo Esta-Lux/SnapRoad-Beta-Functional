@@ -1236,16 +1236,33 @@ def claim_reward(reward_id: str, user_data: dict):
 
 # ==================== USERS CRUD ====================
 
+def _effective_partner_row_id_for_profile(u: dict) -> Optional[str]:
+    """Partner row id for admin: explicit profiles.partner_id, or self id when role is partner
+    (partner signup sets public.partners.id = auth user id; partner_id FK is often unset)."""
+    pid = str(u.get("partner_id") or "").strip()
+    if pid:
+        return pid
+    if str(u.get("role") or "").strip().lower() == "partner":
+        uid = str(u.get("id") or "").strip()
+        if uid:
+            return uid
+    return None
+
+
 @router.get("/admin/users")
 def get_users(limit: Annotated[int, Query(ge=1, le=2000)] = 500):
     data = sb_list_profiles(limit=limit)
-    pids = [str(u["partner_id"]) for u in data if u.get("partner_id")]
-    pmap = sb_get_partners_plan_fields_by_ids(pids) if pids else {}
+    pids = []
     for u in data:
-        pid = u.get("partner_id")
-        if not pid:
+        ep = _effective_partner_row_id_for_profile(u)
+        if ep:
+            pids.append(ep)
+    pmap = sb_get_partners_plan_fields_by_ids(list(dict.fromkeys(pids))) if pids else {}
+    for u in data:
+        ep = _effective_partner_row_id_for_profile(u)
+        if not ep:
             continue
-        pr = pmap.get(str(pid))
+        pr = pmap.get(ep)
         if not pr:
             continue
         u["partner_plan"] = pr.get("plan")
@@ -1287,6 +1304,8 @@ def update_user(user_id: str, user_data: dict):
         try:
             prof = sb_get_profile_raw(user_id) or {}
             pid = str(prof.get("partner_id") or "").strip()
+            if not pid and str(prof.get("role") or "").strip().lower() == "partner":
+                pid = str(user_id).strip()
             if pid and ("plan" in body or "is_premium" in body):
                 prow = sb_get_partner(pid)
                 if prow:
