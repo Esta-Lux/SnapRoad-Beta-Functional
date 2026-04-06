@@ -2218,7 +2218,7 @@ export default function MapScreen() {
               anchor={{ x: 0.5, y: 0.5 }}
             >
               <View style={s.navPuck}>
-                <Ionicons name="arrow-up" size={16} color="#fff" />
+                <Ionicons name="arrow-up" size={13} color="#fff" />
               </View>
             </MapboxGL.MarkerView>
           ) : (
@@ -3009,25 +3009,23 @@ export default function MapScreen() {
         ) : null}
       </TripSummaryModal>
 
-      {/* ═══ FLOATING BUTTONS ═════════════════════════════════════════════ */}
+      {/* ═══ FLOATING BUTTONS (navigation) ════════════════════════════════ */}
 
       {nav.isNavigating && !nav.showRoutePreview && !nav.tripSummary && (
-        <View
-          style={{
-            position: 'absolute',
-            right: 20,
-            bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 6,
-            zIndex: 12,
-            gap: 10,
-            alignItems: 'flex-end',
-          }}
-        >
+        <View style={[s.navFabCol, { bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 10 }]}>
+          {!cameraLocked && (
+            <TouchableOpacity
+              style={[s.navFab, { backgroundColor: '#3B82F6' }]}
+              onPress={handleRecenter}
+              accessibilityLabel="Recenter"
+            >
+              <Ionicons name="navigate" size={20} color="#fff" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
-            style={[s.reportFab, {
-              position: 'relative',
-              bottom: 0,
-              right: 0,
+            style={[s.navFab, {
               backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
+              borderWidth: 1,
               borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
             }]}
             onPress={() => {
@@ -3039,11 +3037,9 @@ export default function MapScreen() {
             <Ionicons name="warning-outline" size={20} color="#F59E0B" />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[s.reportFab, {
-              position: 'relative',
-              bottom: 0,
-              right: 0,
+            style={[s.navFab, {
               backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
+              borderWidth: 1,
               borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
             }]}
             onPress={() => {
@@ -3055,6 +3051,18 @@ export default function MapScreen() {
             <Ionicons name="camera-outline" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
+      )}
+
+      {/* ── Street name pill ── */}
+      {nav.isNavigating && !nav.showRoutePreview && currentStep?.name && (
+        <Animated.View
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(150)}
+          style={[s.streetPill, { bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 10, backgroundColor: isLight ? 'rgba(255,255,255,0.88)' : 'rgba(20,28,44,0.88)' }]}
+        >
+          <Ionicons name="car-outline" size={12} color={colors.textTertiary} />
+          <Text style={[s.streetPillT, { color: colors.text }]} numberOfLines={1}>{currentStep.name}</Text>
+        </Animated.View>
       )}
 
       {!nav.isNavigating && !nav.showRoutePreview && !nav.tripSummary && !selectedPlace && !selectedPlaceId && (
@@ -3084,10 +3092,10 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      {((nav.isNavigating && !cameraLocked) || (!nav.isNavigating && isExploring && !isSearchFocused && !nav.showRoutePreview && !nav.tripSummary)) && (
+      {!nav.isNavigating && isExploring && !isSearchFocused && !nav.showRoutePreview && !nav.tripSummary && (
         <TouchableOpacity style={[s.recenter, { top: insets.top + 88 }]} onPress={handleRecenter}>
-          <Ionicons name={nav.isNavigating ? 'lock-closed' : 'navigate'} size={14} color="#fff" style={{ marginRight: 6 }} />
-          <Text style={s.recenterT}>{nav.isNavigating ? 'Lock Camera' : 'Recenter'}</Text>
+          <Ionicons name="navigate" size={14} color="#fff" style={{ marginRight: 6 }} />
+          <Text style={s.recenterT}>Recenter</Text>
         </TouchableOpacity>
       )}
 
@@ -3726,6 +3734,10 @@ const s = StyleSheet.create({
   tripDoneT: { color: '#fff', fontSize: 16, fontWeight: '800' },
 
   // Floating buttons
+  navFabCol: { position: 'absolute', right: 16, zIndex: 12, gap: 12, alignItems: 'center' as const },
+  navFab: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center' as const, alignItems: 'center' as const, ...shadow(8, 0.18) },
+  streetPill: { position: 'absolute', left: 16, zIndex: 10, flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, ...shadow(4, 0.1) },
+  streetPillT: { fontSize: 12, fontWeight: '600' as const, maxWidth: 160 },
   reportFab: { position: 'absolute', width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.94)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', ...shadow(8, 0.12) },
   communityBtn: { position: 'absolute', minHeight: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.94)', paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', ...shadow(8, 0.12) },
   communityT: { fontSize: 12, fontWeight: '700' },
@@ -3988,11 +4000,11 @@ const s = StyleSheet.create({
   destPin: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#DC2626', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff', ...shadow(12, 0.5) },
   destPinTail: { width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#DC2626', marginTop: -1 },
   navPuck: {
-    width: 30, height: 30, borderRadius: 15,
+    width: 24, height: 24, borderRadius: 12,
     backgroundColor: '#3B82F6',
-    borderWidth: 2.5, borderColor: '#ffffff',
+    borderWidth: 2, borderColor: '#ffffff',
     justifyContent: 'center' as const, alignItems: 'center' as const,
-    ...shadow(8, 0.35),
+    ...shadow(6, 0.4),
   },
 
   // Sheets
