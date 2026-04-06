@@ -13,8 +13,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { api } from '../../api/client';
+import { getMapboxRouteOptions, isMapboxDirectionsConfigured } from '../../lib/directions';
+import { formatTime } from '../../utils/format';
 import { haversineMeters } from '../../utils/distance';
-import type { SavedLocation } from '../../types';
+import type { DrivingMode, SavedLocation } from '../../types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -85,6 +87,8 @@ interface Props {
   placeId: string;
   summary?: { name?: string; lat?: number; lng?: number };
   userLocation?: { lat: number; lng: number };
+  drivingMode?: DrivingMode;
+  maxHeightMeters?: number;
   onClose: () => void;
   onDirections: (place: { name: string; address: string; lat: number; lng: number }) => void;
   onSave?: (place: SavedPlacePayload) => void | Promise<void>;
@@ -141,6 +145,12 @@ function estimateDriveTime(meters: number): string {
   const mins = Math.round(meters / 670);
   return mins < 1 ? '1 min' : `${mins} min`;
 }
+
+type RouteSummary = {
+  durationText: string;
+  distanceText: string;
+  arrivalTimeText: string;
+};
 
 function todayHours(weekdayLines?: string[]): string | null {
   if (!weekdayLines?.length) return null;
@@ -260,6 +270,8 @@ export default function PlaceDetailSheet({
   placeId,
   summary,
   userLocation,
+  drivingMode = 'adaptive',
+  maxHeightMeters,
   onClose,
   onDirections,
   onSave,
@@ -275,6 +287,7 @@ export default function PlaceDetailSheet({
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [saved, setSaved] = useState(false);
+  const [routeSummary, setRouteSummary] = useState<RouteSummary | null>(null);
 
   const bg = isLight ? '#ffffff' : '#0F1118';
   const surface = isLight ? '#F5F5F7' : '#1A1B26';
@@ -315,6 +328,10 @@ export default function PlaceDetailSheet({
     setShowAllHours(false);
     setShowAllReviews(false);
   }, [placeId]);
+
+  useEffect(() => {
+    setRouteSummary(null);
+  }, [placeId, userLocation?.lat, userLocation?.lng, drivingMode, maxHeightMeters]);
 
   // Fetch once per placeId. Do not depend on `summary`: parent often passes a new object each
   // render; including it re-ran this on every GPS tick and toggled loading (sheet glitch).
@@ -538,6 +555,53 @@ export default function PlaceDetailSheet({
 
   const weekdayLines = place?.hours?.length ? place.hours : place?.opening_hours?.weekday_text;
 
+  useEffect(() => {
+    if (
+      !place ||
+      lat == null ||
+      lng == null ||
+      !userLocation ||
+      !Number.isFinite(userLocation.lat) ||
+      !Number.isFinite(userLocation.lng) ||
+      (!isMapboxDirectionsConfigured())
+    ) {
+      setRouteSummary(null);
+      return;
+    }
+    if (
+      Math.abs(userLocation.lat) < 1e-5 &&
+      Math.abs(userLocation.lng) < 1e-5
+    ) {
+      setRouteSummary(null);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const routes = await getMapboxRouteOptions(
+          { lat: userLocation.lat, lng: userLocation.lng },
+          { lat, lng },
+          { mode: drivingMode, maxHeightMeters },
+        );
+        if (cancelled || !routes.length) return;
+        const best = routes[0]!;
+        const arrival = new Date(Date.now() + best.duration * 1000);
+        setRouteSummary({
+          durationText: best.durationText,
+          distanceText: best.distanceText,
+          arrivalTimeText: formatTime(arrival),
+        });
+      } catch {
+        if (!cancelled) setRouteSummary(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [place, lat, lng, userLocation?.lat, userLocation?.lng, drivingMode, maxHeightMeters]);
+
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 50 }]} pointerEvents="box-none">
       <Animated.View style={[S.backdrop, overlayStyle]} pointerEvents="auto">
@@ -660,7 +724,7 @@ export default function PlaceDetailSheet({
                   <TouchableOpacity style={[S.actionBtn, S.actionPrimary]} onPress={handleDirections} activeOpacity={0.85}>
                     <Ionicons name="navigate" size={18} color="#fff" />
                     <Text style={S.actionPrimaryText}>
-                      {distMeters != null ? estimateDriveTime(distMeters) : 'Directions'}
+                      {routeSummary?.durationText ?? (distMeters != null ? estimateDriveTime(distMeters) : 'Directions')}
                     </Text>
                   </TouchableOpacity>
 
@@ -709,14 +773,21 @@ export default function PlaceDetailSheet({
                       </View>
                     </View>
                   ) : null}
-                  {distMeters != null ? (
+                    {routeSummary?.distanceText || distMeters != null ? (
                     <View style={S.qsItem}>
                       <Text style={[S.qsLabel, { color: text3 }]}>Distance</Text>
-                      <Text style={[S.qsValue, { color: text1 }]}>{formatDistanceMeters(distMeters)}</Text>
+                        <Text style={[S.qsValue, { color: text1 }]}>{routeSummary?.distanceText ?? formatDistanceMeters(distMeters!)}</Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                         <Ionicons name="walk" size={12} color={text3} />
-                        <Text style={[S.qsDetail, { color: text3 }]}>{estimateWalkTime(distMeters)}</Text>
+                          <Text style={[S.qsDetail, { color: text3 }]}>{estimateWalkTime(distMeters ?? 0)}</Text>
                       </View>
+                    </View>
+                  ) : null}
+                  {routeSummary ? (
+                    <View style={S.qsItem}>
+                      <Text style={[S.qsLabel, { color: text3 }]}>Arrive</Text>
+                      <Text style={[S.qsValue, { color: text1 }]}>{routeSummary.arrivalTimeText}</Text>
+                      <Text style={[S.qsDetail, { color: text3 }]}>{routeSummary.durationText} drive</Text>
                     </View>
                   ) : null}
                 </View>

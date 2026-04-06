@@ -2316,6 +2316,8 @@ export default function MapScreen() {
           placeId={selectedPlaceId}
           summary={placeDetailSummary}
           userLocation={placeDetailUserLocation}
+          drivingMode={drivingMode}
+          maxHeightMeters={avoidLowClearances ? vehicleHeight : undefined}
           isLight={isLight}
           savedPlaces={savedPlaces}
           onFavoritesChange={refreshSavedPlaces}

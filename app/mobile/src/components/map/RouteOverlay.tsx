@@ -8,6 +8,12 @@ import {
 } from '../../utils/distance';
 import { TRAFFIC_CONGESTION_HEX } from '../../constants/trafficCongestion';
 
+const ROUTE_CONGESTION_COLOR = {
+  moderate: '#FF9500',
+  heavy: '#FF9500',
+  severe: '#FF3B30',
+} as const;
+
 interface Props {
   polyline: Coordinate[];
   isNavigating: boolean;
@@ -134,11 +140,11 @@ export default React.memo(function RouteOverlay({
         'match',
         ['get', 'congestion'],
         'moderate',
-        TRAFFIC_CONGESTION_HEX.moderate,
+        ROUTE_CONGESTION_COLOR.moderate,
         'heavy',
-        TRAFFIC_CONGESTION_HEX.heavy,
+        ROUTE_CONGESTION_COLOR.heavy,
         'severe',
-        TRAFFIC_CONGESTION_HEX.severe,
+        ROUTE_CONGESTION_COLOR.severe,
         'low',
         routeColor,
         'unknown',
