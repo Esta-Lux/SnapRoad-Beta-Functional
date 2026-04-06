@@ -21,6 +21,16 @@ export function metersBetween(a: Coordinate, b: Coordinate): number {
   return haversineMeters(a.lat, a.lng, b.lat, b.lng);
 }
 
+/** Forward azimuth from `from` to `to` in degrees (0 = north, 90 = east). */
+export function bearingDeg(from: Coordinate, to: Coordinate): number {
+  const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+  const lat1 = (from.lat * Math.PI) / 180;
+  const lat2 = (to.lat * Math.PI) / 180;
+  const x = Math.sin(dLng) * Math.cos(lat2);
+  const y = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return ((Math.atan2(x, y) * 180) / Math.PI + 360) % 360;
+}
+
 export function formatDistance(miles: number): string {
   if (miles < 0.1) return `${Math.round(miles * 5280)} ft`;
   return `${miles.toFixed(1)} mi`;

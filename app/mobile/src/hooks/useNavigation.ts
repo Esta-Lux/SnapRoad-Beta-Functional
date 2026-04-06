@@ -9,6 +9,7 @@ export type FetchDirectionsResult =
   | { ok: false; reason: 'invalid_input' | 'no_mapbox' | 'route_failed'; message?: string };
 import {
   alongRouteDistanceMeters,
+  bearingDeg,
   computeNavigationRouteProgress,
   haversineMeters,
   remainingDistanceOnPolyline,
@@ -491,6 +492,28 @@ export function useNavigation(params: {
     return segmentAndTFromCumAlongPolyline(cur.maxCum, poly) ?? null;
   }, [isNavigating, routeProgress, navigationData?.polyline]);
 
+  /** Route-snapped coordinate for the navigation puck (null when off-route or not navigating). */
+  const MAX_SNAP_DISTANCE = 40;
+  const navDisplayCoord = useMemo((): Coordinate | null => {
+    if (!isNavigating || !routeProgress) return null;
+    if (routeProgress.distanceToRouteMeters > MAX_SNAP_DISTANCE) return null;
+    return routeProgress.snapCoord;
+  }, [isNavigating, routeProgress]);
+
+  const navHeadingRef = useRef(0);
+  const navDisplayHeading = useMemo((): number => {
+    if (!navDisplayCoord || !routeProgress || !navigationData?.polyline) return navHeadingRef.current;
+    const poly = navigationData.polyline;
+    const idx = routeProgress.segmentIndex;
+    if (idx >= poly.length - 1) return navHeadingRef.current;
+    const target = bearingDeg(poly[idx], poly[idx + 1]);
+    const prev = navHeadingRef.current;
+    const delta = ((target - prev + 540) % 360) - 180;
+    const smoothed = (prev + delta * 0.45 + 360) % 360;
+    navHeadingRef.current = smoothed;
+    return smoothed;
+  }, [navDisplayCoord, routeProgress, navigationData?.polyline]);
+
   // --- Step index tracking ---
   useEffect(() => {
     if (!isNavigating || !navigationData?.steps?.length) return;
@@ -838,6 +861,8 @@ export function useNavigation(params: {
     isRerouting,
     routeProgress,
     routeSplitForOverlay,
+    navDisplayCoord,
+    navDisplayHeading,
     currentStepIndex,
     traveledDistanceMeters,
     availableRoutes,

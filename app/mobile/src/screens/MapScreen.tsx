@@ -1988,56 +1988,84 @@ export default function MapScreen() {
               }}
             />
           ) : null}
-          <MapboxGL.Camera
-            ref={cameraRef}
-            defaultSettings={{
-              centerCoordinate: stableCenter,
-              zoomLevel: modeConfig.exploreZoom,
-              pitch: modeConfig.explorePitch,
-            }}
-            centerCoordinate={
-              nav.isNavigating || isExploring || compassMode || exploreTracksUser ? undefined : stableCenter
-            }
-            zoomLevel={
-              nav.isNavigating || compassMode || exploreTracksUser ? undefined : modeConfig.exploreZoom
-            }
-            pitch={
-              nav.isNavigating || compassMode || exploreTracksUser ? undefined : modeConfig.explorePitch
-            }
-            animationMode={nav.isNavigating && cameraLocked ? 'linearTo' : 'easeTo'}
-            animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
-            followUserLocation={
-              (nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser
-            }
-            followUserMode={
-              nav.isNavigating && cameraLocked
-                ? MapboxGL.UserTrackingMode.FollowWithCourse
-                : compassMode || followMode === 'heading'
-                  ? MapboxGL.UserTrackingMode.FollowWithHeading
-                  : exploreTracksUser && followMode === 'follow'
-                    ? MapboxGL.UserTrackingMode.Follow
-                    : undefined
-            }
-            followPitch={
-              camCtrl
-                ? camCtrl.followPitch
-                : exploreTracksUser
-                  ? modeConfig.explorePitch
-                  : compassMode
-                    ? 45
-                    : undefined
-            }
-            followZoomLevel={
-              camCtrl
-                ? camCtrl.followZoomLevel
-                : exploreTracksUser
-                  ? modeConfig.exploreZoom
-                  : compassMode
-                    ? 15
-                    : undefined
-            }
-            followPadding={camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING}
-          />
+          {/* Camera: route-snapped center during navigation, native follow otherwise */}
+          {(() => {
+            const isSnappedNav = !!nav.navDisplayCoord && cameraLocked && nav.isNavigating;
+            return (
+              <MapboxGL.Camera
+                ref={cameraRef}
+                defaultSettings={{
+                  centerCoordinate: stableCenter,
+                  zoomLevel: modeConfig.exploreZoom,
+                  pitch: modeConfig.explorePitch,
+                }}
+                centerCoordinate={
+                  isSnappedNav
+                    ? [nav.navDisplayCoord!.lng, nav.navDisplayCoord!.lat]
+                    : nav.isNavigating || isExploring || compassMode || exploreTracksUser
+                      ? undefined
+                      : stableCenter
+                }
+                heading={isSnappedNav ? nav.navDisplayHeading : undefined}
+                zoomLevel={
+                  isSnappedNav
+                    ? camCtrl?.followZoomLevel
+                    : nav.isNavigating || compassMode || exploreTracksUser
+                      ? undefined
+                      : modeConfig.exploreZoom
+                }
+                pitch={
+                  isSnappedNav
+                    ? camCtrl?.followPitch
+                    : nav.isNavigating || compassMode || exploreTracksUser
+                      ? undefined
+                      : modeConfig.explorePitch
+                }
+                padding={isSnappedNav ? camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING : undefined}
+                animationMode={isSnappedNav || (nav.isNavigating && cameraLocked) ? 'linearTo' : 'easeTo'}
+                animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
+                followUserLocation={
+                  isSnappedNav
+                    ? false
+                    : (nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser
+                }
+                followUserMode={
+                  isSnappedNav
+                    ? undefined
+                    : nav.isNavigating && cameraLocked
+                      ? MapboxGL.UserTrackingMode.FollowWithCourse
+                      : compassMode || followMode === 'heading'
+                        ? MapboxGL.UserTrackingMode.FollowWithHeading
+                        : exploreTracksUser && followMode === 'follow'
+                          ? MapboxGL.UserTrackingMode.Follow
+                          : undefined
+                }
+                followPitch={
+                  isSnappedNav
+                    ? undefined
+                    : camCtrl
+                      ? camCtrl.followPitch
+                      : exploreTracksUser
+                        ? modeConfig.explorePitch
+                        : compassMode
+                          ? 45
+                          : undefined
+                }
+                followZoomLevel={
+                  isSnappedNav
+                    ? undefined
+                    : camCtrl
+                      ? camCtrl.followZoomLevel
+                      : exploreTracksUser
+                        ? modeConfig.exploreZoom
+                        : compassMode
+                          ? 15
+                          : undefined
+                }
+                followPadding={isSnappedNav ? undefined : camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING}
+              />
+            );
+          })()}
 
           {/* Terrain: Standard + Satellite (classic streets/dark URLs removed). */}
           {MapboxGL.RasterDemSource && MapboxGL.Terrain && standardStyleImportsEnabled && (
@@ -2182,13 +2210,24 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
-          {/* Last in tree so the location indicator stacks above custom layers + markers when the native stack allows */}
-          {/* Mapbox default LocationPuck (SDK styling) for every map mode / style — no custom scale or Android renderMode overrides. */}
-          <MapboxGL.LocationPuck
-            visible
-            puckBearingEnabled
-            puckBearing={nav.isNavigating ? 'course' : 'heading'}
-          />
+          {/* Route-snapped navigation puck (replaces native GPS puck during active guidance) */}
+          {nav.navDisplayCoord && cameraLocked && nav.isNavigating ? (
+            <MapboxGL.MarkerView
+              id="nav-snapped-puck"
+              coordinate={[nav.navDisplayCoord.lng, nav.navDisplayCoord.lat]}
+              anchor={{ x: 0.5, y: 0.5 }}
+            >
+              <View style={s.navPuck}>
+                <Ionicons name="arrow-up" size={16} color="#fff" />
+              </View>
+            </MapboxGL.MarkerView>
+          ) : (
+            <MapboxGL.LocationPuck
+              visible
+              puckBearingEnabled
+              puckBearing={nav.isNavigating ? 'course' : 'heading'}
+            />
+          )}
         </MapboxGL.MapView>
       ) : (
         <View style={[s.map, s.placeholder]}>
@@ -3948,6 +3987,13 @@ const s = StyleSheet.create({
   destPinWrap: { alignItems: 'center' },
   destPin: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#DC2626', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff', ...shadow(12, 0.5) },
   destPinTail: { width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#DC2626', marginTop: -1 },
+  navPuck: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: '#3B82F6',
+    borderWidth: 2.5, borderColor: '#ffffff',
+    justifyContent: 'center' as const, alignItems: 'center' as const,
+    ...shadow(8, 0.35),
+  },
 
   // Sheets
   overlay: { ...StyleSheet.absoluteFillObject, zIndex: 50, justifyContent: 'flex-end' },
