@@ -181,7 +181,6 @@ export default React.memo(function RouteOverlay({
           lineCap: 'round',
           lineJoin: 'round',
         }}
-        aboveLayerID="sr-route-glow"
       />
 
       {/* Passed (gray) route on top of casing */}
@@ -195,7 +194,6 @@ export default React.memo(function RouteOverlay({
           lineCap: 'round',
           lineJoin: 'round',
         }}
-        aboveLayerID="sr-route-casing"
       />
 
       {/* Ahead (colored) route on top of passed */}
@@ -209,7 +207,6 @@ export default React.memo(function RouteOverlay({
           lineCap: 'round',
           lineJoin: 'round',
         }}
-        aboveLayerID="sr-route-passed"
       />
     </MapboxGL.ShapeSource>
   );

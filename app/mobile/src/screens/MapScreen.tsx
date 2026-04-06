@@ -2210,8 +2210,9 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
-          {/* Route-snapped puck during active navigation; native GPS puck otherwise */}
-          {nav.navDisplayCoord && cameraLocked && nav.isNavigating ? (
+          {/* Themed puck during navigation (independent of camera lock state);
+              native GPS puck otherwise. */}
+          {nav.navDisplayCoord && nav.isNavigating ? (
             <MapboxGL.MarkerView
               id="nav-snapped-puck"
               coordinate={[nav.navDisplayCoord.lng, nav.navDisplayCoord.lat]}
