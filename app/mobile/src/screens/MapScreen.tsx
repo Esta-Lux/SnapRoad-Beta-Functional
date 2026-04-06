@@ -58,7 +58,7 @@ import ManeuverHighlightLayers from '../components/map/ManeuverHighlightLayers';
 import { getDistanceToUpcomingManeuverMeters } from '../navigation/routeGeometry';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
-import { getPrimaryBannerText } from '../navigation/bannerInstructions';
+import { getPrimaryBannerText, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
 import { isLiveShareFresh } from '../lib/friendPresence';
 import type { NavigateToFriendParams } from '../types';
 import {
@@ -303,7 +303,7 @@ export default function MapScreen() {
   const mapTabFocused = useIsFocused();
   const { isNavigating: ctxNavigating, setIsNavigating: setNavCtx } = useNavigatingState();
   const [isNavActive, setIsNavActive] = useState(false);
-  const { location, heading, speed, isLocating, permissionDenied } = useLocation(isNavActive, {
+  const { location, heading, speed, accuracy, isLocating, permissionDenied } = useLocation(isNavActive, {
     paused: !mapTabFocused && !ctxNavigating,
   });
   const { isLight, colors } = useTheme();
@@ -328,9 +328,12 @@ export default function MapScreen() {
     userLocation: location,
     speed,
     heading,
+    gpsAccuracy: accuracy,
     drivingMode,
     voiceMuted: navVoiceMuted,
   });
+  const navDisplayCoord = nav.isNavigating ? nav.fusedNavLocation.displayCoord : location;
+  const navDisplayHeading = nav.isNavigating ? nav.fusedNavLocation.displayHeading : heading;
   const navFetchRef = useRef(nav.fetchDirections);
   const navSetDestRef = useRef(nav.setSelectedDestination);
   useEffect(() => {
@@ -376,10 +379,10 @@ export default function MapScreen() {
       getDistanceToUpcomingManeuverMeters(
         nav.navigationData?.steps,
         nav.currentStepIndex,
-        location,
+        navDisplayCoord,
         nav.navigationData?.polyline,
       ),
-    [nav.navigationData?.steps, nav.navigationData?.polyline, nav.currentStepIndex, location.lat, location.lng],
+    [nav.navigationData?.steps, nav.navigationData?.polyline, nav.currentStepIndex, navDisplayCoord.lat, navDisplayCoord.lng],
   );
   const camCtrl = useCameraController({
     speedMph: speed,
@@ -1003,13 +1006,13 @@ export default function MapScreen() {
   // Fix 14: GPS feed with jitter threshold (route progress uses lat/lng only — do not spam on heading noise).
   useEffect(() => {
     const moveThresholdM = nav.isNavigating ? 0.45 : 1.5;
-    const moved = haversineMeters(lastCameraUpdate.current.lat, lastCameraUpdate.current.lng, location.lat, location.lng) > moveThresholdM;
-    const turned = Math.abs(heading - lastCameraUpdate.current.heading) > 1;
+    const moved = haversineMeters(lastCameraUpdate.current.lat, lastCameraUpdate.current.lng, navDisplayCoord.lat, navDisplayCoord.lng) > moveThresholdM;
+    const turned = Math.abs(navDisplayHeading - lastCameraUpdate.current.heading) > 1;
     if (moved || turned) {
-      lastCameraUpdate.current = { lat: location.lat, lng: location.lng, heading };
-      if (moved) nav.updatePosition(location.lat, location.lng);
+      lastCameraUpdate.current = { lat: navDisplayCoord.lat, lng: navDisplayCoord.lng, heading: navDisplayHeading };
+      if (moved) nav.updatePosition(navDisplayCoord.lat, navDisplayCoord.lng);
     }
-  }, [location.lat, location.lng, heading, nav.isNavigating, nav.updatePosition]);
+  }, [navDisplayCoord.lat, navDisplayCoord.lng, navDisplayHeading, nav.isNavigating, nav.updatePosition]);
 
   useEffect(() => {
     if (!user?.isPremium) return;
@@ -1990,7 +1993,7 @@ export default function MapScreen() {
           ) : null}
           {/* Camera: route-snapped center during navigation, native follow otherwise */}
           {(() => {
-            const isSnappedNav = !!nav.navDisplayCoord && cameraLocked && nav.isNavigating;
+            const isFusedNav = cameraLocked && nav.isNavigating;
             return (
               <MapboxGL.Camera
                 ref={cameraRef}
@@ -2000,37 +2003,37 @@ export default function MapScreen() {
                   pitch: modeConfig.explorePitch,
                 }}
                 centerCoordinate={
-                  isSnappedNav
-                    ? [nav.navDisplayCoord!.lng, nav.navDisplayCoord!.lat]
+                  isFusedNav
+                    ? [navDisplayCoord.lng, navDisplayCoord.lat]
                     : nav.isNavigating || isExploring || compassMode || exploreTracksUser
                       ? undefined
                       : stableCenter
                 }
-                heading={isSnappedNav ? nav.navDisplayHeading : undefined}
+                heading={isFusedNav ? navDisplayHeading : undefined}
                 zoomLevel={
-                  isSnappedNav
+                  isFusedNav
                     ? camCtrl?.followZoomLevel
                     : nav.isNavigating || compassMode || exploreTracksUser
                       ? undefined
                       : modeConfig.exploreZoom
                 }
                 pitch={
-                  isSnappedNav
+                  isFusedNav
                     ? camCtrl?.followPitch
                     : nav.isNavigating || compassMode || exploreTracksUser
                       ? undefined
                       : modeConfig.explorePitch
                 }
-                padding={isSnappedNav ? camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING : undefined}
-                animationMode={isSnappedNav || (nav.isNavigating && cameraLocked) ? 'linearTo' : 'easeTo'}
+                padding={isFusedNav ? camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING : undefined}
+                animationMode={isFusedNav || (nav.isNavigating && cameraLocked) ? 'linearTo' : 'easeTo'}
                 animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
                 followUserLocation={
-                  isSnappedNav
+                  isFusedNav
                     ? false
                     : (nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser
                 }
                 followUserMode={
-                  isSnappedNav
+                  isFusedNav
                     ? undefined
                     : nav.isNavigating && cameraLocked
                       ? MapboxGL.UserTrackingMode.FollowWithCourse
@@ -2041,7 +2044,7 @@ export default function MapScreen() {
                           : undefined
                 }
                 followPitch={
-                  isSnappedNav
+                  isFusedNav
                     ? undefined
                     : camCtrl
                       ? camCtrl.followPitch
@@ -2052,7 +2055,7 @@ export default function MapScreen() {
                           : undefined
                 }
                 followZoomLevel={
-                  isSnappedNav
+                  isFusedNav
                     ? undefined
                     : camCtrl
                       ? camCtrl.followZoomLevel
@@ -2062,7 +2065,7 @@ export default function MapScreen() {
                           ? 15
                           : undefined
                 }
-                followPadding={isSnappedNav ? undefined : camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING}
+                followPadding={isFusedNav ? undefined : camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING}
               />
             );
           })()}
@@ -2210,25 +2213,24 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
-          {/* Themed puck during navigation (independent of camera lock state);
-              native GPS puck otherwise. */}
-          {nav.navDisplayCoord && nav.isNavigating ? (
+          {nav.isNavigating ? (
             <MapboxGL.MarkerView
-              id="nav-snapped-puck"
-              coordinate={[nav.navDisplayCoord.lng, nav.navDisplayCoord.lat]}
+              id="nav-fused-puck"
+              coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
               anchor={{ x: 0.5, y: 0.5 }}
             >
               <View style={[s.navPuck, { backgroundColor: modeConfig.puckColor }]}>
                 <View style={s.navPuckInner} />
               </View>
             </MapboxGL.MarkerView>
-          ) : (
-            <MapboxGL.LocationPuck
-              visible
-              puckBearingEnabled
-              puckBearing={nav.isNavigating ? 'course' : 'heading'}
-            />
-          )}
+          ) : null}
+
+          {/* Default Mapbox user-location puck outside active navigation. */}
+          <MapboxGL.LocationPuck
+            visible={!nav.isNavigating}
+            puckBearingEnabled
+            puckBearing={nav.isNavigating ? 'course' : 'heading'}
+          />
         </MapboxGL.MapView>
       ) : (
         <View style={[s.map, s.placeholder]}>
@@ -2584,9 +2586,8 @@ export default function MapScreen() {
           shouldShowRoadDisambiguation(nextManeuverCoord?.name) ? (nextManeuverCoord?.name ?? null) :
           null;
 
-        /** Banner + lanes for the upcoming maneuver live on `nextStep`; `currentStep` is often “continue” and overrides with the wrong primary. */
-        const bannerStep =
-          cardState === 'confirm' ? currentStep : (nextManeuverCoord ?? currentStep);
+        /** Align banner/lanes/icons with Mapbox step geometry (see `currentStepIndexAlongRoute`). */
+        const guidanceStep = pickGuidanceStep(cardState, currentStep, nextManeuverCoord);
 
         return (
           <View style={[s.turnWrap, { top: insets.top }]} key={nav.currentStepIndex}>
@@ -2606,8 +2607,8 @@ export default function MapScreen() {
                   return !m;
                 });
               }}
-              lanesJson={bannerStep?.lanes ?? currentStep?.lanes}
-              step={bannerStep}
+              lanesJson={mergeLaneSources(guidanceStep, nextManeuverCoord, currentStep)}
+              step={guidanceStep ?? nextManeuverCoord ?? currentStep}
               roadDisambiguationLabel={disambigName}
               isSportBorder={isSport}
               speedMph={speed}

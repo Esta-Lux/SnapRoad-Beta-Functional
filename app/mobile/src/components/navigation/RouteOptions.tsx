@@ -7,7 +7,7 @@ import type { ThemeColors } from '../../contexts/ThemeContext';
 interface Props {
   routes: DirectionsResult[];
   selectedIndex: number;
-  onSelect: (routeType: 'best' | 'eco') => void;
+  onSelect: (routeType: 'best' | 'eco' | 'alt') => void;
   colors: ThemeColors;
 }
 
@@ -17,7 +17,8 @@ export default function RouteOptions({ routes, selectedIndex, onSelect, colors }
   return (
     <View style={styles.row}>
       {routes.slice(0, 2).map((route, i) => {
-        const label = route.routeType === 'eco' ? 'Eco' : 'Best route';
+        const label =
+          route.routeType === 'eco' ? 'Eco' : route.routeType === 'alt' ? 'Alt' : 'Best route';
         const selected = selectedIndex === i;
         return (
           <TouchableOpacity

@@ -11,6 +11,7 @@ import {
   alongRouteDistanceMeters,
   bearingDeg,
   computeNavigationRouteProgress,
+  currentStepIndexAlongRoute,
   haversineMeters,
   remainingDistanceOnPolyline,
   segmentAndTFromCumAlongPolyline,
@@ -24,6 +25,17 @@ import * as Haptics from 'expo-haptics';
 import { useAuth } from '../contexts/AuthContext';
 import { tripGemsFromDurationMinutes } from '../utils/tripGems';
 import type { User } from '../types';
+import {
+  bucketAccuracyBand,
+  bucketConfidence,
+  bucketOffsetBand,
+  bucketProgress,
+  bucketSpeedBand,
+  deviceOsBucket,
+  trackNavigationQualityEvent,
+  trackNavigationQualitySample,
+} from '../utils/navigationQualityTelemetry';
+import { useFusedNavigationLocation } from './useFusedNavigationLocation';
 
 function navRoutePolylineId(poly: Coordinate[]): string {
   if (poly.length < 2) return '';
@@ -83,11 +95,12 @@ export function useNavigation(params: {
   userLocation: Coordinate;
   speed: number;
   heading: number;
+  gpsAccuracy?: number | null;
   drivingMode: DrivingMode;
   /** When true, suppress turn-by-turn speech (user preference; persists in MapScreen). */
   voiceMuted?: boolean;
 }) {
-  const { userLocation, speed, heading, drivingMode, voiceMuted = false } = params;
+  const { userLocation, speed, heading, gpsAccuracy = null, drivingMode, voiceMuted = false } = params;
   const voiceMutedRef = useRef(voiceMuted);
   useLayoutEffect(() => {
     voiceMutedRef.current = voiceMuted;
@@ -122,6 +135,7 @@ export function useNavigation(params: {
   const [tripSummary, setTripSummary] = useState<TripSummary | null>(null);
   const [selectedDestination, setSelectedDestination] = useState<GeocodeResult | null>(null);
   const [isRerouting, setIsRerouting] = useState(false);
+  const navQualityEmitRef = useRef<{ atMs: number; progressBucket: number }>({ atMs: 0, progressBucket: -1 });
 
   const isNavigatingRef = useRef(false);
   const traveledRef = useRef(0);
@@ -145,13 +159,24 @@ export function useNavigation(params: {
   /** Monotonic cumulative progress for route overlay; reset per polyline id (true reroute). */
   const routeSplitCumRef = useRef<{ routeKey: string; maxCum: number }>({ routeKey: '', maxCum: 0 });
 
+  const fusedNavLocation = useFusedNavigationLocation({
+    rawCoord: userLocation,
+    rawHeading: heading,
+    speedMph: speed,
+    accuracyM: gpsAccuracy,
+    isNavigating,
+    polyline: navigationData?.polyline,
+  });
+  const navUserLocation = isNavigating ? fusedNavLocation.displayCoord : userLocation;
+  const navUserHeading = isNavigating ? fusedNavLocation.displayHeading : heading;
+
   // --- Fetch directions ---
   const fetchDirections = useCallback(async (
     destination: Coordinate & { name?: string; address?: string },
     origin?: Coordinate,
     opts?: { maxHeightMeters?: number },
   ): Promise<FetchDirectionsResult> => {
-    const o = origin ?? userLocation;
+    const o = origin ?? navUserLocation;
     const destOk =
       Number.isFinite(destination.lat) &&
       Number.isFinite(destination.lng) &&
@@ -214,7 +239,7 @@ export function useNavigation(params: {
       console.warn('fetchDirections error:', e);
       return { ok: false, reason: 'route_failed', message: msg };
     }
-  }, [userLocation, drivingMode]);
+  }, [navUserLocation, drivingMode]);
 
   const handleRouteSelect = useCallback((routeTypeOrIndex: 'best' | 'eco' | 'alt' | number) => {
     if (!availableRoutes.length || !navigationData) return;
@@ -318,7 +343,7 @@ export function useNavigation(params: {
 
     let polyMiles = 0;
     if (navigationData?.polyline && navigationData.polyline.length >= 2) {
-      const remainMeters = remainingDistanceOnPolyline(userLocation, navigationData.polyline);
+      const remainMeters = remainingDistanceOnPolyline(navUserLocation, navigationData.polyline);
       const drivenMeters = Math.max(0, (navigationData.distance ?? 0) - remainMeters);
       polyMiles = drivenMeters / 1609.34;
     }
@@ -427,7 +452,7 @@ export function useNavigation(params: {
       await refreshUserFromServerRef.current();
       bumpStatsVersionRef.current();
     }).catch(() => { /* offline — summary already shown */ });
-  }, [navigationData, drivingMode, userLocation, user?.isPremium, navSpeak]);
+  }, [navigationData, drivingMode, navUserLocation, user?.isPremium, navSpeak]);
 
   const dismissTripSummary = useCallback(() => setTripSummary(null), []);
 
@@ -449,11 +474,11 @@ export function useNavigation(params: {
   const routeProgress = useMemo((): NavigationRouteProgress | null => {
     if (!isNavigating || !navigationData?.polyline || navigationData.polyline.length < 2) return null;
     return computeNavigationRouteProgress(
-      userLocation,
+      navUserLocation,
       navigationData.polyline,
       navigationData.distance ?? 0,
     );
-  }, [isNavigating, navigationData?.polyline, navigationData?.distance, userLocation.lat, userLocation.lng]);
+  }, [isNavigating, navigationData?.polyline, navigationData?.distance, navUserLocation.lat, navUserLocation.lng]);
 
   /** Keep odometry in sync with monotonic route progress (GPS integration can lag in urban canyons). */
   useEffect(() => {
@@ -464,11 +489,6 @@ export function useNavigation(params: {
       setTraveledDistanceMeters(rt);
     }
   }, [isNavigating, routeProgress?.traveledRouteMeters]);
-
-  const progressAlongRouteMeters =
-    isNavigating && routeProgress
-      ? routeProgress.traveledRouteMeters
-      : traveledDistanceMeters;
 
   /** Synchronous route split — computed in the same render as routeProgress so the
    *  passed/ahead boundary never lags behind the native location puck. */
@@ -492,44 +512,28 @@ export function useNavigation(params: {
     return segmentAndTFromCumAlongPolyline(cur.maxCum, poly) ?? null;
   }, [isNavigating, routeProgress, navigationData?.polyline]);
 
-  /** Route-snapped coordinate for the navigation puck (null when off-route or not navigating). */
-  const MAX_SNAP_DISTANCE = 40;
   const navDisplayCoord = useMemo((): Coordinate | null => {
-    if (!isNavigating || !routeProgress) return null;
-    if (routeProgress.distanceToRouteMeters > MAX_SNAP_DISTANCE) return null;
-    return routeProgress.snapCoord;
-  }, [isNavigating, routeProgress]);
+    if (!isNavigating) return null;
+    return fusedNavLocation.displayCoord;
+  }, [fusedNavLocation.displayCoord, isNavigating]);
 
-  const navHeadingRef = useRef(0);
   const navDisplayHeading = useMemo((): number => {
-    if (!navDisplayCoord || !routeProgress || !navigationData?.polyline) return navHeadingRef.current;
-    const poly = navigationData.polyline;
-    const idx = routeProgress.segmentIndex;
-    if (idx >= poly.length - 1) return navHeadingRef.current;
-    const target = bearingDeg(poly[idx], poly[idx + 1]);
-    const prev = navHeadingRef.current;
-    const delta = ((target - prev + 540) % 360) - 180;
-    const smoothed = (prev + delta * 0.45 + 360) % 360;
-    navHeadingRef.current = smoothed;
-    return smoothed;
-  }, [navDisplayCoord, routeProgress, navigationData?.polyline]);
+    if (!isNavigating) return navUserHeading;
+    return fusedNavLocation.displayHeading;
+  }, [fusedNavLocation.displayHeading, isNavigating, navUserHeading]);
 
-  // --- Step index tracking ---
+  // --- Step index tracking (polyline-aligned; matches Mapbox geometry + turn cards) ---
   useEffect(() => {
-    if (!isNavigating || !navigationData?.steps?.length) return;
-    let cumulative = 0;
-    let nextIndex = 0;
-    for (let i = 0; i < navigationData.steps.length; i++) {
-      const stepDist = navigationData.steps[i].distanceMeters ?? 0;
-      if (progressAlongRouteMeters < cumulative + stepDist) {
-        nextIndex = i;
-        break;
-      }
-      cumulative += stepDist;
-      nextIndex = i + 1;
+    if (!isNavigating || !navigationData?.steps?.length || !navigationData.polyline?.length || !routeProgress) {
+      return;
     }
-    setCurrentStepIndex(Math.min(nextIndex, navigationData.steps.length - 1));
-  }, [isNavigating, navigationData?.steps, progressAlongRouteMeters]);
+    const idx = currentStepIndexAlongRoute(
+      navigationData.steps,
+      routeProgress.cumFromStartMeters,
+      navigationData.polyline,
+    );
+    setCurrentStepIndex(Math.min(idx, navigationData.steps.length - 1));
+  }, [isNavigating, navigationData?.steps, navigationData?.polyline, routeProgress?.cumFromStartMeters]);
 
   // --- Voice announcements on step change ---
   useEffect(() => {
@@ -548,7 +552,7 @@ export function useNavigation(params: {
     const followingStep = navigationData.steps[stepIndex + 1] ?? null;
     const liveDistToThisManeuver =
       isFinite(step.lat) && isFinite(step.lng)
-        ? haversineMeters(userLocation.lat, userLocation.lng, step.lat, step.lng)
+        ? haversineMeters(navUserLocation.lat, navUserLocation.lng, step.lat, step.lng)
         : (step.distanceMeters ?? 400);
 
     const phrase = voiceCue
@@ -565,7 +569,7 @@ export function useNavigation(params: {
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navSpeak(phrase, 'normal', drivingMode);
-  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation, navSpeak]);
+  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, navUserLocation, navSpeak]);
 
   // --- Early turn warnings (500ft and 150ft before next step) ---
   useEffect(() => {
@@ -587,8 +591,8 @@ export function useNavigation(params: {
     const poly = navigationData.polyline;
     const distToNext =
       poly && poly.length >= 2
-        ? alongRouteDistanceMeters(poly, userLocation, { lat: nextStep.lat, lng: nextStep.lng })
-        : haversineMeters(userLocation.lat, userLocation.lng, nextStep.lat, nextStep.lng);
+        ? alongRouteDistanceMeters(poly, navUserLocation, { lat: nextStep.lat, lng: nextStep.lng })
+        : haversineMeters(navUserLocation.lat, navUserLocation.lng, nextStep.lat, nextStep.lng);
 
     const FEET_500 = 152;
     const FEET_150 = 46;
@@ -603,7 +607,7 @@ export function useNavigation(params: {
       const nowCue = nextVoice || nextBanner;
       if (nowCue) navSpeak(nowCue, 'high', drivingMode);
     }
-  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, userLocation, navSpeak]);
+  }, [isNavigating, navigationData?.steps, currentStepIndex, drivingMode, navUserLocation, navSpeak]);
 
   // --- Arrival announcement ---
   useEffect(() => {
@@ -616,7 +620,7 @@ export function useNavigation(params: {
     const rm = liveEta?.distanceMiles;
     const crow =
       Number.isFinite(dest.lat) && Number.isFinite(dest.lng)
-        ? haversineMeters(userLocation.lat, userLocation.lng, dest.lat, dest.lng)
+        ? haversineMeters(navUserLocation.lat, navUserLocation.lng, dest.lat, dest.lng)
         : Number.POSITIVE_INFINITY;
     const near = (rm != null && rm <= 0.05) || crow <= 55;
     if (!near) return;
@@ -632,8 +636,8 @@ export function useNavigation(params: {
     isNavigating,
     liveEta?.distanceMiles,
     navigationData?.destination,
-    userLocation.lat,
-    userLocation.lng,
+    navUserLocation.lat,
+    navUserLocation.lng,
     drivingMode,
     navSpeak,
   ]);
@@ -648,7 +652,7 @@ export function useNavigation(params: {
     const polyline = navigationData.polyline;
     let remainingMeters: number;
     if (polyline && polyline.length >= 2) {
-      remainingMeters = remainingDistanceOnPolyline(userLocation, polyline);
+      remainingMeters = remainingDistanceOnPolyline(navUserLocation, polyline);
     } else {
       remainingMeters = Math.max(0, totalMeters - traveledDistanceMeters);
     }
@@ -690,8 +694,8 @@ export function useNavigation(params: {
     navigationData?.duration,
     navigationData?.polyline,
     routeProgress?.remainingRouteMeters,
-    userLocation.lat,
-    userLocation.lng,
+    navUserLocation.lat,
+    navUserLocation.lng,
     speed,
     traveledDistanceMeters,
   ]);
@@ -703,7 +707,7 @@ export function useNavigation(params: {
     const dest = navigationData.destination;
     if (!Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) return;
 
-    const crow = haversineMeters(userLocation.lat, userLocation.lng, dest.lat, dest.lng);
+    const crow = haversineMeters(navUserLocation.lat, navUserLocation.lng, dest.lat, dest.lng);
     const remainMi = liveEta?.distanceMiles;
     const withinRoute = remainMi != null && remainMi <= 0.1;
     const withinCrow = crow <= 55;
@@ -720,8 +724,8 @@ export function useNavigation(params: {
     isNavigating,
     navigationData?.destination?.lat,
     navigationData?.destination?.lng,
-    userLocation.lat,
-    userLocation.lng,
+    navUserLocation.lat,
+    navUserLocation.lng,
     liveEta?.distanceMiles,
     stopNavigation,
   ]);
@@ -763,11 +767,27 @@ export function useNavigation(params: {
     setIsRerouting(true);
     const rerouteMsg = drivingMode === 'calm' ? 'Let me find you a new route.' : 'Rerouting.';
     navSpeak(rerouteMsg, 'high', drivingMode);
+    trackNavigationQualityEvent({
+      event: 'reroute',
+      accuracyBand: bucketAccuracyBand(gpsAccuracy),
+      offsetBand: bucketOffsetBand(haversineMeters(
+        userLocation.lat,
+        userLocation.lng,
+        fusedNavLocation.displayCoord.lat,
+        fusedNavLocation.displayCoord.lng,
+      )),
+      progressBucket: bucketProgress((routeProgress?.traveledRouteMeters ?? 0) / Math.max(1, navigationData?.distance ?? 1)),
+      speedBand: bucketSpeedBand(speed),
+      osBucket: deviceOsBucket(),
+      qualityState: fusedNavLocation.qualityState,
+      snapped: fusedNavLocation.isSnapped ? 1 : 0,
+      confidenceBucket: bucketConfidence(fusedNavLocation.confidence),
+    });
 
     const reroute = async () => {
       try {
         const dest = navigationData.destination;
-        const res = await fetchDirections(dest, userLocation);
+        const res = await fetchDirections(dest, navUserLocation);
         if (res.ok) {
           lastRerouteAtRef.current = Date.now();
         }
@@ -779,8 +799,8 @@ export function useNavigation(params: {
     };
     reroute();
   }, [
-    userLocation.lat,
-    userLocation.lng,
+    navUserLocation.lat,
+    navUserLocation.lng,
     speed,
     isNavigating,
     navigationData?.destination,
@@ -796,7 +816,7 @@ export function useNavigation(params: {
     navSpeak('Adding a stop. Rerouting.', 'high', drivingMode);
     setIsRerouting(true);
     try {
-      const coords = `${userLocation.lng},${userLocation.lat};${waypoint.lng},${waypoint.lat};${navigationData.destination.lng},${navigationData.destination.lat}`;
+      const coords = `${navUserLocation.lng},${navUserLocation.lat};${waypoint.lng},${waypoint.lat};${navigationData.destination.lng},${navigationData.destination.lat}`;
       const token = getMapboxPublicToken();
       const res = await fetch(
         `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coords}?access_token=${encodeURIComponent(token)}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed`,
@@ -853,7 +873,84 @@ export function useNavigation(params: {
     } finally {
       setIsRerouting(false);
     }
-  }, [navigationData, userLocation, drivingMode, navSpeak]);
+  }, [navigationData, navUserLocation, drivingMode, navSpeak]);
+
+  useEffect(() => {
+    if (!isNavigating || !navigationData?.distance || !routeProgress) return;
+    const totalDistance = Math.max(1, navigationData.distance);
+    const progressBucket = bucketProgress(routeProgress.traveledRouteMeters / totalDistance);
+    const now = Date.now();
+    const prev = navQualityEmitRef.current;
+    if (progressBucket === prev.progressBucket && now - prev.atMs < 25000) return;
+    navQualityEmitRef.current = { atMs: now, progressBucket };
+    trackNavigationQualitySample({
+      accuracyBand: bucketAccuracyBand(gpsAccuracy),
+      offsetBand: bucketOffsetBand(haversineMeters(
+        userLocation.lat,
+        userLocation.lng,
+        fusedNavLocation.displayCoord.lat,
+        fusedNavLocation.displayCoord.lng,
+      )),
+      progressBucket,
+      speedBand: bucketSpeedBand(speed),
+      osBucket: deviceOsBucket(),
+      qualityState: fusedNavLocation.qualityState,
+      snapped: fusedNavLocation.isSnapped ? 1 : 0,
+      confidenceBucket: bucketConfidence(fusedNavLocation.confidence),
+    });
+  }, [
+    fusedNavLocation.confidence,
+    fusedNavLocation.displayCoord.lat,
+    fusedNavLocation.displayCoord.lng,
+    fusedNavLocation.isSnapped,
+    fusedNavLocation.qualityState,
+    gpsAccuracy,
+    isNavigating,
+    navigationData?.distance,
+    routeProgress?.traveledRouteMeters,
+    speed,
+    userLocation.lat,
+    userLocation.lng,
+  ]);
+
+  useEffect(() => {
+    if (!isNavigating || !routeProgress) return;
+    const speedMps = speed * 0.44704;
+    const thresholdM =
+      speedMps > 13 ? 76 + Math.min(14, speedMps * 0.35) : speedMps > 7 ? 60 + speedMps * 0.5 : 46;
+    const dist = routeProgress.distanceToRouteMeters;
+    const severe = Number.isFinite(dist) && (dist > thresholdM * 1.42 || dist > 112 || (speedMps > 12 && dist > 95));
+    if (!severe) return;
+    trackNavigationQualityEvent({
+      event: 'severe_off_route',
+      accuracyBand: bucketAccuracyBand(gpsAccuracy),
+      offsetBand: bucketOffsetBand(haversineMeters(
+        userLocation.lat,
+        userLocation.lng,
+        fusedNavLocation.displayCoord.lat,
+        fusedNavLocation.displayCoord.lng,
+      )),
+      progressBucket: bucketProgress(routeProgress.traveledRouteMeters / Math.max(1, navigationData?.distance ?? 1)),
+      speedBand: bucketSpeedBand(speed),
+      osBucket: deviceOsBucket(),
+      qualityState: fusedNavLocation.qualityState,
+      snapped: fusedNavLocation.isSnapped ? 1 : 0,
+      confidenceBucket: bucketConfidence(fusedNavLocation.confidence),
+    });
+  }, [
+    fusedNavLocation.confidence,
+    fusedNavLocation.displayCoord.lat,
+    fusedNavLocation.displayCoord.lng,
+    fusedNavLocation.isSnapped,
+    fusedNavLocation.qualityState,
+    gpsAccuracy,
+    isNavigating,
+    navigationData?.distance,
+    routeProgress,
+    speed,
+    userLocation.lat,
+    userLocation.lng,
+  ]);
 
   return {
     navigationData,
@@ -863,6 +960,7 @@ export function useNavigation(params: {
     routeSplitForOverlay,
     navDisplayCoord,
     navDisplayHeading,
+    fusedNavLocation,
     currentStepIndex,
     traveledDistanceMeters,
     availableRoutes,

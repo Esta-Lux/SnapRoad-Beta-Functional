@@ -55,7 +55,7 @@ export interface ModeConfig {
 
   buildingOpacity: number;
 
-  /** Color of the user-location puck. Blue for calm/adaptive, red for sport. */
+  /** Active-navigation puck tint when MapScreen renders the fused MarkerView puck. */
   puckColor: string;
 
   directionsProfile: DirectionsProfile;
@@ -196,11 +196,11 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     icon: 'speedometer-outline',
 
     routeColor: '#FFFFFF',
-    routeCasing: '#4A4063',
-    passedColor: '#6B6580',
+    routeCasing: '#F0EEFF',
+    passedColor: '#C8C2DC',
     routeWidth: 6,
     routeGlowColor: '#FFFFFF',
-    routeGlowOpacity: 0.12,
+    routeGlowOpacity: 0.14,
 
     turnCardGradient: ['#4A4063', '#2D2845'],
     turnCardRadius: 16,

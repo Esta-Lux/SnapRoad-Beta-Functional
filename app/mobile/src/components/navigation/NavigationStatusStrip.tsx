@@ -14,8 +14,11 @@ import type { ModeConfig } from '../../constants/modes';
 import { formatDistance } from '../../utils/distance';
 import { formatDuration } from '../../utils/format';
 
-/** Approx vertical space for MapScreen FABs / speed stack above safe area while this strip is shown. */
-export const MAP_NAV_BOTTOM_INSET = 118;
+/**
+ * Vertical offset above the safe area for nav FABs / street pill so they clear the status strip
+ * (ETA rows + voice + End navigation — taller than a single bar).
+ */
+export const MAP_NAV_BOTTOM_INSET = 220;
 
 type LiveEta = { distanceMiles: number; etaMinutes: number };
 

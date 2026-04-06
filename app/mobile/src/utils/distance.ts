@@ -1,4 +1,5 @@
 import type { Coordinate } from '../types';
+import type { DirectionsStep } from '../lib/directions';
 
 export function haversineMeters(
   lat1: number,
@@ -48,6 +49,179 @@ export type PolylineProjection = {
   /** Distance along the polyline from the snap point to the last vertex. */
   remainingToEndMeters: number;
 };
+
+export type HysteresisMatchState = {
+  segmentIndex: number;
+  cumFromStartMeters: number;
+};
+
+export type PolylineMapMatch = PolylineProjection & {
+  score: number;
+  headingDeltaDeg: number | null;
+  usedHysteresis: boolean;
+};
+
+function angularDeltaDeg(a: number, b: number): number {
+  return Math.abs(((a - b + 540) % 360) - 180);
+}
+
+function projectOntoSegment(
+  point: Coordinate,
+  polyline: Coordinate[],
+  prefixMeters: number[],
+  segmentIndex: number,
+): PolylineProjection {
+  const a = polyline[segmentIndex]!;
+  const b = polyline[segmentIndex + 1]!;
+  const latScale = 111320;
+  const lngScale = 111320 * Math.cos((point.lat * Math.PI) / 180);
+  const px = point.lng * lngScale;
+  const py = point.lat * latScale;
+  const ax = a.lng * lngScale;
+  const ay = a.lat * latScale;
+  const bx = b.lng * lngScale;
+  const by = b.lat * latScale;
+  const abx = bx - ax;
+  const aby = by - ay;
+  const ab2 = abx * abx + aby * aby;
+  const t = ab2 > 1e-10 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / ab2)) : 0;
+  const qx = ax + abx * t;
+  const qy = ay + aby * t;
+  const distanceToRouteMeters = Math.hypot(px - qx, py - qy);
+  const segLen = haversineMeters(a.lat, a.lng, b.lat, b.lng);
+  const cumFromStartMeters = prefixMeters[segmentIndex]! + segLen * t;
+  const totalMeters = prefixMeters[prefixMeters.length - 1] ?? 0;
+
+  return {
+    segmentIndex,
+    tOnSegment: t,
+    snapCoord: {
+      lat: a.lat + t * (b.lat - a.lat),
+      lng: a.lng + t * (b.lng - a.lng),
+    },
+    distanceToRouteMeters,
+    cumFromStartMeters,
+    remainingToEndMeters: Math.max(0, totalMeters - cumFromStartMeters),
+  };
+}
+
+function buildPrefixMeters(polyline: Coordinate[]): number[] {
+  const prefix: number[] = [0];
+  let total = 0;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    total += haversineMeters(polyline[i]!.lat, polyline[i]!.lng, polyline[i + 1]!.lat, polyline[i + 1]!.lng);
+    prefix.push(total);
+  }
+  return prefix;
+}
+
+function scoreProjectedCandidate(
+  projection: PolylineProjection,
+  polyline: Coordinate[],
+  prevMatch: HysteresisMatchState | null | undefined,
+  headingDeg?: number | null,
+  maxBackwardMeters = 10,
+): PolylineMapMatch {
+  const segStart = polyline[projection.segmentIndex]!;
+  const segEnd = polyline[projection.segmentIndex + 1]!;
+  const segBearing = bearingDeg(segStart, segEnd);
+  const headingDeltaDeg =
+    headingDeg != null && Number.isFinite(headingDeg) ? angularDeltaDeg(segBearing, headingDeg) : null;
+  const backwardMeters =
+    prevMatch != null
+      ? Math.max(0, prevMatch.cumFromStartMeters - projection.cumFromStartMeters)
+      : 0;
+  const distancePenalty = projection.distanceToRouteMeters;
+  const headingPenalty =
+    headingDeltaDeg == null
+      ? 0
+      : headingDeltaDeg > 100
+        ? 44
+        : headingDeltaDeg > 75
+          ? 24
+          : headingDeltaDeg > 50
+            ? 10
+            : headingDeltaDeg > 30
+              ? 4
+              : 0;
+  const backwardPenalty =
+    backwardMeters > maxBackwardMeters
+      ? 90 + (backwardMeters - maxBackwardMeters) * 1.9
+      : backwardMeters * 2.2;
+  return {
+    ...projection,
+    score: distancePenalty + headingPenalty + backwardPenalty,
+    headingDeltaDeg,
+    usedHysteresis: false,
+  };
+}
+
+export function projectOntoPolylineWithHysteresis(
+  point: Coordinate,
+  polyline: Coordinate[],
+  opts?: {
+    prevMatch?: HysteresisMatchState | null;
+    headingDeg?: number | null;
+    maxBackwardMeters?: number;
+    hysteresisMeters?: number;
+    segmentWindow?: number;
+  },
+): PolylineMapMatch | null {
+  if (polyline.length < 2) return null;
+
+  const prevMatch = opts?.prevMatch ?? null;
+  const maxBackwardMeters = opts?.maxBackwardMeters ?? 10;
+  const hysteresisMeters = opts?.hysteresisMeters ?? 9;
+  const segmentWindow = opts?.segmentWindow ?? 10;
+  const prefixMeters = buildPrefixMeters(polyline);
+  const lastSeg = polyline.length - 2;
+
+  let start = 0;
+  let end = lastSeg;
+  if (prevMatch) {
+    start = Math.max(0, prevMatch.segmentIndex - 2);
+    end = Math.min(lastSeg, prevMatch.segmentIndex + segmentWindow);
+  }
+
+  let best: PolylineMapMatch | null = null;
+  for (let i = start; i <= end; i++) {
+    const candidate = scoreProjectedCandidate(
+      projectOntoSegment(point, polyline, prefixMeters, i),
+      polyline,
+      prevMatch,
+      opts?.headingDeg,
+      maxBackwardMeters,
+    );
+    if (!best || candidate.score < best.score) best = candidate;
+  }
+
+  if (!best) return null;
+  if (!prevMatch) return best;
+
+  const holdStart = Math.max(0, prevMatch.segmentIndex - 1);
+  const holdEnd = Math.min(lastSeg, prevMatch.segmentIndex + 1);
+  let holdBest: PolylineMapMatch | null = null;
+  for (let i = holdStart; i <= holdEnd; i++) {
+    const candidate = scoreProjectedCandidate(
+      projectOntoSegment(point, polyline, prefixMeters, i),
+      polyline,
+      prevMatch,
+      opts?.headingDeg,
+      maxBackwardMeters,
+    );
+    if (!holdBest || candidate.score < holdBest.score) holdBest = candidate;
+  }
+
+  if (
+    holdBest &&
+    holdBest.cumFromStartMeters + maxBackwardMeters >= prevMatch.cumFromStartMeters &&
+    holdBest.score <= best.score + hysteresisMeters
+  ) {
+    return { ...holdBest, usedHysteresis: holdBest.segmentIndex !== best.segmentIndex };
+  }
+
+  return best;
+}
 
 /**
  * Project `point` onto `polyline` (closest segment, clamped). All navigation consumers should use this
@@ -235,6 +409,66 @@ export function computeNavigationRouteProgress(
     remainingRouteMeters: base.remainingToEndMeters,
     traveledRouteMeters,
   };
+}
+
+/** Total path length of the route polyline (meters). */
+export function polylineLengthMeters(polyline: Coordinate[]): number {
+  if (polyline.length < 2) return 0;
+  let len = 0;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i]!;
+    const b = polyline[i + 1]!;
+    len += haversineMeters(a.lat, a.lng, b.lat, b.lng);
+  }
+  return len;
+}
+
+/**
+ * Cumulative distance at the end of each Mapbox step, using per-step geometry when present
+ * (aligned with the same route polyline as projection), else `distanceMeters`.
+ */
+export function stepEndCumulativeMeters(steps: DirectionsStep[]): number[] {
+  const ends: number[] = [];
+  let cum = 0;
+  for (const step of steps) {
+    const g = step.geometryCoordinates;
+    let len = 0;
+    if (g && g.length >= 2) {
+      for (let i = 0; i < g.length - 1; i++) {
+        len += haversineMeters(g[i]![1], g[i]![0], g[i + 1]![1], g[i + 1]![0]);
+      }
+    }
+    if (len < 0.5 && (step.distanceMeters ?? 0) > 0) {
+      len = step.distanceMeters ?? 0;
+    }
+    cum += len;
+    ends.push(cum);
+  }
+  return ends;
+}
+
+/**
+ * Current step index from distance along the polyline (`cumFromStartMeters` from {@link projectOntoPolyline}),
+ * keeping turn cards / lanes in sync with the rendered route.
+ */
+export function currentStepIndexAlongRoute(
+  steps: DirectionsStep[],
+  cumAlongPolylineMeters: number,
+  polyline: Coordinate[],
+): number {
+  if (!steps.length) return 0;
+  const ends = stepEndCumulativeMeters(steps);
+  const gTotal = ends[ends.length - 1] ?? 0;
+  const pLen = polylineLengthMeters(polyline);
+  let u = Math.max(0, cumAlongPolylineMeters);
+  if (gTotal > 2 && pLen > 2 && Math.abs(gTotal - pLen) / pLen > 0.04) {
+    u = (u / pLen) * gTotal;
+  }
+  const EPS = 5;
+  for (let i = 0; i < ends.length; i++) {
+    if (u < ends[i]! - EPS) return i;
+  }
+  return Math.max(0, ends.length - 1);
 }
 
 /** Passed into {@link buildRouteSplitRingsFromProgress} from navigation (monotonic cumulative progress). */
