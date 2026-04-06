@@ -1,3 +1,7 @@
+# OTA runs on GitHub runners — app.config.ts needs EXPO_PUBLIC_* at bundle time.
+# Add repository secrets (same values as Expo → Environment variables → production):
+#   EXPO_PUBLIC_MAPBOX_TOKEN (required; Expo dashboard alone does not inject into CI)
+# See: https://docs.expo.dev/eas/environment-variables/
 name: EAS Update
 
 on:
@@ -39,6 +43,15 @@ jobs:
             exit 1
           fi
 
+      - name: Verify EXPO_PUBLIC_MAPBOX_TOKEN (required for OTA bundle on CI)
+        env:
+          EXPO_PUBLIC_MAPBOX_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}
+        run: |
+          if [ -z "$EXPO_PUBLIC_MAPBOX_TOKEN" ]; then
+            echo "::error::Add repository secret EXPO_PUBLIC_MAPBOX_TOKEN (same public Mapbox token as Expo → Environment variables → production). GitHub runs \`eas update\` locally; app.config.ts reads EXPO_PUBLIC_MAPBOX_TOKEN during bundling. Setting the token only in Expo is not enough for this workflow unless eas env:exec injects it (often flaky with nested CLI)."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: cd app/mobile && npm ci
 
@@ -51,12 +64,13 @@ jobs:
           CI: "1"
           APP_ENV: production
           EXPO_PUBLIC_API_URL: https://api.snaproad.app
+          EXPO_PUBLIC_MAPBOX_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
         run: |
           SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
           if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
-          npx eas-cli env:exec production "npx eas-cli update --channel production --environment production --platform ios --non-interactive --message ${SAFE_MSG}-ios"
+          npx eas-cli update --channel production --environment production --platform ios --non-interactive --message "${SAFE_MSG}-ios"
 
       - name: EAS Update (production Android)
         working-directory: app/mobile
@@ -67,9 +81,10 @@ jobs:
           CI: "1"
           APP_ENV: production
           EXPO_PUBLIC_API_URL: https://api.snaproad.app
+          EXPO_PUBLIC_MAPBOX_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
           UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
         run: |
           SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
           if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
-          npx eas-cli env:exec production "npx eas-cli update --channel production --environment production --platform android --non-interactive --message ${SAFE_MSG}-android"
+          npx eas-cli update --channel production --environment production --platform android --non-interactive --message "${SAFE_MSG}-android"
