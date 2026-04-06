@@ -633,10 +633,12 @@ def redeem_offer(request: Request, offer_id: str, auth_user: CurrentUser):
 @router.get("/offers/my-redemptions")
 @limiter.limit("60/minute")
 def get_my_offer_redemptions(
+    request: Request,
     auth_user: CurrentUser,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ):
     """Driver: offers redeemed with gems / verified at partner — includes `used_in_store` when staff scanned QR."""
+    _ = request
     user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -729,7 +731,8 @@ def get_my_offer_redemptions(
 
 @router.get("/offers/categories")
 @limiter.limit("120/minute")
-def list_offer_categories():
+def list_offer_categories(request: Request):
+    _ = request
     return {"success": True, "data": public_category_list()}
 
 
