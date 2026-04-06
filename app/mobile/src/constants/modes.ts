@@ -55,6 +55,9 @@ export interface ModeConfig {
 
   buildingOpacity: number;
 
+  /** Color of the user-location puck. Blue for calm/adaptive, red for sport. */
+  puckColor: string;
+
   directionsProfile: DirectionsProfile;
   excludeParams?: string;
 
@@ -115,6 +118,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     terrainExaggeration: 1.2,
     buildingOpacity: 0.55,
 
+    puckColor: '#3B82F6',
+
     directionsProfile: 'driving-traffic',
     excludeParams: 'motorway',
 
@@ -174,6 +179,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     terrainExaggeration: 1.0,
     buildingOpacity: 0.75,
 
+    puckColor: '#3B82F6',
+
     directionsProfile: 'driving-traffic',
 
     showCongestion: true,
@@ -188,12 +195,12 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     color: '#4A4063',
     icon: 'speedometer-outline',
 
-    routeColor: '#E8A84C',
-    routeCasing: '#B8792E',
-    passedColor: '#A89070',
+    routeColor: '#FFFFFF',
+    routeCasing: '#4A4063',
+    passedColor: '#6B6580',
     routeWidth: 6,
-    routeGlowColor: '#E8A84C',
-    routeGlowOpacity: 0.18,
+    routeGlowColor: '#FFFFFF',
+    routeGlowOpacity: 0.12,
 
     turnCardGradient: ['#4A4063', '#2D2845'],
     turnCardRadius: 16,
@@ -234,6 +241,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     lightPreset: 'dusk',
     terrainExaggeration: 1.4,
     buildingOpacity: 0.85,
+
+    puckColor: '#DC2626',
 
     directionsProfile: 'driving-traffic',
 
