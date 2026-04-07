@@ -318,7 +318,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
           gem_cost: o.gem_cost || o.base_gems || 0,
           gems_reward: o.gem_cost || o.base_gems || 0,
           redemption_count: o.redemption_count || 0,
-          views: o.views || 0,
+          views: Number(o.view_count ?? o.views ?? 0),
           status: o.status || 'active',
           created_at: o.created_at || '',
           expires_at: o.expires_at || '',

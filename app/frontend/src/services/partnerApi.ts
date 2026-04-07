@@ -361,8 +361,8 @@ class PartnerApiService {
               ctr: Number(d.conversion_rate) || 0,
               conversion_rate: Number(d.conversion_rate) || 0,
             },
-            chart_data: [],
-            geo_data: [],
+            chart_data: Array.isArray(d.chart_data) ? d.chart_data : [],
+            geo_data: Array.isArray(d.geo_data) ? d.geo_data : [],
           },
         }
       }

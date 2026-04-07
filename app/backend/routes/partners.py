@@ -54,6 +54,30 @@ RESP_PARTNER_REGISTER_503 = {
     503: {"description": "Registration temporarily unavailable"},
 }
 
+
+def _enrich_partner_offers_with_analytics(offers: list) -> list:
+    """
+    Expose views/visits/redemptions on each offer for the partner portal.
+    DB columns are view_count / visit_count / redemption_count; UI expects `views`.
+    Merge order matches get_partner_analytics (analytics events, then row counters).
+    """
+    if not offers:
+        return offers
+    totals_by_offer = {str(row.get("offer_id")): row for row in summarize_offer_analytics(limit=500)}
+    out = []
+    for offer in offers:
+        oid = str(offer.get("id"))
+        stats = totals_by_offer.get(oid, {})
+        views = int(stats.get("views") or offer.get("view_count") or offer.get("views") or 0)
+        visits = int(stats.get("visits") or offer.get("visit_count") or 0)
+        redemptions = int(stats.get("redemptions") or offer.get("redemption_count") or 0)
+        row = dict(offer)
+        row["views"] = views
+        row["visits"] = visits
+        row["redemption_count"] = redemptions
+        out.append(row)
+    return out
+
 CurrentPartner = Annotated[dict, Depends(require_partner)]
 PARTNER_OFFER_IMAGE_PREFIX = "partner-offers/"
 MAX_OFFER_IMAGE_BYTES = 10 * 1024 * 1024
@@ -456,7 +480,7 @@ def get_partner_offers(
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
-    offers = sb_get_offers_by_partner(owned_partner_id)[:limit]
+    offers = _enrich_partner_offers_with_analytics(sb_get_offers_by_partner(owned_partner_id)[:limit])
     return {"success": True, "data": offers, "count": len(offers)}
 
 
