@@ -117,7 +117,7 @@ def get_admin_stats():
 
 @router.get("/admin/wallet-ledger")
 def admin_wallet_ledger(
-    user_id: Annotated[Optional[str], Query(None)] = None,
+    user_id: Annotated[Optional[str], Query(description="Filter by driver user_id")] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
 ):
     """Recent rows from `wallet_transactions` for ops review; optional filter by driver user_id."""
