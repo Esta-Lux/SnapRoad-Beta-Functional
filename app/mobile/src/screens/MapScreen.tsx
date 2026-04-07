@@ -181,7 +181,8 @@ function placeCardFuelHint(place: {
 }
 
 /** Traffic cams hide when zoomed out (less map clutter). */
-const TRAFFIC_CAM_MIN_ZOOM = 13.75;
+/** Show traffic / camera POIs once the user is zoomed in enough (lower = visible sooner). */
+const TRAFFIC_CAM_MIN_ZOOM = 12;
 
 function mapFriendsApiToLocations(rows: unknown): FriendLocation[] {
   if (!Array.isArray(rows)) return [];
@@ -1146,15 +1147,15 @@ export default function MapScreen() {
     return () => clearInterval(id);
   }, []);
 
-  // Incident polling -- cadence changes only with nav state, not every GPS tick
+  // Incident polling — faster while incidents layer is on so pins appear quickly
   useEffect(() => {
     void fetchNearbyIncidents();
-    const ms = nav.isNavigating ? 15000 : 45000;
+    const ms = showIncidents ? (nav.isNavigating ? 8000 : 10000) : nav.isNavigating ? 15000 : 45000;
     reportPollRef.current = setInterval(() => void fetchNearbyIncidents(), ms);
     return () => {
       if (reportPollRef.current) clearInterval(reportPollRef.current);
     };
-  }, [nav.isNavigating, fetchNearbyIncidents]);
+  }, [nav.isNavigating, fetchNearbyIncidents, showIncidents]);
 
   useEffect(() => {
     if (!nav.isNavigating) announcedOfferNavRef.current.clear();
@@ -2290,6 +2291,7 @@ export default function MapScreen() {
             puckBearingEnabled
             puckBearing={nav.isNavigating ? 'course' : 'heading'}
             pulsing={{ isEnabled: false }}
+            scale={1.5}
           />
         </MapboxGL.MapView>
       ) : (
@@ -2716,7 +2718,8 @@ export default function MapScreen() {
                 {activeReportCard.title}
               </Text>
               <Text style={s.rcNewSub}>
-                {((haversineMeters(location.lat, location.lng, activeReportCard.lat, activeReportCard.lng) / 1609.34)).toFixed(1)} mi ahead · {timeAgo(activeReportCard.created_at)}
+                {((haversineMeters(location.lat, location.lng, activeReportCard.lat, activeReportCard.lng) / 1609.34)).toFixed(1)} mi{' '}
+                {nav.isNavigating ? 'ahead' : 'away'} · {timeAgo(activeReportCard.created_at)}
               </Text>
               <Text style={s.rcNewVotes}>
                 {activeReportCard.upvotes ?? 0} confirmed

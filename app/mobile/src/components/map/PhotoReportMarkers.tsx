@@ -21,8 +21,8 @@ interface Props {
 }
 
 const MARKER_VIEW_MAX = 60;
-/** Compact thumbnail / icon tile (matches scaled incident markers). */
-const PIN_OUTER = 30;
+/** Circular thumbnail — matches larger incident tiles for tap targets. */
+const PIN_OUTER = 46;
 const PURPLE = '#8B5CF6';
 const PURPLE_DEEP = '#6D28D9';
 
@@ -63,11 +63,12 @@ export default React.memo(function PhotoReportMarkers({ reports, onReportTap }: 
               onPress={() => onReportTap?.(r)}
               style={({ pressed }) => [styles.hit, pressed && styles.hitPressed]}
               accessibilityRole="button"
-              hitSlop={6}
+              accessibilityLabel={r.description ? `Photo report: ${r.description}` : 'Photo road report'}
+              hitSlop={8}
             >
               {uri ? (
                 <View style={styles.thumbRing}>
-                  <Image source={{ uri }} style={styles.thumb} resizeMode="cover" />
+                  <Image source={{ uri }} style={styles.thumb} resizeMode="cover" accessibilityIgnoresInvertColors />
                 </View>
               ) : (
                 <View style={styles.iconOuter}>
@@ -92,8 +93,8 @@ const styles = StyleSheet.create({
     height: PIN_OUTER,
     borderRadius: PIN_OUTER / 2,
     overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: '#fff',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.95)',
     ...Platform.select({
       ios: {
         shadowColor: PURPLE_DEEP,
@@ -109,7 +110,7 @@ const styles = StyleSheet.create({
   iconOuter: {
     width: PIN_OUTER,
     height: PIN_OUTER,
-    borderRadius: 14,
+    borderRadius: PIN_OUTER / 2,
     backgroundColor: 'rgba(255,255,255,0.92)',
     borderWidth: 2,
     borderColor: `${PURPLE}55`,
@@ -127,9 +128,9 @@ const styles = StyleSheet.create({
     }),
   },
   iconInner: {
-    width: 22,
-    height: 22,
-    borderRadius: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 12,
     backgroundColor: PURPLE,
     alignItems: 'center',
     justifyContent: 'center',

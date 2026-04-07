@@ -16,7 +16,8 @@ interface LayerState {
 const DEFAULTS: LayerState = {
   showTraffic: true,
   showIncidents: true,
-  showCameras: false,
+  /** Premium: speed cameras load when enabled; non-premium UI turns this off on launch. */
+  showCameras: true,
   showConstruction: false,
   showPhotoReports: false,
   showTrafficSafety: false,

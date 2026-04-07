@@ -20,6 +20,9 @@ const INCIDENT_COLORS: Record<string, string> = {
 const DEFAULT_COLOR = '#D97706';
 
 const MAX_MARKERS = 100;
+const OUTER = 40;
+const INNER = 30;
+const ICON_SZ = 17;
 
 function incidentIconName(type?: string): keyof typeof Ionicons.glyphMap {
   const t = (type ?? 'hazard').toLowerCase();
@@ -85,13 +88,10 @@ const styles = StyleSheet.create({
   hit: { alignItems: 'center', justifyContent: 'center' },
   hitPressed: { opacity: 0.88, transform: [{ scale: 0.95 }] },
   puckOuter: {
-    width: 30,
-    height: 30,
-    borderRadius: 11,
-    borderWidth: 1.5,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: 'rgba(255,255,255,0.94)',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -104,9 +104,6 @@ const styles = StyleSheet.create({
     }),
   },
   puckInner: {
-    width: 22,
-    height: 22,
-    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },

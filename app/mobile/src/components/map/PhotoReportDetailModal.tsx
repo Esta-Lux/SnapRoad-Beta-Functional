@@ -73,13 +73,25 @@ export default function PhotoReportDetailModal({ visible, report, onClose, onVot
 
   return (
     <Modal visible={visible} onClose={onClose} panDismissible scrollable={false}>
-      <Text style={[styles.title, { color: colors.text }]}>Reported road condition</Text>
+      <View style={styles.headerRow}>
+        <Text style={[styles.title, { color: colors.text, flex: 1 }]} numberOfLines={2}>
+          Reported road condition
+        </Text>
+        <TouchableOpacity
+          onPress={onClose}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+        >
+          <Ionicons name="close-circle" size={32} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
       <Text style={[styles.sub, { color: colors.textSecondary }]}>
         Community photo — faces and plates are blurred before publishing. Automated processing may miss some details; this is not legal advice.
       </Text>
 
       {url ? (
-        <Image source={{ uri: url }} style={styles.image} resizeMode="cover" />
+        <Image source={{ uri: url }} style={styles.image} resizeMode="cover" accessibilityIgnoresInvertColors />
       ) : (
         <View style={[styles.placeholder, { backgroundColor: colors.surfaceSecondary }]}>
           <Ionicons name="image-outline" size={40} color={colors.textTertiary} />
@@ -131,9 +143,10 @@ export default function PhotoReportDetailModal({ visible, report, onClose, onVot
 }
 
 const styles = StyleSheet.create({
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 6 },
   title: { fontSize: 20, fontWeight: '700', marginBottom: 8 },
   sub: { fontSize: 13, lineHeight: 18, marginBottom: 14 },
-  image: { width: '100%', height: 220, borderRadius: 14, marginBottom: 12 },
+  image: { width: '100%', height: 280, borderRadius: 16, marginBottom: 12 },
   placeholder: { height: 200, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   scroll: { maxHeight: 220 },
   type: { fontSize: 15, fontWeight: '700', textTransform: 'capitalize', marginBottom: 6 },

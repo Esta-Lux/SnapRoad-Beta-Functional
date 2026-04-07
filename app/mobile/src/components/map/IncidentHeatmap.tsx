@@ -56,7 +56,7 @@ const IncidentHeatmap = React.memo(function IncidentHeatmap({ incidents, visible
             'rgb(220, 20, 60)',
           ],
           heatmapRadius: ['interpolate', ['linear'], ['zoom'], 0, 2, 13, 20],
-          heatmapOpacity: ['interpolate', ['linear'], ['zoom'], 13, 0.8, 16, 0],
+          heatmapOpacity: ['interpolate', ['linear'], ['zoom'], 12, 0.45, 14, 0.55, 16, 0.35],
         }}
         minZoomLevel={8}
         maxZoomLevel={15}
