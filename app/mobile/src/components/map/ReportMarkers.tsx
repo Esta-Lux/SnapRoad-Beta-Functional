@@ -20,9 +20,8 @@ const INCIDENT_COLORS: Record<string, string> = {
 const DEFAULT_COLOR = '#D97706';
 
 const MAX_MARKERS = 100;
-const OUTER = 40;
-const INNER = 30;
-const ICON_SZ = 17;
+/** Match `CameraMarkers` puck dimensions (28 / 22 / 11). */
+const ICON_SZ = 11;
 
 function incidentIconName(type?: string): keyof typeof Ionicons.glyphMap {
   const t = (type ?? 'hazard').toLowerCase();
@@ -71,9 +70,9 @@ export default React.memo(function ReportMarkers({ incidents, onIncidentTap }: P
               style={({ pressed }) => [styles.hit, pressed && styles.hitPressed]}
               hitSlop={6}
             >
-              <View style={[styles.puckOuter, { borderColor: `${fill}55` }]}>
+              <View style={[styles.puckOuter, { borderColor: 'rgba(255,255,255,0.82)', backgroundColor: `${fill}38` }]}>
                 <View style={[styles.puckInner, { backgroundColor: fill }]}>
-                  <Ionicons name={icon} size={12} color="#FFFFFF" />
+                  <Ionicons name={icon} size={ICON_SZ} color="#FFFFFF" />
                 </View>
               </View>
             </Pressable>
@@ -88,15 +87,17 @@ const styles = StyleSheet.create({
   hit: { alignItems: 'center', justifyContent: 'center' },
   hitPressed: { opacity: 0.88, transform: [{ scale: 0.95 }] },
   puckOuter: {
-    borderWidth: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.94)',
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.18,
+        shadowColor: '#1e3a8a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.35,
         shadowRadius: 3,
       },
       android: { elevation: 4 },
@@ -104,6 +105,9 @@ const styles = StyleSheet.create({
     }),
   },
   puckInner: {
+    width: 22,
+    height: 22,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },

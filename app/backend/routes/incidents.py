@@ -298,11 +298,13 @@ def _nearby_from_db(lat: float, lng: float, radius_miles: float, now: datetime, 
     sb = get_supabase()
     lat_delta = radius_miles / 69.0
     lng_delta = radius_miles / (69.0 * 0.7)
+    select_full = "id,type,description,lat,lng,upvotes,downvotes,created_at,expires_at,moderation_status"
+    select_legacy = "id,type,description,lat,lng,upvotes,created_at,expires_at,moderation_status"
 
-    def _query(with_moderation: bool):
+    def _query(select_cols: str, with_moderation: bool):
         q = (
             sb.table("road_reports")
-            .select("id,type,description,lat,lng,upvotes,downvotes,created_at,expires_at,moderation_status")
+            .select(select_cols)
             .eq("status", "active")
             .gte("lat", lat - lat_delta)
             .lte("lat", lat + lat_delta)
@@ -315,10 +317,27 @@ def _nearby_from_db(lat: float, lng: float, radius_miles: float, now: datetime, 
         return q.execute()
 
     try:
-        res = _query(True)
+        res = _query(select_full, True)
     except Exception as e:
-        logger.warning("road_reports nearby moderation filter unavailable, retrying without it: %s", e)
-        res = _query(False)
+        if _is_schema_missing_downvotes(e):
+            logger.warning("nearby: downvotes column missing (run sql/039); using legacy select: %s", e)
+            try:
+                res = _query(select_legacy, True)
+            except Exception as e2:
+                logger.warning("road_reports nearby moderation filter unavailable: %s", e2)
+                res = _query(select_legacy, False)
+        else:
+            try:
+                res = _query(select_full, False)
+            except Exception as e2:
+                if _is_schema_missing_downvotes(e2):
+                    try:
+                        res = _query(select_legacy, True)
+                    except Exception as e3:
+                        logger.warning("road_reports nearby: %s", e3)
+                        res = _query(select_legacy, False)
+                else:
+                    raise e2
     db_rows = res.data or []
     out: List[Dict[str, Any]] = []
     for row in db_rows:
@@ -423,6 +442,39 @@ def _is_vote_duplicate_error(e: Exception) -> bool:
     return "duplicate" in s or "unique" in s
 
 
+def _is_schema_missing_downvotes(e: Exception) -> bool:
+    """Postgres / PostgREST when migration 039 not applied yet."""
+    s = str(e).lower()
+    return "downvotes" in s and ("does not exist" in s or "column" in s or "42703" in s or "pgrst" in s)
+
+
+def _fetch_road_report_for_votes(sb, incident_id: str) -> Optional[dict]:
+    """Select row for voting; works before `road_reports.downvotes` migration."""
+    try:
+        res = (
+            sb.table("road_reports")
+            .select("id,user_id,upvotes,downvotes,lat,lng,type")
+            .eq("id", incident_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        if not _is_schema_missing_downvotes(e):
+            raise
+        logger.warning("road_reports.downvotes missing; legacy vote select: %s", e)
+        res = (
+            sb.table("road_reports")
+            .select("id,user_id,upvotes,lat,lng,type")
+            .eq("id", incident_id)
+            .limit(1)
+            .execute()
+        )
+    row = res.data[0] if res.data else None
+    if row is not None and "downvotes" not in row:
+        row["downvotes"] = 0
+    return row
+
+
 def _upvote_db(sb, _incident_id: str, voter: str, report: dict) -> dict:
     from services.reporter_rewards import award_reporter_on_peer_confirmation
 
@@ -495,14 +547,7 @@ def upvote_incident(request: Request, incident_id: str, user: CurrentUser):
     voter = str(user.get("id") or "")
     try:
         sb = get_supabase()
-        report_res = (
-            sb.table("road_reports")
-            .select("id,user_id,upvotes,downvotes,lat,lng,type")
-            .eq("id", incident_id)
-            .limit(1)
-            .execute()
-        )
-        report = report_res.data[0] if report_res.data else None
+        report = _fetch_road_report_for_votes(sb, incident_id)
         if report:
             return _upvote_db(sb, incident_id, voter, report)
     except HTTPException:
@@ -533,24 +578,48 @@ def _confirm_db(sb, row: dict, voter: str, body: ConfirmBody) -> dict:
         if _is_vote_duplicate_error(e):
             raise HTTPException(status_code=409, detail=MSG_ALREADY_VOTED)
         raise
-    up = int(row.get("upvotes") or 0)
-    down = int(row.get("downvotes") or 0)
-    if body.confirmed:
-        up += 1
-    else:
-        down += 1
+    orig_up = int(row.get("upvotes") or 0)
+    orig_down = int(row.get("downvotes") or 0)
+    up = orig_up + (1 if body.confirmed else 0)
+    down = orig_down + (0 if body.confirmed else 1)
     updates: Dict[str, Any] = {"upvotes": up, "downvotes": down}
     removed = down > up
     if removed:
         updates["status"] = "inactive"
         updates["expires_at"] = _utc_now().isoformat()
-    sb.table("road_reports").update(updates).eq("id", row.get("id")).execute()
+
+    final_up = up
+    final_down = down
+    removed_final = removed
+    try:
+        sb.table("road_reports").update(updates).eq("id", row.get("id")).execute()
+    except Exception as e:
+        if not _is_schema_missing_downvotes(e):
+            raise
+        logger.warning("confirm update without downvotes column; using net upvotes: %s", e)
+        if body.confirmed:
+            sb.table("road_reports").update({"upvotes": up}).eq("id", row.get("id")).execute()
+            final_up = up
+            final_down = 0
+            removed_final = False
+        else:
+            new_net = orig_up - 1
+            removed_final = new_net < 0
+            fu = max(0, new_net)
+            uu: Dict[str, Any] = {"upvotes": fu}
+            if removed_final:
+                uu["status"] = "inactive"
+                uu["expires_at"] = _utc_now().isoformat()
+            sb.table("road_reports").update(uu).eq("id", row.get("id")).execute()
+            final_up = fu
+            final_down = 0
+
     out: dict = {
         "success": True,
         "confirmed": body.confirmed,
-        "upvotes": up,
-        "downvotes": down,
-        "removed": removed,
+        "upvotes": final_up,
+        "downvotes": final_down,
+        "removed": removed_final,
     }
     if body.confirmed:
         reward = award_reporter_on_peer_confirmation(owner_id=owner or None, voter_id=voter)
@@ -619,14 +688,7 @@ def confirm_incident(request: Request, body: ConfirmBody, _user: CurrentUser):
     voter = str((_user or {}).get("id") or "")
     try:
         sb = get_supabase()
-        res = (
-            sb.table("road_reports")
-            .select("id,user_id,upvotes,downvotes,lat,lng,type")
-            .eq("id", body.incident_id)
-            .limit(1)
-            .execute()
-        )
-        row = res.data[0] if res.data else None
+        row = _fetch_road_report_for_votes(sb, body.incident_id)
         if row:
             return _confirm_db(sb, row, voter, body)
     except HTTPException:
@@ -656,7 +718,20 @@ def _downvote_db(sb, row: dict, voter: str) -> dict:
     if removed:
         updates["status"] = "inactive"
         updates["expires_at"] = _utc_now().isoformat()
-    sb.table("road_reports").update(updates).eq("id", row.get("id")).execute()
+    try:
+        sb.table("road_reports").update(updates).eq("id", row.get("id")).execute()
+    except Exception as e:
+        if not _is_schema_missing_downvotes(e):
+            raise
+        logger.warning("downvote update without downvotes column; net upvotes: %s", e)
+        new_up = up - 1
+        removed = new_up < 0
+        uu: Dict[str, Any] = {"upvotes": max(0, new_up)}
+        if removed:
+            uu["status"] = "inactive"
+            uu["expires_at"] = _utc_now().isoformat()
+        sb.table("road_reports").update(uu).eq("id", row.get("id")).execute()
+        return {"success": True, "upvotes": uu["upvotes"], "downvotes": 0, "removed": removed}
     return {"success": True, "upvotes": up, "downvotes": new_down, "removed": removed}
 
 
@@ -689,14 +764,7 @@ def downvote_incident(request: Request, incident_id: str, _user: CurrentUser):
     voter = str((_user or {}).get("id") or "")
     try:
         sb = get_supabase()
-        res = (
-            sb.table("road_reports")
-            .select("id,user_id,upvotes,downvotes,lat,lng,type")
-            .eq("id", incident_id)
-            .limit(1)
-            .execute()
-        )
-        row = res.data[0] if res.data else None
+        row = _fetch_road_report_for_votes(sb, incident_id)
         if row:
             return _downvote_db(sb, row, voter)
     except HTTPException:
