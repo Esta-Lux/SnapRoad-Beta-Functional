@@ -1,10 +1,12 @@
 import { useMemo, useRef } from 'react';
 import type { DrivingMode } from '../types';
-import { getCameraPreset } from '../navigation/useNavigationCamera';
+import { getCameraPreset, getLiveNavigationCameraPreset } from '../navigation/useNavigationCamera';
 
 interface CameraParams {
   /** Speed in mph (from `useLocation`). */
   speedMph: number;
+  /** Fused ground speed (m/s) while navigating — drives enhanced follow presets when set. */
+  fusedSpeedMps?: number | null;
   drivingMode: DrivingMode;
   isNavigating: boolean;
   cameraLocked: boolean;
@@ -66,6 +68,7 @@ function nearlySameCamera(a: CameraSettings, b: CameraSettings): boolean {
  */
 export function useCameraController({
   speedMph,
+  fusedSpeedMps,
   drivingMode,
   isNavigating,
   cameraLocked,
@@ -80,13 +83,26 @@ export function useCameraController({
   const computed = useMemo(() => {
     if (!isNavigating || !cameraLocked) return null;
 
-    const preset = getCameraPreset({
-      mode: drivingMode,
-      speedMps: Math.max(0, speedB) * MPH_TO_MPS,
-      nextManeuverDistanceMeters: maneuverB,
-      safeAreaTop,
-      safeAreaBottom,
-    });
+    const hasFusedSpeed = fusedSpeedMps != null && Number.isFinite(fusedSpeedMps);
+    const speedMpsForPreset = hasFusedSpeed
+      ? Math.max(0, fusedSpeedMps as number)
+      : Math.max(0, speedB) * MPH_TO_MPS;
+
+    const preset = hasFusedSpeed
+      ? getLiveNavigationCameraPreset({
+            mode: drivingMode,
+            speedMps: speedMpsForPreset,
+            nextManeuverDistanceMeters: maneuverB,
+            safeAreaTop,
+            safeAreaBottom,
+          })
+        : getCameraPreset({
+            mode: drivingMode,
+            speedMps: speedMpsForPreset,
+            nextManeuverDistanceMeters: maneuverB,
+            safeAreaTop,
+            safeAreaBottom,
+          });
 
     return {
       followZoomLevel: Math.round(preset.zoom * 4) / 4,
@@ -96,6 +112,7 @@ export function useCameraController({
     };
   }, [
     speedB,
+    fusedSpeedMps,
     maneuverB,
     drivingMode,
     isNavigating,

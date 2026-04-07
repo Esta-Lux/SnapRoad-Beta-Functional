@@ -58,7 +58,8 @@ import MapCategoryExploreSheet from '../components/map/MapCategoryExploreSheet';
 import PhotoReportSheet from '../components/map/PhotoReportSheet';
 import ManeuverHighlightLayers from '../components/map/ManeuverHighlightLayers';
 import NavigationPuckOverlay from '../components/map/NavigationPuckOverlay';
-import NavigationManeuverArrow from '../components/map/NavigationManeuverArrow';
+import RouteAheadArrowLayer from '../components/map/RouteAheadArrowLayer';
+import { projectAhead, getCameraConfig } from '../navigation/navigationCamera';
 import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
@@ -337,9 +338,16 @@ export default function MapScreen() {
     drivingMode,
     voiceMuted: navVoiceMuted,
   });
-  /** Same source as LocationPuck + route progress / ETA / turn distances (no fused offset). */
-  const navDisplayCoord = location;
-  const navDisplayHeading = heading;
+  /** Fused progress while navigating — matches route, ETA strip, turn card distances, camera. */
+  const navDisplayCoord = nav.isNavigating ? nav.navigationProgressCoord : location;
+  const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
+  const displaySpeedMph = nav.isNavigating
+    ? Math.max(0, (nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704) * 2.236936)
+    : speed;
+  const fusedSpeedMpsNav =
+    nav.isNavigating
+      ? Math.max(0, nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704)
+      : null;
   const navFetchRef = useRef(nav.fetchDirections);
   const navSetDestRef = useRef(nav.setSelectedDestination);
   useEffect(() => {
@@ -404,6 +412,7 @@ export default function MapScreen() {
   );
   const camCtrl = useCameraController({
     speedMph: speed,
+    fusedSpeedMps: fusedSpeedMpsNav,
     drivingMode,
     isNavigating: nav.isNavigating,
     cameraLocked,
@@ -411,6 +420,24 @@ export default function MapScreen() {
     safeAreaTop: insets.top,
     safeAreaBottom: insets.bottom,
   });
+  /** Nudge camera target slightly along heading so the route ahead is more in view (Calm/Adaptive/Sport via getCameraConfig). */
+  const cameraNavCenter = useMemo((): [number, number] | null => {
+    if (!nav.isNavigating || !cameraLocked) return null;
+    const sp = fusedSpeedMpsNav ?? speed * 0.44704;
+    const cfg = getCameraConfig(drivingMode, sp);
+    const la = cfg.lookAheadMeters * 0.3;
+    const p = projectAhead(navDisplayCoord.lat, navDisplayCoord.lng, navDisplayHeading, la);
+    return [p.longitude, p.latitude];
+  }, [
+    nav.isNavigating,
+    cameraLocked,
+    fusedSpeedMpsNav,
+    speed,
+    drivingMode,
+    navDisplayCoord.lat,
+    navDisplayCoord.lng,
+    navDisplayHeading,
+  ]);
   const userInteracting = useRef(false);
   const lastCameraUpdate = useRef({ lat: 0, lng: 0, heading: 0 });
 
@@ -573,12 +600,13 @@ export default function MapScreen() {
       );
 
   /** ~500m grid so place cards / detail distance text do not jitter every GPS tick */
-  const placeCardLocGridLat = Math.round(location.lat * 200) / 200;
-  const placeCardLocGridLng = Math.round(location.lng * 200) / 200;
+  const placeCardAnchor = nav.isNavigating ? nav.navigationProgressCoord : location;
+  const placeCardLocGridLat = Math.round(placeCardAnchor.lat * 200) / 200;
+  const placeCardLocGridLng = Math.round(placeCardAnchor.lng * 200) / 200;
   const placeCardDistanceMeters = useMemo(() => {
     if (!selectedPlace) return undefined;
-    return haversineMeters(location.lat, location.lng, selectedPlace.lat, selectedPlace.lng);
-  }, [placeCardLocGridLat, placeCardLocGridLng, selectedPlace?.lat, selectedPlace?.lng]);
+    return haversineMeters(placeCardAnchor.lat, placeCardAnchor.lng, selectedPlace.lat, selectedPlace.lng);
+  }, [placeCardLocGridLat, placeCardLocGridLng, selectedPlace?.lat, selectedPlace?.lng, nav.isNavigating, nav.navigationProgressCoord.lat, nav.navigationProgressCoord.lng]);
 
   const refreshSavedPlaces = useCallback(() => {
     api
@@ -609,9 +637,10 @@ export default function MapScreen() {
   }, [selectedPlace, savedPlaces]);
 
   const placeDetailUserLocation = useMemo(() => {
-    if (Math.abs(location.lat) <= 1e-5 && Math.abs(location.lng) <= 1e-5) return undefined;
-    return { lat: location.lat, lng: location.lng };
-  }, [placeCardLocGridLat, placeCardLocGridLng]);
+    const src = nav.isNavigating ? nav.navigationProgressCoord : location;
+    if (Math.abs(src.lat) <= 1e-5 && Math.abs(src.lng) <= 1e-5) return undefined;
+    return { lat: src.lat, lng: src.lng };
+  }, [nav.isNavigating, nav.navigationProgressCoord.lat, nav.navigationProgressCoord.lng, placeCardLocGridLat, placeCardLocGridLng, location.lat, location.lng]);
 
   /** Stable object for PlaceDetailSheet so effects are not keyed off new references each render. */
   const placeDetailSummary = useMemo(
@@ -2075,7 +2104,7 @@ export default function MapScreen() {
                 }}
                 centerCoordinate={
                   isFusedNav
-                    ? [navDisplayCoord.lng, navDisplayCoord.lat]
+                    ? (cameraNavCenter ?? [navDisplayCoord.lng, navDisplayCoord.lat])
                     : nav.isNavigating || isExploring || compassMode || exploreTracksUser
                       ? undefined
                       : stableCenter
@@ -2301,12 +2330,13 @@ export default function MapScreen() {
                 lat={nav.navigationProgressCoord.lat}
                 lng={nav.navigationProgressCoord.lng}
                 headingDeg={nav.navigationDisplayHeading}
+                drivingMode={drivingMode}
               />
               {nav.navigationData?.polyline && nav.routeProgress ? (
-                <NavigationManeuverArrow
+                <RouteAheadArrowLayer
                   polyline={nav.navigationData.polyline}
                   cumFromStartMeters={nav.routeProgress.cumFromStartMeters}
-                  arrowColor={modeConfig.routeColor}
+                  lineColor={modeConfig.routeColor}
                 />
               ) : null}
             </>
@@ -2630,7 +2660,7 @@ export default function MapScreen() {
 
         const cardState = resolveTurnCardState({
           distanceToNextManeuverM: liveDistMeters,
-          speedMph: speed,
+          speedMph: displaySpeedMph,
           mode: drivingMode,
           inConfirmationWindow: inConfirmWindow,
           nextStep: nextManeuverCoord,
@@ -2650,7 +2680,7 @@ export default function MapScreen() {
             const p = buildPreviewPrimarySecondary(currentStep, nextManeuverCoord, destinationName);
             primary = p.primary;
             secondary = p.secondary;
-            if (drivingMode === 'sport' && speed > 50) secondary = undefined;
+            if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
             break;
           }
           case 'confirm':
@@ -2704,7 +2734,7 @@ export default function MapScreen() {
               step={actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? currentStep : undefined)}
               roadDisambiguationLabel={disambigName}
               isSportBorder={isSport}
-              speedMph={speed}
+              speedMph={displaySpeedMph}
             />
           </View>
         );
@@ -2898,7 +2928,7 @@ export default function MapScreen() {
           modeConfig={modeConfig}
           isLight={isLight}
           liveEta={nav.liveEta}
-          speedMph={speed}
+          speedMph={displaySpeedMph}
           isRerouting={nav.isRerouting}
           onEndNavigation={nav.stopNavigation}
           bottomInset={insets.bottom}

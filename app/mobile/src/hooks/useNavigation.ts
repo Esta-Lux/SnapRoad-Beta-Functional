@@ -979,6 +979,26 @@ export function useNavigation(params: {
     navigationProgressCoord.lng,
   ]);
 
+  const navigationProgressSnapshot = useMemo(
+    () => ({
+      progressCoord: navigationProgressCoord,
+      displayHeading: navigationDisplayHeading,
+      liveEta,
+      routeProgress,
+      fusedNavState: fusedNav,
+    }),
+    [
+      navigationProgressCoord.lat,
+      navigationProgressCoord.lng,
+      navigationDisplayHeading,
+      liveEta?.distanceMiles,
+      liveEta?.etaMinutes,
+      routeProgress?.cumFromStartMeters,
+      routeProgress?.remainingRouteMeters,
+      fusedNav,
+    ],
+  );
+
   return {
     navigationData,
     isNavigating,
@@ -1008,5 +1028,10 @@ export function useNavigation(params: {
     navigationProgressCoord,
     /** Heading aligned with fused display (turn with map during nav). */
     navigationDisplayHeading,
+    /**
+     * Single object for UI alignment: map puck, route split, ETA strip, turn/orion context.
+     * Prefer this over raw GPS + separate `liveEta` when showing navigation truth.
+     */
+    navigationProgressSnapshot,
   };
 }

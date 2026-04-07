@@ -1,4 +1,5 @@
 import type { DrivingMode } from '../types';
+import { getCameraConfig } from './navigationCamera';
 
 export type CameraPadding = {
   paddingTop: number;
@@ -181,5 +182,22 @@ export function getCameraPreset({
     pitch,
     padding,
     animationDuration: cfg.transitionMs,
+  };
+}
+
+/**
+ * Live navigation: keep UI-aware padding/zoom from {@link getCameraPreset}, blend pitch/zoom/animation
+ * with {@link getCameraConfig} so Calm / Adaptive / Sport feel distinct during follow mode.
+ */
+export function getLiveNavigationCameraPreset(args: Args): CameraPreset {
+  const base = getCameraPreset(args);
+  const enh = getCameraConfig(args.mode, args.speedMps);
+  const zoom = clamp(base.zoom * 0.68 + (enh.zoom + 2.35) * 0.32, 15.1, 18.65);
+  const pitch = clamp(enh.pitch * 0.62 + base.pitch * 0.38, 38, 60);
+  return {
+    zoom,
+    pitch,
+    padding: base.padding,
+    animationDuration: enh.animationDuration,
   };
 }
