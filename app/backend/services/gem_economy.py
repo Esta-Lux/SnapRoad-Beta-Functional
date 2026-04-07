@@ -30,6 +30,46 @@ def apply_trip_gem_daily_cap(gems: int, already_earned_today: int) -> int:
     return min(int(gems), room)
 
 
+def trip_drive_ledger_metadata(
+    duration_seconds: float,
+    distance_miles: float,
+    is_premium: bool,
+    gems_credited: int,
+    already_earned_today_before_this_trip: int,
+) -> dict:
+    """
+    Server-side breakdown for wallet_transactions metadata (trip_drive credits).
+    Mirrors trip_gems_from_duration_minutes + daily cap semantics.
+    """
+    duration_min = max(0.0, float(duration_seconds)) / 60.0
+    chunks = int(duration_min // 10)
+    raw_bucket = 0
+    if chunks >= 1:
+        raw_bucket = min(15 + (chunks - 1) * 5, 100)
+    after_premium = raw_bucket * 2 if is_premium else raw_bucket
+    after_trip_cap = min(after_premium, TRIP_GEM_PER_TRIP_CAP)
+    after_daily = apply_trip_gem_daily_cap(after_trip_cap, already_earned_today_before_this_trip)
+    formula_summary = (
+        f"{chunks} full 10 min block(s) of valid driving: first block 15 gems, "
+        f"+5 per additional block (cap 100 before multiplier). "
+        f"{'Premium 2× applied. ' if is_premium else ''}"
+        f"Per-trip cap {TRIP_GEM_PER_TRIP_CAP} gems; daily cap {TRIP_GEM_DAILY_CAP} gems (UTC)."
+    )
+    return {
+        "duration_minutes": round(duration_min, 2),
+        "duration_seconds": int(duration_seconds),
+        "distance_miles": round(float(distance_miles), 2),
+        "full_ten_minute_chunks": chunks,
+        "base_bucket_gems": raw_bucket,
+        "premium_multiplier": 2 if is_premium else 1,
+        "gems_after_premium_and_trip_cap": after_trip_cap,
+        "already_earned_today_utc_before_trip": int(already_earned_today_before_this_trip),
+        "gems_after_daily_cap": after_daily,
+        "gems_credited": int(gems_credited),
+        "formula_summary": formula_summary,
+    }
+
+
 def offer_gems_reward_for_discount(discount_percent: float, is_free_item: bool) -> int:
     """Partner offer gem cost to drivers — derived from discount, not partner input."""
     if is_free_item:

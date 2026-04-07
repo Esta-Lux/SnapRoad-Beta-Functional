@@ -169,6 +169,14 @@ export interface Offer {
   /** Normalized category title from API (`attach_offer_category_fields`). */
   category_label?: string;
   redeemed?: boolean;
+  /** User's redemption row id when redeemed (driver app). */
+  redemption_id?: string | null;
+  redemption?: {
+    status?: string;
+    redeemed_at?: string;
+    gems_spent?: number;
+  } | null;
+  expires_at?: string;
   distance_km?: number;
   is_admin_offer?: boolean;
   offer_type?: 'partner' | 'admin';

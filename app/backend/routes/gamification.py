@@ -318,6 +318,31 @@ def get_challenge_history(
     return {"success": True, "data": {"challenges": user_challenges, "stats": stats, "badges": badges}}
 
 
+@router.get("/rewards/summary")
+def get_rewards_summary(user: CurrentUser):
+    """Single payload for driver Rewards top cards (gems, trips, badges, multiplier)."""
+    user_id = str(user.get("user_id") or user.get("id") or current_user_id).strip()
+    profile = sb_get_profile(user_id) or {}
+    gems = int(profile.get("gems") or 0)
+    total_trips = int(profile.get("total_trips") or 0)
+    is_premium = profile_row_is_premium(profile)
+    user_row = _user_state(user_id)
+    earned = set(user_row.get("badges_earned", []))
+    badges_earned = len(earned)
+    badges_total = len(ALL_BADGES)
+    return {
+        "success": True,
+        "data": {
+            "gems": gems,
+            "total_trips": total_trips,
+            "badges_earned": badges_earned,
+            "badges_total": badges_total,
+            "gem_multiplier_label": "2x" if is_premium else "1x",
+            "is_premium": is_premium,
+        },
+    }
+
+
 # ==================== GEMS ====================
 @router.post("/gems/generate-route", responses={503: {"description": "Gem generation unavailable in production path"}})
 def generate_route_gems(req: GemGenerateRequest):
@@ -413,6 +438,14 @@ def get_gem_history(user: CurrentUser):
                 direction = str(row.get("direction") or "")
                 amt = int(row.get("amount") or 0)
                 rid = str(row.get("id") or "")
+                md = row.get("metadata")
+                if md is not None and not isinstance(md, dict):
+                    try:
+                        md = json.loads(md) if isinstance(md, str) else {}
+                    except Exception:
+                        md = {}
+                if md is None:
+                    md = {}
                 base_tx = {
                     "id": rid,
                     "tx_type": tx_type,
@@ -421,6 +454,7 @@ def get_gem_history(user: CurrentUser):
                     "balance_before": row.get("balance_before"),
                     "balance_after": row.get("balance_after"),
                     "date": row.get("created_at", ""),
+                    "metadata": md,
                 }
                 if direction == "credit":
                     transactions.append({**base_tx, "type": "earned", "amount": amt, "source": _ledger_credit_source(tx_type)})
@@ -485,6 +519,100 @@ def get_gem_history(user: CurrentUser):
                 "activity_source": "demo_fallback",
             },
         }
+
+
+@router.get("/gems/activity/{wallet_tx_id}")
+def get_gem_activity_detail(wallet_tx_id: str, user: CurrentUser):
+    """Hydrate a single wallet_transactions row for Recent Gem Activity detail UI."""
+    from services.offer_categories import attach_offer_category_fields
+    from services.wallet_ledger import fetch_ledger_row_for_user
+
+    user_id = str(user.get("user_id") or user.get("id") or current_user_id).strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    sb = get_supabase()
+    row = fetch_ledger_row_for_user(sb, user_id=user_id, tx_id=wallet_tx_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    tx_type = str(row.get("tx_type") or "")
+    ref_type = str(row.get("reference_type") or "")
+    ref_id = str(row.get("reference_id") or "").strip()
+    md = row.get("metadata") or {}
+    if not isinstance(md, dict):
+        try:
+            md = json.loads(md) if isinstance(md, str) else {}
+        except Exception:
+            md = {}
+
+    direction = str(row.get("direction") or "")
+    amt = int(row.get("amount") or 0)
+    base = {
+        "wallet_tx_id": str(row.get("id")),
+        "tx_type": tx_type,
+        "direction": direction,
+        "amount": amt,
+        "balance_before": row.get("balance_before"),
+        "balance_after": row.get("balance_after"),
+        "created_at": row.get("created_at"),
+        "reference_type": ref_type,
+        "reference_id": ref_id or None,
+        "metadata": md,
+    }
+
+    if tx_type == "offer_redeem" and ref_id:
+        rrows = (
+            sb.table("redemptions").select("*").eq("id", ref_id).limit(1).execute().data
+            or []
+        )
+        redemption = dict(rrows[0]) if rrows else {}
+        oid = str(redemption.get("offer_id") or md.get("offer_id") or "")
+        offer: dict = {}
+        if oid:
+            orows = sb.table("offers").select("*").eq("id", oid).limit(1).execute().data or []
+            if orows:
+                offer = dict(orows[0])
+                attach_offer_category_fields(offer)
+        return {
+            "success": True,
+            "data": {
+                "kind": "offer_redemption",
+                "base": base,
+                "redemption": redemption,
+                "offer": offer,
+            },
+        }
+
+    if tx_type == "trip_drive" and ref_type == "trip" and ref_id:
+        trows = (
+            sb.table("trips")
+            .select("*")
+            .eq("id", ref_id)
+            .eq("profile_id", user_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        trip = dict(trows[0]) if trows else None
+        return {
+            "success": True,
+            "data": {
+                "kind": "trip_reward",
+                "base": base,
+                "trip": trip,
+                "ledger_metadata": md,
+            },
+        }
+
+    return {
+        "success": True,
+        "data": {
+            "kind": "generic",
+            "base": base,
+            "ledger_metadata": md,
+        },
+    }
 
 
 # ==================== DRIVING SCORE ====================

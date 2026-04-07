@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -6,7 +6,16 @@ import Skeleton from '../common/Skeleton';
 import type { Badge, Offer } from '../../types';
 import type { ChallengeHistoryItem, ChallengeHistoryStats, ChallengeModalTab, UserOfferRedemption } from './types';
 import { displayOfferCategory } from '../../lib/offerCategories';
+import { openMapsSearch } from '../../lib/mapsLinks';
+import { api } from '../../api/client';
 import { rewardsStyles } from './styles';
+
+let QRCode: React.ComponentType<{ value: string; size: number; backgroundColor: string; color: string }> | null = null;
+try {
+  QRCode = require('react-native-qrcode-svg').default;
+} catch {
+  QRCode = null;
+}
 
 type ThemeProps = {
   bg: string;
@@ -53,6 +62,7 @@ export function BadgeDetailModal({
 export function OfferDetailModal({
   selectedOffer,
   redeemingOfferId,
+  redeemExtras,
   cardBg,
   text,
   sub,
@@ -64,6 +74,8 @@ export function OfferDetailModal({
 }: {
   selectedOffer: Offer | null;
   redeemingOfferId: string | null;
+  /** QR / claim code returned immediately after POST /offers/:id/redeem */
+  redeemExtras?: { qr_token?: string; claim_code?: string; expires_at?: string } | null;
   onClose: () => void;
   onRedeem: (offer: Offer) => void;
   primary: string;
@@ -71,47 +83,125 @@ export function OfferDetailModal({
   isLight: boolean;
 } & Pick<ThemeProps, 'cardBg' | 'text' | 'sub'>) {
   const overlay = isLight ? 'rgba(15,23,42,0.45)' : 'rgba(2,6,23,0.72)';
+  const [remote, setRemote] = useState<Offer | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!selectedOffer?.id) {
+      setRemote(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    void (async () => {
+      try {
+        const res = await api.get<Record<string, unknown>>(`/api/offers/${encodeURIComponent(String(selectedOffer.id))}`);
+        if (cancelled) return;
+        const payload = (res.data as { data?: Offer })?.data ?? res.data;
+        if (payload && typeof payload === 'object' && 'id' in (payload as object)) {
+          setRemote(payload as Offer);
+        }
+      } catch {
+        if (!cancelled) setRemote(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedOffer?.id]);
+
+  const offer = remote ?? selectedOffer;
+  const redeemed = Boolean(offer?.redeemed);
+  const cost = offer?.gem_cost ?? offer?.gems_reward ?? 0;
+  const initials = String(offer?.business_name || '?')
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <Modal visible={!!selectedOffer} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]} activeOpacity={1} onPress={onClose}>
         <View style={[rewardsStyles.modalSheet, { backgroundColor: cardBg, borderTopWidth: 1, borderColor: `${primary}22` }]} onStartShouldSetResponder={() => true}>
           <View style={[rewardsStyles.modalHandle, { backgroundColor: sub }]} />
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ maxHeight: '82%' }}>
-            {selectedOffer?.image_url ? (
+            {offer?.image_url ? (
               <View style={{ width: '100%', height: 168, borderRadius: 16, overflow: 'hidden', marginBottom: 14 }}>
-                <Image source={{ uri: selectedOffer.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                <Image source={{ uri: offer.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
               </View>
-            ) : null}
-            <Text style={{ color: sub, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 }}>{selectedOffer?.business_name}</Text>
+            ) : (
+              <View
+                style={{
+                  width: '100%',
+                  height: 140,
+                  borderRadius: 16,
+                  marginBottom: 14,
+                  backgroundColor: `${primary}22`,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1,
+                  borderColor: `${primary}40`,
+                }}
+              >
+                <Text style={{ color: primary, fontSize: 36, fontWeight: '900' }}>{initials}</Text>
+              </View>
+            )}
+            <Text style={{ color: sub, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 }}>{offer?.business_name}</Text>
             <Text style={[rewardsStyles.modalTitle, { color: text, marginTop: 6, textAlign: 'left' }]}>
-              {selectedOffer?.title?.trim() || selectedOffer?.description?.split('.')[0] || `${selectedOffer?.discount_percent}% off`}
+              {offer?.title?.trim() || offer?.description?.split('.')[0] || `${offer?.discount_percent ?? 0}% off`}
             </Text>
             <View style={{ alignSelf: 'flex-start', marginVertical: 10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: `${sub}18` }}>
-              <Text style={{ color: sub, fontSize: 12, fontWeight: '800' }}>{displayOfferCategory(selectedOffer ?? {})}</Text>
+              <Text style={{ color: sub, fontSize: 12, fontWeight: '800' }}>{displayOfferCategory(offer ?? {})}</Text>
             </View>
-            <Text style={{ color: sub, fontSize: 14, marginBottom: 12, lineHeight: 21 }}>{selectedOffer?.description ?? `${selectedOffer?.discount_percent}% off at this partner.`}</Text>
-            {selectedOffer?.address ? (
-              <Text style={{ color: text, fontSize: 13, marginBottom: 12, fontWeight: '600' }}>{selectedOffer.address}</Text>
+            <Text style={{ color: sub, fontSize: 14, marginBottom: 12, lineHeight: 21 }}>{offer?.description ?? `${offer?.discount_percent ?? 0}% off at this partner.`}</Text>
+            {offer?.address ? (
+              <Text style={{ color: text, fontSize: 13, marginBottom: 8, fontWeight: '600' }}>{offer.address}</Text>
             ) : null}
-            {selectedOffer?.distance_km != null ? (
-              <Text style={{ color: sub, fontSize: 12, marginBottom: 12 }}>
-                {(Number(selectedOffer.distance_km) * 0.621371).toFixed(1)} mi away · show staff your QR after redeeming
-              </Text>
+            {offer?.distance_km != null ? (
+              <Text style={{ color: sub, fontSize: 12, marginBottom: 12 }}>{(Number(offer.distance_km) * 0.621371).toFixed(1)} mi away</Text>
+            ) : null}
+            {offer?.address ? (
+              <TouchableOpacity
+                onPress={() => openMapsSearch(offer.address || '', offer.lat, offer.lng)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  marginBottom: 14,
+                  paddingVertical: 12,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: `${primary}44`,
+                  backgroundColor: `${primary}14`,
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="navigate" size={18} color={primary} />
+                <Text style={{ color: primary, fontWeight: '800' }}>Directions</Text>
+              </TouchableOpacity>
             ) : null}
             <View style={{ paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, backgroundColor: `${sub}10`, marginBottom: 16 }}>
               <Text style={{ color: sub, fontSize: 11, fontWeight: '800', marginBottom: 6 }}>Terms</Text>
               <Text style={{ color: sub, fontSize: 12, lineHeight: 18 }}>
+                {offer?.expires_at
+                  ? `Expires ${new Date(String(offer.expires_at)).toLocaleString()}. `
+                  : ''}
                 Discount applies at participating location. Subject to partner policies. SnapRoad gems are non-transferable.
               </Text>
             </View>
             <View style={{ alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ color: primary, fontSize: 24, fontWeight: '900' }}>{selectedOffer?.gem_cost ?? selectedOffer?.gems_reward ?? 0} gems</Text>
+              <Text style={{ color: primary, fontSize: 24, fontWeight: '900' }}>{cost} gems</Text>
               <Text style={{ color: sub, fontSize: 12, fontWeight: '700' }}>Redeem cost</Text>
             </View>
-            {!selectedOffer?.redeemed && (
+            {loading ? <Skeleton width="100%" height={36} borderRadius={12} /> : null}
+            {!redeemed && !loading && (
               <TouchableOpacity
                 disabled={redeemingOfferId === selectedOffer?.id}
-                onPress={() => selectedOffer && onRedeem(selectedOffer)}
+                onPress={() => selectedOffer && onRedeem({ ...selectedOffer, ...offer })}
                 activeOpacity={0.85}
                 style={{ opacity: redeemingOfferId !== null && redeemingOfferId === String(selectedOffer?.id) ? 0.65 : 1 }}
               >
@@ -125,10 +215,36 @@ export function OfferDetailModal({
                 </LinearGradient>
               </TouchableOpacity>
             )}
-            {selectedOffer?.redeemed && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 }}>
-                <Ionicons name="checkmark-circle" size={22} color={success} />
-                <Text style={{ color: success, fontSize: 15, fontWeight: '800' }}>Redeemed — open My redemptions for QR</Text>
+            {redeemed && (
+              <View style={{ gap: 14, paddingVertical: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="checkmark-circle" size={22} color={success} />
+                  <Text style={{ color: success, fontSize: 15, fontWeight: '800' }}>Redeemed</Text>
+                </View>
+                {offer?.redemption?.redeemed_at ? (
+                  <Text style={{ color: sub, fontSize: 13 }}>{new Date(String(offer.redemption.redeemed_at)).toLocaleString()}</Text>
+                ) : null}
+                <Text style={{ color: sub, fontSize: 12, fontWeight: '700' }}>Status: {String(offer?.redemption?.status ?? 'verified')}</Text>
+                {(redeemExtras?.qr_token || redeemExtras?.claim_code) ? (
+                  <View style={{ alignItems: 'center', gap: 10 }}>
+                    <Text style={{ color: text, fontWeight: '800' }}>Show at checkout</Text>
+                    {redeemExtras?.claim_code ? (
+                      <Text style={{ color: text, fontSize: 22, fontWeight: '900', letterSpacing: 2 }}>{redeemExtras.claim_code}</Text>
+                    ) : null}
+                    {QRCode && redeemExtras?.qr_token ? (
+                      <View style={{ padding: 12, borderRadius: 16, backgroundColor: isLight ? '#fff' : 'rgba(255,255,255,0.06)' }}>
+                        <QRCode value={redeemExtras.qr_token} size={180} backgroundColor="transparent" color={text} />
+                      </View>
+                    ) : redeemExtras?.qr_token ? (
+                      <Text style={{ color: sub, fontSize: 11 }} selectable>{redeemExtras.qr_token}</Text>
+                    ) : null}
+                    {redeemExtras?.expires_at ? (
+                      <Text style={{ color: sub, fontSize: 11 }}>QR expires: {new Date(redeemExtras.expires_at).toLocaleString()}</Text>
+                    ) : null}
+                  </View>
+                ) : (
+                  <Text style={{ color: sub, fontSize: 13 }}>Your redemption is saved. Open My redemptions for full details.</Text>
+                )}
               </View>
             )}
           </ScrollView>
@@ -213,10 +329,31 @@ export function RedemptionDetailModal({
             </View>
             {r?.description ? <Text style={{ color: sub, fontSize: 14, lineHeight: 20, marginBottom: 12 }}>{r.description}</Text> : null}
             {r?.address ? (
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-                <Ionicons name="location-outline" size={18} color={primary} />
-                <Text style={{ color: sub, fontSize: 13, flex: 1, lineHeight: 18 }}>{r.address}</Text>
-              </View>
+              <>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                  <Ionicons name="location-outline" size={18} color={primary} />
+                  <Text style={{ color: sub, fontSize: 13, flex: 1, lineHeight: 18 }}>{r.address}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => openMapsSearch(r.address || '', r.lat, r.lng)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    marginBottom: 14,
+                    paddingVertical: 12,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: `${primary}44`,
+                    backgroundColor: `${primary}14`,
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="navigate" size={18} color={primary} />
+                  <Text style={{ color: primary, fontWeight: '800' }}>Directions</Text>
+                </TouchableOpacity>
+              </>
             ) : null}
             <View style={{ borderRadius: 14, borderWidth: 1, borderColor: `${sub}35`, padding: 14, gap: 10, marginBottom: 16 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>

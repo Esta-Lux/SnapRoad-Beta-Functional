@@ -141,15 +141,70 @@ def _apply_favorited_to_offers(user_id: str, offers: list[dict]) -> None:
         o["favorited"] = str(o.get("id")) in fav
 
 
+def _redemption_rows_by_offer_ids(user_id: str, offer_ids: list[str]) -> dict[str, dict]:
+    """Latest redemption per offer for this user (one row per offer_id)."""
+    if not user_id or not offer_ids:
+        return {}
+    try:
+        res = (
+            _sb()
+            .table("redemptions")
+            .select("id, offer_id, status, redeemed_at")
+            .eq("user_id", user_id)
+            .in_("offer_id", list(dict.fromkeys(offer_ids)))
+            .execute()
+        )
+        out: dict[str, dict] = {}
+        for r in res.data or []:
+            oid = str(r.get("offer_id") or "")
+            if oid and oid not in out:
+                out[oid] = dict(r)
+        return out
+    except Exception as e:
+        logger.warning("redemption lookup by offers failed: %s", e)
+        return {}
+
+
+def _apply_redeemed_to_offers(user_id: str, offers: list[dict]) -> None:
+    if not offers:
+        return
+    if not user_id:
+        for o in offers:
+            o["redeemed"] = False
+            o["redemption_id"] = None
+            o["redemption"] = None
+        return
+    ids = [str(o.get("id")) for o in offers if o.get("id") is not None]
+    by_offer = _redemption_rows_by_offer_ids(user_id, ids)
+    for o in offers:
+        oid = str(o.get("id") or "")
+        row = by_offer.get(oid)
+        if row:
+            o["redeemed"] = True
+            o["redemption_id"] = str(row.get("id") or "")
+            o["redemption"] = {
+                "status": row.get("status"),
+                "redeemed_at": row.get("redeemed_at"),
+            }
+        else:
+            o["redeemed"] = False
+            o["redemption_id"] = None
+            o["redemption"] = None
+
+
 def _finalize_nearby_cached_response(cached: dict, user_id: str) -> dict:
-    """Deep-clone cached nearby payload and attach per-user favorited flags (cache is not user-scoped)."""
+    """Deep-clone cached nearby payload and attach per-user favorited + redeemed flags (cache is not user-scoped)."""
     out = copy.deepcopy(cached)
     data = out.get("data") or []
     if user_id:
         _apply_favorited_to_offers(user_id, data)
+        _apply_redeemed_to_offers(user_id, data)
     else:
         for o in data:
             o["favorited"] = False
+            o["redeemed"] = False
+            o["redemption_id"] = None
+            o["redemption"] = None
     return out
 
 
@@ -200,6 +255,47 @@ def validate_qr_token(raw_token: str, *, consume_nonce: bool) -> dict:
         "offer": offer,
         "nonce": nonce,
     }
+
+
+def _issue_post_redeem_qr(*, offer: dict, user_id: str, redemption_id: str) -> Optional[dict]:
+    """JWT + nonce for partner scan after redeem; no geofence (unlike generate-qr)."""
+    from services.runtime_config import cfg_enabled, get_runtime_config
+
+    if not cfg_enabled(get_runtime_config(), "partner_qr_redemption_enabled", default=True):
+        return None
+    try:
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+        nonce = str(uuid.uuid4())
+        payload = {
+            "offer_id": str(offer.get("id")),
+            "user_id": user_id,
+            "redemption_id": redemption_id,
+            "exp": int(expires_at.timestamp()),
+            "expires_at": expires_at.isoformat(),
+            "nonce": nonce,
+            "kind": "post_redeem",
+        }
+        token = _sign_qr_token(payload)
+        cache_set(
+            _qr_nonce_key(nonce),
+            {
+                "offer_id": str(offer.get("id")),
+                "user_id": user_id,
+                "redemption_id": redemption_id,
+                "expires_at": expires_at.isoformat(),
+            },
+            ttl=7 * 24 * 3600,
+        )
+        rid_clean = redemption_id.replace("-", "")
+        claim_code = rid_clean[-8:].upper() if len(rid_clean) >= 8 else rid_clean.upper()
+        return {
+            "qr_token": token,
+            "expires_at": expires_at.isoformat(),
+            "claim_code": claim_code,
+        }
+    except Exception as e:
+        logger.warning("post-redeem QR issue failed: %s", e)
+        return None
 
 
 def _is_unique_violation(exc: BaseException) -> bool:
@@ -288,21 +384,23 @@ def complete_offer_redemption(
             gc = int(rpc_payload.get("gem_cost") or gem_cost)
             disc = int(rpc_payload.get("discount_percent") or discount)
             new_total = int(rpc_payload.get("new_gem_total") or _next_gem_total(user_id))
-            return {
-                "success": True,
-                "data": {
-                    "discount_percent": disc,
-                    "gem_cost": gc,
-                    "gems_earned": -gc,
-                    "new_gem_total": new_total,
-                    "is_free_item": offer.get("is_free_item", False),
-                    "fee_cents": int(fee_preview.get("fee_cents") or 0),
-                    "fee_tier": int(fee_preview.get("fee_tier") or 1),
-                    "fee_amount": float(fee_preview.get("fee_amount") or 0),
-                    "redeemed_at": redeemed_at,
-                    "redemption_id": rid,
-                },
+            data_out = {
+                "discount_percent": disc,
+                "gem_cost": gc,
+                "gems_earned": -gc,
+                "new_gem_total": new_total,
+                "is_free_item": offer.get("is_free_item", False),
+                "fee_cents": int(fee_preview.get("fee_cents") or 0),
+                "fee_tier": int(fee_preview.get("fee_tier") or 1),
+                "fee_amount": float(fee_preview.get("fee_amount") or 0),
+                "redeemed_at": redeemed_at,
+                "redemption_id": rid,
             }
+            if rid:
+                qr_payload = _issue_post_redeem_qr(offer=offer, user_id=user_id, redemption_id=rid)
+                if qr_payload:
+                    data_out.update(qr_payload)
+            return {"success": True, "data": data_out}
         err = str(rpc_payload.get("error") or "redeem_failed")
         if err == "already_redeemed":
             return {"success": False, "message": "Offer already redeemed"}
@@ -430,20 +528,22 @@ def complete_offer_redemption(
     except Exception:
         logger.debug("wallet ledger redeem skipped", exc_info=True)
 
-    return {
-        "success": True,
-        "data": {
-            "discount_percent": discount,
-            "gem_cost": gem_cost,
-            "gems_earned": -gem_cost,
-            "new_gem_total": new_total,
-            "is_free_item": offer.get("is_free_item", False),
-            "fee_cents": fee_record["fee_cents"],
-            "fee_tier": fee_record["fee_tier"],
-            "redeemed_at": redeemed_at,
-            "redemption_id": redemption_id,
-        },
+    data_legacy = {
+        "discount_percent": discount,
+        "gem_cost": gem_cost,
+        "gems_earned": -gem_cost,
+        "new_gem_total": new_total,
+        "is_free_item": offer.get("is_free_item", False),
+        "fee_cents": fee_record["fee_cents"],
+        "fee_tier": fee_record["fee_tier"],
+        "redeemed_at": redeemed_at,
+        "redemption_id": redemption_id,
     }
+    if redemption_id:
+        qr_payload = _issue_post_redeem_qr(offer=offer, user_id=user_id, redemption_id=str(redemption_id))
+        if qr_payload:
+            data_legacy.update(qr_payload)
+    return {"success": True, "data": data_legacy}
 
 
 def _coord_ok(lat: object, lng: object) -> bool:
@@ -721,7 +821,10 @@ def get_personalized_offers(
         attach_offer_category_fields(row)
         scored.append(row)
     scored.sort(key=lambda x: x["score"], reverse=True)
-    return {"success": True, "data": scored[:limit], "voice_prompt": f"I found {min(limit, len(scored))} great offers for you nearby!"}
+    out = scored[:limit]
+    _apply_favorited_to_offers(user_id, out)
+    _apply_redeemed_to_offers(user_id, out)
+    return {"success": True, "data": out, "voice_prompt": f"I found {min(limit, len(scored))} great offers for you nearby!"}
 
 
 @router.post("/offers/{offer_id}/redeem")
@@ -876,8 +979,40 @@ def get_offer_by_id(offer_id: str, auth_user: OptionalUser = None):
     uid = str(auth_user.get("user_id") or auth_user.get("id") or "") if auth_user else ""
     if uid:
         data["favorited"] = str(data.get("id")) in _favorited_offer_ids(uid)
+        try:
+            rres = (
+                _sb()
+                .table("redemptions")
+                .select("id, status, redeemed_at, gems_earned")
+                .eq("user_id", uid)
+                .eq("offer_id", offer_id)
+                .limit(1)
+                .execute()
+            )
+            rrows = rres.data or []
+            if rrows:
+                rr = rrows[0]
+                data["redeemed"] = True
+                data["redemption_id"] = str(rr.get("id") or "")
+                data["redemption"] = {
+                    "status": rr.get("status"),
+                    "redeemed_at": rr.get("redeemed_at"),
+                    "gems_spent": abs(int(rr.get("gems_earned") or 0)),
+                }
+            else:
+                data["redeemed"] = False
+                data["redemption_id"] = None
+                data["redemption"] = None
+        except Exception as e:
+            logger.warning("get_offer redemption lookup failed: %s", e)
+            data["redeemed"] = False
+            data["redemption_id"] = None
+            data["redemption"] = None
     else:
         data["favorited"] = False
+        data["redeemed"] = False
+        data["redemption_id"] = None
+        data["redemption"] = None
     return {"success": True, "data": data}
 
 

@@ -30,6 +30,7 @@ import {
   AllOffersModal,
   ChallengeHistoryModal,
 } from '../components/rewards/RewardsModals';
+import GemActivityDetailModal from '../components/rewards/GemActivityDetailModal';
 import { rewardsStyles } from '../components/rewards/styles';
 import ChallengeModal from '../components/gamification/ChallengeModal';
 import type {
@@ -42,17 +43,25 @@ import type {
   OffersRewardsView,
 } from '../components/rewards/types';
 
-/** Product filter chips (slugs match backend `offer_categories`). `nearby` = ≤ 8 km. */
+/** Product filter chips. `nearby` = ≤ 8 km. `food` / `restaurants` → backend `restaurant`. */
 const REWARDS_OFFER_FILTER_DEFS: { slug: string | null; label: string }[] = [
   { slug: null, label: 'All' },
   { slug: 'nearby', label: 'Nearby' },
   { slug: 'gas', label: 'Gas' },
-  { slug: 'restaurant', label: 'Food' },
+  { slug: 'food', label: 'Food' },
   { slug: 'coffee', label: 'Coffee' },
-  { slug: 'grocery', label: 'Groceries' },
+  { slug: 'restaurants', label: 'Restaurants' },
   { slug: 'retail', label: 'Retail' },
   { slug: 'services', label: 'Services' },
 ];
+
+function offerMatchesCategory(o: Offer, slug: string | null): boolean {
+  if (slug == null) return true;
+  const bt = String(o.business_type || 'other');
+  if (slug === 'nearby') return Number(o.distance_km ?? 999) <= 8;
+  if (slug === 'food' || slug === 'restaurants') return bt === 'restaurant';
+  return bt === slug;
+}
 
 function parseMyRedemptionsResponse(raw: unknown): UserOfferRedemption[] {
   const arr = Array.isArray(raw) ? raw : [];
@@ -131,6 +140,10 @@ export default function RewardsScreen() {
   const [offersRewardsView, setOffersRewardsView] = useState<OffersRewardsView>('nearby');
   const [myRedemptions, setMyRedemptions] = useState<UserOfferRedemption[]>([]);
   const [selectedRedemption, setSelectedRedemption] = useState<UserOfferRedemption | null>(null);
+  const [selectedGemTx, setSelectedGemTx] = useState<GemTx | null>(null);
+  const [redeemQrByOfferId, setRedeemQrByOfferId] = useState<
+    Record<string, { qr_token?: string; claim_code?: string; expires_at?: string }>
+  >({});
 
   const loadFull = useCallback(async (mode: 'initial' | 'refresh' | 'silent', lat: number, lng: number) => {
     if (mode === 'initial') setInitialLoading(true);
@@ -142,7 +155,7 @@ export default function RewardsScreen() {
         try { return await api.get<any>(url); } catch { return { success: false, data: null }; }
       };
       const insightsPromise = isPremium ? safeGet('/api/trips/weekly-insights') : Promise.resolve({ success: false, data: null });
-      const [profileRes, cRes, bRes, oRes, tRes, _iRes, gRes, mineRes] = await Promise.all([
+      const [profileRes, cRes, bRes, oRes, tRes, _iRes, gRes, mineRes, sumRes] = await Promise.all([
         api.getProfile().catch(() => ({ success: false, data: null })),
         safeGet('/api/challenges'),
         safeGet('/api/badges'),
@@ -151,6 +164,7 @@ export default function RewardsScreen() {
         insightsPromise,
         safeGet('/api/gems/history'),
         safeGet('/api/offers/my-redemptions'),
+        safeGet('/api/rewards/summary'),
       ]);
       const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
       const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
@@ -194,6 +208,7 @@ export default function RewardsScreen() {
           reference_type: t.reference_type != null ? String(t.reference_type) : null,
           reference_id: t.reference_id != null ? String(t.reference_id) : null,
           balance_after: t.balance_after != null && t.balance_after !== '' ? Number(t.balance_after) : null,
+          metadata: t.metadata && typeof t.metadata === 'object' ? (t.metadata as Record<string, unknown>) : undefined,
         })),
       );
     } catch {
@@ -287,14 +302,12 @@ export default function RewardsScreen() {
 
   const filteredNearbyOffers = useMemo(() => {
     const base = offers.filter((o) => !o.is_admin_offer);
-    if (!offerCategoryFilter) return base;
-    return base.filter((o) => String(o.business_type || 'other') === offerCategoryFilter);
+    return base.filter((o) => offerMatchesCategory(o, offerCategoryFilter));
   }, [offers, offerCategoryFilter]);
 
   const filteredFeaturedOffers = useMemo(() => {
     const base = offers.filter((o) => Boolean(o.is_admin_offer));
-    if (!offerCategoryFilter) return base;
-    return base.filter((o) => String(o.business_type || 'other') === offerCategoryFilter);
+    return base.filter((o) => offerMatchesCategory(o, offerCategoryFilter));
   }, [offers, offerCategoryFilter]);
 
   const filteredRedemptions = useMemo(() => {
@@ -302,13 +315,10 @@ export default function RewardsScreen() {
     return myRedemptions.filter((r) => String(r.business_type || 'other') === redemptionCategoryFilter);
   }, [myRedemptions, redemptionCategoryFilter]);
 
-  const allOffersForModal = useMemo(() => {
-    if (!offerCategoryFilter) return offers;
-    if (offerCategoryFilter === 'nearby') {
-      return offers.filter((o) => Number(o.distance_km ?? 999) <= 8);
-    }
-    return offers.filter((o) => String(o.business_type || 'other') === offerCategoryFilter);
-  }, [offers, offerCategoryFilter]);
+  const allOffersForModal = useMemo(
+    () => offers.filter((o) => offerMatchesCategory(o, offerCategoryFilter)),
+    [offers, offerCategoryFilter],
+  );
 
   const handleClaimChallenge = useCallback(async (challenge: Challenge) => {
     setClaimingChallengeId(challenge.id);
@@ -337,17 +347,51 @@ export default function RewardsScreen() {
         setErrorMsg(res.error || 'Could not redeem this offer right now.');
         return;
       }
-      const gemCost = Number((res.data as any)?.data?.gem_cost ?? offer.gem_cost ?? offer.gems_reward ?? 0);
-      const newGemTotal = Number((res.data as any)?.data?.new_gem_total ?? NaN);
-      setOffers((prev) => prev.map((o) => (o.id === offer.id ? { ...o, redeemed: true } : o)));
+      const rawRoot = res.data as { data?: Record<string, unknown> } | undefined;
+      const inner = (rawRoot && typeof rawRoot === 'object' && 'data' in rawRoot && rawRoot.data
+        ? rawRoot.data
+        : (rawRoot as Record<string, unknown>)) ?? {};
+      const gemCost = Number(inner.gem_cost ?? offer.gem_cost ?? offer.gems_reward ?? 0);
+      const newGemTotal = Number(inner.new_gem_total ?? NaN);
+      const oid = String(offer.id);
+      setRedeemQrByOfferId((prev) => ({
+        ...prev,
+        [oid]: {
+          qr_token: inner.qr_token != null ? String(inner.qr_token) : undefined,
+          claim_code: inner.claim_code != null ? String(inner.claim_code) : undefined,
+          expires_at: inner.expires_at != null ? String(inner.expires_at) : undefined,
+        },
+      }));
+      setOffers((prev) =>
+        prev.map((o) =>
+          String(o.id) === oid
+            ? {
+                ...o,
+                redeemed: true,
+                redemption_id: inner.redemption_id != null ? String(inner.redemption_id) : o.redemption_id,
+                redemption: { status: 'verified', redeemed_at: inner.redeemed_at != null ? String(inner.redeemed_at) : undefined },
+              }
+            : o,
+        ),
+      );
+      setSelectedOffer((prev) =>
+        prev && String(prev.id) === oid
+          ? {
+              ...prev,
+              redeemed: true,
+              redemption_id: inner.redemption_id != null ? String(inner.redemption_id) : prev.redemption_id,
+              redemption: { status: 'verified', redeemed_at: inner.redeemed_at != null ? String(inner.redeemed_at) : undefined },
+            }
+          : prev,
+      );
       if (user) updateUser({ gems: Number.isFinite(newGemTotal) ? newGemTotal : Math.max(0, user.gems - gemCost) });
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setSelectedOffer(null);
       void refreshMyRedemptions();
+      void loadFull('silent', location.lat, location.lng);
     } finally {
       setRedeemingOfferId(null);
     }
-  }, [updateUser, user, refreshMyRedemptions]);
+  }, [updateUser, user, refreshMyRedemptions, loadFull, location.lat, location.lng]);
 
   const loadChallengeHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -393,13 +437,7 @@ export default function RewardsScreen() {
             tintColor="#3B82F6"
           />
         }>
-      <RewardsHeader
-        colors={colors}
-        gems={user?.gems ?? 0}
-        level={user?.level ?? 1}
-        multiplier={multiplier}
-        miles={String(Math.round(user?.totalMiles ?? 0))}
-      />
+      <RewardsHeader colors={colors} gems={user?.gems ?? 0} multiplier={multiplier} />
       {errorMsg && (
         <View style={[rewardsStyles.errorBanner, { backgroundColor: `${colors.danger}12`, borderWidth: 1, borderColor: `${colors.danger}35` }]}>
           <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
@@ -419,14 +457,12 @@ export default function RewardsScreen() {
             </LinearGradient>
           </View>
           <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
-            <LinearGradient colors={[`${colors.primary}28`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.primary}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                <Ionicons name="shield-checkmark" size={22} color={colors.primary} />
+            <LinearGradient colors={[`${colors.rewardsGradientEnd}33`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.rewardsGradientEnd}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                <Ionicons name="diamond" size={22} color={colors.rewardsGradientEnd} />
               </View>
-              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>
-                {user ? Math.round(user.safetyScore ?? 0) : '—'}
-              </Text>
-              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Safety</Text>
+              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{user ? Math.round(user.gems ?? 0) : '—'}</Text>
+              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Gem balance</Text>
             </LinearGradient>
           </View>
         </View>
@@ -576,7 +612,15 @@ export default function RewardsScreen() {
       )}
 
       <SectionTitle title="Recent Gem Activity" text={text} accent={colors.primary} />
-      <GemActivityList loading={initialLoading} gemTx={gemTx} {...rt} />
+      <GemActivityList
+        loading={initialLoading}
+        gemTx={gemTx}
+        onPressTx={(tx) => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setSelectedGemTx(tx);
+        }}
+        {...rt}
+      />
 
       <View style={{ height: insets.bottom + 20 }} />
 
@@ -584,6 +628,7 @@ export default function RewardsScreen() {
       <OfferDetailModal
         selectedOffer={selectedOffer}
         redeemingOfferId={redeemingOfferId}
+        redeemExtras={selectedOffer ? redeemQrByOfferId[String(selectedOffer.id)] : null}
         cardBg={cardBg}
         text={text}
         sub={sub}
@@ -592,6 +637,19 @@ export default function RewardsScreen() {
         isLight={isLight}
         onClose={() => setSelectedOffer(null)}
         onRedeem={handleRedeemOffer}
+      />
+      <GemActivityDetailModal
+        visible={!!selectedGemTx}
+        tx={selectedGemTx}
+        cardBg={cardBg}
+        text={text}
+        sub={sub}
+        primary={colors.primary}
+        success={colors.success}
+        danger={colors.danger}
+        warning={colors.warning}
+        isLight={isLight}
+        onClose={() => setSelectedGemTx(null)}
       />
       <RedemptionDetailModal
         redemption={selectedRedemption}

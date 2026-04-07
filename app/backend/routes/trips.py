@@ -606,6 +606,7 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
     safety = max(0, min(100, body.safety_score))
     prof = sb_get_profile(str(user_id)) if user_id else None
     reward_user = {**user, **(prof or {})}
+    already_today = _trip_gems_today_utc(user_id)
     gems_earned, xp_earned = _compute_trip_rewards(
         distance, safety, reward_user, body.duration_seconds, profile_id=user_id
     )
@@ -641,10 +642,22 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
     profile_totals = _read_profile_totals_after_trip(user_id)
     if gems_earned > 0 and profile_totals:
         try:
+            from services.gem_economy import trip_drive_ledger_metadata
             from services.wallet_ledger import record_wallet_transaction
 
             sb = get_supabase()
             bal = int(profile_totals.get("gems") or 0)
+            is_prem = bool(reward_user.get("is_premium")) or str(reward_user.get("plan") or "").lower() in (
+                "premium",
+                "family",
+            )
+            meta = trip_drive_ledger_metadata(
+                float(body.duration_seconds),
+                distance,
+                is_prem,
+                int(gems_earned),
+                already_today,
+            )
             record_wallet_transaction(
                 sb,
                 user_id=user_id,
@@ -655,7 +668,7 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
                 balance_after=bal,
                 reference_type="trip",
                 reference_id=trip_id,
-                metadata={"distance_miles": round(distance, 2), "duration_seconds": body.duration_seconds},
+                metadata=meta,
             )
         except Exception:
             _trips_log.debug("trip wallet ledger skipped", exc_info=True)

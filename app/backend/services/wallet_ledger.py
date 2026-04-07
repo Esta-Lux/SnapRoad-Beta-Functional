@@ -75,3 +75,27 @@ def fetch_recent_ledger(sb: Any, user_id: str, limit: int = 40) -> list[dict]:
         if not _missing_table(exc):
             logger.warning("wallet_transactions read failed: %s", exc)
         return []
+
+
+def fetch_ledger_row_for_user(sb: Any, *, user_id: str, tx_id: str) -> Optional[dict]:
+    """Single wallet row; None if missing, wrong user, or table unavailable."""
+    if not tx_id or not user_id:
+        return None
+    try:
+        res = (
+            sb.table(_TABLE)
+            .select(
+                "id,user_id,tx_type,direction,amount,balance_before,balance_after,"
+                "reference_type,reference_id,metadata,created_at,status"
+            )
+            .eq("id", tx_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        rows = res.data or []
+        return dict(rows[0]) if rows else None
+    except Exception as exc:
+        if not _missing_table(exc):
+            logger.warning("wallet_transactions fetch by id failed: %s", exc)
+        return None

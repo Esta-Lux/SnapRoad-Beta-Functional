@@ -39,6 +39,8 @@ export type GemTx = {
   reference_type?: string | null;
   reference_id?: string | null;
   balance_after?: number | null;
+  /** Server ledger metadata (trip formula, etc.). */
+  metadata?: Record<string, unknown>;
 };
 
 export type ChallengeHistoryItem = {

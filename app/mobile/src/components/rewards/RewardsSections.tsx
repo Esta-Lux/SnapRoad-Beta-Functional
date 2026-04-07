@@ -93,7 +93,7 @@ export function OfferCategoryChips({
           (c.slug === null && selectedSlug === null) || (c.slug !== null && c.slug === selectedSlug);
         return (
           <TouchableOpacity
-            key={c.slug === null ? '__all__' : c.slug}
+            key={c.slug === null ? '__all__' : `${c.slug}-${c.label}`}
             onPress={() => onSelect(c.slug)}
             activeOpacity={0.82}
             style={{
@@ -524,9 +524,11 @@ export function GemActivityList({
   success,
   danger,
   warning: _w,
+  onPressTx,
 }: ThemeProps & {
   loading: boolean;
   gemTx: GemTx[];
+  onPressTx: (tx: GemTx) => void;
 }) {
   if (loading) {
     return <View style={{ paddingHorizontal: 16, gap: 8 }}>{[1, 2].map((i) => <Skeleton key={i} width="100%" height={56} borderRadius={12} />)}</View>;
@@ -542,7 +544,12 @@ export function GemActivityList({
   return (
     <>
       {gemTx.map((tx) => (
-        <View key={tx.id} style={[rewardsStyles.tripCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+        <TouchableOpacity
+          key={tx.id}
+          activeOpacity={0.82}
+          onPress={() => onPressTx(tx)}
+          style={[rewardsStyles.tripCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+        >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
             <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: tx.type === 'spent' ? `${danger}15` : `${success}15`, justifyContent: 'center', alignItems: 'center' }}>
               <Ionicons name={tx.type === 'spent' ? 'arrow-down' : 'arrow-up'} size={20} color={tx.type === 'spent' ? danger : success} />
@@ -558,10 +565,13 @@ export function GemActivityList({
               ) : null}
             </View>
           </View>
-          <Text style={{ color: tx.type === 'spent' ? danger : success, fontWeight: '900', fontSize: 16 }}>
-            {tx.type === 'spent' ? '-' : '+'}{tx.amount}
-          </Text>
-        </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={{ color: tx.type === 'spent' ? danger : success, fontWeight: '900', fontSize: 16 }}>
+              {tx.type === 'spent' ? '-' : '+'}{tx.amount}
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={sub} />
+          </View>
+        </TouchableOpacity>
       ))}
     </>
   );

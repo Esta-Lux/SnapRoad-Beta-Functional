@@ -9,9 +9,7 @@ type Props = {
     rewardsGradientEnd: string;
   };
   gems: number;
-  level: number;
   multiplier: string;
-  miles: string | number;
 };
 
 function formatGems(n: number): string {
@@ -22,30 +20,10 @@ function formatGems(n: number): string {
   return String(Math.round(n));
 }
 
-export default function RewardsHeader({ colors, gems, level, multiplier, miles }: Props) {
+/** Compact hero: gem balance + multiplier only (summary metrics live in RewardsScreen cards). */
+export default function RewardsHeader({ colors, gems, multiplier }: Props) {
   const glass = 'rgba(255,255,255,0.14)';
   const glassBorder = 'rgba(255,255,255,0.22)';
-
-  const statPill = (icon: keyof typeof Ionicons.glyphMap, value: string, label: string, accent?: boolean) => (
-    <View
-      style={[
-        styles.statPill,
-        {
-          backgroundColor: glass,
-          borderColor: glassBorder,
-          ...(accent ? styles.statPillAccent : null),
-        },
-      ]}
-    >
-      <Ionicons name={icon} size={17} color={accent ? '#FDE68A' : '#fff'} style={{ marginBottom: 2 }} />
-      <Text style={[styles.statValue, accent && styles.statValueAccent]} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text style={styles.statLabel} numberOfLines={1}>
-        {label}
-      </Text>
-    </View>
-  );
 
   return (
     <LinearGradient
@@ -76,11 +54,16 @@ export default function RewardsHeader({ colors, gems, level, multiplier, miles }
         </View>
       </View>
 
-      <View style={styles.grid}>
-        {statPill('star', `Lvl ${level}`, 'Level')}
-        {statPill('flash-outline', multiplier, 'Multiplier', true)}
-        {statPill('ribbon-outline', String(miles), 'Miles')}
-        {statPill('gift-outline', 'Loot', 'Offers')}
+      <View style={styles.pillRow}>
+        <View style={[styles.statPill, { backgroundColor: glass, borderColor: glassBorder }]}>
+          <Ionicons name="flash-outline" size={17} color="#FDE68A" style={{ marginBottom: 2 }} />
+          <Text style={[styles.statValue, styles.statValueAccent]} numberOfLines={1}>
+            {multiplier}
+          </Text>
+          <Text style={styles.statLabel} numberOfLines={1}>
+            Gem multiplier
+          </Text>
+        </View>
       </View>
     </LinearGradient>
   );
@@ -128,7 +111,7 @@ const styles = StyleSheet.create({
   heroGemRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   heroGemDisc: {
     width: 56,
@@ -151,23 +134,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 2,
   },
-  grid: {
+  pillRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
   statPill: {
-    width: '47%' as const,
     borderRadius: 16,
     paddingVertical: 12,
-    paddingHorizontal: 10,
+    paddingHorizontal: 20,
     alignItems: 'center',
     borderWidth: 1,
-  },
-  statPillAccent: {
-    backgroundColor: 'rgba(250,204,21,0.18)',
-    borderColor: 'rgba(253,224,71,0.45)',
+    minWidth: 140,
   },
   statValue: {
     color: '#fff',
