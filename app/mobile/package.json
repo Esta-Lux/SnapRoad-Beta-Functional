@@ -81,5 +81,10 @@
     "@types/react": "~19.1.10",
     "typescript": "~5.9.2"
   },
+  "overrides": {
+    "@react-native-voice/voice": {
+      "@expo/config-plugins": "54.0.4"
+    }
+  },
   "private": true
 }
