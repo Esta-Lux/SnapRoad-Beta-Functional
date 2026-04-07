@@ -57,6 +57,8 @@ import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config
 import MapCategoryExploreSheet from '../components/map/MapCategoryExploreSheet';
 import PhotoReportSheet from '../components/map/PhotoReportSheet';
 import ManeuverHighlightLayers from '../components/map/ManeuverHighlightLayers';
+import NavigationPuckOverlay from '../components/map/NavigationPuckOverlay';
+import NavigationManeuverArrow from '../components/map/NavigationManeuverArrow';
 import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
@@ -2284,15 +2286,31 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
-          {/* Default Mapbox user-location puck across the app. */}
+          {/* Browse / preview: native puck. Active navigation: custom fused puck (no default puck). */}
           <MapboxGL.LocationPuck
-            visible
+            visible={!nav.isNavigating}
             androidRenderMode="normal"
             puckBearingEnabled
             puckBearing={nav.isNavigating ? 'course' : 'heading'}
             pulsing={{ isEnabled: false }}
             scale={1.5}
           />
+          {nav.isNavigating && nav.navigationProgressCoord && (
+            <>
+              <NavigationPuckOverlay
+                lat={nav.navigationProgressCoord.lat}
+                lng={nav.navigationProgressCoord.lng}
+                headingDeg={nav.navigationDisplayHeading}
+              />
+              {nav.navigationData?.polyline && nav.routeProgress ? (
+                <NavigationManeuverArrow
+                  polyline={nav.navigationData.polyline}
+                  cumFromStartMeters={nav.routeProgress.cumFromStartMeters}
+                  arrowColor={modeConfig.routeColor}
+                />
+              ) : null}
+            </>
+          )}
         </MapboxGL.MapView>
       ) : (
         <View style={[s.map, s.placeholder]}>

@@ -506,6 +506,22 @@ export function segmentAndTFromCumAlongPolyline(
   return { segmentIndex: lastSeg, tOnSegment: 1 };
 }
 
+/** Point on the polyline at `cumMeters` from the start (same basis as {@link segmentAndTFromCumAlongPolyline}). */
+export function coordinateAtCumulativeMeters(
+  polyline: Coordinate[],
+  cumMeters: number,
+): Coordinate | null {
+  const st = segmentAndTFromCumAlongPolyline(cumMeters, polyline);
+  if (!st) return null;
+  const { segmentIndex, tOnSegment } = st;
+  const pa = polyline[segmentIndex]!;
+  const pb = polyline[segmentIndex + 1]!;
+  return {
+    lat: pa.lat + tOnSegment * (pb.lat - pa.lat),
+    lng: pa.lng + tOnSegment * (pb.lng - pa.lng),
+  };
+}
+
 /** Tiny spacing to remove only near-identical duplicate vertices at split boundaries. */
 const ROUTE_SPLIT_MIN_M = 0.05;
 
