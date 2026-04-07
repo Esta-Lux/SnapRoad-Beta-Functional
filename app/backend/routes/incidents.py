@@ -3,6 +3,8 @@ import logging
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Annotated
+
+from services.incident_nearby_notify import notify_drivers_near_incident
 from datetime import datetime, timedelta, timezone
 import math
 from middleware.auth import get_current_user, require_admin
@@ -84,6 +86,21 @@ def _expiry_hours_for(_t: str) -> float:
     return 3.5
 
 
+def _notify_after_new_report(lat: float, lng: float, r_type: str, reporter_uid: str) -> None:
+    try:
+        label = (r_type or "report").replace("_", " ")
+        notify_drivers_near_incident(
+            lat,
+            lng,
+            reporter_uid,
+            "Road alert nearby",
+            f"New {label} reported within ~1 mi — stay aware.",
+            {"kind": "incident_new"},
+        )
+    except Exception as e:
+        logger.warning("notify new report: %s", e)
+
+
 def _to_road_report_payload(report: IncidentReportCompat, user_id: str, now: datetime) -> dict:
     r_type = (report.type or report.incident_type or "").strip().lower()
     return {
@@ -93,9 +110,10 @@ def _to_road_report_payload(report: IncidentReportCompat, user_id: str, now: dat
         "lat": float(report.lat or 0),
         "lng": float(report.lng or 0),
         "upvotes": 0,
+        "downvotes": 0,
         "status": "active",
-        # Pre-moderation: nearby only shows approved|null; map appears after admin approves in dashboard.
-        "moderation_status": "pending",
+        # Shown on driver map immediately; admins can still review in dashboard.
+        "moderation_status": "approved",
         "expires_at": (now + timedelta(hours=_expiry_hours_for(r_type))).isoformat(),
         "created_at": now.isoformat(),
     }
@@ -112,6 +130,7 @@ def _row_to_incident(row: dict, uid: str) -> dict:
         "description": row.get("description"),
         "reported_by": uid,
         "upvotes": row.get("upvotes", 0),
+        "downvotes": row.get("downvotes", 0),
         "created_at": row.get("created_at"),
         "expires_at": row.get("expires_at"),
     }
@@ -163,7 +182,11 @@ def _insert_road_report_row(sb, p: dict, response_uid: str) -> Optional[dict]:
         created = sb.table("road_reports").insert(p).execute()
     except Exception as e:
         err = str(e).lower()
-        if "moderation_status" in p and ("column" in err or "schema" in err or "pgrst" in err):
+        if "downvotes" in err and ("column" in err or "schema" in err or "pgrst" in err):
+            logger.warning("road_reports insert retry without downvotes: %s", e)
+            p2 = {k: v for k, v in p.items() if k != "downvotes"}
+            created = sb.table("road_reports").insert(p2).execute()
+        elif "moderation_status" in p and ("column" in err or "schema" in err or "pgrst" in err):
             logger.warning("road_reports insert retry without moderation_status: %s", e)
             p2 = {k: v for k, v in p.items() if k != "moderation_status"}
             created = sb.table("road_reports").insert(p2).execute()
@@ -212,6 +235,7 @@ def _memory_report_fallback(
         "description": report.description,
         "reported_by": report.reported_by or uid,
         "upvotes": 0,
+        "downvotes": 0,
         "created_at": now.isoformat(),
         "expires_at": exp.isoformat(),
     }
@@ -253,11 +277,14 @@ def report_incident(request: Request, report: IncidentReportCompat, user: Curren
     try:
         out = _try_supabase_report(report, uid, now)
         if out is not None:
+            _notify_after_new_report(float(report.lat), float(report.lng), r_type.lower(), uid)
             return out
     except Exception as e:
         _maybe_raise_incident_503(e, "report_incident supabase")
 
-    return _memory_report_fallback(report, r_type, uid, now, exp)
+    mem = _memory_report_fallback(report, r_type, uid, now, exp)
+    _notify_after_new_report(float(report.lat), float(report.lng), r_type.lower(), uid)
+    return mem
 
 
 def _haversine_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -275,9 +302,8 @@ def _nearby_from_db(lat: float, lng: float, radius_miles: float, now: datetime, 
     def _query(with_moderation: bool):
         q = (
             sb.table("road_reports")
-            .select("id,type,description,lat,lng,upvotes,created_at,expires_at")
+            .select("id,type,description,lat,lng,upvotes,downvotes,created_at,expires_at,moderation_status")
             .eq("status", "active")
-            .gte("upvotes", 0)
             .gte("lat", lat - lat_delta)
             .lte("lat", lat + lat_delta)
             .gte("lng", lng - lng_delta)
@@ -285,7 +311,7 @@ def _nearby_from_db(lat: float, lng: float, radius_miles: float, now: datetime, 
             .gt("expires_at", now.isoformat())
         )
         if with_moderation:
-            q = q.or_("moderation_status.eq.approved,moderation_status.is.null")
+            q = q.or_("moderation_status.eq.approved,moderation_status.is.null,moderation_status.eq.pending")
         return q.execute()
 
     try:
@@ -310,6 +336,7 @@ def _nearby_from_db(lat: float, lng: float, radius_miles: float, now: datetime, 
                     "severity": _severity_for(str(row.get("type") or "")),
                     "description": row.get("description"),
                     "upvotes": row.get("upvotes", 0),
+                    "downvotes": row.get("downvotes", 0),
                     "created_at": row.get("created_at"),
                     "expires_at": row.get("expires_at"),
                     "distance_miles": round(d, 2),
@@ -384,6 +411,7 @@ def dev_seed_incidents(
             "description": title,
             "reported_by": "dev-seed",
             "upvotes": 0,
+            "downvotes": 0,
             "created_at": now.isoformat(),
             "expires_at": (now + timedelta(hours=_expiry_hours_for(t))).isoformat(),
         })
@@ -407,12 +435,25 @@ def _upvote_db(sb, _incident_id: str, voter: str, report: dict) -> dict:
         if _is_vote_duplicate_error(e):
             raise HTTPException(status_code=409, detail=MSG_ALREADY_VOTED)
         raise
-    sb.table("road_reports").update({"upvotes": int(report.get("upvotes") or 0) + 1}).eq("id", report.get("id")).execute()
     new_uv = int(report.get("upvotes") or 0) + 1
+    down = int(report.get("downvotes") or 0)
+    sb.table("road_reports").update({"upvotes": new_uv}).eq("id", report.get("id")).execute()
     reward = award_reporter_on_peer_confirmation(owner_id=owner or None, voter_id=voter)
-    out = {"success": True, "upvotes": new_uv}
+    out: Dict[str, Any] = {"success": True, "upvotes": new_uv, "downvotes": down}
     if reward.get("awarded"):
         out["reporter_reward"] = reward
+    try:
+        title = str(report.get("type") or "incident").replace("_", " ").title()
+        notify_drivers_near_incident(
+            float(report.get("lat") or 0),
+            float(report.get("lng") or 0),
+            voter,
+            "Road report confirmed",
+            f'Drivers confirmed "{title}" within ~1 mi — stay aware.',
+            {"kind": "incident_upvote", "report_id": str(report.get("id"))},
+        )
+    except Exception as e:
+        logger.warning("upvote notify: %s", e)
     return out
 
 
@@ -431,12 +472,13 @@ def _upvote_memory(incident_id: str, voter: str) -> dict:
             raise HTTPException(status_code=409, detail=MSG_ALREADY_VOTED)
         voters.add(voter)
         inc["upvotes"] = int(inc.get("upvotes", 0)) + 1
+        inc.setdefault("downvotes", 0)
         try:
             inc["expires_at"] = (datetime.fromisoformat(inc["expires_at"]) + timedelta(minutes=30)).isoformat()
         except Exception:
             inc["expires_at"] = (_utc_now() + timedelta(minutes=30)).isoformat()
         reward = award_reporter_on_peer_confirmation(owner_id=owner or None, voter_id=voter)
-        out = {"success": True, "upvotes": inc["upvotes"]}
+        out = {"success": True, "upvotes": inc["upvotes"], "downvotes": inc.get("downvotes", 0)}
         if reward.get("awarded"):
             out["reporter_reward"] = reward
         return out
@@ -453,7 +495,13 @@ def upvote_incident(request: Request, incident_id: str, user: CurrentUser):
     voter = str(user.get("id") or "")
     try:
         sb = get_supabase()
-        report_res = sb.table("road_reports").select("id,user_id,upvotes").eq("id", incident_id).limit(1).execute()
+        report_res = (
+            sb.table("road_reports")
+            .select("id,user_id,upvotes,downvotes,lat,lng,type")
+            .eq("id", incident_id)
+            .limit(1)
+            .execute()
+        )
         report = report_res.data[0] if report_res.data else None
         if report:
             return _upvote_db(sb, incident_id, voter, report)
@@ -485,24 +533,41 @@ def _confirm_db(sb, row: dict, voter: str, body: ConfirmBody) -> dict:
         if _is_vote_duplicate_error(e):
             raise HTTPException(status_code=409, detail=MSG_ALREADY_VOTED)
         raise
-    current = int(row.get("upvotes") or 0)
-    new_votes = current + vote_value
-    updates = {"upvotes": new_votes}
-    if vote_value < 0 and new_votes < 0:
+    up = int(row.get("upvotes") or 0)
+    down = int(row.get("downvotes") or 0)
+    if body.confirmed:
+        up += 1
+    else:
+        down += 1
+    updates: Dict[str, Any] = {"upvotes": up, "downvotes": down}
+    removed = down > up
+    if removed:
         updates["status"] = "inactive"
         updates["expires_at"] = _utc_now().isoformat()
     sb.table("road_reports").update(updates).eq("id", row.get("id")).execute()
-    removed = vote_value < 0 and new_votes < 0
     out: dict = {
         "success": True,
         "confirmed": body.confirmed,
-        "upvotes": new_votes,
+        "upvotes": up,
+        "downvotes": down,
         "removed": removed,
     }
-    if vote_value > 0:
+    if body.confirmed:
         reward = award_reporter_on_peer_confirmation(owner_id=owner or None, voter_id=voter)
         if reward.get("awarded"):
             out["reporter_reward"] = reward
+        try:
+            title = str(row.get("type") or "incident").replace("_", " ").title()
+            notify_drivers_near_incident(
+                float(row.get("lat") or 0),
+                float(row.get("lng") or 0),
+                voter,
+                "Road report confirmed",
+                f'Drivers confirmed "{title}" within ~1 mi — stay aware.',
+                {"kind": "incident_confirm", "report_id": str(row.get("id"))},
+            )
+        except Exception as e:
+            logger.warning("confirm notify: %s", e)
     return out
 
 
@@ -515,22 +580,32 @@ def _confirm_memory(body: ConfirmBody, voter: str) -> dict:
         owner = str(inc.get("reported_by") or "")
         if owner and owner == voter:
             raise HTTPException(status_code=400, detail=MSG_CANNOT_UPVOTE_OWN)
+        inc.setdefault("downvotes", 0)
         if body.confirmed:
             inc["upvotes"] = int(inc.get("upvotes", 0)) + 1
             try:
                 inc["expires_at"] = (datetime.fromisoformat(inc["expires_at"]) + timedelta(minutes=30)).isoformat()
             except Exception:
                 inc["expires_at"] = (_utc_now() + timedelta(minutes=30)).isoformat()
-            out = {"success": True, "confirmed": True, "upvotes": inc["upvotes"]}
+            out = {"success": True, "confirmed": True, "upvotes": inc["upvotes"], "downvotes": inc["downvotes"]}
             reward = award_reporter_on_peer_confirmation(owner_id=owner or None, voter_id=voter)
             if reward.get("awarded"):
                 out["reporter_reward"] = reward
             return out
-        inc["upvotes"] = int(inc.get("upvotes", 0)) - 1
-        if inc["upvotes"] < 0:
+        inc["downvotes"] = int(inc.get("downvotes", 0)) + 1
+        upv = int(inc.get("upvotes", 0))
+        dnv = int(inc.get("downvotes", 0))
+        removed = dnv > upv
+        if removed:
             incidents_db.remove(inc)
-            return {"success": True, "confirmed": False, "removed": True}
-        return {"success": True, "confirmed": False, "upvotes": inc["upvotes"]}
+            return {"success": True, "confirmed": False, "removed": True, "upvotes": upv, "downvotes": dnv}
+        return {
+            "success": True,
+            "confirmed": False,
+            "upvotes": upv,
+            "downvotes": dnv,
+            "removed": False,
+        }
     raise HTTPException(status_code=404, detail=MSG_INCIDENT_NOT_FOUND)
 
 
@@ -544,7 +619,13 @@ def confirm_incident(request: Request, body: ConfirmBody, _user: CurrentUser):
     voter = str((_user or {}).get("id") or "")
     try:
         sb = get_supabase()
-        res = sb.table("road_reports").select("id,user_id,upvotes").eq("id", body.incident_id).limit(1).execute()
+        res = (
+            sb.table("road_reports")
+            .select("id,user_id,upvotes,downvotes,lat,lng,type")
+            .eq("id", body.incident_id)
+            .limit(1)
+            .execute()
+        )
         row = res.data[0] if res.data else None
         if row:
             return _confirm_db(sb, row, voter, body)
@@ -568,13 +649,15 @@ def _downvote_db(sb, row: dict, voter: str) -> dict:
         if _is_vote_duplicate_error(e):
             raise HTTPException(status_code=409, detail=MSG_ALREADY_VOTED)
         raise
-    new_votes = int(row.get("upvotes") or 0) - 1
-    updates = {"upvotes": new_votes}
-    if new_votes < 0:
+    up = int(row.get("upvotes") or 0)
+    new_down = int(row.get("downvotes") or 0) + 1
+    updates: Dict[str, Any] = {"downvotes": new_down}
+    removed = new_down > up
+    if removed:
         updates["status"] = "inactive"
         updates["expires_at"] = _utc_now().isoformat()
     sb.table("road_reports").update(updates).eq("id", row.get("id")).execute()
-    return {"success": True, "upvotes": new_votes, "removed": new_votes < 0}
+    return {"success": True, "upvotes": up, "downvotes": new_down, "removed": removed}
 
 
 def _downvote_memory(incident_id: str, voter: str) -> dict:
@@ -584,11 +667,15 @@ def _downvote_memory(incident_id: str, voter: str) -> dict:
         owner = str(inc.get("reported_by") or "")
         if owner and owner == voter:
             raise HTTPException(status_code=400, detail=MSG_CANNOT_UPVOTE_OWN)
-        inc["upvotes"] = int(inc.get("upvotes", 0)) - 1
-        if inc["upvotes"] < 0:
+        inc.setdefault("downvotes", 0)
+        inc["downvotes"] = int(inc.get("downvotes", 0)) + 1
+        up = int(inc.get("upvotes", 0))
+        dn = int(inc.get("downvotes", 0))
+        removed = dn > up
+        if removed:
             incidents_db.remove(inc)
-            return {"success": True, "upvotes": inc["upvotes"], "removed": True}
-        return {"success": True, "upvotes": inc["upvotes"], "removed": False}
+            return {"success": True, "upvotes": up, "downvotes": dn, "removed": True}
+        return {"success": True, "upvotes": up, "downvotes": dn, "removed": False}
     raise HTTPException(status_code=404, detail=MSG_INCIDENT_NOT_FOUND)
 
 
@@ -602,7 +689,13 @@ def downvote_incident(request: Request, incident_id: str, _user: CurrentUser):
     voter = str((_user or {}).get("id") or "")
     try:
         sb = get_supabase()
-        res = sb.table("road_reports").select("id,user_id,upvotes").eq("id", incident_id).limit(1).execute()
+        res = (
+            sb.table("road_reports")
+            .select("id,user_id,upvotes,downvotes,lat,lng,type")
+            .eq("id", incident_id)
+            .limit(1)
+            .execute()
+        )
         row = res.data[0] if res.data else None
         if row:
             return _downvote_db(sb, row, voter)

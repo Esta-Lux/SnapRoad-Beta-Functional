@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { api } from '../../api/client';
 import { getMapboxRouteOptions } from '../../lib/directions';
 import { formatTime } from '../../utils/format';
+import { routeSummaryFromMapboxMetersSeconds } from '../../utils/routeDisplay';
 import { haversineMeters } from '../../utils/distance';
 import type { DrivingMode, SavedLocation } from '../../types';
 
@@ -585,11 +586,11 @@ export default function PlaceDetailSheet({
         );
         if (cancelled || !routes.length) return;
         const best = routes[0]!;
-        const arrival = new Date(Date.now() + best.duration * 1000);
+        const summary = routeSummaryFromMapboxMetersSeconds(best.distance, best.duration);
         setRouteSummary({
-          durationText: best.durationText,
-          distanceText: best.distanceText,
-          arrivalTimeText: formatTime(arrival),
+          durationText: summary.durationText,
+          distanceText: summary.distanceText,
+          arrivalTimeText: formatTime(summary.arrivalDate),
         });
       } catch {
         if (!cancelled) setRouteSummary(null);

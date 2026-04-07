@@ -460,6 +460,30 @@ def register_push_token(body: dict, auth_user: CurrentUser):
     }
 
 
+@router.post("/user/location-ping")
+def location_ping(body: dict, auth_user: CurrentUser):
+    """Persists last map coordinates for nearby incident push alerts (profiles.last_known_* migration 039)."""
+    try:
+        lat = float(body.get("lat"))
+        lng = float(body.get("lng"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="lat and lng are required")
+    if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+        raise HTTPException(status_code=422, detail="Invalid coordinates")
+    user = _get_user_store(auth_user)
+    user_id = str(user.get("id"))
+    updates = {
+        "last_known_lat": lat,
+        "last_known_lng": lng,
+        "last_known_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        sb_update_profile(user_id, updates)
+    except Exception:
+        logger.debug("location_ping: profile columns may be missing (run sql/039)")
+    return {"success": True}
+
+
 @router.get("/help/faq")
 def get_faq():
     return {"success": True, "data": faq_data}

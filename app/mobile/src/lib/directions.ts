@@ -1,6 +1,7 @@
 import type { Coordinate, DrivingMode } from '../types';
 import { getMapboxPublicToken, isMapboxPublicTokenConfigured } from '../config/mapbox';
 import { api } from '../api/client';
+import { routeSummaryFromMapboxMetersSeconds } from '../utils/routeDisplay';
 
 /** True when Mapbox Directions / Geocoding can run (token present in env or Expo extra). */
 export function isMapboxDirectionsConfigured(): boolean {
@@ -172,6 +173,7 @@ function formatDistance(meters: number): string {
   return miles < 0.1 ? `${Math.round(meters * 3.281)} ft` : `${miles.toFixed(1)} mi`;
 }
 
+/** Per-step duration line (step-level seconds → text). Whole-route labels use `routeSummaryFromMapboxMetersSeconds`. */
 function formatDuration(seconds: number): string {
   const mins = Math.round(seconds / 60);
   if (mins < 60) return `${mins} min`;
@@ -278,13 +280,14 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
       ? allCongestion
       : undefined;
 
+  const summary = routeSummaryFromMapboxMetersSeconds(route.distance, route.duration);
   return {
     polyline,
     steps,
     distance: route.distance,
     duration: route.duration,
-    distanceText: formatDistance(route.distance),
-    durationText: formatDuration(route.duration),
+    distanceText: summary.distanceText,
+    durationText: summary.durationText,
     routeType,
     congestion: congestionAligned,
     maxspeeds: allMaxspeeds.length > 0 ? allMaxspeeds : undefined,

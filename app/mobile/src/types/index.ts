@@ -291,6 +291,8 @@ export interface Incident {
   severity: string;
   description?: string;
   upvotes: number;
+  /** Peer downvotes; backend removes when downvotes > upvotes. */
+  downvotes?: number;
   created_at: string;
   expires_at: string;
   distance_miles?: number;

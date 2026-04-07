@@ -1121,21 +1121,40 @@ export default function MapScreen() {
     }
   }, [activeReportCard?.id]);
 
+  const fetchNearbyIncidents = useCallback(async () => {
+    const loc = locationRef.current;
+    if (!loc || (Math.abs(loc.lat) < 1e-5 && Math.abs(loc.lng) < 1e-5)) return;
+    try {
+      const res = await api.get<{ success?: boolean; data?: Incident[] }>(
+        `/api/incidents/nearby?lat=${loc.lat}&lng=${loc.lng}&radius_miles=2`,
+      );
+      if (!res.success || res.data == null) return;
+      const d = (res.data as { data?: Incident[] }).data;
+      if (Array.isArray(d)) setNearbyIncidents(d);
+    } catch { /* offline / tunnel */ }
+  }, []);
+
+  /** Lets backend notify other drivers within ~1 mi when incidents are confirmed (migration 039). */
+  useEffect(() => {
+    const ping = () => {
+      const loc = locationRef.current;
+      if (!loc || Math.abs(loc.lat) < 1e-5) return;
+      void api.post('/api/user/location-ping', { lat: loc.lat, lng: loc.lng }).catch(() => {});
+    };
+    ping();
+    const id = setInterval(ping, 90_000);
+    return () => clearInterval(id);
+  }, []);
+
   // Incident polling -- cadence changes only with nav state, not every GPS tick
   useEffect(() => {
-    const poll = async () => {
-      const loc = locationRef.current;
-      const res = await api.get<{ data?: Incident[] }>(`/api/incidents/nearby?lat=${loc.lat}&lng=${loc.lng}&radius_miles=2`);
-      const d = (res.data as { data?: Incident[] })?.data;
-      if (Array.isArray(d)) {
-        setNearbyIncidents(d.filter((inc) => (inc.upvotes ?? 0) >= 0));
-      }
+    void fetchNearbyIncidents();
+    const ms = nav.isNavigating ? 15000 : 45000;
+    reportPollRef.current = setInterval(() => void fetchNearbyIncidents(), ms);
+    return () => {
+      if (reportPollRef.current) clearInterval(reportPollRef.current);
     };
-    poll();
-    const ms = nav.isNavigating ? 20000 : 60000;
-    reportPollRef.current = setInterval(poll, ms);
-    return () => { if (reportPollRef.current) clearInterval(reportPollRef.current); };
-  }, [nav.isNavigating]);
+  }, [nav.isNavigating, fetchNearbyIncidents]);
 
   useEffect(() => {
     if (!nav.isNavigating) announcedOfferNavRef.current.clear();
@@ -1813,10 +1832,26 @@ export default function MapScreen() {
     setShowReportPicker(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     try {
-      await api.post('/api/incidents/report', { type, lat: location.lat, lng: location.lng });
+      const res = await api.post<{ success?: boolean; data?: Incident }>('/api/incidents/report', {
+        type,
+        lat: location.lat,
+        lng: location.lng,
+      });
+      if (res.success) {
+        void fetchNearbyIncidents();
+        const payload = res.data as { data?: Incident } | undefined;
+        const created = payload?.data;
+        if (created && created.id != null) {
+          setNearbyIncidents((prev) => {
+            const idStr = String(created.id);
+            if (prev.some((p) => String(p.id) === idStr)) return prev;
+            return [{ ...created, title: created.title || type }, ...prev];
+          });
+        }
+      }
       Alert.alert('Report Submitted', 'Thanks for keeping roads safe!');
     } catch { /* silent -- don't interrupt driving */ }
-  }, [location]);
+  }, [location.lat, location.lng, fetchNearbyIncidents]);
 
   const handleConfirm = useCallback(async (confirmed: boolean) => {
     if (!confirmIncident) return;
@@ -1827,27 +1862,40 @@ export default function MapScreen() {
 
   const handleUpvote = useCallback(async (inc: Incident) => {
     try {
-      const res = await api.post<{ upvotes?: number }>(`/api/incidents/${inc.id}/upvote`);
+      const res = await api.post<{ upvotes?: number; downvotes?: number }>(`/api/incidents/${inc.id}/upvote`);
       if (!res.success) throw new Error(res.error || 'Failed');
-      const votes = typeof res.data?.upvotes === 'number' ? res.data.upvotes : (inc.upvotes || 0) + 1;
-      setNearbyIncidents((prev) => prev.map((i) => (String(i.id) === String(inc.id) ? { ...i, upvotes: votes } : i)));
-      setActiveReportCard((prev) => prev && String(prev.id) === String(inc.id) ? { ...prev, upvotes: votes } : prev);
+      const data = res.data as { upvotes?: number; downvotes?: number } | undefined;
+      const up = typeof data?.upvotes === 'number' ? data.upvotes : (inc.upvotes || 0) + 1;
+      const down = typeof data?.downvotes === 'number' ? data.downvotes : (inc.downvotes ?? 0);
+      setNearbyIncidents((prev) =>
+        prev.map((i) => (String(i.id) === String(inc.id) ? { ...i, upvotes: up, downvotes: down } : i)),
+      );
+      setActiveReportCard((prev) =>
+        prev && String(prev.id) === String(inc.id) ? { ...prev, upvotes: up, downvotes: down } : prev,
+      );
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again.'); }
   }, []);
 
   const handleDownvote = useCallback(async (inc: Incident) => {
     try {
-      const res = await api.post<{ upvotes?: number; removed?: boolean }>(`/api/incidents/${inc.id}/downvote`);
+      const res = await api.post<{ upvotes?: number; downvotes?: number; removed?: boolean }>(
+        `/api/incidents/${inc.id}/downvote`,
+      );
       if (!res.success) throw new Error(res.error || 'Failed');
-      const data = res.data as { upvotes?: number; removed?: boolean };
+      const data = res.data as { upvotes?: number; downvotes?: number; removed?: boolean };
       if (data?.removed) {
         setNearbyIncidents((prev) => prev.filter((i) => String(i.id) !== String(inc.id)));
         setActiveReportCard(null);
       } else {
-        const votes = typeof data?.upvotes === 'number' ? data.upvotes : (inc.upvotes ?? 0) - 1;
-        setNearbyIncidents((prev) => prev.map((i) => (String(i.id) === String(inc.id) ? { ...i, upvotes: votes } : i)));
-        setActiveReportCard((prev) => (prev && String(prev.id) === String(inc.id) ? { ...prev, upvotes: votes } : prev));
+        const up = typeof data?.upvotes === 'number' ? data.upvotes : inc.upvotes ?? 0;
+        const down = typeof data?.downvotes === 'number' ? data.downvotes : (inc.downvotes ?? 0) + 1;
+        setNearbyIncidents((prev) =>
+          prev.map((i) => (String(i.id) === String(inc.id) ? { ...i, upvotes: up, downvotes: down } : i)),
+        );
+        setActiveReportCard((prev) =>
+          prev && String(prev.id) === String(inc.id) ? { ...prev, upvotes: up, downvotes: down } : prev,
+        );
       }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (e: any) {
