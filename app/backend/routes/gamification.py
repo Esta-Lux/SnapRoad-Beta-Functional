@@ -26,6 +26,7 @@ from services.premium_access import (
     require_premium_user,
 )
 from config import ENVIRONMENT
+from services.llm_client import chat_completion_model, get_sync_openai_client
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -636,7 +637,7 @@ def get_driving_score(user: CurrentUser):
 
 def _llm_orion_tracking_commentary(payload: dict) -> Optional[str]:
     """One-sentence Orion recap from real aggregates; None if LLM unavailable or fails."""
-    client = get_sync_openai_client() if _OpenAI is not None else None
+    client = get_sync_openai_client()
     if client is None:
         return None
     try:

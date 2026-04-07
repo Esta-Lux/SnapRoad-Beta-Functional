@@ -101,6 +101,13 @@ def validate_production_env() -> None:
     ):
         if not (value or "").strip():
             missing.append(key)
+    mapbox_ok = (
+        (os.environ.get("MAPBOX_ACCESS_TOKEN") or "").strip()
+        or (os.environ.get("MAPBOX_SECRET_TOKEN") or "").strip()
+        or (os.environ.get("MAPBOX_PUBLIC_TOKEN") or "").strip()
+    )
+    if not mapbox_ok:
+        missing.append("MAPBOX_ACCESS_TOKEN (or MAPBOX_SECRET_TOKEN / MAPBOX_PUBLIC_TOKEN)")
     if missing:
         raise RuntimeError(f"Missing required production env vars: {', '.join(missing)}")
 
