@@ -39,5 +39,8 @@
     "ngrok": "^4.3.3",
     "qrcode": "^1.5.4",
     "tunnelmole": "^2.4.0"
+  },
+  "overrides": {
+    "multer": "^2.1.1"
   }
 }

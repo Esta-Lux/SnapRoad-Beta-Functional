@@ -56,11 +56,11 @@ import PhotoReportDetailModal from '../components/map/PhotoReportDetailModal';
 import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config/restrictedRegions';
 import MapCategoryExploreSheet from '../components/map/MapCategoryExploreSheet';
 import PhotoReportSheet from '../components/map/PhotoReportSheet';
-import ManeuverHighlightLayers from '../components/map/ManeuverHighlightLayers';
 import NavigationPuckOverlay from '../components/map/NavigationPuckOverlay';
-import RouteAheadArrowLayer from '../components/map/RouteAheadArrowLayer';
+import NavigationRouteLayers from '../components/navigation/NavigationRouteLayers';
 import { projectAhead, getCameraConfig } from '../navigation/navigationCamera';
 import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
+import { buildNavigationRenderState } from '../navigation/navigationRenderState';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
 import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
@@ -410,6 +410,24 @@ export default function MapScreen() {
       ),
     [nav.navigationData?.steps, nav.navigationData?.polyline, nav.currentStepIndex, navDisplayCoord.lat, navDisplayCoord.lng],
   );
+
+  /** Route casing / traveled / remaining / maneuver — same snap as `routeSplitForOverlay` + puck (see `useNavigation`). */
+  const navRouteRenderState = useMemo(() => {
+    if (!nav.isNavigating || !nav.navigationData?.polyline?.length || !nav.routeSplitForOverlay) return null;
+    return buildNavigationRenderState({
+      route: nav.navigationData.polyline,
+      snappedSegmentIndex: nav.routeSplitForOverlay.segmentIndex,
+      snappedT: nav.routeSplitForOverlay.tOnSegment,
+      steps: nav.navigationData.steps,
+      currentStepIndex: nav.currentStepIndex,
+    });
+  }, [
+    nav.isNavigating,
+    nav.navigationData?.polyline,
+    nav.routeSplitForOverlay,
+    nav.navigationData?.steps,
+    nav.currentStepIndex,
+  ]);
   const camCtrl = useCameraController({
     speedMph: speed,
     fusedSpeedMps: fusedSpeedMpsNav,
@@ -2239,33 +2257,33 @@ export default function MapScreen() {
             });
           })()}
 
-          {nav.navigationData?.polyline && (
-            <RouteOverlay
-              polyline={nav.navigationData.polyline}
-              isNavigating={nav.isNavigating}
-              routeSplit={nav.routeSplitForOverlay}
-              routeColor={modeConfig.routeColor}
-              casingColor={modeConfig.routeCasing}
-              passedColor={modeConfig.passedColor}
-              routeWidth={modeConfig.routeWidth}
-              glowColor={modeConfig.routeGlowColor}
-              glowOpacity={modeConfig.routeGlowOpacity}
-              congestion={nav.navigationData.congestion}
-              showCongestion={
-                modeConfig.showCongestion && (nav.showRoutePreview || nav.isNavigating)
-              }
-              isRerouting={nav.isRerouting}
-            />
-          )}
-
-          {nav.isNavigating && (
-            <ManeuverHighlightLayers
-              steps={nav.navigationData?.steps}
-              currentStepIndex={nav.currentStepIndex}
-              maneuverLineColor={modeConfig.routeColor}
-              visible={!!nav.navigationData?.steps?.length}
-            />
-          )}
+          {nav.navigationData?.polyline &&
+            (nav.isNavigating && navRouteRenderState ? (
+              <NavigationRouteLayers
+                mode={drivingMode}
+                traveledRoute={navRouteRenderState.traveledRoute}
+                remainingRoute={navRouteRenderState.remainingRoute}
+                maneuverRoute={navRouteRenderState.maneuverRoute}
+                lineOpacity={nav.isRerouting ? 0.55 : 1}
+              />
+            ) : (
+              <RouteOverlay
+                polyline={nav.navigationData.polyline}
+                isNavigating={nav.isNavigating}
+                routeSplit={nav.routeSplitForOverlay}
+                routeColor={modeConfig.routeColor}
+                casingColor={modeConfig.routeCasing}
+                passedColor={modeConfig.passedColor}
+                routeWidth={modeConfig.routeWidth}
+                glowColor={modeConfig.routeGlowColor}
+                glowOpacity={modeConfig.routeGlowOpacity}
+                congestion={nav.navigationData.congestion}
+                showCongestion={
+                  modeConfig.showCongestion && (nav.showRoutePreview || nav.isNavigating)
+                }
+                isRerouting={nav.isRerouting}
+              />
+            ))}
 
           {!nav.isNavigating && (
             <OfferMarkers offers={nearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
@@ -2332,13 +2350,6 @@ export default function MapScreen() {
                 headingDeg={nav.navigationDisplayHeading}
                 drivingMode={drivingMode}
               />
-              {nav.navigationData?.polyline && nav.routeProgress ? (
-                <RouteAheadArrowLayer
-                  polyline={nav.navigationData.polyline}
-                  cumFromStartMeters={nav.routeProgress.cumFromStartMeters}
-                  lineColor={modeConfig.routeColor}
-                />
-              ) : null}
             </>
           )}
         </MapboxGL.MapView>

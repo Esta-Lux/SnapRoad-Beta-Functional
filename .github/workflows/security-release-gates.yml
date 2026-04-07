@@ -47,18 +47,25 @@ jobs:
 
   npm-audit:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: app/frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: app/frontend/package-lock.json
-      - run: npm ci
-      - run: npm audit --omit=dev --audit-level=high
+          cache-dependency-path: |
+            package-lock.json
+            app/frontend/package-lock.json
+            app/mobile/package-lock.json
+      # Root is dev-tooling only (no production npm deps); include devDependencies so transitive issues (e.g. tunnelmole → multer) are visible.
+      - name: npm audit (repo root)
+        run: npm ci && npm audit --audit-level=high
+      - name: npm audit (frontend)
+        working-directory: app/frontend
+        run: npm ci && npm audit --omit=dev --audit-level=high
+      - name: npm audit (mobile)
+        working-directory: app/mobile
+        run: npm ci && npm audit --omit=dev --audit-level=high
 
   secret-scan:
     runs-on: ubuntu-latest

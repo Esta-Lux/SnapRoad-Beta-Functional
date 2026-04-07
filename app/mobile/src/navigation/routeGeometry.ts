@@ -1,7 +1,80 @@
-import type { Feature, FeatureCollection, LineString, Point, Position } from 'geojson';
 import type { DirectionsStep } from '../lib/directions';
 import { alongRouteDistanceMeters, metersBetween } from '../utils/distance';
 import type { Coordinate } from '../types';
+
+/** Lat/lng vertex — same shape as {@link Coordinate}; used for navigation route slicing. */
+export type RoutePoint = {
+  lat: number;
+  lng: number;
+};
+
+export type RouteSplit = {
+  traveled: RoutePoint[];
+  remaining: RoutePoint[];
+};
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
+}
+
+/**
+ * Split the polyline at the snapped point on segment `segmentIndex` with interpolation `t` ∈ [0,1].
+ * Aligns with {@link buildRouteSplitRingsFromProgress} / {@link projectOntoPolyline} segment basis.
+ */
+export function splitRouteAtSnapPoint(
+  route: RoutePoint[],
+  segmentIndex: number,
+  t: number,
+): RouteSplit {
+  if (!route.length || route.length < 2) {
+    return { traveled: route, remaining: route };
+  }
+  const i = Math.max(0, Math.min(segmentIndex, route.length - 2));
+  const a = route[i]!;
+  const b = route[i + 1]!;
+  const splitPoint: RoutePoint = {
+    lat: lerp(a.lat, b.lat, t),
+    lng: lerp(a.lng, b.lng, t),
+  };
+  const traveled = [...route.slice(0, i + 1), splitPoint];
+  const remaining = [splitPoint, ...route.slice(i + 1)];
+  return { traveled, remaining };
+}
+
+/**
+ * Next vertices along the polyline starting at vertex index `startVertexIndex` (inclusive).
+ * `vertexCount` is a vertex budget, not meters.
+ */
+export function sliceRouteAhead(
+  route: RoutePoint[],
+  startVertexIndex: number,
+  vertexCount = 10,
+): RoutePoint[] {
+  if (!route.length || route.length < 2) return [];
+  const from = Math.max(0, startVertexIndex);
+  const to = Math.min(route.length - 1, from + vertexCount);
+  return route.slice(from, to + 1);
+}
+
+/**
+ * Small chevron in geographic space for a LineLayer “arrowhead” (two strokes, no icons).
+ */
+export function buildArrowHead(end: RoutePoint, prev: RoutePoint, scale = 0.00008): RoutePoint[] {
+  const dx = end.lng - prev.lng;
+  const dy = end.lat - prev.lat;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1e-9;
+  const ux = dx / len;
+  const uy = dy / len;
+  const leftX = end.lng - ux * scale - uy * scale * 0.65;
+  const leftY = end.lat - uy * scale + ux * scale * 0.65;
+  const rightX = end.lng - ux * scale + uy * scale * 0.65;
+  const rightY = end.lat - uy * scale - ux * scale * 0.65;
+  return [
+    { lat: leftY, lng: leftX },
+    end,
+    { lat: rightY, lng: rightX },
+  ];
+}
 
 function hasLaneGuidance(step: DirectionsStep | null | undefined): boolean {
   const banner = step?.bannerInstructions?.[0];
@@ -20,34 +93,6 @@ function isActionableGuidanceStep(step: DirectionsStep | null | undefined, allow
   return true;
 }
 
-function featureCollection(
-  features: Array<Feature<LineString | Point>>,
-): FeatureCollection {
-  return { type: 'FeatureCollection', features };
-}
-
-function lineFeature(
-  coordinates: Position[],
-  properties: Record<string, unknown> = {},
-): Feature<LineString> {
-  return {
-    type: 'Feature',
-    geometry: { type: 'LineString', coordinates },
-    properties,
-  };
-}
-
-function pointFeature(
-  coordinates: Position,
-  properties: Record<string, unknown> = {},
-): Feature<Point> {
-  return {
-    type: 'Feature',
-    geometry: { type: 'Point', coordinates },
-    properties,
-  };
-}
-
 /** Next step used for on-map maneuver highlight (matches prior TurnSignal “upcoming” set). */
 export function getUpcomingManeuverStep(
   steps: DirectionsStep[] | undefined,
@@ -59,48 +104,6 @@ export function getUpcomingManeuverStep(
   if (actionable) return actionable;
   const arrival = rest.find((s) => isActionableGuidanceStep(s, true));
   return arrival ?? null;
-}
-
-function bearingBetween(a: Position, b: Position): number {
-  const [lng1, lat1] = a;
-  const [lng2, lat2] = b;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const toDeg = (r: number) => (r * 180) / Math.PI;
-  const y = Math.sin(toRad(lng2 - lng1)) * Math.cos(toRad(lat2));
-  const x =
-    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
-    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lng2 - lng1));
-  return (toDeg(Math.atan2(y, x)) + 360) % 360;
-}
-
-export function buildManeuverSegmentFeatureCollection(
-  step: DirectionsStep | null,
-): FeatureCollection {
-  if (!step?.geometryCoordinates?.length) return featureCollection([]);
-
-  const coords = step.geometryCoordinates as Position[];
-  const shortSegment = coords.slice(0, Math.min(coords.length, 8));
-  if (shortSegment.length < 2) return featureCollection([]);
-
-  return featureCollection([
-    lineFeature(shortSegment, {
-      maneuverType: step.maneuver ?? 'turn',
-    }),
-  ]);
-}
-
-export function buildManeuverArrowPointFeatureCollection(
-  step: DirectionsStep | null,
-): FeatureCollection {
-  if (!step?.geometryCoordinates?.length) return featureCollection([]);
-  const coords = step.geometryCoordinates as Position[];
-  if (coords.length < 2) return featureCollection([]);
-
-  const a = coords[Math.min(1, coords.length - 2)];
-  const b = coords[Math.min(2, coords.length - 1)];
-  const bearing = bearingBetween(a, b);
-
-  return featureCollection([pointFeature(b, { bearing })]);
 }
 
 export function getDistanceToUpcomingManeuverMeters(
