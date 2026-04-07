@@ -6,7 +6,6 @@ to direct Mapbox calls. Falls back to client token when this env is unset.
 
 from __future__ import annotations
 
-import os
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -14,6 +13,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from config import mapbox_token_from_env
 from limiter import limiter
 
 router = APIRouter(prefix="/api/navigation", tags=["Navigation / Mapbox"])
@@ -27,11 +27,7 @@ BANNER_VOICE_QS = (
 
 
 def _mapbox_token() -> str:
-    return (
-        (os.environ.get("MAPBOX_ACCESS_TOKEN") or "").strip()
-        or (os.environ.get("MAPBOX_SECRET_TOKEN") or "").strip()
-        or (os.environ.get("MAPBOX_PUBLIC_TOKEN") or "").strip()
-    )
+    return mapbox_token_from_env()
 
 
 def _get_http() -> httpx.AsyncClient:
@@ -61,13 +57,13 @@ class MapboxRoutesBody(BaseModel):
 async def post_mapbox_routes(request: Request, body: MapboxRoutesBody) -> Any:
     """
     Proxy to Mapbox Directions API. Response shape matches Mapbox's JSON (routes, waypoints, …).
-    Configure MAPBOX_ACCESS_TOKEN (or MAPBOX_SECRET_TOKEN / MAPBOX_PUBLIC_TOKEN) on the server.
+    Configure MAPBOX_ACCESS_TOKEN (or MAPBOX_SECRET_TOKEN / MAPBOX_PUBLIC_TOKEN / MAPBOX_TOKEN) on the server.
     """
     token = _mapbox_token()
     if not token:
         raise HTTPException(
             status_code=503,
-            detail="Mapbox token not configured on server (set MAPBOX_ACCESS_TOKEN)",
+            detail="Mapbox token not configured on server (set MAPBOX_ACCESS_TOKEN or MAPBOX_TOKEN)",
         )
 
     prof = body.profile if body.profile in ("driving-traffic", "driving") else "driving-traffic"

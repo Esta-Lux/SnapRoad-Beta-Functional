@@ -55,8 +55,7 @@ def record_offer_event(
 
     updates = {}
     if event_type == "view":
-        updates["view_count"] = int(offer.get("view_count") or 0) + 1
-        updates["views"] = int(offer.get("views") or 0) + 1
+        updates["view_count"] = int(offer.get("view_count") or offer.get("views") or 0) + 1
     elif event_type == "visit":
         updates["visit_count"] = int(offer.get("visit_count") or 0) + 1
     elif event_type == "redeem":

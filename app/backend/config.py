@@ -86,6 +86,19 @@ _WEAK_JWT_SECRETS = {
 }
 
 
+def mapbox_token_from_env() -> str:
+    """
+    Server-side Mapbox token for Directions proxy and health checks.
+    Prefer explicit names; MAPBOX_TOKEN is a common hosting alias (e.g. Railway).
+    """
+    return (
+        (os.environ.get("MAPBOX_ACCESS_TOKEN") or "").strip()
+        or (os.environ.get("MAPBOX_SECRET_TOKEN") or "").strip()
+        or (os.environ.get("MAPBOX_PUBLIC_TOKEN") or "").strip()
+        or (os.environ.get("MAPBOX_TOKEN") or "").strip()
+    )
+
+
 def validate_production_env() -> None:
     """Fail fast for unsafe or missing production secrets/config."""
     if not IS_PRODUCTION:
@@ -101,6 +114,10 @@ def validate_production_env() -> None:
     ):
         if not (value or "").strip():
             missing.append(key)
+    if not mapbox_token_from_env():
+        missing.append(
+            "MAPBOX_ACCESS_TOKEN (or MAPBOX_SECRET_TOKEN / MAPBOX_PUBLIC_TOKEN / MAPBOX_TOKEN)"
+        )
     if missing:
         raise RuntimeError(f"Missing required production env vars: {', '.join(missing)}")
 

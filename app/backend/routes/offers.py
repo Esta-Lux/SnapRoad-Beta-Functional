@@ -671,7 +671,7 @@ def get_offers(
                 "is_admin_offer": offer.get("is_admin_offer", False),
                 "created_by": offer.get("created_by", ""),
                 "redemption_count": offer.get("redemption_count", 0),
-                "views": offer.get("views", 0),
+                "views": int(offer.get("view_count") or offer.get("views") or 0),
                 "redeemed": False,
                 "offer_source": offer.get("offer_source", "direct"),
                 "offer_type": offer.get("offer_type", "admin" if offer.get("is_admin_offer") else "partner"),

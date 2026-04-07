@@ -15,12 +15,14 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
-sentry_sdk.init(
-    dsn=os.getenv("SENTRY_DSN", ""),
-    integrations=[FastApiIntegration()],
-    traces_sample_rate=0.2,
-    environment=os.getenv("ENVIRONMENT", "development"),
-)
+_sentry_dsn = (os.getenv("SENTRY_DSN") or "").strip()
+if _sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        integrations=[FastApiIntegration()],
+        traces_sample_rate=0.2,
+        environment=os.getenv("ENVIRONMENT", "development"),
+    )
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -68,6 +70,7 @@ from config import (
     NVIDIA_API_KEY,
     IS_PRODUCTION,
     OHGO_API_KEY,
+    mapbox_token_from_env,
     validate_production_env,
 )
 from services.llm_client import is_llm_configured
@@ -257,7 +260,13 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(weather_router)
 
 def _build_health_response() -> dict:
-    checks = {"database": "ok", "cache": "unknown", "supabase_env": _supabase_env_health_hint()}
+    mapbox_ok = bool(mapbox_token_from_env())
+    checks = {
+        "database": "ok",
+        "cache": "unknown",
+        "supabase_env": _supabase_env_health_hint(),
+        "mapbox_routes_configured": bool(mapbox_ok),
+    }
     try:
         sb = get_supabase()
         sb.table("profiles").select("id").limit(1).execute()
@@ -316,6 +325,7 @@ def _build_env_check_response() -> dict:
         "nvidia_configured": bool(NVIDIA_API_KEY),
         "openai_configured": bool((OPENAI_API_KEY or "").strip()),
         "ohgo_cameras_configured": bool((OHGO_API_KEY or "").strip()),
+        "mapbox_routes_configured": bool(mapbox_token_from_env()),
     }
 
 
