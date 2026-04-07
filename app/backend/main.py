@@ -70,6 +70,7 @@ from config import (
     NVIDIA_API_KEY,
     IS_PRODUCTION,
     OHGO_API_KEY,
+    mapbox_token_from_env,
     validate_production_env,
 )
 from services.llm_client import is_llm_configured
@@ -259,11 +260,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(weather_router)
 
 def _build_health_response() -> dict:
-    mapbox_ok = (
-        (os.environ.get("MAPBOX_ACCESS_TOKEN") or "").strip()
-        or (os.environ.get("MAPBOX_SECRET_TOKEN") or "").strip()
-        or (os.environ.get("MAPBOX_PUBLIC_TOKEN") or "").strip()
-    )
+    mapbox_ok = bool(mapbox_token_from_env())
     checks = {
         "database": "ok",
         "cache": "unknown",
@@ -328,11 +325,7 @@ def _build_env_check_response() -> dict:
         "nvidia_configured": bool(NVIDIA_API_KEY),
         "openai_configured": bool((OPENAI_API_KEY or "").strip()),
         "ohgo_cameras_configured": bool((OHGO_API_KEY or "").strip()),
-        "mapbox_routes_configured": bool(
-            (os.environ.get("MAPBOX_ACCESS_TOKEN") or "").strip()
-            or (os.environ.get("MAPBOX_SECRET_TOKEN") or "").strip()
-            or (os.environ.get("MAPBOX_PUBLIC_TOKEN") or "").strip()
-        ),
+        "mapbox_routes_configured": bool(mapbox_token_from_env()),
     }
 
 
