@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
-import { arrowHeadPoints } from '../../navigation/navGeometry';
 import type { DrivingMode } from '../../types';
 import type { RoutePoint } from '../../navigation/navModel';
 import { NAV_THEME } from '../../navigation/navTheme';
@@ -10,7 +9,6 @@ type Props = {
   traveledRoute: RoutePoint[];
   remainingRoute: RoutePoint[];
   maneuverRoute: RoutePoint[];
-  /** Dim lines while a new route is loading (reroute). */
   lineOpacity?: number;
 };
 
@@ -25,23 +23,21 @@ function lineFeature(points: RoutePoint[]) {
   };
 }
 
-function multiLineFeature(lines: RoutePoint[][]) {
-  return {
-    type: 'Feature' as const,
-    properties: {},
-    geometry: {
-      type: 'MultiLineString' as const,
-      coordinates: lines.map((line) => line.map((p) => [p.lng, p.lat])),
-    },
-  };
-}
+/** Stronger “remaining” / subtler “traveled” / assertive maneuver — mode-tuned (colors unchanged). */
+const WIDTHS: Record<
+  DrivingMode,
+  { casing: number; remaining: number; traveled: number; maneuver: number }
+> = {
+  calm: { casing: 15, remaining: 10, traveled: 5, maneuver: 12 },
+  adaptive: { casing: 17, remaining: 11, traveled: 5, maneuver: 14 },
+  sport: { casing: 18, remaining: 12, traveled: 4, maneuver: 15 },
+};
 
 export const NAV_ROUTE_LAYER_IDS = {
   remainingCasing: 'nav-remaining-casing-layer',
   remaining: 'nav-remaining-layer',
   traveled: 'nav-traveled-layer',
   maneuver: 'nav-maneuver-layer',
-  arrow: 'nav-maneuver-arrow-layer',
 } as const;
 
 export default React.memo(function NavigationRouteLayers({
@@ -52,17 +48,11 @@ export default React.memo(function NavigationRouteLayers({
   lineOpacity = 1,
 }: Props) {
   const theme = NAV_THEME[mode];
+  const w = WIDTHS[mode];
   const op = lineOpacity;
   const traveled = useMemo(() => lineFeature(traveledRoute), [traveledRoute]);
   const remaining = useMemo(() => lineFeature(remainingRoute), [remainingRoute]);
   const maneuver = useMemo(() => lineFeature(maneuverRoute), [maneuverRoute]);
-  const arrowHead = useMemo(() => {
-    if (maneuverRoute.length < 2) return null;
-    const end = maneuverRoute[maneuverRoute.length - 1]!;
-    const prev = maneuverRoute[maneuverRoute.length - 2]!;
-    const pts = arrowHeadPoints(end, prev);
-    return multiLineFeature([[pts[0]!, pts[1]!], [pts[1]!, pts[2]!]]);
-  }, [maneuverRoute]);
 
   if (!isMapAvailable() || !MapboxGL) return null;
   const MB = MapboxGL;
@@ -74,8 +64,8 @@ export default React.memo(function NavigationRouteLayers({
           id={NAV_ROUTE_LAYER_IDS.remainingCasing}
           style={{
             lineColor: theme.casing,
-            lineWidth: 10,
-            lineOpacity: op,
+            lineWidth: w.casing,
+            lineOpacity: op * 0.95,
             lineCap: 'round',
             lineJoin: 'round',
           }}
@@ -87,7 +77,7 @@ export default React.memo(function NavigationRouteLayers({
           aboveLayerID={NAV_ROUTE_LAYER_IDS.remainingCasing}
           style={{
             lineColor: theme.route,
-            lineWidth: 6,
+            lineWidth: w.remaining,
             lineOpacity: op,
             lineCap: 'round',
             lineJoin: 'round',
@@ -100,8 +90,8 @@ export default React.memo(function NavigationRouteLayers({
           aboveLayerID={NAV_ROUTE_LAYER_IDS.remaining}
           style={{
             lineColor: theme.traveled,
-            lineWidth: 6,
-            lineOpacity: op,
+            lineWidth: w.traveled,
+            lineOpacity: op * 0.85,
             lineCap: 'round',
             lineJoin: 'round',
           }}
@@ -115,25 +105,7 @@ export default React.memo(function NavigationRouteLayers({
             aboveLayerID={NAV_ROUTE_LAYER_IDS.traveled}
             style={{
               lineColor: theme.maneuver,
-              lineWidth: 8,
-              lineOpacity: op,
-              lineCap: 'round',
-              lineJoin: 'round',
-            }}
-          />
-        </MB.ShapeSource>
-      ) : null}
-
-      {arrowHead ? (
-        <MB.ShapeSource id="nav-maneuver-arrow-src" shape={arrowHead}>
-          <MB.LineLayer
-            id={NAV_ROUTE_LAYER_IDS.arrow}
-            aboveLayerID={
-              maneuverRoute.length >= 2 ? NAV_ROUTE_LAYER_IDS.maneuver : NAV_ROUTE_LAYER_IDS.traveled
-            }
-            style={{
-              lineColor: theme.maneuver,
-              lineWidth: 4,
+              lineWidth: w.maneuver,
               lineOpacity: op,
               lineCap: 'round',
               lineJoin: 'round',

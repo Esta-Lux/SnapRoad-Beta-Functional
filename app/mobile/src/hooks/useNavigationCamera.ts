@@ -2,47 +2,59 @@ import { useEffect, type RefObject } from 'react';
 import type Mapbox from '@rnmapbox/maps';
 import type { NavigationProgress } from '../navigation/navModel';
 import type { DrivingMode } from '../types';
+import { getLiveNavigationCameraPreset } from '../navigation/cameraPresets';
 
 type Args = {
   cameraRef: RefObject<Mapbox.Camera | null>;
   progress: NavigationProgress | null;
   mode: DrivingMode;
   isFollowing: boolean;
+  safeAreaTop: number;
+  safeAreaBottom: number;
 };
 
-function configFor(mode: DrivingMode, speedMps: number) {
-  if (mode === 'sport') {
-    return {
-      zoom: speedMps > 22 ? 15.0 : 16.0,
-      pitch: 58,
-      animationDuration: 320,
-    };
-  }
-  if (mode === 'adaptive') {
-    return {
-      zoom: speedMps > 22 ? 14.7 : speedMps > 10 ? 15.5 : 16.4,
-      pitch: speedMps > 18 ? 50 : 42,
-      animationDuration: 420,
-    };
-  }
-  return {
-    zoom: speedMps > 18 ? 15.6 : 16.5,
-    pitch: 34,
-    animationDuration: 520,
-  };
+/** Match `useCameraController` bucketing so zoom/padding do not churn every GPS tick. */
+function maneuverDistanceBucket(meters: number): number {
+  if (!Number.isFinite(meters) || meters <= 0) return 400;
+  const m = Math.min(2000, meters);
+  if (m < 70) return Math.round(m / 18) * 18;
+  if (m < 200) return Math.round(m / 32) * 32;
+  return Math.round(m / 50) * 50;
 }
 
-export function useNavigationCamera({ cameraRef, progress, mode, isFollowing }: Args) {
+/**
+ * **Single nav-follow camera owner:** center, heading, zoom, pitch, padding, and animation
+ * all applied via `setCamera` from one preset chain — nothing else should set these while `isFollowing`.
+ */
+export function useNavigationCamera({
+  cameraRef,
+  progress,
+  mode,
+  isFollowing,
+  safeAreaTop,
+  safeAreaBottom,
+}: Args) {
   useEffect(() => {
     if (!cameraRef.current || !progress?.displayCoord || !isFollowing) return;
-    const speed = progress.displayCoord.speedMps ?? 0;
-    const cfg = configFor(mode, speed);
+
+    const speedMps = Math.max(0, progress.displayCoord.speedMps ?? 0);
+    const maneuverB = maneuverDistanceBucket(progress.nextStepDistanceMeters);
+
+    const preset = getLiveNavigationCameraPreset({
+      mode,
+      speedMps,
+      nextManeuverDistanceMeters: maneuverB,
+      safeAreaTop,
+      safeAreaBottom,
+    });
+
     cameraRef.current.setCamera({
       centerCoordinate: [progress.displayCoord.lng, progress.displayCoord.lat],
       heading: progress.displayCoord.heading ?? 0,
-      zoomLevel: cfg.zoom,
-      pitch: cfg.pitch,
-      animationDuration: cfg.animationDuration,
+      zoomLevel: preset.zoom,
+      pitch: preset.pitch,
+      padding: preset.padding,
+      animationDuration: preset.animationDuration,
     });
-  }, [cameraRef, progress, mode, isFollowing]);
+  }, [cameraRef, progress, mode, isFollowing, safeAreaTop, safeAreaBottom]);
 }

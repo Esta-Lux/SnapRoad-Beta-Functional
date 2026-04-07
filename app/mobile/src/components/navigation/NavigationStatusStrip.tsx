@@ -27,6 +27,12 @@ type Props = {
   modeConfig: ModeConfig;
   isLight: boolean;
   liveEta: LiveEta;
+  /** Wall-clock arrival from {@link NavigationProgress.etaEpochMs} — single ETA truth (not recomputed from rounded minutes). */
+  arrivalEpochMs?: number | null;
+  /** When set, strip distance matches {@link NavigationProgress.distanceRemainingMeters} (converted to miles). */
+  progressDistanceMiles?: number | null;
+  /** When set, strip duration matches {@link NavigationProgress.durationRemainingSeconds} (as minutes). */
+  progressDurationMinutes?: number | null;
   speedMph: number;
   isRerouting: boolean;
   onEndNavigation: () => void;
@@ -43,6 +49,9 @@ export default React.memo(function NavigationStatusStrip({
   modeConfig,
   isLight,
   liveEta,
+  arrivalEpochMs,
+  progressDistanceMiles,
+  progressDurationMinutes,
   speedMph,
   isRerouting,
   onEndNavigation,
@@ -63,12 +72,21 @@ export default React.memo(function NavigationStatusStrip({
   const textSec = modeConfig.etaLabelColor;
   const arriveColor = modeConfig.etaArriveColor;
 
-  const arrivalTime = new Date(Date.now() + liveEta.etaMinutes * 60000).toLocaleTimeString(
-    'en-US',
-    { hour: 'numeric', minute: '2-digit' },
-  );
-  const distLabel = formatDistance(liveEta.distanceMiles);
-  const timeLabel = formatDuration(liveEta.etaMinutes);
+  const arrivalTime = new Date(
+    arrivalEpochMs != null && Number.isFinite(arrivalEpochMs)
+      ? arrivalEpochMs
+      : Date.now() + liveEta.etaMinutes * 60000,
+  ).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const distMiles =
+    progressDistanceMiles != null && Number.isFinite(progressDistanceMiles)
+      ? progressDistanceMiles
+      : liveEta.distanceMiles;
+  const durMin =
+    progressDurationMinutes != null && Number.isFinite(progressDurationMinutes)
+      ? progressDurationMinutes
+      : liveEta.etaMinutes;
+  const distLabel = formatDistance(distMiles);
+  const timeLabel = formatDuration(durMin);
 
   const secondaryLine = useCallback(() => {
     if (isRerouting) {

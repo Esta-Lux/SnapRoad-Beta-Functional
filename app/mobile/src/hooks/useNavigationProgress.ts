@@ -7,6 +7,7 @@ import {
   bearingDegrees,
 } from '../navigation/navGeometry';
 import { NavigationProgress, RawLocation, RoutePoint, NavStep } from '../navigation/navModel';
+import { buildNavBanner } from '../navigation/navBanner';
 
 type Args = {
   rawLocation: RawLocation | null;
@@ -111,19 +112,22 @@ export function useNavigationProgress({
 
     const nextStepRaw =
       steps.find((s) => s.distanceMetersFromStart > snap.cumulativeMeters) ?? null;
+    const nextStepDistanceMeters = nextStepRaw
+      ? Math.max(0, nextStepRaw.distanceMetersFromStart - snap.cumulativeMeters)
+      : 0;
     const nextStep = nextStepRaw
-      ? {
-          ...nextStepRaw,
-          distanceMetersToNext: Math.max(
-            0,
-            nextStepRaw.distanceMetersFromStart - snap.cumulativeMeters,
-          ),
-        }
+      ? { ...nextStepRaw, distanceMetersToNext: nextStepDistanceMeters }
       : null;
+    const followingStepRaw =
+      nextStepRaw != null && nextStepRaw.index + 1 < steps.length
+        ? steps[nextStepRaw.index + 1] ?? null
+        : null;
 
     const maneuverRoute = nextStep
-      ? sliceRouteWindow(route, Math.max(snap.segmentIndex, nextStep.segmentIndex - 2), 8)
-      : sliceRouteWindow(route, snap.segmentIndex, 6);
+      ? sliceRouteWindow(route, Math.max(snap.segmentIndex, nextStep.segmentIndex - 1), 5)
+      : sliceRouteWindow(route, snap.segmentIndex, 5);
+
+    const banner = buildNavBanner(nextStep, followingStepRaw, nextStepDistanceMeters);
 
     const out: NavigationProgress = {
       displayCoord,
@@ -132,6 +136,9 @@ export function useNavigationProgress({
       remainingRoute: remaining,
       maneuverRoute,
       nextStep,
+      followingStep: followingStepRaw,
+      nextStepDistanceMeters,
+      banner,
       distanceRemainingMeters,
       durationRemainingSeconds,
       etaEpochMs,

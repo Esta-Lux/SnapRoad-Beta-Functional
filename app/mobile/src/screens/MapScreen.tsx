@@ -402,11 +402,11 @@ export default function MapScreen() {
   const [isExploring, setIsExploring] = useState(false);
   const [compassMode, setCompassMode] = useState(false);
   const [followMode, setFollowMode] = useState<'free' | 'follow' | 'heading'>('follow');
+  const navCameraFollowActive = cameraLocked && nav.isNavigating;
+  /** Single distance field for maneuver-aware presets (must match banner/speech). */
   const nextManeuverDistanceMeters = useMemo(() => {
-    const fromProgress = nav.navigationProgress?.nextStep?.distanceMetersToNext;
-    if (nav.isNavigating && fromProgress != null && Number.isFinite(fromProgress)) {
-      return fromProgress;
-    }
+    const d = nav.navigationProgress?.nextStepDistanceMeters;
+    if (nav.isNavigating && d != null && Number.isFinite(d)) return d;
     return getDistanceToUpcomingManeuverMeters(
       nav.navigationData?.steps,
       nav.currentStepIndex,
@@ -415,7 +415,7 @@ export default function MapScreen() {
     );
   }, [
     nav.isNavigating,
-    nav.navigationProgress?.nextStep?.distanceMetersToNext,
+    nav.navigationProgress?.nextStepDistanceMeters,
     nav.navigationData?.steps,
     nav.navigationData?.polyline,
     nav.currentStepIndex,
@@ -427,7 +427,8 @@ export default function MapScreen() {
     speedMph: speed,
     fusedSpeedMps: fusedSpeedMpsNav,
     drivingMode,
-    isNavigating: nav.isNavigating,
+    /** Avoid competing with `useNavigationCamera` while follow-locked during navigation. */
+    isNavigating: nav.isNavigating && !navCameraFollowActive,
     cameraLocked,
     nextManeuverDistanceMeters,
     safeAreaTop: insets.top,
@@ -438,7 +439,9 @@ export default function MapScreen() {
     cameraRef,
     progress: nav.navigationProgress,
     mode: drivingMode,
-    isFollowing: cameraLocked && nav.isNavigating,
+    isFollowing: navCameraFollowActive,
+    safeAreaTop: insets.top,
+    safeAreaBottom: insets.bottom,
   });
 
   const userInteracting = useRef(false);
@@ -1596,14 +1599,27 @@ export default function MapScreen() {
     if (!nav.navigationData) return undefined;
     const steps = nav.navigationData.steps;
     const idx = nav.currentStepIndex;
+    const prog = nav.navigationProgress;
     return {
       destination: nav.navigationData.destination?.name ?? '',
-      distanceMiles: nav.liveEta?.distanceMiles ?? (nav.navigationData.distance || 0) / 1609.34,
-      remainingMinutes: nav.liveEta?.etaMinutes ?? Math.round((nav.navigationData.duration || 0) / 60),
+      distanceMiles:
+        prog != null
+          ? Math.max(0, prog.distanceRemainingMeters / 1609.34)
+          : nav.liveEta?.distanceMiles ?? (nav.navigationData.distance || 0) / 1609.34,
+      remainingMinutes:
+        prog != null
+          ? Math.max(1, Math.round(prog.durationRemainingSeconds / 60))
+          : nav.liveEta?.etaMinutes ?? Math.round((nav.navigationData.duration || 0) / 60),
       currentStep: steps?.[idx]?.instruction ?? '',
       nextStep: steps?.[idx + 1]?.instruction ?? '',
     };
-  }, [nav.navigationData, nav.currentStepIndex, nav.liveEta?.distanceMiles, nav.liveEta?.etaMinutes]);
+  }, [
+    nav.navigationData,
+    nav.currentStepIndex,
+    nav.navigationProgress,
+    nav.liveEta?.distanceMiles,
+    nav.liveEta?.etaMinutes,
+  ]);
 
   const handleStartDirections = useCallback(
     async (
@@ -2096,7 +2112,7 @@ export default function MapScreen() {
           ) : null}
           {/* Camera: Phase 1 — useNavigationCamera drives center/zoom/pitch/heading via ref while navigating + locked; native follow otherwise */}
           {(() => {
-            const navHookDriven = cameraLocked && nav.isNavigating;
+            const navHookDriven = navCameraFollowActive;
             return (
               <MapboxGL.Camera
                 ref={cameraRef}
@@ -2126,11 +2142,8 @@ export default function MapScreen() {
                       ? undefined
                       : modeConfig.explorePitch
                 }
-                padding={
-                  navHookDriven ? camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING : undefined
-                }
                 animationMode={navHookDriven || (nav.isNavigating && cameraLocked) ? 'linearTo' : 'easeTo'}
-                animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
+                animationDuration={navHookDriven ? 0 : camCtrl ? camCtrl.animationDuration : animDuration}
                 followUserLocation={
                   navHookDriven
                     ? false
@@ -2645,15 +2658,22 @@ export default function MapScreen() {
       )}
 
       {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
-      {nav.isNavigating && currentStep && (() => {
-        const nextManeuverCoord = upcomingGuidanceStep;
+      {nav.isNavigating && (currentStep || nav.navigationProgress?.banner) && (() => {
+        const prog = nav.navigationProgress;
+        const nextIdx = prog?.nextStep?.index;
+        const nextManeuverCoord =
+          nextIdx != null && nav.navigationData?.steps
+            ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
+            : upcomingGuidanceStep;
         const poly = nav.navigationData?.polyline;
         const liveDistMeters =
-          poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-            ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
-            : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-              ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
-              : (currentStep.distanceMeters ?? 0);
+          prog != null && Number.isFinite(prog.nextStepDistanceMeters)
+            ? prog.nextStepDistanceMeters
+            : poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
+              ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
+              : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
+                ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
+                : (currentStep?.distanceMeters ?? 0);
 
         const cardState = resolveTurnCardState({
           distanceToNextManeuverM: liveDistMeters,
@@ -2665,37 +2685,60 @@ export default function MapScreen() {
 
         const distParts = formatTurnDistanceForCard(liveDistMeters);
         const destinationName = nav.navigationData?.destination?.name ?? null;
+        const banner = prog?.banner ?? null;
+        const useBannerCopy = !!banner && !!nextManeuverCoord;
 
         let primary: string;
         let secondary: string | undefined;
-        switch (cardState) {
-          case 'active':
-            primary = buildActivePrimary(nextManeuverCoord, destinationName) || currentStep.instruction;
-            secondary = undefined;
-            break;
-          case 'preview': {
-            const p = buildPreviewPrimarySecondary(currentStep, nextManeuverCoord, destinationName);
-            primary = p.primary;
-            secondary = p.secondary;
-            if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
-            break;
+        if (useBannerCopy) {
+          switch (cardState) {
+            case 'cruise':
+              primary = buildCruisePrimary(nextManeuverCoord, destinationName);
+              secondary = undefined;
+              break;
+            case 'confirm':
+              primary = currentStep ? buildConfirmPrimary(currentStep) : banner!.primaryInstruction;
+              secondary = banner!.secondaryInstruction ?? undefined;
+              if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
+              break;
+            case 'preview':
+            case 'active':
+            default:
+              primary = banner!.primaryInstruction;
+              secondary = banner!.secondaryInstruction ?? undefined;
+              if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
+              break;
           }
-          case 'confirm':
-            primary = buildConfirmPrimary(currentStep);
-            secondary =
-              (drivingMode === 'calm' || drivingMode === 'adaptive') &&
-              nextManeuverCoord &&
-              nextManeuverCoord.maneuver !== 'arrive'
-                ? `Then ${buildActivePrimary(nextManeuverCoord, destinationName)}`
-                : undefined;
-            break;
-          case 'cruise':
-            primary = buildCruisePrimary(nextManeuverCoord, destinationName);
-            secondary = undefined;
-            break;
-          default:
-            primary = buildActivePrimary(nextManeuverCoord, destinationName) || currentStep.instruction;
-            secondary = undefined;
+        } else {
+          switch (cardState) {
+            case 'active':
+              primary = buildActivePrimary(nextManeuverCoord, destinationName) || currentStep?.instruction || '';
+              secondary = undefined;
+              break;
+            case 'preview': {
+              const p = buildPreviewPrimarySecondary(currentStep, nextManeuverCoord, destinationName);
+              primary = p.primary;
+              secondary = p.secondary;
+              if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
+              break;
+            }
+            case 'confirm':
+              primary = buildConfirmPrimary(currentStep);
+              secondary =
+                (drivingMode === 'calm' || drivingMode === 'adaptive') &&
+                nextManeuverCoord &&
+                nextManeuverCoord.maneuver !== 'arrive'
+                  ? `Then ${buildActivePrimary(nextManeuverCoord, destinationName)}`
+                  : undefined;
+              break;
+            case 'cruise':
+              primary = buildCruisePrimary(nextManeuverCoord, destinationName);
+              secondary = undefined;
+              break;
+            default:
+              primary = buildActivePrimary(nextManeuverCoord, destinationName) || currentStep?.instruction || '';
+              secondary = undefined;
+          }
         }
 
         const maneuverIconKey = iconManeuverForState(cardState, currentStep, nextManeuverCoord);
@@ -2925,6 +2968,17 @@ export default function MapScreen() {
           modeConfig={modeConfig}
           isLight={isLight}
           liveEta={nav.liveEta}
+          arrivalEpochMs={nav.navigationProgress?.etaEpochMs ?? null}
+          progressDistanceMiles={
+            nav.navigationProgress
+              ? Math.max(0, nav.navigationProgress.distanceRemainingMeters / 1609.34)
+              : null
+          }
+          progressDurationMinutes={
+            nav.navigationProgress
+              ? Math.max(0, nav.navigationProgress.durationRemainingSeconds / 60)
+              : null
+          }
           speedMph={displaySpeedMph}
           isRerouting={nav.isRerouting}
           onEndNavigation={nav.stopNavigation}

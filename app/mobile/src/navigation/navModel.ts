@@ -46,6 +46,15 @@ export type SnapPoint = {
   cumulativeMeters: number;
 };
 
+/** Single turn-banner truth derived from {@link NavigationProgress}. */
+export type NavBannerModel = {
+  primaryInstruction: string;
+  primaryDistanceMeters: number;
+  primaryStreet?: string | null;
+  /** Only “Then …” for the maneuver after {@link NavigationProgress.nextStep}. */
+  secondaryInstruction?: string | null;
+};
+
 export type NavigationProgress = {
   displayCoord: RawLocation | null;
   snapped: SnapPoint | null;
@@ -53,6 +62,15 @@ export type NavigationProgress = {
   remainingRoute: RoutePoint[];
   maneuverRoute: RoutePoint[];
   nextStep: NavStep | null;
+  /** Step after `nextStep` (for “Then …” only). */
+  followingStep: NavStep | null;
+  /**
+   * Single source for distance to the upcoming maneuver (snap → step boundary along route model).
+   * Use for banner, speech, camera maneuver boost, and highlight timing — nowhere else.
+   */
+  nextStepDistanceMeters: number;
+  /** Banner copy; distances match {@link nextStepDistanceMeters}. */
+  banner: NavBannerModel | null;
   distanceRemainingMeters: number;
   durationRemainingSeconds: number;
   etaEpochMs: number | null;
