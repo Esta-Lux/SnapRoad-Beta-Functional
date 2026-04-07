@@ -20,7 +20,7 @@ function formatGems(n: number): string {
   return String(Math.round(n));
 }
 
-/** Compact hero: gem balance + multiplier only (summary metrics live in RewardsScreen cards). */
+/** Gem wallet hero: balance, multiplier, and ledger context line. */
 export default function RewardsHeader({ colors, gems, multiplier }: Props) {
   const glass = 'rgba(255,255,255,0.14)';
   const glassBorder = 'rgba(255,255,255,0.22)';
@@ -34,10 +34,12 @@ export default function RewardsHeader({ colors, gems, multiplier }: Props) {
     >
       <View style={styles.topBadgeRow}>
         <View style={styles.eyebrowPill}>
-          <Ionicons name="sparkles" size={12} color="rgba(255,255,255,0.95)" />
-          <Text style={styles.eyebrowText}>REWARDS CENTER</Text>
+          <Ionicons name="wallet-outline" size={12} color="rgba(255,255,255,0.95)" />
+          <Text style={styles.eyebrowText}>GEM WALLET</Text>
         </View>
       </View>
+
+      <Text style={styles.tagline}>Partner offers, redemptions, and activity — one ledger.</Text>
 
       <View style={styles.heroGemRow}>
         <LinearGradient
@@ -50,7 +52,7 @@ export default function RewardsHeader({ colors, gems, multiplier }: Props) {
         </LinearGradient>
         <View style={{ flex: 1, marginLeft: 14 }}>
           <Text style={styles.gemNumber}>{formatGems(gems)}</Text>
-          <Text style={styles.gemCaption}>gems balance</Text>
+          <Text style={styles.gemCaption}>balance</Text>
         </View>
       </View>
 
@@ -90,7 +92,16 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  topBadgeRow: { alignItems: 'center', marginBottom: 12 },
+  topBadgeRow: { alignItems: 'center', marginBottom: 8 },
+  tagline: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 17,
+    marginBottom: 14,
+    paddingHorizontal: 8,
+  },
   eyebrowPill: {
     flexDirection: 'row',
     alignItems: 'center',

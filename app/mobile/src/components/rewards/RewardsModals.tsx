@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Skeleton from '../common/Skeleton';
 import type { Badge, Offer } from '../../types';
-import type { ChallengeHistoryItem, ChallengeHistoryStats, ChallengeModalTab, UserOfferRedemption } from './types';
+import type { UserOfferRedemption } from './types';
 import { displayOfferCategory } from '../../lib/offerCategories';
 import { openMapsSearch } from '../../lib/mapsLinks';
 import { api } from '../../api/client';
@@ -122,14 +122,17 @@ export function OfferDetailModal({
     .slice(0, 2)
     .toUpperCase();
 
+  const titleLine = offer?.title?.trim() || offer?.description?.split(/[.!?]/)[0]?.trim() || `${offer?.discount_percent ?? 0}% off`;
+  const mi = offer?.distance_km != null ? (Number(offer.distance_km) * 0.621371).toFixed(1) : null;
+
   return (
     <Modal visible={!!selectedOffer} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]} activeOpacity={1} onPress={onClose}>
-        <View style={[rewardsStyles.modalSheet, { backgroundColor: cardBg, borderTopWidth: 1, borderColor: `${primary}22` }]} onStartShouldSetResponder={() => true}>
+        <View style={[rewardsStyles.modalSheet, { backgroundColor: cardBg, borderTopWidth: 1, borderColor: `${primary}22`, maxHeight: '92%' }]} onStartShouldSetResponder={() => true}>
           <View style={[rewardsStyles.modalHandle, { backgroundColor: sub }]} />
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ maxHeight: '82%' }}>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
             {offer?.image_url ? (
-              <View style={{ width: '100%', height: 168, borderRadius: 16, overflow: 'hidden', marginBottom: 14 }}>
+              <View style={{ width: '100%', height: 176, borderRadius: 16, overflow: 'hidden', marginBottom: 14 }}>
                 <Image source={{ uri: offer.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
               </View>
             ) : (
@@ -139,112 +142,140 @@ export function OfferDetailModal({
                   height: 140,
                   borderRadius: 16,
                   marginBottom: 14,
-                  backgroundColor: `${primary}22`,
+                  backgroundColor: `${primary}18`,
                   alignItems: 'center',
                   justifyContent: 'center',
                   borderWidth: 1,
-                  borderColor: `${primary}40`,
+                  borderColor: `${primary}35`,
                 }}
               >
-                <Text style={{ color: primary, fontSize: 36, fontWeight: '900' }}>{initials}</Text>
+                <Text style={{ color: primary, fontSize: 40, fontWeight: '900' }}>{initials}</Text>
               </View>
             )}
-            <Text style={{ color: sub, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 }}>{offer?.business_name}</Text>
-            <Text style={[rewardsStyles.modalTitle, { color: text, marginTop: 6, textAlign: 'left' }]}>
-              {offer?.title?.trim() || offer?.description?.split('.')[0] || `${offer?.discount_percent ?? 0}% off`}
+
+            <Text style={{ color: sub, fontSize: 12, fontWeight: '900', letterSpacing: 0.4 }}>{offer?.business_name}</Text>
+            <Text style={[rewardsStyles.modalTitle, { color: text, marginTop: 6, textAlign: 'left', fontSize: 22 }]}>
+              {titleLine}
             </Text>
-            <View style={{ alignSelf: 'flex-start', marginVertical: 10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: `${sub}18` }}>
-              <Text style={{ color: sub, fontSize: 12, fontWeight: '800' }}>{displayOfferCategory(offer ?? {})}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: `${sub}16` }}>
+                <Text style={{ color: sub, fontSize: 11, fontWeight: '900' }}>{displayOfferCategory(offer ?? {})}</Text>
+              </View>
+              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: `${primary}18` }}>
+                <Text style={{ color: primary, fontSize: 11, fontWeight: '900' }}>{offer?.discount_percent ?? 0}% off</Text>
+              </View>
             </View>
-            <Text style={{ color: sub, fontSize: 14, marginBottom: 12, lineHeight: 21 }}>{offer?.description ?? `${offer?.discount_percent ?? 0}% off at this partner.`}</Text>
-            {offer?.address ? (
-              <Text style={{ color: text, fontSize: 13, marginBottom: 8, fontWeight: '600' }}>{offer.address}</Text>
-            ) : null}
-            {offer?.distance_km != null ? (
-              <Text style={{ color: sub, fontSize: 12, marginBottom: 12 }}>{(Number(offer.distance_km) * 0.621371).toFixed(1)} mi away</Text>
-            ) : null}
-            {offer?.address ? (
-              <TouchableOpacity
-                onPress={() => openMapsSearch(offer.address || '', offer.lat, offer.lng)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  marginBottom: 14,
-                  paddingVertical: 12,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: `${primary}44`,
-                  backgroundColor: `${primary}14`,
-                }}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="navigate" size={18} color={primary} />
-                <Text style={{ color: primary, fontWeight: '800' }}>Directions</Text>
-              </TouchableOpacity>
-            ) : null}
-            <View style={{ paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, backgroundColor: `${sub}10`, marginBottom: 16 }}>
-              <Text style={{ color: sub, fontSize: 11, fontWeight: '800', marginBottom: 6 }}>Terms</Text>
-              <Text style={{ color: sub, fontSize: 12, lineHeight: 18 }}>
-                {offer?.expires_at
-                  ? `Expires ${new Date(String(offer.expires_at)).toLocaleString()}. `
-                  : ''}
-                Discount applies at participating location. Subject to partner policies. SnapRoad gems are non-transferable.
-              </Text>
-            </View>
-            <View style={{ alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ color: primary, fontSize: 24, fontWeight: '900' }}>{cost} gems</Text>
-              <Text style={{ color: sub, fontSize: 12, fontWeight: '700' }}>Redeem cost</Text>
-            </View>
-            {loading ? <Skeleton width="100%" height={36} borderRadius={12} /> : null}
-            {!redeemed && !loading && (
-              <TouchableOpacity
-                disabled={redeemingOfferId === selectedOffer?.id}
-                onPress={() => selectedOffer && onRedeem({ ...selectedOffer, ...offer })}
-                activeOpacity={0.85}
-                style={{ opacity: redeemingOfferId !== null && redeemingOfferId === String(selectedOffer?.id) ? 0.65 : 1 }}
-              >
-                <LinearGradient
-                  colors={[primary, `${primary}dd`]}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={{ borderRadius: 14, paddingVertical: 15, alignItems: 'center' }}
-                >
-                  <Text style={rewardsStyles.navBtnText}>{redeemingOfferId !== null && redeemingOfferId === String(selectedOffer?.id) ? 'Redeeming...' : 'Redeem For Gems'}</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            )}
-            {redeemed && (
-              <View style={{ gap: 14, paddingVertical: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Ionicons name="checkmark-circle" size={22} color={success} />
-                  <Text style={{ color: success, fontSize: 15, fontWeight: '800' }}>Redeemed</Text>
+            <Text style={{ color: sub, fontSize: 14, marginTop: 12, lineHeight: 21 }}>{offer?.description ?? `${offer?.discount_percent ?? 0}% off at this partner.`}</Text>
+
+            {!redeemed ? (
+              <>
+                <View style={{ marginTop: 14, padding: 12, borderRadius: 14, backgroundColor: `${sub}0d`, borderWidth: 1, borderColor: `${sub}22` }}>
+                  {offer?.address ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: mi ? 8 : 0 }}>
+                      <Ionicons name="location-outline" size={18} color={sub} style={{ marginTop: 1 }} />
+                      <Text style={{ color: text, fontSize: 13, flex: 1, lineHeight: 19, fontWeight: '600' }}>{offer.address}</Text>
+                    </View>
+                  ) : null}
+                  {mi != null ? (
+                    <Text style={{ color: sub, fontSize: 12, fontWeight: '800' }}>{mi} mi from your last location</Text>
+                  ) : null}
                 </View>
-                {offer?.redemption?.redeemed_at ? (
-                  <Text style={{ color: sub, fontSize: 13 }}>{new Date(String(offer.redemption.redeemed_at)).toLocaleString()}</Text>
-                ) : null}
-                <Text style={{ color: sub, fontSize: 12, fontWeight: '700' }}>Status: {String(offer?.redemption?.status ?? 'verified')}</Text>
+                <View style={{ paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, backgroundColor: `${sub}0a`, marginTop: 14 }}>
+                  <Text style={{ color: sub, fontSize: 10, fontWeight: '900', marginBottom: 6, letterSpacing: 0.5 }}>TERMS</Text>
+                  <Text style={{ color: sub, fontSize: 11, lineHeight: 17 }}>
+                    {offer?.expires_at ? `Expires ${new Date(String(offer.expires_at)).toLocaleString()}. ` : ''}
+                    Valid at participating location. Partner policies apply. Gems are non-transferable.
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 18, marginBottom: 8 }}>
+                  <Text style={{ color: sub, fontSize: 13, fontWeight: '800' }}>Redeem for</Text>
+                  <Text style={{ color: primary, fontSize: 26, fontWeight: '900' }}>{cost} gems</Text>
+                </View>
+                {loading ? <Skeleton width="100%" height={48} borderRadius={14} /> : null}
+                {!loading && (
+                  <TouchableOpacity
+                    disabled={redeemingOfferId === selectedOffer?.id}
+                    onPress={() => selectedOffer && onRedeem({ ...selectedOffer, ...offer })}
+                    activeOpacity={0.85}
+                    style={{ opacity: redeemingOfferId !== null && redeemingOfferId === String(selectedOffer?.id) ? 0.65 : 1 }}
+                  >
+                    <LinearGradient
+                      colors={[primary, `${primary}cc`]}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={{ borderRadius: 16, paddingVertical: 16, alignItems: 'center' }}
+                    >
+                      <Text style={rewardsStyles.navBtnText}>
+                        {redeemingOfferId !== null && redeemingOfferId === String(selectedOffer?.id) ? 'Redeeming…' : `Redeem for ${cost} gems`}
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
+              </>
+            ) : (
+              <View style={{ marginTop: 16, gap: 16 }}>
+                <View style={{ padding: 14, borderRadius: 16, backgroundColor: `${success}12`, borderWidth: 1, borderColor: `${success}35` }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Ionicons name="checkmark-circle" size={26} color={success} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: success, fontSize: 16, fontWeight: '900' }}>Redeemed</Text>
+                      <Text style={{ color: sub, fontSize: 12, marginTop: 2 }}>
+                        {offer?.redemption?.redeemed_at
+                          ? new Date(String(offer.redemption.redeemed_at)).toLocaleString()
+                          : 'Saved to your wallet'}
+                      </Text>
+                      <Text style={{ color: sub, fontSize: 11, marginTop: 6, fontWeight: '700' }}>
+                        Status · {String(offer?.redemption?.status ?? 'verified')}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
                 {(redeemExtras?.qr_token || redeemExtras?.claim_code) ? (
-                  <View style={{ alignItems: 'center', gap: 10 }}>
-                    <Text style={{ color: text, fontWeight: '800' }}>Show at checkout</Text>
+                  <View style={{ padding: 16, borderRadius: 16, borderWidth: 1, borderColor: `${sub}28`, backgroundColor: isLight ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.04)', alignItems: 'center', gap: 12 }}>
+                    <Text style={{ color: text, fontWeight: '900', fontSize: 15 }}>Show at checkout</Text>
                     {redeemExtras?.claim_code ? (
-                      <Text style={{ color: text, fontSize: 22, fontWeight: '900', letterSpacing: 2 }}>{redeemExtras.claim_code}</Text>
+                      <Text style={{ color: text, fontSize: 26, fontWeight: '900', letterSpacing: 3 }}>{redeemExtras.claim_code}</Text>
                     ) : null}
                     {QRCode && redeemExtras?.qr_token ? (
-                      <View style={{ padding: 12, borderRadius: 16, backgroundColor: isLight ? '#fff' : 'rgba(255,255,255,0.06)' }}>
-                        <QRCode value={redeemExtras.qr_token} size={180} backgroundColor="transparent" color={text} />
+                      <View style={{ padding: 14, borderRadius: 18, backgroundColor: isLight ? '#fff' : 'rgba(255,255,255,0.07)' }}>
+                        <QRCode value={redeemExtras.qr_token} size={200} backgroundColor="transparent" color={text} />
                       </View>
                     ) : redeemExtras?.qr_token ? (
-                      <Text style={{ color: sub, fontSize: 11 }} selectable>{redeemExtras.qr_token}</Text>
+                      <Text style={{ color: sub, fontSize: 11 }} selectable>
+                        {redeemExtras.qr_token}
+                      </Text>
                     ) : null}
                     {redeemExtras?.expires_at ? (
-                      <Text style={{ color: sub, fontSize: 11 }}>QR expires: {new Date(redeemExtras.expires_at).toLocaleString()}</Text>
+                      <Text style={{ color: sub, fontSize: 11 }}>Code expires · {new Date(redeemExtras.expires_at).toLocaleString()}</Text>
                     ) : null}
                   </View>
                 ) : (
-                  <Text style={{ color: sub, fontSize: 13 }}>Your redemption is saved. Open My redemptions for full details.</Text>
+                  <Text style={{ color: sub, fontSize: 13, lineHeight: 19 }}>
+                    Your redemption is on file. Open My redemptions for the full receipt, or ask staff to scan your code from there.
+                  </Text>
                 )}
+
+                {offer?.address ? (
+                  <TouchableOpacity
+                    onPress={() => openMapsSearch(offer.address || '', offer.lat, offer.lng)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      paddingVertical: 14,
+                      borderRadius: 16,
+                      borderWidth: 1,
+                      borderColor: `${primary}44`,
+                      backgroundColor: `${primary}12`,
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="navigate" size={20} color={primary} />
+                    <Text style={{ color: primary, fontWeight: '900', fontSize: 16 }}>Directions to store</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             )}
           </ScrollView>
@@ -430,177 +461,48 @@ export function AllOffersModal({
               </Text>
             )}
             {offers.map((o) => (
-              <TouchableOpacity key={o.id} style={[rewardsStyles.offerCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]} onPress={() => onSelectOffer(o)} activeOpacity={0.82}>
+              <TouchableOpacity
+                key={o.id}
+                style={[rewardsStyles.offerCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border, borderRadius: 16, padding: 12 }]}
+                onPress={() => onSelectOffer(o)}
+                activeOpacity={0.82}
+              >
                 {o.image_url ? (
-                  <View style={{ width: 56, height: 56, borderRadius: 14, overflow: 'hidden', marginRight: 12 }}>
+                  <View style={{ width: 72, height: 72, borderRadius: 14, overflow: 'hidden', marginRight: 12, backgroundColor: border }}>
                     <Image source={{ uri: o.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                   </View>
-                ) : null}
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <View style={{ backgroundColor: `${primary}20`, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
-                      <Text style={{ color: primary, fontSize: 11, fontWeight: '900' }}>{o.discount_percent ?? 0}%</Text>
-                    </View>
-                    <Text style={[rewardsStyles.offerBiz, { color: text, flex: 1 }]} numberOfLines={1}>{o.business_name}</Text>
+                ) : (
+                  <View style={{ width: 72, height: 72, borderRadius: 14, marginRight: 12, backgroundColor: `${primary}14`, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${primary}28` }}>
+                    <Ionicons name="storefront-outline" size={28} color={primary} />
                   </View>
-                  <Text style={{ color: sub, fontSize: 12 }} numberOfLines={2}>{o.description ?? `${o.discount_percent}% off`}</Text>
-                  {o.address ? <Text style={{ color: sub, fontSize: 11, marginTop: 4 }} numberOfLines={1}>{o.address}</Text> : null}
-                </View>
-                <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                  <Ionicons name={o.redeemed ? 'checkmark-done' : 'diamond-outline'} size={18} color={o.redeemed ? success : primary} />
-                  <Text style={{ color: o.redeemed ? success : primary, fontSize: 12, fontWeight: '800' }}>
-                    {o.redeemed ? 'Redeemed' : `${o.gem_cost ?? o.gems_reward ?? 0} gems`}
+                )}
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ color: sub, fontSize: 11, fontWeight: '800' }} numberOfLines={1}>{o.business_name}</Text>
+                  <Text style={[rewardsStyles.offerBiz, { color: text, marginTop: 2 }]} numberOfLines={2}>
+                    {o.title?.trim() || o.description?.split('.')[0] || `${o.discount_percent}% off`}
                   </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                    <Text style={{ color: sub, fontSize: 10, fontWeight: '800', backgroundColor: `${sub}14`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>{displayOfferCategory(o)}</Text>
+                    <Text style={{ color: primary, fontSize: 10, fontWeight: '900', backgroundColor: `${primary}16`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>{o.discount_percent ?? 0}% off</Text>
+                  </View>
+                  {o.description ? <Text style={{ color: sub, fontSize: 11, marginTop: 6 }} numberOfLines={2}>{o.description}</Text> : null}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                    {o.address ? <Text style={{ color: sub, fontSize: 10 }} numberOfLines={1}>{o.address}</Text> : null}
+                    {o.distance_km != null ? (
+                      <Text style={{ color: sub, fontSize: 10, fontWeight: '800' }}>{(Number(o.distance_km) * 0.621371).toFixed(1)} mi</Text>
+                    ) : null}
+                  </View>
+                </View>
+                <View style={{ alignItems: 'flex-end', justifyContent: 'center', gap: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: `${success}18`, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 10 }}>
+                    <Ionicons name="diamond-outline" size={14} color={success} />
+                    <Text style={{ color: success, fontSize: 14, fontWeight: '900' }}>{o.gem_cost ?? o.gems_reward ?? 0}</Text>
+                  </View>
+                  <Text style={{ color: o.redeemed ? success : primary, fontSize: 11, fontWeight: '800' }}>{o.redeemed ? 'Redeemed' : 'Open'}</Text>
                 </View>
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-export function ChallengeHistoryModal({
-  visible,
-  historyLoading,
-  challengeHistoryStats,
-  challengeHistoryItems,
-  badges,
-  activeTab,
-  bg,
-  cardBg,
-  text,
-  sub,
-  primary,
-  heroGradient,
-  isLight,
-  onClose,
-  onTabChange,
-  onSelectBadge,
-}: {
-  visible: boolean;
-  historyLoading: boolean;
-  challengeHistoryStats: ChallengeHistoryStats | null;
-  challengeHistoryItems: ChallengeHistoryItem[];
-  badges: Badge[];
-  activeTab: ChallengeModalTab;
-  onClose: () => void;
-  onTabChange: (tab: ChallengeModalTab) => void;
-  onSelectBadge: (badge: Badge) => void;
-  primary: string;
-  heroGradient: readonly [string, string];
-  isLight: boolean;
-} & ThemeProps) {
-  const wins = challengeHistoryStats?.wins ?? 0;
-  const losses = challengeHistoryStats?.losses ?? 0;
-  const winRate = challengeHistoryStats?.win_rate ?? 0;
-  const netGems = (challengeHistoryStats?.total_gems_won ?? 0) - (challengeHistoryStats?.total_gems_lost ?? 0);
-
-  const overlay = isLight ? 'rgba(15,23,42,0.4)' : 'rgba(2,6,23,0.65)';
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]}>
-        <View style={[rewardsStyles.fullSheet, { backgroundColor: bg, borderTopWidth: 1, borderColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)' }]}>
-          <LinearGradient
-            colors={[...heroGradient]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[rewardsStyles.modalHero, { paddingTop: 8, paddingBottom: 12 }]}
-          >
-            <View style={rewardsStyles.sheetHeader}>
-              <Text style={[rewardsStyles.modalHeroTitle, { fontSize: 34, marginBottom: 8 }]}>Challenge History</Text>
-              <TouchableOpacity onPress={onClose}>
-                <Ionicons name="close" size={26} color="rgba(255,255,255,0.9)" />
-              </TouchableOpacity>
-            </View>
-            <View style={rewardsStyles.modalHeroStatsRow}>
-              <View style={[rewardsStyles.modalHeroStatCard, { paddingVertical: 9 }]}>
-                <Text style={[rewardsStyles.modalHeroStatValue, { fontSize: 22 }]}>{wins}</Text>
-                <Text style={[rewardsStyles.modalHeroStatLabel, { fontSize: 10 }]}>Wins</Text>
-              </View>
-              <View style={[rewardsStyles.modalHeroStatCard, { paddingVertical: 9 }]}>
-                <Text style={[rewardsStyles.modalHeroStatValue, { fontSize: 22 }]}>{losses}</Text>
-                <Text style={[rewardsStyles.modalHeroStatLabel, { fontSize: 10 }]}>Losses</Text>
-              </View>
-              <View style={[rewardsStyles.modalHeroStatCard, { paddingVertical: 9 }]}>
-                <Text style={[rewardsStyles.modalHeroStatValue, { fontSize: 22 }]}>{Math.round(winRate)}%</Text>
-                <Text style={[rewardsStyles.modalHeroStatLabel, { fontSize: 10 }]}>Win Rate</Text>
-              </View>
-              <View style={[rewardsStyles.modalHeroStatCard, { paddingVertical: 9 }]}>
-                <Text style={[rewardsStyles.modalHeroStatValue, { fontSize: 22 }]}>{netGems}</Text>
-                <Text style={[rewardsStyles.modalHeroStatLabel, { fontSize: 10 }]}>Net Gems</Text>
-              </View>
-            </View>
-          </LinearGradient>
-          <View style={[rewardsStyles.modalTabRow, { backgroundColor: cardBg, borderBottomColor: `${sub}35` }]}>
-            <TouchableOpacity
-              style={[rewardsStyles.modalTabBtn, activeTab === 'history' && [rewardsStyles.modalTabBtnActive, { borderBottomColor: primary }]]}
-              onPress={() => onTabChange('history')}
-            >
-              <Text style={[rewardsStyles.modalTabText, { color: activeTab === 'history' ? primary : sub }]}>History</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[rewardsStyles.modalTabBtn, activeTab === 'badges' && [rewardsStyles.modalTabBtnActive, { borderBottomColor: primary }]]}
-              onPress={() => onTabChange('badges')}
-            >
-              <Text style={[rewardsStyles.modalTabText, { color: activeTab === 'badges' ? primary : sub }]}>Badges</Text>
-            </TouchableOpacity>
-          </View>
-          {historyLoading ? (
-            <View style={{ paddingHorizontal: 16, gap: 8 }}>{[1, 2, 3].map((i) => <Skeleton key={i} width="100%" height={64} borderRadius={12} />)}</View>
-          ) : (
-            <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-              {activeTab === 'history' ? (
-                <>
-                  {!!challengeHistoryStats && (
-                    <View style={[rewardsStyles.historyStats, { backgroundColor: cardBg }]}>
-                      <Text style={[rewardsStyles.historyStatText, { color: text }]}>Current streak: {challengeHistoryStats.current_streak}</Text>
-                      <Text style={[rewardsStyles.historyStatText, { color: text }]}>Best streak: {challengeHistoryStats.best_streak}</Text>
-                    </View>
-                  )}
-                  {challengeHistoryItems.length === 0 ? (
-                    <View style={[rewardsStyles.emptyCard, { backgroundColor: cardBg }]}><Text style={{ color: sub }}>No challenge history yet</Text></View>
-                  ) : challengeHistoryItems.map((c) => (
-                    <View key={c.id} style={[rewardsStyles.challengeCard, { backgroundColor: cardBg }]}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[rewardsStyles.challengeTitle, { color: text }]}>vs {c.opponent_name}</Text>
-                        <Text style={{ color: sub, fontSize: 11 }}>{c.duration_hours}h · stake {c.stake} gems</Text>
-                        <Text style={{ color: sub, fontSize: 11, marginTop: 2 }}>You {c.your_score} - {c.opponent_score} Them</Text>
-                      </View>
-                      <Text style={{ color: c.status === 'won' ? '#22C55E' : c.status === 'lost' ? '#EF4444' : '#64748B', fontSize: 12, fontWeight: '700' }}>
-                        {String(c.status).toUpperCase()}
-                      </Text>
-                    </View>
-                  ))}
-                </>
-              ) : (
-                <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
-                  {badges.length === 0 ? (
-                    <View style={[rewardsStyles.emptyCard, { backgroundColor: cardBg }]}><Text style={{ color: sub }}>No badges yet</Text></View>
-                  ) : badges.map((b) => (
-                    <TouchableOpacity key={`history-badge-${b.id}`} style={[rewardsStyles.nativeBadgeCard, { backgroundColor: cardBg, opacity: b.earned ? 1 : 0.82, borderColor: `${primary}28` }]} onPress={() => onSelectBadge(b)}>
-                      <View style={[rewardsStyles.nativeBadgeIconWrap, { backgroundColor: b.earned ? `${primary}18` : undefined }]}>
-                        <Ionicons name={b.earned ? 'trophy' : 'lock-closed'} size={26} color={b.earned ? primary : sub} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[rewardsStyles.nativeBadgeTitle, { color: text }]}>{b.name}</Text>
-                        <Text style={[rewardsStyles.nativeBadgeDesc, { color: sub }]}>{b.description}</Text>
-                        {!b.earned && (
-                          <>
-                            <View style={rewardsStyles.nativeProgressTrack}>
-                              <LinearGradient colors={[primary, `${primary}99`]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={[rewardsStyles.nativeProgressFill, { width: `${Math.min(100, Math.max(0, b.progress ?? 0))}%` }]} />
-                            </View>
-                            <Text style={[rewardsStyles.nativeProgressText, { color: sub }]}>{Math.round(b.progress ?? 0)}%</Text>
-                          </>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </ScrollView>
-          )}
         </View>
       </View>
     </Modal>
@@ -659,7 +561,7 @@ export function AllBadgesModal({
             <View style={rewardsStyles.badgesGrid}>
               {badges.map((b) => (
                 <TouchableOpacity key={`all-${b.id}`} style={[rewardsStyles.badgeItem, { backgroundColor: cardBg, opacity: b.earned ? 1 : 0.4 }]} onPress={() => onSelectBadge(b)}>
-                  <Text style={{ fontSize: 26 }}>{b.earned ? '🏆' : '🔒'}</Text>
+                  <Ionicons name={b.earned ? 'trophy' : 'lock-closed'} size={28} color={b.earned ? '#FDE68A' : sub} />
                   <Text style={[rewardsStyles.badgeName, { color: text }]} numberOfLines={1}>{b.name}</Text>
                 </TouchableOpacity>
               ))}

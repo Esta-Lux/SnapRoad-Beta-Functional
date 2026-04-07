@@ -1,9 +1,9 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Image, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Skeleton from '../common/Skeleton';
-import type { Badge, Challenge, Offer, Trip, WeeklyInsights } from '../../types';
+import type { Badge, Offer } from '../../types';
 import type { GemTx, OffersRewardsView, UserOfferRedemption } from './types';
 import { displayOfferCategory } from '../../lib/offerCategories';
 import { rewardsStyles } from './styles';
@@ -25,6 +25,28 @@ export function formatCompactGems(gems: number): string {
   if (gems >= 10_000) return `${Math.round(gems / 1000)}k`;
   if (gems >= 1000) return `${(gems / 1000).toFixed(1)}k`;
   return String(Math.round(gems));
+}
+
+function truncateText(s: string, max: number): string {
+  const t = s.trim();
+  if (!t) return '';
+  return t.length <= max ? t : `${t.slice(0, max).trim()}…`;
+}
+
+function offerHeadlineTitle(o: Offer): string {
+  const t = o.title?.trim();
+  if (t) return t;
+  const first = o.description?.split(/[.!?\n]/)[0]?.trim();
+  if (first) return first;
+  return `${o.discount_percent ?? 0}% off`;
+}
+
+function offerDescriptionShort(o: Offer): string {
+  const raw = (o.description || '').trim();
+  if (!raw) return '';
+  const title = offerHeadlineTitle(o);
+  if (raw.startsWith(title)) return truncateText(raw.slice(title.length).replace(/^[\s.,-]+/, ''), 120);
+  return truncateText(raw, 120);
 }
 
 export function ViewAllButton({
@@ -302,78 +324,6 @@ export function MyRedemptionsSection({
   );
 }
 
-export function ChallengesPreview({
-  loading,
-  challenges,
-  claimingChallengeId,
-  onClaim,
-  cardBg,
-  text,
-  sub,
-  border,
-  primary,
-  success,
-  danger: _d,
-  warning: _w,
-}: ThemeProps & {
-  loading: boolean;
-  challenges: Challenge[];
-  claimingChallengeId: string | null;
-  onClaim: (challenge: Challenge) => void;
-}) {
-  if (loading) {
-    return <View style={{ paddingHorizontal: 16, gap: 8 }}>{[1, 2].map((i) => <Skeleton key={i} width="100%" height={70} borderRadius={12} />)}</View>;
-  }
-  if (challenges.length === 0) {
-    return (
-      <View style={[rewardsStyles.emptyCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]}>
-        <Ionicons name="flag-outline" size={36} color={sub} style={{ marginBottom: 8 }} />
-        <Text style={{ color: sub, fontSize: 14, fontWeight: '600' }}>No active challenges</Text>
-      </View>
-    );
-  }
-  return (
-    <>
-      {challenges.slice(0, 6).map((c) => {
-        const goal = Number(c.goal ?? c.target ?? 1);
-        const claimed = Boolean(c.claimed);
-        const pct = Math.min(100, (c.progress / goal) * 100);
-        return (
-          <View key={c.id} style={[rewardsStyles.challengeCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]}>
-            <LinearGradient colors={[`${primary}50`, `${primary}08`]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: 16, borderBottomLeftRadius: 16 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={[rewardsStyles.challengeTitle, { color: text }]}>{c.title}</Text>
-              <View style={[rewardsStyles.progressTrack, { overflow: 'hidden' }]}>
-                <LinearGradient
-                  colors={[primary, `${primary}bb`]}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={{ height: 6, width: `${pct}%`, borderRadius: 3 }}
-                />
-              </View>
-              <Text style={{ color: sub, fontSize: 11, fontWeight: '600' }}>{c.progress}/{goal} · +{c.gems} gems</Text>
-            </View>
-            {c.completed && !claimed ? (
-              <TouchableOpacity
-                style={[rewardsStyles.claimBtn, { backgroundColor: success }, claimingChallengeId === c.id && { opacity: 0.6 }]}
-                disabled={claimingChallengeId === c.id}
-                onPress={() => onClaim(c)}
-              >
-                <Text style={rewardsStyles.claimBtnText}>{claimingChallengeId === c.id ? 'Claiming...' : 'Claim'}</Text>
-              </TouchableOpacity>
-            ) : claimed ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Ionicons name="checkmark-circle" size={18} color={success} />
-                <Text style={{ color: success, fontSize: 12, fontWeight: '800' }}>Claimed</Text>
-              </View>
-            ) : null}
-          </View>
-        );
-      })}
-    </>
-  );
-}
-
 export function BadgesPreview({
   loading,
   badges,
@@ -437,78 +387,100 @@ export function OffersPreview({
   onPressOffer: (offer: Offer) => void;
 }) {
   if (loading) {
-    return <View style={{ paddingHorizontal: 16, gap: 8 }}>{[1, 2].map((i) => <Skeleton key={i} width="100%" height={70} borderRadius={12} />)}</View>;
+    return <View style={{ paddingHorizontal: 16, gap: 8 }}>{[1, 2].map((i) => <Skeleton key={i} width="100%" height={118} borderRadius={16} />)}</View>;
   }
   if (offers.length === 0) {
     return (
       <View style={[rewardsStyles.emptyCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]}>
         <Ionicons name="pricetag-outline" size={36} color={sub} style={{ marginBottom: 8 }} />
         <Text style={{ color: sub, fontSize: 14, fontWeight: '600' }}>No offers nearby</Text>
-        <Text style={{ color: sub, fontSize: 12, marginTop: 4, opacity: 0.85 }}>Check the map for partner deals when you drive</Text>
+        <Text style={{ color: sub, fontSize: 12, marginTop: 4, opacity: 0.85 }}>Move around or pull to refresh — offers use your last known area.</Text>
       </View>
     );
   }
   return (
     <>
-      {offers.slice(0, 6).map((o) => (
-        <TouchableOpacity
-          key={o.id}
-          style={[
-            rewardsStyles.offerCard,
-            {
-              backgroundColor: cardBg,
-              borderWidth: 1,
-              borderColor: border,
-              borderRadius: 18,
-              overflow: 'hidden',
-            },
-          ]}
-          onPress={() => onPressOffer(o)}
-          activeOpacity={0.82}
-        >
-          <LinearGradient colors={[`${success}35`, `${success}08`]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: 18, borderBottomLeftRadius: 18 }} />
-          {o.image_url ? (
-            <View style={{ width: 80, height: 80, borderRadius: 18, overflow: 'hidden', marginRight: 12, backgroundColor: border, borderWidth: 1, borderColor: `${border}88` }}>
-              <Image source={{ uri: o.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-            </View>
-          ) : (
-            <View style={{ width: 80, height: 80, borderRadius: 18, backgroundColor: `${primary}14`, marginRight: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${primary}28` }}>
-              <Ionicons name="storefront-outline" size={30} color={primary} />
-            </View>
-          )}
-          <View style={{ flex: 1, paddingLeft: 4 }}>
-            <Text style={{ color: sub, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4 }} numberOfLines={1}>
-              {o.business_name}
-            </Text>
-            <Text style={[rewardsStyles.offerBiz, { color: text, marginTop: 2 }]} numberOfLines={2}>
-              {o.title?.trim() || o.description || `${o.discount_percent}% off at partner`}
-            </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-              <View style={{ backgroundColor: `${primary}20`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
-                <Text style={{ color: primary, fontSize: 11, fontWeight: '900' }}>{o.discount_percent ?? 0}% off</Text>
+      {offers.slice(0, 6).map((o) => {
+        const desc = offerDescriptionShort(o);
+        const mi = o.distance_km != null ? (Number(o.distance_km) * 0.621371).toFixed(1) : null;
+        return (
+          <TouchableOpacity
+            key={o.id}
+            style={[
+              rewardsStyles.offerCard,
+              {
+                backgroundColor: cardBg,
+                borderWidth: 1,
+                borderColor: border,
+                borderRadius: 18,
+                overflow: 'hidden',
+                alignItems: 'stretch',
+              },
+            ]}
+            onPress={() => onPressOffer(o)}
+            activeOpacity={0.82}
+          >
+            <LinearGradient
+              colors={[`${success}38`, `${success}08`]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: 18, borderBottomLeftRadius: 18 }}
+            />
+            {o.image_url ? (
+              <View style={{ width: 88, height: 88, borderRadius: 16, overflow: 'hidden', marginRight: 12, backgroundColor: border, borderWidth: 1, borderColor: `${border}99` }}>
+                <Image source={{ uri: o.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
               </View>
-              <View style={{ backgroundColor: `${sub}14`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
-                <Text style={{ color: sub, fontSize: 10, fontWeight: '800' }} numberOfLines={1}>{displayOfferCategory(o)}</Text>
+            ) : (
+              <View style={{ width: 88, height: 88, borderRadius: 16, backgroundColor: `${primary}12`, marginRight: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${primary}25` }}>
+                <Ionicons name="storefront-outline" size={32} color={primary} />
               </View>
-            </View>
-            {o.address ? <Text style={{ color: sub, fontSize: 11, marginTop: 6 }} numberOfLines={1}>{o.address}</Text> : null}
-            {o.distance_km != null && (
-              <Text style={{ color: sub, fontSize: 11, marginTop: 4, fontWeight: '600' }}>
-                {(Number(o.distance_km) * 0.621371).toFixed(1)} mi away
-              </Text>
             )}
-          </View>
-          <View style={{ alignItems: 'flex-end', gap: 6, justifyContent: 'center' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: `${success}18`, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 }}>
-              <Ionicons name="diamond-outline" size={14} color={success} />
-              <Text style={{ color: success, fontSize: 13, fontWeight: '800' }}>{o.gem_cost ?? o.gems_reward ?? 0}</Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ color: sub, fontSize: 12, fontWeight: '800' }} numberOfLines={1}>
+                {o.business_name || 'Partner'}
+              </Text>
+              <Text style={{ color: text, fontSize: 16, fontWeight: '900', marginTop: 4 }} numberOfLines={2}>
+                {offerHeadlineTitle(o)}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                <View style={{ backgroundColor: `${sub}16`, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                  <Text style={{ color: sub, fontSize: 10, fontWeight: '900' }} numberOfLines={1}>
+                    {displayOfferCategory(o)}
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: `${primary}18`, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                  <Text style={{ color: primary, fontSize: 10, fontWeight: '900' }}>{o.discount_percent ?? 0}% off</Text>
+                </View>
+              </View>
+              {desc ? (
+                <Text style={{ color: sub, fontSize: 12, lineHeight: 17, marginTop: 8 }} numberOfLines={2}>
+                  {desc}
+                </Text>
+              ) : null}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                {o.address ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
+                    <Ionicons name="location-outline" size={14} color={sub} />
+                    <Text style={{ color: sub, fontSize: 11, flex: 1 }} numberOfLines={1}>
+                      {o.address}
+                    </Text>
+                  </View>
+                ) : null}
+                {mi != null ? <Text style={{ color: sub, fontSize: 11, fontWeight: '700' }}>{mi} mi</Text> : null}
+              </View>
             </View>
-            <Text style={{ color: o.redeemed ? success : primary, fontSize: 11, fontWeight: '800' }}>
-              {o.redeemed ? 'Redeemed' : 'Available'}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      ))}
+            <View style={{ alignItems: 'flex-end', justifyContent: 'space-between', paddingLeft: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: `${success}20`, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 }}>
+                <Ionicons name="diamond" size={15} color={success} />
+                <Text style={{ color: success, fontSize: 15, fontWeight: '900' }}>{o.gem_cost ?? o.gems_reward ?? 0}</Text>
+              </View>
+              <Text style={{ color: o.redeemed ? success : primary, fontSize: 11, fontWeight: '900', marginTop: 8 }}>
+                {o.redeemed ? 'Redeemed' : 'Tap for details'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
     </>
   );
 }
@@ -520,7 +492,7 @@ export function GemActivityList({
   text,
   sub,
   border,
-  primary: _primary,
+  primary,
   success,
   danger,
   warning: _w,
@@ -531,132 +503,90 @@ export function GemActivityList({
   onPressTx: (tx: GemTx) => void;
 }) {
   if (loading) {
-    return <View style={{ paddingHorizontal: 16, gap: 8 }}>{[1, 2].map((i) => <Skeleton key={i} width="100%" height={56} borderRadius={12} />)}</View>;
+    return <View style={{ paddingHorizontal: 16, gap: 8 }}>{[1, 2].map((i) => <Skeleton key={i} width="100%" height={64} borderRadius={14} />)}</View>;
   }
   if (gemTx.length === 0) {
     return (
       <View style={[rewardsStyles.emptyCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]}>
         <Ionicons name="wallet-outline" size={32} color={sub} style={{ marginBottom: 8 }} />
-        <Text style={{ color: sub, fontWeight: '600' }}>No gem activity yet</Text>
+        <Text style={{ color: text, fontWeight: '800' }}>No gem activity yet</Text>
+        <Text style={{ color: sub, fontSize: 13, marginTop: 6, textAlign: 'center', lineHeight: 18 }}>
+          Drive and complete trips — credits and partner redemptions will show here from the same wallet ledger.
+        </Text>
       </View>
     );
   }
   return (
     <>
-      {gemTx.map((tx) => (
-        <TouchableOpacity
-          key={tx.id}
-          activeOpacity={0.82}
-          onPress={() => onPressTx(tx)}
-          style={[rewardsStyles.tripCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: tx.type === 'spent' ? `${danger}15` : `${success}15`, justifyContent: 'center', alignItems: 'center' }}>
-              <Ionicons name={tx.type === 'spent' ? 'arrow-down' : 'arrow-up'} size={20} color={tx.type === 'spent' ? danger : success} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[rewardsStyles.tripRoute, { color: text }]} numberOfLines={1}>{tx.source}</Text>
-              <Text style={{ color: sub, fontSize: 11, fontWeight: '600' }}>{tx.date ? new Date(tx.date).toLocaleString() : 'Recently'}</Text>
-              {tx.reference_type && tx.reference_id ? (
-                <Text style={{ color: sub, fontSize: 10, fontWeight: '600', marginTop: 3 }} numberOfLines={1}>
-                  {tx.reference_type} · {tx.reference_id.slice(0, 8)}
-                  {tx.reference_id.length > 8 ? '…' : ''}
+      {gemTx.map((tx) => {
+        const kindLabel =
+          tx.tx_type === 'trip_drive'
+            ? 'Trip'
+            : tx.tx_type === 'offer_redemption' || tx.reference_type === 'redemption'
+              ? 'Redemption'
+              : tx.tx_type
+                ? String(tx.tx_type).replace(/_/g, ' ')
+                : null;
+        return (
+          <TouchableOpacity
+            key={tx.id}
+            activeOpacity={0.82}
+            onPress={() => onPressTx(tx)}
+            style={{
+              marginHorizontal: 16,
+              marginBottom: 10,
+              padding: 14,
+              borderRadius: 16,
+              backgroundColor: cardBg,
+              borderWidth: 1,
+              borderColor: border,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  backgroundColor: tx.type === 'spent' ? `${danger}14` : `${success}14`,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <Ionicons name={tx.type === 'spent' ? 'arrow-down-circle' : 'arrow-up-circle'} size={22} color={tx.type === 'spent' ? danger : success} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <Text style={[rewardsStyles.tripRoute, { color: text, flexShrink: 1 }]} numberOfLines={1}>
+                    {tx.source}
+                  </Text>
+                  {kindLabel ? (
+                    <View style={{ backgroundColor: `${primary}16`, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
+                      <Text style={{ color: primary, fontSize: 9, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.3 }}>{kindLabel}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={{ color: sub, fontSize: 11, fontWeight: '600', marginTop: 3 }}>
+                  {tx.date ? new Date(tx.date).toLocaleString() : 'Recently'}
                 </Text>
-              ) : null}
+                {tx.balance_after != null && Number.isFinite(tx.balance_after) ? (
+                  <Text style={{ color: sub, fontSize: 10, fontWeight: '600', marginTop: 4 }}>Balance after · {formatCompactGems(tx.balance_after)}</Text>
+                ) : null}
+              </View>
             </View>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={{ color: tx.type === 'spent' ? danger : success, fontWeight: '900', fontSize: 16 }}>
-              {tx.type === 'spent' ? '-' : '+'}{tx.amount}
-            </Text>
-            <Ionicons name="chevron-forward" size={18} color={sub} />
-          </View>
-        </TouchableOpacity>
-      ))}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={{ color: tx.type === 'spent' ? danger : success, fontWeight: '900', fontSize: 17 }}>
+                {tx.type === 'spent' ? '−' : '+'}
+                {tx.amount}
+              </Text>
+              <Ionicons name="chevron-forward" size={18} color={sub} />
+            </View>
+          </TouchableOpacity>
+        );
+      })}
     </>
   );
 }
-
-export function TripsList({
-  loading,
-  trips,
-  cardBg,
-  text,
-  sub,
-  border,
-  primary,
-  success,
-  warning,
-}: ThemeProps & {
-  loading: boolean;
-  trips: Trip[];
-}) {
-  if (loading) {
-    return <View style={{ paddingHorizontal: 16, gap: 8 }}>{[1, 2].map((i) => <Skeleton key={i} width="100%" height={60} borderRadius={12} />)}</View>;
-  }
-  if (trips.length === 0) {
-    return (
-      <View style={[rewardsStyles.emptyCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]}>
-        <Ionicons name="car-outline" size={36} color={sub} style={{ marginBottom: 8 }} />
-        <Text style={{ color: sub, fontWeight: '600' }}>No trips yet</Text>
-      </View>
-    );
-  }
-  return (
-    <>
-      {trips.slice(0, 5).map((t) => (
-        <View key={t.id} style={[rewardsStyles.tripCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <Ionicons name="navigate" size={16} color={primary} />
-            <Text style={[rewardsStyles.tripRoute, { color: text, flex: 1 }]} numberOfLines={2}>{t.origin} → {t.destination}</Text>
-          </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
-            <Text style={{ color: sub, fontSize: 11, fontWeight: '600' }}>{t.distance_miles != null ? `${t.distance_miles.toFixed(1)} mi` : '—'}</Text>
-            <Text style={{ color: sub, fontSize: 11, fontWeight: '600' }}>{t.duration_minutes ?? '—'} min</Text>
-            <View style={{ backgroundColor: `${success}22`, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
-              <Text style={{ color: success, fontSize: 11, fontWeight: '800' }}>Safety {t.safety_score ?? '—'}</Text>
-            </View>
-            <View style={{ backgroundColor: `${warning}22`, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
-              <Text style={{ color: warning, fontSize: 11, fontWeight: '800' }}>+{t.gems_earned ?? 0} gems</Text>
-            </View>
-          </View>
-        </View>
-      ))}
-    </>
-  );
-}
-
-export function WeeklyInsightsSection({
-  insights,
-  cardBg,
-  text,
-  sub,
-  border,
-  primary,
-  success,
-  warning,
-  danger: _danger,
-}: ThemeProps & {
-  insights: WeeklyInsights;
-}) {
-  return (
-    <View style={[rewardsStyles.insightsCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border }]}>
-      <LinearGradient colors={[`${primary}14`, 'transparent']} style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 120, borderTopLeftRadius: 16, borderTopRightRadius: 16 }} pointerEvents="none" />
-      <View style={rewardsStyles.insightsRow}>
-        <View style={rewardsStyles.insightItem}><Text style={[rewardsStyles.insightVal, { color: text }]}>{insights.total_trips}</Text><Text style={{ color: sub, fontSize: 10, fontWeight: '600' }}>Trips</Text></View>
-        <View style={rewardsStyles.insightItem}><Text style={[rewardsStyles.insightVal, { color: text }]}>{Math.round(insights.total_miles ?? 0)}</Text><Text style={{ color: sub, fontSize: 10, fontWeight: '600' }}>Miles</Text></View>
-        <View style={rewardsStyles.insightItem}><Text style={[rewardsStyles.insightVal, { color: warning }]}>{insights.gems_earned_week}</Text><Text style={{ color: sub, fontSize: 10, fontWeight: '600' }}>Gems</Text></View>
-        <View style={rewardsStyles.insightItem}><Text style={[rewardsStyles.insightVal, { color: success }]}>{insights.safety_score_avg}</Text><Text style={{ color: sub, fontSize: 10, fontWeight: '600' }}>Safety</Text></View>
-      </View>
-      {insights.ai_tip && (
-        <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: border }}>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-            <Ionicons name="sparkles" size={16} color={primary} style={{ marginTop: 2 }} />
-            <Text style={{ color: sub, fontSize: 13, lineHeight: 19, flex: 1, fontWeight: '500' }}>{insights.ai_tip}</Text>
-          </View>
-        </View>
-      )}
-    </View>
-  );
-}
-

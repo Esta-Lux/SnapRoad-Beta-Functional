@@ -1,6 +1,6 @@
-import type { Badge, Challenge, Offer } from '../../types';
+import type { Badge, Offer } from '../../types';
 
-export type RewardsTab = 'offers' | 'challenges' | 'badges';
+export type RewardsTab = 'offers' | 'badges';
 
 /** Driver redemption ledger (GET /api/offers/my-redemptions). */
 export type UserOfferRedemption = {
@@ -26,7 +26,6 @@ export type UserOfferRedemption = {
 };
 
 export type OffersRewardsView = 'nearby' | 'my_redemptions';
-export type ChallengeModalTab = 'history' | 'badges';
 
 export type GemTx = {
   id: string;
@@ -43,26 +42,5 @@ export type GemTx = {
   metadata?: Record<string, unknown>;
 };
 
-export type ChallengeHistoryItem = {
-  id: string;
-  opponent_name: string;
-  status: 'pending' | 'active' | 'won' | 'lost' | 'draw' | string;
-  your_score: number;
-  opponent_score: number;
-  stake: number;
-  duration_hours: number;
-};
-
-export type ChallengeHistoryStats = {
-  wins: number;
-  losses: number;
-  win_rate: number;
-  total_gems_won: number;
-  total_gems_lost: number;
-  current_streak: number;
-  best_streak: number;
-};
-
 export type BadgePressHandler = (badge: Badge) => void;
 export type OfferPressHandler = (offer: Offer) => void;
-export type ChallengeClaimHandler = (challenge: Challenge) => void;

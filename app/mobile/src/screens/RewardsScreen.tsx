@@ -9,13 +9,12 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../hooks/useLocation';
 import { api } from '../api/client';
-import type { Challenge, Badge, Offer } from '../types';
+import type { Badge, Offer } from '../types';
 import RewardsHeader from '../components/rewards/RewardsHeader';
 import RewardsTabs from '../components/rewards/RewardsTabs';
 import {
   ViewAllButton,
   SectionTitle,
-  ChallengesPreview,
   BadgesPreview,
   OffersPreview,
   OffersRewardsSegment,
@@ -28,20 +27,11 @@ import {
   OfferDetailModal,
   RedemptionDetailModal,
   AllOffersModal,
-  ChallengeHistoryModal,
+  AllBadgesModal,
 } from '../components/rewards/RewardsModals';
 import GemActivityDetailModal from '../components/rewards/GemActivityDetailModal';
 import { rewardsStyles } from '../components/rewards/styles';
-import ChallengeModal from '../components/gamification/ChallengeModal';
-import type {
-  RewardsTab,
-  GemTx,
-  ChallengeHistoryItem,
-  ChallengeHistoryStats,
-  ChallengeModalTab,
-  UserOfferRedemption,
-  OffersRewardsView,
-} from '../components/rewards/types';
+import type { RewardsTab, GemTx, UserOfferRedemption, OffersRewardsView } from '../components/rewards/types';
 
 /** Product filter chips. `nearby` = ≤ 8 km. `food` / `restaurants` → backend `restaurant`. */
 const REWARDS_OFFER_FILTER_DEFS: { slug: string | null; label: string }[] = [
@@ -119,24 +109,17 @@ export default function RewardsScreen() {
 
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [badges, setBadges] = useState<Badge[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [selectedBadge, setSelectedBadge] = useState<Badge | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [rewardsTab, setRewardsTab] = useState<RewardsTab>('offers');
-  const [claimingChallengeId, setClaimingChallengeId] = useState<string | null>(null);
   const [redeemingOfferId, setRedeemingOfferId] = useState<string | null>(null);
   const [gemTx, setGemTx] = useState<GemTx[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showAllOffers, setShowAllOffers] = useState(false);
-  const [showChallengeHistory, setShowChallengeHistory] = useState(false);
-  const [challengeModalTab, setChallengeModalTab] = useState<ChallengeModalTab>('history');
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [challengeHistoryItems, setChallengeHistoryItems] = useState<ChallengeHistoryItem[]>([]);
-  const [challengeHistoryStats, setChallengeHistoryStats] = useState<ChallengeHistoryStats | null>(null);
+  const [showAllBadges, setShowAllBadges] = useState(false);
   const [offerCategoryFilter, setOfferCategoryFilter] = useState<string | null>(null);
-  const [challengeTarget, setChallengeTarget] = useState<{ id: string; name: string } | null>(null);
   const [offersRewardsView, setOffersRewardsView] = useState<OffersRewardsView>('nearby');
   const [myRedemptions, setMyRedemptions] = useState<UserOfferRedemption[]>([]);
   const [selectedRedemption, setSelectedRedemption] = useState<UserOfferRedemption | null>(null);
@@ -144,24 +127,26 @@ export default function RewardsScreen() {
   const [redeemQrByOfferId, setRedeemQrByOfferId] = useState<
     Record<string, { qr_token?: string; claim_code?: string; expires_at?: string }>
   >({});
+  /** Populated from GET /api/rewards/summary — drives the 2×2 stat cards (trips, badges, multiplier label). */
+  const [rewardsSummary, setRewardsSummary] = useState<{
+    totalTrips: number;
+    badgesEarned: number;
+    badgesTotal: number;
+    gemMultiplierLabel: string;
+  } | null>(null);
 
   const loadFull = useCallback(async (mode: 'initial' | 'refresh' | 'silent', lat: number, lng: number) => {
     if (mode === 'initial') setInitialLoading(true);
     else if (mode === 'refresh') setRefreshing(true);
     setErrorMsg(null);
     try {
-      const isPremium = Boolean(user?.isPremium);
       const safeGet = async (url: string) => {
         try { return await api.get<any>(url); } catch { return { success: false, data: null }; }
       };
-      const insightsPromise = isPremium ? safeGet('/api/trips/weekly-insights') : Promise.resolve({ success: false, data: null });
-      const [profileRes, cRes, bRes, oRes, tRes, _iRes, gRes, mineRes, sumRes] = await Promise.all([
+      const [profileRes, bRes, oRes, gRes, mineRes, sumRes] = await Promise.all([
         api.getProfile().catch(() => ({ success: false, data: null })),
-        safeGet('/api/challenges'),
         safeGet('/api/badges'),
         safeGet(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=40`),
-        safeGet('/api/trips?limit=10'),
-        insightsPromise,
         safeGet('/api/gems/history'),
         safeGet('/api/offers/my-redemptions'),
         safeGet('/api/rewards/summary'),
@@ -175,16 +160,6 @@ export default function RewardsScreen() {
         totalTrips: Number(profilePayload.total_trips ?? 0),
         safetyScore: Number(profilePayload.safety_score ?? 0),
       });
-      const rawChallenges = Array.isArray(unwrap(cRes)) ? unwrap(cRes) : [];
-      setChallenges(rawChallenges.map((c: any) => ({
-        ...c,
-        id: String(c.id),
-        goal: Number(c.goal ?? c.target ?? 1),
-        progress: Number(c.progress ?? 0),
-        gems: Number(c.gems ?? 0),
-        completed: Boolean(c.completed),
-        claimed: Boolean(c.claimed),
-      })));
       const bData = unwrap(bRes);
       setBadges(Array.isArray(bData) ? bData : (bData?.badges ?? []));
       setOffers(Array.isArray(unwrap(oRes)) ? unwrap(oRes) : []);
@@ -211,13 +186,28 @@ export default function RewardsScreen() {
           metadata: t.metadata && typeof t.metadata === 'object' ? (t.metadata as Record<string, unknown>) : undefined,
         })),
       );
+      if (sumRes?.success) {
+        const raw = (sumRes as { data?: { data?: Record<string, unknown> } }).data?.data ?? (sumRes as { data?: Record<string, unknown> }).data;
+        if (raw && typeof raw === 'object') {
+          setRewardsSummary({
+            totalTrips: Number(raw.total_trips ?? 0),
+            badgesEarned: Number(raw.badges_earned ?? 0),
+            badgesTotal: Math.max(0, Number(raw.badges_total ?? 0)),
+            gemMultiplierLabel: String(raw.gem_multiplier_label ?? '1x'),
+          });
+        } else {
+          setRewardsSummary(null);
+        }
+      } else {
+        setRewardsSummary(null);
+      }
     } catch {
       setErrorMsg('Could not refresh rewards data. Pull to retry.');
     } finally {
       if (mode === 'initial') setInitialLoading(false);
       else setRefreshing(false);
     }
-  }, [updateUser, user?.isPremium]);
+  }, [updateUser]);
 
   const refreshNearbyOffers = useCallback(async (lat: number, lng: number) => {
     try {
@@ -285,6 +275,12 @@ export default function RewardsScreen() {
 
   const earnedBadges = badges.filter((b) => b.earned).length;
   const multiplier = user?.isPremium ? '2x' : '1x';
+  const headerMultiplier = rewardsSummary?.gemMultiplierLabel ?? multiplier;
+  const tripsCardValue = rewardsSummary != null ? rewardsSummary.totalTrips : (user?.totalTrips ?? 0);
+  const badgesCardLabel =
+    rewardsSummary != null && rewardsSummary.badgesTotal > 0
+      ? `${rewardsSummary.badgesEarned}/${rewardsSummary.badgesTotal}`
+      : String(earnedBadges);
 
   const redemptionCategoryChoices = useMemo(() => {
     const m = new Map<string, string>();
@@ -319,24 +315,6 @@ export default function RewardsScreen() {
     () => offers.filter((o) => offerMatchesCategory(o, offerCategoryFilter)),
     [offers, offerCategoryFilter],
   );
-
-  const handleClaimChallenge = useCallback(async (challenge: Challenge) => {
-    setClaimingChallengeId(challenge.id);
-    setErrorMsg(null);
-    try {
-      const res = await api.post<any>(`/api/challenges/${challenge.id}/claim`);
-      if (!res.success) {
-        setErrorMsg(res.error || 'Could not claim challenge reward.');
-        return;
-      }
-      const earned = Number((res.data as any)?.data?.gems_earned ?? challenge.gems ?? 0);
-      setChallenges((prev) => prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c)));
-      if (user) updateUser({ gems: user.gems + earned });
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } finally {
-      setClaimingChallengeId(null);
-    }
-  }, [updateUser, user]);
 
   const handleRedeemOffer = useCallback(async (offer: Offer) => {
     setRedeemingOfferId(String(offer.id));
@@ -393,40 +371,6 @@ export default function RewardsScreen() {
     }
   }, [updateUser, user, refreshMyRedemptions, loadFull, location.lat, location.lng]);
 
-  const loadChallengeHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    try {
-      const res = await api.get<any>('/api/challenges/history');
-      if (!res.success) {
-        setErrorMsg(res.error || 'Could not load challenge history.');
-        return;
-      }
-      const payload = (res.data as any)?.data ?? res.data ?? {};
-      const list = Array.isArray(payload?.challenges) ? payload.challenges : [];
-      setChallengeHistoryItems(list.map((c: any) => ({
-        id: String(c.id),
-        opponent_name: String(c.opponent_name ?? 'Driver'),
-        status: String(c.status ?? 'pending'),
-        your_score: Number(c.your_score ?? 0),
-        opponent_score: Number(c.opponent_score ?? 0),
-        stake: Number(c.stake ?? 0),
-        duration_hours: Number(c.duration_hours ?? 0),
-      })));
-      const stats = payload?.stats;
-      setChallengeHistoryStats(stats ? {
-        wins: Number(stats.wins ?? 0),
-        losses: Number(stats.losses ?? 0),
-        win_rate: Number(stats.win_rate ?? 0),
-        total_gems_won: Number(stats.total_gems_won ?? 0),
-        total_gems_lost: Number(stats.total_gems_lost ?? 0),
-        current_streak: Number(stats.current_streak ?? 0),
-        best_streak: Number(stats.best_streak ?? 0),
-      } : null);
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, []);
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
       <ScrollView style={{ flex: 1, backgroundColor: bg }}
@@ -437,7 +381,7 @@ export default function RewardsScreen() {
             tintColor="#3B82F6"
           />
         }>
-      <RewardsHeader colors={colors} gems={user?.gems ?? 0} multiplier={multiplier} />
+      <RewardsHeader colors={colors} gems={user?.gems ?? 0} multiplier={headerMultiplier} />
       {errorMsg && (
         <View style={[rewardsStyles.errorBanner, { backgroundColor: `${colors.danger}12`, borderWidth: 1, borderColor: `${colors.danger}35` }]}>
           <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
@@ -452,7 +396,7 @@ export default function RewardsScreen() {
               <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.warning}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
                 <Ionicons name="flame" size={22} color={colors.warning} />
               </View>
-              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{user?.totalTrips ?? 0}</Text>
+              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{tripsCardValue}</Text>
               <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Trips</Text>
             </LinearGradient>
           </View>
@@ -472,7 +416,7 @@ export default function RewardsScreen() {
               <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.success}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
                 <Ionicons name="ribbon" size={22} color={colors.success} />
               </View>
-              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{earnedBadges}</Text>
+              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{badgesCardLabel}</Text>
               <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Badges</Text>
             </LinearGradient>
           </View>
@@ -481,9 +425,35 @@ export default function RewardsScreen() {
               <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.rewardsGradientEnd}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
                 <Ionicons name="diamond" size={22} color={colors.rewardsGradientEnd} />
               </View>
-              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{multiplier}</Text>
+              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{headerMultiplier}</Text>
               <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Gem mult.</Text>
             </LinearGradient>
+          </View>
+        </View>
+      </View>
+
+      <View
+        style={{
+          marginHorizontal: 16,
+          marginBottom: 14,
+          paddingVertical: 12,
+          paddingHorizontal: 14,
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: cardBg,
+          ...shadow(4),
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: `${colors.primary}18`, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="layers-outline" size={18} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: text, fontSize: 13, fontWeight: '900' }}>One wallet ledger</Text>
+            <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>
+              Balance, partner offers, redemptions, and the activity list below all reflect the same gem account.
+            </Text>
           </View>
         </View>
       </View>
@@ -521,39 +491,9 @@ export default function RewardsScreen() {
         }}
       />
 
-      {rewardsTab === 'challenges' && (
-        <>
-          <ViewAllButton
-            title="View all challenges"
-            onPress={() => {
-              setChallengeModalTab('history');
-              setShowChallengeHistory(true);
-              loadChallengeHistory();
-            }}
-            {...rt}
-          />
-          <SectionTitle title="Active Challenges" text={text} accent={colors.primary} />
-          <ChallengesPreview
-            loading={initialLoading}
-            challenges={challenges}
-            claimingChallengeId={claimingChallengeId}
-            onClaim={handleClaimChallenge}
-            {...rt}
-          />
-        </>
-      )}
-
       {rewardsTab === 'badges' && (
         <>
-          <ViewAllButton
-            title="View all badges"
-            onPress={() => {
-              setChallengeModalTab('badges');
-              setShowChallengeHistory(true);
-              loadChallengeHistory();
-            }}
-            {...rt}
-          />
+          <ViewAllButton title="View all badges" onPress={() => setShowAllBadges(true)} {...rt} />
           <SectionTitle title={`Badges · ${earnedBadges}/${badges.length}`} text={text} accent={colors.primary} />
           <BadgesPreview loading={initialLoading} badges={badges} onPressBadge={setSelectedBadge} {...rt} />
         </>
@@ -611,7 +551,10 @@ export default function RewardsScreen() {
         </>
       )}
 
-      <SectionTitle title="Recent Gem Activity" text={text} accent={colors.primary} />
+      <SectionTitle title="Gem activity" text={text} accent={colors.primary} />
+      <Text style={{ color: sub, fontSize: 12, lineHeight: 17, paddingHorizontal: 16, marginTop: -6, marginBottom: 12, fontWeight: '600' }}>
+        Latest credits and debits from your wallet (trips, redemptions, adjustments). Tap a row for details.
+      </Text>
       <GemActivityList
         loading={initialLoading}
         gemTx={gemTx}
@@ -677,27 +620,20 @@ export default function RewardsScreen() {
         onClose={() => setShowAllOffers(false)}
         onSelectOffer={setSelectedOffer}
       />
-      <ChallengeHistoryModal
-        visible={showChallengeHistory}
-        historyLoading={historyLoading}
-        challengeHistoryStats={challengeHistoryStats}
-        challengeHistoryItems={challengeHistoryItems}
+      <AllBadgesModal
+        visible={showAllBadges}
         badges={badges}
-        activeTab={challengeModalTab}
         bg={bg}
         cardBg={cardBg}
         text={text}
         sub={sub}
-        primary={colors.primary}
-        heroGradient={[colors.rewardsGradientStart, colors.rewardsGradientEnd]}
-        isLight={isLight}
-        onClose={() => setShowChallengeHistory(false)}
-        onTabChange={setChallengeModalTab}
-        onSelectBadge={setSelectedBadge}
+        onClose={() => setShowAllBadges(false)}
+        onSelectBadge={(b) => {
+          setShowAllBadges(false);
+          setSelectedBadge(b);
+        }}
       />
       </ScrollView>
-
-      <ChallengeModal visible={!!challengeTarget} onClose={() => setChallengeTarget(null)} targetFriend={challengeTarget} />
     </SafeAreaView>
   );
 }

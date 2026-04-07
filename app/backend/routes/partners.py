@@ -888,6 +888,7 @@ def redeem_offer(
         qr_nonce=validated["nonce"],
         lat=payload.get("lat"),
         lng=payload.get("lng"),
+        redemption_id_from_qr=str(payload.get("redemption_id") or "").strip() or None,
     )
     if result["success"]:
         background_tasks.add_task(ws_manager.notify_partner_redemption, partner_id, result)

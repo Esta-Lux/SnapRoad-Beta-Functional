@@ -12,6 +12,29 @@ function isWalletUuid(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id.trim());
 }
 
+function formatMetaRows(meta: Record<string, unknown>): { label: string; value: string }[] {
+  const skip = new Set(['formula_summary', 'ledger_metadata']);
+  const rows: { label: string; value: string }[] = [];
+  const preferred = ['trip_id', 'offer_id', 'redemption_id', 'route_label', 'miles', 'duration_minutes'];
+  for (const key of preferred) {
+    if (key in meta && meta[key] != null && String(meta[key]).trim() !== '') {
+      rows.push({ label: humanizeKey(key), value: String(meta[key]) });
+    }
+  }
+  for (const [k, v] of Object.entries(meta)) {
+    if (skip.has(k) || preferred.includes(k)) continue;
+    if (v == null || typeof v === 'object') continue;
+    const s = String(v).trim();
+    if (!s) continue;
+    rows.push({ label: humanizeKey(k), value: s.length > 120 ? `${s.slice(0, 120)}…` : s });
+  }
+  return rows.slice(0, 12);
+}
+
+function humanizeKey(k: string): string {
+  return k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 type Props = {
   visible: boolean;
   tx: GemTx | null;
@@ -87,15 +110,16 @@ export default function GemActivityDetailModal({
   const kind = typeof detail?.kind === 'string' ? detail.kind : null;
   const base = (detail?.base as Record<string, unknown> | undefined) || {};
   const meta = (base.metadata as Record<string, unknown> | undefined) || tx.metadata || {};
+  const metaRows = formatMetaRows(typeof meta === 'object' && meta !== null ? (meta as Record<string, unknown>) : {});
 
   const directions = (address: string, lat?: number | null, lng?: number | null) => (
     <TouchableOpacity
       onPress={() => openMapsSearch(address, lat, lng)}
-      style={[styles.dirBtn, { backgroundColor: `${primary}22`, borderColor: `${primary}44` }]}
+      style={[styles.dirBtn, { backgroundColor: `${primary}18`, borderColor: `${primary}40` }]}
       activeOpacity={0.85}
     >
       <Ionicons name="navigate" size={18} color={primary} />
-      <Text style={{ color: primary, fontWeight: '800', fontSize: 14 }}>Directions</Text>
+      <Text style={{ color: primary, fontWeight: '900', fontSize: 15 }}>Directions</Text>
     </TouchableOpacity>
   );
 
@@ -103,36 +127,35 @@ export default function GemActivityDetailModal({
 
   if (!isWalletUuid(tx.id)) {
     body = (
-      <View style={{ gap: 10 }}>
-        <Text style={{ color: sub, fontSize: 13, lineHeight: 20 }}>
-          This activity was recorded before the gem wallet synced. You still earned or spent gems, but line-item details are not available for this entry.
-        </Text>
-        <View style={[styles.rowCard, { borderColor: `${sub}33` }]}>
-          <Text style={{ color: sub, fontSize: 12 }}>Source</Text>
-          <Text style={{ color: text, fontWeight: '700' }}>{tx.source}</Text>
-          <Text style={{ color: sub, fontSize: 12, marginTop: 8 }}>Amount</Text>
-          <Text style={{ color: tx.type === 'spent' ? danger : success, fontWeight: '900', fontSize: 18 }}>
-            {tx.type === 'spent' ? '−' : '+'}
-            {tx.amount}
+      <View style={{ gap: 12 }}>
+        <View style={[styles.pill, { backgroundColor: `${warning}18`, borderColor: `${warning}35` }]}>
+          <Ionicons name="time-outline" size={16} color={warning} />
+          <Text style={{ color: text, fontSize: 12, fontWeight: '700', flex: 1 }}>
+            Legacy entry — full wallet details were not stored for this line.
           </Text>
-          {tx.date ? (
-            <>
-              <Text style={{ color: sub, fontSize: 12, marginTop: 8 }}>When</Text>
-              <Text style={{ color: text }}>{new Date(tx.date).toLocaleString()}</Text>
-            </>
-          ) : null}
+        </View>
+        <View style={[styles.card, { borderColor: `${sub}28` }]}>
+          <Row label="Source" value={tx.source} text={text} sub={sub} />
+          <Row
+            label="Amount"
+            value={`${tx.type === 'spent' ? '−' : '+'}${tx.amount} gems`}
+            text={text}
+            sub={sub}
+            valueColor={tx.type === 'spent' ? danger : success}
+          />
+          {tx.date ? <Row label="When" value={new Date(tx.date).toLocaleString()} text={text} sub={sub} /> : null}
         </View>
       </View>
     );
   } else if (loading) {
     body = (
-      <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-        <ActivityIndicator color={primary} />
-        <Text style={{ color: sub, marginTop: 12 }}>Loading details…</Text>
+      <View style={{ paddingVertical: 28, alignItems: 'center' }}>
+        <ActivityIndicator color={primary} size="large" />
+        <Text style={{ color: sub, marginTop: 14, fontWeight: '600' }}>Loading ledger details…</Text>
       </View>
     );
   } else if (err) {
-    body = <Text style={{ color: warning }}>{err}</Text>;
+    body = <Text style={{ color: warning, fontWeight: '700' }}>{err}</Text>;
   } else if (kind === 'offer_redemption') {
     const offer = (detail?.offer as Record<string, unknown>) || {};
     const redemption = (detail?.redemption as Record<string, unknown>) || {};
@@ -145,26 +168,32 @@ export default function GemActivityDetailModal({
     const status = String(redemption.status || 'verified');
     const when = redemption.redeemed_at != null ? String(redemption.redeemed_at) : tx.date;
     body = (
-      <View style={{ gap: 12 }}>
+      <View style={{ gap: 14 }}>
+        <View style={[styles.kindPill, { backgroundColor: `${danger}14`, borderColor: `${danger}30` }]}>
+          <Ionicons name="bag-remove-outline" size={16} color={danger} />
+          <Text style={{ color: danger, fontSize: 11, fontWeight: '900', letterSpacing: 0.6 }}>OFFER REDEMPTION</Text>
+        </View>
         {img ? (
-          <Image source={{ uri: img }} style={{ width: '100%', height: 140, borderRadius: 14 }} resizeMode="cover" />
+          <Image source={{ uri: img }} style={{ width: '100%', height: 150, borderRadius: 16 }} resizeMode="cover" />
         ) : (
-          <View style={[styles.ph, { backgroundColor: `${primary}18` }]}>
-            <Ionicons name="storefront" size={40} color={primary} />
+          <View style={[styles.ph, { backgroundColor: `${primary}14` }]}>
+            <Ionicons name="storefront" size={44} color={primary} />
           </View>
         )}
-        <Text style={{ color: sub, fontSize: 12, fontWeight: '800' }}>{biz}</Text>
+        <Text style={{ color: sub, fontSize: 12, fontWeight: '900' }}>{biz}</Text>
         <Text style={{ color: text, fontSize: 20, fontWeight: '900' }}>{title}</Text>
-        <View style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: `${sub}18` }}>
+        <View style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: `${sub}14` }}>
           <Text style={{ color: sub, fontSize: 12, fontWeight: '800' }}>{displayOfferCategory(offer as { category_label?: string; business_type?: string })}</Text>
         </View>
-        <Text style={{ color: danger, fontSize: 18, fontWeight: '900' }}>−{tx.amount} gems</Text>
-        <Text style={{ color: sub }}>Status: {status}</Text>
-        <Text style={{ color: sub }}>Redeemed: {when ? new Date(when).toLocaleString() : '—'}</Text>
-        {addr ? <Text style={{ color: text }}>{addr}</Text> : null}
+        <View style={[styles.card, { borderColor: `${danger}22` }]}>
+          <Text style={{ color: danger, fontSize: 22, fontWeight: '900' }}>−{tx.amount} gems</Text>
+          <Text style={{ color: sub, fontSize: 12, marginTop: 10, fontWeight: '700' }}>Status · {status}</Text>
+          <Text style={{ color: sub, fontSize: 12, marginTop: 4 }}>Redeemed · {when ? new Date(when).toLocaleString() : '—'}</Text>
+        </View>
+        {addr ? <Text style={{ color: text, fontSize: 14, lineHeight: 20, fontWeight: '600' }}>{addr}</Text> : null}
         {addr ? directions(addr, lat, lng) : null}
         <Text style={{ color: sub, fontSize: 12, lineHeight: 18 }}>
-          Show your QR or claim code at checkout. Partner staff can scan to mark “used in store.”
+          Show your QR or claim code at checkout. Staff can scan to mark “used in store” on your redemption list.
         </Text>
       </View>
     );
@@ -177,40 +206,70 @@ export default function GemActivityDetailModal({
     const gems = trip?.gems_earned != null ? Number(trip.gems_earned) : tx.amount;
     const started = trip?.started_at != null ? String(trip.started_at) : tx.date;
     body = (
-      <View style={{ gap: 12 }}>
-        <Text style={{ color: text, fontSize: 18, fontWeight: '900' }}>Trip reward</Text>
-        <Text style={{ color: sub }}>Started: {started ? new Date(started).toLocaleString() : '—'}</Text>
-        {dist != null ? <Text style={{ color: text }}>Distance: {dist.toFixed(1)} mi</Text> : null}
-        {durSec != null ? <Text style={{ color: text }}>Duration: {Math.round(durSec / 60)} min</Text> : null}
-        <Text style={{ color: success, fontSize: 20, fontWeight: '900' }}>+{gems} gems</Text>
+      <View style={{ gap: 14 }}>
+        <View style={[styles.kindPill, { backgroundColor: `${success}14`, borderColor: `${success}30` }]}>
+          <Ionicons name="car-sport-outline" size={16} color={success} />
+          <Text style={{ color: success, fontSize: 11, fontWeight: '900', letterSpacing: 0.6 }}>TRIP REWARD</Text>
+        </View>
+        <Text style={{ color: text, fontSize: 19, fontWeight: '900' }}>Trip credit</Text>
+        <View style={[styles.card, { borderColor: `${success}25` }]}>
+          <Text style={{ color: success, fontSize: 26, fontWeight: '900' }}>+{gems} gems</Text>
+          <Text style={{ color: sub, fontSize: 12, marginTop: 8 }}>Started · {started ? new Date(started).toLocaleString() : '—'}</Text>
+          {dist != null ? <Text style={{ color: text, marginTop: 6, fontWeight: '700' }}>{dist.toFixed(1)} mi</Text> : null}
+          {durSec != null ? <Text style={{ color: text, marginTop: 4, fontWeight: '700' }}>{Math.round(durSec / 60)} min</Text> : null}
+        </View>
         {formula ? (
-          <View style={[styles.rowCard, { borderColor: `${sub}33` }]}>
-            <Text style={{ color: sub, fontSize: 11, fontWeight: '800', marginBottom: 6 }}>Breakdown</Text>
-            <Text style={{ color: text, fontSize: 13, lineHeight: 20 }}>{formula}</Text>
+          <View style={[styles.card, { borderColor: `${sub}22` }]}>
+            <Text style={{ color: sub, fontSize: 10, fontWeight: '900', marginBottom: 8, letterSpacing: 0.4 }}>BREAKDOWN</Text>
+            <Text style={{ color: text, fontSize: 14, lineHeight: 21 }}>{formula}</Text>
+          </View>
+        ) : null}
+        {metaRows.length > 0 ? (
+          <View style={[styles.card, { borderColor: `${sub}22` }]}>
+            <Text style={{ color: sub, fontSize: 10, fontWeight: '900', marginBottom: 10, letterSpacing: 0.4 }}>DETAILS</Text>
+            {metaRows.map((r) => (
+              <View key={r.label} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                <Text style={{ color: sub, fontSize: 12, fontWeight: '700', flex: 0.4 }}>{r.label}</Text>
+                <Text style={{ color: text, fontSize: 12, fontWeight: '600', flex: 0.6, textAlign: 'right' }} numberOfLines={3}>
+                  {r.value}
+                </Text>
+              </View>
+            ))}
           </View>
         ) : null}
         <TouchableOpacity
-          style={[styles.dirBtn, { backgroundColor: `${primary}22`, borderColor: `${primary}44` }]}
+          style={[styles.dirBtn, { backgroundColor: `${primary}14`, borderColor: `${primary}35` }]}
           onPress={() => (navigation as { navigate: (n: string) => void }).navigate('Profile')}
           activeOpacity={0.85}
         >
           <Ionicons name="analytics-outline" size={18} color={primary} />
-          <Text style={{ color: primary, fontWeight: '800', fontSize: 14 }}>Open Profile insights</Text>
+          <Text style={{ color: primary, fontWeight: '900', fontSize: 15 }}>Profile insights</Text>
         </TouchableOpacity>
       </View>
     );
   } else {
     body = (
-      <View style={{ gap: 10 }}>
-        <Text style={{ color: text, fontWeight: '800', fontSize: 16 }}>{tx.source}</Text>
-        <Text style={{ color: tx.type === 'spent' ? danger : success, fontSize: 22, fontWeight: '900' }}>
+      <View style={{ gap: 12 }}>
+        <View style={[styles.kindPill, { backgroundColor: `${primary}12`, borderColor: `${primary}28` }]}>
+          <Ionicons name="receipt-outline" size={16} color={primary} />
+          <Text style={{ color: primary, fontSize: 11, fontWeight: '900', letterSpacing: 0.6 }}>WALLET ENTRY</Text>
+        </View>
+        <Text style={{ color: text, fontWeight: '900', fontSize: 18 }}>{tx.source}</Text>
+        <Text style={{ color: tx.type === 'spent' ? danger : success, fontSize: 28, fontWeight: '900' }}>
           {tx.type === 'spent' ? '−' : '+'}
           {tx.amount} gems
         </Text>
-        {tx.date ? <Text style={{ color: sub }}>{new Date(tx.date).toLocaleString()}</Text> : null}
-        {Object.keys(meta).length > 0 ? (
-          <View style={[styles.rowCard, { borderColor: `${sub}33` }]}>
-            <Text style={{ color: sub, fontSize: 12 }}>{JSON.stringify(meta, null, 2)}</Text>
+        {tx.date ? <Text style={{ color: sub, fontSize: 13 }}>{new Date(tx.date).toLocaleString()}</Text> : null}
+        {metaRows.length > 0 ? (
+          <View style={[styles.card, { borderColor: `${sub}22` }]}>
+            {metaRows.map((r) => (
+              <View key={r.label} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                <Text style={{ color: sub, fontSize: 12, fontWeight: '700', flex: 0.35 }}>{r.label}</Text>
+                <Text style={{ color: text, fontSize: 12, fontWeight: '600', flex: 0.65, textAlign: 'right' }} numberOfLines={4}>
+                  {r.value}
+                </Text>
+              </View>
+            ))}
           </View>
         ) : null}
       </View>
@@ -220,14 +279,14 @@ export default function GemActivityDetailModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]} activeOpacity={1} onPress={onClose}>
-        <View style={[rewardsStyles.modalSheet, { backgroundColor: cardBg, borderTopWidth: 1, borderColor: `${primary}22`, maxHeight: '88%' }]} onStartShouldSetResponder={() => true}>
+        <View style={[rewardsStyles.modalSheet, { backgroundColor: cardBg, borderTopWidth: 1, borderColor: `${primary}22`, maxHeight: '90%' }]} onStartShouldSetResponder={() => true}>
           <View style={[rewardsStyles.modalHandle, { backgroundColor: sub }]} />
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <Text style={[rewardsStyles.modalTitle, { color: text, marginBottom: 12 }]}>Gem activity</Text>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 8 }}>
+            <Text style={[rewardsStyles.modalTitle, { color: text, marginBottom: 14, fontSize: 20 }]}>Activity detail</Text>
             {body}
           </ScrollView>
-          <TouchableOpacity onPress={onClose} activeOpacity={0.85} style={{ marginTop: 8 }}>
-            <View style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: primary }}>
+          <TouchableOpacity onPress={onClose} activeOpacity={0.85} style={{ marginTop: 10 }}>
+            <View style={{ borderRadius: 16, paddingVertical: 15, alignItems: 'center', backgroundColor: primary }}>
               <Text style={rewardsStyles.navBtnText}>Done</Text>
             </View>
           </TouchableOpacity>
@@ -237,24 +296,63 @@ export default function GemActivityDetailModal({
   );
 }
 
+function Row({
+  label,
+  value,
+  text,
+  sub,
+  valueColor,
+}: {
+  label: string;
+  value: string;
+  text: string;
+  sub: string;
+  valueColor?: string;
+}) {
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <Text style={{ color: sub, fontSize: 11, fontWeight: '800', marginBottom: 4 }}>{label}</Text>
+      <Text style={{ color: valueColor ?? text, fontSize: valueColor ? 20 : 15, fontWeight: '900' }}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  rowCard: {
+  card: {
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 16,
+    padding: 14,
+  },
+  kindPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
   },
   dirBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingVertical: 14,
+    borderRadius: 16,
     borderWidth: 1,
   },
   ph: {
     height: 140,
-    borderRadius: 14,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },

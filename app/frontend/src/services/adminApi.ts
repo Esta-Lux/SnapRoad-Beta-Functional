@@ -99,6 +99,13 @@ class AdminApiService {
     return this.request('/api/admin/stats')
   }
 
+  /** Cross-user gem ledger (`wallet_transactions`) for admin review; optional `userId` filter. */
+  async getWalletLedger(userId?: string, limit = 200): Promise<AdminApiResponse<any[]>> {
+    const qs = new URLSearchParams({ limit: String(limit) })
+    if (userId) qs.set('user_id', userId)
+    return this.request(`/api/admin/wallet-ledger?${qs.toString()}`)
+  }
+
   async getAnalytics(): Promise<AdminApiResponse<AdminAnalytics>> {
     return this.request('/api/admin/analytics')
   }

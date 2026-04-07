@@ -314,6 +314,7 @@ def complete_offer_redemption(
     qr_nonce: Optional[str] = None,
     lat: Optional[float] = None,
     lng: Optional[float] = None,
+    redemption_id_from_qr: Optional[str] = None,
 ) -> dict:
     from services.runtime_config import require_enabled
 
@@ -326,15 +327,51 @@ def complete_offer_redemption(
         "Offer redemptions are temporarily unavailable.",
     )
     sb = _sb()
-    existing_redemption = (
+    existing_res = (
         sb.table("redemptions")
-        .select("id")
+        .select("id,scanned_by_user_id,gems_earned,discount_applied,redeemed_at,status")
         .eq("offer_id", offer.get("id"))
         .eq("user_id", user_id)
         .limit(1)
         .execute()
     )
-    if existing_redemption.data:
+    if existing_res.data:
+        row = existing_res.data[0]
+        rid = str(row.get("id") or "")
+        if scanned_by_user_id:
+            exp = str(redemption_id_from_qr or "").strip().replace("-", "").lower()
+            got = rid.replace("-", "").lower()
+            if exp and got and exp != got:
+                return {"success": False, "message": "Invalid redemption QR"}
+            new_total = _next_gem_total(user_id)
+            try:
+                disc = int(row.get("discount_applied") or 0)
+            except (TypeError, ValueError):
+                disc = 0
+            try:
+                ge = int(row.get("gems_earned") or 0)
+            except (TypeError, ValueError):
+                ge = 0
+            gc = abs(ge)
+            base = {
+                "redemption_id": rid,
+                "discount_percent": disc,
+                "gem_cost": gc,
+                "gems_earned": ge,
+                "new_gem_total": new_total,
+                "redeemed_at": str(row.get("redeemed_at") or ""),
+                "used_in_store": True,
+            }
+            if row.get("scanned_by_user_id"):
+                return {"success": True, "data": {**base, "scan_already_recorded": True}}
+            try:
+                sb.table("redemptions").update(
+                    {"scanned_by_user_id": scanned_by_user_id, "qr_nonce": qr_nonce}
+                ).eq("id", rid).execute()
+            except Exception:
+                logger.exception("redemption scan update failed")
+                return {"success": False, "message": "Could not record scan"}
+            return {"success": True, "data": {**base, "scan_confirmed": True}}
         return {"success": False, "message": "Offer already redeemed"}
 
     user_profile = _get_profile_like(user_id)

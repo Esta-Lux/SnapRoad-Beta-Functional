@@ -13,8 +13,7 @@ type Props = {
 };
 
 const TABS: { key: RewardsTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'offers', label: 'Offers', icon: 'pricetag-outline' },
-  { key: 'challenges', label: 'Challenges', icon: 'flag-outline' },
+  { key: 'offers', label: 'Offers & redemptions', icon: 'pricetag-outline' },
   { key: 'badges', label: 'Badges', icon: 'ribbon-outline' },
 ];
 
@@ -43,12 +42,16 @@ export default function RewardsTabs({ colors, rewardsTab, onTabChange }: Props) 
                 }}
               >
                 <Ionicons name={icon} size={14} color="#fff" />
-                <Text style={[rewardsStyles.tabText, { color: '#fff' }]} numberOfLines={1}>{label}</Text>
+                <Text style={[rewardsStyles.tabText, { color: '#fff' }]} numberOfLines={2}>
+                  {label}
+                </Text>
               </LinearGradient>
             ) : (
               <View style={{ paddingVertical: 10, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5 }}>
                 <Ionicons name={icon} size={14} color={sub} />
-                <Text style={[rewardsStyles.tabText, { color: sub }]} numberOfLines={1}>{label}</Text>
+                <Text style={[rewardsStyles.tabText, { color: sub }]} numberOfLines={2}>
+                  {label}
+                </Text>
               </View>
             )}
           </TouchableOpacity>

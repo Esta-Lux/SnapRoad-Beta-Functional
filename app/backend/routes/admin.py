@@ -115,6 +115,34 @@ def get_admin_stats():
     return {"success": True, "source": "supabase", "data": data}
 
 
+@router.get("/admin/wallet-ledger")
+def admin_wallet_ledger(
+    user_id: Annotated[Optional[str], Query(None)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+):
+    """Recent rows from `wallet_transactions` for ops review; optional filter by driver user_id."""
+    from database import get_supabase
+
+    sb = get_supabase()
+    try:
+        q = (
+            sb.table("wallet_transactions")
+            .select(
+                "id,user_id,tx_type,direction,amount,balance_before,balance_after,"
+                "reference_type,reference_id,metadata,status,created_at"
+            )
+            .order("created_at", desc=True)
+            .limit(limit)
+        )
+        if user_id:
+            q = q.eq("user_id", user_id)
+        res = q.execute()
+        return {"success": True, "data": res.data or []}
+    except Exception as e:
+        logger.warning("admin wallet-ledger: %s", e)
+        return {"success": False, "message": "Could not load wallet ledger", "data": []}
+
+
 # ==================== CONCERNS (admin) ====================
 
 @router.get("/admin/concerns")
