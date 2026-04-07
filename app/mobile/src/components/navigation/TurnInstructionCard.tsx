@@ -16,7 +16,6 @@ import type { ModeConfig } from '../../constants/modes';
 import type { TurnCardState } from '../../navigation/turnCardModel';
 import type { DirectionsStep } from '../../lib/directions';
 import { getBannerThenLine, getLaneData } from '../../navigation/bannerInstructions';
-import LaneGuide from './LaneGuide';
 
 function normalizeModifier(mod: string | undefined, maneuverKey: string): string {
   const m = (mod || maneuverKey || '').toLowerCase().replace(/-/g, ' ');
@@ -327,12 +326,6 @@ export default React.memo(function TurnInstructionCard({
             <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={16} color={tcTextColor} style={{ opacity: 0.85 }} />
           </TouchableOpacity>
         </View>
-
-        {effectiveLanes ? (
-          <View style={{ marginTop: 6 }}>
-            <LaneGuide lanes={effectiveLanes} activeColor="#ffffff" inactiveColor="rgba(255,255,255,0.28)" />
-          </View>
-        ) : null}
 
         {roadDisambiguationLabel ? (
           <View style={styles.disambig}>

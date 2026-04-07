@@ -85,7 +85,12 @@ import TripShare from '../components/gamification/TripShare';
 import HamburgerMenu from '../components/profile/HamburgerMenu';
 import ConvoyMode from '../components/social/ConvoyMode';
 // Crash detection hook removed (no SOS backend); friend locations handled inline via Supabase realtime
-import { alongRouteDistanceMeters, formatDistance, haversineMeters } from '../utils/distance';
+import {
+  alongRouteDistanceMeters,
+  formatDistance,
+  haversineMeters,
+  type RouteSplitForOverlay,
+} from '../utils/distance';
 import { formatDuration } from '../utils/format';
 import { speak, stopSpeaking } from '../utils/voice';
 import { api, API_BASE_URL } from '../api/client';
@@ -347,6 +352,18 @@ export default function MapScreen() {
   /** During nav, same as raw `location` (reliable puck/camera); turn/ETA still from `navigationProgress`. */
   const navDisplayCoord = nav.isNavigating ? nav.navigationProgressCoord : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
+
+  /** Passed / ahead route styling while navigating — same snap as turn/ETA (`navigationProgress`). */
+  const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
+    if (!nav.isNavigating) return null;
+    const s = nav.navigationProgress?.snapped;
+    if (!s) return null;
+    return { segmentIndex: s.segmentIndex, tOnSegment: s.t };
+  }, [
+    nav.isNavigating,
+    nav.navigationProgress?.snapped?.segmentIndex,
+    nav.navigationProgress?.snapped?.t,
+  ]);
   const displaySpeedMph = nav.isNavigating
     ? Math.max(0, (nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704) * 2.236936)
     : speed;
@@ -2222,7 +2239,7 @@ export default function MapScreen() {
             <RouteOverlay
               polyline={nav.navigationData.polyline}
               isNavigating={nav.isNavigating}
-              routeSplit={null}
+              routeSplit={navigationRouteSplit}
               routeColor={modeConfig.routeColor}
               casingColor={modeConfig.routeCasing}
               passedColor={modeConfig.passedColor}
@@ -2286,7 +2303,7 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
-          {/* Native puck in all modes (reliable GPS alignment during navigation). */}
+          {/* Native puck in all modes — same stable fused location as browse; turn guidance is turn cards only. */}
           <MapboxGL.LocationPuck
             visible
             androidRenderMode="normal"
