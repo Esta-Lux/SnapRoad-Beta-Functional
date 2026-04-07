@@ -85,11 +85,45 @@ export function trackNavigationQualitySample(sample: NavigationQualitySample): v
   Sentry.logger.info('nav_quality', payload);
 }
 
-export function trackNavigationQualityEvent(event: NavigationQualityEvent): void {
-  const payload = compactPayload(event);
+export type NavigationQualityEventExtras = {
+  /** Monotonic reroute count this session (spike detection). */
+  seq?: number;
+  /** Meters off polyline when reroute triggered. */
+  off_m?: number;
+};
+
+/**
+ * Logs structured nav quality event. Reroutes also emit a Sentry breadcrumb + `captureMessage` in prod
+ * so spikes show in the issue stream (not only logger).
+ */
+export function trackNavigationQualityEvent(
+  event: NavigationQualityEvent,
+  extras?: NavigationQualityEventExtras,
+): void {
+  const base = compactPayload(event);
+  const payload: Record<string, unknown> = {
+    ...base,
+    ...(extras?.seq != null ? { seq: extras.seq } : {}),
+    ...(extras?.off_m != null ? { off_m: extras.off_m } : {}),
+  };
+
   if (__DEV__) {
     console.info('[nav-quality-event]', payload);
     return;
   }
+
   Sentry.logger.info('nav_quality_event', payload);
+  if (event.event === 'reroute') {
+    Sentry.addBreadcrumb({
+      category: 'navigation',
+      type: 'info',
+      message: 'nav_reroute',
+      data: payload,
+      level: 'info',
+    });
+    Sentry.captureMessage('nav_reroute', {
+      level: 'info',
+      extra: payload,
+    });
+  }
 }

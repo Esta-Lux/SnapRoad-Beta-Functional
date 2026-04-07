@@ -6,6 +6,8 @@ let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
 /** Shorten gap slightly so stacked prompts (reroute + turn) are less likely to drop the second cue. */
 const MIN_GAP_MS = 2200;
+/** Min interval between **different** turn-by-turn cues (normal `speak()` would block these at MIN_GAP_MS). */
+const GUIDANCE_MIN_MS = 900;
 
 /**
  * Session before TTS: iOS uses non-mixing so navigation cues behave like other nav apps (music yields).
@@ -84,6 +86,30 @@ export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', _m
   void configureAudioSession();
 
   if (priority === 'high') Speech.stop();
+  Speech.speak(phrase, {
+    rate: ORION_SPEECH_RATE,
+    pitch: ORION_SPEECH_PITCH,
+    language: 'en-US',
+    onDone: onUtteranceFinished,
+    onStopped: onUtteranceFinished,
+    onError: onUtteranceFinished,
+  });
+}
+
+/**
+ * Turn-by-turn distance cues: same audio session as {@link speak}, but allows successive **different**
+ * phrases sooner than `MIN_GAP_MS` (still debounces identical phrase repeats).
+ */
+export function speakGuidance(phrase: string, _mode: DrivingMode = 'adaptive') {
+  if (!phrase.trim()) return;
+  const normalized = phrase.trim().toLowerCase();
+  const now = Date.now();
+  if (normalized === lastSpokenPhrase && now - lastSpokenAt < MIN_GAP_MS) return;
+  if (normalized !== lastSpokenPhrase && now - lastSpokenAt < GUIDANCE_MIN_MS) return;
+  lastSpokenPhrase = normalized;
+  lastSpokenAt = now;
+
+  void configureAudioSession();
   Speech.speak(phrase, {
     rate: ORION_SPEECH_RATE,
     pitch: ORION_SPEECH_PITCH,

@@ -2,6 +2,7 @@ import React from 'react';
 import type { FillExtrusionLayerStyle } from '@rnmapbox/maps';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import type { DrivingMode } from '../../types';
+import { BuildingLayerIds } from '../../map/mapLayerRegistry';
 
 interface Props {
   drivingMode?: DrivingMode;
@@ -126,7 +127,7 @@ export default React.memo(function BuildingsLayer({
   try {
     return (
       <MapboxGL.FillExtrusionLayer
-        id="sr-3d-buildings"
+        id={BuildingLayerIds.fillExtrusion}
         existing={false}
         sourceID="composite"
         sourceLayerID="building"

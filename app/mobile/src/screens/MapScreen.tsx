@@ -56,14 +56,14 @@ import PhotoReportDetailModal from '../components/map/PhotoReportDetailModal';
 import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config/restrictedRegions';
 import MapCategoryExploreSheet from '../components/map/MapCategoryExploreSheet';
 import PhotoReportSheet from '../components/map/PhotoReportSheet';
-import NavigationPuck from '../components/navigation/NavigationPuck';
-import NavigationRouteLayers from '../components/navigation/NavigationRouteLayers';
 import { projectAhead, getCameraConfig } from '../navigation/navigationCamera';
 import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import { useNavigationSpeech } from '../hooks/useNavigationSpeech';
-import { useNavigationCamera } from '../hooks/useNavigationCamera';
+import { repeatLastTurnByTurn } from '../navigation/navigationGuidanceMemory';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
+import NavigationDebugHud from '../components/navigation/NavigationDebugHud';
+import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
 import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
 import { isLiveShareFresh } from '../lib/friendPresence';
 import type { NavigateToFriendParams } from '../types';
@@ -339,8 +339,12 @@ export default function MapScreen() {
     drivingMode,
     voiceMuted: navVoiceMuted,
   });
-  useNavigationSpeech({ progress: nav.navigationProgress, enabled: !navVoiceMuted });
-  /** Fused progress while navigating — matches route, ETA strip, turn card distances, camera. */
+  useNavigationSpeech({
+    progress: nav.navigationProgress,
+    enabled: !navVoiceMuted,
+    drivingMode,
+  });
+  /** During nav, same as raw `location` (reliable puck/camera); turn/ETA still from `navigationProgress`. */
   const navDisplayCoord = nav.isNavigating ? nav.navigationProgressCoord : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
   const displaySpeedMph = nav.isNavigating
@@ -402,7 +406,6 @@ export default function MapScreen() {
   const [isExploring, setIsExploring] = useState(false);
   const [compassMode, setCompassMode] = useState(false);
   const [followMode, setFollowMode] = useState<'free' | 'follow' | 'heading'>('follow');
-  const navCameraFollowActive = cameraLocked && nav.isNavigating;
   /** Single distance field for maneuver-aware presets (must match banner/speech). */
   const nextManeuverDistanceMeters = useMemo(() => {
     const d = nav.navigationProgress?.nextStepDistanceMeters;
@@ -427,19 +430,9 @@ export default function MapScreen() {
     speedMph: speed,
     fusedSpeedMps: fusedSpeedMpsNav,
     drivingMode,
-    /** Avoid competing with `useNavigationCamera` while follow-locked during navigation. */
-    isNavigating: nav.isNavigating && !navCameraFollowActive,
+    isNavigating: nav.isNavigating,
     cameraLocked,
     nextManeuverDistanceMeters,
-    safeAreaTop: insets.top,
-    safeAreaBottom: insets.bottom,
-  });
-
-  useNavigationCamera({
-    cameraRef,
-    progress: nav.navigationProgress,
-    mode: drivingMode,
-    isFollowing: navCameraFollowActive,
     safeAreaTop: insets.top,
     safeAreaBottom: insets.bottom,
   });
@@ -580,15 +573,11 @@ export default function MapScreen() {
   );
   const standardStyleImportsEnabled = usesStandardStyleConfiguration(activeStyleURL);
 
-  /** Keeps 3D extrusions under label layers; LocationPuck is last in the MapView tree. */
-  const buildingsBelowLayerId = useMemo(() => {
-    const u = activeStyleURL;
-    if (u.includes('dark-v')) return 'road-label-simple';
-    if (u.includes('streets-v')) return 'road-label';
-    if (u.includes('navigation-night')) return 'road-label-navigation';
-    if (u.includes('light-v')) return 'road-label';
-    return undefined;
-  }, [activeStyleURL]);
+  /** Keeps 3D extrusions and route line under label layers where the style exposes anchors. */
+  const buildingsBelowLayerId = useMemo(
+    () => labelAnchorLayerIdForStyleUrl(activeStyleURL),
+    [activeStyleURL],
+  );
 
   const isCalm = drivingMode === 'calm';
   const isSport = drivingMode === 'sport';
@@ -2110,84 +2099,55 @@ export default function MapScreen() {
               }}
             />
           ) : null}
-          {/* Camera: Phase 1 — useNavigationCamera drives center/zoom/pitch/heading via ref while navigating + locked; native follow otherwise */}
-          {(() => {
-            const navHookDriven = navCameraFollowActive;
-            return (
-              <MapboxGL.Camera
-                ref={cameraRef}
-                defaultSettings={{
-                  centerCoordinate: stableCenter,
-                  zoomLevel: modeConfig.exploreZoom,
-                  pitch: modeConfig.explorePitch,
-                }}
-                centerCoordinate={
-                  navHookDriven
-                    ? undefined
-                    : nav.isNavigating || isExploring || compassMode || exploreTracksUser
-                      ? undefined
-                      : stableCenter
-                }
-                zoomLevel={
-                  navHookDriven
-                    ? undefined
-                    : nav.isNavigating || compassMode || exploreTracksUser
-                      ? undefined
-                      : modeConfig.exploreZoom
-                }
-                pitch={
-                  navHookDriven
-                    ? undefined
-                    : nav.isNavigating || compassMode || exploreTracksUser
-                      ? undefined
-                      : modeConfig.explorePitch
-                }
-                animationMode={navHookDriven || (nav.isNavigating && cameraLocked) ? 'linearTo' : 'easeTo'}
-                animationDuration={navHookDriven ? 0 : camCtrl ? camCtrl.animationDuration : animDuration}
-                followUserLocation={
-                  navHookDriven
-                    ? false
-                    : (nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser
-                }
-                followUserMode={
-                  navHookDriven
-                    ? undefined
-                    : nav.isNavigating && cameraLocked
-                      ? MapboxGL.UserTrackingMode.FollowWithCourse
-                      : compassMode || followMode === 'heading'
-                        ? MapboxGL.UserTrackingMode.FollowWithHeading
-                        : exploreTracksUser && followMode === 'follow'
-                          ? MapboxGL.UserTrackingMode.Follow
-                          : undefined
-                }
-                followPitch={
-                  navHookDriven
-                    ? undefined
-                    : camCtrl
-                      ? camCtrl.followPitch
-                      : exploreTracksUser
-                        ? modeConfig.explorePitch
-                        : compassMode
-                          ? 45
-                          : undefined
-                }
-                followZoomLevel={
-                  navHookDriven
-                    ? undefined
-                    : camCtrl
-                      ? camCtrl.followZoomLevel
-                      : exploreTracksUser
-                        ? modeConfig.exploreZoom
-                        : compassMode
-                          ? 15
-                          : undefined
-                }
-                followPadding={
-                  navHookDriven ? undefined : camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING
-                }
-              />
-            );
-          })()}
+          {/* Camera: Mapbox follow + useCameraController (single owner — no parallel setCamera nav hook). */}
+          <MapboxGL.Camera
+            ref={cameraRef}
+            defaultSettings={{
+              centerCoordinate: stableCenter,
+              zoomLevel: modeConfig.exploreZoom,
+              pitch: modeConfig.explorePitch,
+            }}
+            centerCoordinate={
+              nav.isNavigating || isExploring || compassMode || exploreTracksUser ? undefined : stableCenter
+            }
+            zoomLevel={
+              nav.isNavigating || compassMode || exploreTracksUser ? undefined : modeConfig.exploreZoom
+            }
+            pitch={
+              nav.isNavigating || compassMode || exploreTracksUser ? undefined : modeConfig.explorePitch
+            }
+            animationMode={nav.isNavigating && cameraLocked ? 'linearTo' : 'easeTo'}
+            animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
+            followUserLocation={(nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser}
+            followUserMode={
+              nav.isNavigating && cameraLocked
+                ? MapboxGL.UserTrackingMode.FollowWithCourse
+                : compassMode || followMode === 'heading'
+                  ? MapboxGL.UserTrackingMode.FollowWithHeading
+                  : exploreTracksUser && followMode === 'follow'
+                    ? MapboxGL.UserTrackingMode.Follow
+                    : undefined
+            }
+            followPitch={
+              camCtrl
+                ? camCtrl.followPitch
+                : exploreTracksUser
+                  ? modeConfig.explorePitch
+                  : compassMode
+                    ? 45
+                    : undefined
+            }
+            followZoomLevel={
+              camCtrl
+                ? camCtrl.followZoomLevel
+                : exploreTracksUser
+                  ? modeConfig.exploreZoom
+                  : compassMode
+                    ? 15
+                    : undefined
+            }
+            followPadding={camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING}
+          />
 
           {/* Terrain: Standard + Satellite (classic streets/dark URLs removed). */}
           {MapboxGL.RasterDemSource && MapboxGL.Terrain && standardStyleImportsEnabled && (
@@ -2258,33 +2218,25 @@ export default function MapScreen() {
             });
           })()}
 
-          {nav.navigationData?.polyline &&
-            (nav.isNavigating && nav.navigationProgress ? (
-              <NavigationRouteLayers
-                mode={drivingMode}
-                traveledRoute={nav.navigationProgress.traveledRoute}
-                remainingRoute={nav.navigationProgress.remainingRoute}
-                maneuverRoute={nav.navigationProgress.maneuverRoute}
-                lineOpacity={nav.isRerouting ? 0.55 : 1}
-              />
-            ) : (
-              <RouteOverlay
-                polyline={nav.navigationData.polyline}
-                isNavigating={nav.isNavigating}
-                routeSplit={null}
-                routeColor={modeConfig.routeColor}
-                casingColor={modeConfig.routeCasing}
-                passedColor={modeConfig.passedColor}
-                routeWidth={modeConfig.routeWidth}
-                glowColor={modeConfig.routeGlowColor}
-                glowOpacity={modeConfig.routeGlowOpacity}
-                congestion={nav.navigationData.congestion}
-                showCongestion={
-                  modeConfig.showCongestion && (nav.showRoutePreview || nav.isNavigating)
-                }
-                isRerouting={nav.isRerouting}
-              />
-            ))}
+          {nav.navigationData?.polyline && (
+            <RouteOverlay
+              polyline={nav.navigationData.polyline}
+              isNavigating={nav.isNavigating}
+              routeSplit={null}
+              routeColor={modeConfig.routeColor}
+              casingColor={modeConfig.routeCasing}
+              passedColor={modeConfig.passedColor}
+              routeWidth={modeConfig.routeWidth}
+              glowColor={modeConfig.routeGlowColor}
+              glowOpacity={modeConfig.routeGlowOpacity}
+              congestion={nav.navigationData.congestion}
+              showCongestion={
+                modeConfig.showCongestion && (nav.showRoutePreview || nav.isNavigating)
+              }
+              isRerouting={nav.isRerouting}
+              belowLayerID={buildingsBelowLayerId}
+            />
+          )}
 
           {!nav.isNavigating && (
             <OfferMarkers offers={nearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
@@ -2334,23 +2286,15 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
-          {/* Browse / preview: native puck. Active navigation: custom fused puck (no default puck). */}
+          {/* Native puck in all modes (reliable GPS alignment during navigation). */}
           <MapboxGL.LocationPuck
-            visible={!nav.isNavigating}
+            visible
             androidRenderMode="normal"
             puckBearingEnabled
             puckBearing={nav.isNavigating ? 'course' : 'heading'}
             pulsing={{ isEnabled: false }}
             scale={1.5}
           />
-          {nav.isNavigating && nav.navigationProgress?.displayCoord && (
-            <NavigationPuck
-              lat={nav.navigationProgress.displayCoord.lat}
-              lng={nav.navigationProgress.displayCoord.lng}
-              heading={nav.navigationProgress.displayCoord.heading ?? nav.navigationDisplayHeading}
-              mode={drivingMode}
-            />
-          )}
         </MapboxGL.MapView>
       ) : (
         <View style={[s.map, s.placeholder]}>
@@ -2871,10 +2815,18 @@ export default function MapScreen() {
         >
           <Ionicons name="refresh-outline" size={14} color={isCalm ? '#4A7BBF' : '#fff'} style={{ marginRight: 6 }} />
           <Text style={[s.reroutingText, isCalm && { color: '#2C5F9E' }]}>
-            {isCalm ? 'Finding a new route for you…' : 'Rerouting…'}
+            {isCalm ? 'Recalculating your route…' : 'Recalculating…'}
           </Text>
         </Animated.View>
       )}
+
+      {typeof __DEV__ !== 'undefined' && __DEV__ && nav.isNavigating && !nav.showRoutePreview ? (
+        <NavigationDebugHud
+          progress={nav.navigationProgress ?? null}
+          currentStepIndex={nav.currentStepIndex}
+          topInset={insets.top}
+        />
+      ) : null}
 
       {/* ═══ TRAFFIC CONGESTION BANNER (during navigation) ══════════════ */}
       {modeConfig.showTrafficBar && nav.isNavigating && !nav.isRerouting && !trafficBannerDismissed && (() => {
@@ -2989,6 +2941,10 @@ export default function MapScreen() {
               if (!m) stopSpeaking();
               return !m;
             });
+          }}
+          onVoiceRepeat={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            repeatLastTurnByTurn(drivingMode, navVoiceMuted);
           }}
         />
       )}
@@ -3126,12 +3082,28 @@ export default function MapScreen() {
       <TripSummaryModal visible={!!nav.tripSummary} onClose={nav.dismissTripSummary}>
         {nav.tripSummary ? (
           <>
-            <Text style={[s.tripTitle, {	color: colors.text }]}>Trip Summary</Text>
+            <Text style={[s.tripTitle, { color: colors.text }]}>
+              {nav.tripSummary.arrivedAtDestination ? "You've arrived" : 'Trip Summary'}
+            </Text>
             <Text style={[s.tripRoute, { color: colors.textTertiary }]}>{nav.tripSummary.origin} → {nav.tripSummary.destination}</Text>
+            {nav.tripSummary.arrivedAtDestination && nav.tripSummary.counted !== false ? (
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: 14,
+                  fontWeight: '600',
+                  textAlign: 'center',
+                  marginBottom: 10,
+                }}
+              >
+                Here’s how this trip looks in SnapRoad.
+              </Text>
+            ) : null}
             {nav.tripSummary.counted === false && (
               <View style={{ backgroundColor: isLight ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.15)', borderRadius: 12, padding: 12, marginBottom: 12 }}>
                 <Text style={{ color: isLight ? '#92400E' : '#FBBF24', fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
-                  This drive was too short to count for gems or trip history. Go a bit farther next time.
+                  This drive didn’t meet the minimum to count for gems or trip history. You need about 0.15 miles on the route, at
+                  least 45 seconds of driving, and about 200 meters of real GPS movement. Try a slightly longer trip next time.
                 </Text>
               </View>
             )}

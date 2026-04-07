@@ -1,11 +1,14 @@
 import { useEffect, useRef } from 'react';
-import * as Speech from 'expo-speech';
+import type { DrivingMode } from '../types';
+import { speakGuidance } from '../utils/voice';
 import { NavigationProgress } from '../navigation/navModel';
 import { phraseForManeuverKind } from '../navigation/spokenManeuver';
+import { setLastTurnByTurnPhrase } from '../navigation/navigationGuidanceMemory';
 
 type Args = {
   progress: NavigationProgress | null;
   enabled: boolean;
+  drivingMode: DrivingMode;
 };
 
 function buildUtterance(progress: NavigationProgress): string | null {
@@ -20,7 +23,7 @@ function buildUtterance(progress: NavigationProgress): string | null {
   return `${distancePart}, ${instruction}${street}`;
 }
 
-export function useNavigationSpeech({ progress, enabled }: Args) {
+export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
   const lastKey = useRef<string | null>(null);
 
   useEffect(() => {
@@ -35,16 +38,15 @@ export function useNavigationSpeech({ progress, enabled }: Args) {
     const phrase = buildUtterance(progress);
     if (!phrase) return;
 
-    Speech.stop();
-    Speech.speak(phrase, {
-      language: 'en-US',
-      pitch: 1.0,
-      rate: 0.96,
-    });
+    setLastTurnByTurnPhrase(phrase);
+    speakGuidance(phrase, drivingMode);
     lastKey.current = key;
-  }, [progress, enabled]);
+  }, [progress, enabled, drivingMode]);
 
   useEffect(() => {
-    if (!enabled) lastKey.current = null;
+    if (!enabled) {
+      lastKey.current = null;
+      setLastTurnByTurnPhrase(null);
+    }
   }, [enabled]);
 }

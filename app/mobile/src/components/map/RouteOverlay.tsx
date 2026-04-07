@@ -7,6 +7,11 @@ import {
   type RouteSplitForOverlay,
 } from '../../utils/distance';
 import { TRAFFIC_CONGESTION_HEX } from '../../constants/trafficCongestion';
+import {
+  ROUTE_SOURCE_ID,
+  ROUTE_SOURCE_ID_MINIMAL,
+  RouteLineLayerIds,
+} from '../../map/mapLayerRegistry';
 
 const ROUTE_CONGESTION_COLOR = {
   moderate: '#FF9500',
@@ -29,6 +34,10 @@ interface Props {
   congestion?: CongestionLevel[];
   showCongestion?: boolean;
   isRerouting?: boolean;
+  /** Anchor below a known basemap label layer (style-specific). */
+  belowLayerID?: string;
+  /** Degraded path: one source + one line (fewer native layer inserts). */
+  routeRenderVariant?: 'full' | 'minimal';
 }
 
 function lngLatToCoords(ring: [number, number][]): Coordinate[] {
@@ -48,6 +57,8 @@ export default React.memo(function RouteOverlay({
   congestion,
   showCongestion = false,
   isRerouting = false,
+  belowLayerID,
+  routeRenderVariant = 'full',
 }: Props) {
   const hasCongestion = showCongestion && congestion && congestion.length > 0;
 
@@ -156,15 +167,44 @@ export default React.memo(function RouteOverlay({
   const lineOpacity = isRerouting ? 0.35 : 1.0;
   const effectiveGlowColor = glowColor || routeColor;
 
+  if (routeRenderVariant === 'minimal') {
+    const minimalShape: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: fullCoords },
+        },
+      ],
+    };
+    return (
+      <MapboxGL.ShapeSource id={ROUTE_SOURCE_ID_MINIMAL} shape={minimalShape} lineMetrics={false}>
+        <MapboxGL.LineLayer
+          id={RouteLineLayerIds.minimalLine}
+          belowLayerID={belowLayerID}
+          style={{
+            lineColor: routeColor,
+            lineWidth: routeWidth + 3,
+            lineOpacity,
+            lineCap: 'round',
+            lineJoin: 'round',
+          }}
+        />
+      </MapboxGL.ShapeSource>
+    );
+  }
+
   return (
     <MapboxGL.ShapeSource
-      id="sr-route"
+      id={ROUTE_SOURCE_ID}
       shape={geoJSON as GeoJSON.FeatureCollection}
       lineMetrics={false}
     >
       {/* Continuous glow on the full-route base feature — no split seam */}
       <MapboxGL.LineLayer
-        id="sr-route-glow"
+        id={RouteLineLayerIds.glow}
+        belowLayerID={belowLayerID}
         filter={['==', ['get', 'segment'], 'base']}
         style={{
           lineColor: effectiveGlowColor,
@@ -178,7 +218,8 @@ export default React.memo(function RouteOverlay({
 
       {/* Continuous casing on the full-route base feature */}
       <MapboxGL.LineLayer
-        id="sr-route-casing"
+        id={RouteLineLayerIds.casing}
+        aboveLayerID={RouteLineLayerIds.glow}
         filter={['==', ['get', 'segment'], 'base']}
         style={{
           lineColor: casingColor,
@@ -204,7 +245,8 @@ export default React.memo(function RouteOverlay({
 
       {/* Ahead (colored) route on top of passed */}
       <MapboxGL.LineLayer
-        id="sr-route-ahead"
+        id={RouteLineLayerIds.ahead}
+        aboveLayerID={RouteLineLayerIds.passed}
         filter={['==', ['get', 'segment'], 'ahead']}
         style={{
           lineColor: aheadLineColor,

@@ -42,6 +42,8 @@ type Props = {
   /** Turn-by-turn speech mute (persisted on MapScreen). */
   voiceMuted?: boolean;
   onVoiceToggle?: () => void;
+  /** Long-press voice control: repeat last turn-by-turn cue (not mute). */
+  onVoiceRepeat?: () => void;
 };
 
 export default React.memo(function NavigationStatusStrip({
@@ -59,6 +61,7 @@ export default React.memo(function NavigationStatusStrip({
   contextLine,
   voiceMuted = false,
   onVoiceToggle,
+  onVoiceRepeat,
 }: Props) {
   const [calmExpanded, setCalmExpanded] = useState(false);
 
@@ -92,7 +95,7 @@ export default React.memo(function NavigationStatusStrip({
     if (isRerouting) {
       return (
         <Text style={[styles.secondary, { color: etaAccent }]} numberOfLines={1}>
-          Updating route…
+          Recalculating…
         </Text>
       );
     }
@@ -177,20 +180,22 @@ export default React.memo(function NavigationStatusStrip({
         ]}
       >
         {onVoiceToggle ? (
-          <TouchableOpacity
+          <Pressable
             style={styles.voiceBtn}
             onPress={onVoiceToggle}
+            onLongPress={onVoiceRepeat}
+            delayLongPress={450}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityRole="button"
             accessibilityLabel={voiceMuted ? 'Unmute voice guidance' : 'Mute voice guidance'}
-            activeOpacity={0.75}
+            accessibilityHint={onVoiceRepeat ? 'Long press to repeat last instruction' : undefined}
           >
             <Ionicons
               name={voiceMuted ? 'volume-mute' : 'volume-high'}
               size={20}
               color={voiceMuted ? textSec : etaAccent}
             />
-          </TouchableOpacity>
+          </Pressable>
         ) : null}
         <View style={onVoiceToggle ? styles.primaryLineWithVoice : undefined}>
           <Text style={styles.primaryLine} numberOfLines={1}>

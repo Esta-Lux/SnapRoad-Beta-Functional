@@ -34,6 +34,8 @@ import {
 import { useNavigationProgress } from './useNavigationProgress';
 import { buildNavStepsFromDirections } from '../navigation/navStepsFromDirections';
 import type { NavigationProgress } from '../navigation/navModel';
+import { offRouteTuningForMode } from '../navigation/offRouteTuning';
+import * as Haptics from 'expo-haptics';
 function applyTripCompleteProfileToUser(updateUser: (u: Partial<User>) => void, profile: unknown) {
   if (!profile || typeof profile !== 'object') return;
   const p = profile as Record<string, unknown>;
@@ -72,6 +74,8 @@ export interface TripSummary {
   date: string;
   /** False = trip sheet still shows, but drive did not meet min distance/time for rewards. */
   counted?: boolean;
+  /** Auto-ended at destination — show “You’ve arrived” hero in trip sheet. */
+  arrivedAtDestination?: boolean;
   /** Authoritative profile totals after /api/trips/complete (when returned). */
   profile_totals?: {
     total_miles?: number;
@@ -136,8 +140,14 @@ export function useNavigation(params: {
   const hasAnnouncedArrivalRef = useRef(false);
   /** Prevents double auto-end when arrival conditions flicker on successive GPS ticks. */
   const autoEndNavTriggeredRef = useRef(false);
-  /** Phase 1: consecutive ticks with `navigationProgress.isOffRoute` before reroute. */
+  /** Set only when auto-end fires so trip summary can show arrival hero. */
+  const autoEndFromArrivalRef = useRef(false);
+  /** Consecutive ticks with `navigationProgress.isOffRoute` before reroute. */
   const offRouteStreakRef = useRef(0);
+  const rerouteSeqRef = useRef(0);
+  const lastRerouteVoiceAtRef = useRef(0);
+  /** Require consecutive arrival samples before auto-end (GPS flicker). */
+  const arrivalNearStreakRef = useRef(0);
 
   const routePoints = useMemo(
     () =>
@@ -167,30 +177,27 @@ export function useNavigation(params: {
     };
   }, [isNavigating, routePoints.length, userLocation.lat, userLocation.lng, heading, speed, gpsAccuracy]);
 
+  const offRouteTuning = useMemo(() => offRouteTuningForMode(drivingMode), [drivingMode]);
+
   const navigationProgress: NavigationProgress | null = useNavigationProgress({
     rawLocation: rawForNavigationProgress,
     route: routePoints,
     steps: navStepsBuilt,
     routeDurationSeconds: navigationData?.duration ?? 0,
+    offRouteTuning,
   });
 
-  /** Single display fix for route progress, ETA, split, turn distances — from {@link navigationProgress}. */
-  const navigationProgressCoord: Coordinate = useMemo(() => {
-    if (isNavigating && navigationProgress?.displayCoord) {
-      return {
-        lat: navigationProgress.displayCoord.lat,
-        lng: navigationProgress.displayCoord.lng,
-      };
-    }
-    return userLocation;
-  }, [isNavigating, navigationProgress, userLocation.lat, userLocation.lng]);
+  /**
+   * Reliability rollback: raw GPS for progress/ETA/arrival (matches native LocationPuck),
+   * avoids smoothed coordinates lagging at stops and intersections.
+   * Banner/speech/ETA numbers still come from `navigationProgress` (single model).
+   */
+  const navigationProgressCoord: Coordinate = useMemo(
+    () => ({ lat: userLocation.lat, lng: userLocation.lng }),
+    [userLocation.lat, userLocation.lng],
+  );
 
-  const navigationDisplayHeading = useMemo(() => {
-    if (isNavigating && navigationProgress?.displayCoord?.heading != null) {
-      return navigationProgress.displayCoord.heading;
-    }
-    return heading;
-  }, [isNavigating, navigationProgress, heading]);
+  const navigationDisplayHeading = heading;
 
   const liveEta = useMemo((): { distanceMiles: number; etaMinutes: number } | null => {
     if (!isNavigating || !navigationProgress) return null;
@@ -311,6 +318,10 @@ export function useNavigation(params: {
     tripStartTimeRef.current = Date.now();
     setShowRoutePreview(false);
     offRouteStreakRef.current = 0;
+    rerouteSeqRef.current = 0;
+    lastRerouteVoiceAtRef.current = 0;
+    arrivalNearStreakRef.current = 0;
+    autoEndFromArrivalRef.current = false;
     const dest = navigationData.destination.name ?? 'your destination';
     const etaMin = Math.round(navigationData.duration / 60);
     const firstStep = navigationData.steps?.[0];
@@ -340,6 +351,8 @@ export function useNavigation(params: {
       tripStartTimeRef.current = null;
       hasAnnouncedArrivalRef.current = false;
       autoEndNavTriggeredRef.current = false;
+      autoEndFromArrivalRef.current = false;
+      arrivalNearStreakRef.current = 0;
       offRouteStreakRef.current = 0;
       rerouteInFlightRef.current = false;
       lastRerouteAtRef.current = 0;
@@ -393,6 +406,10 @@ export function useNavigation(params: {
       && durationSec >= MIN_QUALIFYING_SEC
       && roundedDist >= MIN_QUALIFYING_MI;
 
+    const arrivedAtDestination = autoEndFromArrivalRef.current;
+    autoEndFromArrivalRef.current = false;
+    arrivalNearStreakRef.current = 0;
+
     const summaryPayload: TripSummary = {
       distance: roundedDist,
       duration: Math.max(1, durationMin || 1),
@@ -405,6 +422,7 @@ export function useNavigation(params: {
       destination: destName,
       date: new Date().toLocaleDateString(),
       counted: qualifies,
+      arrivedAtDestination,
     };
 
     queueMicrotask(() => setTripSummary(summaryPayload));
@@ -575,12 +593,20 @@ export function useNavigation(params: {
     const remainMi = liveEta?.distanceMiles;
     const withinRoute = remainMi != null && remainMi <= 0.1;
     const withinCrow = crow <= 55;
-    if (!withinRoute && !withinCrow) return;
+    if (!withinRoute && !withinCrow) {
+      arrivalNearStreakRef.current = 0;
+      return;
+    }
+
+    arrivalNearStreakRef.current += 1;
+    if (arrivalNearStreakRef.current < 2) return;
 
     const sessionAge = Date.now() - navSessionStartRef.current;
     if (sessionAge < 4000) return;
 
     autoEndNavTriggeredRef.current = true;
+    autoEndFromArrivalRef.current = true;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     queueMicrotask(() => {
       stopNavigation();
     });
@@ -674,6 +700,7 @@ export function useNavigation(params: {
     drivingMode,
     fetchDirections,
     navSpeak,
+    offRouteTuning.streakRequired,
   ]);
 
   const addWaypoint = useCallback(async (waypoint: Coordinate & { name?: string }) => {
@@ -848,11 +875,11 @@ export function useNavigation(params: {
     addWaypoint,
     /** Single navigation core: puck, split, ETA, turn — null when not navigating. */
     navigationProgress,
-    /** @deprecated Use `navigationProgress` (displayCoord, snapped, confidence). */
+    /** Same as {@link navigationProgress} — kept for callers expecting `fusedNavState`. */
     fusedNavState: navigationProgress,
-    /** Authoritative map/ETA coordinate while navigating (smoothed toward route). */
+    /** Raw GPS while navigating (matches native puck / route progress). */
     navigationProgressCoord,
-    /** Heading aligned with fused display (turn with map during nav). */
+    /** Device heading (matches native course/heading follow). */
     navigationDisplayHeading,
     /**
      * Single object for UI alignment: map puck, route split, ETA strip, turn/orion context.
