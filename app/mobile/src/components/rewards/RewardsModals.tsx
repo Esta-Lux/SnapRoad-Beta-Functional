@@ -457,7 +457,7 @@ export function AllOffersModal({
           <ScrollView contentContainerStyle={{ paddingBottom: 24, paddingTop: 8 }}>
             {offers.length === 0 && (
               <Text style={[rewardsStyles.offerBiz, { color: sub, textAlign: 'center', paddingVertical: 28, paddingHorizontal: 16 }]}>
-                No offers in range yet. Pull to refresh on Rewards, or move closer to a partner location (offers use your last known area).
+                No offers in range yet. Pull to refresh on Wallet, or move closer to a partner location (offers use your last known area).
               </Text>
             )}
             {offers.map((o) => (

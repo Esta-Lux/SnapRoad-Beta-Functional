@@ -1,6 +1,10 @@
 import type { Badge, Offer } from '../../types';
 
-export type RewardsTab = 'offers' | 'badges';
+/** Primary Wallet sections (UI: former "Rewards"). */
+export type WalletTab = 'balance' | 'activity' | 'offers' | 'redemptions' | 'badges';
+
+/** @deprecated Use WalletTab */
+export type RewardsTab = WalletTab;
 
 /** Driver redemption ledger (GET /api/offers/my-redemptions). */
 export type UserOfferRedemption = {

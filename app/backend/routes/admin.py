@@ -118,9 +118,10 @@ def get_admin_stats():
 @router.get("/admin/wallet-ledger")
 def admin_wallet_ledger(
     user_id: Annotated[Optional[str], Query(description="Filter by driver user_id")] = None,
+    tx_type: Annotated[Optional[str], Query(description="Filter by tx_type e.g. trip_drive, offer_redeem")] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
 ):
-    """Recent rows from `wallet_transactions` for ops review; optional filter by driver user_id."""
+    """Recent rows from `wallet_transactions` for ops review; optional filter by driver user_id or tx_type."""
     from database import get_supabase
 
     sb = get_supabase()
@@ -136,11 +137,61 @@ def admin_wallet_ledger(
         )
         if user_id:
             q = q.eq("user_id", user_id)
+        if tx_type and str(tx_type).strip():
+            q = q.eq("tx_type", str(tx_type).strip())
         res = q.execute()
         return {"success": True, "data": res.data or []}
     except Exception as e:
         logger.warning("admin wallet-ledger: %s", e)
         return {"success": False, "message": "Could not load wallet ledger", "data": []}
+
+
+@router.get("/admin/redemptions")
+def admin_redemptions_list(
+    user_id: Annotated[Optional[str], Query(description="Filter by driver user_id")] = None,
+    status: Annotated[Optional[str], Query(description="Redemption status e.g. verified")] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 150,
+):
+    """Monitor offer redemptions across partners (service role)."""
+    from database import get_supabase
+
+    sb = get_supabase()
+    try:
+        q = sb.table("redemptions").select("*").order("created_at", desc=True).limit(limit)
+        if user_id:
+            q = q.eq("user_id", user_id)
+        if status and str(status).strip():
+            q = q.eq("status", str(status).strip())
+        res = q.execute()
+        return {"success": True, "data": res.data or []}
+    except Exception as e:
+        logger.warning("admin redemptions: %s", e)
+        return {"success": False, "message": "Could not load redemptions", "data": []}
+
+
+class AdminOfferStatusBody(BaseModel):
+    """Set offer visibility / lifecycle for moderation."""
+
+    status: str = Field(..., min_length=3, max_length=32)
+
+
+@router.post("/admin/offers/{offer_id}/status")
+def admin_set_offer_status(offer_id: str, body: AdminOfferStatusBody):
+    """
+    Approve or pause offers: active | inactive | paused.
+    `rejected` is stored as inactive for drivers (not shown as live offers).
+    """
+    raw = str(body.status or "").strip().lower()
+    if raw == "reject":
+        raw = "rejected"
+    if raw not in ("active", "inactive", "paused", "rejected"):
+        return {"success": False, "message": "status must be active, inactive, paused, or rejected"}
+    stored = "inactive" if raw == "rejected" else raw
+    ok = sb_update_offer(offer_id, {"status": stored})
+    if ok:
+        sb_create_audit_log("OFFER_STATUS", "admin", offer_id, f"Offer status set to {stored}")
+        return {"success": True, "message": "Offer updated", "data": {"status": stored}}
+    return {"success": False, "message": "Could not update offer"}
 
 
 # ==================== CONCERNS (admin) ====================

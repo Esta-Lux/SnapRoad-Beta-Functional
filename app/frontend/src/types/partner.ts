@@ -34,6 +34,8 @@ export interface PartnerRedemption {
   user_name?: string
   customer_id?: string
   scanned_by_user_id?: string
+  /** True when staff scanned QR in store (same as backend `used_in_store`). */
+  used_in_store?: boolean
   redeemed_at?: string
   created_at?: string
 }

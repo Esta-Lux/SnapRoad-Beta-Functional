@@ -116,28 +116,40 @@ export default function RedemptionsTab({ redemptions, feeInfo, onExportCsv, onOp
             <table className="w-full text-sm">
               <thead className="bg-white/[0.02] text-slate-400">
                 <tr>
-                  <th className="text-left px-3 py-3 font-medium sm:px-6">When</th>
+                  <th className="text-left px-3 py-3 font-medium sm:px-6">Redeemed</th>
                   <th className="text-left px-3 py-3 font-medium sm:px-6">Offer</th>
                   <th className="text-left px-3 py-3 font-medium sm:px-6">Customer</th>
+                  <th className="text-left px-3 py-3 font-medium sm:px-6">In-store scan</th>
                   <th className="text-left px-3 py-3 font-medium sm:px-6">Discount</th>
                   <th className="text-left px-3 py-3 font-medium sm:px-6">Fee</th>
                   <th className="text-left px-3 py-3 font-medium sm:px-6">Tier</th>
                 </tr>
               </thead>
               <tbody>
-                {redemptions.map((row, idx) => (
+                {redemptions.map((row, idx) => {
+                  const used = Boolean(row.used_in_store) || (row.scanned_by_user_id != null && String(row.scanned_by_user_id).trim() !== '')
+                  return (
                   <tr key={`${row.offer_id}-${row.redeemed_at || row.created_at || idx}`} className="border-t border-white/5 text-slate-200">
-                    <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap">{formatWhen(row.redeemed_at || row.created_at)}</td>
+                    <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-xs">{formatWhen(row.redeemed_at || row.created_at)}</td>
                     <td className="px-3 py-3 sm:px-6 sm:py-4 min-w-[140px]">
                       <div className="font-medium text-white break-words">{row.offer_name || row.business_name || `Offer ${row.offer_id}`}</div>
                       <div className="text-xs text-slate-500">Offer #{row.offer_id}</div>
                     </td>
                     <td className="px-3 py-3 sm:px-6 sm:py-4 max-w-[120px] truncate sm:max-w-none">{row.user_name || row.customer_id || 'Driver'}</td>
+                    <td className="px-3 py-3 sm:px-6 sm:py-4">
+                      <span className={used ? 'text-emerald-400 font-semibold' : 'text-slate-500'}>{used ? 'Yes' : 'Pending'}</span>
+                      {used && row.scanned_by_user_id ? (
+                        <div className="text-[10px] text-slate-500 mt-0.5 font-mono truncate max-w-[140px]" title={String(row.scanned_by_user_id)}>
+                          staff {String(row.scanned_by_user_id).slice(0, 8)}…
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-3 sm:px-6 sm:py-4 text-emerald-300">{row.discount_applied ? `${row.discount_applied}%` : '—'}</td>
                     <td className="px-3 py-3 sm:px-6 sm:py-4 text-amber-300 whitespace-nowrap">{formatMoney(row.fee_amount, row.fee_cents)}</td>
                     <td className="px-3 py-3 sm:px-6 sm:py-4">{row.fee_tier ? `Tier ${row.fee_tier}` : '—'}</td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

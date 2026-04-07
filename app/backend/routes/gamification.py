@@ -402,16 +402,11 @@ def get_gem_history(user: CurrentUser):
         try:
             from services.wallet_ledger import fetch_recent_ledger
 
-            ledger_rows = fetch_recent_ledger(sb, user_id, limit=30)
+            ledger_rows = fetch_recent_ledger(sb, user_id, limit=50)
         except Exception:
             ledger_rows = []
 
-        earned_rows = sb.table("trips").select("gems_earned, created_at").eq("profile_id", user_id).gt("gems_earned", 0).order("created_at", desc=True).limit(20).execute()
-        # NOTE: production schema uses `redemptions.gems_earned` (legacy) rather than `gems_cost`.
-        # Selecting a non-existent column causes PostgREST to throw; keep this query compatible.
-        spent_rows = sb.table("redemptions").select("gems_earned, created_at, offer_id").eq("user_id", user_id).order("created_at", desc=True).limit(20).execute()
-
-        # Driver app no longer surfaces a global leaderboard; hide legacy ledger rows.
+        # Driver gem activity is sourced only from `wallet_transactions` (append-only ledger).
         _LEDGER_SKIP_TYPES = frozenset({"leaderboard", "weekly_leaderboard", "global_leaderboard"})
 
         def _ledger_credit_source(tx_type: str) -> str:
@@ -429,68 +424,36 @@ def get_gem_history(user: CurrentUser):
             return tx_type.replace("_", " ").strip().title() or "Gems spent"
 
         transactions = []
-        activity_source = "wallet_transactions" if ledger_rows else "trips_and_redemptions"
-        if ledger_rows:
-            for row in ledger_rows:
-                tx_type = str(row.get("tx_type") or "").strip()
-                if tx_type in _LEDGER_SKIP_TYPES:
-                    continue
-                direction = str(row.get("direction") or "")
-                amt = int(row.get("amount") or 0)
-                rid = str(row.get("id") or "")
-                md = row.get("metadata")
-                if md is not None and not isinstance(md, dict):
-                    try:
-                        md = json.loads(md) if isinstance(md, str) else {}
-                    except Exception:
-                        md = {}
-                if md is None:
+        activity_source = "wallet_transactions"
+        for row in ledger_rows:
+            tx_type = str(row.get("tx_type") or "").strip()
+            if tx_type in _LEDGER_SKIP_TYPES:
+                continue
+            direction = str(row.get("direction") or "")
+            amt = int(row.get("amount") or 0)
+            rid = str(row.get("id") or "")
+            md = row.get("metadata")
+            if md is not None and not isinstance(md, dict):
+                try:
+                    md = json.loads(md) if isinstance(md, str) else {}
+                except Exception:
                     md = {}
-                base_tx = {
-                    "id": rid,
-                    "tx_type": tx_type,
-                    "reference_type": row.get("reference_type"),
-                    "reference_id": str(row.get("reference_id") or "") if row.get("reference_id") is not None else None,
-                    "balance_before": row.get("balance_before"),
-                    "balance_after": row.get("balance_after"),
-                    "date": row.get("created_at", ""),
-                    "metadata": md,
-                }
-                if direction == "credit":
-                    transactions.append({**base_tx, "type": "earned", "amount": amt, "source": _ledger_credit_source(tx_type)})
-                elif direction == "debit":
-                    transactions.append({**base_tx, "type": "spent", "amount": amt, "source": _ledger_debit_source(tx_type)})
-        else:
-            for r in (earned_rows.data or []):
-                ca = r.get("created_at", "")
-                transactions.append({
-                    "id": f"trip-{ca}",
-                    "type": "earned",
-                    "amount": int(r.get("gems_earned", 0)),
-                    "source": "Trip completion",
-                    "date": ca,
-                    "tx_type": "trip_drive",
-                    "reference_type": "trip",
-                    "reference_id": None,
-                    "balance_before": None,
-                    "balance_after": None,
-                })
-            for r in (spent_rows.data or []):
-                raw = int(r.get("gems_earned", 0))
-                ca = r.get("created_at", "")
-                oid = r.get("offer_id")
-                transactions.append({
-                    "id": f"redeem-{ca}-{oid}",
-                    "type": "spent",
-                    "amount": abs(raw),
-                    "source": "Offer redemption",
-                    "date": ca,
-                    "tx_type": "offer_redeem",
-                    "reference_type": "offer",
-                    "reference_id": str(oid) if oid is not None else None,
-                    "balance_before": None,
-                    "balance_after": None,
-                })
+            if md is None:
+                md = {}
+            base_tx = {
+                "id": rid,
+                "tx_type": tx_type,
+                "reference_type": row.get("reference_type"),
+                "reference_id": str(row.get("reference_id") or "") if row.get("reference_id") is not None else None,
+                "balance_before": row.get("balance_before"),
+                "balance_after": row.get("balance_after"),
+                "date": row.get("created_at", ""),
+                "metadata": md,
+            }
+            if direction == "credit":
+                transactions.append({**base_tx, "type": "earned", "amount": amt, "source": _ledger_credit_source(tx_type)})
+            elif direction == "debit":
+                transactions.append({**base_tx, "type": "spent", "amount": amt, "source": _ledger_debit_source(tx_type)})
         transactions.sort(key=lambda x: x.get("date", ""), reverse=True)
 
         total_earned = sum(t["amount"] for t in transactions if t["type"] == "earned")

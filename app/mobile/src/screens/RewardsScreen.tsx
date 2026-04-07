@@ -17,7 +17,6 @@ import {
   SectionTitle,
   BadgesPreview,
   OffersPreview,
-  OffersRewardsSegment,
   MyRedemptionsSection,
   GemActivityList,
   OfferCategoryChips,
@@ -31,7 +30,7 @@ import {
 } from '../components/rewards/RewardsModals';
 import GemActivityDetailModal from '../components/rewards/GemActivityDetailModal';
 import { rewardsStyles } from '../components/rewards/styles';
-import type { RewardsTab, GemTx, UserOfferRedemption, OffersRewardsView } from '../components/rewards/types';
+import type { WalletTab, GemTx, UserOfferRedemption } from '../components/rewards/types';
 
 /** Product filter chips. `nearby` = ≤ 8 km. `food` / `restaurants` → backend `restaurant`. */
 const REWARDS_OFFER_FILTER_DEFS: { slug: string | null; label: string }[] = [
@@ -113,14 +112,13 @@ export default function RewardsScreen() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [selectedBadge, setSelectedBadge] = useState<Badge | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
-  const [rewardsTab, setRewardsTab] = useState<RewardsTab>('offers');
+  const [walletTab, setWalletTab] = useState<WalletTab>('balance');
   const [redeemingOfferId, setRedeemingOfferId] = useState<string | null>(null);
   const [gemTx, setGemTx] = useState<GemTx[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showAllOffers, setShowAllOffers] = useState(false);
   const [showAllBadges, setShowAllBadges] = useState(false);
   const [offerCategoryFilter, setOfferCategoryFilter] = useState<string | null>(null);
-  const [offersRewardsView, setOffersRewardsView] = useState<OffersRewardsView>('nearby');
   const [myRedemptions, setMyRedemptions] = useState<UserOfferRedemption[]>([]);
   const [selectedRedemption, setSelectedRedemption] = useState<UserOfferRedemption | null>(null);
   const [selectedGemTx, setSelectedGemTx] = useState<GemTx | null>(null);
@@ -202,7 +200,7 @@ export default function RewardsScreen() {
         setRewardsSummary(null);
       }
     } catch {
-      setErrorMsg('Could not refresh rewards data. Pull to retry.');
+      setErrorMsg('Could not refresh wallet data. Pull to retry.');
     } finally {
       if (mode === 'initial') setInitialLoading(false);
       else setRefreshing(false);
@@ -389,181 +387,178 @@ export default function RewardsScreen() {
         </View>
       )}
 
-      <View style={{ marginHorizontal: 16, marginBottom: 14, gap: 10 }}>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
-            <LinearGradient colors={[`${colors.warning}28`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.warning}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                <Ionicons name="flame" size={22} color={colors.warning} />
-              </View>
-              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{tripsCardValue}</Text>
-              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Trips</Text>
-            </LinearGradient>
-          </View>
-          <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
-            <LinearGradient colors={[`${colors.rewardsGradientEnd}33`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.rewardsGradientEnd}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                <Ionicons name="diamond" size={22} color={colors.rewardsGradientEnd} />
-              </View>
-              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{user ? Math.round(user.gems ?? 0) : '—'}</Text>
-              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Gem balance</Text>
-            </LinearGradient>
-          </View>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
-            <LinearGradient colors={[`${colors.success}28`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.success}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                <Ionicons name="ribbon" size={22} color={colors.success} />
-              </View>
-              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{badgesCardLabel}</Text>
-              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Badges</Text>
-            </LinearGradient>
-          </View>
-          <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
-            <LinearGradient colors={[`${colors.rewardsGradientEnd}33`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.rewardsGradientEnd}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                <Ionicons name="diamond" size={22} color={colors.rewardsGradientEnd} />
-              </View>
-              <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{headerMultiplier}</Text>
-              <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Gem mult.</Text>
-            </LinearGradient>
-          </View>
-        </View>
-      </View>
-
-      <View
-        style={{
-          marginHorizontal: 16,
-          marginBottom: 14,
-          paddingVertical: 12,
-          paddingHorizontal: 14,
-          borderRadius: 16,
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: cardBg,
-          ...shadow(4),
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: `${colors.primary}18`, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="layers-outline" size={18} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: text, fontSize: 13, fontWeight: '900' }}>One wallet ledger</Text>
-            <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>
-              Balance, partner offers, redemptions, and the activity list below all reflect the same gem account.
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {!user?.isPremium && (
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); (navigation as { navigate: (n: string) => void }).navigate('Profile'); }}
-          style={{ marginHorizontal: 16, marginBottom: 14, borderRadius: 18, overflow: 'hidden', ...shadow(8) }}
-        >
-          <LinearGradient
-            colors={isLight ? ['#eef2ff', '#ede9fe'] : ['rgba(99,102,241,0.45)', 'rgba(139,92,246,0.28)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderWidth: 1, borderColor: isLight ? 'rgba(79,70,229,0.22)' : 'rgba(167,139,250,0.35)' }}
-          >
-            <LinearGradient colors={[colors.ctaGradientStart, colors.ctaGradientEnd]} style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-              <Ionicons name="sparkles" size={22} color="#fff" />
-            </LinearGradient>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Upgrade to Premium</Text>
-              <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>2× gems, richer offers, traffic cameras, more place alerts, and deeper Profile insights.</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-          </LinearGradient>
-        </TouchableOpacity>
-      )}
-
       <RewardsTabs
         colors={colors}
-        rewardsTab={rewardsTab}
+        walletTab={walletTab}
         onTabChange={(t) => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setRewardsTab(t);
+          setWalletTab(t);
         }}
       />
 
-      {rewardsTab === 'badges' && (
+      {walletTab === 'balance' && (
+        <>
+          <View style={{ marginHorizontal: 16, marginBottom: 14, marginTop: 6, gap: 10 }}>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
+                <LinearGradient colors={[`${colors.warning}28`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
+                  <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.warning}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                    <Ionicons name="flame" size={22} color={colors.warning} />
+                  </View>
+                  <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{tripsCardValue}</Text>
+                  <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Trips</Text>
+                </LinearGradient>
+              </View>
+              <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
+                <LinearGradient colors={[`${colors.rewardsGradientEnd}33`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
+                  <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.rewardsGradientEnd}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                    <Ionicons name="diamond" size={22} color={colors.rewardsGradientEnd} />
+                  </View>
+                  <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{user ? Math.round(user.gems ?? 0) : '—'}</Text>
+                  <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Gem balance</Text>
+                </LinearGradient>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
+                <LinearGradient colors={[`${colors.success}28`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
+                  <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.success}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                    <Ionicons name="ribbon" size={22} color={colors.success} />
+                  </View>
+                  <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{badgesCardLabel}</Text>
+                  <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Badges</Text>
+                </LinearGradient>
+              </View>
+              <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}>
+                <LinearGradient colors={[`${colors.rewardsGradientEnd}33`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 14 }}>
+                  <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.rewardsGradientEnd}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                    <Ionicons name="diamond" size={22} color={colors.rewardsGradientEnd} />
+                  </View>
+                  <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{headerMultiplier}</Text>
+                  <Text style={{ color: sub, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 }}>Gem mult.</Text>
+                </LinearGradient>
+              </View>
+            </View>
+          </View>
+
+          <View
+            style={{
+              marginHorizontal: 16,
+              marginBottom: 14,
+              paddingVertical: 12,
+              paddingHorizontal: 14,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: cardBg,
+              ...shadow(4),
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: `${colors.primary}18`, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="layers-outline" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: text, fontSize: 13, fontWeight: '900' }}>Unified wallet</Text>
+                <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>
+                  Gems move only through your ledger. Use Activity for history, Offers to redeem, Redemptions for partner proof.
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {!user?.isPremium && (
+            <TouchableOpacity
+              activeOpacity={0.88}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); (navigation as { navigate: (n: string) => void }).navigate('Profile'); }}
+              style={{ marginHorizontal: 16, marginBottom: 14, borderRadius: 18, overflow: 'hidden', ...shadow(8) }}
+            >
+              <LinearGradient
+                colors={isLight ? ['#eef2ff', '#ede9fe'] : ['rgba(99,102,241,0.45)', 'rgba(139,92,246,0.28)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderWidth: 1, borderColor: isLight ? 'rgba(79,70,229,0.22)' : 'rgba(167,139,250,0.35)' }}
+              >
+                <LinearGradient colors={[colors.ctaGradientStart, colors.ctaGradientEnd]} style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                  <Ionicons name="sparkles" size={22} color="#fff" />
+                </LinearGradient>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Upgrade to Premium</Text>
+                  <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>2× gems, richer offers, traffic cameras, more place alerts, and deeper Profile insights.</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+        </>
+      )}
+
+      {walletTab === 'activity' && (
+        <>
+          <SectionTitle title="Activity" text={text} accent={colors.primary} />
+          <Text style={{ color: sub, fontSize: 12, lineHeight: 17, paddingHorizontal: 16, marginTop: -6, marginBottom: 12, fontWeight: '600' }}>
+            Ledger entries from wallet_transactions (trips, redemptions, and more). Tap a row for details.
+          </Text>
+          <GemActivityList
+            loading={initialLoading}
+            gemTx={gemTx}
+            onPressTx={(tx) => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setSelectedGemTx(tx);
+            }}
+            {...rt}
+          />
+        </>
+      )}
+
+      {walletTab === 'offers' && (
+        <>
+          <OfferCategoryChips
+            choices={REWARDS_OFFER_FILTER_DEFS}
+            selectedSlug={offerCategoryFilter}
+            onSelect={setOfferCategoryFilter}
+            {...rt}
+          />
+          <ViewAllButton title="View all offers" onPress={() => setShowAllOffers(true)} {...rt} />
+          <SectionTitle title="Nearby Partner Offers" text={text} accent={colors.primary} />
+          <OffersPreview loading={initialLoading} offers={filteredNearbyOffers} onPressOffer={setSelectedOffer} {...rt} />
+          {offers.some((o) => o.is_admin_offer) && (
+            <>
+              <SectionTitle title="Featured Deals" text={text} accent={colors.primary} />
+              <OffersPreview loading={initialLoading} offers={filteredFeaturedOffers} onPressOffer={setSelectedOffer} {...rt} />
+            </>
+          )}
+        </>
+      )}
+
+      {walletTab === 'redemptions' && (
+        <>
+          <OfferCategoryChips
+            choices={redemptionCategoryChoices}
+            selectedSlug={redemptionCategoryFilter}
+            onSelect={setRedemptionCategoryFilter}
+            {...rt}
+          />
+          <SectionTitle title="Your redemptions" text={text} accent={colors.primary} />
+          <MyRedemptionsSection
+            loading={initialLoading}
+            redemptions={filteredRedemptions}
+            onOpen={(r) => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setSelectedRedemption(r);
+            }}
+            {...rt}
+          />
+        </>
+      )}
+
+      {walletTab === 'badges' && (
         <>
           <ViewAllButton title="View all badges" onPress={() => setShowAllBadges(true)} {...rt} />
           <SectionTitle title={`Badges · ${earnedBadges}/${badges.length}`} text={text} accent={colors.primary} />
           <BadgesPreview loading={initialLoading} badges={badges} onPressBadge={setSelectedBadge} {...rt} />
         </>
       )}
-
-      {rewardsTab === 'offers' && (
-        <>
-          <OffersRewardsSegment
-            view={offersRewardsView}
-            myCount={myRedemptions.length}
-            onChange={(v) => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setOffersRewardsView(v);
-            }}
-            {...rt}
-          />
-          {offersRewardsView === 'nearby' ? (
-            <>
-              <OfferCategoryChips
-                choices={REWARDS_OFFER_FILTER_DEFS}
-                selectedSlug={offerCategoryFilter}
-                onSelect={setOfferCategoryFilter}
-                {...rt}
-              />
-              <ViewAllButton title="View all offers" onPress={() => setShowAllOffers(true)} {...rt} />
-              <SectionTitle title="Nearby Partner Offers" text={text} accent={colors.primary} />
-              <OffersPreview loading={initialLoading} offers={filteredNearbyOffers} onPressOffer={setSelectedOffer} {...rt} />
-              {offers.some((o) => o.is_admin_offer) && (
-                <>
-                  <SectionTitle title="Featured Deals" text={text} accent={colors.primary} />
-                  <OffersPreview loading={initialLoading} offers={filteredFeaturedOffers} onPressOffer={setSelectedOffer} {...rt} />
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <OfferCategoryChips
-                choices={redemptionCategoryChoices}
-                selectedSlug={redemptionCategoryFilter}
-                onSelect={setRedemptionCategoryFilter}
-                {...rt}
-              />
-              <SectionTitle title="Your redemptions" text={text} accent={colors.primary} />
-              <MyRedemptionsSection
-                loading={initialLoading}
-                redemptions={filteredRedemptions}
-                onOpen={(r) => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setSelectedRedemption(r);
-                }}
-                {...rt}
-              />
-            </>
-          )}
-        </>
-      )}
-
-      <SectionTitle title="Gem activity" text={text} accent={colors.primary} />
-      <Text style={{ color: sub, fontSize: 12, lineHeight: 17, paddingHorizontal: 16, marginTop: -6, marginBottom: 12, fontWeight: '600' }}>
-        Latest credits and debits from your wallet (trips, redemptions, adjustments). Tap a row for details.
-      </Text>
-      <GemActivityList
-        loading={initialLoading}
-        gemTx={gemTx}
-        onPressTx={(tx) => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setSelectedGemTx(tx);
-        }}
-        {...rt}
-      />
 
       <View style={{ height: insets.bottom + 20 }} />
 

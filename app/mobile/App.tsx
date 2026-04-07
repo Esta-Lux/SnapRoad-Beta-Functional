@@ -200,10 +200,11 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
-        name="Rewards"
+        name="Wallet"
         component={RewardsStackScreen}
         options={{
-          tabBarIcon: ({ color }) => <Ionicons name="gift-outline" size={24} color={color} />,
+          tabBarLabel: 'Wallet',
+          tabBarIcon: ({ color }) => <Ionicons name="wallet-outline" size={24} color={color} />,
         }}
       />
       <Tab.Screen
@@ -451,9 +452,9 @@ function RootNavigator() {
             DashboardMain: 'dashboard',
           },
         },
-        Rewards: {
+        Wallet: {
           screens: {
-            RewardsMain: 'rewards',
+            RewardsMain: 'wallet',
           },
         },
         Profile: {

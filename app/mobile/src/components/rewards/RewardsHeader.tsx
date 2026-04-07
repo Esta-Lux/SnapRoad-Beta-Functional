@@ -35,11 +35,11 @@ export default function RewardsHeader({ colors, gems, multiplier }: Props) {
       <View style={styles.topBadgeRow}>
         <View style={styles.eyebrowPill}>
           <Ionicons name="wallet-outline" size={12} color="rgba(255,255,255,0.95)" />
-          <Text style={styles.eyebrowText}>GEM WALLET</Text>
+          <Text style={styles.eyebrowText}>WALLET</Text>
         </View>
       </View>
 
-      <Text style={styles.tagline}>Partner offers, redemptions, and activity — one ledger.</Text>
+      <Text style={styles.tagline}>Balance, activity, offers, and redemptions — one gem account.</Text>
 
       <View style={styles.heroGemRow}>
         <LinearGradient

@@ -99,11 +99,32 @@ class AdminApiService {
     return this.request('/api/admin/stats')
   }
 
-  /** Cross-user gem ledger (`wallet_transactions`) for admin review; optional `userId` filter. */
-  async getWalletLedger(userId?: string, limit = 200): Promise<AdminApiResponse<any[]>> {
+  /** Cross-user gem ledger (`wallet_transactions`) for admin review; optional `userId` / `txType` filter. */
+  async getWalletLedger(userId?: string, limit = 200, txType?: string): Promise<AdminApiResponse<any[]>> {
     const qs = new URLSearchParams({ limit: String(limit) })
     if (userId) qs.set('user_id', userId)
+    if (txType) qs.set('tx_type', txType)
     return this.request(`/api/admin/wallet-ledger?${qs.toString()}`)
+  }
+
+  async getRedemptions(params?: {
+    user_id?: string
+    status?: string
+    limit?: number
+  }): Promise<AdminApiResponse<any[]>> {
+    const qs = new URLSearchParams()
+    if (params?.user_id) qs.set('user_id', params.user_id)
+    if (params?.status) qs.set('status', params.status)
+    if (params?.limit != null) qs.set('limit', String(params.limit))
+    const suffix = qs.toString() ? `?${qs.toString()}` : ''
+    return this.request(`/api/admin/redemptions${suffix}`)
+  }
+
+  async setOfferStatus(offerId: string, status: 'active' | 'inactive' | 'paused' | 'rejected'): Promise<AdminApiResponse<any>> {
+    return this.request(`/api/admin/offers/${offerId}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    })
   }
 
   async getAnalytics(): Promise<AdminApiResponse<AdminAnalytics>> {

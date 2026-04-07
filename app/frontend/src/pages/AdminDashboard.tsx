@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Users, AlertTriangle, Eye, Gift, Building2, BarChart3,
   Bell, TrendingUp, DollarSign, Scale, Settings, FileText, LogOut,
   Moon, Sun, Crown, LayoutGrid, Menu, X, ChevronLeft, ChevronRight,
+  Wallet, Receipt,
 } from 'lucide-react'
 
 import { adminApi } from '@/services/adminApi'
@@ -25,6 +26,8 @@ import SettingsTab from '@/components/admin/SettingsTab'
 import NotificationsTab from '@/components/admin/NotificationsTab'
 import AuditLogTab from '@/components/admin/AuditLogTab'
 import { AdminOfferManagement } from '@/components/admin/AdminOfferManagement'
+import AdminWalletLedgerTab from '@/components/admin/AdminWalletLedgerTab'
+import AdminRedemptionsMonitorTab from '@/components/admin/AdminRedemptionsMonitorTab'
 import AppControl from '@/pages/AdminDashboard/components/AppControl'
 
 const NAV_BASE = [
@@ -33,6 +36,8 @@ const NAV_BASE = [
   { id: 'users', label: 'Users & Families', icon: Users, badgeKey: 'total_users' },
   { id: 'incidents', label: 'Incidents', icon: AlertTriangle, badgeKey: 'pending_incidents' },
   { id: 'moderation', label: 'AI Moderation Queue', icon: Eye, badgeKey: '' },
+  { id: 'wallet-ledger', label: 'Wallet Ledger', icon: Wallet, badgeKey: '' },
+  { id: 'redemptions-monitor', label: 'Redemptions', icon: Receipt, badgeKey: '' },
   { id: 'rewards', label: 'Rewards & Vouchers', icon: Gift, badgeKey: '' },
   { id: 'partners', label: 'Partners & Campaigns', icon: Building2, badgeKey: 'total_partners' },
   { id: 'offers', label: 'Offer Management', icon: Gift, badgeKey: '' },
@@ -167,6 +172,10 @@ export default function AdminDashboard({ initialTab = 'dashboard', initialOffers
         return <IncidentsTab theme={darkMode ? 'dark' : 'light'} />
       case 'moderation':
         return <AIModerationTab theme={darkMode ? 'dark' : 'light'} />
+      case 'wallet-ledger':
+        return <AdminWalletLedgerTab theme={darkMode ? 'dark' : 'light'} />
+      case 'redemptions-monitor':
+        return <AdminRedemptionsMonitorTab theme={darkMode ? 'dark' : 'light'} />
       case 'rewards':
         return <RewardsTab theme={darkMode ? 'dark' : 'light'} />
       case 'partners':

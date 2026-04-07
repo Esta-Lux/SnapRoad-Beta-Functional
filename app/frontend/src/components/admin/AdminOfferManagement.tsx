@@ -1,7 +1,7 @@
 // Offer Management tab — admin offers (replaces figma-ui AdminOfferManagement)
 
 import { useState, useEffect, useRef } from 'react'
-import { Gift, Search, Trash2, Upload, FileSpreadsheet } from 'lucide-react'
+import { Gift, Search, Trash2, Upload, FileSpreadsheet, CheckCircle, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/services/adminApi'
 import { useSupabaseRealtimeRefresh } from '@/hooks/useSupabaseRealtimeRefresh'
@@ -112,6 +112,20 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
       loadOffers()
     } catch (e) {
       console.error(e)
+    }
+  }
+
+  const handleSetOfferStatus = async (id: string, status: 'active' | 'rejected') => {
+    try {
+      const res = await adminApi.setOfferStatus(String(id), status)
+      if (res.success) {
+        toast.success(status === 'active' ? 'Offer approved (active)' : 'Offer rejected (inactive)')
+        await loadOffers()
+      } else {
+        toast.error(res.message || 'Could not update status')
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not update status')
     }
   }
 
@@ -398,12 +412,35 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
                 <div>
                   <p className="font-medium">{offer.business_name ?? offer.name ?? 'Offer'}</p>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <span className="uppercase text-[10px] font-bold tracking-wide mr-2 opacity-80">{String(offer.status ?? '—')}</span>
                     {offer.discount_percent != null ? `${offer.discount_percent}% off` : ''}
                     {offer.gems_reward != null ? ` · ${offer.gems_reward} gems` : ''}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 justify-end">
+                {String(offer.status || 'active') !== 'active' && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetOfferStatus(String(offer.id ?? offer.offer_id), 'active')}
+                    className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm ${isDark ? 'hover:bg-emerald-500/20 text-emerald-300' : 'hover:bg-emerald-50 text-emerald-700'}`}
+                    title="Approve — set active"
+                  >
+                    <CheckCircle size={16} />
+                    Approve
+                  </button>
+                )}
+                {String(offer.status || '') !== 'inactive' && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetOfferStatus(String(offer.id ?? offer.offer_id), 'rejected')}
+                    className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm ${isDark ? 'hover:bg-orange-500/20 text-orange-200' : 'hover:bg-orange-50 text-orange-800'}`}
+                    title="Reject — set inactive"
+                  >
+                    <XCircle size={16} />
+                    Reject
+                  </button>
+                )}
                 <button
                   onClick={() => setEditingAllocation({
                     ...offer,

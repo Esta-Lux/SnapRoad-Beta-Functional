@@ -25,6 +25,8 @@ import OffersUploadPage from './pages/Admin/OffersUploadPage'
 import OffersManagePage from './pages/Admin/OffersManagePage'
 import BillingPage from './pages/PartnerPortal/BillingPage'
 import ScannerPage from './pages/PartnerPortal/ScannerPage'
+import PartnerOffersPage from './pages/PartnerOffersPage'
+import PartnerRedemptionsPage from './pages/PartnerRedemptionsPage'
 import { isPartnerPortalPrimarySite } from '@/lib/siteProfile'
 
 function App() {
@@ -84,6 +86,8 @@ function App() {
           <Route path="/portal/partner" element={<PartnerGuard><PartnerDashboard /></PartnerGuard>} />
           <Route path="/portal/partner/billing" element={<PartnerGuard><BillingPage /></PartnerGuard>} />
           <Route path="/portal/partner/scanner" element={<PartnerGuard><ScannerPage /></PartnerGuard>} />
+          <Route path="/portal/partner/offers" element={<PartnerGuard><PartnerOffersPage /></PartnerGuard>} />
+          <Route path="/portal/partner/redemptions" element={<PartnerGuard><PartnerRedemptionsPage /></PartnerGuard>} />
           <Route path="/portal/admin-sr2025secure/sign-in" element={<AdminSignInPage />} />
           <Route path="/portal/admin-sr2025secure" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
           <Route path="/portal/admin-sr2025secure/realtime" element={<AdminGuard><RealtimeDashboard /></AdminGuard>} />

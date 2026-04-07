@@ -1,32 +1,39 @@
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import type { ThemeColors } from '../../contexts/ThemeContext';
 import { rewardsStyles } from './styles';
-import type { RewardsTab } from './types';
+import type { WalletTab } from './types';
 
 type Props = {
   colors: ThemeColors;
-  rewardsTab: RewardsTab;
-  onTabChange: (tab: RewardsTab) => void;
+  walletTab: WalletTab;
+  onTabChange: (tab: WalletTab) => void;
 };
 
-const TABS: { key: RewardsTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'offers', label: 'Offers & redemptions', icon: 'pricetag-outline' },
+const TABS: { key: WalletTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'balance', label: 'Balance', icon: 'wallet-outline' },
+  { key: 'activity', label: 'Activity', icon: 'pulse-outline' },
+  { key: 'offers', label: 'Offers', icon: 'pricetag-outline' },
+  { key: 'redemptions', label: 'Redemptions', icon: 'receipt-outline' },
   { key: 'badges', label: 'Badges', icon: 'ribbon-outline' },
 ];
 
-export default function RewardsTabs({ colors, rewardsTab, onTabChange }: Props) {
+export default function RewardsTabs({ colors, walletTab, onTabChange }: Props) {
   const border = colors.border;
   const sub = colors.textSecondary;
 
   return (
-    <View style={[rewardsStyles.tabsRow, { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: border }]}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={[rewardsStyles.tabsRow, { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: border, flexGrow: 1 }]}
+    >
       {TABS.map(({ key, label, icon }) => {
-        const active = rewardsTab === key;
+        const active = walletTab === key;
         return (
-          <TouchableOpacity key={key} style={{ flex: 1 }} onPress={() => onTabChange(key)} activeOpacity={0.85}>
+          <TouchableOpacity key={key} style={{ flexGrow: 1, minWidth: 88 }} onPress={() => onTabChange(key)} activeOpacity={0.85}>
             {active ? (
               <LinearGradient
                 colors={[colors.ctaGradientStart, colors.ctaGradientEnd]}
@@ -57,6 +64,6 @@ export default function RewardsTabs({ colors, rewardsTab, onTabChange }: Props) 
           </TouchableOpacity>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }
