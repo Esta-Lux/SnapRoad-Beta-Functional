@@ -1,6 +1,6 @@
 /**
  * Mode-aware follow-camera tuning (browse vs calm / adaptive / sport).
- * MapScreen continues to use {@link getCameraPreset} from useNavigationCamera for padding/zoom;
+ * MapScreen continues to use {@link getCameraPreset} from cameraPresets for padding/zoom;
  * these tokens document pitch/zoom deltas for future fusion with {@link projectAhead}.
  */
 

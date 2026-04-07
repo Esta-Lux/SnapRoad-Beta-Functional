@@ -56,11 +56,12 @@ import PhotoReportDetailModal from '../components/map/PhotoReportDetailModal';
 import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config/restrictedRegions';
 import MapCategoryExploreSheet from '../components/map/MapCategoryExploreSheet';
 import PhotoReportSheet from '../components/map/PhotoReportSheet';
-import NavigationPuckOverlay from '../components/map/NavigationPuckOverlay';
+import NavigationPuck from '../components/navigation/NavigationPuck';
 import NavigationRouteLayers from '../components/navigation/NavigationRouteLayers';
 import { projectAhead, getCameraConfig } from '../navigation/navigationCamera';
 import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
-import { buildNavigationRenderState } from '../navigation/navigationRenderState';
+import { useNavigationSpeech } from '../hooks/useNavigationSpeech';
+import { useNavigationCamera } from '../hooks/useNavigationCamera';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
 import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
@@ -338,6 +339,7 @@ export default function MapScreen() {
     drivingMode,
     voiceMuted: navVoiceMuted,
   });
+  useNavigationSpeech({ progress: nav.navigationProgress, enabled: !navVoiceMuted });
   /** Fused progress while navigating — matches route, ETA strip, turn card distances, camera. */
   const navDisplayCoord = nav.isNavigating ? nav.navigationProgressCoord : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
@@ -400,34 +402,27 @@ export default function MapScreen() {
   const [isExploring, setIsExploring] = useState(false);
   const [compassMode, setCompassMode] = useState(false);
   const [followMode, setFollowMode] = useState<'free' | 'follow' | 'heading'>('follow');
-  const nextManeuverDistanceMeters = useMemo(
-    () =>
-      getDistanceToUpcomingManeuverMeters(
-        nav.navigationData?.steps,
-        nav.currentStepIndex,
-        navDisplayCoord,
-        nav.navigationData?.polyline,
-      ),
-    [nav.navigationData?.steps, nav.navigationData?.polyline, nav.currentStepIndex, navDisplayCoord.lat, navDisplayCoord.lng],
-  );
-
-  /** Route casing / traveled / remaining / maneuver — same snap as `routeSplitForOverlay` + puck (see `useNavigation`). */
-  const navRouteRenderState = useMemo(() => {
-    if (!nav.isNavigating || !nav.navigationData?.polyline?.length || !nav.routeSplitForOverlay) return null;
-    return buildNavigationRenderState({
-      route: nav.navigationData.polyline,
-      snappedSegmentIndex: nav.routeSplitForOverlay.segmentIndex,
-      snappedT: nav.routeSplitForOverlay.tOnSegment,
-      steps: nav.navigationData.steps,
-      currentStepIndex: nav.currentStepIndex,
-    });
+  const nextManeuverDistanceMeters = useMemo(() => {
+    const fromProgress = nav.navigationProgress?.nextStep?.distanceMetersToNext;
+    if (nav.isNavigating && fromProgress != null && Number.isFinite(fromProgress)) {
+      return fromProgress;
+    }
+    return getDistanceToUpcomingManeuverMeters(
+      nav.navigationData?.steps,
+      nav.currentStepIndex,
+      navDisplayCoord,
+      nav.navigationData?.polyline,
+    );
   }, [
     nav.isNavigating,
-    nav.navigationData?.polyline,
-    nav.routeSplitForOverlay,
+    nav.navigationProgress?.nextStep?.distanceMetersToNext,
     nav.navigationData?.steps,
+    nav.navigationData?.polyline,
     nav.currentStepIndex,
+    navDisplayCoord.lat,
+    navDisplayCoord.lng,
   ]);
+
   const camCtrl = useCameraController({
     speedMph: speed,
     fusedSpeedMps: fusedSpeedMpsNav,
@@ -438,24 +433,14 @@ export default function MapScreen() {
     safeAreaTop: insets.top,
     safeAreaBottom: insets.bottom,
   });
-  /** Nudge camera target slightly along heading so the route ahead is more in view (Calm/Adaptive/Sport via getCameraConfig). */
-  const cameraNavCenter = useMemo((): [number, number] | null => {
-    if (!nav.isNavigating || !cameraLocked) return null;
-    const sp = fusedSpeedMpsNav ?? speed * 0.44704;
-    const cfg = getCameraConfig(drivingMode, sp);
-    const la = cfg.lookAheadMeters * 0.3;
-    const p = projectAhead(navDisplayCoord.lat, navDisplayCoord.lng, navDisplayHeading, la);
-    return [p.longitude, p.latitude];
-  }, [
-    nav.isNavigating,
-    cameraLocked,
-    fusedSpeedMpsNav,
-    speed,
-    drivingMode,
-    navDisplayCoord.lat,
-    navDisplayCoord.lng,
-    navDisplayHeading,
-  ]);
+
+  useNavigationCamera({
+    cameraRef,
+    progress: nav.navigationProgress,
+    mode: drivingMode,
+    isFollowing: cameraLocked && nav.isNavigating,
+  });
+
   const userInteracting = useRef(false);
   const lastCameraUpdate = useRef({ lat: 0, lng: 0, heading: 0 });
 
@@ -2109,9 +2094,9 @@ export default function MapScreen() {
               }}
             />
           ) : null}
-          {/* Camera: route-snapped center during navigation, native follow otherwise */}
+          {/* Camera: Phase 1 — useNavigationCamera drives center/zoom/pitch/heading via ref while navigating + locked; native follow otherwise */}
           {(() => {
-            const isFusedNav = cameraLocked && nav.isNavigating;
+            const navHookDriven = cameraLocked && nav.isNavigating;
             return (
               <MapboxGL.Camera
                 ref={cameraRef}
@@ -2121,37 +2106,38 @@ export default function MapScreen() {
                   pitch: modeConfig.explorePitch,
                 }}
                 centerCoordinate={
-                  isFusedNav
-                    ? (cameraNavCenter ?? [navDisplayCoord.lng, navDisplayCoord.lat])
+                  navHookDriven
+                    ? undefined
                     : nav.isNavigating || isExploring || compassMode || exploreTracksUser
                       ? undefined
                       : stableCenter
                 }
-                heading={isFusedNav ? navDisplayHeading : undefined}
                 zoomLevel={
-                  isFusedNav
-                    ? camCtrl?.followZoomLevel
+                  navHookDriven
+                    ? undefined
                     : nav.isNavigating || compassMode || exploreTracksUser
                       ? undefined
                       : modeConfig.exploreZoom
                 }
                 pitch={
-                  isFusedNav
-                    ? camCtrl?.followPitch
+                  navHookDriven
+                    ? undefined
                     : nav.isNavigating || compassMode || exploreTracksUser
                       ? undefined
                       : modeConfig.explorePitch
                 }
-                padding={isFusedNav ? camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING : undefined}
-                animationMode={isFusedNav || (nav.isNavigating && cameraLocked) ? 'linearTo' : 'easeTo'}
+                padding={
+                  navHookDriven ? camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING : undefined
+                }
+                animationMode={navHookDriven || (nav.isNavigating && cameraLocked) ? 'linearTo' : 'easeTo'}
                 animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
                 followUserLocation={
-                  isFusedNav
+                  navHookDriven
                     ? false
                     : (nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser
                 }
                 followUserMode={
-                  isFusedNav
+                  navHookDriven
                     ? undefined
                     : nav.isNavigating && cameraLocked
                       ? MapboxGL.UserTrackingMode.FollowWithCourse
@@ -2162,7 +2148,7 @@ export default function MapScreen() {
                           : undefined
                 }
                 followPitch={
-                  isFusedNav
+                  navHookDriven
                     ? undefined
                     : camCtrl
                       ? camCtrl.followPitch
@@ -2173,7 +2159,7 @@ export default function MapScreen() {
                           : undefined
                 }
                 followZoomLevel={
-                  isFusedNav
+                  navHookDriven
                     ? undefined
                     : camCtrl
                       ? camCtrl.followZoomLevel
@@ -2183,7 +2169,9 @@ export default function MapScreen() {
                           ? 15
                           : undefined
                 }
-                followPadding={isFusedNav ? undefined : camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING}
+                followPadding={
+                  navHookDriven ? undefined : camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING
+                }
               />
             );
           })()}
@@ -2258,19 +2246,19 @@ export default function MapScreen() {
           })()}
 
           {nav.navigationData?.polyline &&
-            (nav.isNavigating && navRouteRenderState ? (
+            (nav.isNavigating && nav.navigationProgress ? (
               <NavigationRouteLayers
                 mode={drivingMode}
-                traveledRoute={navRouteRenderState.traveledRoute}
-                remainingRoute={navRouteRenderState.remainingRoute}
-                maneuverRoute={navRouteRenderState.maneuverRoute}
+                traveledRoute={nav.navigationProgress.traveledRoute}
+                remainingRoute={nav.navigationProgress.remainingRoute}
+                maneuverRoute={nav.navigationProgress.maneuverRoute}
                 lineOpacity={nav.isRerouting ? 0.55 : 1}
               />
             ) : (
               <RouteOverlay
                 polyline={nav.navigationData.polyline}
                 isNavigating={nav.isNavigating}
-                routeSplit={nav.routeSplitForOverlay}
+                routeSplit={null}
                 routeColor={modeConfig.routeColor}
                 casingColor={modeConfig.routeCasing}
                 passedColor={modeConfig.passedColor}
@@ -2342,15 +2330,13 @@ export default function MapScreen() {
             pulsing={{ isEnabled: false }}
             scale={1.5}
           />
-          {nav.isNavigating && nav.navigationProgressCoord && (
-            <>
-              <NavigationPuckOverlay
-                lat={nav.navigationProgressCoord.lat}
-                lng={nav.navigationProgressCoord.lng}
-                headingDeg={nav.navigationDisplayHeading}
-                drivingMode={drivingMode}
-              />
-            </>
+          {nav.isNavigating && nav.navigationProgress?.displayCoord && (
+            <NavigationPuck
+              lat={nav.navigationProgress.displayCoord.lat}
+              lng={nav.navigationProgress.displayCoord.lng}
+              heading={nav.navigationProgress.displayCoord.heading ?? nav.navigationDisplayHeading}
+              mode={drivingMode}
+            />
           )}
         </MapboxGL.MapView>
       ) : (

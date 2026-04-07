@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import type { DrivingMode } from '../types';
-import { getCameraPreset, getLiveNavigationCameraPreset } from '../navigation/useNavigationCamera';
+import { getCameraPreset, getLiveNavigationCameraPreset } from '../navigation/cameraPresets';
 
 interface CameraParams {
   /** Speed in mph (from `useLocation`). */
