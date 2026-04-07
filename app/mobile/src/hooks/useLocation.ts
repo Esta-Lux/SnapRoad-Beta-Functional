@@ -34,6 +34,47 @@ function haversineMeters(a: Coordinate, b: Coordinate): number {
   return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
+/** Blend raw GPS toward previous fix — reduces puck / camera jitter without large nav lag. */
+function blendTowardGps(
+  prev: Coordinate,
+  raw: Coordinate,
+  accuracyM: number | null,
+  speedMph: number,
+  isNavigating: boolean,
+  dtSec: number,
+): Coordinate {
+  const dist = haversineMeters(prev, raw);
+  const speedMps = Math.max(0, speedMph) / 2.237;
+  const base = isNavigating ? 2.8 + speedMps * dtSec * 2.1 : 2.2 + speedMps * dtSec * 2.6;
+  const accExtra = typeof accuracyM === 'number' ? Math.min(40, accuracyM * 0.4) : 14;
+  const maxJump = Math.min(150, base + accExtra);
+
+  if (dist > maxJump && speedMph < 5.5) {
+    return prev;
+  }
+  if (dist > maxJump * 1.25 && speedMph < 22) {
+    const t = 0.1;
+    return {
+      lat: prev.lat + (raw.lat - prev.lat) * t,
+      lng: prev.lng + (raw.lng - prev.lng) * t,
+    };
+  }
+
+  let a = isNavigating ? 0.44 : 0.3;
+  if (typeof accuracyM === 'number') {
+    if (accuracyM > 65) a *= 0.48;
+    else if (accuracyM > 38) a *= 0.72;
+    else if (accuracyM < 18) a = Math.min(0.58, a * 1.14);
+  }
+  if (speedMph < 3.5) a *= 0.58;
+  else if (speedMph > 52) a = Math.min(0.64, a * 1.15);
+
+  return {
+    lat: prev.lat + (raw.lat - prev.lat) * a,
+    lng: prev.lng + (raw.lng - prev.lng) * a,
+  };
+}
+
 function smoothHeading(current: number, raw: number, alpha = HEADING_SMOOTHING): number {
   let delta = raw - current;
   if (delta > 180) delta -= 360;
@@ -68,11 +109,16 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
   const smoothedRef = useRef(0);
   const hasHeadingRef = useRef(false);
   const bgPermRequested = useRef(false);
+  /** Low-pass filtered fix — drives map + nav (not raw GPS). */
+  const positionBlendRef = useRef<Coordinate | null>(null);
+  const lastGpsFixAtRef = useRef<number>(Date.now());
 
   useEffect(() => {
     let cancelled = false;
     loadCachedLocation().then((cached) => {
       if (cancelled || !cached) return;
+      positionBlendRef.current = cached;
+      lastGpsFixAtRef.current = Date.now();
       setState((prev) => (
         prev.location.lat === UNKNOWN_LOCATION.lat && prev.location.lng === UNKNOWN_LOCATION.lng
           ? { ...prev, location: cached }
@@ -105,9 +151,12 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       const lat = coarse.coords.latitude;
       const lng = coarse.coords.longitude;
       persistCachedLocation(lat, lng);
+      const initCoord = { lat, lng };
+      positionBlendRef.current = initCoord;
+      lastGpsFixAtRef.current = Date.now();
       setState((prev) => ({
         ...prev,
-        location: { lat, lng },
+        location: initCoord,
         speed: Math.max(0, (coarse.coords.speed ?? 0) * 2.237),
         accuracy: coarse.coords.accuracy ?? null,
         isLocating: false,
@@ -118,9 +167,9 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
     const accuracy = isNavigating
       ? Location.Accuracy.BestForNavigation
       : Location.Accuracy.Highest;
-    /** Nav: faster fixes so puck / progress / turn card stay aligned (still OS-throttled). */
-    const timeInterval = isNavigating ? 750 : 2000;
-    const distanceInterval = isNavigating ? 1 : 8;
+    /** Nav: frequent fixes; 2m minimum spacing reduces duplicate noisy samples before blending. */
+    const timeInterval = isNavigating ? 700 : 2000;
+    const distanceInterval = isNavigating ? 2 : 8;
 
     watchRef.current = await Location.watchPositionAsync(
       {
@@ -137,7 +186,9 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
         const acc = loc.coords.accuracy;
         let speedMph = Math.max(0, (loc.coords.speed ?? 0) * 2.237);
         const gpsHeading = loc.coords.heading;
-        const nextCoord = { lat, lng };
+        const rawCoord = { lat, lng };
+        const now = Date.now();
+        const dtSec = Math.min(3.5, Math.max(0.07, (now - lastGpsFixAtRef.current) / 1000));
 
         persistCachedLocation(lat, lng);
 
@@ -146,7 +197,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
           typeof gpsHeading === 'number' && Number.isFinite(gpsHeading) && gpsHeading >= 0 && speedMph > 5;
 
         setState((prev) => {
-          const movedMeters = haversineMeters(prev.location, nextCoord);
+          const movedMeters = haversineMeters(prev.location, rawCoord);
           if (
             prev.location.lat !== UNKNOWN_LOCATION.lat &&
             prev.location.lng !== UNKNOWN_LOCATION.lng &&
@@ -156,6 +207,17 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
           ) {
             return { ...prev, isLocating: false, accuracy: acc ?? prev.accuracy };
           }
+
+          lastGpsFixAtRef.current = now;
+
+          const baseCoord =
+            positionBlendRef.current ??
+            (prev.location.lat !== UNKNOWN_LOCATION.lat ? prev.location : null);
+          const nextCoord =
+            baseCoord != null
+              ? blendTowardGps(baseCoord, rawCoord, acc ?? null, speedMph, isNavigating, dtSec)
+              : rawCoord;
+          positionBlendRef.current = nextCoord;
 
           let newHeading = prev.heading;
           if (useGpsCourse) {
