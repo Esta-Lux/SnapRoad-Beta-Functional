@@ -332,9 +332,6 @@ export default function FuelTracker({ visible, onClose }: Props) {
           <Ionicons name="car-sport-outline" size={24} color={colors.primary} />
           <Text style={[typography.h2, { color: colors.text }]}>Fuel tracker</Text>
         </View>
-        <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel="Done">
-          <Text style={{ fontSize: 17, fontWeight: '600', color: colors.primary }}>Done</Text>
-        </TouchableOpacity>
       </View>
 
       <Text style={[typography.caption, { color: colors.textSecondary, marginBottom: spacing.sm, lineHeight: 18 }]}>

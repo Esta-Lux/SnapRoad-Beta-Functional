@@ -63,9 +63,6 @@ export default function DriverSnapshotModal({ visible, onClose, user, weeklyReca
         <Text style={[typography.h2, { color: colors.text, flex: 1 }]} numberOfLines={2}>
           Driving snapshot
         </Text>
-        <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="button" accessibilityLabel="Done">
-          <Text style={[styles.doneText, { color: colors.primary }]}>Done</Text>
-        </TouchableOpacity>
       </View>
 
       <Text style={[typography.caption, { color: colors.textSecondary, marginBottom: spacing.sm }]}>
@@ -151,7 +148,6 @@ export default function DriverSnapshotModal({ visible, onClose, user, weeklyReca
 
 const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
-  doneText: { fontSize: 17, fontWeight: '600', minWidth: 44, textAlign: 'right', paddingVertical: 6 },
   summaryCard: { borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, padding: 16 },
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
   ringWrap: { alignItems: 'center', marginBottom: 16 },

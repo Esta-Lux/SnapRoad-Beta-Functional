@@ -159,7 +159,7 @@ export function usePassiveDriveGems(opts: {
       const prev = prevLl.current;
       if (prev && Math.abs(prev.lat) > 1e-6 && Math.abs(location.lat) > 1e-6) {
         const d = haversineMeters(prev, location);
-        if (d > 0 && d < 100) odomRef.current += d;
+        if (d > 0 && d < 500) odomRef.current += d;
       }
       prevLl.current = location;
     } else {

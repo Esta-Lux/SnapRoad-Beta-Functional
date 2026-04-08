@@ -6,7 +6,9 @@ import {
 import Animated, {
   FadeIn, FadeOut, SlideInDown, SlideOutDown,
   useSharedValue, useAnimatedStyle, withTiming, Easing,
+  runOnJS,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapboxGL, { isMapAvailable } from '../utils/mapbox';
 import * as Battery from 'expo-battery';
@@ -315,12 +317,13 @@ export default function MapScreen() {
   const mapTabFocused = useIsFocused();
   const { isNavigating: ctxNavigating, setIsNavigating: setNavCtx } = useNavigatingState();
   const [isNavActive, setIsNavActive] = useState(false);
-  const { location, heading, speed, accuracy, isLocating, permissionDenied } = useLocation(isNavActive, {
-    paused: !mapTabFocused && !ctxNavigating,
-  });
   const { isLight, colors } = useTheme();
   const route = useRoute<any>();
   const { user, updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
+  /** Keep GPS alive on other tabs when logged in so passive + profile miles stay accurate (battery tradeoff). */
+  const { location, heading, speed, accuracy, isLocating, permissionDenied } = useLocation(isNavActive, {
+    paused: !mapTabFocused && !ctxNavigating && !user?.id,
+  });
 
   // ── Driving mode ──
   const [drivingMode, setDrivingMode] = useState<DrivingMode>('adaptive');
@@ -396,7 +399,7 @@ export default function MapScreen() {
 
   usePassiveDriveGems({
     enabled: Boolean(user?.id),
-    mapFocused: mapTabFocused,
+    mapFocused: true,
     isNavigating: nav.isNavigating,
     location,
     speedMph: speed,
@@ -472,6 +475,17 @@ export default function MapScreen() {
 
   const userInteracting = useRef(false);
   const lastCameraUpdate = useRef({ lat: 0, lng: 0, heading: 0 });
+  const wasNavigatingForOdomRef = useRef(false);
+  useEffect(() => {
+    if (nav.isNavigating && !wasNavigatingForOdomRef.current) {
+      lastCameraUpdate.current = {
+        lat: navDisplayCoord.lat,
+        lng: navDisplayCoord.lng,
+        heading: navDisplayHeading,
+      };
+    }
+    wasNavigatingForOdomRef.current = nav.isNavigating;
+  }, [nav.isNavigating, navDisplayCoord.lat, navDisplayCoord.lng, navDisplayHeading]);
 
   // ── Reports ──
   const [nearbyIncidents, setNearbyIncidents] = useState<Incident[]>([]);
@@ -1842,6 +1856,22 @@ export default function MapScreen() {
     nav.setShowRoutePreview(false);
   }, [nav]);
 
+  const dismissRoutePreview = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    nav.cancelRoutePreview();
+  }, [nav]);
+
+  const routePreviewHandlePan = useMemo(
+    () =>
+      Gesture.Pan()
+        .onEnd((e) => {
+          if (e.translationY > 72 || e.velocityY > 380) {
+            runOnJS(dismissRoutePreview)();
+          }
+        }),
+    [dismissRoutePreview],
+  );
+
   const handleMapCameraChanged = useCallback((state: { properties?: { zoom?: number } }) => {
     const z = state?.properties?.zoom;
     if (typeof z !== 'number' || !isFinite(z)) return;
@@ -2959,6 +2989,7 @@ export default function MapScreen() {
           onEndNavigation={nav.stopNavigation}
           bottomInset={insets.bottom}
           voiceMuted={navVoiceMuted}
+          drivenMiles={nav.traveledDistanceMeters / 1609.34}
           onVoiceToggle={() => {
             setNavVoiceMuted((m) => {
               if (!m) stopSpeaking();
@@ -3002,7 +3033,22 @@ export default function MapScreen() {
 
         return (
         <Animated.View entering={SlideInDown.duration(320).easing(Easing.out(Easing.cubic))} exiting={SlideOutDown.duration(220)} style={[s.preview, { paddingBottom: Math.max(insets.bottom, 20) + 16, backgroundColor: isLight ? 'rgba(255,255,255,0.97)' : 'rgba(15,23,42,0.97)', borderColor: colors.border }]}>
-          <View style={[s.handle, { backgroundColor: colors.border }]} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+            <GestureDetector gesture={routePreviewHandlePan}>
+              <View style={{ flex: 1, alignItems: 'center', paddingVertical: 8 }}>
+                <View style={[s.handle, { backgroundColor: colors.border }]} />
+              </View>
+            </GestureDetector>
+            <TouchableOpacity
+              onPress={dismissRoutePreview}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close route preview"
+              style={{ padding: 6, marginLeft: 4 }}
+            >
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
           <Text style={[s.previewTitle, { color: colors.text }]} numberOfLines={1}>
             {nav.navigationData!.destination.name ?? 'Destination'}
           </Text>

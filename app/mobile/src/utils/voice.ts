@@ -30,6 +30,26 @@ export async function configureAudioSession(): Promise<void> {
   }
 }
 
+/**
+ * Turn-by-turn / Orion on the **phone speaker**: `DoNotMix` can route poorly vs CarPlay.
+ * DuckOthers keeps output on the main route and plays in silent mode.
+ */
+export async function configureAudioSessionForSpeechOutput(): Promise<void> {
+  try {
+    await Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      allowsRecordingIOS: false,
+      interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+      staysActiveInBackground: false,
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Relax session after Orion / turn-by-turn finishes so media can resume normally. */
 export async function restoreDefaultAudioSession(): Promise<void> {
   try {
@@ -92,17 +112,19 @@ export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', mo
   lastSpokenPhrase = normalized;
   lastSpokenAt = now;
 
-  void configureAudioSession();
-
   if (priority === 'high') Speech.stop();
-  Speech.speak(phrase, {
-    rate: speechRateForMode(mode),
-    pitch: speechPitchForMode(mode),
-    language: 'en-US',
-    onDone: onUtteranceFinished,
-    onStopped: onUtteranceFinished,
-    onError: onUtteranceFinished,
-  });
+
+  void (async () => {
+    await configureAudioSessionForSpeechOutput();
+    Speech.speak(phrase, {
+      rate: speechRateForMode(mode),
+      pitch: speechPitchForMode(mode),
+      language: 'en-US',
+      onDone: onUtteranceFinished,
+      onStopped: onUtteranceFinished,
+      onError: onUtteranceFinished,
+    });
+  })();
 }
 
 /**
@@ -122,15 +144,17 @@ export function speakGuidance(
   lastSpokenPhrase = normalized;
   lastSpokenAt = now;
 
-  void configureAudioSession();
-  Speech.speak(phrase, {
-    rate: speechRateForMode(mode),
-    pitch: speechPitchForMode(mode),
-    language: language || 'en-US',
-    onDone: onUtteranceFinished,
-    onStopped: onUtteranceFinished,
-    onError: onUtteranceFinished,
-  });
+  void (async () => {
+    await configureAudioSessionForSpeechOutput();
+    Speech.speak(phrase, {
+      rate: speechRateForMode(mode),
+      pitch: speechPitchForMode(mode),
+      language: language || 'en-US',
+      onDone: onUtteranceFinished,
+      onStopped: onUtteranceFinished,
+      onError: onUtteranceFinished,
+    });
+  })();
 }
 
 export function stopSpeaking() {

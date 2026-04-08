@@ -166,6 +166,15 @@ export default function ProfileInsightsDashboard({
     };
   }, [filteredTrips]);
 
+  /** Week view: server weekly total can include trips not yet in the recent-history list. */
+  const kpiMilesDisplay = useMemo(() => {
+    let m = kpis.miles;
+    if (preset === 'week' && isPremium && weeklyRecap.totalMiles > 0) {
+      m = Math.max(m, weeklyRecap.totalMiles);
+    }
+    return m;
+  }, [kpis.miles, preset, isPremium, weeklyRecap.totalMiles]);
+
   const badgesByCategory = useMemo(() => {
     const m = new Map<string, ProfileBadgeItem[]>();
     for (const b of badgeRows) {
@@ -249,9 +258,6 @@ export default function ProfileInsightsDashboard({
         <View style={{ paddingVertical: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md }}>
             <Text style={[typography.h2, { color: colors.text, flex: 1 }]}>Insights & Recap</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Text style={{ fontSize: 17, fontWeight: '600', color: colors.primary }}>Done</Text>
-            </TouchableOpacity>
           </View>
           <View style={{ alignItems: 'center', paddingVertical: 20 }}>
             <Ionicons name="lock-closed" size={40} color={colors.primary} />
@@ -387,10 +393,15 @@ export default function ProfileInsightsDashboard({
 
         <View style={styles.kpiGrid}>
           {kpiTile('car-outline', String(kpis.trips), 'Trips')}
-          {kpiTile('location-outline', kpis.miles.toFixed(1), 'Miles')}
+          {kpiTile('location-outline', kpiMilesDisplay.toFixed(1), 'Miles')}
           {kpiTile('shield-checkmark-outline', kpis.trips > 0 ? kpis.avgSafety.toFixed(0) : '—', 'Avg safety')}
           {kpiTile('diamond-outline', String(kpis.gemsFromTrips), 'Gems (trips)')}
         </View>
+        <Text
+          style={[typography.caption, { color: colors.textTertiary, marginTop: 6, marginBottom: spacing.sm, lineHeight: 18 }]}
+        >
+          Miles and trips reflect qualifying drives in this range. Totals align with your profile as trips finish syncing.
+        </Text>
 
         {weeklyRecap.highlights && weeklyRecap.highlights.length > 0 ? (
           <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}>

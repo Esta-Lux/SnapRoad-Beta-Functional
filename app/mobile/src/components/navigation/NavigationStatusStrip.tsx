@@ -44,6 +44,8 @@ type Props = {
   onVoiceToggle?: () => void;
   /** Long-press voice control: repeat last turn-by-turn cue (not mute). */
   onVoiceRepeat?: () => void;
+  /** Distance covered this navigation session (mi), from fused odometry + route progress. */
+  drivenMiles?: number | null;
 };
 
 export default React.memo(function NavigationStatusStrip({
@@ -62,6 +64,7 @@ export default React.memo(function NavigationStatusStrip({
   voiceMuted = false,
   onVoiceToggle,
   onVoiceRepeat,
+  drivenMiles = null,
 }: Props) {
   const [calmExpanded, setCalmExpanded] = useState(false);
 
@@ -297,6 +300,13 @@ const styles = StyleSheet.create({
   primaryEmphasis: { fontWeight: '900', fontSize: 28, letterSpacing: -0.6 },
   primaryMid: { fontWeight: '800', fontSize: 24, letterSpacing: -0.5 },
   primaryArrive: { fontWeight: '800' },
+  drivenLine: {
+    textAlign: 'center',
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: -0.1,
+  },
   bullet: { fontWeight: '500' },
   secondaryRow: {
     marginTop: 6,

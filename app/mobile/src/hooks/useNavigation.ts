@@ -25,7 +25,7 @@ import {
   remainingDistanceOnPolyline,
   type NavigationRouteProgress,
 } from '../utils/distance';
-import { speak, stopSpeaking, configureAudioSession } from '../utils/voice';
+import { speak, stopSpeaking, configureAudioSessionForSpeechOutput } from '../utils/voice';
 import { setNavigationGuidanceSuppressedUntil } from '../navigation/navigationGuidanceMemory';
 import { primaryInstructionText, primaryVoiceAnnouncement } from '../lib/navigationInstructions';
 import { api } from '../api/client';
@@ -144,7 +144,6 @@ export function useNavigation(params: {
   const navSpeak = useCallback(
     (phrase: string, priority: 'high' | 'normal' = 'normal', mode: DrivingMode = drivingMode) => {
       if (voiceMutedRef.current || !phrase.trim()) return;
-      void configureAudioSession();
       speak(phrase, priority, mode);
     },
     [drivingMode],
@@ -176,6 +175,8 @@ export function useNavigation(params: {
   const isNavigatingRef = useRef(false);
   const traveledRef = useRef(0);
   const prevLocationRef = useRef<Coordinate | null>(null);
+  /** Latest route progress (for trip-end distance; avoids stale useCallback closure). */
+  const routeProgressRef = useRef<NavigationRouteProgress | null>(null);
   const tripStartTimeRef = useRef<number | null>(null);
   const rerouteInFlightRef = useRef(false);
   const lastRerouteAtRef = useRef(0);
@@ -392,6 +393,7 @@ export function useNavigation(params: {
         if (!opts?.fastSingleRoute) {
           traveledRef.current = 0;
           setTraveledDistanceMeters(0);
+          prevLocationRef.current = null;
           hasAnnouncedArrivalRef.current = false;
           autoEndNavTriggeredRef.current = false;
         }
@@ -664,7 +666,7 @@ export function useNavigation(params: {
   // --- Start / Stop navigation ---
   const startNavigation = useCallback(() => {
     if (!navigationData) return;
-    configureAudioSession();
+    void configureAudioSessionForSpeechOutput();
     stopSpeaking();
     navSessionStartRef.current = Date.now();
     lastRerouteAtRef.current = 0;
@@ -673,6 +675,7 @@ export function useNavigation(params: {
     isNavigatingRef.current = true;
     traveledRef.current = 0;
     setTraveledDistanceMeters(0);
+    prevLocationRef.current = null;
     setCurrentStepIndex(0);
     hasAnnouncedArrivalRef.current = false;
     autoEndNavTriggeredRef.current = false;
@@ -714,6 +717,7 @@ export function useNavigation(params: {
       setAvailableRoutes([]);
       setSelectedDestination(null);
       tripStartTimeRef.current = null;
+      prevLocationRef.current = null;
       hasAnnouncedArrivalRef.current = false;
       autoEndNavTriggeredRef.current = false;
       autoEndFromArrivalRef.current = false;
@@ -730,7 +734,7 @@ export function useNavigation(params: {
     /** Must match backend /api/trips/complete gates (distance + duration + real GPS movement). */
     const MIN_QUALIFYING_MI = 0.15;
     const MIN_QUALIFYING_SEC = 45;
-    /** ~200 m of actual GPS path — stops "start nav → instant end" from inflating polyline progress */
+    /** ~200 m of real movement (GPS + route projection) — stops instant-end inflation */
     const MIN_GPS_METERS = 200;
 
     const now = Date.now();
@@ -739,16 +743,18 @@ export function useNavigation(params: {
       : 0;
     const durationMin = Math.max(0, Math.round(durationSec / 60));
 
+    const routeTraveledM = routeProgressRef.current?.traveledRouteMeters ?? 0;
+    const odoMeters = Math.max(traveledRef.current, routeTraveledM);
+
     let polyMiles = 0;
     if (navigationData?.polyline && navigationData.polyline.length >= 2) {
       const remainMeters = remainingDistanceOnPolyline(navigationProgressCoord, navigationData.polyline);
       const drivenMeters = Math.max(0, (navigationData.distance ?? 0) - remainMeters);
       polyMiles = drivenMeters / 1609.34;
     }
-    const gpsMiles = traveledRef.current / 1609.34;
+    const odoMiles = odoMeters / 1609.34;
     const totalRouteMi = (navigationData?.distance ?? 0) / 1609.34;
-    // Use the better of polyline progress vs GPS odometry (min() under-credited real drives).
-    const blendedMi = Math.max(polyMiles, gpsMiles);
+    const blendedMi = Math.max(polyMiles, odoMiles);
     const distMiles =
       totalRouteMi > 0
         ? Math.max(0, Math.min(blendedMi, totalRouteMi + 0.12))
@@ -766,10 +772,11 @@ export function useNavigation(params: {
     offRouteStreakRef.current = 0;
     rerouteInFlightRef.current = false;
     tripStartTimeRef.current = null;
+    prevLocationRef.current = null;
 
     const qualifiesTrip =
       !dynamicDest
-      && traveledRef.current >= MIN_GPS_METERS
+      && odoMeters >= MIN_GPS_METERS
       && durationSec >= MIN_QUALIFYING_SEC
       && roundedDist >= MIN_QUALIFYING_MI;
 
@@ -864,19 +871,28 @@ export function useNavigation(params: {
 
   const dismissTripSummary = useCallback(() => setTripSummary(null), []);
 
+  /** Leave route preview: clears directions overlay (distinct from starting or stopping active navigation). */
+  const cancelRoutePreview = useCallback(() => {
+    setShowRoutePreview(false);
+    setNavigationData(null);
+    setAvailableRoutes([]);
+    setSelectedRouteIndex(0);
+    setSelectedDestination(null);
+  }, []);
+
   // --- Update position (called by MapScreen on each GPS tick) ---
   const updatePosition = useCallback((lat: number, lng: number) => {
-    if (!isNavigatingRef.current || !navigationData) return;
+    if (!isNavigatingRef.current || !navigationDataRef.current) return;
     const prev = prevLocationRef.current;
     if (prev) {
       const dist = haversineMeters(prev.lat, prev.lng, lat, lng);
-      if (dist > 0 && dist < 100) {
+      if (dist > 0 && dist < 500) {
         traveledRef.current += dist;
         setTraveledDistanceMeters(traveledRef.current);
       }
     }
     prevLocationRef.current = { lat, lng };
-  }, [navigationData]);
+  }, []);
 
   /** Single projection + traveled/remaining: drives step index, ETA, voice, reroute, and route split in MapScreen. */
   const routeProgress = useMemo((): NavigationRouteProgress | null => {
@@ -887,6 +903,10 @@ export function useNavigation(params: {
       navigationData.distance ?? 0,
     );
   }, [isNavigating, navigationData?.polyline, navigationData?.distance, navigationProgressCoord.lat, navigationProgressCoord.lng]);
+
+  useEffect(() => {
+    routeProgressRef.current = routeProgress;
+  }, [routeProgress]);
 
   /** Keep odometry in sync with monotonic route progress (GPS integration can lag in urban canyons). */
   useEffect(() => {
@@ -1106,6 +1126,7 @@ export function useNavigation(params: {
         const dr = parseMapboxDirectionsRoute(route as RawRoute);
         traveledRef.current = 0;
         setTraveledDistanceMeters(0);
+        prevLocationRef.current = null;
         setCurrentStepIndex(0);
         autoEndNavTriggeredRef.current = false;
         setNavigationData({
@@ -1228,6 +1249,7 @@ export function useNavigation(params: {
     liveEta,
     showRoutePreview,
     setShowRoutePreview,
+    cancelRoutePreview,
     tripSummary,
     selectedDestination,
     setSelectedDestination,
