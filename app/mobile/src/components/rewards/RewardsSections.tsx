@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Skeleton from '../common/Skeleton';
 import type { Badge, Offer } from '../../types';
+import { badgeCategoryAccent, badgeIoniconsName } from '../../lib/badgeIcons';
 import type { GemTx, OffersRewardsView, UserOfferRedemption } from './types';
 import { displayOfferCategory } from '../../lib/offerCategories';
 import { rewardsStyles } from './styles';
@@ -346,27 +347,46 @@ export function BadgesPreview({
   }
   return (
     <View style={rewardsStyles.badgesGrid}>
-      {badges.slice(0, 12).map((b) => (
-        <TouchableOpacity
-          key={b.id}
-          style={[
-            rewardsStyles.badgeItem,
-            {
-              backgroundColor: cardBg,
-              opacity: b.earned ? 1 : 0.55,
-              borderColor: b.earned ? `${primary}55` : border,
-              borderWidth: 1,
-            },
-          ]}
-          onPress={() => onPressBadge(b)}
-          activeOpacity={0.8}
-        >
-          <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: b.earned ? `${primary}22` : `${sub}18`, justifyContent: 'center', alignItems: 'center' }}>
-            <Ionicons name={b.earned ? 'trophy' : 'lock-closed'} size={24} color={b.earned ? primary : sub} />
-          </View>
-          <Text style={[rewardsStyles.badgeName, { color: text }]} numberOfLines={1}>{b.name}</Text>
-        </TouchableOpacity>
-      ))}
+      {badges.slice(0, 12).map((b) => {
+        const accent = badgeCategoryAccent(b.category);
+        const iconName = badgeIoniconsName(b.icon);
+        const prog = Math.max(0, Math.min(100, Number(b.progress) || 0));
+        return (
+          <TouchableOpacity
+            key={b.id}
+            style={[
+              rewardsStyles.badgeItem,
+              {
+                backgroundColor: cardBg,
+                opacity: b.earned ? 1 : 0.58,
+                borderColor: b.earned ? accent : border,
+                borderWidth: b.earned ? 2 : 1,
+              },
+            ]}
+            onPress={() => onPressBadge(b)}
+            activeOpacity={0.8}
+          >
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                backgroundColor: b.earned ? `${accent}28` : `${sub}14`,
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <Ionicons name={b.earned ? iconName : 'lock-closed-outline'} size={24} color={b.earned ? accent : sub} />
+            </View>
+            {!b.earned && prog > 0 && prog < 100 ? (
+              <View style={[rewardsStyles.progressTrack, { width: '100%', marginTop: 6 }]}>
+                <View style={[rewardsStyles.progressBar, { width: `${prog}%`, backgroundColor: accent }]} />
+              </View>
+            ) : null}
+            <Text style={[rewardsStyles.badgeName, { color: text }]} numberOfLines={1}>{b.name}</Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }

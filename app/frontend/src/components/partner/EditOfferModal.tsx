@@ -1,5 +1,5 @@
 import { useRef, useState, useMemo, useEffect } from 'react'
-import { X, Gift as GiftIcon, Check, MapPin, Gem, Loader2, Upload } from 'lucide-react'
+import { X, Gift as GiftIcon, Check, MapPin, Gem, Loader2, Upload, Image as ImageIcon } from 'lucide-react'
 import type { Offer, PartnerProfile } from '@/types/partner'
 import { calculateAutoGems, calculateFreeDiscount } from '@/lib/offer-pricing'
 import { PARTNER_OFFER_CATEGORY_OPTIONS } from '@/lib/offer-categories'
@@ -9,6 +9,7 @@ interface Props {
   partnerProfile: PartnerProfile | null
   onClose: () => void
   onUpdate: (offerId: string, offerData: {
+    business_display_name: string
     title: string
     description: string
     category: string
@@ -20,6 +21,9 @@ interface Props {
   }, imageUrl: string | null) => Promise<void>
   offerImage: string | null
   uploadingImage?: boolean
+  importingPlacePhoto?: boolean
+  onSuggestPhotoFromLocation?: (locationId: string) => Promise<void>
+  onImportGooglePhotoRef?: (photoReference: string) => Promise<void>
   onUploadImage: (file: File) => Promise<void>
   onClearImage: () => void
 }
@@ -36,11 +40,16 @@ export default function EditOfferModal({
   onUpdate,
   offerImage,
   uploadingImage = false,
+  importingPlacePhoto = false,
+  onSuggestPhotoFromLocation,
+  onImportGooglePhotoRef,
   onUploadImage,
   onClearImage,
 }: Props) {
+  const [googlePhotoRef, setGooglePhotoRef] = useState('')
   const [formData, setFormData] = useState({
-    title: offer.title,
+    business_display_name: (offer.business_name || partnerProfile?.business_name || '').trim(),
+    title: (offer.title || '').trim(),
     description: offer.description,
     category: offer.business_type && String(offer.business_type).trim() ? String(offer.business_type) : 'retail',
     discount_percent: offer.discount_percent,
@@ -70,7 +79,7 @@ export default function EditOfferModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.title || !formData.location_id) return
+    if (!formData.title || !formData.location_id || !formData.business_display_name?.trim()) return
 
     setLoading(true)
     try {
@@ -117,15 +126,31 @@ export default function EditOfferModal({
                   e.currentTarget.value = ''
                 }}
               />
-              <button type="button" onClick={() => fileRef.current?.click()} className="w-full border-2 border-dashed border-emerald-500/30 rounded-xl p-4 text-emerald-300 hover:border-emerald-500/50 hover:bg-emerald-500/5 flex items-center justify-center gap-2">
+              <button type="button" onClick={() => fileRef.current?.click()} className="w-full border-2 border-dashed border-slate-500/40 rounded-xl p-4 text-slate-300 hover:border-emerald-500/40 hover:bg-emerald-500/5 flex items-center justify-center gap-2">
                 {uploadingImage ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
-                {offerImage ? 'Replace Storefront Photo' : 'Upload Storefront Photo'}
+                {offerImage ? 'Replace storefront / hero image' : 'Upload storefront or offer image (optional)'}
               </button>
-              <p className="text-xs text-slate-400 -mt-2">Required: upload a real photo of the front of the store.</p>
+              <p className="text-xs text-slate-400 -mt-2">
+                Optional on the driver card. Clear the image with ✕ to remove it from the live offer.
+              </p>
 
               <div>
                 <label className="text-slate-400 text-sm mb-1.5 block">
-                  Offer Title <span className="text-red-400">*</span>
+                  Business name (drivers see this first) <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.business_display_name}
+                  onChange={(e) => setFormData({ ...formData, business_display_name: e.target.value })}
+                  className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  placeholder={partnerProfile?.business_name || 'Store name'}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-400 text-sm mb-1.5 block">
+                  Offer headline / promo title <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="text"
@@ -210,6 +235,39 @@ export default function EditOfferModal({
                     ))}
                   </select>
                 </div>
+                {formData.location_id && onSuggestPhotoFromLocation ? (
+                  <button
+                    type="button"
+                    className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-500/50 bg-slate-700/30 text-slate-200 text-sm font-semibold hover:bg-slate-700/50 disabled:opacity-50"
+                    disabled={importingPlacePhoto || uploadingImage}
+                    onClick={() => onSuggestPhotoFromLocation(formData.location_id)}
+                  >
+                    {importingPlacePhoto ? <Loader2 size={18} className="animate-spin" /> : <ImageIcon size={18} />}
+                    Use Google Places photo (near this location)
+                  </button>
+                ) : null}
+                {onImportGooglePhotoRef ? (
+                  <div className="mt-3 space-y-1">
+                    <label className="text-slate-500 text-xs">Advanced: Google photo reference</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={googlePhotoRef}
+                        onChange={(e) => setGooglePhotoRef(e.target.value)}
+                        placeholder="photoreference from Places API"
+                        className="flex-1 bg-slate-700/50 border border-white/10 rounded-xl px-3 py-2 text-white text-sm placeholder-slate-500"
+                      />
+                      <button
+                        type="button"
+                        className="shrink-0 px-3 py-2 rounded-xl bg-slate-600 text-white text-sm font-semibold disabled:opacity-40"
+                        disabled={!googlePhotoRef.trim() || importingPlacePhoto || uploadingImage}
+                        onClick={() => onImportGooglePhotoRef(googlePhotoRef.trim())}
+                      >
+                        Import
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <div>
@@ -233,7 +291,7 @@ export default function EditOfferModal({
                 </button>
                 <button
                   type="submit"
-                  disabled={loading || !formData.title || !formData.location_id || !offerImage || uploadingImage}
+                  disabled={loading || !formData.title || !formData.location_id || !formData.business_display_name?.trim() || uploadingImage || importingPlacePhoto}
                   className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl hover:from-emerald-400 hover:to-teal-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {loading ? (

@@ -146,10 +146,12 @@ export interface NavigateToFriendParams {
   lastUpdated?: string;
 }
 
-/** Map tab: fly to friend's marker. */
+/** Map tab: fly to friend's marker. Optional coords when list is fresher than map state. */
 export interface MapFocusFriendParams {
   friendId: string;
   nonce: number;
+  lat?: number;
+  lng?: number;
 }
 
 export interface Offer {
@@ -204,7 +206,8 @@ export interface Badge {
   id: string;
   name: string;
   description: string;
-  icon: string;
+  /** Backend / ALL_BADGES icon slug (Ionicons name where valid). */
+  icon?: string;
   category: string;
   earned: boolean;
   progress: number;

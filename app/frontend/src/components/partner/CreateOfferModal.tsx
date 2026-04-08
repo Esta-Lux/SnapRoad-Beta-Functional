@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react'
-import { X, MapPin, Plus, Check, Gem, Gift, Loader2, Upload } from 'lucide-react'
+import { useRef, useState, useEffect } from 'react'
+import { X, MapPin, Plus, Check, Gem, Gift, Loader2, Upload, Image } from 'lucide-react'
 import type { PartnerProfile } from '@/types/partner'
 import { calculateAutoGems, calculateFreeDiscount } from '@/lib/offer-pricing'
 import { PARTNER_OFFER_CATEGORY_OPTIONS } from '@/lib/offer-categories'
 
 interface NewOfferData {
+  business_display_name: string
   title: string
   description: string
   category: string
@@ -19,6 +20,9 @@ interface Props {
   partnerProfile: PartnerProfile | null
   newOfferImage: string | null
   uploadingImage?: boolean
+  importingPlacePhoto?: boolean
+  onSuggestPhotoFromLocation?: (locationId: string) => Promise<void>
+  onImportGooglePhotoRef?: (photoReference: string) => Promise<void>
   onClose: () => void
   onCreate: (data: NewOfferData, image: string | null) => Promise<void>
   onUploadImage: (file: File) => Promise<void>
@@ -28,9 +32,15 @@ interface Props {
 
 export default function CreateOfferModal({
   partnerProfile, newOfferImage, onClose, onCreate,
-  uploadingImage = false, onUploadImage, onClearImage, onSwitchToLocations,
+  uploadingImage = false,
+  importingPlacePhoto = false,
+  onSuggestPhotoFromLocation,
+  onImportGooglePhotoRef,
+  onUploadImage, onClearImage, onSwitchToLocations,
 }: Props) {
+  const [googlePhotoRef, setGooglePhotoRef] = useState('')
   const [data, setData] = useState<NewOfferData>({
+    business_display_name: partnerProfile?.business_name?.trim() || '',
     title: '',
     description: '',
     category: 'retail',
@@ -42,6 +52,20 @@ export default function CreateOfferModal({
   })
   const [submitting, setSubmitting] = useState(false)
   const fileRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (!partnerProfile) return
+    setData((d) => {
+      const next = { ...d }
+      if (!d.business_display_name?.trim() && partnerProfile.business_name) {
+        next.business_display_name = partnerProfile.business_name
+      }
+      if (!d.location_id && partnerProfile.locations[0]?.id) {
+        next.location_id = String(partnerProfile.locations[0].id)
+      }
+      return next
+    })
+  }, [partnerProfile])
 
   const autoGems = calculateAutoGems(data.discount_percent, data.is_free_item)
   const freeDiscount = calculateFreeDiscount(data.discount_percent)
@@ -83,11 +107,55 @@ export default function CreateOfferModal({
                   e.currentTarget.value = ''
                 }}
               />
-              <button type="button" onClick={() => fileRef.current?.click()} className="w-full border-2 border-dashed border-emerald-500/30 rounded-xl p-4 text-emerald-300 hover:border-emerald-500/50 hover:bg-emerald-500/5 flex items-center justify-center gap-2">
+              <button type="button" onClick={() => fileRef.current?.click()} className="w-full border-2 border-dashed border-slate-500/40 rounded-xl p-4 text-slate-300 hover:border-emerald-500/40 hover:bg-emerald-500/5 flex items-center justify-center gap-2">
                 {uploadingImage ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
-                {newOfferImage ? 'Replace Storefront Photo' : 'Upload Storefront Photo'}
+                {newOfferImage ? 'Replace storefront / hero image' : 'Upload storefront or offer image (optional)'}
               </button>
-              <p className="text-xs text-slate-400 -mt-2">Required: upload a real photo of the front of the store.</p>
+              <p className="text-xs text-slate-400 -mt-2">
+                Optional hero image on the driver offer card. Super admin can publish without one; when you upload, use your real storefront or promo creative.
+              </p>
+              {onSuggestPhotoFromLocation && data.location_id ? (
+                <button
+                  type="button"
+                  disabled={importingPlacePhoto || !data.location_id}
+                  onClick={() => void onSuggestPhotoFromLocation(data.location_id)}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 py-3 text-sm font-medium text-cyan-200 hover:bg-cyan-500/15 disabled:opacity-50"
+                >
+                  {importingPlacePhoto ? <Loader2 size={18} className="animate-spin" /> : <Image size={18} />}
+                  Use Google Places photo near this location
+                </button>
+              ) : null}
+              {onImportGooglePhotoRef ? (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="text"
+                    placeholder="Advanced: Google photo_reference"
+                    value={googlePhotoRef}
+                    onChange={(e) => setGooglePhotoRef(e.target.value)}
+                    className="flex-1 bg-slate-700/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={!googlePhotoRef.trim() || importingPlacePhoto}
+                    onClick={() => void onImportGooglePhotoRef(googlePhotoRef.trim())}
+                    className="rounded-xl border border-slate-500/40 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700/50 disabled:opacity-50"
+                  >
+                    Import ref
+                  </button>
+                </div>
+              ) : null}
+
+              <div>
+                <label className="text-slate-400 text-sm mb-1 block">Business name (drivers see this first) <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  placeholder={partnerProfile?.business_name || 'Your store name'}
+                  value={data.business_display_name}
+                  onChange={(e) => setData((prev) => ({ ...prev, business_display_name: e.target.value }))}
+                  className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500"
+                />
+                <p className="text-slate-500 text-xs mt-1">Matches the large business line on the map and redemption screen.</p>
+              </div>
 
               <div>
                 <label className="text-slate-400 text-sm mb-1 block flex items-center gap-2">
@@ -127,10 +195,11 @@ export default function CreateOfferModal({
               </div>
 
               <div>
-                <label className="text-slate-400 text-sm mb-1 block">Offer Title <span className="text-red-400">*</span></label>
+                <label className="text-slate-400 text-sm mb-1 block">Offer headline / promo title <span className="text-red-400">*</span></label>
                 <input type="text" placeholder="e.g., 20% Off Weekend Special"
                   value={data.title} onChange={(e) => setData(prev => ({ ...prev, title: e.target.value }))}
                   className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500" />
+                <p className="text-slate-500 text-xs mt-1">Shown as the discount / promo line next to the gem badge in the app.</p>
               </div>
               <div>
                 <label className="text-slate-400 text-sm mb-1 block">Description</label>
@@ -189,7 +258,7 @@ export default function CreateOfferModal({
               </div>
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={onClose} disabled={submitting} className="flex-1 bg-slate-700/50 text-white py-3 rounded-xl hover:bg-slate-700 disabled:opacity-50">Cancel</button>
-                <button type="button" onClick={handleCreate} disabled={!data.title || !data.location_id || !newOfferImage || submitting || uploadingImage}
+                <button type="button" onClick={handleCreate} disabled={!data.title || !data.location_id || !data.business_display_name?.trim() || submitting || uploadingImage || importingPlacePhoto}
                   className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl hover:from-emerald-400 hover:to-teal-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                   {submitting ? <><Loader2 size={18} className="animate-spin" /> Creating...</> : 'Create Offer'}
                 </button>

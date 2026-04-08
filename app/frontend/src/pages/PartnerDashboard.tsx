@@ -73,6 +73,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
   const [newOfferImage, setNewOfferImage] = useState<string | null>(null)
   const [editingOfferImage, setEditingOfferImage] = useState<string | null>(null)
   const [uploadingOfferImage, setUploadingOfferImage] = useState(false)
+  const [importingPlacePhoto, setImportingPlacePhoto] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
@@ -437,14 +438,56 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
     }
   }
 
-  const handleCreateOffer = async (offerData: { title: string; description: string; category: string; discount_percent: number; gem_cost: number; is_free_item?: boolean; location_id: string; expires_days: number }, image: string | null) => {
-    if (!offerData.title || !offerData.location_id || !image) {
-      sendNotification('system', 'Error', 'Please fill in all required fields, select a location, and upload a storefront photo.')
+  const handleSuggestOfferPhoto = async (locationId: string, mode: 'create' | 'edit') => {
+    setImportingPlacePhoto(true)
+    try {
+      const res = await partnerApi.suggestOfferPhotoFromLocation(locationId)
+      const url = res?.data?.image_url as string | undefined
+      if (res?.success && url) {
+        if (mode === 'create') setNewOfferImage(url)
+        else setEditingOfferImage(url)
+        sendNotification('system', 'Photo added', 'Google Places photo saved to your offer hero image.')
+      } else {
+        sendNotification('system', 'No photo found', res?.message || 'Try uploading your own image.')
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not load photo from Google.'
+      sendNotification('system', 'Import failed', msg)
+    } finally {
+      setImportingPlacePhoto(false)
+    }
+  }
+
+  const handleImportGooglePhotoRef = async (photoReference: string, mode: 'create' | 'edit') => {
+    if (!photoReference.trim()) return
+    setImportingPlacePhoto(true)
+    try {
+      const res = await partnerApi.importGoogleOfferPhoto(photoReference.trim(), 800)
+      const url = res?.data?.image_url as string | undefined
+      if (res?.success && url) {
+        if (mode === 'create') setNewOfferImage(url)
+        else setEditingOfferImage(url)
+        sendNotification('system', 'Photo imported', 'Image copied from Google Places.')
+      } else {
+        sendNotification('system', 'Import failed', res?.message || 'Check the photo reference.')
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Import failed.'
+      sendNotification('system', 'Import failed', msg)
+    } finally {
+      setImportingPlacePhoto(false)
+    }
+  }
+
+  const handleCreateOffer = async (offerData: { business_display_name: string; title: string; description: string; category: string; discount_percent: number; gem_cost: number; is_free_item?: boolean; location_id: string; expires_days: number }, image: string | null) => {
+    if (!offerData.title?.trim() || !offerData.location_id || !offerData.business_display_name?.trim()) {
+      sendNotification('system', 'Error', 'Please enter business name, offer headline, and select a location.')
       return
     }
     try {
       const data = await partnerApi.createOffer({
-        title: offerData.title,
+        business_display_name: offerData.business_display_name.trim(),
+        title: offerData.title.trim(),
         description: offerData.description,
         category: offerData.category,
         discount_percent: offerData.discount_percent,
@@ -452,7 +495,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
         is_free_item: offerData.is_free_item ?? false,
         location_id: offerData.location_id,
         expires_hours: offerData.expires_days * 24,
-        image_url: image,
+        image_url: image || null,
       })
       if (data.success) {
         sendNotification('offer', 'Offer Created', 'Your new offer is now live!')
@@ -476,14 +519,17 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
     }
   }
 
-  const handleUpdateOffer = async (offerId: string, offerData: { title: string; description: string; category: string; discount_percent: number; gem_cost: number; is_free_item?: boolean; location_id: string; expires_days: number }, imageUrl: string | null) => {
-    if (!imageUrl) {
-      sendNotification('system', 'Offer not updated', 'A storefront photo is required for every offer.')
-      return
-    }
+  const handleUpdateOffer = async (offerId: string, offerData: { business_display_name: string; title: string; description: string; category: string; discount_percent: number; gem_cost: number; is_free_item?: boolean; location_id: string; expires_days: number }, imageUrl: string | null) => {
     try {
       const data = await partnerApi.updateOffer(offerId, {
-        ...offerData,
+        business_display_name: offerData.business_display_name.trim(),
+        title: offerData.title.trim(),
+        description: offerData.description,
+        category: offerData.category,
+        discount_percent: offerData.discount_percent,
+        gem_cost: offerData.gem_cost,
+        is_free_item: offerData.is_free_item ?? false,
+        location_id: offerData.location_id,
         expires_hours: offerData.expires_days * 24,
         image_url: imageUrl,
       })
@@ -579,6 +625,9 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
           partnerProfile={partnerProfile}
           newOfferImage={newOfferImage}
           uploadingImage={uploadingOfferImage}
+          importingPlacePhoto={importingPlacePhoto}
+          onSuggestPhotoFromLocation={(id) => handleSuggestOfferPhoto(id, 'create')}
+          onImportGooglePhotoRef={(ref) => handleImportGooglePhotoRef(ref, 'create')}
           onClose={() => setShowCreateModal(false)}
           onCreate={handleCreateOffer}
           onUploadImage={(file) => handleUploadOfferImage(file, 'create')}
@@ -593,6 +642,9 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
           partnerProfile={partnerProfile}
           offerImage={editingOfferImage}
           uploadingImage={uploadingOfferImage}
+          importingPlacePhoto={importingPlacePhoto}
+          onSuggestPhotoFromLocation={(id) => handleSuggestOfferPhoto(id, 'edit')}
+          onImportGooglePhotoRef={(ref) => handleImportGooglePhotoRef(ref, 'edit')}
           onClose={() => {
             setEditingOffer(null)
             setEditingOfferImage(null)

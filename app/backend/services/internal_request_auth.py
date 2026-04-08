@@ -16,6 +16,11 @@ def _is_production() -> bool:
     return os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
 
 
+def _is_railway_deploy() -> bool:
+    """Railway sets these; cron/workers often POST with X-Commute-Dispatch-Secret only."""
+    return bool((os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID") or "").strip())
+
+
 async def verify_commute_internal_request(
     request: Request,
     *,
@@ -59,15 +64,31 @@ async def verify_commute_internal_request(
             raise HTTPException(status_code=403, detail="Invalid signature")
         return
 
+    legacy_expected = (legacy_plain_secret_expected or "").strip() or dispatch_secret
+    plain = (plain_secret_header or "").strip()
+    plain_ok = bool(legacy_expected) and plain == legacy_expected
+
+    if plain_ok:
+        if not _is_production():
+            return
+        if allow_legacy:
+            return
+        if _is_railway_deploy():
+            # Cron on Railway typically uses a shared secret header; same security model as legacy flag.
+            return
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: use HMAC (X-Internal-Timestamp + X-Internal-Signature over "
+            "{timestamp}\\n{raw_body}) or set COMMUTE_INTERNAL_ALLOW_LEGACY_SECRET=1. "
+            "Plain X-Commute-Dispatch-Secret is also accepted automatically on Railway.",
+        )
+
     if _is_production() and not allow_legacy:
         raise HTTPException(
             status_code=403,
             detail="Forbidden: send X-Internal-Timestamp, X-Internal-Signature (HMAC-SHA256 of "
-            "{timestamp}\\n{body}), or set COMMUTE_INTERNAL_ALLOW_LEGACY_SECRET during migration.",
+            "{timestamp}\\n{body}), set COMMUTE_INTERNAL_ALLOW_LEGACY_SECRET=1, "
+            "or use X-Commute-Dispatch-Secret on Railway with COMMUTE_DISPATCH_SECRET.",
         )
-
-    legacy_expected = (legacy_plain_secret_expected or "").strip() or dispatch_secret
-    if legacy_expected and (plain_secret_header or "").strip() == legacy_expected:
-        return
 
     raise HTTPException(status_code=403, detail="Forbidden")

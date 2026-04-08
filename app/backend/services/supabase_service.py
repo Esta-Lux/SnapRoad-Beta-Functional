@@ -741,7 +741,9 @@ def sb_create_offer(data: dict) -> Optional[dict]:
 
 def sb_update_offer(offer_id: str, updates: dict) -> bool:
     try:
-        payload = {k: v for k, v in updates.items() if k != "title"}
+        payload = {k: v for k, v in updates.items() if v is not None}
+        if "image_url" in updates and updates["image_url"] is None:
+            payload["image_url"] = None
         if not payload:
             return True
         _sb().table("offers").update(payload).eq("id", offer_id).execute()

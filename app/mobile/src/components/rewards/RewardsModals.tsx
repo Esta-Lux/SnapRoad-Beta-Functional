@@ -9,6 +9,7 @@ import { displayOfferCategory } from '../../lib/offerCategories';
 import { openMapsSearch } from '../../lib/mapsLinks';
 import { api } from '../../api/client';
 import { rewardsStyles } from './styles';
+import { badgeCategoryAccent, badgeIoniconsName } from '../../lib/badgeIcons';
 
 let QRCode: React.ComponentType<{ value: string; size: number; backgroundColor: string; color: string }> | null = null;
 try {
@@ -39,19 +40,48 @@ export function BadgeDetailModal({
   isLight: boolean;
 } & Pick<ThemeProps, 'cardBg' | 'text' | 'sub'>) {
   const overlay = isLight ? 'rgba(15,23,42,0.45)' : 'rgba(2,6,23,0.72)';
+  const accent = selectedBadge ? badgeCategoryAccent(selectedBadge.category) : primary;
+  const iconName = selectedBadge ? badgeIoniconsName(selectedBadge.icon) : 'ribbon-outline';
+  const prog = selectedBadge ? Math.max(0, Math.min(100, Number(selectedBadge.progress) || 0)) : 0;
   return (
     <Modal visible={!!selectedBadge} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={[rewardsStyles.modalOverlay, { backgroundColor: overlay }]} activeOpacity={1} onPress={onClose}>
-        <View style={[rewardsStyles.modalCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: `${primary}22` }]} onStartShouldSetResponder={() => true}>
-          <View style={{ alignSelf: 'center', width: 72, height: 72, borderRadius: 22, backgroundColor: selectedBadge?.earned ? `${primary}18` : `${sub}22`, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-            <Ionicons name={selectedBadge?.earned ? 'trophy' : 'lock-closed'} size={36} color={selectedBadge?.earned ? primary : sub} />
+        <View
+          style={[rewardsStyles.modalCard, { backgroundColor: cardBg, borderWidth: 2, borderColor: selectedBadge?.earned ? `${accent}55` : `${primary}18` }]}
+          onStartShouldSetResponder={() => true}
+        >
+          <View
+            style={{
+              alignSelf: 'center',
+              width: 72,
+              height: 72,
+              borderRadius: 22,
+              backgroundColor: selectedBadge?.earned ? `${accent}22` : `${sub}18`,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 12,
+            }}
+          >
+            <Ionicons
+              name={selectedBadge?.earned ? iconName : 'lock-closed-outline'}
+              size={36}
+              color={selectedBadge?.earned ? accent : sub}
+            />
           </View>
           <Text style={[rewardsStyles.modalTitle, { color: text }]}>{selectedBadge?.name}</Text>
+          {selectedBadge?.category ? (
+            <Text style={{ color: accent, textAlign: 'center', fontSize: 11, fontWeight: '800', textTransform: 'capitalize', marginBottom: 6 }}>
+              {selectedBadge.category}
+            </Text>
+          ) : null}
           <Text style={{ color: sub, textAlign: 'center', fontSize: 13 }}>{selectedBadge?.description}</Text>
           {!selectedBadge?.earned && (
-            <Text style={{ color: primary, textAlign: 'center', fontSize: 12, marginTop: 8, fontWeight: '700' }}>
-              Progress: {selectedBadge?.progress}%
-            </Text>
+            <View style={{ width: '100%', marginTop: 14 }}>
+              <View style={rewardsStyles.nativeProgressTrack}>
+                <View style={[rewardsStyles.nativeProgressFill, { width: `${prog}%`, backgroundColor: accent }]} />
+              </View>
+              <Text style={[rewardsStyles.nativeProgressText, { color: primary }]}>Progress: {prog}%</Text>
+            </View>
           )}
         </View>
       </TouchableOpacity>
@@ -559,12 +589,45 @@ export function AllBadgesModal({
           </LinearGradient>
           <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
             <View style={rewardsStyles.badgesGrid}>
-              {badges.map((b) => (
-                <TouchableOpacity key={`all-${b.id}`} style={[rewardsStyles.badgeItem, { backgroundColor: cardBg, opacity: b.earned ? 1 : 0.4 }]} onPress={() => onSelectBadge(b)}>
-                  <Ionicons name={b.earned ? 'trophy' : 'lock-closed'} size={28} color={b.earned ? '#FDE68A' : sub} />
-                  <Text style={[rewardsStyles.badgeName, { color: text }]} numberOfLines={1}>{b.name}</Text>
-                </TouchableOpacity>
-              ))}
+              {badges.map((b) => {
+                const accent = badgeCategoryAccent(b.category);
+                const iconName = badgeIoniconsName(b.icon);
+                const prog = Math.max(0, Math.min(100, Number(b.progress) || 0));
+                return (
+                  <TouchableOpacity
+                    key={`all-${b.id}`}
+                    style={[
+                      rewardsStyles.badgeItem,
+                      {
+                        backgroundColor: cardBg,
+                        opacity: b.earned ? 1 : 0.48,
+                        borderColor: b.earned ? accent : `${sub}44`,
+                        borderWidth: b.earned ? 2 : 1,
+                      },
+                    ]}
+                    onPress={() => onSelectBadge(b)}
+                  >
+                    <View
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 16,
+                        backgroundColor: b.earned ? `${accent}24` : `${sub}14`,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Ionicons name={b.earned ? iconName : 'lock-closed-outline'} size={28} color={b.earned ? accent : sub} />
+                    </View>
+                    {!b.earned && prog > 0 ? (
+                      <View style={[rewardsStyles.progressTrack, { width: '100%', marginTop: 6 }]}>
+                        <View style={[rewardsStyles.progressBar, { width: `${prog}%`, backgroundColor: accent }]} />
+                      </View>
+                    ) : null}
+                    <Text style={[rewardsStyles.badgeName, { color: text }]} numberOfLines={1}>{b.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </ScrollView>
         </View>

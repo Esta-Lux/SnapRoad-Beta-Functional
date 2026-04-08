@@ -16,6 +16,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import * as Battery from 'expo-battery';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -30,6 +31,7 @@ import { supabase } from '../lib/supabase';
 import { normalizeFriendFromApi, deriveFriendPresence } from '../lib/friendPresence';
 import FriendListCard, { type FriendListCardTheme } from '../components/social/FriendListCard';
 import FriendDetailModalContent from '../components/social/FriendDetailModal';
+import type { MapFocusFriendParams } from '../types';
 
 type Section = 'friends' | 'family';
 
@@ -149,7 +151,8 @@ export default function DashboardScreen() {
   const isFocused = useIsFocused();
   const [section, setSection] = useState<Section>('friends');
   const friendsTabActive = section === 'friends' && isFocused;
-  const { location } = useLocation(false, { paused: !friendsTabActive });
+  const { location, heading, speed } = useLocation(false, { paused: !friendsTabActive });
+  const dashboardLivePublishRef = useRef(0);
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(true);
@@ -302,6 +305,46 @@ export default function DashboardScreen() {
     };
   }, [friendsTabActive]);
 
+  /** Mirror Map tab: publish GPS + battery while Social friends tab is open and sharing (Premium). */
+  useEffect(() => {
+    if (!user?.isPremium || !friendsTabActive || !isSharingLocation) return;
+    const rLat = Math.round(location.lat * 1000);
+    const rLng = Math.round(location.lng * 1000);
+    if (rLat === 0 && rLng === 0) return;
+    const now = Date.now();
+    if (now - dashboardLivePublishRef.current < 25_000) return;
+    dashboardLivePublishRef.current = now;
+
+    let cancelled = false;
+    (async () => {
+      let battery_pct: number | undefined;
+      try {
+        const lvl = await Battery.getBatteryLevelAsync();
+        if (cancelled) return;
+        battery_pct = Math.round(Math.max(0, Math.min(1, lvl)) * 100);
+      } catch {
+        /* optional */
+      }
+      if (cancelled) return;
+      try {
+        await api.post('/api/friends/location/update', {
+          lat: location.lat,
+          lng: location.lng,
+          heading,
+          speed_mph: speed,
+          is_navigating: false,
+          is_sharing: true,
+          battery_pct,
+        });
+      } catch {
+        /* offline */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.isPremium, friendsTabActive, isSharingLocation, location.lat, location.lng, heading, speed]);
+
   const myCoord = useMemo(() => {
     if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return null;
     if (location.lat === 0 && location.lng === 0) return null;
@@ -383,11 +426,36 @@ export default function DashboardScreen() {
     [loadFriends],
   );
 
+  const openFriendOnMap = useCallback(
+    (f: Friend) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const lat = f.lat;
+      const lng = f.lng;
+      const coordsOk =
+        Number.isFinite(lat) &&
+        Number.isFinite(lng) &&
+        !((lat === 0 || Math.abs(lat as number) < 1e-6) && (lng === 0 || Math.abs(lng as number) < 1e-6));
+      const payload: MapFocusFriendParams = {
+        friendId: f.friend_id || f.id,
+        nonce: Date.now(),
+        ...(coordsOk ? { lat: lat as number, lng: lng as number } : {}),
+      };
+      navigation.getParent()?.navigate('Map', { screen: 'MapMain', params: { mapFocusFriend: payload } });
+    },
+    [navigation],
+  );
+
   const renderFriend = useCallback(
     ({ item }: { item: (typeof friendListData)[0] }) => (
-      <FriendListCard friend={item.friend} presence={item.presence} theme={listTheme} onPress={setSelectedFriend} />
+      <FriendListCard
+        friend={item.friend}
+        presence={item.presence}
+        theme={listTheme}
+        onPress={setSelectedFriend}
+        onAvatarPress={openFriendOnMap}
+      />
     ),
-    [listTheme],
+    [listTheme, openFriendOnMap],
   );
 
   const listKeyExtractor = useCallback((item: (typeof friendListData)[0]) => item.friend.id, []);

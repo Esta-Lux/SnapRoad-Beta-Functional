@@ -985,14 +985,18 @@ export default function PlaceDetailSheet({
               </ScrollView>
             </View>
             <View style={[S.stickyBottom, { paddingBottom: Math.max(insets.bottom, 8), backgroundColor: bg, borderTopColor: border }]}>
-              <TouchableOpacity style={S.directionsBtn} onPress={handleDirections} activeOpacity={0.85}>
-                <LinearGradient colors={['#2563EB', '#1D4ED8']} style={S.directionsBtnGrad}>
+              <TouchableOpacity
+                style={[S.directionsBtnFlat, { backgroundColor: '#2563EB', borderColor: '#1D4ED8' }]}
+                onPress={handleDirections}
+                activeOpacity={0.85}
+              >
+                <View style={S.directionsBtnGrad}>
                   <Ionicons name="navigate" size={18} color="#fff" />
                   <Text style={S.directionsBtnText}>Directions</Text>
                   {distMeters != null ? (
                     <Text style={S.directionsBtnDist}>· {formatDistanceMeters(distMeters)}</Text>
                   ) : null}
-                </LinearGradient>
+                </View>
               </TouchableOpacity>
             </View>
             </>
@@ -1116,6 +1120,7 @@ const S = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   directionsBtn: { borderRadius: 16, overflow: 'hidden' },
+  directionsBtnFlat: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
   directionsBtnGrad: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, paddingVertical: 15,

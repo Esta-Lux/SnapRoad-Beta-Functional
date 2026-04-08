@@ -19,17 +19,27 @@ export default function OffersTab({ offers, onBoost, onEdit, onDelete }: Props) 
                 {offer.image_url ? (
                   <img
                     src={offer.image_url}
-                    alt={offer.title}
+                    alt={offer.business_name || offer.title}
                     className="h-24 w-full rounded-2xl object-cover md:h-24 md:w-32"
                   />
-                ) : null}
+                ) : (
+                  <div className="h-24 w-full md:w-32 shrink-0 rounded-2xl border border-dashed border-slate-600 flex items-center justify-center text-slate-500 text-xs text-center px-2">
+                    No hero image — drivers still see name & offer details
+                  </div>
+                )}
                 <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="text-white font-semibold text-lg">{offer.title}</h3>
+                <div className="flex items-center gap-3 mb-2 flex-wrap">
+                  <h3 className="text-white font-semibold text-lg">{offer.business_name || offer.title}</h3>
+                  {offer.title && offer.business_name && offer.title !== offer.business_name ? (
+                    <span className="text-slate-400 text-sm font-medium">· {offer.title}</span>
+                  ) : null}
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${offer.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : offer.status === 'paused' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'}`}>
                     {offer.status.charAt(0).toUpperCase() + offer.status.slice(1)}
                   </span>
                 </div>
+                {offer.category_label ? (
+                  <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide mb-2">{offer.category_label}</p>
+                ) : null}
                 <p className="text-slate-400 text-sm mb-4">{offer.description}</p>
                 {offer.address ? <p className="text-slate-500 text-xs mb-3">{offer.address}</p> : null}
                 <div className="flex items-center gap-4 text-sm">

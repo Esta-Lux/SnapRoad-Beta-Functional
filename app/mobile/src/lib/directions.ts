@@ -482,13 +482,85 @@ export async function getMapboxDirections(
 export function getModeDirectionsConfig(mode: DrivingMode): { profile: DirectionsProfile; exclude?: string } {
   switch (mode) {
     case 'calm':
-      return { profile: 'driving-traffic', exclude: 'motorway' };
+      // Same traffic model as adaptive; calm path prefers less motorway among time-competitive alternates (see orderCalmPrimaryRoute).
+      return { profile: 'driving-traffic' };
     case 'sport':
       return { profile: 'driving-traffic' };
     case 'adaptive':
     default:
       return { profile: 'driving-traffic' };
   }
+}
+
+/** Avoid importing distance util here (it imports directions types → circular). */
+function _haversineM(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371000;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLng = ((bLng - aLng) * Math.PI) / 180;
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+function rawRouteMotorwayMeters(route: RawRoute): number {
+  let m = 0;
+  for (const leg of route.legs) {
+    for (const step of leg.steps) {
+      const ints = step.intersections;
+      if (!Array.isArray(ints)) continue;
+      const onMw = ints.some((i) => Array.isArray(i.classes) && i.classes.includes('motorway'));
+      if (onMw && typeof step.distance === 'number') m += step.distance;
+    }
+  }
+  return m;
+}
+
+function rawRoutesAreNearDuplicate(a: RawRoute, b: RawRoute): boolean {
+  if (Math.abs(a.duration - b.duration) >= 55) return false;
+  if (Math.abs(a.distance - b.distance) >= 400) return false;
+  const ac = a.geometry.coordinates;
+  const bc = b.geometry.coordinates;
+  if (!ac?.length || !bc?.length || ac.length < 2 || bc.length < 2) return false;
+  const a0 = ac[0]!;
+  const a1 = ac[ac.length - 1]!;
+  const b0 = bc[0]!;
+  const b1 = bc[bc.length - 1]!;
+  const startClose = _haversineM(a0[1]!, a0[0]!, b0[1]!, b0[0]!) < 90;
+  const endClose = _haversineM(a1[1]!, a1[0]!, b1[1]!, b1[0]!) < 90;
+  return startClose && endClose;
+}
+
+function dedupeRawTrafficRoutes(routes: RawRoute[]): RawRoute[] {
+  const out: RawRoute[] = [];
+  for (const r of routes) {
+    if (!out.some((o) => rawRoutesAreNearDuplicate(o, r))) out.push(r);
+  }
+  return out;
+}
+
+/** For calm mode: keep traffic alternates, but surface the time-competitive route with the least mapped motorway mileage first. */
+function orderCalmPrimaryRoute(routes: RawRoute[], mode?: DrivingMode): RawRoute[] {
+  if (mode !== 'calm' || routes.length <= 1) return routes;
+  const baseDur = Math.min(...routes.map((r) => r.duration));
+  const maxDur = Math.min(baseDur * 1.15, baseDur + 480);
+  const viableIdx = routes
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r.duration <= maxDur)
+    .map((x) => x.i);
+  const pool = viableIdx.length ? viableIdx : [0];
+  let pick = pool[0]!;
+  let bestMw = rawRouteMotorwayMeters(routes[pick]!);
+  for (let k = 1; k < pool.length; k++) {
+    const i = pool[k]!;
+    const mw = rawRouteMotorwayMeters(routes[i]!);
+    if (mw < bestMw || (mw === bestMw && routes[i]!.duration < routes[pick]!.duration)) {
+      pick = i;
+      bestMw = mw;
+    }
+  }
+  const primary = routes[pick]!;
+  return [primary, ...routes.filter((_, i) => i !== pick)];
 }
 
 type MapboxDirectionsJson = { routes?: RawRoute[]; message?: string };
@@ -561,41 +633,13 @@ export async function getMapboxRouteOptions(
     }
   }
 
-  const MAPBOX_TOKEN = isMapboxDirectionsConfigured() ? getMapboxPublicToken() : '';
-  const tokenQS = MAPBOX_TOKEN ? `access_token=${encodeURIComponent(MAPBOX_TOKEN)}` : '';
-  const commonQS =
-    tokenQS &&
-    `${tokenQS}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed,duration&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
+  trafficRoutes = dedupeRawTrafficRoutes(trafficRoutes);
+  trafficRoutes = orderCalmPrimaryRoute(trafficRoutes, options?.mode);
 
-  const results: DirectionsResult[] = [parseMapboxDirectionsRoute(trafficRoutes[0]!, 'best')];
+  const results: DirectionsResult[] = [];
+  if (trafficRoutes[0]) results.push(parseMapboxDirectionsRoute(trafficRoutes[0]!, 'best'));
   for (let i = 1; i < trafficRoutes.length && !options?.fastSingleRoute && results.length < 3; i++) {
     results.push(parseMapboxDirectionsRoute(trafficRoutes[i]!, 'alt'));
-  }
-
-  if (!options?.fastSingleRoute && results.length < 3 && commonQS) {
-    try {
-      const drivingUrl = `${DIRECTIONS_BASE}/driving/${coordsPath}?${commonQS}&alternatives=true`;
-      const drivingRes = await fetch(drivingUrl);
-      if (drivingRes.ok) {
-        const drivingJson = (await drivingRes.json()) as { routes?: RawRoute[] };
-        const drivingRoutes = (drivingJson.routes ?? []) as RawRoute[];
-        if (drivingRoutes.length > 0) {
-          const byDist = [...drivingRoutes].sort((a, b) => a.distance - b.distance);
-          for (const candidate of byDist) {
-            if (results.length >= 3) break;
-            const dup = results.find(
-              (r) =>
-                Math.abs(r.duration - candidate.duration) < 30 && Math.abs(r.distance - candidate.distance) < 200,
-            );
-            if (!dup) {
-              results.push(parseMapboxDirectionsRoute(candidate, 'eco'));
-            }
-          }
-        }
-      }
-    } catch {
-      /* Eco alternative is optional */
-    }
   }
 
   return results.slice(0, 3);

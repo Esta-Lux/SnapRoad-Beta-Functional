@@ -119,8 +119,8 @@ export default function PlaceCard({
               <Ionicons name={icon} size={20} color="#3B82F6" />
             </View>
             <View style={styles.info}>
-              <Text style={[styles.name, { color: nameColor }]} numberOfLines={3}>{name}</Text>
-              {address ? <Text style={[styles.address, { color: addrColor }]} numberOfLines={3}>{address}</Text> : null}
+              <Text style={[styles.name, { color: nameColor }]} numberOfLines={4}>{name}</Text>
+              {address ? <Text style={[styles.address, { color: addrColor }]} numberOfLines={6}>{address}</Text> : null}
               <View style={styles.metaRow}>
                 {dist && (
                   <View style={styles.metaChip}>
@@ -134,6 +134,9 @@ export default function PlaceCard({
                   </View>
                 )}
               </View>
+              {detailHint ? (
+                <Text style={[styles.detailHint, { color: metaColor }]}>{detailHint}</Text>
+              ) : null}
             </View>
             <TouchableOpacity onPress={onDismiss} style={[styles.closeBtn, { backgroundColor: chipBg }]} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Ionicons name="close" size={16} color={addrColor} />
@@ -164,7 +167,9 @@ export default function PlaceCard({
   );
 }
 
-const PLACE_CARD_MAX_H = Dimensions.get('window').height * 0.52;
+const PLACE_CARD_MAX_H = Dimensions.get('window').height * 0.58;
+/** Handle + action row + padding — reserve space so ScrollView can use the rest. */
+const PLACE_CARD_CHROME_H = 150;
 
 const styles = StyleSheet.create({
   container: {
@@ -174,14 +179,15 @@ const styles = StyleSheet.create({
     zIndex: 30,
     borderTopWidth: 1,
     maxHeight: PLACE_CARD_MAX_H,
+    flexDirection: 'column',
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.2, shadowRadius: 20 },
-      android: { elevation: 16 },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 16 },
+      android: { elevation: 12 },
     }),
   },
   handle: { width: 40, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: 14 },
-  scroll: { flexGrow: 0, maxHeight: Dimensions.get('window').height * 0.34 },
-  scrollContent: { flexGrow: 0 },
+  scroll: { maxHeight: Math.max(140, PLACE_CARD_MAX_H - PLACE_CARD_CHROME_H) },
+  scrollContent: { paddingBottom: 6 },
   row: { flexDirection: 'row', alignItems: 'flex-start' },
   iconCircle: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 12, marginTop: 2 },
   info: { flex: 1 },
@@ -194,14 +200,12 @@ const styles = StyleSheet.create({
   catChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   catText: { fontSize: 11, fontWeight: '600' },
   closeBtn: { width: 30, height: 30, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
-  actions: { flexDirection: 'row', gap: 10, marginTop: 16, flexShrink: 0 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 14, marginBottom: 4, flexShrink: 0 },
   dirBtn: {
     flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#3B82F6', borderRadius: 14, paddingVertical: 14,
-    ...Platform.select({
-      ios: { shadowColor: '#3B82F6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 12 },
-      android: { elevation: 6 },
-    }),
+    backgroundColor: '#2563EB', borderRadius: 14, paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#1D4ED8',
   },
   dirText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   saveBtn: {

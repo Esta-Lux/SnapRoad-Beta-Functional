@@ -252,6 +252,20 @@ class PartnerApiService {
     return response.json()
   }
 
+  async suggestOfferPhotoFromLocation(locationId: string): Promise<any> {
+    return this.request(`/api/partner/offers/suggest-photo-from-location?partner_id=${this.partnerId}`, {
+      method: 'POST',
+      body: JSON.stringify({ location_id: locationId }),
+    })
+  }
+
+  async importGoogleOfferPhoto(photoReference: string, maxwidth = 800): Promise<any> {
+    return this.request(`/api/partner/offers/import-google-photo?partner_id=${this.partnerId}`, {
+      method: 'POST',
+      body: JSON.stringify({ photo_reference: photoReference.trim(), maxwidth }),
+    })
+  }
+
   async deleteOffer(offerId: string): Promise<any> {
     return this.request(`/api/partner/offers/${offerId}?partner_id=${this.partnerId}`, {
       method: 'DELETE',

@@ -8,6 +8,7 @@ from typing import Annotated, Optional
 from datetime import datetime, timedelta, timezone
 from models.schemas import (
     PartnerLocation, PartnerPlanUpdate, PartnerOfferCreate,
+    PartnerOfferGooglePhotoImport, PartnerOfferLocationPhotoSuggest,
     PartnerLoginRequest, PartnerRegisterRequest,
     TeamInviteRequest, ReferralRequest,
     CreditUseRequest, QRRedemptionRequest, BoostRequest, BoostCreditsRequest,
@@ -75,6 +76,7 @@ def _enrich_partner_offers_with_analytics(offers: list) -> list:
         row["views"] = views
         row["visits"] = visits
         row["redemption_count"] = redemptions
+        attach_offer_category_fields(row)
         out.append(row)
     return out
 
@@ -176,25 +178,20 @@ def _require_owned_partner_id(user: dict, partner_id: Optional[str] = None) -> s
     return token_partner_id
 
 
-def _require_uploaded_storefront_image(image_url: Optional[str]) -> str:
+def _partner_offer_image_url(image_url: Optional[str]) -> Optional[str]:
+    """Optional hero image. When set, must be a partner storefront upload in our public bucket."""
     url = str(image_url or "").strip()
     if not url:
-        raise HTTPException(status_code=400, detail="A storefront photo is required before publishing an offer.")
+        return None
     if "/storage/v1/object/public/" not in url or f"/{PARTNER_OFFER_IMAGE_PREFIX}" not in url:
-        raise HTTPException(status_code=400, detail="Offer image must be an uploaded storefront photo.")
+        raise HTTPException(status_code=400, detail="Offer image must be an uploaded storefront photo from this portal.")
     return url
 
 
-@router.post("/partner/offers/upload-image", responses={403: {"description": "Partner access denied"}})
-async def upload_partner_offer_image(
-    user: CurrentPartner,
-    partner_id: str = "default_partner",
-    file: UploadFile = File(...),
-):
-    owned_partner_id = _require_partner_portal_entitled(user, partner_id)
-    payload = await file.read()
+def _store_partner_offer_image(owned_partner_id: str, payload: bytes) -> str:
+    """Validate image bytes, upload to public partner-offers bucket, return public URL."""
     if not payload:
-        raise HTTPException(status_code=400, detail="Empty upload")
+        raise HTTPException(status_code=400, detail="Empty image")
     if len(payload) > MAX_OFFER_IMAGE_BYTES:
         raise HTTPException(status_code=400, detail="Image too large")
     inferred = detect_image_type(payload[:512])
@@ -210,12 +207,108 @@ async def upload_partner_offer_image(
             payload,
             file_options={"content-type": inferred},
         )
-        url = supabase.storage.from_(PUBLIC_PHOTO_BUCKET).get_public_url(path)
+        return supabase.storage.from_(PUBLIC_PHOTO_BUCKET).get_public_url(path)
     except Exception as exc:
-        logger.exception("partner offer image upload failed: %s", exc)
+        logger.exception("partner offer image store failed: %s", exc)
         raise HTTPException(status_code=503, detail="Offer image upload unavailable") from exc
 
-    return {"success": True, "data": {"image_url": url, "path": path}}
+
+async def _download_google_place_photo(photo_reference: str, maxwidth: int) -> bytes:
+    from routes import places as places_mod
+
+    key = places_mod._KEY()
+    if not key:
+        raise HTTPException(status_code=503, detail="Google Places is not configured on the server.")
+    url = f"{places_mod._BASE}/photo"
+    r = await places_mod._get_http().get(
+        url,
+        params={"photoreference": photo_reference.strip(), "maxwidth": maxwidth, "key": key},
+        follow_redirects=True,
+    )
+    if r.status_code != 200 or not r.content:
+        raise HTTPException(status_code=400, detail="Could not retrieve image from Google Places.")
+    return r.content
+
+
+@router.post("/partner/offers/upload-image", responses={403: {"description": "Partner access denied"}})
+async def upload_partner_offer_image(
+    user: CurrentPartner,
+    partner_id: str = "default_partner",
+    file: UploadFile = File(...),
+):
+    owned_partner_id = _require_partner_portal_entitled(user, partner_id)
+    payload = await file.read()
+    url = _store_partner_offer_image(owned_partner_id, payload)
+    return {"success": True, "data": {"image_url": url}}
+
+
+@router.post("/partner/offers/import-google-photo", responses={403: {"description": "Partner access denied"}})
+@limiter.limit("20/minute")
+async def import_google_offer_photo(
+    request: Request,
+    body: PartnerOfferGooglePhotoImport,
+    user: CurrentPartner,
+    partner_id: str = "default_partner",
+):
+    owned_partner_id = _require_partner_portal_entitled(user, partner_id)
+    raw = await _download_google_place_photo(body.photo_reference.strip(), body.maxwidth)
+    url = _store_partner_offer_image(owned_partner_id, raw)
+    return {"success": True, "data": {"image_url": url}}
+
+
+@router.post("/partner/offers/suggest-photo-from-location", responses={403: {"description": "Partner access denied"}})
+@limiter.limit("20/minute")
+async def suggest_offer_photo_from_location(
+    request: Request,
+    body: PartnerOfferLocationPhotoSuggest,
+    user: CurrentPartner,
+    partner_id: str = "default_partner",
+):
+    owned_partner_id = _require_partner_portal_entitled(user, partner_id)
+    from routes.places import fetch_nearby_places_list
+
+    loc_id = str(body.location_id).strip()
+    locations = sb_get_partner_locations(owned_partner_id)
+    location = next((l for l in locations if str(l.get("id")) == loc_id), None)
+    if not location:
+        return {"success": False, "message": "Location not found."}
+
+    lat = float(location["lat"])
+    lng = float(location["lng"])
+    name_kw = str(location.get("name") or "").strip() or None
+
+    # Nearby radius in meters — 150m is too tight for Google to return the storefront POI; use multi-km search.
+    rows = await fetch_nearby_places_list(lat, lng, radius=4000, limit=15, keyword=name_kw)
+    photo_ref: Optional[str] = None
+    for row in rows:
+        ref = row.get("photo_reference")
+        if ref:
+            photo_ref = str(ref)
+            break
+    if not photo_ref:
+        rows_b = await fetch_nearby_places_list(lat, lng, radius=8000, limit=12, keyword=None)
+        for row in rows_b:
+            ref = row.get("photo_reference")
+            if ref:
+                photo_ref = str(ref)
+                break
+
+    if not photo_ref:
+        return {
+            "success": False,
+            "message": "No Google Places photo near this pin. Try uploading your own image.",
+        }
+
+    try:
+        raw = await _download_google_place_photo(photo_ref, 800)
+        url = _store_partner_offer_image(owned_partner_id, raw)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("suggest_offer_photo_from_location failed: %s", exc, exc_info=True)
+        return {"success": False, "message": "Could not copy photo from Google. Try uploading instead."}
+
+    return {"success": True, "data": {"image_url": url}}
 
 
 def _assert_partner_resource_owner(
@@ -436,20 +529,29 @@ def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partne
     elif offer.gems_reward is not None and int(offer.gems_reward) > 0:
         auto_gems = int(offer.gems_reward)
     free_discount = calculate_free_discount(offer.discount_percent)
-    image_url = _require_uploaded_storefront_image(offer.image_url)
+    image_url = _partner_offer_image_url(offer.image_url)
 
+    title_clean = (offer.title or "").strip()
+    if not title_clean:
+        return {"success": False, "message": "Offer title is required."}
+    business_display = (offer.business_display_name or "").strip()
     business_name = (
-        (partner.get("business_name") or "").strip()
+        business_display
+        or (partner.get("business_name") or "").strip()
         or (location.get("name") or "").strip()
-        or offer.title.strip()
+        or title_clean
         or "Partner offer"
     )
-    business_type = str(partner.get("business_type") or location.get("business_type") or "retail").strip() or "retail"
+    cat_raw = offer.category if (offer.category and str(offer.category).strip()) else None
+    business_type = normalize_offer_category(cat_raw) if cat_raw else normalize_offer_category(
+        partner.get("business_type") or location.get("business_type") or "retail"
+    )
 
     new_offer = sb_create_offer({
         "partner_id": owned_partner_id,
         "location_id": location["id"],
         "business_name": business_name,
+        "title": title_clean,
         "business_type": business_type,
         "description": offer.description,
         "discount_percent": offer.discount_percent,
@@ -503,15 +605,20 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: Current
         auto_gems = int(offer.gem_cost)
     premium_discount = offer.discount_percent
     free_discount = calculate_free_discount(premium_discount)
-    image_url = _require_uploaded_storefront_image(offer.image_url)
+    image_url = _partner_offer_image_url(offer.image_url)
 
     fallback_bn = (
         (partner.get("business_name") or "").strip()
         or (location.get("name") or "").strip()
         or "Partner offer"
     )
-    display_name = (offer.title or "").strip() or fallback_bn
+    title_clean = (offer.title or "").strip()
+    if not title_clean:
+        return {"success": False, "message": "Offer title is required."}
+    business_display = (offer.business_display_name or "").strip()
+    display_name = business_display or fallback_bn
     updates = {
+        "title": title_clean,
         "business_name": display_name,
         "description": offer.description,
         "discount_percent": premium_discount,

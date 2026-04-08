@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Friend } from '../../types';
 import type { FriendPresence } from '../../lib/friendPresence';
-import { formatDistanceMeters, formatLastUpdatedShort } from '../../lib/friendPresence';
+import { formatDistanceMeters, formatLastUpdatedShort, hasValidFriendCoords } from '../../lib/friendPresence';
 
 export type FriendListCardTheme = {
   cardBg: string;
@@ -18,6 +18,8 @@ type Props = {
   presence: FriendPresence;
   theme: FriendListCardTheme;
   onPress: (f: Friend) => void;
+  /** Opens map at friend — does not open detail modal. */
+  onAvatarPress?: (f: Friend) => void;
 };
 
 function badgeColors(
@@ -38,7 +40,7 @@ function badgeColors(
   }
 }
 
-const FriendListCard = memo(function FriendListCard({ friend, presence, theme, onPress }: Props) {
+const FriendListCard = memo(function FriendListCard({ friend, presence, theme, onPress, onAvatarPress }: Props) {
   const initials = (friend.name ?? 'U')
     .split(' ')
     .filter(Boolean)
@@ -48,91 +50,134 @@ const FriendListCard = memo(function FriendListCard({ friend, presence, theme, o
     .toUpperCase();
 
   const distLabel = formatDistanceMeters(presence.distanceFromMeM);
+  const awayLine =
+    distLabel && presence.distanceFromMeM != null && presence.distanceFromMeM > 0
+      ? `~${distLabel} away`
+      : '';
   const liveBadge = badgeColors('LIVE', theme.primary);
   const stateBadge = badgeColors(presence.badge, theme.primary);
 
-  return (
-    <TouchableOpacity
-      style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
-      onPress={() => onPress(friend)}
-      activeOpacity={0.72}
-    >
-      <View style={styles.avatarWrap}>
-        {friend.avatar ? (
-          <Image source={{ uri: friend.avatar }} style={styles.avatarImg} />
-        ) : (
-          <View style={[styles.avatarFallback, { backgroundColor: theme.primary }]}>
-            <Text style={styles.avatarInitials}>{initials}</Text>
-          </View>
-        )}
-      </View>
+  const sharingWithCoords =
+    friend.is_sharing === true && hasValidFriendCoords(friend.lat, friend.lng);
+  const showBattery =
+    sharingWithCoords &&
+    friend.battery_pct != null &&
+    Number.isFinite(friend.battery_pct);
 
-      <View style={styles.mid}>
-        <View style={styles.titleRow}>
-          <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
-            {friend.name}
-          </Text>
-          <View style={styles.pillRow}>
-            {presence.showLivePill && (
-              <View style={[styles.pill, { backgroundColor: liveBadge.bg }]}>
-                <View style={[styles.liveDot, { backgroundColor: liveBadge.fg }]} />
-                <Text style={[styles.pillText, { color: liveBadge.fg }]}>LIVE</Text>
+  const AvatarInner = (
+    <>
+      {friend.avatar ? (
+        <Image source={{ uri: friend.avatar }} style={styles.avatarImg} />
+      ) : (
+        <View style={[styles.avatarFallback, { backgroundColor: theme.primary }]}>
+          <Text style={styles.avatarInitials}>{initials}</Text>
+        </View>
+      )}
+    </>
+  );
+
+  return (
+    <View style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+      {onAvatarPress ? (
+        <TouchableOpacity
+          style={styles.avatarWrap}
+          onPress={() => onAvatarPress(friend)}
+          activeOpacity={0.82}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`View ${friend.name} on map`}
+        >
+          {AvatarInner}
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.avatarWrap}>{AvatarInner}</View>
+      )}
+
+      <TouchableOpacity
+        style={styles.rowMain}
+        onPress={() => onPress(friend)}
+        activeOpacity={0.72}
+      >
+        <View style={styles.mid}>
+          <View style={styles.titleRow}>
+            <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
+              {friend.name}
+            </Text>
+            <View style={styles.pillRow}>
+              {presence.showLivePill && (
+                <View style={[styles.pill, { backgroundColor: liveBadge.bg }]}>
+                  <View style={[styles.liveDot, { backgroundColor: liveBadge.fg }]} />
+                  <Text style={[styles.pillText, { color: liveBadge.fg }]}>LIVE</Text>
+                </View>
+              )}
+              <View style={[styles.pill, { backgroundColor: stateBadge.bg }]}>
+                <Text style={[styles.pillText, { color: stateBadge.fg }]}>
+                  {presence.badge === 'OFFLINE'
+                    ? 'OFF'
+                    : presence.badge === 'STALE'
+                      ? 'STALE'
+                      : presence.badge === 'DRIVING'
+                        ? 'DRV'
+                        : presence.badge === 'PARKED'
+                          ? 'IDLE'
+                          : presence.badge}
+                </Text>
               </View>
-            )}
-            <View style={[styles.pill, { backgroundColor: stateBadge.bg }]}>
-              <Text style={[styles.pillText, { color: stateBadge.fg }]}>
-                {presence.badge === 'OFFLINE'
-                  ? 'OFF'
-                  : presence.badge === 'STALE'
-                    ? 'STALE'
-                    : presence.badge === 'DRIVING'
-                      ? 'DRV'
-                      : presence.badge === 'PARKED'
-                        ? 'IDLE'
-                        : presence.badge}
-              </Text>
             </View>
           </View>
+          <Text style={[styles.statusLine, { color: theme.primary }]} numberOfLines={1}>
+            {presence.statusLabel}
+          </Text>
+          {awayLine ? (
+            <Text style={[styles.awayLine, { color: theme.text }]} numberOfLines={1}>
+              {awayLine}
+            </Text>
+          ) : null}
+          <Text style={[styles.subLine, { color: theme.sub }]} numberOfLines={2}>
+            {presence.sublabel}
+          </Text>
+          {friend.last_updated ? (
+            <Text style={[styles.timeLine, { color: theme.sub }]}>
+              Updated {presence.isStale ? '(stale) ' : ''}
+              {formatLastUpdatedShort(friend.last_updated)}
+            </Text>
+          ) : null}
         </View>
-        <Text style={[styles.statusLine, { color: theme.primary }]} numberOfLines={1}>
-          {presence.statusLabel}
-        </Text>
-        <Text style={[styles.subLine, { color: theme.sub }]} numberOfLines={2}>
-          {presence.sublabel}
-        </Text>
-        {friend.last_updated ? (
-          <Text style={[styles.timeLine, { color: theme.sub }]}>
-            Updated {presence.isStale ? '(stale) ' : ''}
-            {formatLastUpdatedShort(friend.last_updated)}
-          </Text>
-        ) : null}
-      </View>
 
-      <View style={styles.right}>
-        {distLabel ? (
-          <Text style={[styles.dist, { color: theme.text }]} numberOfLines={1}>
-            {distLabel}
-          </Text>
-        ) : (
-          <Text style={[styles.distMuted, { color: theme.sub }]} numberOfLines={1}>
-            —
-          </Text>
-        )}
-        {friend.battery_pct != null &&
-        Number.isFinite(friend.battery_pct) &&
-        presence.isLiveFresh ? (
-          <View style={styles.batRow}>
-            <Ionicons
-              name="battery-charging-outline"
-              size={14}
-              color={friend.battery_pct > 20 ? '#34C759' : '#FF9500'}
-            />
-            <Text style={[styles.batTxt, { color: theme.sub }]}>{Math.round(friend.battery_pct)}%</Text>
-          </View>
-        ) : null}
-        <Ionicons name="chevron-forward" size={18} color={theme.sub} style={styles.chevron} />
-      </View>
-    </TouchableOpacity>
+        <View style={styles.right}>
+          {distLabel ? (
+            <Text style={[styles.dist, { color: theme.text }]} numberOfLines={1}>
+              {distLabel}
+            </Text>
+          ) : (
+            <Text style={[styles.distMuted, { color: theme.sub }]} numberOfLines={1}>
+              —
+            </Text>
+          )}
+          {showBattery ? (
+            <View
+              style={[
+                styles.batRow,
+                !presence.isLiveFresh && presence.isStale && styles.batRowStale,
+              ]}
+            >
+              <Ionicons
+                name={presence.isLiveFresh ? 'battery-charging-outline' : 'battery-half-outline'}
+                size={14}
+                color={friend.battery_pct! > 20 ? '#34C759' : '#FF9500'}
+              />
+              <Text style={[styles.batTxt, { color: theme.sub }]}>
+                {Math.round(friend.battery_pct!)}%
+              </Text>
+            </View>
+          ) : null}
+          {showBattery && !presence.isLiveFresh && (
+            <Text style={[styles.batCaption, { color: theme.sub }]}>last reported</Text>
+          )}
+          <Ionicons name="chevron-forward" size={18} color={theme.sub} style={styles.chevron} />
+        </View>
+      </TouchableOpacity>
+    </View>
   );
 });
 
@@ -154,6 +199,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   avatarWrap: { marginRight: 12 },
+  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', minWidth: 0 },
   avatarImg: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#E8E8ED' },
   avatarFallback: {
     width: 48,
@@ -178,12 +224,15 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.3 },
   liveDot: { width: 5, height: 5, borderRadius: 3 },
   statusLine: { fontSize: 12, fontWeight: '700', marginBottom: 2 },
+  awayLine: { fontSize: 13, fontWeight: '800', marginBottom: 2 },
   subLine: { fontSize: 12, lineHeight: 16 },
   timeLine: { fontSize: 11, marginTop: 4, opacity: 0.9 },
   right: { alignItems: 'flex-end', paddingLeft: 8, minWidth: 64 },
   dist: { fontSize: 13, fontWeight: '800' },
   distMuted: { fontSize: 12, fontWeight: '600' },
   batRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 4 },
+  batRowStale: { opacity: 0.72 },
   batTxt: { fontSize: 10, fontWeight: '700' },
+  batCaption: { fontSize: 9, fontWeight: '600', marginTop: 2 },
   chevron: { marginTop: 6, opacity: 0.45 },
 });

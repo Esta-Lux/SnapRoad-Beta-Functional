@@ -121,7 +121,6 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     puckColor: '#3B82F6',
 
     directionsProfile: 'driving-traffic',
-    excludeParams: 'motorway',
 
     showCongestion: true,
     showTrafficBadge: true,

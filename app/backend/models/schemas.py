@@ -223,7 +223,19 @@ class PartnerLocation(BaseModel):
 class PartnerPlanUpdate(BaseModel):
     plan: str
 
+class PartnerOfferGooglePhotoImport(BaseModel):
+    """Import a Google Places photo into partner-offer storage (server downloads + uploads to our bucket)."""
+    photo_reference: str = Field(..., min_length=8, max_length=512)
+    maxwidth: int = Field(default=800, ge=100, le=1600)
+
+
+class PartnerOfferLocationPhotoSuggest(BaseModel):
+    """Find nearest Google result with a photo at this saved location and copy it to partner-offer storage."""
+    location_id: str | int
+
+
 class PartnerOfferCreate(BaseModel):
+    """Partner portal — fields align with driver app offer cards (business name, headline, description, category, etc.)."""
     title: str
     description: str
     discount_percent: int
@@ -235,6 +247,10 @@ class PartnerOfferCreate(BaseModel):
     expires_hours: int = 168
     image_url: Optional[str] = None
     category: Optional[str] = None  # slug (gas, restaurant, …) → offers.business_type
+    business_display_name: Optional[str] = Field(
+        default=None,
+        description="Store/brand name shown prominently to drivers; defaults to partner or location name.",
+    )
 
 class PartnerLoginRequest(BaseModel):
     email: str
@@ -303,6 +319,8 @@ class AdminOfferCreate(BaseModel):
     lng: float = -82.9988
     expires_hours: int = 24
     image_id: Optional[str] = None
+    image_url: Optional[str] = Field(default=None, description="Optional hero image URL for driver offer cards.")
+    title: Optional[str] = Field(default=None, description="Promo headline; defaults to a short description slice.")
     offer_source: str = "direct"
     original_price: Optional[float] = None
     offer_url: Optional[str] = None

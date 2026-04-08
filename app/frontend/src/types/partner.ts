@@ -1,9 +1,14 @@
 export interface Offer {
   id: number
-  title: string
+  /** Store / brand name shown prominently to drivers (map, redemption sheet). */
+  business_name?: string
+  /** Promo headline — second line in list when different from business name. */
+  title?: string
   description: string
   /** Category slug (gas, restaurant, …) — matches mobile map / rewards filtering. */
   business_type?: string
+  /** Human-readable category from API (`category_label`). */
+  category_label?: string
   discount_percent: number
   gem_cost: number
   gems_reward: number

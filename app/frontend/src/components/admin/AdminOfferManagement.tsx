@@ -1,7 +1,7 @@
 // Offer Management tab — admin offers (replaces figma-ui AdminOfferManagement)
 
 import { useState, useEffect, useRef } from 'react'
-import { Gift, Search, Trash2, Upload, FileSpreadsheet, CheckCircle, XCircle } from 'lucide-react'
+import { Gift, Search, Trash2, Upload, FileSpreadsheet, CheckCircle, XCircle, MapPin, Gem, ImageOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/services/adminApi'
 import { useSupabaseRealtimeRefresh } from '@/hooks/useSupabaseRealtimeRefresh'
@@ -162,11 +162,22 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
   }
 
   const filtered = search.trim()
-    ? offers.filter(
-        (o) =>
-          (o.business_name || o.name || '').toLowerCase().includes(search.toLowerCase()) ||
-          (o.title || '').toLowerCase().includes(search.toLowerCase())
-      )
+    ? offers.filter((o) => {
+        const q = search.toLowerCase()
+        const blob = [
+          o.business_name,
+          o.name,
+          o.title,
+          o.description,
+          o.address,
+          o.category_label,
+          o.business_type,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return blob.includes(q)
+      })
     : offers
 
   const isDark = theme === 'dark'
@@ -401,24 +412,74 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
           {filtered.map((offer) => (
             <div
               key={offer.id ?? offer.offer_id}
-              className={`flex items-center justify-between p-4 rounded-xl border ${
+              className={`flex flex-col sm:flex-row sm:items-stretch gap-4 p-4 rounded-xl border ${
                 isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'
               }`}
             >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                  <Gift size={20} className="text-purple-400" />
-                </div>
-                <div>
-                  <p className="font-medium">{offer.business_name ?? offer.name ?? 'Offer'}</p>
-                  <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                    <span className="uppercase text-[10px] font-bold tracking-wide mr-2 opacity-80">{String(offer.status ?? '—')}</span>
-                    {offer.discount_percent != null ? `${offer.discount_percent}% off` : ''}
-                    {offer.gems_reward != null ? ` · ${offer.gems_reward} gems` : ''}
+              <div className="flex gap-4 flex-1 min-w-0">
+                {offer.image_url ? (
+                  <img
+                    src={offer.image_url}
+                    alt=""
+                    className="w-full sm:w-28 h-28 rounded-lg object-cover shrink-0 border border-white/10"
+                  />
+                ) : (
+                  <div
+                    className={`w-full sm:w-28 h-28 rounded-lg shrink-0 flex flex-col items-center justify-center gap-1 text-center px-2 text-xs ${
+                      isDark ? 'bg-white/5 text-gray-500 border border-white/10' : 'bg-gray-100 text-gray-500 border border-gray-200'
+                    }`}
+                  >
+                    <ImageOff size={22} className="opacity-60" />
+                    <span>No hero image</span>
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="uppercase text-[10px] font-bold tracking-wide opacity-80 text-amber-500/90">
+                      {String(offer.status ?? '—')}
+                    </span>
+                    {offer.is_admin_offer ? (
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-violet-400">Admin</span>
+                    ) : (
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-400">Partner</span>
+                    )}
+                    {offer.category_label ? (
+                      <span className={`text-xs font-semibold ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {offer.category_label}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className={`font-semibold text-base leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    {offer.business_name ?? offer.name ?? 'Offer'}
                   </p>
+                  {offer.title && String(offer.title).trim() !== String(offer.business_name || '').trim() ? (
+                    <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{offer.title}</p>
+                  ) : null}
+                  {offer.description ? (
+                    <p className={`text-sm mt-2 line-clamp-2 ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>
+                      {offer.description}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-sm">
+                    {offer.discount_percent != null ? (
+                      <span className={isDark ? 'text-emerald-300' : 'text-emerald-700'}>
+                        {offer.discount_percent}% off
+                      </span>
+                    ) : null}
+                    <span className={`inline-flex items-center gap-1 ${isDark ? 'text-cyan-300' : 'text-cyan-800'}`}>
+                      <Gem size={14} />
+                      {offer.base_gems ?? offer.gem_cost ?? offer.gems_reward ?? '—'} gems
+                    </span>
+                    {offer.address ? (
+                      <span className={`inline-flex items-center gap-1 min-w-0 ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>
+                        <MapPin size={14} className="shrink-0" />
+                        <span className="truncate">{offer.address}</span>
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 justify-end">
+              <div className="flex sm:flex-col flex-wrap items-stretch sm:items-end gap-2 justify-end shrink-0">
                 {String(offer.status || 'active') !== 'active' && (
                   <button
                     type="button"

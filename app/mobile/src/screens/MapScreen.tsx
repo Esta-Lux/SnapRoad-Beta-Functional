@@ -1,7 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
-  Platform, Keyboard, Alert, Switch, Pressable, Image,
+  Platform, Keyboard, Alert, Switch, Pressable, Image, Dimensions,
 } from 'react-native';
 import Animated, {
   FadeIn, FadeOut, SlideInDown, SlideOutDown,
@@ -68,7 +68,7 @@ import NavigationDebugHud from '../components/navigation/NavigationDebugHud';
 import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
 import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
 import { isLiveShareFresh } from '../lib/friendPresence';
-import type { NavigateToFriendParams } from '../types';
+import type { MapFocusFriendParams, NavigateToFriendParams } from '../types';
 import {
   formatTurnDistanceForCard,
   resolveTurnCardState,
@@ -433,9 +433,15 @@ export default function MapScreen() {
 
   // ── Search ──
   const [searchQuery, setSearchQuery] = useState('');
+  const searchQueryRef = useRef('');
+  useEffect(() => {
+    searchQueryRef.current = searchQuery;
+  }, [searchQuery]);
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [routePreviewHeight, setRoutePreviewHeight] = useState(0);
+  const [routePreviewDetails, setRoutePreviewDetails] = useState(false);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchGenRef = useRef(0);
@@ -1162,18 +1168,34 @@ export default function MapScreen() {
     }
   }, [nav.tripSummary]);
 
-  // Fix 4: Fit camera to route on preview
+  useEffect(() => {
+    if (nav.showRoutePreview) {
+      setRoutePreviewDetails(false);
+      setRoutePreviewHeight(0);
+    }
+  }, [nav.showRoutePreview]);
+
+  // Fit camera to route on preview — padding from safe area + measured sheet (avoid huge fixed bottom inset).
   useEffect(() => {
     if (!nav.showRoutePreview || !nav.navigationData?.polyline?.length) return;
     const coords = nav.navigationData.polyline;
     const lngs = coords.map((c) => c.lng);
     const lats = coords.map((c) => c.lat);
+    const winH = Dimensions.get('window').height;
+    const topPad = insets.top + 96;
+    const sidePad = 44;
+    const fallbackBottom = Math.round(winH * 0.4);
+    const bottomPad =
+      routePreviewHeight > 48
+        ? routePreviewHeight + Math.max(insets.bottom, 12) + 12
+        : Math.min(fallbackBottom + Math.max(insets.bottom, 8), Math.round(winH * 0.46));
     cameraRef.current?.fitBounds(
       [Math.max(...lngs), Math.max(...lats)],
       [Math.min(...lngs), Math.min(...lats)],
-      80, 1000,
+      [topPad, sidePad, bottomPad, sidePad],
+      600,
     );
-  }, [nav.showRoutePreview, nav.navigationData?.polyline]);
+  }, [nav.showRoutePreview, nav.navigationData?.polyline, routePreviewHeight, insets.top, insets.bottom]);
 
   // Fix 5: Reroute when driving mode changes during active nav
   useEffect(() => {
@@ -1423,6 +1445,97 @@ export default function MapScreen() {
     }, 200);
   }, [sortGeocodeByProximity, savedPlaces, recentSearches]);
 
+  /** Enter key: forced text search + nearby merge + Mapbox forward geocode, deduped and distance-sorted. */
+  const commitSearch = useCallback(async () => {
+    Keyboard.dismiss();
+    const raw = searchQueryRef.current.trim();
+    if (raw.length < 2) {
+      setIsSearchFocused(false);
+      return;
+    }
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    setIsSearching(true);
+    const gen = ++searchGenRef.current;
+    const loc = locationRef.current;
+    const hasLoc = Math.abs(loc.lat) > 1e-5 || Math.abs(loc.lng) > 1e-5;
+    const prep = prepareMapSearchQuery(raw);
+    if (prep.query.length < 2) {
+      setIsSearching(false);
+      return;
+    }
+    const localFirst = localMatchesForSearchQuery(prep.query, savedPlaces, recentSearches);
+    const mapPred = (p: any): GeocodeResult => ({
+      name: p.name || p.description || prep.query,
+      address: p.address || p.description || '',
+      lat: p.lat ?? 0,
+      lng: p.lng ?? 0,
+      placeType: p.types?.[0] ?? 'poi',
+      place_id: p.place_id,
+      photo_reference: typeof p.photo_reference === 'string' ? p.photo_reference : undefined,
+      open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
+      price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
+    });
+
+    const bucket: GeocodeResult[] = [...localFirst];
+
+    try {
+      const biasQs = hasLoc
+        ? `&lat=${loc.lat}&lng=${loc.lng}&radius=${prep.radiusM}${prep.openNow ? '&open_now=true' : ''}&textsearch=true`
+        : '';
+      const res = await api.get<any>(
+        `/api/places/autocomplete?q=${encodeURIComponent(prep.query)}${biasQs}`,
+      );
+      if (searchGenRef.current !== gen) return;
+      const root = res.data as any;
+      const predictions = root?.data ?? root?.predictions ?? [];
+      if (Array.isArray(predictions) && predictions.length > 0) {
+        bucket.push(...predictions.map(mapPred));
+      }
+    } catch {
+      /* offline */
+    }
+
+    if (hasLoc) {
+      try {
+        const nr = await api.get<any>(
+          `/api/places/nearby?lat=${loc.lat}&lng=${loc.lng}&radius=${Math.min(prep.radiusM, 12000)}&limit=20`,
+        );
+        if (searchGenRef.current !== gen) return;
+        const root = nr.data as Record<string, unknown> | undefined;
+        const payload = root?.data ?? root;
+        const arr = Array.isArray(payload) ? payload : [];
+        for (const p of arr) {
+          const rec = p as Record<string, unknown>;
+          bucket.push({
+            name: String(rec.name ?? ''),
+            address: String(rec.address ?? ''),
+            lat: Number(rec.lat) || 0,
+            lng: Number(rec.lng) || 0,
+            place_id: rec.place_id != null ? String(rec.place_id) : undefined,
+            placeType: Array.isArray(rec.types) && rec.types[0] ? String(rec.types[0]) : undefined,
+            photo_reference: rec.photo_reference != null ? String(rec.photo_reference) : undefined,
+            open_now: typeof rec.open_now === 'boolean' ? rec.open_now : undefined,
+            price_level: typeof rec.price_level === 'number' ? rec.price_level : undefined,
+          });
+        }
+      } catch {
+        /* offline */
+      }
+    }
+
+    if (searchGenRef.current !== gen) return;
+
+    let merged = dedupeGeocodeResults(bucket);
+    const mbResults = await forwardGeocode(prep.query, hasLoc ? loc : undefined);
+    if (searchGenRef.current !== gen) return;
+    const filtered = hasLoc
+      ? mbResults.filter((r) => haversineMeters(loc.lat, loc.lng, r.lat, r.lng) <= 50000)
+      : mbResults;
+    merged = dedupeGeocodeResults([...merged, ...filtered]);
+    setSearchResults(sortGeocodeByProximity(merged, loc));
+    setIsSearching(false);
+  }, [savedPlaces, recentSearches, sortGeocodeByProximity]);
+
   const openSearchResultsSheet = useCallback(() => {
     const q = searchQuery.trim();
     if (!q || searchResults.length === 0) return;
@@ -1546,21 +1659,13 @@ export default function MapScreen() {
     }
     const EXPLORE: Record<string, { title: string; subtitle?: string; type?: string; radius: number; limit: number }> = {
       nearby: { title: 'Nearby', subtitle: 'Places around your location', radius: 1200, limit: 15 },
-      nearby_gas: {
-        title: 'Nearby gas',
+      gas: {
+        title: 'Gas',
         subtitle:
-          'Closest stations first. Typical cost tier ($–$$$) when Google provides it. Live $/gal is not available here — confirm on the pump.',
+          'Stations near you (typical cost tier when Google provides it). Live $/gal is not shown — confirm at the pump.',
         type: 'gas_station',
         radius: 15000,
         limit: 20,
-      },
-      gas: {
-        title: 'Gas stations',
-        subtitle:
-          'Fuel nearby. Typical cost tier may show on rows; $/gal is not listed in SnapRoad — verify at the station.',
-        type: 'gas_station',
-        radius: 8000,
-        limit: 18,
       },
       food: { title: 'Restaurants', type: 'restaurant', radius: 5000, limit: 18 },
       coffee: { title: 'Coffee & cafés', type: 'cafe', radius: 5000, limit: 18 },
@@ -1769,15 +1874,30 @@ export default function MapScreen() {
 
   const lastMapFocusFriendNonceRef = useRef<number | null>(null);
   useEffect(() => {
-    const p = route.params?.mapFocusFriend as { friendId?: string; nonce?: number } | undefined;
+    const p = route.params?.mapFocusFriend as MapFocusFriendParams | undefined;
     if (!p?.friendId || p.nonce == null) return;
     if (lastMapFocusFriendNonceRef.current === p.nonce) return;
     lastMapFocusFriendNonceRef.current = p.nonce;
     rnNav.setParams({ mapFocusFriend: undefined } as any);
     const fl = friendLocations.find((f) => String(f.id) === String(p.friendId));
-    if (!fl || !Number.isFinite(fl.lat) || !Number.isFinite(fl.lng) || (fl.lat === 0 && fl.lng === 0)) return;
+    let lat: number | undefined;
+    let lng: number | undefined;
+    if (fl && Number.isFinite(fl.lat) && Number.isFinite(fl.lng) && !(Math.abs(fl.lat) < 1e-6 && Math.abs(fl.lng) < 1e-6)) {
+      lat = fl.lat;
+      lng = fl.lng;
+    } else if (
+      p.lat != null &&
+      p.lng != null &&
+      Number.isFinite(p.lat) &&
+      Number.isFinite(p.lng) &&
+      !(Math.abs(p.lat) < 1e-6 && Math.abs(p.lng) < 1e-6)
+    ) {
+      lat = p.lat;
+      lng = p.lng;
+    }
+    if (lat == null || lng == null) return;
     cameraRef.current?.setCamera({
-      centerCoordinate: [fl.lng, fl.lat],
+      centerCoordinate: [lng, lat],
       zoomLevel: 15,
       pitch: 45,
       animationDuration: 650,
@@ -2354,7 +2474,7 @@ export default function MapScreen() {
             androidRenderMode="normal"
             puckBearingEnabled
             puckBearing={
-              nav.isNavigating && speed > 12
+              nav.isNavigating && displaySpeedMph > 4
                 ? 'course'
                 : 'heading'
             }
@@ -2556,7 +2676,6 @@ export default function MapScreen() {
               data={[
                 { key: 'favorites', label: 'Favorites', icon: 'star-outline' as const },
                 { key: 'nearby', label: 'Nearby', icon: 'location-outline' as const },
-                { key: 'nearby_gas', label: 'Nearby Gas', icon: 'speedometer-outline' as const },
                 { key: 'gas', label: 'Gas', icon: 'flash-outline' as const },
                 { key: 'food', label: 'Food', icon: 'restaurant-outline' as const },
                 { key: 'coffee', label: 'Coffee', icon: 'cafe-outline' as const },
@@ -3020,11 +3139,13 @@ export default function MapScreen() {
       {nav.showRoutePreview && nav.navigationData && !nav.isNavigating && (() => {
         const selectedRoute = nav.availableRoutes[nav.selectedRouteIndex];
         const selType = selectedRoute?.routeType ?? 'best';
+        const previewCompact = !routePreviewDetails;
 
         const routeLabel = (rt?: 'best' | 'eco' | 'alt', idx?: number): string => {
           if (rt === 'best') return 'Fastest';
           if (rt === 'eco') return 'Eco';
-          return `Route ${(idx ?? 0) + 1}`;
+          const i = idx ?? 1;
+          return i <= 1 ? 'Alternate' : `Alternate ${i}`;
         };
         const routeIcon = (rt?: 'best' | 'eco' | 'alt'): 'flash' | 'leaf' | 'navigate' => {
           if (rt === 'best') return 'flash';
@@ -3045,12 +3166,28 @@ export default function MapScreen() {
         const startGrad: [string, string] = selType === 'eco' ? ['#16A34A', '#15803D'] : selType === 'best' ? ['#2563EB', '#1D4ED8'] : ['#7C3AED', '#6D28D9'];
 
         return (
-        <Animated.View entering={SlideInDown.duration(320).easing(Easing.out(Easing.cubic))} exiting={SlideOutDown.duration(220)} style={[s.preview, { paddingBottom: Math.max(insets.bottom, 20) + 16, backgroundColor: isLight ? 'rgba(255,255,255,0.97)' : 'rgba(15,23,42,0.97)', borderColor: colors.border }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+        <Animated.View
+          entering={SlideInDown.duration(320).easing(Easing.out(Easing.cubic))}
+          exiting={SlideOutDown.duration(220)}
+          onLayout={(e) => setRoutePreviewHeight(e.nativeEvent.layout.height)}
+          style={[s.preview, { paddingBottom: Math.max(insets.bottom, 12) + (previewCompact ? 12 : 16), paddingTop: previewCompact ? 12 : 20, backgroundColor: isLight ? 'rgba(255,255,255,0.97)' : 'rgba(15,23,42,0.97)', borderColor: colors.border }]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
             <GestureDetector gesture={routePreviewHandlePan}>
-              <View style={{ flex: 1, alignItems: 'center', paddingVertical: 8 }}>
+              <Pressable
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setRoutePreviewDetails((d) => !d);
+                }}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={routePreviewDetails ? 'Collapse route details' : 'Expand route details'}
+              >
                 <View style={[s.handle, { backgroundColor: colors.border }]} />
-              </View>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textTertiary, marginTop: 4 }}>
+                  {routePreviewDetails ? 'Hide details' : 'Details'}
+                </Text>
+              </Pressable>
             </GestureDetector>
             <TouchableOpacity
               onPress={dismissRoutePreview}
@@ -3062,59 +3199,78 @@ export default function MapScreen() {
               <Ionicons name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
-          <Text style={[s.previewTitle, { color: colors.text }]} numberOfLines={1}>
+          <Text style={[s.previewTitle, { color: colors.text, marginBottom: drivingMode === 'calm' ? 4 : 8 }]} numberOfLines={1}>
             {nav.navigationData!.destination.name ?? 'Destination'}
           </Text>
-          <View style={{ marginBottom: 14, gap: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-              <Ionicons name="navigate-circle-outline" size={16} color={colors.primary} style={{ marginTop: 2 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={[s.previewRouteLbl, { color: colors.textTertiary }]}>From</Text>
-                <Text style={[s.previewRouteVal, { color: colors.textSecondary }]} numberOfLines={2}>
-                  {currentAddress || 'Current location'}
-                </Text>
+          {drivingMode === 'calm' ? (
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: previewCompact ? 6 : 10 }}>
+              Less highway when travel time is about the same.
+            </Text>
+          ) : null}
+          {!previewCompact ? (
+            <View style={{ marginBottom: 14, gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                <Ionicons name="navigate-circle-outline" size={16} color={colors.primary} style={{ marginTop: 2 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.previewRouteLbl, { color: colors.textTertiary }]}>From</Text>
+                  <Text style={[s.previewRouteVal, { color: colors.textSecondary }]} numberOfLines={2}>
+                    {currentAddress || 'Current location'}
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                <Ionicons name="flag" size={16} color="#22C55E" style={{ marginTop: 2 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.previewRouteLbl, { color: colors.textTertiary }]}>To</Text>
+                  <Text style={[s.previewRouteVal, { color: colors.textSecondary }]} numberOfLines={3}>
+                    {nav.navigationData!.destination.name ?? 'Destination'}
+                    {nav.selectedDestination?.address ? ` · ${nav.selectedDestination.address}` : ''}
+                  </Text>
+                </View>
               </View>
             </View>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-              <Ionicons name="flag" size={16} color="#22C55E" style={{ marginTop: 2 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={[s.previewRouteLbl, { color: colors.textTertiary }]}>To</Text>
-                <Text style={[s.previewRouteVal, { color: colors.textSecondary }]} numberOfLines={3}>
-                  {nav.navigationData!.destination.name ?? 'Destination'}
-                  {nav.selectedDestination?.address ? ` · ${nav.selectedDestination.address}` : ''}
-                </Text>
-              </View>
-            </View>
-          </View>
+          ) : null}
 
-          {/* ── Route cards (scrollable up to 3) ── */}
           <FlatList
             horizontal
             data={nav.availableRoutes}
             keyExtractor={(_r, i) => `rc-${i}`}
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 10, paddingHorizontal: 2 }}
-            style={{ marginBottom: 14 }}
+            contentContainerStyle={{ gap: previewCompact ? 8 : 10, paddingHorizontal: 2 }}
+            style={{ marginBottom: previewCompact ? 10 : 14 }}
             renderItem={({ item: route, index: idx }) => {
               const isSel = idx === nav.selectedRouteIndex;
               const accent = routeAccent(route.routeType);
               const traffic = modeConfig.showTrafficBadge ? analyzeCongestion(route.congestion) : null;
               return (
                 <TouchableOpacity
-                  style={[s.routeCardNew, isSel && s.routeCardNewSel, { backgroundColor: colors.surfaceSecondary, borderColor: isSel ? accent : colors.border, minWidth: 140 }]}
+                  style={[
+                    s.routeCardNew,
+                    isSel && s.routeCardNewSel,
+                    {
+                      backgroundColor: colors.surfaceSecondary,
+                      borderColor: isSel ? accent : colors.border,
+                      minWidth: previewCompact ? 108 : 140,
+                      paddingVertical: previewCompact ? 10 : 14,
+                      paddingHorizontal: previewCompact ? 11 : 14,
+                      ...(previewCompact
+                        ? Platform.select({ ios: { shadowOpacity: 0.04 }, android: { elevation: 1 }, default: {} })
+                        : {}),
+                    },
+                  ]}
                   onPress={() => nav.handleRouteSelect(idx)}
                   activeOpacity={0.85}
                 >
-                  <View style={s.routeCardHeader}>
-                    <View style={[s.routeCardIcon, { backgroundColor: routeAccentBg(route.routeType) }]}>
-                      <Ionicons name={routeIcon(route.routeType)} size={16} color={accent} />
+                  <View style={[s.routeCardHeader, previewCompact && { marginBottom: 6 }]}>
+                    <View style={[s.routeCardIcon, { backgroundColor: routeAccentBg(route.routeType), width: previewCompact ? 26 : 28, height: previewCompact ? 26 : 28 }]}>
+                      <Ionicons name={routeIcon(route.routeType)} size={previewCompact ? 14 : 16} color={accent} />
                     </View>
-                    <Text style={[s.routeCardType, { color: isSel ? accent : colors.textSecondary }]}>{routeLabel(route.routeType, idx)}</Text>
+                    <Text style={[s.routeCardType, { color: isSel ? accent : colors.textSecondary, fontSize: previewCompact ? 11 : 12 }]}>{routeLabel(route.routeType, idx)}</Text>
                     {isSel && <View style={[s.routeCardCheck, { backgroundColor: accent }]}><Ionicons name="checkmark" size={12} color="#fff" /></View>}
                   </View>
-                  <Text style={[s.routeCardDuration, { color: colors.text }]}>{route.durationText}</Text>
-                  <Text style={[s.routeCardDist, { color: colors.textSecondary }]}>{route.distanceText}</Text>
-                  {traffic && traffic.level !== 'low' && (
+                  <Text style={[s.routeCardDuration, { color: colors.text, fontSize: previewCompact ? 18 : 22, lineHeight: previewCompact ? 20 : 24 }]}>{route.durationText}</Text>
+                  <Text style={[s.routeCardDist, { color: colors.textSecondary, marginBottom: previewCompact ? 0 : 8 }]}>{route.distanceText}</Text>
+                  {!previewCompact && traffic && traffic.level !== 'low' && (
                     <View style={[s.routeTrafficBadge, { backgroundColor: traffic.level === 'heavy' ? '#FEF2F2' : '#FFFBEB' }]}>
                       <Ionicons name="warning" size={10} color={traffic.level === 'heavy' ? '#DC2626' : '#D97706'} />
                       <Text style={[s.routeTrafficTxt, { color: traffic.level === 'heavy' ? '#DC2626' : '#D97706' }]}>
@@ -3122,7 +3278,7 @@ export default function MapScreen() {
                       </Text>
                     </View>
                   )}
-                  {(!traffic || traffic.level === 'low') && (
+                  {!previewCompact && (!traffic || traffic.level === 'low') && (
                     <View style={[s.routeTrafficBadge, { backgroundColor: '#F0FDF4' }]}>
                       <Ionicons name="checkmark-circle" size={10} color="#16A34A" />
                       <Text style={[s.routeTrafficTxt, { color: '#16A34A' }]}>Clear roads</Text>

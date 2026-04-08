@@ -18,6 +18,7 @@ from models.schemas import (
     BoostCalculate, BoostCreate, AnalyticsEvent,
 )
 from services.offer_utils import calculate_auto_gems, calculate_free_discount
+from services.offer_categories import attach_offer_category_fields
 from services.cache import cache_delete
 from services.fee_calculator import list_monthly_fee_summaries, get_partner_fee_history
 from services.offer_analytics import (
@@ -737,6 +738,8 @@ def get_offers(
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     data = sb_get_offers(status=status, limit=limit)
+    for row in data:
+        attach_offer_category_fields(row)
     return {"success": True, "data": data}
 
 
@@ -761,7 +764,6 @@ _OFFER_OPTIONAL_KEYS = {
     "original_price": "original_price",
     "affiliate_tracking_url": "affiliate_tracking_url",
     "external_id": "external_id",
-    "image_url": "image_id",
 }
 
 
@@ -770,6 +772,12 @@ def admin_create_offer(offer: AdminOfferCreate):
     auto_gems = offer.base_gems if offer.base_gems is not None else calculate_auto_gems(offer.discount_percent, offer.is_free_item)
     premium_discount = offer.discount_percent
     free_discount = calculate_free_discount(premium_discount)
+
+    title_val = (offer.title or "").strip() or (
+        (offer.description[:60] if offer.description else "") or "Admin Offer"
+    )
+    img_val = (offer.image_url or offer.image_id or None)
+    img_val = str(img_val).strip() if img_val else None
 
     data = {
         "business_name": offer.business_name,
@@ -785,10 +793,12 @@ def admin_create_offer(offer: AdminOfferCreate):
         "is_admin_offer": True,
         "created_by": "admin",
         "status": "active",
-        "title": offer.description[:60] if offer.description else "Admin Offer",
+        "title": title_val,
         "offer_source": offer.offer_source,
         **_optional_fields(offer, _OFFER_OPTIONAL_KEYS),
     }
+    if img_val:
+        data["image_url"] = img_val
     if offer.expires_hours:
         data["expires_at"] = (datetime.now() + timedelta(hours=offer.expires_hours)).isoformat()
 

@@ -55,6 +55,11 @@ function hasValidCoords(lat?: number, lng?: number): boolean {
   return true;
 }
 
+/** Exported for Social UI (distance / battery rows) — same rules as presence coords. */
+export function hasValidFriendCoords(lat?: number, lng?: number): boolean {
+  return hasValidCoords(lat, lng);
+}
+
 function locationAgeMs(iso?: string): number | null {
   if (!iso) return null;
   const t = new Date(iso).getTime();
