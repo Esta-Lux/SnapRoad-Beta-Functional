@@ -2,6 +2,13 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import { loadCachedLocation, persistCachedLocation } from '../utils/locationCache';
+import {
+  accuracyQualityFactor,
+  coordinateSeparationMeters,
+  extrapolateForDisplay,
+  plausibleMaxStepMeters,
+  shouldHoldBlendForOutlierStep,
+} from '../utils/locationAccuracy';
 import type { Coordinate } from '../types';
 
 interface LocationState {
@@ -46,6 +53,7 @@ function blendTowardGps(
   smoothedSpeedMph: number,
   isNavigating: boolean,
   dtSec: number,
+  qualityScale: number,
 ): Coordinate {
   const dist = haversineMeters(prev, raw);
   const speedMps = Math.max(0, speedMph) / 2.237;
@@ -75,15 +83,15 @@ function blendTowardGps(
 
   let a: number;
   if (vRegime < 1.4 && speedMph < 2.8) {
-    a = 0.065;
+    a = 0.052;
   } else if (vRegime < 5) {
-    a = isNavigating ? 0.24 : 0.19;
+    a = isNavigating ? 0.2 : 0.16;
   } else if (vRegime < 22) {
     a = isNavigating ? 0.5 : 0.38;
   } else if (vRegime < 48) {
-    a = isNavigating ? 0.68 : 0.52;
+    a = isNavigating ? 0.72 : 0.52;
   } else {
-    a = isNavigating ? 0.86 : 0.6;
+    a = isNavigating ? 0.88 : 0.62;
   }
 
   if (typeof accuracyM === 'number') {
@@ -95,6 +103,9 @@ function blendTowardGps(
   if (smoothedSpeedMph < 1.8 && speedMph < 3 && dist < Math.max(2.2, (accuracyM ?? 12) * 0.38)) {
     a *= 0.42;
   }
+
+  a *= qualityScale;
+  a = Math.min(0.94, Math.max(0.032, a));
 
   let lat = prev.lat + (raw.lat - prev.lat) * a;
   let lng = prev.lng + (raw.lng - prev.lng) * a;
@@ -149,12 +160,25 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
   /** Low-pass filtered fix — drives map + nav (not raw GPS). */
   const positionBlendRef = useRef<Coordinate | null>(null);
   const lastGpsFixAtRef = useRef<number>(Date.now());
+  /** Previous raw GPS sample — outlier step detection between fixes. */
+  const prevRawFixRef = useRef<Coordinate | null>(null);
+  /** Prior published heading — suppress display extrapolation during sharp turns. */
+  const displayHeadingPrevRef = useRef<number | null>(null);
+
+  const prevNavigatingRef = useRef(isNavigating);
+  useEffect(() => {
+    if (prevNavigatingRef.current !== isNavigating) {
+      displayHeadingPrevRef.current = null;
+      prevNavigatingRef.current = isNavigating;
+    }
+  }, [isNavigating]);
 
   useEffect(() => {
     let cancelled = false;
     loadCachedLocation().then((cached) => {
       if (cancelled || !cached) return;
       positionBlendRef.current = cached;
+      prevRawFixRef.current = cached;
       lastGpsFixAtRef.current = Date.now();
       setState((prev) => (
         prev.location.lat === UNKNOWN_LOCATION.lat && prev.location.lng === UNKNOWN_LOCATION.lng
@@ -190,6 +214,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       persistCachedLocation(lat, lng);
       const initCoord = { lat, lng };
       positionBlendRef.current = initCoord;
+      prevRawFixRef.current = initCoord;
       lastGpsFixAtRef.current = Date.now();
       setState((prev) => ({
         ...prev,
@@ -242,26 +267,39 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
             speedMph < 8 &&
             movedMeters > LOW_SPEED_JUMP_METERS
           ) {
+            prevRawFixRef.current = rawCoord;
             return { ...prev, isLocating: false, accuracy: acc ?? prev.accuracy };
           }
 
+          const prevRaw = prevRawFixRef.current;
+          const stepFromPrev =
+            prevRaw != null ? coordinateSeparationMeters(prevRaw, rawCoord) : 0;
+          prevRawFixRef.current = rawCoord;
+
           lastGpsFixAtRef.current = now;
+
+          const maxStep = plausibleMaxStepMeters(speedMph, dtSec, isNavigating, acc ?? null);
+          const holdOutlier = shouldHoldBlendForOutlierStep(stepFromPrev, speedMph, maxStep);
+          const qualityScale = accuracyQualityFactor(acc ?? null);
 
           const baseCoord =
             positionBlendRef.current ??
             (prev.location.lat !== UNKNOWN_LOCATION.lat ? prev.location : null);
           const nextCoord =
-            baseCoord != null
-              ? blendTowardGps(
-                  baseCoord,
-                  rawCoord,
-                  acc ?? null,
-                  speedMph,
-                  prev.speed,
-                  isNavigating,
-                  dtSec,
-                )
-              : rawCoord;
+            holdOutlier && baseCoord != null
+              ? baseCoord
+              : baseCoord != null
+                ? blendTowardGps(
+                    baseCoord,
+                    rawCoord,
+                    acc ?? null,
+                    speedMph,
+                    prev.speed,
+                    isNavigating,
+                    dtSec,
+                    qualityScale,
+                  )
+                : rawCoord;
           positionBlendRef.current = nextCoord;
 
           let newHeading = prev.heading;
@@ -282,7 +320,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
 
           const accuracyPoor = typeof acc === 'number' && acc > 72;
           const accuracyWeak = typeof acc === 'number' && acc > 42;
-          const alpha =
+          let alpha =
             !isNavigating
               ? SPEED_SMOOTHING
               : accuracyPoor
@@ -290,6 +328,8 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
                 : accuracyWeak
                   ? 0.14
                   : SPEED_SMOOTHING;
+
+          if (holdOutlier) alpha *= 0.42;
 
           if (isNavigating && accuracyPoor && speedMph > prev.speed + 25) {
             speedMph = prev.speed + 8;
@@ -308,9 +348,24 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
             nextSpeed = Math.max(0, prev.speed + clampedDelta);
           }
 
+          let published = nextCoord;
+          if (isNavigating && !holdOutlier) {
+            published = extrapolateForDisplay(
+              nextCoord,
+              newHeading,
+              nextSpeed,
+              dtSec,
+              true,
+              displayHeadingPrevRef.current,
+            );
+            displayHeadingPrevRef.current = newHeading;
+          } else {
+            displayHeadingPrevRef.current = newHeading;
+          }
+
           return {
             ...prev,
-            location: nextCoord,
+            location: published,
             speed: nextSpeed,
             accuracy: acc ?? null,
             isLocating: false,
