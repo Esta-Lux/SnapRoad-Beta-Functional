@@ -1,6 +1,7 @@
 import {
   cumulativeRouteMeters,
   snapToRoute,
+  snapToRouteFullRoute,
   splitRouteAtSnap,
   sliceRouteWindow,
   bearingDegrees,
@@ -30,6 +31,11 @@ export type ComputeNavigationProgressArgs = {
     modelRefreshedAtMs: number;
     speedStability01: number;
   };
+  /**
+   * When true, also compute a whole-polyline snap; adopt it if it reduces perpendicular distance
+   * to the route by at least ~12m vs the local window snap.
+   */
+  tryGlobalReanchor?: boolean;
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -73,11 +79,23 @@ export function computeNavigationProgressFrame({
   edgeDurationSec,
   useEdgeEta,
   etaBlend,
+  tryGlobalReanchor = false,
 }: ComputeNavigationProgressArgs): NavigationProgress | null {
   const cumulative = cumulativeRouteMeters(route);
   const prevSegment = previous?.snapped?.segmentIndex ?? 0;
-  const snap = snapToRoute(rawLocation, route, cumulative, prevSegment, 35);
+  let snap = snapToRoute(rawLocation, route, cumulative, prevSegment, 35);
   if (!snap) return null;
+
+  if (tryGlobalReanchor) {
+    const globalSnap = snapToRouteFullRoute(rawLocation, route, cumulative);
+    const REANCHOR_IMPROVE_M = 12;
+    if (
+      globalSnap &&
+      globalSnap.distanceMeters < snap.distanceMeters - REANCHOR_IMPROVE_M
+    ) {
+      snap = globalSnap;
+    }
+  }
 
   const confidence = confidenceFrom(rawLocation, snap.distanceMeters);
   const isOffRoute =

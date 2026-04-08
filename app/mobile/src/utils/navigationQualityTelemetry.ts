@@ -18,7 +18,9 @@ export type NavigationQualityEvent = NavigationQualitySample & {
     | 'reroute'
     | 'severe_off_route'
     | 'traffic_refresh_requested'
-    | 'traffic_refresh_skipped';
+    | 'traffic_refresh_skipped'
+    /** After a directions response while navigating: share of edges that worsened vs pre-fetch snapshot. */
+    | 'navigation_congestion_compare';
 };
 
 function compactPayload(payload: NavigationQualitySample | NavigationQualityEvent): Record<string, unknown> {
@@ -102,6 +104,8 @@ export type NavigationQualityEventExtras = {
   skip_reason?: string;
   /** ETA drift: |model - naive| seconds when evaluated. */
   drift_gap_sec?: number;
+  /** `navigation_congestion_compare`: fraction of edges that worsened (aligned from index 0). */
+  congestion_worsened_frac?: number | null;
 };
 
 /**
@@ -120,6 +124,9 @@ export function trackNavigationQualityEvent(
     ...(extras?.refresh_trigger != null ? { rr: extras.refresh_trigger } : {}),
     ...(extras?.skip_reason != null ? { sr: extras.skip_reason } : {}),
     ...(extras?.drift_gap_sec != null ? { dg: extras.drift_gap_sec } : {}),
+    ...(extras?.congestion_worsened_frac != null
+      ? { cw: extras.congestion_worsened_frac }
+      : {}),
   };
 
   if (__DEV__) {

@@ -34,11 +34,15 @@ export function useNavigationProgress({
   const prevRef = useRef<NavigationProgress | null>(null);
   const prevSpeedRef = useRef<number | null>(null);
   const speedVarRef = useRef(0);
+  const lastGlobalSnapAtRef = useRef(0);
+  const lastQualityGlobalAtRef = useRef(0);
 
   return useMemo(() => {
     if (!rawLocation || route.length < 2) {
       prevRef.current = null;
       prevSpeedRef.current = null;
+      lastGlobalSnapAtRef.current = 0;
+      lastQualityGlobalAtRef.current = 0;
       return null;
     }
 
@@ -57,6 +61,28 @@ export function useNavigationProgress({
           ? rawLocation.timestamp
           : Date.now();
 
+    const nowTs =
+      typeof rawLocation.timestamp === 'number' && Number.isFinite(rawLocation.timestamp)
+        ? rawLocation.timestamp
+        : Date.now();
+    const previous = prevRef.current;
+    if (lastGlobalSnapAtRef.current === 0) {
+      lastGlobalSnapAtRef.current = nowTs;
+    }
+    let tryGlobalReanchor = false;
+    if (nowTs - lastGlobalSnapAtRef.current >= 10_000) {
+      tryGlobalReanchor = true;
+      lastGlobalSnapAtRef.current = nowTs;
+    } else if (
+      previous?.snapped &&
+      previous.snapped.distanceMeters > 42 &&
+      speedMps > 2.5 &&
+      nowTs - lastQualityGlobalAtRef.current >= 3000
+    ) {
+      tryGlobalReanchor = true;
+      lastQualityGlobalAtRef.current = nowTs;
+    }
+
     const next = computeNavigationProgressFrame({
       rawLocation,
       route,
@@ -64,7 +90,7 @@ export function useNavigationProgress({
       routeDurationSeconds,
       routeDistanceMeters,
       offRouteTuning,
-      previous: prevRef.current,
+      previous,
       edgeDurationSec,
       useEdgeEta: navEdgeEtaEnabled,
       etaBlend:
@@ -75,6 +101,7 @@ export function useNavigationProgress({
               speedStability01,
             }
           : undefined,
+      tryGlobalReanchor,
     });
 
     if (!next) {

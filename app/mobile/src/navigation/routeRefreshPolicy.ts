@@ -23,6 +23,14 @@ export const DEFAULT_REFRESH_POLICY = {
   /** Model speed mismatch: actual speed this far below annotated edge speed (ratio). */
   modelSpeedMismatchRatio: 0.52,
   modelSpeedMismatchSustainMs: 35_000,
+  /**
+   * When this fraction of **remaining** edges (from snap index) is moderate+ congestion,
+   * allow an extra refresh candidate after `congestionStressMinRefreshAgeMs` (single-snapshot heuristic).
+   */
+  congestionStressMinFraction: 0.42,
+  congestionStressMinEdges: 12,
+  /** Shorter floor than periodic stale so bad corridors re-query traffic sooner. */
+  congestionStressMinRefreshAgeMs: 75_000,
 } as const;
 
 export type RouteRefreshPolicyConfig = typeof DEFAULT_REFRESH_POLICY;
@@ -132,6 +140,27 @@ export function congestionDeltaTrigger(args: {
   return frac != null && frac >= args.minFraction;
 }
 
+/**
+ * True when the remaining route slice (from `fromEdgeIndex`) is mostly moderate/heavy/severe.
+ * Uses one Directions snapshot; paired with a minimum age since last refresh to avoid spam.
+ */
+export function remainingCongestionStressTrigger(args: {
+  congestion: CongestionLevel[] | undefined;
+  fromEdgeIndex: number;
+  minModerateOrHigherFraction: number;
+  minEdges: number;
+}): boolean {
+  if (!args.congestion?.length) return false;
+  const i = Math.max(0, Math.min(args.fromEdgeIndex, args.congestion.length - 1));
+  const slice = args.congestion.slice(i);
+  if (slice.length < args.minEdges) return false;
+  let stressed = 0;
+  for (const c of slice) {
+    if (congestionRank(c) >= 2) stressed += 1;
+  }
+  return stressed / slice.length >= args.minModerateOrHigherFraction;
+}
+
 /** Long highway-style step: big step geometry with maneuver still several minutes out. */
 export function longSegmentTrigger(args: {
   currentStepLengthM: number;
@@ -171,6 +200,8 @@ export type RefreshCandidate = {
 
 /**
  * Choose the strongest refresh candidate from passive signals (no cooldown / hourly cap here).
+ *
+ * Priority: periodic_stale → congestion_delta (stress heuristic) → eta_drift → long_segment → model_speed_mismatch.
  */
 export function pickRefreshCandidate(args: {
   nowMs: number;
@@ -194,9 +225,24 @@ export function pickRefreshCandidate(args: {
   modelSpeedMismatchSustainMs: number;
   userSpeedKmh: number;
   modelSpeedMismatchRatio: number;
+  congestionStressMinFraction: number;
+  congestionStressMinEdges: number;
+  congestionStressMinRefreshAgeMs: number;
 }): RefreshCandidate | null {
   if (args.nowMs - args.lastRefreshAtMs >= args.periodicStaleMs) {
     return { trigger: 'periodic_stale' };
+  }
+
+  if (
+    args.nowMs - args.lastRefreshAtMs >= args.congestionStressMinRefreshAgeMs &&
+    remainingCongestionStressTrigger({
+      congestion: args.congestionCurrent,
+      fromEdgeIndex: args.snapSegmentIndex,
+      minModerateOrHigherFraction: args.congestionStressMinFraction,
+      minEdges: args.congestionStressMinEdges,
+    })
+  ) {
+    return { trigger: 'congestion_delta' };
   }
 
   const naive = naiveRemainingSeconds(args.distanceRemainingM, args.speedMps, args.vMinMps);

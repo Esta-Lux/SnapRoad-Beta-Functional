@@ -335,6 +335,21 @@ export default function MapScreen() {
     storage.set('snaproad_nav_voice_muted', navVoiceMuted ? '1' : '0');
   }, [navVoiceMuted]);
 
+  const [friendLocations, setFriendLocations] = useState<FriendLocation[]>([]);
+  const [friendFollowSession, setFriendFollowSession] = useState<{
+    friendId: string;
+    name: string;
+    mode: 'live' | 'last_known';
+    startedLive: boolean;
+  } | null>(null);
+  const friendFollowLastDestRef = useRef<{ lat: number; lng: number } | null>(null);
+  const friendFollowLastRerouteRef = useRef(0);
+  const friendFollowRerouteBusyRef = useRef(false);
+  const friendFollowSessionRef = useRef<typeof friendFollowSession>(null);
+  useEffect(() => {
+    friendFollowSessionRef.current = friendFollowSession;
+  }, [friendFollowSession]);
+
   // ── Navigation hook ──
   const nav = useNav({
     userLocation: location,
@@ -343,6 +358,7 @@ export default function MapScreen() {
     gpsAccuracy: accuracy,
     drivingMode,
     voiceMuted: navVoiceMuted,
+    dynamicDestinationFollow: friendFollowSession?.mode === 'live',
   });
   useNavigationSpeech({
     progress: nav.navigationProgress,
@@ -487,21 +503,6 @@ export default function MapScreen() {
   const [savedPlaces, setSavedPlaces] = useState<SavedLocation[]>([]);
   const [activeChip, setActiveChip] = useState<string>('favorites');
   const [nearbyOffers, setNearbyOffers] = useState<Offer[]>([]);
-  const [friendLocations, setFriendLocations] = useState<FriendLocation[]>([]);
-  /** Live-follow: reroutes when friend moves (throttled). Trip/gems still use normal nav completion rules — moving targets may behave oddly. */
-  const [friendFollowSession, setFriendFollowSession] = useState<{
-    friendId: string;
-    name: string;
-    mode: 'live' | 'last_known';
-    startedLive: boolean;
-  } | null>(null);
-  const friendFollowLastDestRef = useRef<{ lat: number; lng: number } | null>(null);
-  const friendFollowLastRerouteRef = useRef(0);
-  const friendFollowRerouteBusyRef = useRef(false);
-  const friendFollowSessionRef = useRef<typeof friendFollowSession>(null);
-  useEffect(() => {
-    friendFollowSessionRef.current = friendFollowSession;
-  }, [friendFollowSession]);
 
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
@@ -1814,6 +1815,7 @@ export default function MapScreen() {
       });
   }, [friendLocations, nav.isNavigating, avoidLowClearances, vehicleHeight]);
 
+  /** Copy for live friend follow; trips do not earn gems (`dynamicDestination` on route). */
   const friendFollowContextLine = useMemo(() => {
     if (!nav.isNavigating || !friendFollowSession) return null;
     const fl = friendLocations.find((x) => String(x.id) === String(friendFollowSession.friendId));

@@ -53,6 +53,9 @@ test('pickRefreshCandidate: periodic stale', () => {
     modelSpeedMismatchSustainMs: 35_000,
     userSpeedKmh: 72,
     modelSpeedMismatchRatio: 0.52,
+    congestionStressMinFraction: 0.42,
+    congestionStressMinEdges: 12,
+    congestionStressMinRefreshAgeMs: 75_000,
   });
   assert.equal(c?.trigger, 'periodic_stale');
 });
@@ -81,8 +84,43 @@ test('pickRefreshCandidate: sustained drift', () => {
     modelSpeedMismatchSustainMs: 35_000,
     userSpeedKmh: 90,
     modelSpeedMismatchRatio: 0.52,
+    congestionStressMinFraction: 0.42,
+    congestionStressMinEdges: 12,
+    congestionStressMinRefreshAgeMs: 75_000,
   });
   assert.equal(c?.trigger, 'eta_drift');
+});
+
+test('pickRefreshCandidate: congestion stress triggers before eta_drift', () => {
+  const now = 500_000;
+  const congested: CongestionLevel[] = Array(16).fill('moderate');
+  const c = pickRefreshCandidate({
+    nowMs: now,
+    lastRefreshAtMs: now - 80_000,
+    periodicStaleMs: 300_000,
+    driftSustainMs: 50_000,
+    driftSustainThresholdMs: 45_000,
+    driftGapSec: 120,
+    modelRemainingSec: 600,
+    distanceRemainingM: 15_000,
+    speedMps: 25,
+    vMinMps: 2,
+    currentStepLengthM: 100,
+    nextStepDistanceMeters: 400,
+    longStepMeters: 8000,
+    timeToManeuverMaxMin: 12,
+    snapSegmentIndex: 0,
+    congestionCurrent: congested,
+    edgeSpeedsKmh: undefined,
+    edgeMismatchSustainMs: 0,
+    modelSpeedMismatchSustainMs: 35_000,
+    userSpeedKmh: 90,
+    modelSpeedMismatchRatio: 0.52,
+    congestionStressMinFraction: 0.42,
+    congestionStressMinEdges: 12,
+    congestionStressMinRefreshAgeMs: 75_000,
+  });
+  assert.equal(c?.trigger, 'congestion_delta');
 });
 
 test('decideTrafficRefresh respects cooldown', () => {

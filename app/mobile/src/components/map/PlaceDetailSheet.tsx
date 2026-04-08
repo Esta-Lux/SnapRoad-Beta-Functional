@@ -142,11 +142,6 @@ function estimateWalkTime(meters: number): string {
   return mins < 1 ? '1 min walk' : `${mins} min walk`;
 }
 
-function estimateDriveTime(meters: number): string {
-  const mins = Math.round(meters / 670);
-  return mins < 1 ? '1 min' : `${mins} min`;
-}
-
 type RouteSummary = {
   durationText: string;
   distanceText: string;
@@ -289,6 +284,8 @@ export default function PlaceDetailSheet({
   const [photoIndex, setPhotoIndex] = useState(0);
   const [saved, setSaved] = useState(false);
   const [routeSummary, setRouteSummary] = useState<RouteSummary | null>(null);
+  /** True while Mapbox route (+traffic) is loading — avoid fake crow‑flies “drive mins” then swapping. */
+  const [routeLoading, setRouteLoading] = useState(false);
 
   const bg = isLight ? '#ffffff' : '#0F1118';
   const surface = isLight ? '#F5F5F7' : '#1A1B26';
@@ -329,10 +326,6 @@ export default function PlaceDetailSheet({
     setShowAllHours(false);
     setShowAllReviews(false);
   }, [placeId]);
-
-  useEffect(() => {
-    setRouteSummary(null);
-  }, [placeId, userLocation?.lat, userLocation?.lng, drivingMode, maxHeightMeters]);
 
   // Fetch once per placeId. Do not depend on `summary`: parent often passes a new object each
   // render; including it re-ran this on every GPS tick and toggled loading (sheet glitch).
@@ -566,6 +559,7 @@ export default function PlaceDetailSheet({
       !Number.isFinite(userLocation.lng)
     ) {
       setRouteSummary(null);
+      setRouteLoading(false);
       return;
     }
     if (
@@ -573,10 +567,13 @@ export default function PlaceDetailSheet({
       Math.abs(userLocation.lng) < 1e-5
     ) {
       setRouteSummary(null);
+      setRouteLoading(false);
       return;
     }
 
     let cancelled = false;
+    setRouteSummary(null);
+    setRouteLoading(true);
     (async () => {
       try {
         const routes = await getMapboxRouteOptions(
@@ -584,7 +581,11 @@ export default function PlaceDetailSheet({
           { lat, lng },
           { mode: drivingMode, maxHeightMeters },
         );
-        if (cancelled || !routes.length) return;
+        if (cancelled) return;
+        if (!routes.length) {
+          setRouteSummary(null);
+          return;
+        }
         const best = routes[0]!;
         const summary = routeSummaryFromMapboxMetersSeconds(best.distance, best.duration);
         setRouteSummary({
@@ -594,6 +595,8 @@ export default function PlaceDetailSheet({
         });
       } catch {
         if (!cancelled) setRouteSummary(null);
+      } finally {
+        if (!cancelled) setRouteLoading(false);
       }
     })();
 
@@ -721,10 +724,15 @@ export default function PlaceDetailSheet({
                 </View>
 
                 <View style={S.actionsRow}>
-                  <TouchableOpacity style={[S.actionBtn, S.actionPrimary]} onPress={handleDirections} activeOpacity={0.85}>
+                  <TouchableOpacity
+                    style={[S.actionBtn, S.actionPrimary, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }]}
+                    onPress={handleDirections}
+                    activeOpacity={0.85}
+                  >
                     <Ionicons name="navigate" size={18} color="#fff" />
+                    {routeLoading ? <ActivityIndicator size="small" color="#fff" /> : null}
                     <Text style={S.actionPrimaryText}>
-                      {routeSummary?.durationText ?? (distMeters != null ? estimateDriveTime(distMeters) : 'Directions')}
+                      {routeSummary?.durationText ?? (routeLoading ? 'Drive time…' : 'Directions')}
                     </Text>
                   </TouchableOpacity>
 

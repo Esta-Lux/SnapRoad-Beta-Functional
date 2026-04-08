@@ -109,7 +109,11 @@ export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', mo
  * Turn-by-turn distance cues: same audio session as {@link speak}, but allows successive **different**
  * phrases sooner than `MIN_GAP_MS` (still debounces identical phrase repeats).
  */
-export function speakGuidance(phrase: string, mode: DrivingMode = 'adaptive') {
+export function speakGuidance(
+  phrase: string,
+  mode: DrivingMode = 'adaptive',
+  language: string = 'en-US',
+) {
   if (!phrase.trim()) return;
   const normalized = phrase.trim().toLowerCase();
   const now = Date.now();
@@ -122,7 +126,7 @@ export function speakGuidance(phrase: string, mode: DrivingMode = 'adaptive') {
   Speech.speak(phrase, {
     rate: speechRateForMode(mode),
     pitch: speechPitchForMode(mode),
-    language: 'en-US',
+    language: language || 'en-US',
     onDone: onUtteranceFinished,
     onStopped: onUtteranceFinished,
     onError: onUtteranceFinished,

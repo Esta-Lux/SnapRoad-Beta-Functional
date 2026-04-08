@@ -81,6 +81,23 @@ export function snapToRoute(
   return best;
 }
 
+/** Cap full-polyline search cost on pathological routes (still covers ~hundreds of km of geometry). */
+export const SNAP_GLOBAL_MAX_LOOKAHEAD_SEGMENTS = 4000;
+
+/**
+ * Closest snap over the whole polyline (from segment 0), capped by {@link SNAP_GLOBAL_MAX_LOOKAHEAD_SEGMENTS}.
+ */
+export function snapToRouteFullRoute(
+  raw: RawLocation,
+  route: RoutePoint[],
+  cumulative: number[],
+): SnapPoint | null {
+  if (route.length < 2) return null;
+  const lastSeg = route.length - 2;
+  const lookahead = Math.min(lastSeg, SNAP_GLOBAL_MAX_LOOKAHEAD_SEGMENTS);
+  return snapToRoute(raw, route, cumulative, 0, lookahead);
+}
+
 export function splitRouteAtSnap(route: RoutePoint[], snap: SnapPoint) {
   const i = snap.segmentIndex;
   const split = interpolatePoint(route[i]!, route[i + 1]!, snap.t);
@@ -136,6 +153,6 @@ export function nearestSegmentIndex(route: RoutePoint[], p: RoutePoint): number 
   if (route.length < 2) return 0;
   const cumulative = cumulativeRouteMeters(route);
   const raw: RawLocation = { lat: p.lat, lng: p.lng };
-  const snap = snapToRoute(raw, route, cumulative, 0, route.length + 10);
+  const snap = snapToRouteFullRoute(raw, route, cumulative);
   return snap?.segmentIndex ?? 0;
 }

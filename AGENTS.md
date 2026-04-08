@@ -99,6 +99,24 @@ Do **not** run a bare `eas build` from the **repo root**, or from `app/mobile` w
 - **Commands:** From **repo root**, `npm run eas:android:production`, `eas:android:preview`, `eas:ios:production`, etc. From **app/mobile**, use `npm run eas:build:prod:android` (and other `eas:build:*` scripts) — they invoke the same wrapper.
 - **Ignore files:** Prefer `app/mobile/.easignore`; root `.easignore` is only a safety net if the archive root is wrong.
 
+### Navigation feature flags (mobile)
+
+Defined in `app/mobile/src/navigation/navFeatureFlags.ts`. All default **off** unless the env var is `1` / `true`:
+
+| Variable | Effect |
+|----------|--------|
+| `EXPO_PUBLIC_NAV_REFRESH_V2` | Policy-based traffic refresh (drift, congestion stress, long segment, caps) instead of a fixed ~3 min interval. |
+| `EXPO_PUBLIC_NAV_EDGE_ETA` | Per-edge duration from Mapbox annotations for remaining time. |
+| `EXPO_PUBLIC_NAV_ETA_BLEND` | Blend model ETA with observed speed; drift policy uses displayed ETA when this is on. |
+| `EXPO_PUBLIC_NAV_SERVER_ETA` | Optional server canonical ETA (see backend when enabled). |
+
+**Smoke QA matrix** (run with navigation + voice unmuted where noted):
+
+1. **Baseline** (all flags off): start nav, arrive at destination (auto-end), cancel nav early (no false trip complete).
+2. **Refresh v2 only** (`NAV_REFRESH_V2=1`): drive until traffic refresh fires or skip logs in dev; off-route reroute still works.
+3. **Edge ETA + blend** (`NAV_EDGE_ETA=1`, `NAV_ETA_BLEND=1`): ETA strip updates smoothly; no crashes on long routes.
+4. Cross-check **voice** on/off with start prompt + turn cues (no double-speak immediately after “Starting navigation…”).
+
 ## Backend -- Critical Rules
 
 ### API Port

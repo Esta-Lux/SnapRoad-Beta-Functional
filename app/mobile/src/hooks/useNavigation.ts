@@ -1,6 +1,12 @@
 import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect } from 'react';
 import type { Coordinate, DrivingMode } from '../types';
-import type { DirectionsResult, DirectionsStep, GeocodeResult, RawRoute } from '../lib/directions';
+import type {
+  CongestionLevel,
+  DirectionsResult,
+  DirectionsStep,
+  GeocodeResult,
+  RawRoute,
+} from '../lib/directions';
 import {
   getMapboxRouteOptions,
   isMapboxDirectionsConfigured,
@@ -20,6 +26,7 @@ import {
   type NavigationRouteProgress,
 } from '../utils/distance';
 import { speak, stopSpeaking, configureAudioSession } from '../utils/voice';
+import { setNavigationGuidanceSuppressedUntil } from '../navigation/navigationGuidanceMemory';
 import { primaryInstructionText, primaryVoiceAnnouncement } from '../lib/navigationInstructions';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -47,11 +54,15 @@ import {
   passesRefreshGates,
   pickRefreshCandidate,
   congestionRank,
+  congestionWorsenedEdgeFraction,
   updateDriftSustained,
   updateMismatchSustained,
 } from '../navigation/routeRefreshPolicy';
 import { resolveEdgeDurationSec } from '../navigation/navigationEtaEdges';
 import * as Haptics from 'expo-haptics';
+
+/** Aligned voice + auto-end: "near destination" along remaining route (`navStepsFromDirections` maps `arrive`). */
+const ARRIVAL_NEAR_ROUTE_MI = 0.08;
 function applyTripCompleteProfileToUser(updateUser: (u: Partial<User>) => void, profile: unknown) {
   if (!profile || typeof profile !== 'object') return;
   const p = profile as Record<string, unknown>;
@@ -78,6 +89,8 @@ export interface NavigationData {
   maxspeeds?: (number | null)[];
   edgeSpeedsKmh?: (number | null)[] | undefined;
   edgeDurationSec?: number[] | undefined;
+  /** Live-updating destination (e.g. friend follow); suppresses gems / trip-complete API. */
+  dynamicDestination?: boolean;
 }
 
 export interface TripSummary {
@@ -111,8 +124,18 @@ export function useNavigation(params: {
   drivingMode: DrivingMode;
   /** When true, suppress turn-by-turn speech (user preference; persists in MapScreen). */
   voiceMuted?: boolean;
+  /** Live friend destination — marks routes as non-qualifying for gems. */
+  dynamicDestinationFollow?: boolean;
 }) {
-  const { userLocation, speed, heading, gpsAccuracy = null, drivingMode, voiceMuted = false } = params;
+  const {
+    userLocation,
+    speed,
+    heading,
+    gpsAccuracy = null,
+    drivingMode,
+    voiceMuted = false,
+    dynamicDestinationFollow = false,
+  } = params;
   const voiceMutedRef = useRef(voiceMuted);
   useLayoutEffect(() => {
     voiceMutedRef.current = voiceMuted;
@@ -147,6 +170,8 @@ export function useNavigation(params: {
   const [selectedDestination, setSelectedDestination] = useState<GeocodeResult | null>(null);
   const [isRerouting, setIsRerouting] = useState(false);
   const navQualityEmitRef = useRef<{ atMs: number; progressBucket: number }>({ atMs: 0, progressBucket: -1 });
+  /** Congestion snapshot before a directions request (nav); used after fetch for compare telemetry. */
+  const congestionBeforeDirectionsRef = useRef<CongestionLevel[] | null>(null);
 
   const isNavigatingRef = useRef(false);
   const traveledRef = useRef(0);
@@ -241,6 +266,16 @@ export function useNavigation(params: {
     };
   }, [isNavigating, navigationProgress]);
 
+  const navigationDataRef = useRef(navigationData);
+  useEffect(() => {
+    navigationDataRef.current = navigationData;
+  }, [navigationData]);
+
+  const navigationProgressRef = useRef(navigationProgress);
+  useEffect(() => {
+    navigationProgressRef.current = navigationProgress;
+  }, [navigationProgress]);
+
   // --- Fetch directions ---
   const fetchDirections = useCallback(async (
     destination: Coordinate & { name?: string; address?: string },
@@ -268,6 +303,12 @@ export function useNavigation(params: {
       };
     }
 
+    if (isNavigatingRef.current && navigationDataRef.current?.congestion?.length) {
+      congestionBeforeDirectionsRef.current = [...navigationDataRef.current.congestion];
+    } else {
+      congestionBeforeDirectionsRef.current = null;
+    }
+
     try {
       const options = await getMapboxRouteOptions(o, destination, {
         mode: drivingMode,
@@ -282,6 +323,13 @@ export function useNavigation(params: {
       setSelectedRouteIndex(0);
 
       const first = options[0];
+      const preCongestion = congestionBeforeDirectionsRef.current;
+      congestionBeforeDirectionsRef.current = null;
+
+      const preserveDynamic =
+        Boolean(dynamicDestinationFollow) ||
+        (isNavigatingRef.current && Boolean(navigationDataRef.current?.dynamicDestination));
+
       const nav: NavigationData = {
         origin: { ...o, name: 'Current Location' },
         destination: { ...destination, name: destination.name ?? 'Destination' },
@@ -295,18 +343,58 @@ export function useNavigation(params: {
         maxspeeds: first.maxspeeds,
         edgeSpeedsKmh: first.edgeSpeedsKmh,
         edgeDurationSec: first.edgeDurationSec,
+        ...(preserveDynamic ? { dynamicDestination: true } : {}),
       };
+
+      if (
+        isNavigatingRef.current &&
+        preCongestion?.length &&
+        first.congestion?.length
+      ) {
+        const pol = DEFAULT_REFRESH_POLICY;
+        const worsenedFrac = congestionWorsenedEdgeFraction(
+          preCongestion,
+          first.congestion,
+          0,
+          pol.congestionJumpMinDelta,
+        );
+        const navp = navigationProgressRef.current;
+        const navD = navigationDataRef.current;
+        const offM = navp?.snapped?.distanceMeters ?? 999;
+        const distRem = navp?.distanceRemainingMeters ?? 0;
+        const totalD = Math.max(1, navD?.distance ?? 1);
+        const traveled01 = Math.max(0, Math.min(1, (totalD - distRem) / totalD));
+        trackNavigationQualityEvent(
+          {
+            event: 'navigation_congestion_compare',
+            accuracyBand: bucketAccuracyBand(gpsAccuracy),
+            offsetBand: bucketOffsetBand(Number.isFinite(offM) ? offM : 999),
+            progressBucket: bucketProgress(traveled01),
+            speedBand: bucketSpeedBand(speed),
+            osBucket: deviceOsBucket(),
+            qualityState: Number.isFinite(offM) && offM < 40 ? 'on_route' : 'off_route',
+            snapped: Number.isFinite(offM) && offM < 35 ? 1 : 0,
+            confidenceBucket: bucketConfidence(
+              Math.max(0, Math.min(1, navp?.confidence ?? 0.5)),
+            ),
+          },
+          { congestion_worsened_frac: worsenedFrac },
+        );
+      }
+
       setNavigationData(nav);
       routeModelRefreshedAtRef.current = Date.now();
       setRouteModelRefreshKey((k) => k + 1);
       setCurrentStepIndex(0);
 
       if (isNavigatingRef.current) {
-        traveledRef.current = 0;
-        setTraveledDistanceMeters(0);
-        hasAnnouncedArrivalRef.current = false;
-        autoEndNavTriggeredRef.current = false;
         offRouteStreakRef.current = 0;
+        if (!opts?.fastSingleRoute) {
+          traveledRef.current = 0;
+          setTraveledDistanceMeters(0);
+          hasAnnouncedArrivalRef.current = false;
+          autoEndNavTriggeredRef.current = false;
+        }
       } else {
         setShowRoutePreview(true);
       }
@@ -316,7 +404,7 @@ export function useNavigation(params: {
       console.warn('fetchDirections error:', e);
       return { ok: false, reason: 'route_failed', message: msg };
     }
-  }, [userLocation, drivingMode]);
+  }, [userLocation, drivingMode, gpsAccuracy, speed, dynamicDestinationFollow]);
 
   const fetchDirectionsRef = useRef(fetchDirections);
   useEffect(() => {
@@ -337,15 +425,6 @@ export function useNavigation(params: {
   }, [navigationData?.destination]);
 
   const lastTrafficRefreshAtRef = useRef(0);
-  const navigationProgressRef = useRef(navigationProgress);
-  useEffect(() => {
-    navigationProgressRef.current = navigationProgress;
-  }, [navigationProgress]);
-
-  const navigationDataRef = useRef(navigationData);
-  useEffect(() => {
-    navigationDataRef.current = navigationData;
-  }, [navigationData]);
 
   const navStepsBuiltRef = useRef(navStepsBuilt);
   useEffect(() => {
@@ -412,10 +491,14 @@ export function useNavigation(params: {
         minNavConfidence: pol.minNavConfidence,
       });
 
+      /** Match turn-card ETA when blend is on (see `navModel.durationRemainingSeconds`). */
+      const policyRemainingSec = navEtaBlendEnabled()
+        ? navp.durationRemainingSeconds
+        : navp.modelDurationRemainingSeconds;
       const modelSec = navp.modelDurationRemainingSeconds;
       const distRem = navp.distanceRemainingMeters;
       const naive = naiveRemainingSeconds(distRem, speedMps, pol.vMinMps);
-      const gap = Math.abs(modelSec - naive);
+      const gap = Math.abs(policyRemainingSec - naive);
       driftMsRef.current = updateDriftSustained(
         driftMsRef.current,
         now,
@@ -482,6 +565,9 @@ export function useNavigation(params: {
         modelSpeedMismatchSustainMs: pol.modelSpeedMismatchSustainMs,
         userSpeedKmh: speedMps * 3.6,
         modelSpeedMismatchRatio: pol.modelSpeedMismatchRatio,
+        congestionStressMinFraction: pol.congestionStressMinFraction,
+        congestionStressMinEdges: pol.congestionStressMinEdges,
+        congestionStressMinRefreshAgeMs: pol.congestionStressMinRefreshAgeMs,
       });
 
       const decision = decideTrafficRefresh({
@@ -582,6 +668,7 @@ export function useNavigation(params: {
     stopSpeaking();
     navSessionStartRef.current = Date.now();
     lastRerouteAtRef.current = 0;
+    setNavigationGuidanceSuppressedUntil(Date.now() + 8500);
     setIsNavigating(true);
     isNavigatingRef.current = true;
     traveledRef.current = 0;
@@ -671,6 +758,7 @@ export function useNavigation(params: {
     const originName = navigationData?.origin?.name ?? 'Start';
     const destName = navigationData?.destination?.name ?? 'End';
     const tripStartMs = tripStartTimeRef.current;
+    const dynamicDest = navigationData?.dynamicDestination === true;
 
     setNavigationData(null);
     setAvailableRoutes([]);
@@ -679,8 +767,9 @@ export function useNavigation(params: {
     rerouteInFlightRef.current = false;
     tripStartTimeRef.current = null;
 
-    const qualifies =
-      traveledRef.current >= MIN_GPS_METERS
+    const qualifiesTrip =
+      !dynamicDest
+      && traveledRef.current >= MIN_GPS_METERS
       && durationSec >= MIN_QUALIFYING_SEC
       && roundedDist >= MIN_QUALIFYING_MI;
 
@@ -692,20 +781,24 @@ export function useNavigation(params: {
       distance: roundedDist,
       duration: Math.max(1, durationMin || 1),
       safety_score: 85,
-      gems_earned: qualifies
+      gems_earned: qualifiesTrip
         ? tripGemsFromDurationMinutes(Math.max(1, durationMin || 1), Boolean(user?.isPremium))
         : 0,
-      xp_earned: qualifies ? 100 : 0,
+      xp_earned: qualifiesTrip ? 100 : 0,
       origin: originName,
       destination: destName,
       date: new Date().toLocaleDateString(),
-      counted: qualifies,
+      counted: qualifiesTrip,
       arrivedAtDestination,
     };
 
     queueMicrotask(() => setTripSummary(summaryPayload));
 
-    if (!qualifies) {
+    if (dynamicDest) {
+      return;
+    }
+
+    if (!qualifiesTrip) {
       setTimeout(
         () =>
           navSpeak(
@@ -834,13 +927,14 @@ export function useNavigation(params: {
       return;
     }
     if (hasAnnouncedArrivalRef.current) return;
+    if (navigationProgress?.nextStep?.kind !== 'arrive') return;
     const dest = navigationData.destination;
     const rm = liveEta?.distanceMiles;
     const crow =
       Number.isFinite(dest.lat) && Number.isFinite(dest.lng)
         ? haversineMeters(navigationProgressCoord.lat, navigationProgressCoord.lng, dest.lat, dest.lng)
         : Number.POSITIVE_INFINITY;
-    const near = (rm != null && rm <= 0.05) || crow <= 55;
+    const near = (rm != null && rm <= ARRIVAL_NEAR_ROUTE_MI) || crow <= 55;
     if (!near) return;
     hasAnnouncedArrivalRef.current = true;
     const destLabel = dest.name ?? 'your destination';
@@ -854,6 +948,7 @@ export function useNavigation(params: {
     isNavigating,
     liveEta?.distanceMiles,
     navigationData?.destination,
+    navigationProgress?.nextStep?.kind,
     navigationProgressCoord.lat,
     navigationProgressCoord.lng,
     drivingMode,
@@ -864,12 +959,21 @@ export function useNavigation(params: {
   useEffect(() => {
     if (!isNavigating || !navigationData?.destination) return;
     if (autoEndNavTriggeredRef.current) return;
+    if (navigationProgress?.nextStep?.kind !== 'arrive') {
+      arrivalNearStreakRef.current = 0;
+      return;
+    }
+    const speedMps = speed * 0.44704;
+    if (speedMps >= 2.2) {
+      arrivalNearStreakRef.current = 0;
+      return;
+    }
     const dest = navigationData.destination;
     if (!Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) return;
 
     const crow = haversineMeters(navigationProgressCoord.lat, navigationProgressCoord.lng, dest.lat, dest.lng);
     const remainMi = liveEta?.distanceMiles;
-    const withinRoute = remainMi != null && remainMi <= 0.1;
+    const withinRoute = remainMi != null && remainMi <= ARRIVAL_NEAR_ROUTE_MI;
     const withinCrow = crow <= 55;
     if (!withinRoute && !withinCrow) {
       arrivalNearStreakRef.current = 0;
@@ -895,6 +999,8 @@ export function useNavigation(params: {
     navigationProgressCoord.lat,
     navigationProgressCoord.lng,
     liveEta?.distanceMiles,
+    navigationProgress?.nextStep?.kind,
+    speed,
     stopNavigation,
   ]);
 
