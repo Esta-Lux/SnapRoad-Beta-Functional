@@ -1,5 +1,6 @@
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, TileLayer, CircleMarker, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet'
+import { useMapEvents } from 'react-leaflet/hooks'
 
 interface Props {
   lat: number | null
