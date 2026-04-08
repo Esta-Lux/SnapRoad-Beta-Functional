@@ -346,7 +346,7 @@ export default function MapScreen() {
   });
   useNavigationSpeech({
     progress: nav.navigationProgress,
-    enabled: !navVoiceMuted,
+    enabled: !navVoiceMuted && nav.isNavigating,
     drivingMode,
   });
   /** During nav, same as raw `location` (reliable puck/camera); turn/ETA still from `navigationProgress`. */
@@ -1614,7 +1614,7 @@ export default function MapScreen() {
           : nav.liveEta?.distanceMiles ?? (nav.navigationData.distance || 0) / 1609.34,
       remainingMinutes:
         prog != null
-          ? Math.max(1, Math.round(prog.durationRemainingSeconds / 60))
+          ? Math.max(0, prog.durationRemainingSeconds / 60)
           : nav.liveEta?.etaMinutes ?? Math.round((nav.navigationData.duration || 0) / 60),
       currentStep: steps?.[idx]?.instruction ?? '',
       nextStep: steps?.[idx + 1]?.instruction ?? '',

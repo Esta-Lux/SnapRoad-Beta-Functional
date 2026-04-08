@@ -19,6 +19,7 @@ const steps: DirectionsStep[] = [
     distance: '0.1 mi',
     distanceMeters: 111,
     duration: '1 min',
+    durationSeconds: 300,
     maneuver: 'straight',
     name: 'Main St',
     lat: 40.0,
@@ -29,6 +30,7 @@ const steps: DirectionsStep[] = [
     distance: '0.1 mi',
     distanceMeters: 111,
     duration: '1 min',
+    durationSeconds: 300,
     maneuver: 'right',
     name: 'Oak',
     lat: 40.003,
@@ -52,11 +54,13 @@ test('computeNavigationProgressFrame: on route yields banner and sane next-step 
     route,
     steps: navSteps,
     routeDurationSeconds: 600,
+    routeDistanceMeters: 222,
     offRouteTuning: OFF_ROUTE_CONSERVATIVE,
     previous: null,
   });
   assert.ok(a);
   assert.equal(a.isOffRoute, false);
+  assert.ok(typeof a.modelDurationRemainingSeconds === 'number');
   assert.ok(a.nextStepDistanceMeters >= 0);
   assert.ok(a.banner?.primaryInstruction);
 });
@@ -77,6 +81,7 @@ test('computeNavigationProgressFrame: far from polyline flags off-route under ag
     route,
     steps: navSteps,
     routeDurationSeconds: 600,
+    routeDistanceMeters: 222,
     offRouteTuning: OFF_ROUTE_AGGRESSIVE,
     previous: null,
   });

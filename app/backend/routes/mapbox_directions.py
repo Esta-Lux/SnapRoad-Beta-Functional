@@ -6,6 +6,7 @@ to direct Mapbox calls. Falls back to client token when this env is unset.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -39,6 +40,14 @@ def _get_http() -> httpx.AsyncClient:
             follow_redirects=True,
         )
     return _http
+
+
+class CanonicalEtaBody(BaseModel):
+    """Mobile Phase 4 hook — server-authoritative ETA snapshot (stub until Mapbox server-side refresh lands)."""
+
+    route_version: int = Field(default=0, ge=0)
+    remaining_seconds_hint: float = Field(default=0, ge=0)
+    polyline_hash: Optional[str] = None
 
 
 class MapboxRoutesBody(BaseModel):
@@ -76,7 +85,7 @@ async def post_mapbox_routes(request: Request, body: MapboxRoutesBody) -> Any:
     token_qs = f"access_token={quote(token, safe='')}"
     common = (
         f"{token_qs}&geometries=geojson&overview=full&steps=true&language=en"
-        f"&annotations=congestion,maxspeed,speed&{BANNER_VOICE_QS}{max_h}{excl}"
+        f"&annotations=congestion,maxspeed,speed,duration&{BANNER_VOICE_QS}{max_h}{excl}"
     )
     url = f"{DIRECTIONS_BASE}/{prof}/{coords_path}?{common}&alternatives={alt}"
 
@@ -99,3 +108,25 @@ async def post_mapbox_routes(request: Request, body: MapboxRoutesBody) -> Any:
         raise HTTPException(status_code=404, detail=str(msg or "No routes"))
 
     return data
+
+
+@router.post("/canonical-eta")
+@limiter.limit("60/minute")
+async def post_canonical_eta_snapshot(request: Request, body: CanonicalEtaBody) -> Any:
+    """
+    Versioned ETA snapshot contract for multi-surface alignment (Orion, strip, speech).
+    Stub: echoes hint until server-side traffic refresh is implemented.
+    """
+    now_ms = int(time.time() * 1000)
+    rem = max(0.0, float(body.remaining_seconds_hint))
+    ttl_sec = 45
+    return {
+        "success": True,
+        "data": {
+            "routeVersion": int(body.route_version),
+            "remainingSeconds": rem,
+            "etaEpochMs": now_ms + int(rem * 1000),
+            "source": "stub",
+            "ttlSec": ttl_sec,
+        },
+    }

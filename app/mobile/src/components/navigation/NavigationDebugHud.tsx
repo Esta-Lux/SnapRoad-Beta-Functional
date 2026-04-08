@@ -26,6 +26,14 @@ export default React.memo(function NavigationDebugHud({
         offRoute={progress.isOffRoute ? '1' : '0'} · conf={progress.confidence.toFixed(2)} · snap=
         {snapM != null ? snapM.toFixed(0) : '—'}m
       </Text>
+      {progress.etaNaiveSeconds != null && progress.etaBlendWeight != null ? (
+        <Text style={styles.line}>
+          ETA model={Math.round(progress.modelDurationRemainingSeconds)}s disp=
+          {Math.round(progress.durationRemainingSeconds)}s naive=
+          {Math.round(progress.etaNaiveSeconds)}s w=
+          {progress.etaBlendWeight.toFixed(2)}
+        </Text>
+      ) : null}
     </View>
   );
 });

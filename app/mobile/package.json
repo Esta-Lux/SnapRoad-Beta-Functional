@@ -21,7 +21,7 @@
     "eas:submit:ios:interactive": "eas submit --platform ios --latest",
     "android:sha1": "bash scripts/print-android-sha1.sh",
     "postinstall": "node scripts/restore-expo-vector-fonts.cjs",
-    "test": "tsx --test \"src/**/*.smoke.test.ts\""
+    "test": "tsx --test \"src/**/*.smoke.test.ts\" \"src/**/*.unit.test.ts\""
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

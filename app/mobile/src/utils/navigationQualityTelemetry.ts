@@ -14,7 +14,11 @@ export type NavigationQualitySample = {
 };
 
 export type NavigationQualityEvent = NavigationQualitySample & {
-  event: 'reroute' | 'severe_off_route';
+  event:
+    | 'reroute'
+    | 'severe_off_route'
+    | 'traffic_refresh_requested'
+    | 'traffic_refresh_skipped';
 };
 
 function compactPayload(payload: NavigationQualitySample | NavigationQualityEvent): Record<string, unknown> {
@@ -28,7 +32,9 @@ function compactPayload(payload: NavigationQualitySample | NavigationQualityEven
     snap: payload.snapped,
     conf: payload.confidenceBucket,
     ...(Object.prototype.hasOwnProperty.call(payload, 'event')
-      ? { evt: (payload as NavigationQualityEvent).event }
+      ? {
+          evt: (payload as NavigationQualityEvent).event,
+        }
       : {}),
   };
 }
@@ -90,6 +96,12 @@ export type NavigationQualityEventExtras = {
   seq?: number;
   /** Meters off polyline when reroute triggered. */
   off_m?: number;
+  /** Traffic refresh: trigger id (e.g. eta_drift, periodic_stale). */
+  refresh_trigger?: string;
+  /** Traffic refresh: skip / gate reason. */
+  skip_reason?: string;
+  /** ETA drift: |model - naive| seconds when evaluated. */
+  drift_gap_sec?: number;
 };
 
 /**
@@ -105,6 +117,9 @@ export function trackNavigationQualityEvent(
     ...base,
     ...(extras?.seq != null ? { seq: extras.seq } : {}),
     ...(extras?.off_m != null ? { off_m: extras.off_m } : {}),
+    ...(extras?.refresh_trigger != null ? { rr: extras.refresh_trigger } : {}),
+    ...(extras?.skip_reason != null ? { sr: extras.skip_reason } : {}),
+    ...(extras?.drift_gap_sec != null ? { dg: extras.drift_gap_sec } : {}),
   };
 
   if (__DEV__) {

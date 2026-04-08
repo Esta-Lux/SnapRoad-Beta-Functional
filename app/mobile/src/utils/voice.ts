@@ -1,6 +1,7 @@
 import * as Speech from 'expo-speech';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import type { DrivingMode } from '../types';
+import { DRIVING_MODES } from '../constants/modes';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
@@ -66,15 +67,23 @@ export async function configureAudioSessionForVoiceInput(): Promise<void> {
   }
 }
 
-/** Orion and navigation share the same Speech settings. */
+/** Orion fallback when mode config is missing. */
 const ORION_SPEECH_RATE = 0.96;
 const ORION_SPEECH_PITCH = 1.0;
+
+function speechRateForMode(mode: DrivingMode): number {
+  return DRIVING_MODES[mode]?.speechRate ?? ORION_SPEECH_RATE;
+}
+
+function speechPitchForMode(mode: DrivingMode): number {
+  return DRIVING_MODES[mode]?.speechPitch ?? ORION_SPEECH_PITCH;
+}
 
 function onUtteranceFinished() {
   void restoreDefaultAudioSession();
 }
 
-export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', _mode: DrivingMode = 'adaptive') {
+export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', mode: DrivingMode = 'adaptive') {
   if (!phrase.trim()) return;
   const normalized = phrase.trim().toLowerCase();
   const now = Date.now();
@@ -87,8 +96,8 @@ export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', _m
 
   if (priority === 'high') Speech.stop();
   Speech.speak(phrase, {
-    rate: ORION_SPEECH_RATE,
-    pitch: ORION_SPEECH_PITCH,
+    rate: speechRateForMode(mode),
+    pitch: speechPitchForMode(mode),
     language: 'en-US',
     onDone: onUtteranceFinished,
     onStopped: onUtteranceFinished,
@@ -100,7 +109,7 @@ export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', _m
  * Turn-by-turn distance cues: same audio session as {@link speak}, but allows successive **different**
  * phrases sooner than `MIN_GAP_MS` (still debounces identical phrase repeats).
  */
-export function speakGuidance(phrase: string, _mode: DrivingMode = 'adaptive') {
+export function speakGuidance(phrase: string, mode: DrivingMode = 'adaptive') {
   if (!phrase.trim()) return;
   const normalized = phrase.trim().toLowerCase();
   const now = Date.now();
@@ -111,8 +120,8 @@ export function speakGuidance(phrase: string, _mode: DrivingMode = 'adaptive') {
 
   void configureAudioSession();
   Speech.speak(phrase, {
-    rate: ORION_SPEECH_RATE,
-    pitch: ORION_SPEECH_PITCH,
+    rate: speechRateForMode(mode),
+    pitch: speechPitchForMode(mode),
     language: 'en-US',
     onDone: onUtteranceFinished,
     onStopped: onUtteranceFinished,

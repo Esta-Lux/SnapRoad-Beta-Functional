@@ -8,15 +8,28 @@ import {
 import type { NavigationProgress, RawLocation, RoutePoint, NavStep } from './navModel';
 import { buildNavBanner } from './navBanner';
 import type { OffRouteTuning } from './offRouteTuning';
+import { remainingDurationSecondsFromNavSteps } from './navigationEta';
+import { remainingDurationSecondsFromEdges } from './navigationEtaEdges';
+import { blendModelWithObservedEta } from './etaObservedBlend';
 
 export type ComputeNavigationProgressArgs = {
   rawLocation: RawLocation;
   route: RoutePoint[];
   steps: NavStep[];
   routeDurationSeconds: number;
+  /** Mapbox route `distance` (meters); aligns polyline snap with step boundaries for ETA. */
+  routeDistanceMeters: number;
   offRouteTuning: OffRouteTuning;
   /** Prior frame for smoothing / segment continuity; null on first tick. */
   previous: NavigationProgress | null;
+  /** Per-edge duration (seconds), length = route points - 1, when edge ETA is enabled. */
+  edgeDurationSec?: number[] | null;
+  useEdgeEta?: boolean;
+  etaBlend?: {
+    enabled: boolean;
+    modelRefreshedAtMs: number;
+    speedStability01: number;
+  };
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -54,8 +67,12 @@ export function computeNavigationProgressFrame({
   route,
   steps,
   routeDurationSeconds,
+  routeDistanceMeters,
   offRouteTuning,
   previous,
+  edgeDurationSec,
+  useEdgeEta,
+  etaBlend,
 }: ComputeNavigationProgressArgs): NavigationProgress | null {
   const cumulative = cumulativeRouteMeters(route);
   const prevSegment = previous?.snapped?.segmentIndex ?? 0;
@@ -101,10 +118,54 @@ export function computeNavigationProgressFrame({
   const { traveled, remaining } = splitRouteAtSnap(route, snap);
   const routeTotalMeters = cumulative[cumulative.length - 1] ?? 0;
   const distanceRemainingMeters = Math.max(0, routeTotalMeters - snap.cumulativeMeters);
-  const durationRemainingSeconds =
-    routeTotalMeters > 1
-      ? Math.round((distanceRemainingMeters / routeTotalMeters) * routeDurationSeconds)
-      : 0;
+  let modelDurationRemainingSeconds = remainingDurationSecondsFromNavSteps({
+    snapCumulativeMetersAlongPolyline: snap.cumulativeMeters,
+    polylineTotalMeters: routeTotalMeters,
+    routeDistanceMetersApi: routeDistanceMeters > 1 ? routeDistanceMeters : routeTotalMeters,
+    steps,
+    routeDurationSecondsFallback: routeDurationSeconds,
+  });
+
+  const edgeDur = edgeDurationSec;
+  const edgeOk =
+    Boolean(useEdgeEta) &&
+    Array.isArray(edgeDur) &&
+    edgeDur.length === route.length - 1 &&
+    edgeDur.some((x) => x > 0);
+  if (edgeOk) {
+    modelDurationRemainingSeconds = remainingDurationSecondsFromEdges({
+      snapCumulativeMetersAlongPolyline: snap.cumulativeMeters,
+      cumulativeVertexMeters: cumulative,
+      edgeDurationSec: edgeDur!,
+    });
+  }
+
+  let durationRemainingSeconds = modelDurationRemainingSeconds;
+  let etaBlendWeight: number | undefined;
+  let etaNaiveSeconds: number | undefined;
+
+  if (etaBlend?.enabled && typeof etaBlend.modelRefreshedAtMs === 'number') {
+    const nowTs = typeof rawLocation.timestamp === 'number' ? rawLocation.timestamp : Date.now();
+    const prevTs = previous?.displayCoord?.timestamp;
+    const dtMs =
+      typeof prevTs === 'number' && Number.isFinite(prevTs)
+        ? Math.max(80, Math.min(6000, nowTs - prevTs))
+        : 1000;
+    const blended = blendModelWithObservedEta({
+      modelRemainingSec: modelDurationRemainingSeconds,
+      distanceRemainingM: distanceRemainingMeters,
+      smoothedSpeedMps: Math.max(0, rawLocation.speedMps ?? 0),
+      confidence,
+      msSinceModelRefresh: Math.max(0, nowTs - etaBlend.modelRefreshedAtMs),
+      speedStability01: Math.max(0, Math.min(1, etaBlend.speedStability01)),
+      prevBlendedSec: previous?.durationRemainingSeconds ?? null,
+      dtMs,
+    });
+    durationRemainingSeconds = blended.blendedSec;
+    etaBlendWeight = blended.weightModel;
+    etaNaiveSeconds = blended.naiveSec;
+  }
+
   const etaEpochMs = Date.now() + durationRemainingSeconds * 1000;
 
   const nextStepRaw =
@@ -137,8 +198,11 @@ export function computeNavigationProgressFrame({
     nextStepDistanceMeters,
     banner,
     distanceRemainingMeters,
+    modelDurationRemainingSeconds,
     durationRemainingSeconds,
     etaEpochMs,
+    etaBlendWeight,
+    etaNaiveSeconds,
     isOffRoute,
     confidence,
   };

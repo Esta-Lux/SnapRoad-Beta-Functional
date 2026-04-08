@@ -32,6 +32,8 @@ export type NavStep = {
   distanceMetersFromStart: number;
   /** Along-route distance to execute this step; recomputed in progress from snap. */
   distanceMetersToNext: number;
+  /** Mapbox per-step duration (seconds); used with `navigationEta.ts` for remaining time. */
+  durationSeconds: number;
   kind: ManeuverKind;
   modifier?: string;
   streetName?: string | null;
@@ -72,8 +74,13 @@ export type NavigationProgress = {
   /** Banner copy; distances match {@link nextStepDistanceMeters}. */
   banner: NavBannerModel | null;
   distanceRemainingMeters: number;
+  /** Pre-blend model ETA (Mapbox step/edge timing). Policy + drift use this. */
+  modelDurationRemainingSeconds: number;
   durationRemainingSeconds: number;
   etaEpochMs: number | null;
+  /** Populated when observed-speed blend is active (debug / HUD). */
+  etaBlendWeight?: number;
+  etaNaiveSeconds?: number;
   isOffRoute: boolean;
   confidence: number;
 };

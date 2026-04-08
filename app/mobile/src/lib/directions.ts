@@ -47,6 +47,8 @@ export interface DirectionsStep {
   distance: string;
   distanceMeters: number;
   duration: string;
+  /** Raw Mapbox step duration (seconds), used for navigation ETA. */
+  durationSeconds: number;
   maneuver: string;
   /** Road name of this step (from Mapbox `step.name`). */
   name?: string;
@@ -76,6 +78,10 @@ export interface DirectionsResult {
   routeType?: 'best' | 'eco' | 'alt';
   congestion?: CongestionLevel[];
   maxspeeds?: (number | null)[];
+  /** Per-edge typical (Mapbox `annotations.speed`) in km/h when aligned to polyline edges. */
+  edgeSpeedsKmh?: (number | null)[];
+  /** Per-edge duration in seconds when Mapbox `annotations.duration` aligns to edges. */
+  edgeDurationSec?: number[] | undefined;
 }
 
 export interface GeocodeResult {
@@ -199,7 +205,7 @@ export function mapboxManeuverToSimple(modifier?: string, type?: string): string
 }
 
 /** Raw Mapbox `routes[]` entry — shared by client and `/api/navigation/mapbox-routes` proxy. */
-interface RawRoute {
+export interface RawRoute {
   geometry: { coordinates: [number, number][] };
   legs: Array<{
     steps: Array<{
@@ -217,19 +223,28 @@ interface RawRoute {
     annotation?: {
       congestion?: string[];
       maxspeed?: Array<{ speed?: number; unit?: string; unknown?: boolean }>;
+      /** km/h per route segment when present. */
+      speed?: number[];
+      /** seconds per route segment when present. */
+      duration?: number[];
     };
   }>;
   distance: number;
   duration: number;
 }
 
-function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']): DirectionsResult {
+export function parseMapboxDirectionsRoute(
+  route: RawRoute,
+  routeType?: DirectionsResult['routeType'],
+): DirectionsResult {
   const polyline: Coordinate[] = route.geometry.coordinates.map(
     (coord) => ({ lat: coord[1], lng: coord[0] }),
   );
   const steps: DirectionsStep[] = [];
   const allCongestion: CongestionLevel[] = [];
   const allMaxspeeds: (number | null)[] = [];
+  const allSpeedKmh: (number | null)[] = [];
+  const allDurationSec: number[] = [];
 
   for (const leg of route.legs) {
     for (const step of leg.steps) {
@@ -239,6 +254,7 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
         distance: formatDistance(step.distance),
         distanceMeters: step.distance,
         duration: formatDuration(step.duration),
+        durationSeconds: Math.max(0, step.duration ?? 0),
         maneuver: mapboxManeuverToSimple(step.maneuver?.modifier, step.maneuver?.type),
         name: typeof step.name === 'string' && step.name ? step.name : undefined,
         lanes: step.intersections?.[0]?.lanes ? JSON.stringify(step.intersections[0].lanes) : undefined,
@@ -273,11 +289,31 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
         }
       }
     }
+    if (Array.isArray(leg.annotation?.speed)) {
+      for (const sk of leg.annotation.speed) {
+        if (typeof sk === 'number' && Number.isFinite(sk)) {
+          allSpeedKmh.push(sk);
+        } else {
+          allSpeedKmh.push(null);
+        }
+      }
+    }
+    if (Array.isArray(leg.annotation?.duration)) {
+      for (const d of leg.annotation.duration) {
+        allDurationSec.push(typeof d === 'number' && Number.isFinite(d) && d >= 0 ? d : 0);
+      }
+    }
   }
   const edgeCount = Math.max(0, polyline.length - 1);
   const congestionAligned =
     allCongestion.length > 0 && edgeCount > 0 && allCongestion.length === edgeCount
       ? allCongestion
+      : undefined;
+  const speedsAligned =
+    allSpeedKmh.length > 0 && edgeCount > 0 && allSpeedKmh.length === edgeCount ? allSpeedKmh : undefined;
+  const durationAligned =
+    allDurationSec.length > 0 && edgeCount > 0 && allDurationSec.length === edgeCount
+      ? allDurationSec
       : undefined;
 
   const summary = routeSummaryFromMapboxMetersSeconds(route.distance, route.duration);
@@ -291,6 +327,8 @@ function parseRoute(route: RawRoute, routeType?: DirectionsResult['routeType']):
     routeType,
     congestion: congestionAligned,
     maxspeeds: allMaxspeeds.length > 0 ? allMaxspeeds : undefined,
+    edgeSpeedsKmh: speedsAligned,
+    edgeDurationSec: durationAligned,
   };
 }
 
@@ -394,7 +432,7 @@ export async function getMapboxDirections(
     steps: 'true',
     alternatives: String(options?.alternatives ?? false),
     language: 'en',
-    annotations: 'congestion,maxspeed,speed',
+    annotations: 'congestion,maxspeed,speed,duration',
     banner_instructions: 'true',
     voice_instructions: 'true',
     voice_units: 'imperial',
@@ -410,7 +448,7 @@ export async function getMapboxDirections(
   }
   const data = await response.json();
   if (!data.routes?.length) throw new Error('No routes found');
-  return parseRoute(data.routes[0]);
+  return parseMapboxDirectionsRoute(data.routes[0]);
 }
 
 export function getModeDirectionsConfig(mode: DrivingMode): { profile: DirectionsProfile; exclude?: string } {
@@ -481,7 +519,7 @@ export async function getMapboxRouteOptions(
     const MAPBOX_TOKEN = getMapboxPublicToken();
     const tokenQS = `access_token=${encodeURIComponent(MAPBOX_TOKEN)}`;
     const commonQS =
-      `${tokenQS}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
+      `${tokenQS}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed,duration&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
     const trafficUrl = `${DIRECTIONS_BASE}/${modeConfig.profile}/${coordsPath}?${commonQS}&alternatives=${options?.fastSingleRoute ? 'false' : 'true'}`;
     const trafficRes = await fetch(trafficUrl);
     const trafficJson = (await trafficRes.json().catch(() => ({}))) as MapboxDirectionsJson;
@@ -499,11 +537,11 @@ export async function getMapboxRouteOptions(
   const tokenQS = MAPBOX_TOKEN ? `access_token=${encodeURIComponent(MAPBOX_TOKEN)}` : '';
   const commonQS =
     tokenQS &&
-    `${tokenQS}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
+    `${tokenQS}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed,duration&${DIRECTIONS_BANNER_VOICE_PARAMS}${maxHeightParam}${excludeParam}`;
 
-  const results: DirectionsResult[] = [parseRoute(trafficRoutes[0]!, 'best')];
+  const results: DirectionsResult[] = [parseMapboxDirectionsRoute(trafficRoutes[0]!, 'best')];
   for (let i = 1; i < trafficRoutes.length && !options?.fastSingleRoute && results.length < 3; i++) {
-    results.push(parseRoute(trafficRoutes[i]!, 'alt'));
+    results.push(parseMapboxDirectionsRoute(trafficRoutes[i]!, 'alt'));
   }
 
   if (!options?.fastSingleRoute && results.length < 3 && commonQS) {
@@ -522,7 +560,7 @@ export async function getMapboxRouteOptions(
                 Math.abs(r.duration - candidate.duration) < 30 && Math.abs(r.distance - candidate.distance) < 200,
             );
             if (!dup) {
-              results.push(parseRoute(candidate, 'eco'));
+              results.push(parseMapboxDirectionsRoute(candidate, 'eco'));
             }
           }
         }

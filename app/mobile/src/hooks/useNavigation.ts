@@ -1,7 +1,11 @@
 import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect } from 'react';
 import type { Coordinate, DrivingMode } from '../types';
-import type { DirectionsResult, DirectionsStep, GeocodeResult } from '../lib/directions';
-import { getMapboxRouteOptions, isMapboxDirectionsConfigured, mapboxManeuverToSimple } from '../lib/directions';
+import type { DirectionsResult, DirectionsStep, GeocodeResult, RawRoute } from '../lib/directions';
+import {
+  getMapboxRouteOptions,
+  isMapboxDirectionsConfigured,
+  parseMapboxDirectionsRoute,
+} from '../lib/directions';
 import { getMapboxPublicToken } from '../config/mapbox';
 
 export type FetchDirectionsResult =
@@ -35,6 +39,18 @@ import { useNavigationProgress } from './useNavigationProgress';
 import { buildNavStepsFromDirections } from '../navigation/navStepsFromDirections';
 import type { NavigationProgress } from '../navigation/navModel';
 import { offRouteTuningForMode } from '../navigation/offRouteTuning';
+import { navEdgeEtaEnabled, navEtaBlendEnabled, navRefreshV2Enabled } from '../navigation/navFeatureFlags';
+import {
+  DEFAULT_REFRESH_POLICY,
+  decideTrafficRefresh,
+  naiveRemainingSeconds,
+  passesRefreshGates,
+  pickRefreshCandidate,
+  congestionRank,
+  updateDriftSustained,
+  updateMismatchSustained,
+} from '../navigation/routeRefreshPolicy';
+import { resolveEdgeDurationSec } from '../navigation/navigationEtaEdges';
 import * as Haptics from 'expo-haptics';
 function applyTripCompleteProfileToUser(updateUser: (u: Partial<User>) => void, profile: unknown) {
   if (!profile || typeof profile !== 'object') return;
@@ -60,6 +76,8 @@ export interface NavigationData {
   distanceText: string;
   congestion?: import('../lib/directions').CongestionLevel[];
   maxspeeds?: (number | null)[];
+  edgeSpeedsKmh?: (number | null)[] | undefined;
+  edgeDurationSec?: number[] | undefined;
 }
 
 export interface TripSummary {
@@ -144,8 +162,6 @@ export function useNavigation(params: {
   const autoEndFromArrivalRef = useRef(false);
   /** Consecutive ticks with `navigationProgress.isOffRoute` before reroute. */
   const offRouteStreakRef = useRef(0);
-  const rerouteSeqRef = useRef(0);
-  const lastRerouteVoiceAtRef = useRef(0);
   /** Require consecutive arrival samples before auto-end (GPS flicker). */
   const arrivalNearStreakRef = useRef(0);
 
@@ -164,6 +180,18 @@ export function useNavigation(params: {
         : [],
     [navigationData?.steps, navigationData?.polyline],
   );
+
+  const routeModelRefreshedAtRef = useRef(Date.now());
+  const [routeModelRefreshKey, setRouteModelRefreshKey] = useState(0);
+
+  const edgeDurationResolved = useMemo(() => {
+    if (!navigationData?.polyline?.length || !navStepsBuilt.length) return null;
+    return resolveEdgeDurationSec({
+      polyline: navigationData.polyline,
+      navSteps: navStepsBuilt,
+      mapboxEdgeDurationSec: navigationData.edgeDurationSec,
+    });
+  }, [navigationData?.polyline, navigationData?.edgeDurationSec, navStepsBuilt]);
 
   const rawForNavigationProgress = useMemo(() => {
     if (!isNavigating || routePoints.length < 2) return null;
@@ -184,7 +212,13 @@ export function useNavigation(params: {
     route: routePoints,
     steps: navStepsBuilt,
     routeDurationSeconds: navigationData?.duration ?? 0,
+    routeDistanceMeters: navigationData?.distance ?? 0,
     offRouteTuning,
+    edgeDurationSec: edgeDurationResolved,
+    routeModelTick: routeModelRefreshKey,
+    routeModelRefreshedAtMs: routeModelRefreshedAtRef.current,
+    navEdgeEtaEnabled: navEdgeEtaEnabled(),
+    navEtaBlendEnabled: navEtaBlendEnabled(),
   });
 
   /**
@@ -203,7 +237,7 @@ export function useNavigation(params: {
     if (!isNavigating || !navigationProgress) return null;
     return {
       distanceMiles: Math.max(0, navigationProgress.distanceRemainingMeters / 1609.34),
-      etaMinutes: Math.max(1, Math.round(navigationProgress.durationRemainingSeconds / 60)),
+      etaMinutes: Math.max(0, navigationProgress.durationRemainingSeconds / 60),
     };
   }, [isNavigating, navigationProgress]);
 
@@ -259,8 +293,12 @@ export function useNavigation(params: {
         distanceText: first.distanceText,
         congestion: first.congestion,
         maxspeeds: first.maxspeeds,
+        edgeSpeedsKmh: first.edgeSpeedsKmh,
+        edgeDurationSec: first.edgeDurationSec,
       };
       setNavigationData(nav);
+      routeModelRefreshedAtRef.current = Date.now();
+      setRouteModelRefreshKey((k) => k + 1);
       setCurrentStepIndex(0);
 
       if (isNavigatingRef.current) {
@@ -280,6 +318,238 @@ export function useNavigation(params: {
     }
   }, [userLocation, drivingMode]);
 
+  const fetchDirectionsRef = useRef(fetchDirections);
+  useEffect(() => {
+    fetchDirectionsRef.current = fetchDirections;
+  }, [fetchDirections]);
+
+  const speedMphNavRef = useRef(speed);
+  const userLocNavRef = useRef(userLocation);
+  const navDestRef = useRef(navigationData?.destination ?? null);
+  useEffect(() => {
+    speedMphNavRef.current = speed;
+  }, [speed]);
+  useEffect(() => {
+    userLocNavRef.current = userLocation;
+  }, [userLocation]);
+  useEffect(() => {
+    navDestRef.current = navigationData?.destination ?? null;
+  }, [navigationData?.destination]);
+
+  const lastTrafficRefreshAtRef = useRef(0);
+  const navigationProgressRef = useRef(navigationProgress);
+  useEffect(() => {
+    navigationProgressRef.current = navigationProgress;
+  }, [navigationProgress]);
+
+  const navigationDataRef = useRef(navigationData);
+  useEffect(() => {
+    navigationDataRef.current = navigationData;
+  }, [navigationData]);
+
+  const navStepsBuiltRef = useRef(navStepsBuilt);
+  useEffect(() => {
+    navStepsBuiltRef.current = navStepsBuilt;
+  }, [navStepsBuilt]);
+
+  const currentStepIndexRef = useRef(currentStepIndex);
+  useEffect(() => {
+    currentStepIndexRef.current = currentStepIndex;
+  }, [currentStepIndex]);
+
+  const driftMsRef = useRef(0);
+  const mismatchMsRef = useRef(0);
+  const lastPolicyTickMsRef = useRef(Date.now());
+  const lastDebouncedTrafficAttemptMsRef = useRef(0);
+  const trafficRefreshHistoryRef = useRef<number[]>([]);
+
+  /** Legacy: fixed ~3 min Mapbox refresh when policy v2 flag is off. */
+  useEffect(() => {
+    if (navRefreshV2Enabled()) return undefined;
+    if (!isNavigating || !navigationData?.destination) return undefined;
+
+    const INTERVAL_MS = 180_000;
+    const MIN_BETWEEN_MS = 150_000;
+
+    const id = setInterval(() => {
+      if (!isNavigatingRef.current || rerouteInFlightRef.current) return;
+      if (speedMphNavRef.current * 0.44704 < 1.5) return;
+      const now = Date.now();
+      if (now - lastTrafficRefreshAtRef.current < MIN_BETWEEN_MS) return;
+      const dest = navDestRef.current;
+      if (!dest || !Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) return;
+      lastTrafficRefreshAtRef.current = now;
+      void fetchDirectionsRef.current(dest, userLocNavRef.current, { fastSingleRoute: true });
+    }, INTERVAL_MS);
+
+    return () => clearInterval(id);
+  }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng]);
+
+  /** Policy-driven refresh: drift, long-step, model speed mismatch, staleness — capped + debounced. */
+  useEffect(() => {
+    if (!navRefreshV2Enabled()) return undefined;
+    if (!isNavigating || !navigationData?.destination) return undefined;
+
+    const pol = DEFAULT_REFRESH_POLICY;
+    const id = setInterval(() => {
+      if (!isNavigatingRef.current) return;
+      const now = Date.now();
+      const lastTick = lastPolicyTickMsRef.current;
+      lastPolicyTickMsRef.current = now;
+
+      const navp = navigationProgressRef.current;
+      const navData = navigationDataRef.current;
+      if (!navp?.snapped || !navData?.destination) return;
+
+      const speedMps = speedMphNavRef.current * 0.44704;
+      const gates = passesRefreshGates({
+        speedMps,
+        rerouteInFlight: rerouteInFlightRef.current,
+        gpsAccuracyM: gpsAccuracy,
+        navConfidence: navp.confidence,
+        stallSpeedMps: pol.stallSpeedMps,
+        poorGpsAccuracyM: pol.poorGpsAccuracyM,
+        minNavConfidence: pol.minNavConfidence,
+      });
+
+      const modelSec = navp.modelDurationRemainingSeconds;
+      const distRem = navp.distanceRemainingMeters;
+      const naive = naiveRemainingSeconds(distRem, speedMps, pol.vMinMps);
+      const gap = Math.abs(modelSec - naive);
+      driftMsRef.current = updateDriftSustained(
+        driftMsRef.current,
+        now,
+        lastTick,
+        gap,
+        pol.driftGapSec,
+      );
+
+      const seg = navp.snapped.segmentIndex;
+      const edgesKmh = navData.edgeSpeedsKmh;
+      const cong = navData.congestion;
+      let mismatchActive = false;
+      if (edgesKmh?.length && cong?.length) {
+        const ei = Math.min(seg, edgesKmh.length - 1, cong.length - 1);
+        const expected = edgesKmh[ei];
+        const userKmh = speedMps * 3.6;
+        if (
+          typeof expected === 'number'
+          && Number.isFinite(expected)
+          && expected >= 12
+          && congestionRank(cong[ei]!) >= 2
+        ) {
+          mismatchActive = userKmh < expected * pol.modelSpeedMismatchRatio;
+        }
+      }
+      mismatchMsRef.current = updateMismatchSustained(
+        mismatchMsRef.current,
+        now,
+        lastTick,
+        mismatchActive,
+      );
+
+      const idx = currentStepIndexRef.current;
+      const built = navStepsBuiltRef.current;
+      let currentStepLengthM = 0;
+      if (built.length && idx < built.length) {
+        const cur = built[idx]!;
+        if (idx + 1 < built.length) {
+          currentStepLengthM = built[idx + 1]!.distanceMetersFromStart - cur.distanceMetersFromStart;
+        } else {
+          currentStepLengthM = Math.max(0, (navData.distance ?? 0) - cur.distanceMetersFromStart);
+        }
+      }
+
+      const candidate = pickRefreshCandidate({
+        nowMs: now,
+        lastRefreshAtMs: lastTrafficRefreshAtRef.current,
+        periodicStaleMs: pol.periodicStaleMs,
+        driftSustainMs: driftMsRef.current,
+        driftSustainThresholdMs: pol.driftSustainMs,
+        driftGapSec: pol.driftGapSec,
+        modelRemainingSec: modelSec,
+        distanceRemainingM: distRem,
+        speedMps,
+        vMinMps: pol.vMinMps,
+        currentStepLengthM,
+        nextStepDistanceMeters: navp.nextStepDistanceMeters,
+        longStepMeters: pol.longStepMeters,
+        timeToManeuverMaxMin: pol.timeToManeuverMaxMin,
+        snapSegmentIndex: seg,
+        congestionCurrent: cong,
+        edgeSpeedsKmh: edgesKmh,
+        edgeMismatchSustainMs: mismatchMsRef.current,
+        modelSpeedMismatchSustainMs: pol.modelSpeedMismatchSustainMs,
+        userSpeedKmh: speedMps * 3.6,
+        modelSpeedMismatchRatio: pol.modelSpeedMismatchRatio,
+      });
+
+      const decision = decideTrafficRefresh({
+        nowMs: now,
+        lastRefreshAtMs: lastTrafficRefreshAtRef.current,
+        lastDebouncedAttemptMs: lastDebouncedTrafficAttemptMsRef.current,
+        refreshHistoryMs: trafficRefreshHistoryRef.current,
+        candidate,
+        gates,
+        minCooldownMs: pol.minCooldownMs,
+        maxRefreshesPerHour: pol.maxRefreshesPerHour,
+        debounceMs: pol.debounceMs,
+      });
+
+      const offM = navp.snapped?.distanceMeters ?? 999;
+      const totalD = Math.max(1, navData.distance ?? 1);
+      const traveled01 = Math.max(0, Math.min(1, (totalD - distRem) / totalD));
+
+      if (decision.action === 'skip') {
+        if (decision.reason !== 'no_candidate' && decision.reason !== 'debounced') {
+          trackNavigationQualityEvent(
+            {
+              event: 'traffic_refresh_skipped',
+              accuracyBand: bucketAccuracyBand(gpsAccuracy),
+              offsetBand: bucketOffsetBand(Number.isFinite(offM) ? offM : 999),
+              progressBucket: bucketProgress(traveled01),
+              speedBand: bucketSpeedBand(speedMphNavRef.current),
+              osBucket: deviceOsBucket(),
+              qualityState: Number.isFinite(offM) && offM < 40 ? 'on_route' : 'off_route',
+              snapped: Number.isFinite(offM) && offM < 35 ? 1 : 0,
+              confidenceBucket: bucketConfidence(navp.confidence),
+            },
+            { skip_reason: decision.reason, drift_gap_sec: Math.round(gap) },
+          );
+        }
+        return;
+      }
+
+      const dest = navDestRef.current;
+      if (!dest || !Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) return;
+
+      lastDebouncedTrafficAttemptMsRef.current = now;
+      lastTrafficRefreshAtRef.current = now;
+      trafficRefreshHistoryRef.current.push(now);
+      const cutoff = now - 3600_000;
+      trafficRefreshHistoryRef.current = trafficRefreshHistoryRef.current.filter((t) => t >= cutoff);
+
+      trackNavigationQualityEvent(
+        {
+          event: 'traffic_refresh_requested',
+          accuracyBand: bucketAccuracyBand(gpsAccuracy),
+          offsetBand: bucketOffsetBand(Number.isFinite(offM) ? offM : 999),
+          progressBucket: bucketProgress(traveled01),
+          speedBand: bucketSpeedBand(speedMphNavRef.current),
+          osBucket: deviceOsBucket(),
+          qualityState: Number.isFinite(offM) && offM < 40 ? 'on_route' : 'off_route',
+          snapped: Number.isFinite(offM) && offM < 35 ? 1 : 0,
+          confidenceBucket: bucketConfidence(navp.confidence),
+        },
+        { refresh_trigger: decision.trigger, drift_gap_sec: Math.round(gap) },
+      );
+
+      void fetchDirectionsRef.current(dest, userLocNavRef.current, { fastSingleRoute: true });
+    }, pol.policyEvalIntervalMs);
+
+    return () => clearInterval(id);
+  }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng, gpsAccuracy]);
+
   const handleRouteSelect = useCallback((routeTypeOrIndex: 'best' | 'eco' | 'alt' | number) => {
     if (!availableRoutes.length || !navigationData) return;
     const index = typeof routeTypeOrIndex === 'number'
@@ -298,7 +568,11 @@ export function useNavigation(params: {
       distanceText: r.distanceText,
       congestion: r.congestion,
       maxspeeds: r.maxspeeds,
+      edgeSpeedsKmh: r.edgeSpeedsKmh,
+      edgeDurationSec: r.edgeDurationSec,
     });
+    routeModelRefreshedAtRef.current = Date.now();
+    setRouteModelRefreshKey((k) => k + 1);
   }, [availableRoutes, navigationData]);
 
   // --- Start / Stop navigation ---
@@ -318,10 +592,14 @@ export function useNavigation(params: {
     tripStartTimeRef.current = Date.now();
     setShowRoutePreview(false);
     offRouteStreakRef.current = 0;
-    rerouteSeqRef.current = 0;
-    lastRerouteVoiceAtRef.current = 0;
     arrivalNearStreakRef.current = 0;
     autoEndFromArrivalRef.current = false;
+    driftMsRef.current = 0;
+    mismatchMsRef.current = 0;
+    lastPolicyTickMsRef.current = Date.now();
+    trafficRefreshHistoryRef.current = [];
+    routeModelRefreshedAtRef.current = Date.now();
+    setRouteModelRefreshKey((k) => k + 1);
     const dest = navigationData.destination.name ?? 'your destination';
     const etaMin = Math.round(navigationData.duration / 60);
     const firstStep = navigationData.steps?.[0];
@@ -620,7 +898,7 @@ export function useNavigation(params: {
     stopNavigation,
   ]);
 
-  // --- Off-route detection + auto-reroute (Phase 1: 3 consecutive progress ticks isOffRoute) ---
+  // --- Off-route detection + auto-reroute (`streakRequired` from mode tuning; sport=3, calm/adaptive=4) ---
   useEffect(() => {
     if (!isNavigating || !navigationData?.destination || !navigationData?.polyline?.length || !navigationProgress) {
       offRouteStreakRef.current = 0;
@@ -639,7 +917,8 @@ export function useNavigation(params: {
       offRouteStreakRef.current = 0;
     }
 
-    if (offRouteStreakRef.current < 3) return;
+    const streakNeeded = offRouteTuning.streakRequired;
+    if (offRouteStreakRef.current < streakNeeded) return;
     if (rerouteInFlightRef.current) return;
 
     const now = Date.now();
@@ -677,7 +956,9 @@ export function useNavigation(params: {
           timeout,
         ]);
         if (res.ok) {
-          lastRerouteAtRef.current = Date.now();
+          const t = Date.now();
+          lastRerouteAtRef.current = t;
+          lastTrafficRefreshAtRef.current = t;
         }
       } finally {
         rerouteInFlightRef.current = false;
@@ -700,7 +981,7 @@ export function useNavigation(params: {
     drivingMode,
     fetchDirections,
     navSpeak,
-    offRouteTuning.streakRequired,
+    offRouteTuning,
   ]);
 
   const addWaypoint = useCallback(async (waypoint: Coordinate & { name?: string }) => {
@@ -711,53 +992,31 @@ export function useNavigation(params: {
       const coords = `${userLocation.lng},${userLocation.lat};${waypoint.lng},${waypoint.lat};${navigationData.destination.lng},${navigationData.destination.lat}`;
       const token = getMapboxPublicToken();
       const res = await fetch(
-        `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coords}?access_token=${encodeURIComponent(token)}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed`,
+        `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coords}?access_token=${encodeURIComponent(token)}&geometries=geojson&overview=full&steps=true&language=en&annotations=congestion,maxspeed,speed,duration`,
       );
       const json = await res.json();
       const route = json?.routes?.[0];
       if (route?.geometry?.coordinates?.length) {
-        const polyline = route.geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
-        const steps = (route.legs ?? []).flatMap((leg: any) =>
-          (leg.steps ?? []).map((s: any) => {
-            const g = s.geometry?.coordinates;
-            const durSec = s.duration ?? 0;
-            return {
-              instruction: s.maneuver?.instruction ?? '',
-              distance: `${(s.distance / 1609.34).toFixed(1)} mi`,
-              distanceMeters: s.distance ?? 0,
-              duration: durSec < 3600 ? `${Math.max(1, Math.round(durSec / 60))} min` : `${Math.floor(durSec / 3600)} hr ${Math.round((durSec % 3600) / 60)} min`,
-              maneuver: mapboxManeuverToSimple(s.maneuver?.modifier, s.maneuver?.type),
-              name: typeof s.name === 'string' ? s.name : '',
-              lat: s.maneuver?.location?.[1] ?? 0,
-              lng: s.maneuver?.location?.[0] ?? 0,
-              geometryCoordinates: Array.isArray(g) && g.length >= 2 ? g : undefined,
-              intersections: Array.isArray(s.intersections)
-                ? s.intersections.map((int: unknown) => {
-                    const intRec = int as { classes?: string[] };
-                    return { classes: Array.isArray(intRec.classes) ? intRec.classes : [] };
-                  })
-                : undefined,
-              bannerInstructions: s.bannerInstructions ?? s.banner_instructions ?? [],
-              voiceInstructions: s.voiceInstructions ?? s.voice_instructions ?? [],
-              lanes: s.intersections?.[0]?.lanes ? JSON.stringify(s.intersections[0].lanes) : undefined,
-            };
-          }),
-        );
+        const dr = parseMapboxDirectionsRoute(route as RawRoute);
         traveledRef.current = 0;
         setTraveledDistanceMeters(0);
         setCurrentStepIndex(0);
         autoEndNavTriggeredRef.current = false;
-        const totalDuration = route.duration ?? 0;
-        const totalDistance = route.distance ?? 0;
         setNavigationData({
           ...navigationData,
-          steps,
-          polyline,
-          duration: totalDuration,
-          distance: totalDistance,
-          durationText: totalDuration < 3600 ? `${Math.round(totalDuration / 60)} min` : `${Math.floor(totalDuration / 3600)}h ${Math.round((totalDuration % 3600) / 60)}min`,
-          distanceText: `${(totalDistance / 1609.34).toFixed(1)} mi`,
+          steps: dr.steps,
+          polyline: dr.polyline,
+          duration: dr.duration,
+          distance: dr.distance,
+          durationText: dr.durationText,
+          distanceText: dr.distanceText,
+          congestion: dr.congestion,
+          maxspeeds: dr.maxspeeds,
+          edgeSpeedsKmh: dr.edgeSpeedsKmh,
+          edgeDurationSec: dr.edgeDurationSec,
         });
+        routeModelRefreshedAtRef.current = Date.now();
+        setRouteModelRefreshKey((k) => k + 1);
       }
     } catch (e) {
       console.warn('addWaypoint error:', e);

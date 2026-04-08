@@ -65,6 +65,7 @@ export function buildNavStepsFromDirections(steps: DirectionsStep[], polyline: C
       segmentIndex,
       distanceMetersFromStart,
       distanceMetersToNext: fallbackToNext,
+      durationSeconds: Math.max(0, step.durationSeconds ?? 0),
       kind: maneuverToKind(step.maneuver),
       modifier: step.maneuver,
       streetName: step.name ?? null,
