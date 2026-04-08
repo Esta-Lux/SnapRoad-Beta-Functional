@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,15 @@ import Modal from '../common/Modal';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../api/client';
 import type { SavedLocation } from '../../types';
-import { forwardGeocode, type GeocodeResult } from '../../lib/directions';
+import type { GeocodeResult } from '../../lib/directions';
+import {
+  buildLocalCommuteHits,
+  COMMUTE_RECENT_SEARCHES_KEY,
+  fetchCommuteAddressSuggestions,
+  resolveCommutePlaceCoords,
+  type CommuteGeocodeHit,
+} from '../../lib/commutePlacesSearch';
+import { storage } from '../../utils/storage';
 
 const DAYS: { key: string; label: string }[] = [
   { key: 'mon', label: 'Mo' },
@@ -67,16 +75,22 @@ export default function AddCommuteModal({
   const [originMode, setOriginMode] = useState<'current' | 'address' | 'saved'>('current');
   const [originPlaceId, setOriginPlaceId] = useState<number | null>(null);
   const [originQuery, setOriginQuery] = useState('');
-  const [originHits, setOriginHits] = useState<GeocodeResult[]>([]);
-  const [originPick, setOriginPick] = useState<GeocodeResult | null>(null);
+  const [originHits, setOriginHits] = useState<CommuteGeocodeHit[]>([]);
+  const [originPick, setOriginPick] = useState<CommuteGeocodeHit | null>(null);
   const [originPickIdx, setOriginPickIdx] = useState<number | null>(null);
 
   const [destQuery, setDestQuery] = useState('');
-  const [destHits, setDestHits] = useState<GeocodeResult[]>([]);
-  const [destPick, setDestPick] = useState<GeocodeResult | null>(null);
+  const [destHits, setDestHits] = useState<CommuteGeocodeHit[]>([]);
+  const [destPick, setDestPick] = useState<CommuteGeocodeHit | null>(null);
   const [destPickIdx, setDestPickIdx] = useState<number | null>(null);
 
-  const [geBusy, setGeBusy] = useState<null | 'origin' | 'dest'>(null);
+  const [originSuggestLoading, setOriginSuggestLoading] = useState(false);
+  const [destSuggestLoading, setDestSuggestLoading] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<GeocodeResult[]>([]);
+  const originTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const originGenRef = useRef(0);
+  const destTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const destGenRef = useRef(0);
 
   const locOk = useMemo(() => {
     return (
@@ -97,41 +111,116 @@ export default function AddCommuteModal({
     setDayMap((m) => ({ ...m, [key]: !m[key] }));
   };
 
-  const searchOrigin = useCallback(async () => {
+  useEffect(() => {
+    if (!visible) return;
+    const load = async () => {
+      let raw = storage.getString(COMMUTE_RECENT_SEARCHES_KEY);
+      if (raw == null) raw = await storage.getStringAsync(COMMUTE_RECENT_SEARCHES_KEY);
+      if (!raw) {
+        setRecentSearches([]);
+        return;
+      }
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        setRecentSearches(Array.isArray(parsed) ? (parsed as GeocodeResult[]) : []);
+      } catch {
+        setRecentSearches([]);
+      }
+    };
+    void load();
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || originMode !== 'address') return;
+    if (originTimerRef.current) clearTimeout(originTimerRef.current);
     const q = originQuery.trim();
-    if (q.length < 3) {
-      Alert.alert('Address', 'Enter at least 3 characters for the starting point.');
+    if (q.length < 2) {
+      setOriginHits(buildLocalCommuteHits(q, places, recentSearches));
+      setOriginSuggestLoading(false);
       return;
     }
-    setGeBusy('origin');
+    setOriginSuggestLoading(true);
+    const gen = ++originGenRef.current;
+    originTimerRef.current = setTimeout(() => {
+      void (async () => {
+        try {
+          const hits = await fetchCommuteAddressSuggestions(q, prox, places, recentSearches);
+          if (originGenRef.current !== gen) return;
+          setOriginPick(null);
+          setOriginPickIdx(null);
+          setOriginHits(hits);
+        } finally {
+          if (originGenRef.current === gen) setOriginSuggestLoading(false);
+        }
+      })();
+    }, 280);
+    return () => {
+      if (originTimerRef.current) clearTimeout(originTimerRef.current);
+    };
+  }, [visible, originMode, originQuery, prox, places, recentSearches]);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (destTimerRef.current) clearTimeout(destTimerRef.current);
+    const q = destQuery.trim();
+    if (q.length < 2) {
+      setDestHits(buildLocalCommuteHits(q, places, recentSearches));
+      setDestSuggestLoading(false);
+      return;
+    }
+    setDestSuggestLoading(true);
+    const gen = ++destGenRef.current;
+    destTimerRef.current = setTimeout(() => {
+      void (async () => {
+        try {
+          const hits = await fetchCommuteAddressSuggestions(q, prox, places, recentSearches);
+          if (destGenRef.current !== gen) return;
+          setDestPick(null);
+          setDestPickIdx(null);
+          setDestHits(hits);
+        } finally {
+          if (destGenRef.current === gen) setDestSuggestLoading(false);
+        }
+      })();
+    }, 280);
+    return () => {
+      if (destTimerRef.current) clearTimeout(destTimerRef.current);
+    };
+  }, [visible, destQuery, prox, places, recentSearches]);
+
+  const refreshOriginNow = useCallback(async () => {
+    const q = originQuery.trim();
+    if (q.length < 2) {
+      setOriginHits(buildLocalCommuteHits(q, places, recentSearches));
+      return;
+    }
+    setOriginSuggestLoading(true);
     try {
-      const hits = await forwardGeocode(q, prox, 8);
+      const hits = await fetchCommuteAddressSuggestions(q, prox, places, recentSearches);
       setOriginPick(null);
       setOriginPickIdx(null);
       setOriginHits(hits);
-      if (hits.length === 0) Alert.alert('No matches', 'Try a fuller street address or city.');
     } finally {
-      setGeBusy(null);
+      setOriginSuggestLoading(false);
     }
-  }, [originQuery, prox]);
+  }, [originQuery, prox, places, recentSearches]);
 
-  const searchDest = useCallback(async () => {
+  const refreshDestNow = useCallback(async () => {
     const q = destQuery.trim();
-    if (q.length < 3) {
-      Alert.alert('Address', 'Enter at least 3 characters for the destination.');
+    if (q.length < 2) {
+      setDestHits(buildLocalCommuteHits(q, places, recentSearches));
       return;
     }
-    setGeBusy('dest');
+    setDestSuggestLoading(true);
     try {
-      const hits = await forwardGeocode(q, prox, 8);
+      const hits = await fetchCommuteAddressSuggestions(q, prox, places, recentSearches);
       setDestPick(null);
       setDestPickIdx(null);
       setDestHits(hits);
-      if (hits.length === 0) Alert.alert('No matches', 'Try a fuller street address or city.');
     } finally {
-      setGeBusy(null);
+      setDestSuggestLoading(false);
     }
-  }, [destQuery, prox]);
+  }, [destQuery, prox, places, recentSearches]);
 
   const submit = async () => {
     if (commuteCount >= commuteLimit) {
@@ -288,6 +377,10 @@ export default function AddCommuteModal({
 
         {originMode === 'address' ? (
           <View style={{ marginBottom: 12 }}>
+            <Text style={{ color: sub, fontSize: 11, marginBottom: 6 }}>
+              Type for suggestions — saved places, recent map picks, then Google/Mapbox results (location-biased when GPS
+              is available).
+            </Text>
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
               <TextInput
                 value={originQuery}
@@ -299,29 +392,44 @@ export default function AddCommuteModal({
                   { flex: 1, marginBottom: 0, color: text, borderColor: border, backgroundColor: cardBg },
                 ]}
               />
+              {originSuggestLoading ? <ActivityIndicator color={primary} /> : null}
               <TouchableOpacity
-                onPress={() => void searchOrigin()}
-                style={[styles.geoBtn, { backgroundColor: primary }]}
-                disabled={geBusy === 'origin'}
+                onPress={() => void refreshOriginNow()}
+                style={[styles.geoIconBtn, { borderColor: border, backgroundColor: cardBg }]}
+                accessibilityLabel="Refresh address suggestions"
               >
-                {geBusy === 'origin' ? <ActivityIndicator color="#fff" /> : <Text style={styles.geoBtnText}>Search</Text>}
+                <Ionicons name="refresh" size={20} color={primary} />
               </TouchableOpacity>
             </View>
             {originHits.map((h, i) => (
               <TouchableOpacity
-                key={`${h.lat}-${h.lng}-${i}`}
-                onPress={() => {
+                key={`o-${h.place_id || ''}-${h.lat}-${h.lng}-${i}`}
+                onPress={async () => {
+                  const resolved = await resolveCommutePlaceCoords(h);
+                  const latOk =
+                    Number.isFinite(resolved.lat) &&
+                    Number.isFinite(resolved.lng) &&
+                    (Math.abs(resolved.lat) > 1e-6 || Math.abs(resolved.lng) > 1e-6);
+                  if (!latOk) {
+                    Alert.alert('Location', 'Could not resolve this place. Try another suggestion.');
+                    return;
+                  }
                   setOriginPickIdx(i);
-                  setOriginPick(h);
+                  setOriginPick({ ...resolved, fromSavedPlaces: h.fromSavedPlaces });
                 }}
                 style={[
                   styles.hitRow,
                   { borderColor: originPickIdx === i ? primary : border, backgroundColor: cardBg },
                 ]}
               >
-                <Text style={{ color: text, fontWeight: '600' }} numberOfLines={2}>
-                  {h.address || h.name}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {h.fromSavedPlaces ? (
+                    <Ionicons name="bookmark" size={16} color={primary} accessibilityLabel="Saved place" />
+                  ) : null}
+                  <Text style={{ color: text, fontWeight: '600', flex: 1 }} numberOfLines={2}>
+                    {h.address || h.name}
+                  </Text>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
@@ -334,6 +442,9 @@ export default function AddCommuteModal({
         ) : null}
 
         <Text style={[styles.label, { color: sub }]}>Destination</Text>
+        <Text style={{ color: sub, fontSize: 11, marginBottom: 6 }}>
+          Same smart suggestions as the map search — type a few letters to see results.
+        </Text>
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }}>
           <TextInput
             value={destQuery}
@@ -345,26 +456,41 @@ export default function AddCommuteModal({
               { flex: 1, marginBottom: 0, color: text, borderColor: border, backgroundColor: cardBg },
             ]}
           />
+          {destSuggestLoading ? <ActivityIndicator color={primary} /> : null}
           <TouchableOpacity
-            onPress={() => void searchDest()}
-            style={[styles.geoBtn, { backgroundColor: primary }]}
-            disabled={geBusy === 'dest'}
+            onPress={() => void refreshDestNow()}
+            style={[styles.geoIconBtn, { borderColor: border, backgroundColor: cardBg }]}
+            accessibilityLabel="Refresh address suggestions"
           >
-            {geBusy === 'dest' ? <ActivityIndicator color="#fff" /> : <Text style={styles.geoBtnText}>Search</Text>}
+            <Ionicons name="refresh" size={20} color={primary} />
           </TouchableOpacity>
         </View>
         {destHits.map((h, i) => (
           <TouchableOpacity
-            key={`d-${h.lat}-${h.lng}-${i}`}
-            onPress={() => {
+            key={`d-${h.place_id || ''}-${h.lat}-${h.lng}-${i}`}
+            onPress={async () => {
+              const resolved = await resolveCommutePlaceCoords(h);
+              const latOk =
+                Number.isFinite(resolved.lat) &&
+                Number.isFinite(resolved.lng) &&
+                (Math.abs(resolved.lat) > 1e-6 || Math.abs(resolved.lng) > 1e-6);
+              if (!latOk) {
+                Alert.alert('Location', 'Could not resolve this place. Try another suggestion.');
+                return;
+              }
               setDestPickIdx(i);
-              setDestPick(h);
+              setDestPick({ ...resolved, fromSavedPlaces: h.fromSavedPlaces });
             }}
             style={[styles.hitRow, { borderColor: destPickIdx === i ? primary : border, backgroundColor: cardBg }]}
           >
-            <Text style={{ color: text, fontWeight: '600' }} numberOfLines={2}>
-              {h.address || h.name}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {h.fromSavedPlaces ? (
+                <Ionicons name="bookmark" size={16} color={primary} accessibilityLabel="Saved place" />
+              ) : null}
+              <Text style={{ color: text, fontWeight: '600', flex: 1 }} numberOfLines={2}>
+                {h.address || h.name}
+              </Text>
+            </View>
           </TouchableOpacity>
         ))}
 
@@ -439,15 +565,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   hitRow: { padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 8 },
-  geoBtn: {
+  geoIconBtn: {
     borderRadius: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 12,
-    minWidth: 88,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  geoBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   dayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   dayChip: {
     width: 36,
