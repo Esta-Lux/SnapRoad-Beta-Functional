@@ -65,10 +65,20 @@ def _persist_user_fields(user_id: str, updates: dict) -> None:
 
 
 def _normalize_earned_badge_ids(raw: Any) -> set[int]:
+    """Parse profiles.badges_earned from Supabase JSONB (list of ints, or legacy shapes)."""
     out: set[int] = set()
+    if raw is None:
+        return out
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            return out
     if not isinstance(raw, list):
         return out
     for x in raw:
+        if isinstance(x, dict):
+            x = x.get("id") if x.get("id") is not None else x.get("badge_id")
         try:
             out.add(int(x))
         except (TypeError, ValueError):
@@ -106,7 +116,7 @@ def sync_earned_driver_badges(user_id: str) -> None:
     profile = sb_get_profile(user_id) or {}
     user_row = _user_state(user_id)
     merged: dict[str, Any] = {**dict(profile), **dict(user_row)}
-    earned_prev = _normalize_earned_badge_ids(profile.get("badges_earned"))
+    earned_prev = _normalize_earned_badge_ids(profile.get("badges_earned") or [])
     new_set = set(earned_prev)
     for b in ALL_BADGES:
         bid = int(b["id"])
@@ -241,13 +251,17 @@ def _badge_progress_pct(badge: dict, profile: dict, user: dict, earned: bool) ->
 @router.get("/badges")
 def get_badges(user: CurrentUser):
     user_id = str(user.get("id") or current_user_id)
+    try:
+        sync_earned_driver_badges(user_id)
+    except Exception:
+        logger.warning("sync_earned_driver_badges on get_badges failed", exc_info=True)
     user_row = _user_state(user_id)
     profile = {}
     try:
         profile = sb_get_profile(user_id) or {}
     except Exception:
         profile = {}
-    earned = _normalize_earned_badge_ids(user_row.get("badges_earned", []))
+    earned = _normalize_earned_badge_ids(user_row.get("badges_earned") or [])
     badges = []
     for b in ALL_BADGES:
         is_earned = int(b["id"]) in earned
@@ -386,12 +400,16 @@ def get_challenge_history(
 def get_rewards_summary(user: CurrentUser):
     """Single payload for driver Rewards top cards (gems, trips, badges, multiplier)."""
     user_id = str(user.get("user_id") or user.get("id") or current_user_id).strip()
+    try:
+        sync_earned_driver_badges(user_id)
+    except Exception:
+        logger.warning("sync_earned_driver_badges on rewards/summary failed", exc_info=True)
     profile = sb_get_profile(user_id) or {}
     gems = int(profile.get("gems") or 0)
     total_trips = int(profile.get("total_trips") or 0)
     is_premium = profile_row_is_premium(profile)
     user_row = _user_state(user_id)
-    earned = _normalize_earned_badge_ids(user_row.get("badges_earned", []))
+    earned = _normalize_earned_badge_ids(user_row.get("badges_earned") or [])
     badges_earned = len(earned)
     badges_total = len(ALL_BADGES)
     return {

@@ -72,7 +72,9 @@ export default function NearbyOffersPickerSheet({
             </TouchableOpacity>
           </View>
           <Text style={[styles.sub, { color: colors.textSecondary }]}>
-            {sorted.length} partner {sorted.length === 1 ? 'offer' : 'offers'} near you — tap for details.
+            {sorted.length === 0
+              ? 'No partner offers within about 20 miles — zoom closer or check back after you move.'
+              : `${sorted.length} partner ${sorted.length === 1 ? 'offer' : 'offers'} within ~20 miles — tap for details.`}
           </Text>
           <FlatList
             data={sorted}
@@ -93,8 +95,8 @@ export default function NearbyOffersPickerSheet({
                   }}
                   activeOpacity={0.82}
                 >
-                  <View style={[styles.iconWrap, { backgroundColor: `${colors.primary}18` }]}>
-                    <Ionicons name="storefront-outline" size={22} color={colors.primary} />
+                  <View style={[styles.iconWrap, { backgroundColor: `${colors.warning}22` }]}>
+                    <Ionicons name="diamond-outline" size={22} color={colors.warning} />
                   </View>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[styles.biz, { color: colors.text }]} numberOfLines={1}>

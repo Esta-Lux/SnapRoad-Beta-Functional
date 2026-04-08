@@ -120,6 +120,8 @@ export default function ProfileScreen() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [showDriverSnapshot, setShowDriverSnapshot] = useState(false);
   const [showPlaceAlertsDashboard, setShowPlaceAlertsDashboard] = useState(false);
+  const scrollRef = useRef<ScrollView | null>(null);
+  const commuteSectionY = useRef(0);
   const [weeklyRecap, setWeeklyRecap] = useState<ProfileWeeklyRecap>({
     totalTrips: 0,
     totalMiles: 0,
@@ -413,6 +415,17 @@ export default function ProfileScreen() {
   }, [route.params?.openPlaceAlerts, navigation]);
 
   useEffect(() => {
+    if (!route.params?.openCommuteReminders) return;
+    setProfileTab('overview');
+    navigation.setParams({ openCommuteReminders: undefined });
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({ y: Math.max(0, commuteSectionY.current - 20), animated: true });
+      }, 400);
+    });
+  }, [route.params?.openCommuteReminders, navigation]);
+
+  useEffect(() => {
     if (user?.vehicle_height_meters && user.vehicle_height_meters > 0) {
       setTallVehicle(true);
       setVehicleHeight(String(user.vehicle_height_meters));
@@ -660,6 +673,7 @@ export default function ProfileScreen() {
         keyboardVerticalOffset={insets.top}
       >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -775,25 +789,31 @@ export default function ProfileScreen() {
               />
             </View>
 
-            <SectionHeader title={`Commute reminders (${commutes.length}/${commuteLimit})`} isLight={isLight} />
-            <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 6, marginTop: -6, lineHeight: 16 }}>
-              Recurring commute routes with typical leave times. Use Place alerts above for one-off destinations and richer leave-time options.
-            </Text>
-            <CommuteRoutesSection
-              cardBg={cardBg}
-              text={text}
-              sub={sub}
-              border={colors.border}
-              primary={colors.primary}
-              routes={commutes}
-              loading={initialLoading}
-              limit={commuteLimit}
-              onDelete={handleDeleteCommute}
-              onAdd={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowAddCommute(true);
+            <View
+              onLayout={(e) => {
+                commuteSectionY.current = e.nativeEvent.layout.y;
               }}
-            />
+            >
+              <SectionHeader title={`Commute reminders (${commutes.length}/${commuteLimit})`} isLight={isLight} />
+              <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 6, marginTop: -6, lineHeight: 16 }}>
+                Recurring commute routes with typical leave times. Use Place alerts above for one-off destinations and richer leave-time options.
+              </Text>
+              <CommuteRoutesSection
+                cardBg={cardBg}
+                text={text}
+                sub={sub}
+                border={colors.border}
+                primary={colors.primary}
+                routes={commutes}
+                loading={initialLoading}
+                limit={commuteLimit}
+                onDelete={handleDeleteCommute}
+                onAdd={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowAddCommute(true);
+                }}
+              />
+            </View>
           </>
         )}
 

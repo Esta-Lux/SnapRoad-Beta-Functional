@@ -29,6 +29,7 @@ export type HamburgerMenuTarget =
   | 'Social'
   | 'Convoy'
   | 'PlaceAlerts'
+  | 'CommuteAlerts'
   | 'Profile'
   | 'Help';
 
@@ -69,6 +70,12 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
       label: 'Place alerts',
       accent: '#3B82F6',
       action: () => runAfterMenuClose(onClose, () => onNavigate('PlaceAlerts')),
+    },
+    {
+      icon: 'navigate-outline',
+      label: 'Commute alerts',
+      accent: '#10B981',
+      action: () => runAfterMenuClose(onClose, () => onNavigate('CommuteAlerts')),
     },
     {
       icon: 'share-social-outline',

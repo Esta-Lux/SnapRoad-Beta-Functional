@@ -307,6 +307,11 @@ type CategoryExploreState = {
   loading: boolean;
 };
 
+/** GET /api/offers/nearby uses km; ~20 mi driving radius cap for fetches (~32.2 km). */
+const OFFERS_NEARBY_RADIUS_KM = 32.2;
+/** Map + “nearby” sheet only recommend offers within this distance (meters). */
+const RECOMMENDED_OFFER_MAX_METERS = 20 * 1609.34;
+
 // ═════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
@@ -517,6 +522,14 @@ export default function MapScreen() {
   const [savedPlaces, setSavedPlaces] = useState<SavedLocation[]>([]);
   const [activeChip, setActiveChip] = useState<string>('favorites');
   const [nearbyOffers, setNearbyOffers] = useState<Offer[]>([]);
+  const recommendedNearbyOffers = useMemo(() => {
+    return nearbyOffers.filter((o) => {
+      const la = Number(o.lat);
+      const lo = Number(o.lng);
+      if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
+      return haversineMeters(location.lat, location.lng, la, lo) <= RECOMMENDED_OFFER_MAX_METERS;
+    });
+  }, [nearbyOffers, location.lat, location.lng]);
 
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
@@ -800,7 +813,7 @@ export default function MapScreen() {
     const rLng = Math.round(location.lng * 100);
     if (rLat === 0 && rLng === 0) return;
     api
-      .get<any>(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}&radius=40`)
+      .get<any>(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}&radius=${OFFERS_NEARBY_RADIUS_KM}`)
       .then((r) => {
         if (!r.success) {
           logMapDataIssue('GET /api/offers/nearby', r.error);
@@ -813,8 +826,8 @@ export default function MapScreen() {
   }, [Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
   useEffect(() => {
-    if (!nearbyOffers.length) return;
-    for (const offer of nearbyOffers) {
+    if (!recommendedNearbyOffers.length) return;
+    for (const offer of recommendedNearbyOffers) {
       const key = String(offer.id);
       if (trackedOfferViewsRef.current.has(key)) continue;
       trackedOfferViewsRef.current.add(key);
@@ -825,11 +838,11 @@ export default function MapScreen() {
         })
         .catch((e) => logMapDataIssue(`POST /api/offers/${offer.id}/view`, e));
     }
-  }, [nearbyOffers, location.lat, location.lng]);
+  }, [recommendedNearbyOffers, location.lat, location.lng]);
 
   useEffect(() => {
-    if (!nearbyOffers.length) return;
-    for (const offer of nearbyOffers) {
+    if (!recommendedNearbyOffers.length) return;
+    for (const offer of recommendedNearbyOffers) {
       const key = String(offer.id);
       if (trackedOfferVisitsRef.current.has(key)) continue;
       const distance = haversineMeters(location.lat, location.lng, offer.lat ?? 0, offer.lng ?? 0);
@@ -1221,8 +1234,8 @@ export default function MapScreen() {
 
   /** Voice offer hints during navigation (same TTS stack as turn-by-turn). */
   useEffect(() => {
-    if (!nav.isNavigating || !nearbyOffers.length) return;
-    const ordered = [...nearbyOffers].sort((a, b) => {
+    if (!nav.isNavigating || !recommendedNearbyOffers.length) return;
+    const ordered = [...recommendedNearbyOffers].sort((a, b) => {
       const da = haversineMeters(location.lat, location.lng, a.lat ?? 0, a.lng ?? 0);
       const db = haversineMeters(location.lat, location.lng, b.lat ?? 0, b.lng ?? 0);
       return da - db;
@@ -1238,7 +1251,7 @@ export default function MapScreen() {
       speak(`Orion: SnapRoad offer nearby — ${name}.`, 'normal', drivingMode);
       break;
     }
-  }, [nav.isNavigating, nearbyOffers, location.lat, location.lng, drivingMode]);
+  }, [nav.isNavigating, recommendedNearbyOffers, location.lat, location.lng, drivingMode]);
 
   // Report cards during navigation
   useEffect(() => {
@@ -2288,7 +2301,7 @@ export default function MapScreen() {
           )}
 
           {!nav.isNavigating && (
-            <OfferMarkers offers={nearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
+            <OfferMarkers offers={recommendedNearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
           )}
           {showIncidents && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
             if ((inc.upvotes ?? 0) < 0) return false;
@@ -2486,7 +2499,7 @@ export default function MapScreen() {
 
       <NearbyOffersPickerSheet
         visible={nearbyOffersPickerOpen}
-        offers={nearbyOffers}
+        offers={recommendedNearbyOffers}
         userLat={location.lat}
         userLng={location.lng}
         onClose={() => setNearbyOffersPickerOpen(false)}
@@ -3336,25 +3349,25 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      {!nav.isNavigating && !nav.showRoutePreview && !selectedPlace && !selectedPlaceId && nearbyOffers.length > 0 && (
+      {!nav.isNavigating && !nav.showRoutePreview && !selectedPlace && !selectedPlaceId && recommendedNearbyOffers.length > 0 && (
         <TouchableOpacity
           style={[s.offerPill, { bottom: 50 + insets.bottom, backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(30,30,46,0.92)', borderColor: colors.border }]}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (nearbyOffers.length === 1) {
-              setSelectedOffer(nearbyOffers[0]);
+            if (recommendedNearbyOffers.length === 1) {
+              setSelectedOffer(recommendedNearbyOffers[0]);
             } else {
               setNearbyOffersPickerOpen(true);
             }
           }}
           activeOpacity={0.88}
           accessibilityRole="button"
-          accessibilityLabel={`${nearbyOffers.length} offers nearby, open list`}
+          accessibilityLabel={`${recommendedNearbyOffers.length} gem offers within 20 miles, open list`}
         >
-          <Text style={{ fontSize: 14 }}>💎</Text>
-          <Text style={[s.offerPillT, { color: colors.text }]}>{nearbyOffers.length} offers nearby</Text>
+          <Ionicons name="diamond-outline" size={15} color={colors.warning} />
+          <Text style={[s.offerPillT, { color: colors.text }]}>{recommendedNearbyOffers.length} offers within 20 mi</Text>
           <View style={[s.offerBadge, { backgroundColor: colors.success }]}>
-            <Text style={s.offerBadgeT}>{nearbyOffers.length}</Text>
+            <Text style={s.offerBadgeT}>{recommendedNearbyOffers.length}</Text>
           </View>
           <Ionicons name="chevron-up" size={16} color={colors.textSecondary} style={{ marginLeft: 2 }} />
         </TouchableOpacity>
@@ -3608,10 +3621,15 @@ export default function MapScreen() {
           /* Menu already closed by HamburgerMenu before this runs (deferred). */
           if (screen === 'Profile' || screen === 'Help') {
             rnNav.navigate('Profile' as never);
-          } else           if (screen === 'PlaceAlerts') {
+          } else if (screen === 'PlaceAlerts') {
             (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Profile', {
               screen: 'ProfileMain',
               params: { openPlaceAlerts: true },
+            });
+          } else if (screen === 'CommuteAlerts') {
+            (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Profile', {
+              screen: 'ProfileMain',
+              params: { openCommuteReminders: true },
             });
           } else if (screen === 'Convoy') {
             if (!user?.isPremium) {
@@ -3707,7 +3725,7 @@ export default function MapScreen() {
           isPremium: user?.isPremium,
           favoritePlacesSummary: orionFavoriteSummary || undefined,
           currentRoute: orionCurrentRoute,
-          nearbyOffers: nearbyOffers.slice(0, 5).map((o) => ({
+          nearbyOffers: recommendedNearbyOffers.slice(0, 5).map((o) => ({
             id: o.id,
             title: o.business_name,
             partner_name: o.business_name,

@@ -1,45 +1,30 @@
 import React, { useMemo } from 'react';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { View, Pressable, StyleSheet, Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import type { Offer } from '../../types';
-import MapPinMarker from './MapPinMarker';
 
-/** Hide offer pins when zoomed out (same idea as traffic cameras). */
+/**
+ * Hide offer gems when zoomed out — keeps the map calm (traffic cameras stay visible at all zooms).
+ */
 const OFFER_MARKERS_MIN_ZOOM = 13.25;
 
 interface Props {
   offers: Offer[];
   onOfferTap?: (offer: Offer) => void;
-  /** Current map zoom; pins hidden below OFFER_MARKERS_MIN_ZOOM. */
   zoomLevel: number;
 }
 
-function tierFill(d: number): string {
-  if (d >= 20) return '#B45309';
-  if (d >= 10) return '#6D28D9';
-  if (d >= 5) return '#1D4ED8';
-  return '#166534';
+function tierColors(d: number): { inner: string; outer: string; border: string } {
+  if (d >= 20) return { inner: '#B45309', outer: 'rgba(245, 158, 11, 0.24)', border: 'rgba(255,255,255,0.85)' };
+  if (d >= 10) return { inner: '#6D28D9', outer: 'rgba(139, 92, 246, 0.22)', border: 'rgba(255,255,255,0.85)' };
+  if (d >= 5) return { inner: '#1D4ED8', outer: 'rgba(59, 130, 246, 0.22)', border: 'rgba(255,255,255,0.85)' };
+  return { inner: '#166534', outer: 'rgba(34, 197, 94, 0.2)', border: 'rgba(255,255,255,0.85)' };
 }
 
-function tierGradient(d: number): [string, string] {
-  if (d >= 20) return ['#F59E0B', '#B45309'];
-  if (d >= 10) return ['#8B5CF6', '#6D28D9'];
-  if (d >= 5) return ['#3B82F6', '#1D4ED8'];
-  return ['#22C55E', '#166534'];
-}
-
-function markerSize(offer: Offer): { disc: number; glow: number; icon: number } {
-  const boost = Math.max(1, Number(offer.boost_multiplier || 1))
-  const locationScale = Array.isArray(offer.allocated_locations) ? Math.min(2, offer.allocated_locations.length) : 1
-  const redemptionScale = offer.redemption_count ? Math.min(2, Math.floor(offer.redemption_count / 40)) : 0
-  const disc = Math.min(30, 18 + (boost - 1) * 1.5 + locationScale * 1.5 + redemptionScale)
-  return {
-    disc,
-    glow: disc + 8,
-    icon: Math.max(10, Math.round(disc * 0.44)),
-  }
-}
-
+/**
+ * Partner offers as compact MarkerView + Ionicons diamond (same footprint as traffic cameras).
+ */
 export default React.memo(function OfferMarkers({ offers, onOfferTap, zoomLevel }: Props) {
   const markers = useMemo(() => {
     const filtered = offers.filter((o) => {
@@ -53,30 +38,30 @@ export default React.memo(function OfferMarkers({ offers, onOfferTap, zoomLevel 
 
   if (!isMapAvailable() || !MapboxGL || !markers.length || zoomLevel < OFFER_MARKERS_MIN_ZOOM) return null;
   const MB = MapboxGL;
-  const pinScale = zoomLevel >= 15 ? 0.72 : zoomLevel >= 14 ? 0.64 : 0.58;
 
   return (
     <>
       {markers.map((offer) => {
-        const fill = tierFill(offer.discount_percent);
-        const size = markerSize(offer);
+        const { inner, outer, border } = tierColors(Number(offer.discount_percent ?? 0));
         return (
           <MB.MarkerView
             key={String(offer.id)}
             id={`sr-offer-${offer.id}`}
             coordinate={[offer.lng!, offer.lat!]}
-            anchor={{ x: 0.5, y: 1 }}
+            anchor={{ x: 0.5, y: 0.5 }}
             allowOverlap
           >
-            <MapPinMarker
-              compact
-              sizeScale={pinScale}
+            <Pressable
               onPress={() => onOfferTap?.(offer)}
-              gradientColors={tierGradient(offer.discount_percent)}
-              glowColor={`${fill}44`}
+              style={({ pressed }) => [styles.hit, pressed && styles.hitPressed]}
+              hitSlop={6}
             >
-              <MaterialCommunityIcons name="storefront-outline" size={size.icon} color="#fff" />
-            </MapPinMarker>
+              <View style={[styles.puck, { backgroundColor: outer, borderColor: border }]}>
+                <View style={[styles.puckInner, { backgroundColor: inner }]}>
+                  <Ionicons name="diamond" size={11} color="#FFFFFF" />
+                </View>
+              </View>
+            </Pressable>
           </MB.MarkerView>
         );
       })}
@@ -84,3 +69,32 @@ export default React.memo(function OfferMarkers({ offers, onOfferTap, zoomLevel 
   );
 });
 
+const styles = StyleSheet.create({
+  hit: { alignItems: 'center', justifyContent: 'center' },
+  hitPressed: { opacity: 0.88, transform: [{ scale: 0.96 }] },
+  puck: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1e3a8a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 3,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
+  },
+  puckInner: {
+    width: 22,
+    height: 22,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

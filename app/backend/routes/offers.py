@@ -748,6 +748,7 @@ def get_nearby_offers(
     auth_user: CurrentUser,
     lat: float = 39.9612,
     lng: float = -82.9988,
+    # `radius` is in kilometers (rough planar distance vs. user lat/lng, not driving miles).
     radius: Annotated[float, Query(ge=0.1, le=200)] = 10.0,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):

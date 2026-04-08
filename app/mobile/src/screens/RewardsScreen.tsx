@@ -32,7 +32,7 @@ import GemActivityDetailModal from '../components/rewards/GemActivityDetailModal
 import { rewardsStyles } from '../components/rewards/styles';
 import type { WalletTab, GemTx, UserOfferRedemption } from '../components/rewards/types';
 
-/** Product filter chips. `nearby` = ≤ 8 km. `food` / `restaurants` → backend `restaurant`. */
+/** Product filter chips. `nearby` = ≤ ~20 mi (~32 km) to match map recommendations. */
 const REWARDS_OFFER_FILTER_DEFS: { slug: string | null; label: string }[] = [
   { slug: null, label: 'All' },
   { slug: 'nearby', label: 'Nearby' },
@@ -47,7 +47,7 @@ const REWARDS_OFFER_FILTER_DEFS: { slug: string | null; label: string }[] = [
 function offerMatchesCategory(o: Offer, slug: string | null): boolean {
   if (slug == null) return true;
   const bt = String(o.business_type || 'other');
-  if (slug === 'nearby') return Number(o.distance_km ?? 999) <= 8;
+  if (slug === 'nearby') return Number(o.distance_km ?? 999) <= 32.2;
   if (slug === 'food' || slug === 'restaurants') return bt === 'restaurant';
   return bt === slug;
 }
@@ -144,7 +144,7 @@ export default function RewardsScreen() {
       const [profileRes, bRes, oRes, gRes, mineRes, sumRes] = await Promise.all([
         api.getProfile().catch(() => ({ success: false, data: null })),
         safeGet('/api/badges'),
-        safeGet(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=40`),
+        safeGet(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=32.2`),
         safeGet('/api/gems/history'),
         safeGet('/api/offers/my-redemptions'),
         safeGet('/api/rewards/summary'),
@@ -209,7 +209,7 @@ export default function RewardsScreen() {
 
   const refreshNearbyOffers = useCallback(async (lat: number, lng: number) => {
     try {
-      const res = await api.get<any>(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=40`);
+      const res = await api.get<any>(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=32.2`);
       const raw = res?.data?.data ?? res?.data ?? [];
       setOffers(Array.isArray(raw) ? raw : []);
     } catch {
