@@ -83,7 +83,8 @@ export function computeNavigationProgressFrame({
 }: ComputeNavigationProgressArgs): NavigationProgress | null {
   const cumulative = cumulativeRouteMeters(route);
   const prevSegment = previous?.snapped?.segmentIndex ?? 0;
-  let snap = snapToRoute(rawLocation, route, cumulative, prevSegment, 35);
+  /** Wider window reduces wrong-edge snaps on sharp corners before global re-anchor kicks in. */
+  let snap = snapToRoute(rawLocation, route, cumulative, prevSegment, 52);
   if (!snap) return null;
 
   if (tryGlobalReanchor) {
@@ -116,6 +117,8 @@ export function computeNavigationProgressFrame({
   if (speed < 1) alpha = 0.12;
   else if (speed < 6) alpha = 0.18;
   else alpha = 0.28;
+  if (snap.distanceMeters > 18) alpha = Math.min(0.52, alpha + 0.12);
+  if (snap.distanceMeters > 38) alpha = Math.min(0.6, alpha + 0.08);
 
   const displayCoord: RawLocation = {
     lat: prevDisplay.lat + (target.lat - prevDisplay.lat) * alpha,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Image,
   Platform, ActivityIndicator, Linking, Dimensions, FlatList, Share, Alert,
@@ -549,30 +549,30 @@ export default function PlaceDetailSheet({
 
   const weekdayLines = place?.hours?.length ? place.hours : place?.opening_hours?.weekday_text;
 
-  useEffect(() => {
-    if (
-      !place ||
-      lat == null ||
-      lng == null ||
-      !userLocation ||
-      !Number.isFinite(userLocation.lat) ||
-      !Number.isFinite(userLocation.lng)
-    ) {
-      setRouteSummary(null);
-      setRouteLoading(false);
-      return;
+  /** ~100m grid: raw GPS deps fire every tick and were wiping/reloading ETA constantly. */
+  const userOriginKey = useMemo(() => {
+    if (!userLocation || !Number.isFinite(userLocation.lat) || !Number.isFinite(userLocation.lng)) {
+      return '';
     }
-    if (
-      Math.abs(userLocation.lat) < 1e-5 &&
-      Math.abs(userLocation.lng) < 1e-5
-    ) {
+    if (Math.abs(userLocation.lat) < 1e-5 && Math.abs(userLocation.lng) < 1e-5) return '';
+    return `${userLocation.lat.toFixed(3)},${userLocation.lng.toFixed(3)}`;
+  }, [userLocation?.lat, userLocation?.lng]);
+
+  const routeDestRef = useRef('');
+  useEffect(() => {
+    if (lat == null || lng == null || !userOriginKey || !userLocation) {
       setRouteSummary(null);
       setRouteLoading(false);
       return;
     }
 
+    const destKey = `${placeId}|${lat}|${lng}`;
+    if (routeDestRef.current !== destKey) {
+      routeDestRef.current = destKey;
+      setRouteSummary(null);
+    }
+
     let cancelled = false;
-    setRouteSummary(null);
     setRouteLoading(true);
     (async () => {
       try {
@@ -583,16 +583,18 @@ export default function PlaceDetailSheet({
         );
         if (cancelled) return;
         if (!routes.length) {
-          setRouteSummary(null);
+          if (!cancelled) setRouteSummary(null);
           return;
         }
         const best = routes[0]!;
         const summary = routeSummaryFromMapboxMetersSeconds(best.distance, best.duration);
-        setRouteSummary({
-          durationText: summary.durationText,
-          distanceText: summary.distanceText,
-          arrivalTimeText: formatTime(summary.arrivalDate),
-        });
+        if (!cancelled) {
+          setRouteSummary({
+            durationText: summary.durationText,
+            distanceText: summary.distanceText,
+            arrivalTimeText: formatTime(summary.arrivalDate),
+          });
+        }
       } catch {
         if (!cancelled) setRouteSummary(null);
       } finally {
@@ -603,7 +605,7 @@ export default function PlaceDetailSheet({
     return () => {
       cancelled = true;
     };
-  }, [place, lat, lng, userLocation?.lat, userLocation?.lng, drivingMode, maxHeightMeters]);
+  }, [placeId, lat, lng, userOriginKey, drivingMode, maxHeightMeters, userLocation]);
 
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 50 }]} pointerEvents="box-none">

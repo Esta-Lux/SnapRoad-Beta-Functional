@@ -19,6 +19,14 @@ type Args = {
   drivingMode: DrivingMode;
 };
 
+/**
+ * Two spoken cues per maneuver: farther (~≤400m) and imminent (≤95m).
+ * Avoids stacking 3–4 distance buckets on every turn.
+ */
+const ADVANCE_MAX_M = 400;
+const ADVANCE_MIN_M = 95;
+const IMMINENT_M = 95;
+
 function buildUtterance(progress: NavigationProgress, metric: boolean): string | null {
   const step = progress.nextStep;
   if (!step || step.kind === 'arrive') return null;
@@ -41,18 +49,10 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
 
     const d = progress.nextStepDistanceMeters;
 
-    /** Extra early cue on multi-step legs (e.g. motorway before an exit). */
-    const longLeg = progress.followingStep != null;
-    const bucket =
-      d <= 60
-        ? 'final'
-        : d <= 150
-          ? 'near'
-          : d <= 400
-            ? 'prep'
-            : longLeg && d >= 800 && d <= 1400
-              ? 'early_prep'
-              : null;
+    let bucket: 'advance' | 'imminent' | null = null;
+    if (d <= IMMINENT_M) bucket = 'imminent';
+    else if (d <= ADVANCE_MAX_M && d > ADVANCE_MIN_M) bucket = 'advance';
+
     if (!bucket) return;
 
     const key = `${progress.nextStep.index}:${bucket}`;

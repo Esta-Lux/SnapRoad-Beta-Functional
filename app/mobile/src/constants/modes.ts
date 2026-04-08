@@ -111,7 +111,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     exploreZoom: 14,
     cameraPaddingBottom: 250,
 
-    speechRate: 0.95,
+    speechRate: 0.88,
     speechPitch: 0.95,
 
     lightPreset: 'dawn',
@@ -172,7 +172,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     exploreZoom: 15,
     cameraPaddingBottom: 280,
 
-    speechRate: 1.1,
+    speechRate: 1.02,
     speechPitch: 1.0,
 
     lightPreset: 'day',
@@ -235,7 +235,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     exploreZoom: 15.5,
     cameraPaddingBottom: 300,
 
-    speechRate: 1.25,
+    speechRate: 1.14,
     speechPitch: 1.05,
 
     lightPreset: 'dusk',

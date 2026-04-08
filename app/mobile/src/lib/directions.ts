@@ -233,6 +233,34 @@ export interface RawRoute {
   duration: number;
 }
 
+type MapboxLegStep = RawRoute['legs'][number]['steps'][number];
+
+/**
+ * Mapbox often leaves `maneuver.instruction` empty; banner + voice carry the real turn text.
+ */
+export function mapboxStepPrimaryInstruction(step: MapboxLegStep): string {
+  const direct = step.maneuver?.instruction?.trim();
+  if (direct) return direct;
+  const banners = step.bannerInstructions ?? step.banner_instructions ?? [];
+  for (const b of banners) {
+    const p = b?.primary;
+    if (p?.text?.trim()) return p.text.trim();
+    if (p?.components?.length) {
+      const joined = p.components
+        .map((c) => (typeof c?.text === 'string' ? c.text : ''))
+        .join('')
+        .trim();
+      if (joined) return joined;
+    }
+  }
+  const voice = step.voiceInstructions ?? step.voice_instructions ?? [];
+  for (const v of voice) {
+    const a = v?.announcement?.trim();
+    if (a) return a.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  return '';
+}
+
 export function parseMapboxDirectionsRoute(
   route: RawRoute,
   routeType?: DirectionsResult['routeType'],
@@ -250,7 +278,7 @@ export function parseMapboxDirectionsRoute(
     for (const step of leg.steps) {
       const g = step.geometry?.coordinates;
       steps.push({
-        instruction: step.maneuver?.instruction || '',
+        instruction: mapboxStepPrimaryInstruction(step),
         distance: formatDistance(step.distance),
         distanceMeters: step.distance,
         duration: formatDuration(step.duration),

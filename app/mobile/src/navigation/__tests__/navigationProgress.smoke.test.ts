@@ -91,7 +91,7 @@ test('computeNavigationProgressFrame: far from polyline flags off-route under ag
 
 test('computeNavigationProgressFrame: tryGlobalReanchor corrects snap when local window misses true corridor', () => {
   const routePts: Coordinate[] = [];
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 120; i++) {
     routePts.push({ lat: 40 + i * 0.0001, lng: -83.0 });
   }
   const navSteps = buildNavStepsFromDirections(
@@ -144,7 +144,7 @@ test('computeNavigationProgressFrame: tryGlobalReanchor corrects snap when local
   });
   assert.ok(stuckPrevious?.snapped);
   const jumped = {
-    lat: 40 + 72 * 0.0001,
+    lat: 40 + 95 * 0.0001,
     lng: -83.0,
     speedMps: 8,
     accuracy: 10,

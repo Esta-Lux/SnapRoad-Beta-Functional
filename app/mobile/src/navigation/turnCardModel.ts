@@ -62,6 +62,11 @@ export function buildActivePrimary(
 ): string {
   if (!nextStep) return '';
   const dest = destinationName?.trim() || '';
+  const instr = nextStep.instruction.replace(/\s+/g, ' ').trim();
+  if (instr.length > 3) {
+    const cap = instr.charAt(0).toUpperCase() + instr.slice(1);
+    return cap.length <= 88 ? cap : `${cap.slice(0, 86)}…`;
+  }
   const onto = nextStep.name?.trim() || (nextStep.maneuver === 'arrive' ? dest : '');
   const verb = maneuverWords(nextStep.maneuver);
   if (onto) {
@@ -70,7 +75,7 @@ export function buildActivePrimary(
     return `${verb} onto ${onto}`;
   }
   if (nextStep.maneuver === 'arrive' && dest) return `Arrive at ${dest}`;
-  return nextStep.instruction.replace(/\s+/g, ' ').trim();
+  return instr;
 }
 
 function stripCompassNoise(s: string): string {

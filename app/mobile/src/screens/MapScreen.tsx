@@ -2310,7 +2310,11 @@ export default function MapScreen() {
             visible
             androidRenderMode="normal"
             puckBearingEnabled
-            puckBearing={nav.isNavigating ? 'course' : 'heading'}
+            puckBearing={
+              nav.isNavigating && speed > 12
+                ? 'course'
+                : 'heading'
+            }
             pulsing={{ isEnabled: false }}
             scale={1.5}
           />
