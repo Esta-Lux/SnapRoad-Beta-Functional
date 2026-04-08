@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Dimensions,
-  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -232,6 +232,10 @@ export default function ProfileInsightsDashboard({
     void loadDrivingScore();
   }, [visible, loadDrivingScore]);
 
+  useEffect(() => {
+    if (!visible) setTripDetail(null);
+  }, [visible]);
+
   const chip = (id: TimeRangePreset, label: string) => (
     <TouchableOpacity
       key={id}
@@ -314,12 +318,15 @@ export default function ProfileInsightsDashboard({
   );
 
   return (
-    <>
     <SheetModal visible={visible} onClose={onClose} scrollable={false}>
+      {/* Single RN Modal only (SheetModal). Trip detail is an in-sheet overlay so touches are not lost to nested Modals. */}
+      <View style={[styles.insightsSheetBody, { height: winH * 0.88 }]}>
       <ScrollView
-        style={{ maxHeight: winH * 0.88 }}
+        style={styles.insightsScroll}
+        contentContainerStyle={tripDetail ? styles.insightsScrollDimmed : undefined}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        scrollEnabled={!tripDetail}
       >
         <View style={{ marginBottom: spacing.md, flexDirection: 'row', alignItems: 'flex-start' }}>
           <Text style={[typography.h2, { color: colors.text, flex: 1 }]}>Insights & Recap</Text>
@@ -542,9 +549,9 @@ export default function ProfileInsightsDashboard({
               No trips in this range yet.
             </Text>
           ) : (
-            filteredTrips.slice(0, 25).map((trip) => (
+            filteredTrips.slice(0, 25).map((trip, idx) => (
               <TouchableOpacity
-                key={trip.id}
+                key={`${trip.id}-${idx}`}
                 activeOpacity={0.85}
                 onPress={() => setTripDetail(trip)}
                 style={[
@@ -688,76 +695,77 @@ export default function ProfileInsightsDashboard({
           </View>
         ) : null}
       </ScrollView>
-    </SheetModal>
-    <Modal
-      visible={tripDetail != null}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setTripDetail(null)}
-    >
-      <Pressable style={styles.tripOverlay} onPress={() => setTripDetail(null)}>
-        <Pressable
-          style={[styles.tripDetailCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={(e) => e.stopPropagation()}
+
+      {tripDetail ? (
+        <View
+          style={[
+            styles.tripDetailLayer,
+            Platform.OS === 'android' ? { elevation: 30 } : null,
+          ]}
+          pointerEvents="box-none"
         >
-          {tripDetail ? (
-            <>
-              <Text style={[typography.h2, { color: colors.text, marginBottom: 8 }]}>Trip detail</Text>
-              <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 12 }}>
-                {tripDetail.date} · {tripDetail.time}
-              </Text>
-              <View style={styles.tripDetailRow}>
-                <Ionicons name="navigate-outline" size={18} color={colors.primary} />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>From</Text>
-                  <Text style={{ color: colors.text, fontWeight: '700' }}>{tripDetail.origin}</Text>
-                </View>
+          <Pressable
+            style={styles.tripOverlayInner}
+            onPress={() => setTripDetail(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss trip detail"
+          />
+          <View style={[styles.tripDetailCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[typography.h2, { color: colors.text, marginBottom: 8 }]}>Trip detail</Text>
+            <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 12 }}>
+              {tripDetail.date} · {tripDetail.time}
+            </Text>
+            <View style={styles.tripDetailRow}>
+              <Ionicons name="navigate-outline" size={18} color={colors.primary} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>From</Text>
+                <Text style={{ color: colors.text, fontWeight: '700' }}>{tripDetail.origin}</Text>
               </View>
-              <View style={styles.tripDetailRow}>
-                <Ionicons name="flag-outline" size={18} color={colors.primary} />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>To</Text>
-                  <Text style={{ color: colors.text, fontWeight: '700' }}>{tripDetail.destination}</Text>
-                </View>
+            </View>
+            <View style={styles.tripDetailRow}>
+              <Ionicons name="flag-outline" size={18} color={colors.primary} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>To</Text>
+                <Text style={{ color: colors.text, fontWeight: '700' }}>{tripDetail.destination}</Text>
               </View>
-              <View style={[styles.tripStatGrid, { borderColor: colors.border }]}>
-                <View style={styles.tripStatCell}>
-                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Distance</Text>
-                  <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
-                    {Number(tripDetail.distance_miles ?? 0).toFixed(1)} mi
-                  </Text>
-                </View>
-                <View style={styles.tripStatCell}>
-                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Duration</Text>
-                  <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
-                    {tripDetail.duration_minutes ?? 0} min
-                  </Text>
-                </View>
-                <View style={styles.tripStatCell}>
-                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Safety</Text>
-                  <Text style={{ color: colors.success, fontSize: 18, fontWeight: '900' }}>
-                    {tripDetail.safety_score ?? 0}
-                  </Text>
-                </View>
-                <View style={styles.tripStatCell}>
-                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Gems</Text>
-                  <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
-                    {tripDetail.gems_earned ?? 0}
-                  </Text>
-                </View>
+            </View>
+            <View style={[styles.tripStatGrid, { borderColor: colors.border }]}>
+              <View style={styles.tripStatCell}>
+                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Distance</Text>
+                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
+                  {Number(tripDetail.distance_miles ?? 0).toFixed(1)} mi
+                </Text>
               </View>
-              <TouchableOpacity
-                onPress={() => setTripDetail(null)}
-                style={[styles.tripDetailClose, { backgroundColor: colors.primary }]}
-              >
-                <Text style={{ color: '#fff', fontWeight: '800' }}>Close</Text>
-              </TouchableOpacity>
-            </>
-          ) : null}
-        </Pressable>
-      </Pressable>
-    </Modal>
-    </>
+              <View style={styles.tripStatCell}>
+                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Duration</Text>
+                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
+                  {tripDetail.duration_minutes ?? 0} min
+                </Text>
+              </View>
+              <View style={styles.tripStatCell}>
+                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Safety</Text>
+                <Text style={{ color: colors.success, fontSize: 18, fontWeight: '900' }}>
+                  {tripDetail.safety_score ?? 0}
+                </Text>
+              </View>
+              <View style={styles.tripStatCell}>
+                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Gems</Text>
+                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
+                  {tripDetail.gems_earned ?? 0}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={() => setTripDetail(null)}
+              style={[styles.tripDetailClose, { backgroundColor: colors.primary }]}
+            >
+              <Text style={{ color: '#fff', fontWeight: '800' }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+      </View>
+    </SheetModal>
   );
 }
 
@@ -862,11 +870,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tripOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+  insightsSheetBody: {
+    position: 'relative',
+    width: '100%',
+  },
+  insightsScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  insightsScrollDimmed: {
+    opacity: 0.35,
+  },
+  tripDetailLayer: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
-    padding: 24,
+    paddingHorizontal: 12,
+    zIndex: 50,
+  },
+  tripOverlayInner: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   tripDetailCard: {
     borderRadius: 16,
