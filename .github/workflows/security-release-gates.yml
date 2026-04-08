@@ -42,7 +42,8 @@ jobs:
           cache-dependency-path: app/backend/requirements.txt
       - run: pip install -r requirements.txt
       - run: pip install pip-audit bandit
-      - run: pip-audit
+      # Fail on any PyPI advisory in locked deps (same as validate.yml backend job).
+      - run: pip-audit -r requirements.txt
       - run: bandit -q -c bandit.yaml -r routes services main.py config.py
 
   npm-audit:
@@ -59,13 +60,13 @@ jobs:
             app/mobile/package-lock.json
       # Root is dev-tooling only (no production npm deps); include devDependencies so transitive issues (e.g. tunnelmole → multer) are visible.
       - name: npm audit (repo root)
-        run: npm ci && npm audit --audit-level=high
+        run: npm ci && npm audit --audit-level=moderate
       - name: npm audit (frontend)
         working-directory: app/frontend
-        run: npm ci && npm audit --omit=dev --audit-level=high
+        run: npm ci && npm audit --omit=dev --audit-level=moderate
       - name: npm audit (mobile)
         working-directory: app/mobile
-        run: npm ci && npm audit --omit=dev --audit-level=high
+        run: npm ci && npm audit --omit=dev --audit-level=moderate
 
   secret-scan:
     runs-on: ubuntu-latest

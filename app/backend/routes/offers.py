@@ -367,7 +367,7 @@ def complete_offer_redemption(
             try:
                 sb.table("redemptions").update(
                     {"scanned_by_user_id": scanned_by_user_id, "qr_nonce": qr_nonce}
-                ).eq("id", rid).execute()
+                ).eq("id", rid).eq("user_id", user_id).execute()
             except Exception:
                 logger.exception("redemption scan update failed")
                 return {"success": False, "message": "Could not record scan"}
@@ -516,7 +516,7 @@ def complete_offer_redemption(
 
     if not debited:
         try:
-            sb.table("redemptions").delete().eq("id", redemption_id).execute()
+            sb.table("redemptions").delete().eq("id", redemption_id).eq("user_id", user_id).execute()
         except Exception:
             logger.warning("rollback redemption delete failed for %s", redemption_id)
         return {"success": False, "message": "Could not deduct gems"}

@@ -4,8 +4,10 @@ import os
 from typing import Optional
 from urllib.parse import urlparse
 
+from jose import jwt as jose_jwt
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from starlette.requests import Request
 
 # Doc/template hostnames that are not real Redis endpoints — using them makes every @limiter route 500.
 _REDIS_PLACEHOLDER_HOSTS = frozenset(
@@ -36,6 +38,36 @@ def _limiter_storage_uri() -> Optional[str]:
     if not host or host in _REDIS_PLACEHOLDER_HOSTS:
         return None
     return raw
+
+
+def get_mapbox_rate_limit_key(request: Request) -> str:
+    """
+    Per-user key when Bearer token present (verified SnapRoad JWT or unverified sub for Supabase tokens).
+    Falls through to IP only if no usable subject (before auth dependency rejects unauthenticated).
+    """
+    ip = get_remote_address(request)
+    auth = (request.headers.get("authorization") or "").strip()
+    if not auth.lower().startswith("bearer "):
+        return f"mapbox:ip:{ip}"
+    raw = auth[7:].strip()
+    if not raw:
+        return f"mapbox:ip:{ip}"
+    try:
+        from middleware.auth import _decode_snaproad_access_token
+
+        snap = _decode_snaproad_access_token(raw)
+        if snap and snap.get("id"):
+            return f"mapbox:uid:{snap['id']}"
+    except Exception:
+        pass
+    try:
+        claims = jose_jwt.get_unverified_claims(raw)
+        sub = claims.get("sub")
+        if sub:
+            return f"mapbox:uid:{sub}"
+    except Exception:
+        pass
+    return f"mapbox:ip:{ip}"
 
 
 limiter = Limiter(

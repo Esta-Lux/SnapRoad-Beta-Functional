@@ -424,8 +424,10 @@ function RootNavigator() {
   React.useEffect(() => {
     const subReceive = Notifications.addNotificationReceivedListener((notification) => {
       const data = notification.request.content.data as Record<string, unknown> | undefined;
-      if (data?.type === 'commute_alert') {
-        const title = notification.request.content.title ?? 'Time to head out';
+      if (data?.type === 'commute_alert' || data?.type === 'commute_traffic_alert') {
+        const title =
+          notification.request.content.title ??
+          (data?.type === 'commute_traffic_alert' ? 'Traffic update' : 'Time to head out');
         const body = notification.request.content.body ?? '';
         Alert.alert(title, body, [{ text: 'OK' }], { cancelable: true });
       }

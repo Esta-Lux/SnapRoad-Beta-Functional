@@ -13,7 +13,7 @@ from services.mock_data import (
     users_db, current_user_id, trips_db, fuel_logs, FUEL_PRICES, XP_CONFIG,
     create_new_user,
 )
-from routes.gamification import add_xp_to_user
+from routes.gamification import add_xp_to_user, recompute_profile_level_fields, sync_earned_driver_badges
 from config import ENVIRONMENT
 from services.llm_client import chat_completion_model, get_sync_openai_client
 from database import get_supabase
@@ -547,6 +547,11 @@ def _persist_trip_and_update_profile(
                     "total_trips": int(p.get("total_trips") or 0) + 1,
                     "total_miles": round(float(p.get("total_miles") or 0) + float(distance), 2),
                 }).eq("id", user_id).execute()
+                try:
+                    recompute_profile_level_fields(user_id)
+                    sync_earned_driver_badges(user_id)
+                except Exception:
+                    _trips_log.warning("post-trip level/badge sync failed for user_id=%s", user_id, exc_info=True)
             else:
                 _trips_log.warning("No profile row for user_id=%s after trip insert; skipping counter update", user_id)
             return True

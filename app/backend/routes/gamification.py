@@ -64,6 +64,60 @@ def _persist_user_fields(user_id: str, updates: dict) -> None:
             raise HTTPException(status_code=503, detail="Gamification persistence unavailable")
 
 
+def _normalize_earned_badge_ids(raw: Any) -> set[int]:
+    out: set[int] = set()
+    if not isinstance(raw, list):
+        return out
+    for x in raw:
+        try:
+            out.add(int(x))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def recompute_profile_level_fields(user_id: str) -> None:
+    """Recompute level and XP bar fields from total XP (e.g. after /trips/complete increments xp)."""
+    profile = sb_get_profile(user_id) or {}
+    new_xp = max(0, int(profile.get("xp") or 0))
+    max_lv = int(XP_CONFIG["max_level"])
+    new_level = 1
+    xp_threshold = 0
+    for lvl in range(2, max_lv + 1):
+        xp_needed = XP_CONFIG["base_xp_to_level"] + (lvl - 2) * XP_CONFIG["xp_increment"]
+        xp_threshold += xp_needed
+        if new_xp >= xp_threshold:
+            new_level = lvl
+        else:
+            break
+    new_level = min(new_level, max_lv)
+    if new_level < max_lv:
+        xp_to_next = XP_CONFIG["base_xp_to_level"] + (new_level - 1) * XP_CONFIG["xp_increment"]
+        xp_at_current_level = calculate_xp_for_level(new_level)
+        xp_progress = max(0, new_xp - xp_at_current_level)
+        updates = {"level": new_level, "xp_to_next_level": int(xp_to_next), "xp_progress": int(xp_progress)}
+    else:
+        updates = {"level": new_level, "xp_to_next_level": 0, "xp_progress": 0}
+    _persist_user_fields(user_id, updates)
+
+
+def sync_earned_driver_badges(user_id: str) -> None:
+    """Unlock ALL_BADGES when profile stats meet requirements; writes profiles.badges_earned."""
+    profile = sb_get_profile(user_id) or {}
+    user_row = _user_state(user_id)
+    merged: dict[str, Any] = {**dict(profile), **dict(user_row)}
+    earned_prev = _normalize_earned_badge_ids(profile.get("badges_earned"))
+    new_set = set(earned_prev)
+    for b in ALL_BADGES:
+        bid = int(b["id"])
+        prog = _badge_progress_pct(b, profile, merged, bid in new_set)
+        if prog >= 100:
+            new_set.add(bid)
+    if new_set == earned_prev:
+        return
+    _persist_user_fields(user_id, {"badges_earned": sorted(new_set)})
+
+
 def add_xp_to_user(user_id: str, xp_amount: int) -> dict:
     user = _user_state(user_id)
     old_level = user.get("level", 1)
@@ -92,6 +146,10 @@ def add_xp_to_user(user_id: str, xp_amount: int) -> dict:
         updates["xp_to_next_level"] = 0
         updates["xp_progress"] = 0
     _persist_user_fields(user_id, updates)
+    try:
+        sync_earned_driver_badges(user_id)
+    except Exception:
+        logger.warning("sync_earned_driver_badges after XP failed", exc_info=True)
 
     level_change = new_level - old_level
     return {"old_level": old_level, "new_level": new_level, "level_change": level_change, "leveled_up": level_change > 0, "leveled_down": level_change < 0, "xp_gained": xp_amount, "total_xp": new_xp, "xp_to_next_level": updates.get("xp_to_next_level", 0)}
@@ -142,10 +200,11 @@ def get_xp_status(user: CurrentUser):
     level = user.get("level", 1)
     xp = user.get("xp", 0)
     xp_at_current = calculate_xp_for_level(level)
-    xp_to_next = calculate_xp_to_next_level(level) if level < 99 else 0
+    max_lv = int(XP_CONFIG.get("max_level", 100))
+    xp_to_next = calculate_xp_to_next_level(level) if level < max_lv else 0
     xp_progress = xp - xp_at_current
     progress_percent = (xp_progress / xp_to_next * 100) if xp_to_next > 0 else 100
-    return {"success": True, "data": {"level": level, "total_xp": xp, "xp_progress": xp_progress, "xp_to_next_level": xp_to_next, "progress_percent": round(progress_percent, 1), "is_max_level": level >= 99}}
+    return {"success": True, "data": {"level": level, "total_xp": xp, "xp_progress": xp_progress, "xp_to_next_level": xp_to_next, "progress_percent": round(progress_percent, 1), "is_max_level": level >= max_lv}}
 
 
 @router.get("/xp/config")
@@ -171,6 +230,8 @@ def _badge_progress_pct(badge: dict, profile: dict, user: dict, earned: bool) ->
         cur = float(merged.get("safety_score") or 0)
     elif rtype == "streak":
         cur = float(merged.get("safe_drive_streak") or merged.get("streak") or 0)
+    elif rtype == "level":
+        cur = float(merged.get("level") or 1)
     else:
         cur = 0.0
     return int(max(0, min(100, round(100 * cur / req))))
@@ -186,10 +247,10 @@ def get_badges(user: CurrentUser):
         profile = sb_get_profile(user_id) or {}
     except Exception:
         profile = {}
-    earned = set(user_row.get("badges_earned", []))
+    earned = _normalize_earned_badge_ids(user_row.get("badges_earned", []))
     badges = []
     for b in ALL_BADGES:
-        is_earned = b["id"] in earned
+        is_earned = int(b["id"]) in earned
         progress = _badge_progress_pct(b, profile, user_row, is_earned)
         badges.append({
             **b,
@@ -267,7 +328,9 @@ def accept_challenge(challenge_id: str, auth_user: CurrentUser):
         if c:
             result = _deduct_stake_and_activate(user_id, c)
             try:
-                get_supabase().table("challenges").update({"status": "active"}).eq("id", c.get("id")).execute()
+                get_supabase().table("challenges").update({"status": "active"}).eq("id", c.get("id")).eq(
+                    "opponent_id", user_id
+                ).execute()
             except Exception as e:
                 logger.warning("failed to update challenge status to active: %s", e)
             return result
@@ -328,7 +391,7 @@ def get_rewards_summary(user: CurrentUser):
     total_trips = int(profile.get("total_trips") or 0)
     is_premium = profile_row_is_premium(profile)
     user_row = _user_state(user_id)
-    earned = set(user_row.get("badges_earned", []))
+    earned = _normalize_earned_badge_ids(user_row.get("badges_earned", []))
     badges_earned = len(earned)
     badges_total = len(ALL_BADGES)
     return {

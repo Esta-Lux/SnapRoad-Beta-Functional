@@ -1,17 +1,25 @@
 """Production saved commute routes (A→B) with scheduled alert dispatch."""
 
+import logging
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from database import get_supabase
 from limiter import limiter
 from middleware.auth import get_current_user
+from services.commute_traffic_mapbox import should_notify_traffic_delay, traffic_vs_baseline_seconds
 from services.expo_push import send_expo_push
+from services.internal_request_auth import verify_commute_internal_request
+from services.supabase_service import sb_get_profile
+from services.premium_access import profile_row_is_premium
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/commute-routes", tags=["commute_routes"])
 
@@ -188,14 +196,14 @@ def _parse_hhmm(s: str) -> Optional[tuple[int, int]]:
 
 
 @router.post("/internal/dispatch")
-def dispatch_commute_alerts(
-    request: Request,
-    x_commute_dispatch_secret: Optional[str] = Header(None, alias="X-Commute-Dispatch-Secret"),
-):
-    """Cron/worker: send push alerts when leave window approaches. Secured by COMMUTE_DISPATCH_SECRET."""
-    expected = (os.getenv("COMMUTE_DISPATCH_SECRET") or "").strip()
-    if not expected or x_commute_dispatch_secret != expected:
-        raise HTTPException(status_code=403, detail="Forbidden")
+async def dispatch_commute_alerts(request: Request):
+    """Cron/worker: send push alerts when leave window approaches.
+
+    Auth: HMAC-SHA256 over ``{unix_ts}\\n{raw_body}`` in headers X-Internal-Timestamp + X-Internal-Signature
+    (see services/internal_request_auth), or legacy X-Commute-Dispatch-Secret when allowed.
+    """
+    plain = (request.headers.get("X-Commute-Dispatch-Secret") or "").strip() or None
+    await verify_commute_internal_request(request, plain_secret_header=plain)
     sb = get_supabase()
     try:
         res = sb.table("commute_routes").select("*").eq("notifications_enabled", True).execute()
@@ -226,19 +234,24 @@ def dispatch_commute_alerts(
         last_push = route.get("last_push_date")
         if last_push == str(today_utc) or last_push == today_utc.isoformat():
             continue
-        prof = sb.table("profiles").select("expo_push_token, is_premium, plan").eq("id", uid).limit(1).execute()
-        token = None
-        if prof.data:
-            token = (prof.data[0].get("expo_push_token") or "").strip() or None
+        prof_row = sb_get_profile(str(uid)) or {}
+        token = (prof_row.get("expo_push_token") or "").strip() or None
+        is_premium = profile_row_is_premium(prof_row)
         if not token:
             continue
         origin = route.get("origin_label") or "Start"
         dest = route.get("dest_label") or "Destination"
         title = "Time to head out"
-        body = (
-            f"Leave by {route.get('leave_by_time')} for {dest}. "
-            f"Options: leave early for traffic, or try an eco route to save fuel."
-        )
+        if is_premium:
+            body = (
+                f"Leave by {route.get('leave_by_time')} for {dest}. "
+                "Premium live scan: leave a few minutes early if roads are heavy, or open SnapRoad for a faster alternate route."
+            )
+        else:
+            body = (
+                f"Leave by {route.get('leave_by_time')} for {dest}. "
+                "Options: leave early for traffic, or try an eco route to save fuel."
+            )
         data = {
             "type": "commute_alert",
             "commute_id": route.get("id"),
@@ -246,6 +259,10 @@ def dispatch_commute_alerts(
             "origin_label": origin,
             "dest_label": dest,
             "alert_minutes_before": alert_min,
+            "is_premium": is_premium,
+            "suggested_actions": (
+                ["leave_early", "alternate_route"] if is_premium else ["leave_early", "eco_route"]
+            ),
         }
         if send_expo_push(token, title, body, data):
             try:
@@ -254,3 +271,153 @@ def dispatch_commute_alerts(
                 pass
             sent += 1
     return {"success": True, "dispatched": sent, "checked": len(routes)}
+
+
+@router.post("/internal/dispatch-traffic")
+async def dispatch_commute_traffic_alerts(request: Request):
+    """
+    Cron/worker (Premium only): poll Mapbox driving-traffic vs driving for each qualifying commute
+    and push when delay exceeds COMMUTE_TRAFFIC_* thresholds.
+
+    Auth: same HMAC / legacy headers as POST /internal/dispatch. Legacy plain header must match
+    COMMUTE_TRAFFIC_DISPATCH_SECRET if set, else COMMUTE_DISPATCH_SECRET.
+
+    Suggested schedule: every 10 minutes (overlap with leave window is filtered per route).
+
+    Env:
+      COMMUTE_TRAFFIC_DISPATCH_SECRET — optional; falls back to COMMUTE_DISPATCH_SECRET (legacy header only)
+      COMMUTE_TRAFFIC_WINDOW_START_BEFORE_LEAVE_MIN — default 180 (first poll starts this many minutes before leave_by)
+      COMMUTE_TRAFFIC_MIN_EXTRA_SEC — default 300 (absolute delay vs non-traffic baseline)
+      COMMUTE_TRAFFIC_EXTRA_RATIO — default 0.12 (delay must also exceed ratio * baseline when combined with min via max())
+      COMMUTE_TRAFFIC_PUSH_COOLDOWN_SEC — default 2700 (per-route minimum gap between traffic pushes)
+    """
+    plain = (request.headers.get("X-Commute-Dispatch-Secret") or "").strip() or None
+    legacy_secret = (os.getenv("COMMUTE_TRAFFIC_DISPATCH_SECRET") or os.getenv("COMMUTE_DISPATCH_SECRET") or "").strip()
+    await verify_commute_internal_request(
+        request,
+        plain_secret_header=plain,
+        legacy_plain_secret_expected=legacy_secret or None,
+    )
+
+    window_min = max(30, min(360, int(os.getenv("COMMUTE_TRAFFIC_WINDOW_START_BEFORE_LEAVE_MIN", "180"))))
+    min_extra = float(os.getenv("COMMUTE_TRAFFIC_MIN_EXTRA_SEC", "300"))
+    min_ratio = float(os.getenv("COMMUTE_TRAFFIC_EXTRA_RATIO", "0.12"))
+    cooldown = max(600, min(24 * 3600, int(os.getenv("COMMUTE_TRAFFIC_PUSH_COOLDOWN_SEC", "2700"))))
+
+    sb = get_supabase()
+    try:
+        res = sb.table("commute_routes").select("*").eq("notifications_enabled", True).execute()
+        routes = res.data or []
+    except Exception as e:
+        logger.warning("commute traffic poll: list routes failed: %s", e)
+        routes = []
+
+    sent = 0
+    skipped = 0
+    errors = 0
+
+    with httpx.Client(timeout=25.0) as http:
+        for route in routes:
+            uid = route.get("user_id")
+            if not uid:
+                skipped += 1
+                continue
+            prof_row = sb_get_profile(str(uid)) or {}
+            if not profile_row_is_premium(prof_row):
+                skipped += 1
+                continue
+
+            tz_name = route.get("tz") or "UTC"
+            now_local = _local_now(str(tz_name))
+            wk = _weekday_key(now_local)
+            days = route.get("days_of_week") or list(DAY_KEYS)
+            if wk not in days:
+                skipped += 1
+                continue
+
+            hm = _parse_hhmm(str(route.get("leave_by_time") or ""))
+            if not hm:
+                skipped += 1
+                continue
+
+            leave_local = now_local.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
+            window_start = leave_local - timedelta(minutes=window_min)
+            if now_local < window_start or now_local > leave_local:
+                skipped += 1
+                continue
+
+            if not _traffic_push_cooldown_elapsed(route.get("last_traffic_push_at"), cooldown):
+                skipped += 1
+                continue
+
+            o_lat = float(route.get("origin_lat"))
+            o_lng = float(route.get("origin_lng"))
+            d_lat = float(route.get("dest_lat"))
+            d_lng = float(route.get("dest_lng"))
+
+            t_sec, b_sec, extra_sec = traffic_vs_baseline_seconds(
+                o_lat, o_lng, d_lat, d_lng, http=http,
+            )
+            if extra_sec is None or t_sec is None or b_sec is None:
+                errors += 1
+                continue
+
+            if not should_notify_traffic_delay(
+                float(extra_sec), float(b_sec), min_extra_sec=min_extra, min_ratio=min_ratio
+            ):
+                skipped += 1
+                continue
+
+            token = (prof_row.get("expo_push_token") or "").strip() or None
+            if not token:
+                skipped += 1
+                continue
+
+            dest = route.get("dest_label") or "your destination"
+            extra_min = max(1, int(round(float(extra_sec) / 60.0)))
+            traffic_min = max(1, int(round(float(t_sec) / 60.0)))
+            baseline_min = max(1, int(round(float(b_sec) / 60.0)))
+
+            title = "Traffic heavier than usual"
+            body = (
+                f"Route to {dest}: about +{extra_min} min vs typical right now "
+                f"({traffic_min} min drive vs ~{baseline_min} min baseline). Leave a bit earlier or open SnapRoad for an alternate route."
+            )
+            data = {
+                "type": "commute_traffic_alert",
+                "commute_id": route.get("id"),
+                "leave_by_time": route.get("leave_by_time"),
+                "dest_label": dest,
+                "extra_minutes": extra_min,
+                "traffic_duration_min": traffic_min,
+                "baseline_duration_min": baseline_min,
+                "suggested_actions": ["leave_early", "alternate_route"],
+            }
+            if send_expo_push(token, title, body, data):
+                try:
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    sb.table("commute_routes").update(
+                        {
+                            "last_traffic_push_at": now_iso,
+                            "last_traffic_extra_sec": int(round(float(extra_sec))),
+                        }
+                    ).eq("id", route["id"]).execute()
+                    sent += 1
+                except Exception as ue:
+                    logger.error(
+                        "commute traffic poll: push delivered but cooldown persist failed route=%s: %s",
+                        route.get("id"),
+                        ue,
+                    )
+                    errors += 1
+            else:
+                errors += 1
+
+    return {
+        "success": True,
+        "traffic_pushes_sent": sent,
+        "skipped": skipped,
+        "mapbox_or_push_errors": errors,
+        "checked": len(routes),
+        "window_minutes_before_leave": window_min,
+    }

@@ -1137,6 +1137,8 @@ export default function ProfileScreen() {
         places={places}
         originLat={location.lat}
         originLng={location.lng}
+        commuteCount={commutes.length}
+        commuteLimit={commuteLimit}
         onCreated={() => void loadData('silent')}
       />
       <FuelTracker visible={showFuelTracker} onClose={() => setShowFuelTracker(false)} />

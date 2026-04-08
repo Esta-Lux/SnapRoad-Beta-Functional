@@ -9,6 +9,18 @@ from services.demo_random import choice, randint, sample
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
 
+# ==================== XP CONFIG (used by gamification + trip level recompute) ====================
+XP_CONFIG = {
+    "photo_report": 500,
+    "offer_redemption": 700,
+    "safe_drive": 1000,
+    "consistent_driving": 500,
+    "safety_score_penalty": -500,
+    "base_xp_to_level": 2500,
+    "xp_increment": 500,
+    "max_level": 100,
+}
+
 # ==================== PRICING ====================
 pricing_config = {
     "founders_price": 10.99,
@@ -42,15 +54,18 @@ def create_new_user(user_id: str, name: str = "New Driver", email: str = "") -> 
 def calculate_xp_for_level(level: int) -> int:
     if level <= 1:
         return 0
+    base = XP_CONFIG["base_xp_to_level"]
+    inc = XP_CONFIG["xp_increment"]
     total = 0
     for lvl in range(2, level + 1):
-        total += 2500 + (lvl - 2) * 500
+        total += base + (lvl - 2) * inc
     return total
 
 def calculate_xp_to_next_level(level: int) -> int:
-    if level >= 99:
+    max_lv = int(XP_CONFIG["max_level"])
+    if level >= max_lv:
         return 0
-    return 2500 + (level - 1) * 500
+    return XP_CONFIG["base_xp_to_level"] + (level - 1) * XP_CONFIG["xp_increment"]
 
 # ==================== USERS DB ====================
 users_db = {DEFAULT_DRIVER_ID: create_new_user(DEFAULT_DRIVER_ID, "Driver", "driver@snaproad.com")}
@@ -62,7 +77,7 @@ LAST_NAMES = ["Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Da
 for i in range(100):
     uid = str(123457 + i)
     is_premium = choice([True, False])
-    level = randint(5, 99)
+    level = randint(5, int(XP_CONFIG["max_level"]))
     users_db[uid] = {
         "id": uid, "name": f"{choice(FIRST_NAMES)} {choice(LAST_NAMES)}",
         "gems": randint(500, 50000), "level": level,
@@ -71,7 +86,7 @@ for i in range(100):
         "safety_score": randint(60, 100), "streak": randint(0, 100),
         "safe_drive_streak": randint(0, 10),
         "total_miles": randint(100, 10000), "total_trips": randint(10, 500),
-        "badges_earned": sample(range(1, 161), randint(3, 30)),
+        "badges_earned": sample(range(1, 30), randint(3, 12)),
         "community_badges": sample(range(1, 21), randint(0, 5)),
         "state": choice(STATES),
         "is_premium": is_premium, "plan": "premium" if is_premium else "basic",
@@ -201,13 +216,6 @@ driver_location_history = {}
 active_boosts = {}
 admin_offers_db = []
 
-# ==================== XP CONFIG ====================
-XP_CONFIG = {
-    "photo_report": 500, "offer_redemption": 700, "safe_drive": 1000,
-    "consistent_driving": 500, "safety_score_penalty": -500,
-    "base_xp_to_level": 2500, "xp_increment": 500, "max_level": 99,
-}
-
 # ==================== PARTNER DATA ====================
 PARTNER_PLANS = {
     # Assigned at registration until the partner completes Stripe checkout for Starter or Growth.
@@ -303,6 +311,32 @@ ALL_BADGES = [
     {"id": 17, "name": "On a Roll", "desc": "3-day safe drive streak", "icon": "flame", "category": "streak", "requirement_type": "streak", "requirement": 3, "gems": 35},
     {"id": 18, "name": "Streak Master", "desc": "7-day safe drive streak", "icon": "flame-outline", "category": "streak", "requirement_type": "streak", "requirement": 7, "gems": 100},
 ]
+
+# Level milestones — unlock with driver level so progression aligns with max_level.
+_LEVEL_LABELS = {
+    10: ("Committed driver", "Reach driver level 10"),
+    20: ("Regional regular", "Reach driver level 20"),
+    30: ("Seasoned commuter", "Reach driver level 30"),
+    40: ("Mile cruncher", "Reach driver level 40"),
+    50: ("Veteran wheel", "Reach driver level 50"),
+    60: ("Road-tested", "Reach driver level 60"),
+    70: ("Distance ace", "Reach driver level 70"),
+    80: ("High-mileage pro", "Reach driver level 80"),
+    90: ("Elite cruiser", "Reach driver level 90"),
+    100: ("SnapRoad legend", "Reach driver level 100"),
+}
+for _i, _lvl in enumerate(range(10, 101, 10)):
+    _nm, _dc = _LEVEL_LABELS[_lvl]
+    ALL_BADGES.append({
+        "id": 19 + _i,
+        "name": _nm,
+        "desc": _dc,
+        "icon": "star",
+        "category": "level",
+        "requirement_type": "level",
+        "requirement": float(_lvl),
+        "gems": 25 + _i * 10,
+    })
 
 COMMUNITY_BADGES = [
     {"id": 1, "name": "First Report", "desc": "Post your first road report", "icon": "pin", "requirement": 1},

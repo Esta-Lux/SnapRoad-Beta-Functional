@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Dimensions,
+  Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -89,6 +91,7 @@ function categoryIcon(cat: string): keyof typeof Ionicons.glyphMap {
   if (c === 'gems') return 'diamond-outline';
   if (c === 'safety') return 'shield-checkmark-outline';
   if (c === 'streak') return 'flame-outline';
+  if (c === 'level') return 'trending-up-outline';
   return 'ribbon-outline';
 }
 
@@ -129,6 +132,7 @@ export default function ProfileInsightsDashboard({
   const [tripsOpen, setTripsOpen] = useState(true);
   const [gemsOpen, setGemsOpen] = useState(false);
   const [badgesOpen, setBadgesOpen] = useState(true);
+  const [tripDetail, setTripDetail] = useState<ProfileTripHistoryItem | null>(null);
 
   const [drivingLoading, setDrivingLoading] = useState(false);
   const [drivingMetrics, setDrivingMetrics] = useState<DrivingMetric[]>([]);
@@ -310,6 +314,7 @@ export default function ProfileInsightsDashboard({
   );
 
   return (
+    <>
     <SheetModal visible={visible} onClose={onClose} scrollable={false}>
       <ScrollView
         style={{ maxHeight: winH * 0.88 }}
@@ -538,8 +543,10 @@ export default function ProfileInsightsDashboard({
             </Text>
           ) : (
             filteredTrips.slice(0, 25).map((trip) => (
-              <View
+              <TouchableOpacity
                 key={trip.id}
+                activeOpacity={0.85}
+                onPress={() => setTripDetail(trip)}
                 style={[
                   styles.tripRow,
                   { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
@@ -549,19 +556,26 @@ export default function ProfileInsightsDashboard({
                   <Text style={{ color: colors.textSecondary, fontSize: 11 }} numberOfLines={1}>
                     {trip.date} · {trip.time}
                   </Text>
-                  <Text style={{ color: colors.text, fontSize: 13 }} numberOfLines={2}>
+                  <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }} numberOfLines={2}>
                     {trip.origin} › {trip.destination}
                   </Text>
                   <Text style={{ color: colors.textSecondary, fontSize: 11 }}>
                     {Number(trip.distance_miles ?? 0).toFixed(1)} mi · {trip.duration_minutes ?? 0} min
+                    {typeof trip.gems_earned === 'number' && trip.gems_earned > 0
+                      ? ` · ${trip.gems_earned} gems`
+                      : ''}
+                  </Text>
+                  <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '700', marginTop: 4 }}>
+                    Tap for details
                   </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <View style={[styles.scoreChip, { backgroundColor: `${colors.success}22` }]}>
                     <Text style={{ color: colors.success, fontWeight: '800' }}>{trip.safety_score ?? 0}</Text>
                   </View>
+                  <Text style={{ color: colors.textTertiary, fontSize: 10, marginTop: 4 }}>Safety</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))
           )
         ) : null}
@@ -675,6 +689,75 @@ export default function ProfileInsightsDashboard({
         ) : null}
       </ScrollView>
     </SheetModal>
+    <Modal
+      visible={tripDetail != null}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setTripDetail(null)}
+    >
+      <Pressable style={styles.tripOverlay} onPress={() => setTripDetail(null)}>
+        <Pressable
+          style={[styles.tripDetailCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          {tripDetail ? (
+            <>
+              <Text style={[typography.h2, { color: colors.text, marginBottom: 8 }]}>Trip detail</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 12 }}>
+                {tripDetail.date} · {tripDetail.time}
+              </Text>
+              <View style={styles.tripDetailRow}>
+                <Ionicons name="navigate-outline" size={18} color={colors.primary} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>From</Text>
+                  <Text style={{ color: colors.text, fontWeight: '700' }}>{tripDetail.origin}</Text>
+                </View>
+              </View>
+              <View style={styles.tripDetailRow}>
+                <Ionicons name="flag-outline" size={18} color={colors.primary} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>To</Text>
+                  <Text style={{ color: colors.text, fontWeight: '700' }}>{tripDetail.destination}</Text>
+                </View>
+              </View>
+              <View style={[styles.tripStatGrid, { borderColor: colors.border }]}>
+                <View style={styles.tripStatCell}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Distance</Text>
+                  <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
+                    {Number(tripDetail.distance_miles ?? 0).toFixed(1)} mi
+                  </Text>
+                </View>
+                <View style={styles.tripStatCell}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Duration</Text>
+                  <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
+                    {tripDetail.duration_minutes ?? 0} min
+                  </Text>
+                </View>
+                <View style={styles.tripStatCell}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Safety</Text>
+                  <Text style={{ color: colors.success, fontSize: 18, fontWeight: '900' }}>
+                    {tripDetail.safety_score ?? 0}
+                  </Text>
+                </View>
+                <View style={styles.tripStatCell}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Gems</Text>
+                  <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
+                    {tripDetail.gems_earned ?? 0}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setTripDetail(null)}
+                style={[styles.tripDetailClose, { backgroundColor: colors.primary }]}
+              >
+                <Text style={{ color: '#fff', fontWeight: '800' }}>Close</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
+        </Pressable>
+      </Pressable>
+    </Modal>
+    </>
   );
 }
 
@@ -779,4 +862,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  tripOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  tripDetailCard: {
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 20,
+  },
+  tripDetailRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14 },
+  tripStatGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 14,
+    marginTop: 8,
+    gap: 12,
+  },
+  tripStatCell: { width: '47%' },
+  tripDetailClose: { marginTop: 18, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
 });

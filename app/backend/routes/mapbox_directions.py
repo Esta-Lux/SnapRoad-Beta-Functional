@@ -7,17 +7,20 @@ to direct Mapbox calls. Falls back to client token when this env is unset.
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 from urllib.parse import quote
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from config import mapbox_token_from_env
-from limiter import limiter
+from limiter import get_mapbox_rate_limit_key, limiter
+from middleware.auth import get_current_user
 
 router = APIRouter(prefix="/api/navigation", tags=["Navigation / Mapbox"])
+
+CurrentUser = Annotated[dict, Depends(get_current_user)]
 
 _http: Optional[httpx.AsyncClient] = None
 
@@ -62,8 +65,12 @@ class MapboxRoutesBody(BaseModel):
 
 
 @router.post("/mapbox-routes")
-@limiter.limit("90/minute")
-async def post_mapbox_routes(request: Request, body: MapboxRoutesBody) -> Any:
+@limiter.limit("45/minute", key_func=get_mapbox_rate_limit_key)
+async def post_mapbox_routes(
+    request: Request,
+    body: MapboxRoutesBody,
+    _user: CurrentUser,
+) -> Any:
     """
     Proxy to Mapbox Directions API. Response shape matches Mapbox's JSON (routes, waypoints, …).
     Configure MAPBOX_ACCESS_TOKEN (or MAPBOX_SECRET_TOKEN / MAPBOX_PUBLIC_TOKEN / MAPBOX_TOKEN) on the server.
@@ -111,8 +118,12 @@ async def post_mapbox_routes(request: Request, body: MapboxRoutesBody) -> Any:
 
 
 @router.post("/canonical-eta")
-@limiter.limit("60/minute")
-async def post_canonical_eta_snapshot(request: Request, body: CanonicalEtaBody) -> Any:
+@limiter.limit("60/minute", key_func=get_mapbox_rate_limit_key)
+async def post_canonical_eta_snapshot(
+    request: Request,
+    body: CanonicalEtaBody,
+    _user: CurrentUser,
+) -> Any:
     """
     Versioned ETA snapshot contract for multi-surface alignment (Orion, strip, speech).
     Stub: echoes hint until server-side traffic refresh is implemented.

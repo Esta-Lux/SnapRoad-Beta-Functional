@@ -8,9 +8,20 @@ from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRY_HOURS
 from services.supabase_service import sb_get_auth_user_from_access_token, sb_get_profile
+from services.premium_access import profile_row_is_premium
 
 logger = logging.getLogger(__name__)
 ALLOW_MOCK_AUTH = os.getenv("ALLOW_MOCK_AUTH", "false").strip().lower() in ("1", "true", "yes")
+ENABLE_MOCK_BEARER_AUTH = os.getenv("ENABLE_MOCK_BEARER_AUTH", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+
+def _mock_bearer_allowed() -> bool:
+    """mock_token_* accepted only when explicitly enabled (and never in production — guarded at startup)."""
+    return ENABLE_MOCK_BEARER_AUTH or ALLOW_MOCK_AUTH
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
@@ -90,20 +101,51 @@ def _user_from_bearer_token(token: str) -> Optional[dict]:
     if supabase_user and supabase_user.get("id"):
         user_id = str(supabase_user.get("id"))
         profile = sb_get_profile(user_id) or {}
+        plan = str(profile.get("plan") or "basic").strip().lower()
         return {
             "id": user_id,
             "user_id": user_id,
             "email": supabase_user.get("email") or profile.get("email"),
             "role": profile.get("role", "user"),
             "partner_id": profile.get("partner_id"),
+            "plan": plan,
+            "is_premium": profile_row_is_premium(profile),
         }
 
-    if os.getenv("ENVIRONMENT") != "production" and ALLOW_MOCK_AUTH:
+    if os.getenv("ENVIRONMENT", "development").strip().lower() != "production" and _mock_bearer_allowed():
         if token.startswith("mock_token_"):
             logger.warning("Mock token used in development mode")
             user_id = token.replace("mock_token_", "")
             return {"id": user_id, "user_id": user_id, "role": "user"}
     return None
+
+
+def merge_profile_entitlements_into_user(user: dict) -> dict:
+    """
+    SnapRoad JWT and mock tokens omit plan / is_premium. Merge from Supabase profiles
+    so routes using _is_premium(token user) match GET /api/user/profile.
+    """
+    uid = str(user.get("user_id") or user.get("id") or "").strip()
+    if not uid:
+        return user
+    try:
+        prof = sb_get_profile(uid)
+        if not prof:
+            return user
+        out = {**user}
+        plan = str(prof.get("plan") or "basic").strip().lower()
+        out["plan"] = plan
+        out["is_premium"] = profile_row_is_premium(prof)
+        # Authoritative privileged claims (JWT may be stale after role changes).
+        r = prof.get("role")
+        if r is not None and str(r).strip():
+            out["role"] = str(r).strip()
+        if "partner_id" in prof:
+            out["partner_id"] = prof.get("partner_id")
+        return out
+    except Exception:
+        logger.debug("merge_profile_entitlements_into_user skipped", exc_info=True)
+        return user
 
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -116,21 +158,47 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return user
+    return merge_profile_entitlements_into_user(user)
 
 
 async def get_current_user_optional(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Same resolution as get_current_user but returns None when unauthenticated or invalid."""
     if not credentials or not credentials.credentials:
         return None
-    return _user_from_bearer_token(credentials.credentials)
+    u = _user_from_bearer_token(credentials.credentials)
+    return merge_profile_entitlements_into_user(u) if u else None
+
+
+def user_id_from_payload(payload: dict) -> str:
+    return str(payload.get("sub") or payload.get("user_id") or payload.get("id") or "").strip()
+
+
+def db_user_has_admin_role(user_id: str) -> bool:
+    if not user_id:
+        return False
+    prof = sb_get_profile(user_id)
+    if not prof:
+        return False
+    role = str(prof.get("role") or "").strip().lower()
+    return role in ("admin", "super_admin")
+
+
+def db_user_is_partner_for(user_id: str, partner_id: str) -> bool:
+    if not user_id or not partner_id:
+        return False
+    prof = sb_get_profile(user_id)
+    if not prof:
+        return False
+    if str(prof.get("role") or "").strip().lower() != "partner":
+        return False
+    return str(prof.get("partner_id") or "") == str(partner_id)
 
 
 async def require_admin(user: dict = Depends(get_current_user)):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    role = user.get("role")
-    if role not in ("admin", "super_admin"):
+    uid = str(user.get("user_id") or user.get("id") or "").strip()
+    if not db_user_has_admin_role(uid):
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
@@ -138,8 +206,10 @@ async def require_admin(user: dict = Depends(get_current_user)):
 async def require_partner(user: dict = Depends(get_current_user)):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    if user.get("role") != "partner":
+    uid = str(user.get("user_id") or user.get("id") or "").strip()
+    partner_id = user.get("partner_id")
+    if not partner_id:
+        raise HTTPException(status_code=403, detail="No partner_id in profile")
+    if not db_user_is_partner_for(uid, str(partner_id)):
         raise HTTPException(status_code=403, detail="Partner access required")
-    if not user.get("partner_id"):
-        raise HTTPException(status_code=403, detail="No partner_id in token")
     return user

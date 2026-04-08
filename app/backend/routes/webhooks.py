@@ -4,26 +4,41 @@ from datetime import datetime, timedelta, timezone
 import json
 import logging
 from services.demo_random import choice, randint
-from middleware.auth import decode_token, require_admin
+from config import IS_PRODUCTION
+from middleware.auth import (
+    decode_token,
+    require_admin,
+    db_user_has_admin_role,
+    db_user_is_partner_for,
+    user_id_from_payload,
+)
 from services.telemetry_service import telemetry_service
 
 router = APIRouter(tags=["Webhooks & WebSocket"])
 logger = logging.getLogger(__name__)
 
 
-async def _require_ws_token(websocket: WebSocket) -> dict:
-    token = websocket.query_params.get("token")
+def _ws_extract_bearer_raw(websocket: WebSocket, *, allow_query_token: bool) -> str:
+    token = ""
+    if allow_query_token:
+        token = (websocket.query_params.get("token") or "").strip()
     if not token:
         auth_header = websocket.headers.get("authorization", "")
         if auth_header.lower().startswith("bearer "):
             token = auth_header.split(" ", 1)[1].strip()
     if not token:
-        # Browser-compatible alternative: send token in subprotocol as "bearer.<jwt>"
+        # Browser-compatible: Sec-WebSocket-Protocol includes bearer.<jwt>
         protocols = websocket.headers.get("sec-websocket-protocol", "")
         for proto in [p.strip() for p in protocols.split(",") if p.strip()]:
             if proto.startswith("bearer."):
-                token = proto[len("bearer."):].strip()
+                token = proto[len("bearer.") :].strip()
                 break
+    return token
+
+
+async def _require_ws_token(websocket: WebSocket) -> dict:
+    """Partner/customer sockets: query ?token= allowed (use header/subprotocol in new clients)."""
+    token = _ws_extract_bearer_raw(websocket, allow_query_token=True)
     if not token:
         await websocket.close(code=1008, reason="Missing token")
         return {}
@@ -32,6 +47,33 @@ async def _require_ws_token(websocket: WebSocket) -> dict:
     except Exception:
         await websocket.close(code=1008, reason="Invalid token")
         return {}
+
+
+async def _require_ws_admin_payload(websocket: WebSocket) -> dict:
+    """
+    Admin moderation/monitor sockets.
+    Production: Authorization: Bearer <jwt> or Sec-WebSocket-Protocol bearer.<jwt> only (no ?token=).
+    Non-production: ?token= still accepted for local tooling.
+    Role is enforced from Supabase profiles (not JWT claims).
+    """
+    allow_q = not IS_PRODUCTION
+    token = _ws_extract_bearer_raw(websocket, allow_query_token=allow_q)
+    if not token:
+        await websocket.close(
+            code=1008,
+            reason="Missing token — use Authorization: Bearer or Sec-WebSocket-Protocol bearer.<jwt>",
+        )
+        return {}
+    try:
+        payload = decode_token(token)
+    except Exception:
+        await websocket.close(code=1008, reason="Invalid token")
+        return {}
+    uid = user_id_from_payload(payload)
+    if not db_user_has_admin_role(uid):
+        await websocket.close(code=1008, reason="Admin access required")
+        return {}
+    return payload
 
 # ==================== STRIPE WEBHOOKS ====================
 
@@ -257,7 +299,8 @@ async def partner_websocket(websocket: WebSocket, partner_id: str):
     payload = await _require_ws_token(websocket)
     if not payload:
         return
-    if payload.get("role") != "partner" or str(payload.get("partner_id") or "") != str(partner_id):
+    uid = user_id_from_payload(payload)
+    if not db_user_is_partner_for(uid, partner_id):
         await websocket.close(code=1008, reason="Partner access required")
         return
     connection_id = f"conn_{uuid.uuid4().hex[:8]}"
@@ -448,23 +491,9 @@ async def admin_monitor_ws(websocket: WebSocket):
     """Admin-only websocket stream for live request/error telemetry."""
     from services.websocket_manager import ws_manager
     import uuid
-    token = websocket.query_params.get("token")
-    if not token:
-        protocols = websocket.headers.get("sec-websocket-protocol", "")
-        for proto in [p.strip() for p in protocols.split(",") if p.strip()]:
-            if proto.startswith("bearer."):
-                token = proto[len("bearer."):].strip()
-                break
-    if not token:
-        await websocket.close(code=1008, reason="Missing token")
-        return
-    try:
-        payload = decode_token(token)
-        if payload.get("role") not in ("admin", "super_admin"):
-            await websocket.close(code=1008, reason="Admin access required")
-            return
-    except Exception:
-        await websocket.close(code=1008, reason="Invalid token")
+
+    payload = await _require_ws_admin_payload(websocket)
+    if not payload:
         return
 
     admin_id = f"monitor_{uuid.uuid4().hex[:8]}"

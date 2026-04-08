@@ -25,7 +25,15 @@ def _truthy_env(name: str) -> bool:
 
 
 # When true, POST /api/incidents/* returns 503 detail including str(exc) for Supabase failures (debug prod only).
-EXPOSE_INCIDENT_BACKEND_ERRORS = _truthy_env("EXPOSE_INCIDENT_BACKEND_ERRORS")
+# Overridden to False in production at import time (see below).
+_EXPOSE_INCIDENT_ENV = _truthy_env("EXPOSE_INCIDENT_BACKEND_ERRORS")
+EXPOSE_INCIDENT_BACKEND_ERRORS = False if IS_PRODUCTION else _EXPOSE_INCIDENT_ENV
+if IS_PRODUCTION and _EXPOSE_INCIDENT_ENV:
+    import logging
+
+    logging.getLogger(__name__).warning(
+        "EXPOSE_INCIDENT_BACKEND_ERRORS is disabled in production regardless of env (details stay in logs only)."
+    )
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 
@@ -128,3 +136,8 @@ def validate_production_env() -> None:
     cors_origins = (os.getenv("CORS_ORIGINS") or "").strip()
     if not cors_origins:
         raise RuntimeError("CORS_ORIGINS must be explicitly set in production.")
+
+    if _truthy_env("ENABLE_MOCK_BEARER_AUTH") or _truthy_env("ALLOW_MOCK_AUTH"):
+        raise RuntimeError(
+            "Mock bearer auth is forbidden in production: unset ENABLE_MOCK_BEARER_AUTH and ALLOW_MOCK_AUTH."
+        )

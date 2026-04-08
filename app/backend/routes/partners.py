@@ -985,7 +985,10 @@ def revoke_team_link(link_id: str, user: CurrentPartner):
         if not link:
             raise HTTPException(status_code=404, detail="Team link not found")
         _require_owned_partner_id(user, link.get("partner_id"))
-        _sb().table("partner_team_links").update({"is_active": False}).eq("id", link_id).execute()
+        pid = str(link.get("partner_id") or "")
+        _sb().table("partner_team_links").update({"is_active": False}).eq("id", link_id).eq(
+            "partner_id", pid
+        ).execute()
     except HTTPException:
         raise
     except Exception as e:

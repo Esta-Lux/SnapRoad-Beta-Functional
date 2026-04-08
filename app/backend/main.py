@@ -260,6 +260,14 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(weather_router)
 
 def _build_health_response() -> dict:
+    if IS_PRODUCTION:
+        try:
+            sb = get_supabase()
+            sb.table("profiles").select("id").limit(1).execute()
+            return {"status": "ok"}
+        except Exception:
+            return {"status": "degraded"}
+
     mapbox_ok = bool(mapbox_token_from_env())
     checks = {
         "database": "ok",
