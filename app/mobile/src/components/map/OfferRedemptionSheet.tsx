@@ -7,6 +7,7 @@ import { api } from '../../api/client';
 import type { Offer } from '../../types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { haversineMeters, formatDistance } from '../../utils/distance';
+import { displayOfferCategory } from '../../lib/offerCategories';
 
 let QRCode: any = null;
 try { QRCode = require('react-native-qrcode-svg').default; } catch {}
@@ -172,6 +173,12 @@ export default function OfferRedemptionSheet({ offer, onDismiss, onRedeem, onNav
                   </Text>
                 ) : null}
                 <Text style={[styles.discount, { color }]}>{offer.discount_percent > 0 ? `${offer.discount_percent}% off` : 'Free item'}</Text>
+                <View style={[styles.categoryPill, { borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.12)', backgroundColor: isLight ? colors.surfaceSecondary : 'rgba(255,255,255,0.06)' }]}>
+                  <Ionicons name="pricetag-outline" size={12} color={colors.textTertiary} />
+                  <Text style={[styles.categoryPillText, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {displayOfferCategory(offer)}
+                  </Text>
+                </View>
                 {offer.address ? <Text style={[styles.address, { color: colors.textSecondary }]} numberOfLines={2}>{offer.address}</Text> : null}
                 {offer.description ? <Text style={[styles.desc, { color: colors.textSecondary }]} numberOfLines={2}>{offer.description}</Text> : null}
               </View>
@@ -268,6 +275,19 @@ const styles = StyleSheet.create({
   business: { fontSize: 17, fontWeight: '800', color: '#f8fafc', letterSpacing: -0.3 },
   offerTitleLine: { fontSize: 14, fontWeight: '600', marginTop: 4, lineHeight: 19 },
   discount: { fontSize: 15, fontWeight: '700', color: '#F59E0B', marginTop: 2 },
+  categoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    maxWidth: '100%',
+  },
+  categoryPillText: { fontSize: 12, fontWeight: '700', flex: 1 },
   address: { fontSize: 12, marginTop: 3, lineHeight: 17 },
   desc: { fontSize: 13, color: '#94a3b8', marginTop: 4, lineHeight: 18 },
   closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.08)', justifyContent: 'center', alignItems: 'center' },

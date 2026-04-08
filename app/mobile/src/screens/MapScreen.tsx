@@ -1447,9 +1447,9 @@ export default function MapScreen() {
 
   /** Enter key: forced text search + nearby merge + Mapbox forward geocode, deduped and distance-sorted. */
   const commitSearch = useCallback(async () => {
-    Keyboard.dismiss();
     const raw = searchQueryRef.current.trim();
     if (raw.length < 2) {
+      Keyboard.dismiss();
       setIsSearchFocused(false);
       return;
     }
@@ -1461,6 +1461,7 @@ export default function MapScreen() {
     const prep = prepareMapSearchQuery(raw);
     if (prep.query.length < 2) {
       setIsSearching(false);
+      Keyboard.dismiss();
       return;
     }
     const localFirst = localMatchesForSearchQuery(prep.query, savedPlaces, recentSearches);
@@ -1534,6 +1535,10 @@ export default function MapScreen() {
     merged = dedupeGeocodeResults([...merged, ...filtered]);
     setSearchResults(sortGeocodeByProximity(merged, loc));
     setIsSearching(false);
+    if (merged.length > 0) {
+      setIsSearchFocused(true);
+    }
+    Keyboard.dismiss();
   }, [savedPlaces, recentSearches, sortGeocodeByProximity]);
 
   const openSearchResultsSheet = useCallback(() => {
@@ -2648,9 +2653,11 @@ export default function MapScreen() {
                 value={searchQuery}
                 onChangeText={handleSearchChange}
                 onFocus={() => setIsSearchFocused(true)}
-                blurOnSubmit
-                returnKeyType="done"
-                onSubmitEditing={() => { Keyboard.dismiss(); setIsSearchFocused(false); }}
+                blurOnSubmit={false}
+                returnKeyType="search"
+                onSubmitEditing={() => {
+                  void commitSearch();
+                }}
                 clearButtonMode="while-editing"
               />
               {searchQuery.length > 0 ? (

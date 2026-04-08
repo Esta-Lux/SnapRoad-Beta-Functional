@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import type { FriendLocation } from '../../types';
 import { haversineMeters } from '../../utils/distance';
+import { hasValidFriendCoords } from '../../lib/friendPresence';
 
 interface Props {
   friends: FriendLocation[];
@@ -108,7 +109,10 @@ function InterpolatedFriendMarker({
  * Coordinates ease between GPS samples so pins don’t jump.
  */
 export default React.memo(function FriendMarkers({ friends, onFriendTap }: Props) {
-  const visible = friends.filter((f) => f.isSharing && f.lat !== 0 && f.lng !== 0);
+  // Pins need valid GPS. Show when sharing, or when navigating with a live coordinate (common when share flag lags).
+  const visible = friends.filter(
+    (f) => hasValidFriendCoords(f.lat, f.lng) && (f.isSharing || f.isNavigating),
+  );
   if (!isMapAvailable() || !MapboxGL || !visible.length) return null;
   const MB = MapboxGL;
 
