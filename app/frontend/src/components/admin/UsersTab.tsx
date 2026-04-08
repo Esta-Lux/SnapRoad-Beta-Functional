@@ -450,28 +450,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
                             Admin-managed partner tier (Stripe changes blocked)
                           </div>
                         )}
-                        <div className={`text-[10px] ${textSecondary}`}>
-                          Driver app:{' '}
-                          <span
-                            className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] ${
-                              user.plan === 'premium' ? 'bg-purple-500/20 text-purple-400' :
-                              user.plan === 'family' ? 'bg-blue-500/20 text-blue-400' :
-                              'bg-slate-500/20 text-slate-400'
-                            }`}
-                          >
-                            {formatPlanWord(user.plan || 'basic')}
-                          </span>
-                        </div>
-                        {user.promotion_access_until && (
-                          <div className={`text-[10px] ${textSecondary}`}>
-                            Driver promo until {String(user.promotion_access_until).slice(0, 10)}
-                          </div>
-                        )}
-                        {(user.plan_entitlement_source || '').toLowerCase() === 'admin' && (
-                          <div className="text-[10px] text-amber-400/90">
-                            Admin-managed driver tier (in-app downgrade blocked)
-                          </div>
-                        )}
+                        {/* Partner account rows show business tier only; driver tier controls are hidden below. */}
                       </div>
                     ) : (
                       <>
@@ -564,7 +543,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
                       >
                         <Trash2 size={16} />
                       </button>
-                      {user.plan !== 'premium' && (
+                      {!isPartnerPortalAccount(user) && user.plan !== 'premium' && (
                         <button
                           type="button"
                           onClick={() => setPlanConfirm({ user, next: 'premium' })}
@@ -574,7 +553,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
                           Premium
                         </button>
                       )}
-                      {user.plan !== 'family' && (
+                      {!isPartnerPortalAccount(user) && user.plan !== 'family' && (
                         <button
                           type="button"
                           onClick={() => setPlanConfirm({ user, next: 'family' })}
@@ -584,7 +563,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
                           Family
                         </button>
                       )}
-                      {user.plan !== 'basic' && (
+                      {!isPartnerPortalAccount(user) && user.plan !== 'basic' && (
                         <button
                           type="button"
                           onClick={() => setPlanConfirm({ user, next: 'basic' })}

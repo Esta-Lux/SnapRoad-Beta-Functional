@@ -27,7 +27,7 @@ from services.supabase_service import (
     sb_get_boosts, sb_create_boost, sb_cancel_boost,
     sb_get_redemptions_by_partner,
     sb_get_partner_referrals, sb_create_partner_referral,
-    sb_login_user, sb_create_user, sb_get_user_by_email,
+    sb_login_user, sb_create_user, sb_get_user_by_email, sb_update_profile,
     _sb,
 )
 from services.mock_data import PARTNER_PLANS, BOOST_PRICING
@@ -799,6 +799,18 @@ def partner_login_v2(request: Request, body: PartnerLoginRequest):
     # Use partner record ID if exists, otherwise use user ID
     partner_id = match["id"] if match else str(user.get("id", ""))
     business_name = match.get("business_name", "") if match else ""
+
+    # Keep profile linkage healthy so non-portal flows don't fail on missing partner_id.
+    try:
+        updates = {}
+        if str(user.get("partner_id") or "").strip() != str(partner_id):
+            updates["partner_id"] = partner_id
+        if str(user.get("role") or "").strip().lower() != "partner":
+            updates["role"] = "partner"
+        if updates:
+            sb_update_profile(str(user.get("id")), updates)
+    except Exception as e:
+        logger.warning("partner_login_v2: profile linkage backfill skipped: %s", e)
     
     token = create_access_token({"sub": str(user["id"]), "email": body.email, "role": "partner", "partner_id": partner_id})
     return {"success": True, "token": token, "partner_id": partner_id, "business_name": business_name}
