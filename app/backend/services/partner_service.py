@@ -5,7 +5,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict
+from typing import Optional, List
 from dotenv import load_dotenv
 
 load_dotenv()

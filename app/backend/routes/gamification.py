@@ -23,7 +23,6 @@ from services.premium_access import (
     MSG_PREMIUM_REQUIRED,
     profile_row_is_premium,
     user_id_is_premium,
-    require_premium_user,
 )
 from config import ENVIRONMENT
 from services.llm_client import chat_completion_model, get_sync_openai_client

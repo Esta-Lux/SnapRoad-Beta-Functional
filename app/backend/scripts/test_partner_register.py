@@ -7,7 +7,7 @@ os.chdir(BACKEND_DIR)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(BACKEND_DIR, ".env"), override=True)
 
-from services.supabase_service import sb_create_user, sb_create_partner, sb_get_user_by_email
+from services.supabase_service import sb_create_user, sb_get_user_by_email
 
 # Test data
 email = "john.dan@estaluxtest.com"

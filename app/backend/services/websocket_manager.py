@@ -1,11 +1,9 @@
 # SnapRoad - WebSocket Manager for Real-time Notifications
 # Handles real-time updates for partner redemptions and customer proximity alerts
 
-import json
-import asyncio
 from datetime import datetime
-from typing import Dict, Set, Optional
-from fastapi import WebSocket, WebSocketDisconnect
+from typing import Dict
+from fastapi import WebSocket
 
 class ConnectionManager:
     """Manages WebSocket connections for real-time notifications"""

@@ -2,7 +2,6 @@
 Test Trip Analytics, Route History 3D, Fuel Prices, and Personalized Offers APIs
 Tests for SnapRoad new features: TripAnalytics, RouteHistory3D, CollapsibleOffersPanel, OrionVoice
 """
-import pytest
 import requests
 import os
 

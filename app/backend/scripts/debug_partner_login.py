@@ -12,7 +12,6 @@ import config
 importlib.reload(config)
 
 from services.supabase_service import sb_login_user, sb_get_partners, sb_get_user_by_email
-import json
 
 email = "john.don@estaluxtest.com"
 password = os.getenv("SNAPROAD_TEST_PASSWORD", "")

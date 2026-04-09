@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from typing import Annotated, Optional
 from datetime import datetime, timedelta, timezone
-from models.schemas import OfferCreate, BulkOfferUpload
+from models.schemas import OfferCreate
 
 from services.mock_data import (
     OFFER_CONFIG,
-    generated_images_db, driver_location_history,
+    driver_location_history,
 )
 from models.schemas import ImageGenerateRequest, LocationVisit
 from services.supabase_service import _sb, sb_get_profile, _table_missing

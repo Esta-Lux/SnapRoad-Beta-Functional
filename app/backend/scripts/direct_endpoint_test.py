@@ -12,7 +12,6 @@ import config
 importlib.reload(config)
 
 from services.supabase_service import sb_login_user, sb_get_user_by_email
-from models.schemas import LoginRequest
 import json
 
 # Test admin login flow

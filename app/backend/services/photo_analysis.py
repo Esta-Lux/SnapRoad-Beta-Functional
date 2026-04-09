@@ -2,11 +2,9 @@
 # AI-powered face and license plate detection for privacy protection
 # Uses OpenAI Vision API directly - no platform-specific dependencies
 
-import base64
 import json
 import re
-from datetime import datetime
-from typing import Optional, List
+from typing import List
 from dotenv import load_dotenv
 load_dotenv()
 

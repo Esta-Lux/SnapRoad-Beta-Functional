@@ -3,7 +3,6 @@ Lightweight pre-deploy smoke checks that run in CI without external credentials.
 """
 from pathlib import Path
 import re
-import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]

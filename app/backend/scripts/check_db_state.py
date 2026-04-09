@@ -13,7 +13,6 @@ importlib.reload(config)
 
 from services.supabase_service import sb_get_user_by_email, sb_get_partners
 from database import get_supabase
-import json
 
 sb = get_supabase()
 

@@ -8,14 +8,12 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from models.schemas import PlanUpdate, CarCustomization
 from services.mock_data import (
     users_db, pricing_config,
-    calculate_xp_for_level, calculate_xp_to_next_level,
     CAR_MODELS, CAR_SKINS, PREMIUM_COLORS,
     notification_settings, faq_data,
 )
 from middleware.auth import get_current_user
 from services.supabase_service import (
     sb_get_profile,
-    sb_get_profile_raw,
     sb_update_profile,
     sb_soft_delete_profile,
     sb_delete_auth_user,

@@ -3,7 +3,6 @@ Test Offer Boosting APIs - Partner Portal boost functionality
 Tests for SnapRoad Offer Boost feature: pricing, create boost, active boosts, cancel boost
 All boost APIs are MOCKED with in-memory data
 """
-import pytest
 import requests
 import os
 

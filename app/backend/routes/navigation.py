@@ -2,14 +2,14 @@ from fastapi import APIRouter, Query, Body, Depends, HTTPException
 from starlette.requests import Request
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 import math
 
 from services.demo_random import choice, randint
 import httpx
 from limiter import limiter
-from models.schemas import NavigationRequest, Location, Route, Widget
+from models.schemas import NavigationRequest, Location, Route
 from services.mock_data import (
     saved_locations, saved_routes, widget_settings, MAP_LOCATIONS,
     road_reports_db, users_db,

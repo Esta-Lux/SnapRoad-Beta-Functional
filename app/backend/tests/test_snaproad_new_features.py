@@ -5,7 +5,6 @@ Backend tests for SnapRoad new features:
 - Admin Users list (Supabase-powered with mock fallback)
 - Admin Supabase status endpoint
 """
-import pytest
 import requests
 import os
 

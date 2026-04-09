@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, HTTPException, Depends, Request
+from fastapi import APIRouter, Query, HTTPException, Depends
 from typing import Annotated, Optional, Any, Dict
 from datetime import datetime, timedelta, timezone
 import json
@@ -17,7 +17,7 @@ from routes.gamification import add_xp_to_user, recompute_profile_level_fields, 
 from config import ENVIRONMENT
 from services.llm_client import chat_completion_model, get_sync_openai_client
 from database import get_supabase
-from services.supabase_service import sb_update_profile, sb_get_profile
+from services.supabase_service import sb_get_profile
 from services.premium_access import require_premium_user
 
 _trips_log = logging.getLogger(__name__)

@@ -1,7 +1,6 @@
 """Commute internal cron auth: HMAC and plain secret (incl. Railway production)."""
 import hashlib
 import hmac
-import os
 import time
 
 import pytest

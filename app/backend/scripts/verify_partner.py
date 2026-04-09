@@ -16,7 +16,7 @@ import importlib
 import config
 importlib.reload(config)
 
-from services.supabase_service import sb_get_user_by_email, sb_get_partner, sb_create_partner, sb_get_partners
+from services.supabase_service import sb_get_user_by_email, sb_create_partner, sb_get_partners
 from database import get_supabase
 
 PARTNER_EMAIL = "john.don@estaluxtest.com"
