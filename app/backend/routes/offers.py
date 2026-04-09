@@ -421,6 +421,22 @@ def complete_offer_redemption(
             gc = int(rpc_payload.get("gem_cost") or gem_cost)
             disc = int(rpc_payload.get("discount_percent") or discount)
             new_total = int(rpc_payload.get("new_gem_total") or _next_gem_total(user_id))
+            expected_total = max(0, int(current_gems) - int(gc))
+            if new_total > expected_total:
+                # Guardrail: a redeem must never increase wallet balance.
+                correction = expected_total - new_total
+                corrected = False
+                try:
+                    sb.rpc("increment_gems", {"uid": user_id, "amount": correction}).execute()
+                    corrected = True
+                except Exception:
+                    try:
+                        sb.table("profiles").update({"gems": expected_total}).eq("id", user_id).execute()
+                        corrected = True
+                    except Exception:
+                        logger.warning("Redeem gem correction failed for user %s", user_id, exc_info=True)
+                if corrected:
+                    new_total = expected_total
             data_out = {
                 "discount_percent": disc,
                 "gem_cost": gc,

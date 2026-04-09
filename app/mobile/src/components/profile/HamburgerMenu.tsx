@@ -73,7 +73,7 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
     },
     {
       icon: 'navigate-outline',
-      label: 'Commute alerts',
+      label: 'Commute Alerts',
       accent: '#10B981',
       action: () => runAfterMenuClose(onClose, () => onNavigate('CommuteAlerts')),
     },

@@ -360,7 +360,11 @@ export default function RewardsScreen() {
             }
           : prev,
       );
-      if (user) updateUser({ gems: Number.isFinite(newGemTotal) ? newGemTotal : Math.max(0, user.gems - gemCost) });
+      if (user) {
+        const fallbackTotal = Math.max(0, user.gems - gemCost);
+        const safeTotal = Number.isFinite(newGemTotal) ? Math.min(newGemTotal, fallbackTotal) : fallbackTotal;
+        updateUser({ gems: safeTotal });
+      }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       void refreshMyRedemptions();
       void loadFull('silent', location.lat, location.lng);
