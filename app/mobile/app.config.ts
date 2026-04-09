@@ -29,6 +29,9 @@ const envAny = (names: string[], fallback = ""): string => {
   return fallback;
 };
 
+/** Default Mapbox public token when env is unset. Override with EXPO_PUBLIC_MAPBOX_TOKEN / EAS env; restrict this key in the Mapbox dashboard. */
+const MAPBOX_PUBLIC_TOKEN_DEFAULT =
+  "pk.eyJ1Ijoic25hcHJvYWQiLCJhIjoiY21rdDkxbXR0MTRiODNsb2Q4dDdoaHFraSJ9.gE8IUpGUVsu50hH30SYAtg";
 
 const EAS_PROJECT_ID = "b800018b-79d3-4b8e-bbad-f5d628ee6a60";
 
@@ -57,11 +60,6 @@ const _includeDevClient =
   ["development", "development-simulator", "preview"].includes(_profile) ||
   (!_prod && _profile.length === 0);
 
-/** Mapbox pk. token: canonical EXPO_PUBLIC_MAPBOX_TOKEN only (embedded into extra.mapboxPublicToken at build time). */
-function resolveMapboxPublicTokenForConfig(): string {
-  return envAny(["EXPO_PUBLIC_MAPBOX_TOKEN"], "").trim();
-}
-
 function resolveSentryExpoPlugin(): string | [string, Record<string, string>] {
   if (envAny(["SENTRY_ORG"], "").trim() && envAny(["SENTRY_PROJECT"], "").trim()) {
     return [
@@ -84,9 +82,9 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
     owner: "snaproad",
     slug: "snaproad",
     scheme: "snaproad",
-    version: "1.0.1",
+    version: "1.0.0",
     // Bare workflow: `policy` runtime versions are invalid; keep in sync with `version` for OTA.
-    runtimeVersion: "1.0.1",
+    runtimeVersion: "1.0.0",
     updates: { url: `https://u.expo.dev/${EAS_PROJECT_ID}` },
     orientation: "portrait",
     icon: "./assets/icon.png",
@@ -127,8 +125,6 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
           "SnapRoad uses your camera to take photos of road hazards and incidents for community safety reports.",
         NSMicrophoneUsageDescription:
           "SnapRoad uses your microphone for voice commands with the Orion driving assistant.",
-        NSSpeechRecognitionUsageDescription:
-          "SnapRoad uses speech recognition to turn your voice into text for destination search and hands-free Orion commands while driving.",
         UIBackgroundModes: ["audio", "location", "fetch"],
         ITSAppUsesNonExemptEncryption: false,
         ...(_prod ? {} : {
@@ -171,13 +167,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
         "@rnmapbox/maps",
         {
           RNMapboxMapsImpl: "mapbox",
-        },
-      ],
-      [
-        "@badatgil/expo-mapbox-navigation",
-        {
-          accessToken: resolveMapboxPublicTokenForConfig(),
-          mapboxMapsVersion: "11.18.2",
+          RNMapboxMapsVersion: "11.18.2",
         },
       ],
       [
@@ -214,29 +204,10 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       easBuildProfile: process.env.EAS_BUILD_PROFILE || "",
       apiUrl: resolveApiUrl(),
       // Restrict this token in the Mapbox dashboard: iOS/Android bundle com.snaproad.app; web https://app.snaproad.app
-      mapboxPublicToken: (() => {
-        const t = resolveMapboxPublicTokenForConfig();
-        const easProfile = String(process.env.EAS_BUILD_PROFILE || "").toLowerCase();
-        const escape = Boolean(envAny(["ALLOW_MISSING_MAPBOX_TOKEN"], "").trim());
-        const prodish = easProfile === "production" || _prod;
-        const isCiLikePublish = String(process.env.CI || "").trim().length > 0 || process.env.EAS_BUILD;
-        if (isCiLikePublish && !t.trim() && prodish && !escape) {
-          throw new Error(
-            "[app.config] Mapbox public token is empty for a production build/update publish. " +
-              "Set EXPO_PUBLIC_MAPBOX_TOKEN in Expo → Environment variables for `production` " +
-              "(Plain text or Sensitive; not Secret), and publish OTA with `--environment production`. " +
-              "For GitHub Actions OTA, ensure Expo production env has this key, or add repo secret EXPO_PUBLIC_MAPBOX_TOKEN. " +
-              "Temporary bypass: ALLOW_MISSING_MAPBOX_TOKEN=1 — not for store.",
-          );
-        }
-        if (isCiLikePublish && !t.trim() && (!prodish || escape)) {
-          console.warn(
-            "[app.config] Mapbox token empty for CI build/update publish — process continues; set EXPO_PUBLIC_MAPBOX_TOKEN for a working map. " +
-              `Profile: ${easProfile || "(unset)"} APP_ENV=${process.env.APP_ENV || "(unset)"}.`,
-          );
-        }
-        return t;
-      })(),
+      mapboxPublicToken: envAny(
+        ["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"],
+        MAPBOX_PUBLIC_TOKEN_DEFAULT,
+      ),
       supabaseUrl: envAny(["EXPO_PUBLIC_SUPABASE_URL", "SUPABASE_URL"]),
       supabaseAnonKey: envAny(["EXPO_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY"]),
       stripePublishableKey: envAny([
