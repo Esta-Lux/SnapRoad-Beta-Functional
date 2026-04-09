@@ -3,9 +3,10 @@ from typing import Annotated, Optional
 from datetime import datetime, timedelta, timezone
 from models.schemas import OfferCreate
 
-from services.mock_data import (
-    OFFER_CONFIG,
-    driver_location_history,
+from services.offers_ports import (
+    append_driver_location_visit,
+    get_driver_location_history,
+    get_offer_config,
 )
 from models.schemas import ImageGenerateRequest, LocationVisit
 from services.supabase_service import _sb, sb_get_profile, _table_missing
@@ -72,7 +73,7 @@ def _user_offer_affinity(user_id: str, offer: dict) -> tuple[float, bool]:
     business_name = str(offer.get("business_name") or "").strip().lower()
     business_type = str(offer.get("business_type") or "").strip().lower()
 
-    history = driver_location_history.get(user_id, [])
+    history = get_driver_location_history(user_id)
     visits_here = 0
     same_type_visits = 0
     for visit in history:
@@ -732,8 +733,8 @@ def get_offers(
             "success": True,
             "data": offers,
             "discount_info": {
-                "free_discount": OFFER_CONFIG["free_discount_percent"],
-                "premium_discount": OFFER_CONFIG["premium_discount_percent"],
+                "free_discount": get_offer_config()["free_discount_percent"],
+                "premium_discount": get_offer_config()["premium_discount_percent"],
             },
             "total_savings": sum(o.get("discount_percent", 0) for o in offers),
             "count": len(offers),
@@ -861,7 +862,7 @@ def get_personalized_offers(
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
     user = _get_profile_like(user_id)
-    history = driver_location_history.get(user_id, [])
+    history = get_driver_location_history(user_id)
     visited_types = {}
     for visit in history:
         if visit.get("business_type"):
@@ -890,7 +891,8 @@ def get_personalized_offers(
         if offer.get("business_type") in visited_types:
             score += visited_types[offer["business_type"]] * 5
         is_prem = bool(user.get("is_premium")) or str(user.get("plan") or "").lower() in ("premium", "family")
-        discount = OFFER_CONFIG["premium_discount_percent"] if is_prem else OFFER_CONFIG["free_discount_percent"]
+        offer_cfg = get_offer_config()
+        discount = offer_cfg["premium_discount_percent"] if is_prem else offer_cfg["free_discount_percent"]
         row = {**offer, "score": score, "distance_km": round(dist, 2), "discount_percent": discount}
         attach_offer_category_fields(row)
         scored.append(row)
@@ -1278,16 +1280,17 @@ def record_location_visit(visit: LocationVisit, auth_user: CurrentUser):
     user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
-    if user_id not in driver_location_history:
-        driver_location_history[user_id] = []
-    driver_location_history[user_id].append({
-        "lat": visit.lat,
-        "lng": visit.lng,
-        "business_name": visit.business_name,
-        "business_type": visit.business_type,
-        "timestamp": visit.timestamp or datetime.now(timezone.utc).isoformat(),
-    })
-    driver_location_history[user_id] = driver_location_history[user_id][-100:]
+    append_driver_location_visit(
+        user_id,
+        {
+            "lat": visit.lat,
+            "lng": visit.lng,
+            "business_name": visit.business_name,
+            "business_type": visit.business_type,
+            "timestamp": visit.timestamp or datetime.now(timezone.utc).isoformat(),
+        },
+        max_items=100,
+    )
 
     source = _active_offers_source(limit=500)
     tracked = 0

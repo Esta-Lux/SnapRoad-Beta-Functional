@@ -11,6 +11,11 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../hooks/useLocation';
 import { api } from '../api/client';
+import { unwrapApiData as unwrapOffersApiData } from '../api/dto/offers';
+import {
+  parseProfilePatch,
+  unwrapApiData as unwrapProfileApiData,
+} from '../api/dto/profileWallet';
 import { PLANS, premiumSavingsPercent, PREMIUM_PUBLIC_MONTHLY } from '../constants/plans';
 import { applySnapRoadFromProfilePayload } from '../utils/profileScore';
 import FuelTracker from '../components/profile/FuelTracker';
@@ -171,10 +176,10 @@ export default function ProfileScreen() {
     else if (mode === 'refresh') setRefreshing(true);
     try {
       const safeGet = async (url: string) => {
-        try { return await api.get<any>(url); } catch { return { success: false, data: null }; }
+        try { return await api.get(url); } catch { return { success: false, data: null }; }
       };
       const profileRes = await api.getProfile().catch(() => ({ success: false, data: null }));
-      const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
+      const profilePayload = unwrapProfileApiData(profileRes?.data);
       const pp = profilePayload as Record<string, unknown>;
       const planStr = typeof pp.plan === 'string' ? pp.plan : '';
       const planLowerEarly = planStr.toLowerCase();
@@ -194,7 +199,7 @@ export default function ProfileScreen() {
         safeGet('/api/fuel/stats'),
         safeGet('/api/fuel/trends'),
       ]);
-      const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
+      const unwrap = (r: { data?: unknown } | undefined) => unwrapProfileApiData(r?.data);
       const emailLower = String(pp.email ?? '').trim().toLowerCase();
       const rawName =
         typeof pp.name === 'string' && pp.name.trim()
@@ -209,11 +214,7 @@ export default function ProfileScreen() {
         typeof pp.username_change_available_at === 'string' ? pp.username_change_available_at : null,
       );
       const userPatch: Partial<User> = {
-        gems: Number(pp.gems ?? 0),
-        level: Number(pp.level ?? 1),
-        totalMiles: Number(pp.total_miles ?? 0),
-        totalTrips: Number(pp.total_trips ?? 0),
-        safetyScore: Number(pp.safety_score ?? 0),
+        ...parseProfilePatch(pp),
         streak: Number(pp.streak ?? pp.safe_drive_streak ?? 0),
         xp: pp.xp != null ? Number(pp.xp) : undefined,
       };
@@ -243,8 +244,8 @@ export default function ProfileScreen() {
       }
       userPatch.promotion_active = pp.promotion_active === true;
       applySnapRoadFromProfilePayload(userPatch, pp);
-      const statsBody = (fuelStatsRes?.data as any)?.data ?? fuelStatsRes?.data ?? {};
-      const trendsBody = (fuelTrendsRes?.data as any)?.data ?? fuelTrendsRes?.data ?? {};
+      const statsBody = (unwrapProfileApiData(fuelStatsRes?.data) as Record<string, unknown>) ?? {};
+      const trendsBody = (unwrapProfileApiData(fuelTrendsRes?.data) as Record<string, unknown>) ?? {};
       const avgMpgRaw = statsBody.avg_mpg ?? statsBody.averageMpg;
       const avgMpg = avgMpgRaw != null && avgMpgRaw !== '' ? Number(avgMpgRaw) : null;
       const monthlyGallons = Number(trendsBody.monthly_avg_gallons ?? 0);
@@ -264,21 +265,26 @@ export default function ProfileScreen() {
         lastOdometerMi,
         milesSinceLastFill,
       });
-      setPlaces(Array.isArray(unwrap(locRes)) ? unwrap(locRes) : []);
-      setRoutes(Array.isArray(unwrap(routeRes)) ? unwrap(routeRes) : []);
+      const locData = unwrap(locRes);
+      const routeData = unwrap(routeRes);
+      setPlaces(Array.isArray(locData) ? (locData as SavedLocation[]) : []);
+      setRoutes(Array.isArray(routeData) ? (routeData as SavedRoute[]) : []);
       if (commuteRes.success && commuteRes.data) {
         const cw = commuteRes.data as { data?: CommuteRoute[]; limit?: number };
         setCommutes(Array.isArray(cw.data) ? cw.data : []);
         setCommuteLimit(Number(cw.limit ?? 5));
       }
-      api.get<any>('/api/place-alerts').then((r) => {
-        const d = r?.data?.data ?? r?.data ?? [];
+      api.get('/api/place-alerts').then((r) => {
+        const d = unwrapOffersApiData(r?.data);
         if (Array.isArray(d)) setPlaceAlerts(d);
-        setPlaceAlertLimit(r?.data?.limit ?? 5);
-        setPlaceAlertPremium(r?.data?.is_premium ?? false);
+        const meta = (r?.data as Record<string, unknown> | undefined) ?? {};
+        setPlaceAlertLimit(Number(meta.limit ?? 5));
+        setPlaceAlertPremium(Boolean(meta.is_premium ?? false));
       }).catch(() => {});
-      const notifPayload = (notifRes.data as any)?.data ?? notifRes.data ?? {};
-      const push = notifPayload?.push_notifications ?? {};
+      const notifPayload = (unwrapProfileApiData(notifRes.data) as Record<string, unknown>) ?? {};
+      const push = (notifPayload.push_notifications && typeof notifPayload.push_notifications === 'object'
+        ? (notifPayload.push_notifications as Record<string, unknown>)
+        : {});
       setPushEnabled(Boolean(push.trip_summary ?? true));
       setFriendRequests(Boolean(push.friend_activity ?? true));
       setOfferAlerts(Boolean(push.offers ?? true));
@@ -295,7 +301,7 @@ export default function ProfileScreen() {
           behavior: { hard_braking_events_total: 0, speeding_events_total: 0 },
         });
       } else {
-        const weekly = weeklyRes?.data?.data ?? weeklyRes?.data ?? {};
+        const weekly = (unwrapProfileApiData(weeklyRes?.data) as Record<string, unknown>) ?? {};
         const beh = weekly.behavior;
         setWeeklyRecap({
           totalTrips: Number(weekly.total_trips ?? weekly.trips_this_week ?? 0),
@@ -308,8 +314,8 @@ export default function ProfileScreen() {
           behavior:
             beh && typeof beh === 'object'
               ? {
-                  hard_braking_events_total: Number((beh as any).hard_braking_events_total ?? 0),
-                  speeding_events_total: Number((beh as any).speeding_events_total ?? 0),
+                  hard_braking_events_total: Number((beh as Record<string, unknown>).hard_braking_events_total ?? 0),
+                  speeding_events_total: Number((beh as Record<string, unknown>).speeding_events_total ?? 0),
                 }
               : { hard_braking_events_total: 0, speeding_events_total: 0 },
         });
@@ -320,10 +326,10 @@ export default function ProfileScreen() {
         setVehicleType(vtRaw);
       }
       updateUserRef.current(userPatch);
-      const historyRoot = tripsHistoryRes?.data?.data ?? tripsHistoryRes?.data;
+      const historyRoot = unwrapProfileApiData(tripsHistoryRes?.data);
       const recentTrips = Array.isArray(historyRoot) ? historyRoot : [];
       setTripHistoryRows(
-        recentTrips.map((t: any, idx: number) => {
+        recentTrips.map((t: Record<string, unknown>, idx: number) => {
           const rawDate = String(t.date ?? '');
           let dateStr = '';
           let timeStr = '';
@@ -356,20 +362,28 @@ export default function ProfileScreen() {
           };
         }),
       );
-      const gemData = gemsRes?.data?.data ?? gemsRes?.data ?? {};
+      const gemData = (unwrapProfileApiData(gemsRes?.data) as Record<string, unknown>) ?? {};
       const tx = Array.isArray(gemData.recent_transactions) ? gemData.recent_transactions : [];
-      setGemTxRows(tx.map((item: any, idx: number) => ({
+      setGemTxRows(tx.map((item: Record<string, unknown>, idx: number) => ({
         id: String(idx),
         type: item.type === 'earned' || item.type === 'spent' ? item.type : 'unknown',
         amount: Number(item.amount ?? 0),
         source: String(item.source ?? 'Transaction'),
         date: String(item.date ?? new Date().toISOString()),
       })));
-      const badgeData = badgesRes?.data?.data ?? badgesRes?.data ?? {};
-      const badgeList = Array.isArray(badgeData.badges) ? badgeData.badges : Array.isArray(badgeData) ? badgeData : [];
+      const badgeDataRaw = unwrapProfileApiData(badgesRes?.data);
+      const badgeDataObj =
+        badgeDataRaw && typeof badgeDataRaw === 'object' && !Array.isArray(badgeDataRaw)
+          ? (badgeDataRaw as Record<string, unknown>)
+          : null;
+      const badgeList = Array.isArray(badgeDataRaw)
+        ? badgeDataRaw
+        : Array.isArray(badgeDataObj?.badges)
+          ? badgeDataObj.badges
+          : [];
       setBadgeRows(
-        badgeList.map((b: any, idx: number) => ({
-          id: b.id ?? idx,
+        badgeList.map((b: Record<string, unknown>, idx: number) => ({
+          id: typeof b.id === 'number' || typeof b.id === 'string' ? b.id : idx,
           name: String(b.name ?? 'Badge'),
           earned: Boolean(b.earned),
           description: String(b.description ?? b.desc ?? ''),

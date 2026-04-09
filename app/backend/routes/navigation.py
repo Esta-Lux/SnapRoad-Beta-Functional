@@ -10,9 +10,12 @@ from services.demo_random import choice, randint
 import httpx
 from limiter import limiter
 from models.schemas import NavigationRequest, Location, Route
-from services.mock_data import (
-    saved_locations, saved_routes, widget_settings, MAP_LOCATIONS,
-    road_reports_db, users_db,
+from services.navigation_ports import (
+    get_map_locations_seed,
+    get_road_reports_seed,
+    get_user_snapshot,
+    get_widget_settings,
+    resolve_user_scoped_data,
 )
 from config import (
     CAMERAS_API_KEY,
@@ -33,27 +36,14 @@ class VoiceCommandBody(BaseModel):
     lng: Optional[float] = None
 
 router = APIRouter(prefix="/api", tags=["Navigation"])
+logger = logging.getLogger(__name__)
 
 
 def _resolve_user_scoped_data(auth_user: dict) -> tuple[str, list, list]:
-    user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid auth context")
-    user = users_db.get(user_id)
-    if not user:
-        if ENVIRONMENT == "production":
-            # Avoid mutating in-memory state in production read paths.
-            return user_id, list(saved_locations), list(saved_routes)
-        user = users_db.setdefault(user_id, {"id": user_id})
-    if "saved_locations" not in user:
-        if ENVIRONMENT == "production":
-            return user_id, list(saved_locations), list(user.get("saved_routes", saved_routes))
-        user["saved_locations"] = list(saved_locations)
-    if "saved_routes" not in user:
-        if ENVIRONMENT == "production":
-            return user_id, list(user.get("saved_locations", saved_locations)), list(saved_routes)
-        user["saved_routes"] = list(saved_routes)
-    return user_id, user["saved_locations"], user["saved_routes"]
+    try:
+        return resolve_user_scoped_data(auth_user, is_production=(ENVIRONMENT == "production"))
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="Invalid auth context") from exc
 
 
 def _production_saved_places_user_id(auth_user: dict) -> str:
@@ -68,6 +58,7 @@ def _sb_list_user_saved_places(uid: str) -> list:
     try:
         res = sb.table("user_saved_places").select("*").eq("user_id", uid).order("created_at").execute()
     except Exception:
+        logger.warning("saved places read failed for user_id=%s", uid, exc_info=True)
         return []
     out = []
     for x in res.data or []:
@@ -128,6 +119,7 @@ def add_location(location: Location, auth_user: dict = Depends(get_current_user)
             if "id" not in saved:
                 raise ValueError("no id")
         except Exception:
+            logger.warning("save place failed for user_id=%s", uid, exc_info=True)
             raise HTTPException(status_code=500, detail="Could not save place")
         loc = {
             "id": int(saved["id"]),
@@ -154,6 +146,7 @@ def delete_location(location_id: int, auth_user: dict = Depends(get_current_user
         try:
             sb.table("user_saved_places").delete().eq("user_id", uid).eq("id", location_id).execute()
         except Exception:
+            logger.warning("delete place failed for user_id=%s location_id=%s", uid, location_id, exc_info=True)
             raise HTTPException(status_code=500, detail="Could not delete place")
         return {"success": True, "message": "Location deleted"}
     _, user_locations, _ = _resolve_user_scoped_data(auth_user)
@@ -317,7 +310,7 @@ def get_route_notifications(
     Premium/family users are push-eligible; free users receive in-app only notifications.
     """
     user_id, _, user_routes = _resolve_user_scoped_data(auth_user)
-    user = users_db.get(user_id, {})
+    user = get_user_snapshot(user_id)
     push_eligible = _is_premium_or_family(user)
     now = datetime.now()
     today_weekday = now.strftime("%a")  # Mon, Tue, ...
@@ -402,8 +395,9 @@ def get_navigation_nearby_offers(
     from routes.offers import _active_offers_source
 
     user_id, user_locations, user_routes = _resolve_user_scoped_data(auth_user)
-    prior_visits = users_db.get(user_id, {}).get("saved_locations", user_locations) or user_locations
-    history = users_db.get(user_id, {}).get("saved_routes", user_routes) or user_routes
+    profile = get_user_snapshot(user_id)
+    prior_visits = profile.get("saved_locations", user_locations) or user_locations
+    history = profile.get("saved_routes", user_routes) or user_routes
     alerted_key = f"nearby-offers-alerted:{trip_id}"
     alerted_ids = {str(item) for item in (cache_get(alerted_key) or [])}
 
@@ -556,11 +550,11 @@ async def search_map_locations(
                 })
             return {"success": True, "data": results, "query": q, "total_results": len(results)}
         except Exception as exc:
-            _nav_log.warning("Places API search failed, falling back to local: %s", exc)
+            logger.warning("Places API search failed, falling back to local: %s", exc)
 
     query = q.lower().strip()
     results = []
-    for loc in MAP_LOCATIONS:
+    for loc in get_map_locations_seed():
         name_match = query in loc["name"].lower()
         address_match = query in loc["address"].lower()
         type_match = query in loc["type"].lower()
@@ -605,7 +599,7 @@ def get_mock_directions(origin_lat: float, origin_lng: float, dest_lat: float, d
 def get_widgets():
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
-    return {"success": True, "data": widget_settings}
+    return {"success": True, "data": get_widget_settings()}
 
 
 @router.post("/widgets/{widget_id}/toggle")
@@ -613,6 +607,7 @@ def get_widgets():
 def toggle_widget(widget_id: str):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
+    widget_settings = get_widget_settings()
     if widget_id in widget_settings:
         widget_settings[widget_id]["visible"] = not widget_settings[widget_id]["visible"]
     return {"success": True, "data": widget_settings}
@@ -623,6 +618,7 @@ def toggle_widget(widget_id: str):
 def collapse_widget(widget_id: str):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
+    widget_settings = get_widget_settings()
     if widget_id in widget_settings:
         widget_settings[widget_id]["collapsed"] = not widget_settings[widget_id]["collapsed"]
     return {"success": True, "data": widget_settings}
@@ -632,6 +628,7 @@ def collapse_widget(widget_id: str):
 def update_widget_position(widget_id: str, body: dict):
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Legacy widget settings unavailable in production")
+    widget_settings = get_widget_settings()
     if widget_id in widget_settings:
         widget_settings[widget_id]["position"] = body.get("position", 0)
     return {"success": True, "data": widget_settings}
@@ -889,7 +886,7 @@ def get_map_cameras(
 
     # No OHGO → fall back to seed data cameras so the layer always has something in dev
     if not filtered:
-        for r in road_reports_db:
+        for r in get_road_reports_seed():
             if r.get("type") == "camera":
                 filtered.append(r)
 
@@ -944,9 +941,10 @@ def get_map_traffic(
             )
         reports = rr.data or []
     except Exception:
+        logger.warning("map/traffic fallback to seed reports", exc_info=True)
         if ENVIRONMENT == "production":
             raise HTTPException(status_code=503, detail="Traffic overlay unavailable")
-        reports = list(road_reports_db)
+        reports = get_road_reports_seed()
     # Fetch cameras from external API when key and URL are configured
     if lat is not None and lng is not None and CAMERAS_API_KEY and (CAMERAS_API_URL or "").strip():
         external = _fetch_cameras_from_api(lat, lng, radius)
@@ -969,8 +967,8 @@ def get_map_traffic(
                 filtered.append(r)
         reports = filtered
     # If nothing in radius, still return seed data so map always has cameras to show
-    if not reports and road_reports_db:
-        reports = list(road_reports_db)
+    if not reports:
+        reports = get_road_reports_seed()
 
     overlays = []
     for r in reports:

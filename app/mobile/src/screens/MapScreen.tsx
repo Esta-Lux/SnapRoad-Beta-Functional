@@ -63,6 +63,10 @@ import PhotoReportDetailModal from '../components/map/PhotoReportDetailModal';
 import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config/restrictedRegions';
 import MapCategoryExploreSheet from '../components/map/MapCategoryExploreSheet';
 import PhotoReportSheet from '../components/map/PhotoReportSheet';
+import MapSearchTopBar from '../components/map/MapSearchTopBar';
+import IncidentReportCard from '../components/map/IncidentReportCard';
+import TrafficCongestionBanner from '../components/map/TrafficCongestionBanner';
+import RoutePreviewPanel from '../components/map/RoutePreviewPanel';
 import { projectAhead, getCameraConfig } from '../navigation/navigationCamera';
 import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import { useNavigationSpeech } from '../hooks/useNavigationSpeech';
@@ -101,6 +105,12 @@ import {
 import { formatDuration } from '../utils/format';
 import { speak, stopSpeaking } from '../utils/voice';
 import { api, API_BASE_URL } from '../api/client';
+import {
+  parseNearbyOffers,
+  parseRedeemOfferPayload,
+  unwrapApiData as unwrapOffersApiData,
+} from '../api/dto/offers';
+import { parseLiveLocationUpdate } from '../api/dto/realtime';
 import OrionChat, { type OrionPlaceSuggestion } from '../components/orion/OrionChat';
 import OrionQuickMic from '../components/orion/OrionQuickMic';
 import TripSummaryModal from '../components/common/Modal';
@@ -114,57 +124,17 @@ import { storage } from '../utils/storage';
 import { logMapDataIssue } from '../utils/mapApiDiagnostics';
 import { supabase } from '../lib/supabase';
 import type { DrivingMode, Incident, SavedLocation, Offer, FriendLocation } from '../types';
+import {
+  mapFriendsApiToLocations,
+  mergeLiveLocationUpdate,
+} from '../hooks/useMapFriendPresence';
+import { dedupeGeocodeResults, localMatchesForSearchQuery } from '../hooks/useMapSearchSession';
+import { useNearbyOffersOnMap } from '../hooks/useNearbyOffersOnMap';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
 
-function dedupeGeocodeResults(rows: GeocodeResult[]): GeocodeResult[] {
-  const seen = new Set<string>();
-  const out: GeocodeResult[] = [];
-  for (const r of rows) {
-    const pid = r.place_id;
-    const k = pid
-      ? `pid:${pid}`
-      : `xy:${(r.name || '').toLowerCase()}:${Number(r.lat).toFixed(4)}:${Number(r.lng).toFixed(4)}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(r);
-  }
-  return out;
-}
-
-/** Saved places + recent searches matching the query (shown before remote autocomplete). */
-function localMatchesForSearchQuery(
-  q: string,
-  savedPlaces: SavedLocation[],
-  recent: GeocodeResult[],
-): GeocodeResult[] {
-  const ql = q.trim().toLowerCase();
-  if (ql.length < 2) return [];
-  const fromSaved: GeocodeResult[] = [];
-  for (const p of savedPlaces) {
-    if (p.lat == null || p.lng == null) continue;
-    const nm = (p.name || '').toLowerCase();
-    const ad = (p.address || '').toLowerCase();
-    if (!nm.includes(ql) && !ad.includes(ql)) continue;
-    fromSaved.push({
-      name: p.name,
-      address: p.address || '',
-      lat: Number(p.lat),
-      lng: Number(p.lng),
-      placeType: p.category,
-    });
-  }
-  const fromRecent: GeocodeResult[] = [];
-  for (const r of recent) {
-    const nm = (r.name || '').toLowerCase();
-    const ad = (r.address || '').toLowerCase();
-    if (!nm.includes(ql) && !ad.includes(ql)) continue;
-    fromRecent.push({ ...r });
-  }
-  return dedupeGeocodeResults([...fromSaved, ...fromRecent]);
-}
 
 function placePhotoThumbUri(photoRef?: string, maxWidth = 96): string | undefined {
   if (!photoRef || !API_BASE_URL) return undefined;
@@ -203,26 +173,6 @@ function placeCardFuelHint(place: {
 /** Traffic cams hide when zoomed out (less map clutter). */
 /** Show traffic / camera POIs once the user is zoomed in enough (lower = visible sooner). */
 const TRAFFIC_CAM_MIN_ZOOM = 12;
-
-function mapFriendsApiToLocations(rows: unknown): FriendLocation[] {
-  if (!Array.isArray(rows)) return [];
-  return rows
-    .map((r: Record<string, unknown>) => ({
-      id: String(r.friend_id ?? r.id ?? ''),
-      name: (r.name as string) ?? 'Friend',
-      avatar: r.avatar_url as string | undefined,
-      lat: Number(r.lat ?? 0),
-      lng: Number(r.lng ?? 0),
-      heading: Number(r.heading ?? 0),
-      speedMph: Number(r.speed_mph ?? 0),
-      isNavigating: !!r.is_navigating,
-      destinationName: typeof r.destination_name === 'string' ? r.destination_name : undefined,
-      lastUpdated: typeof r.last_updated === 'string' ? r.last_updated : '',
-      isSharing: !!r.is_sharing,
-      batteryPct: r.battery_pct != null && r.battery_pct !== '' ? Number(r.battery_pct) : undefined,
-    }))
-    .filter((f) => f.id.length > 0);
-}
 
 const INCIDENT_COLORS: Record<string, string> = {
   police: '#4A90D9', accident: '#D04040', hazard: '#E07830',
@@ -539,14 +489,12 @@ export default function MapScreen() {
   const [savedPlaces, setSavedPlaces] = useState<SavedLocation[]>([]);
   const [activeChip, setActiveChip] = useState<string>('favorites');
   const [nearbyOffers, setNearbyOffers] = useState<Offer[]>([]);
-  const recommendedNearbyOffers = useMemo(() => {
-    return nearbyOffers.filter((o) => {
-      const la = Number(o.lat);
-      const lo = Number(o.lng);
-      if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
-      return haversineMeters(location.lat, location.lng, la, lo) <= RECOMMENDED_OFFER_MAX_METERS;
-    });
-  }, [nearbyOffers, location.lat, location.lng]);
+  const recommendedNearbyOffers = useNearbyOffersOnMap(
+    nearbyOffers,
+    location,
+    RECOMMENDED_OFFER_MAX_METERS,
+    haversineMeters,
+  );
 
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
@@ -844,14 +792,13 @@ export default function MapScreen() {
       return;
     }
     api
-      .get<any>('/api/friends/list')
+      .get('/api/friends/list')
       .then((r) => {
         if (!r.success) {
           logMapDataIssue('GET /api/friends/list', r.error);
           return;
         }
-        const d = (r.data as any)?.data ?? r.data;
-        setFriendLocations(mapFriendsApiToLocations(d));
+        setFriendLocations(mapFriendsApiToLocations(unwrapOffersApiData(r.data)));
       })
       .catch((e) => logMapDataIssue('GET /api/friends/list', e));
   }, [refreshSavedPlaces, user?.isPremium]);
@@ -862,14 +809,13 @@ export default function MapScreen() {
     const rLng = Math.round(location.lng * 100);
     if (rLat === 0 && rLng === 0) return;
     api
-      .get<any>(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}&radius=${OFFERS_NEARBY_RADIUS_KM}`)
+      .get(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}&radius=${OFFERS_NEARBY_RADIUS_KM}`)
       .then((r) => {
         if (!r.success) {
           logMapDataIssue('GET /api/offers/nearby', r.error);
           return;
         }
-        const d = (r.data as any)?.data ?? r.data;
-        if (Array.isArray(d)) setNearbyOffers(d);
+        setNearbyOffers(parseNearbyOffers(r.data));
       })
       .catch((e) => logMapDataIssue('GET /api/offers/nearby', e));
   }, [Math.round(location.lat * 100), Math.round(location.lng * 100)]);
@@ -931,14 +877,19 @@ export default function MapScreen() {
 
   const handleRedeemOffer = useCallback(async (offer: Offer) => {
     try {
-      const res = await api.post<any>(`/api/offers/${offer.id}/redeem`);
+      const res = await api.post(`/api/offers/${offer.id}/redeem`);
       if (!res.success) {
         Alert.alert('Redeem Offer', res.error || 'Could not redeem this offer right now.');
         return;
       }
 
-      const gemCost = Number((res.data as any)?.data?.gem_cost ?? offer.gem_cost ?? offer.gems_reward ?? 0);
-      const newGemTotal = Number((res.data as any)?.data?.new_gem_total ?? NaN);
+      const redeemPayload = parseRedeemOfferPayload(res.data);
+      const gemCost = Number(
+        Number.isFinite(redeemPayload.gem_cost ?? NaN)
+          ? redeemPayload.gem_cost
+          : offer.gem_cost ?? offer.gems_reward ?? 0,
+      );
+      const newGemTotal = Number(redeemPayload.new_gem_total ?? NaN);
       setNearbyOffers((prev) => prev.map((item) => (item.id === offer.id ? { ...item, redeemed: true } : item)));
       setSelectedOffer((prev) => (prev?.id === offer.id ? { ...offer, redeemed: true } : prev));
       if (user) {
@@ -1125,24 +1076,21 @@ export default function MapScreen() {
   // Fix 7: Supabase realtime for friend locations
   useEffect(() => {
     const channel = supabase.channel('friend-locations')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, (payload: any) => {
-        if (!payload?.new) return;
-        setFriendLocations((prev) => prev.map((f) =>
-          String(f.id) === String(payload.new.user_id)
-            ? {
-              ...f,
-              lat: payload.new.lat ?? f.lat,
-              lng: payload.new.lng ?? f.lng,
-              speedMph: payload.new.speed_mph ?? f.speedMph,
-              heading: payload.new.heading ?? f.heading,
-              isSharing: typeof payload.new.is_sharing === 'boolean' ? payload.new.is_sharing : f.isSharing,
-              isNavigating: typeof payload.new.is_navigating === 'boolean' ? payload.new.is_navigating : f.isNavigating,
-              destinationName: payload.new.destination_name ?? f.destinationName,
-              batteryPct: payload.new.battery_pct ?? f.batteryPct,
-              lastUpdated: typeof payload.new.last_updated === 'string' ? payload.new.last_updated : f.lastUpdated,
-            }
-            : f
-        ));
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, (payload) => {
+        const upd = parseLiveLocationUpdate(payload?.new);
+        if (!upd) return;
+        setFriendLocations((prev) => mergeLiveLocationUpdate(prev, {
+          friend_id: upd.friendId,
+          lat: upd.lat,
+          lng: upd.lng,
+          speed_mph: upd.speedMph,
+          heading: upd.heading,
+          is_sharing: upd.isSharing,
+          is_navigating: upd.isNavigating,
+          destination_name: upd.destinationName,
+          battery_pct: upd.batteryPct,
+          last_updated: upd.lastUpdated,
+        }));
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -2803,161 +2751,39 @@ export default function MapScreen() {
         onClose={() => setSelectedTrafficCamera(null)}
       />
 
-      {/* ═══ TOP BAR (not navigating, not previewing) ═════════════════════ */}
-      {!nav.isNavigating && !nav.showRoutePreview && (
-        <View style={[s.topBar, { top: insets.top + 8, zIndex: 15 }]} pointerEvents="box-none">
-          <View style={s.searchRow}>
-            <TouchableOpacity style={[s.menuBtn, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => setShowMenu(!showMenu)}>
-              <Ionicons name="menu" size={18} color={colors.text} />
-            </TouchableOpacity>
-            <View style={[s.searchPill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Ionicons name="search-outline" size={15} color={colors.textTertiary} />
-              <TextInput
-                style={[s.searchInput, { color: colors.text }]}
-                placeholder="Where to?"
-                placeholderTextColor={colors.textTertiary}
-                value={searchQuery}
-                onChangeText={handleSearchChange}
-                onFocus={() => setIsSearchFocused(true)}
-                blurOnSubmit={false}
-                returnKeyType="search"
-                onSubmitEditing={() => {
-                  void commitSearch();
-                }}
-                clearButtonMode="while-editing"
-              />
-              {searchQuery.length > 0 ? (
-                <TouchableOpacity onPress={handleClearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  onPress={() => setShowOrion(true)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={{ marginLeft: 10, paddingLeft: 4 }}
-                  accessibilityLabel="Open Orion"
-                >
-                  <Ionicons name="mic-outline" size={16} color={colors.textTertiary} />
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          {!isSearchFocused && (
-            <FlatList
-              horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}
-              data={[
-                { key: 'favorites', label: 'Favorites', icon: 'star-outline' as const },
-                { key: 'nearby', label: 'Nearby', icon: 'location-outline' as const },
-                { key: 'gas', label: 'Gas', icon: 'flash-outline' as const },
-                { key: 'food', label: 'Food', icon: 'restaurant-outline' as const },
-                { key: 'coffee', label: 'Coffee', icon: 'cafe-outline' as const },
-                { key: 'parking', label: 'Parking', icon: 'car-outline' as const },
-                { key: 'ev', label: 'EV', icon: 'battery-charging-outline' as const },
-                { key: 'grocery', label: 'Grocery', icon: 'cart-outline' as const },
-              ]}
-              keyExtractor={(c) => c.key}
-              renderItem={({ item: chip }) => {
-                const sel = activeChip === chip.key;
-                return (
-                  <TouchableOpacity style={[s.chip, { backgroundColor: sel ? colors.primary : colors.surface, borderColor: sel ? 'transparent' : colors.border }]}
-                    onPress={() => openCategoryExplore(chip.key)}>
-                    <Ionicons name={chip.icon} size={13} color={sel ? '#fff' : colors.textSecondary} style={{ marginRight: 4 }} />
-                    <Text style={{ color: sel ? '#fff' : colors.text, fontSize: 12, fontWeight: '600' }}>{chip.label}</Text>
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          )}
-
-          {!isSearchFocused && savedPlaces.length > 0 && (
-            <FlatList
-              horizontal showsHorizontalScrollIndicator={false}
-              style={{ marginTop: 8 }}
-              data={savedPlaces.filter((p) => ['home', 'work', 'favorite'].includes(p.category)).slice(0, 5)}
-              keyExtractor={(p) => String(p.id)}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={[s.quickPlace, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                  onPress={() => { if (item.lat && item.lng) handleSelectResult({ name: item.name, address: item.address, lat: item.lat, lng: item.lng }); }}>
-                  <Ionicons name={item.category === 'home' ? 'home-outline' : item.category === 'work' ? 'briefcase-outline' : 'star-outline'} size={14} color={colors.textTertiary} />
-                  <View><Text style={[s.qpTitle, { color: colors.text }]}>{item.name}</Text><Text style={[s.qpSub, { color: colors.textSecondary }]} numberOfLines={1}>{item.address}</Text></View>
-                </TouchableOpacity>
-              )}
-            />
-          )}
-
-          {isSearchFocused && (
-            <View style={[s.results, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              {!searchQuery.trim() && recentSearches.length > 0 && <Text style={[s.recentHeader, { color: colors.textTertiary }]}>Recent</Text>}
-              {isSearching && searchQuery.trim() ? (
-                <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                  <Text style={{ color: colors.textTertiary, fontSize: 13 }}>Searching...</Text>
-                </View>
-              ) : searchQuery.trim() && searchResults.length === 0 ? (
-                <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                  <Ionicons name="search-outline" size={22} color={colors.textTertiary} />
-                  <Text style={{ color: colors.textTertiary, fontSize: 13, marginTop: 6 }}>
-                    {searchQuery.trim().length < 2 ? 'Keep typing to search...' : 'No results found'}
-                  </Text>
-                </View>
-              ) : (
-                <FlatList
-                  data={searchQuery.trim() ? searchResults : recentSearches}
-                  keyExtractor={(item, i) => `${(item as any).place_id || item.name}-${i}`}
-                  keyboardShouldPersistTaps="handled"
-                  renderItem={({ item }) => {
-                    const pt = item.placeType || '';
-                    const icon: keyof typeof Ionicons.glyphMap =
-                      pt.includes('restaurant') || pt.includes('food') || pt.includes('cafe') ? 'restaurant-outline'
-                      : pt.includes('gas') || pt.includes('fuel') ? 'flash-outline'
-                      : pt.includes('lodging') || pt.includes('hotel') ? 'bed-outline'
-                      : pt.includes('store') || pt.includes('shop') || pt.includes('grocery') ? 'cart-outline'
-                      : pt.includes('park') ? 'leaf-outline'
-                      : pt.includes('hospital') || pt.includes('pharmacy') || pt.includes('health') ? 'medkit-outline'
-                      : pt.includes('school') || pt.includes('university') ? 'school-outline'
-                      : (item as any).place_id ? 'business-outline'
-                      : pt === 'address' ? 'location-outline'
-                      : 'location-outline';
-                    const hasCoords = item.lat !== 0 && item.lng !== 0;
-                    const dist = hasCoords ? haversineMeters(location.lat, location.lng, item.lat, item.lng) : null;
-                    const distText = dist != null ? (dist < 160 ? `${Math.round(dist * 3.281)} ft` : `${(dist / 1609.344).toFixed(1)} mi`) : '';
-                    const suri = placePhotoThumbUri((item as GeocodeResult).photo_reference, 128);
-                    const priceHint = searchResultPriceHint(item as GeocodeResult);
-                    const openHint =
-                      (item as GeocodeResult).open_now === true
-                        ? 'Open now'
-                        : (item as GeocodeResult).open_now === false
-                          ? 'Closed'
-                          : '';
-                    return (
-                      <TouchableOpacity style={[s.resultRow, { borderBottomColor: colors.border }]} onPress={() => handleSelectResult(item)}>
-                        <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: colors.surfaceSecondary, justifyContent: 'center', alignItems: 'center', marginRight: 10, overflow: 'hidden' }}>
-                          {suri ? (
-                            <Image source={{ uri: suri }} style={{ width: 44, height: 44 }} resizeMode="cover" />
-                          ) : (
-                            <Ionicons name={icon} size={18} color={colors.primary} />
-                          )}
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[s.resultName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                          <Text style={[s.resultAddr, { color: colors.textSecondary }]} numberOfLines={1}>{item.address}</Text>
-                          {priceHint ? (
-                            <Text style={{ color: colors.textTertiary, fontSize: 11, fontWeight: '600', marginTop: 2 }} numberOfLines={2}>{priceHint}</Text>
-                          ) : null}
-                          {openHint ? (
-                            <Text style={{ color: openHint === 'Open now' ? '#22C55E' : colors.textTertiary, fontSize: 11, fontWeight: '600', marginTop: 2 }}>{openHint}</Text>
-                          ) : null}
-                        </View>
-                        {distText ? <Text style={{ color: colors.textTertiary, fontSize: 11, fontWeight: '600', marginLeft: 8 }}>{distText}</Text> : null}
-                      </TouchableOpacity>
-                    );
-                  }}
-                />
-              )}
-            </View>
-          )}
-        </View>
-      )}
+      <MapSearchTopBar
+        visible={!nav.isNavigating && !nav.showRoutePreview}
+        topInset={insets.top}
+        colors={colors}
+        styles={s}
+        showMenu={showMenu}
+        setShowMenu={setShowMenu}
+        searchQuery={searchQuery}
+        onSearchChange={handleSearchChange}
+        isSearchFocused={isSearchFocused}
+        setIsSearchFocused={setIsSearchFocused}
+        onSubmitSearch={() => {
+          void commitSearch();
+        }}
+        onClearSearch={handleClearSearch}
+        onOpenOrion={() => setShowOrion(true)}
+        activeChip={activeChip}
+        onSelectChip={openCategoryExplore}
+        savedPlaces={savedPlaces}
+        onSelectSavedPlace={(item) => {
+          if (item.lat && item.lng) {
+            handleSelectResult({ name: item.name, address: item.address, lat: item.lat, lng: item.lng });
+          }
+        }}
+        isSearching={isSearching}
+        searchResults={searchResults}
+        recentSearches={recentSearches}
+        location={location}
+        onSelectResult={handleSelectResult}
+        haversineMeters={haversineMeters}
+        placePhotoThumbUri={placePhotoThumbUri}
+        searchResultPriceHint={searchResultPriceHint}
+      />
 
       {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
       {nav.isNavigating && (currentStep || nav.navigationProgress?.banner) && (() => {
@@ -3082,65 +2908,20 @@ export default function MapScreen() {
         );
       })()}
 
-      {/* ═══ REPORT CARD (all modes — large, clean, with timer + vote) ══ */}
-      {activeReportCard && (
-        <Animated.View
-          entering={FadeIn.duration(300)}
-          exiting={FadeOut.duration(250)}
-          style={[
-            s.reportCardNew,
-            { top: nav.isNavigating ? insets.top + 130 : insets.top + 90 },
-          ]}
-        >
-          {/* Main content */}
-          <View style={s.rcNewContent}>
-            {/* Icon badge */}
-            <View style={[s.rcNewIcon, { backgroundColor: (INCIDENT_COLORS[activeReportCard.type] ?? '#F59E0B') + '22' }]}>
-              <Ionicons
-                name={activeReportCard.type === 'police' ? 'shield' : activeReportCard.type === 'accident' ? 'car-sport' : activeReportCard.type === 'construction' ? 'construct' : 'warning'}
-                size={22}
-                color={INCIDENT_COLORS[activeReportCard.type] ?? '#F59E0B'}
-              />
-            </View>
-            {/* Text */}
-            <View style={s.rcNewTextBlock}>
-              <Text style={s.rcNewTitle} numberOfLines={1}>
-                {activeReportCard.title}
-              </Text>
-              <Text style={s.rcNewSub}>
-                {((haversineMeters(location.lat, location.lng, activeReportCard.lat, activeReportCard.lng) / 1609.34)).toFixed(1)} mi{' '}
-                {nav.isNavigating ? 'ahead' : 'away'} · {timeAgo(activeReportCard.created_at)}
-              </Text>
-              <Text style={s.rcNewVotes}>
-                {activeReportCard.upvotes ?? 0} confirmed
-              </Text>
-            </View>
-            {/* Dismiss */}
-            <TouchableOpacity
-              style={s.rcNewDismiss}
-              onPress={() => setActiveReportCard(null)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="close" size={20} color="rgba(255,255,255,0.55)" />
-            </TouchableOpacity>
-          </View>
-          {/* Vote row */}
-          <View style={s.rcNewVoteRow}>
-            <TouchableOpacity style={[s.rcNewVoteBtn, s.rcUpvote]} onPress={() => handleUpvote(activeReportCard)} activeOpacity={0.85}>
-              <Ionicons name="thumbs-up" size={15} color="#fff" />
-              <Text style={s.rcNewVoteBtnT}>Still there</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[s.rcNewVoteBtn, s.rcDownvote]} onPress={() => handleDownvote(activeReportCard)} activeOpacity={0.85}>
-              <Ionicons name="thumbs-down" size={15} color="#fff" />
-              <Text style={s.rcNewVoteBtnT}>Gone</Text>
-            </TouchableOpacity>
-          </View>
-          {/* Timer progress bar */}
-          <View style={s.rcNewTimerTrack}>
-            <Animated.View style={[s.rcNewTimerBar, { backgroundColor: INCIDENT_COLORS[activeReportCard.type] ?? '#F59E0B' }, reportTimerStyle]} />
-          </View>
-        </Animated.View>
-      )}
+      <IncidentReportCard
+        activeReportCard={activeReportCard}
+        insetsTop={insets.top}
+        isNavigating={nav.isNavigating}
+        styles={s}
+        incidentColors={INCIDENT_COLORS}
+        location={location}
+        haversineMeters={haversineMeters}
+        timeAgo={timeAgo}
+        onDismiss={() => setActiveReportCard(null)}
+        onUpvote={handleUpvote}
+        onDownvote={handleDownvote}
+        reportTimerStyle={reportTimerStyle}
+      />
 
       {/* ═══ CONFIRM PROMPT ═══════════════════════════════════════════════ */}
       {confirmIncident && (
@@ -3186,66 +2967,18 @@ export default function MapScreen() {
         />
       ) : null}
 
-      {/* ═══ TRAFFIC CONGESTION BANNER (during navigation) ══════════════ */}
-      {modeConfig.showTrafficBar && nav.isNavigating && !nav.isRerouting && !trafficBannerDismissed && (() => {
-        const traffic = analyzeCongestion(nav.navigationData?.congestion);
-        if (!traffic || traffic.level === 'low') return null;
-        const isHeavy = traffic.level === 'heavy';
-        return (
-          <Animated.View
-            entering={FadeIn.duration(400)}
-            exiting={FadeOut.duration(300)}
-            style={[
-              s.trafficBanner,
-              { top: insets.top + (nav.isNavigating ? 150 : 100) },
-              { backgroundColor: isHeavy ? '#FEF2F2' : '#FFFBEB',
-                borderColor: isHeavy ? '#FECACA' : '#FDE68A' },
-            ]}
-          >
-            <View style={s.trafficBannerLeft}>
-              <Ionicons
-                name={isHeavy ? 'warning' : 'information-circle'}
-                size={20}
-                color={isHeavy ? '#DC2626' : '#D97706'}
-                style={{ marginRight: 10 }}
-              />
-              <View>
-                <Text style={[s.trafficBannerTitle, { color: isHeavy ? '#991B1B' : '#92400E' }]}>
-                  {isHeavy ? 'Heavy traffic ahead' : 'Moderate traffic ahead'}
-                </Text>
-                <Text style={[s.trafficBannerSub, { color: isHeavy ? '#DC2626' : '#D97706' }]}>
-                  {traffic.delayMin > 0 ? `~${traffic.delayMin} min delay on your route` : 'Congestion on your route'}
-                </Text>
-              </View>
-            </View>
-            <View style={s.trafficBannerActions}>
-              <TouchableOpacity
-                style={[s.trafficRerouteBtn, { backgroundColor: isHeavy ? '#DC2626' : '#D97706' }]}
-                onPress={() => {
-                  setTrafficBannerDismissed(true);
-                  if (nav.navigationData?.destination) {
-                    void nav.fetchDirections(nav.navigationData.destination).then((r) => {
-                      if (!r.ok) {
-                        Alert.alert('Reroute failed', r.message ?? 'Could not fetch a new route.');
-                      }
-                    });
-                  }
-                }}
-                activeOpacity={0.85}
-              >
-                <Text style={s.trafficRerouteBtnT}>Reroute</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={s.trafficDismissBtn}
-                onPress={() => setTrafficBannerDismissed(true)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="close" size={16} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        );
-      })()}
+      <TrafficCongestionBanner
+        visible={modeConfig.showTrafficBar && nav.isNavigating && !nav.isRerouting && !trafficBannerDismissed}
+        topInset={insets.top + (nav.isNavigating ? 150 : 100)}
+        congestion={nav.navigationData?.congestion}
+        analyzeCongestion={analyzeCongestion}
+        setDismissed={setTrafficBannerDismissed}
+        fetchReroute={async () => {
+          if (!nav.navigationData?.destination) return { ok: false, message: 'Missing destination.' };
+          return nav.fetchDirections(nav.navigationData.destination);
+        }}
+        styles={s}
+      />
 
       {nav.isNavigating && ephemeralTurnHint ? (
         <Animated.View
@@ -3308,221 +3041,74 @@ export default function MapScreen() {
         />
       )}
 
-      {/* ═══ ROUTE PREVIEW ════════════════════════════════════════════════ */}
-      {nav.showRoutePreview && nav.navigationData && !nav.isNavigating && (() => {
-        const selectedRoute = nav.availableRoutes[nav.selectedRouteIndex];
-        const selType = selectedRoute?.routeType ?? 'best';
-        const previewCompact = !routePreviewDetails;
-
-        const routeLabel = (rt?: 'best' | 'eco' | 'alt', idx?: number): string => {
-          if (rt === 'best') return 'Fastest';
-          if (rt === 'eco') return 'Eco';
-          const i = idx ?? 1;
-          return i <= 1 ? 'Alternate' : `Alternate ${i}`;
-        };
-        const routeIcon = (rt?: 'best' | 'eco' | 'alt'): 'flash' | 'leaf' | 'navigate' => {
-          if (rt === 'best') return 'flash';
-          if (rt === 'eco') return 'leaf';
-          return 'navigate';
-        };
-        const routeAccent = (rt?: 'best' | 'eco' | 'alt'): string => {
-          if (rt === 'best') return '#2563EB';
-          if (rt === 'eco') return '#16A34A';
-          return '#8B5CF6';
-        };
-        const routeAccentBg = (rt?: 'best' | 'eco' | 'alt'): string => {
-          if (rt === 'best') return '#EFF6FF';
-          if (rt === 'eco') return '#F0FDF4';
-          return '#F5F3FF';
-        };
-
-        const startGrad: [string, string] = selType === 'eco' ? ['#16A34A', '#15803D'] : selType === 'best' ? ['#2563EB', '#1D4ED8'] : ['#7C3AED', '#6D28D9'];
-
-        return (
-        <Animated.View
-          entering={SlideInDown.duration(320).easing(Easing.out(Easing.cubic))}
-          exiting={SlideOutDown.duration(220)}
-          onLayout={(e) => setRoutePreviewHeight(e.nativeEvent.layout.height)}
-          style={[s.preview, { paddingBottom: Math.max(insets.bottom, 12) + (previewCompact ? 12 : 16), paddingTop: previewCompact ? 12 : 20, backgroundColor: isLight ? 'rgba(255,255,255,0.97)' : 'rgba(15,23,42,0.97)', borderColor: colors.border }]}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-            <GestureDetector gesture={routePreviewHandlePan}>
-              <Pressable
-                onPress={() => {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setRoutePreviewDetails((d) => !d);
-                }}
-                style={{ flex: 1, alignItems: 'center', paddingVertical: 8 }}
-                accessibilityRole="button"
-                accessibilityLabel={routePreviewDetails ? 'Collapse route details' : 'Expand route details'}
-              >
-                <View style={[s.handle, { backgroundColor: colors.border }]} />
-                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textTertiary, marginTop: 4 }}>
-                  {routePreviewDetails ? 'Hide details' : 'Details'}
-                </Text>
-              </Pressable>
-            </GestureDetector>
-            <TouchableOpacity
-              onPress={dismissRoutePreview}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              accessibilityRole="button"
-              accessibilityLabel="Close route preview"
-              style={{ padding: 6, marginLeft: 4 }}
-            >
-              <Ionicons name="close" size={22} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-          <Text style={[s.previewTitle, { color: colors.text, marginBottom: drivingMode === 'calm' ? 4 : 8 }]} numberOfLines={1}>
-            {nav.navigationData!.destination.name ?? 'Destination'}
-          </Text>
-          {drivingMode === 'calm' ? (
-            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: previewCompact ? 6 : 10 }}>
-              Less highway when travel time is about the same.
-            </Text>
-          ) : null}
-          {!previewCompact ? (
-            <View style={{ marginBottom: 14, gap: 6 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-                <Ionicons name="navigate-circle-outline" size={16} color={colors.primary} style={{ marginTop: 2 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.previewRouteLbl, { color: colors.textTertiary }]}>From</Text>
-                  <Text style={[s.previewRouteVal, { color: colors.textSecondary }]} numberOfLines={2}>
-                    {currentAddress || 'Current location'}
-                  </Text>
-                </View>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-                <Ionicons name="flag" size={16} color="#22C55E" style={{ marginTop: 2 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.previewRouteLbl, { color: colors.textTertiary }]}>To</Text>
-                  <Text style={[s.previewRouteVal, { color: colors.textSecondary }]} numberOfLines={3}>
-                    {nav.navigationData!.destination.name ?? 'Destination'}
-                    {nav.selectedDestination?.address ? ` · ${nav.selectedDestination.address}` : ''}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          ) : null}
-
-          <FlatList
-            horizontal
-            data={nav.availableRoutes}
-            keyExtractor={(_r, i) => `rc-${i}`}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: previewCompact ? 8 : 10, paddingHorizontal: 2 }}
-            style={{ marginBottom: previewCompact ? 10 : 14 }}
-            renderItem={({ item: route, index: idx }) => {
-              const isSel = idx === nav.selectedRouteIndex;
-              const accent = routeAccent(route.routeType);
-              const traffic = modeConfig.showTrafficBadge ? analyzeCongestion(route.congestion) : null;
-              return (
-                <TouchableOpacity
-                  style={[
-                    s.routeCardNew,
-                    isSel && s.routeCardNewSel,
-                    {
-                      backgroundColor: colors.surfaceSecondary,
-                      borderColor: isSel ? accent : colors.border,
-                      minWidth: previewCompact ? 108 : 140,
-                      paddingVertical: previewCompact ? 10 : 14,
-                      paddingHorizontal: previewCompact ? 11 : 14,
-                      ...(previewCompact
-                        ? Platform.select({ ios: { shadowOpacity: 0.04 }, android: { elevation: 1 }, default: {} })
-                        : {}),
-                    },
-                  ]}
-                  onPress={() => nav.handleRouteSelect(idx)}
-                  activeOpacity={0.85}
-                >
-                  <View style={[s.routeCardHeader, previewCompact && { marginBottom: 6 }]}>
-                    <View style={[s.routeCardIcon, { backgroundColor: routeAccentBg(route.routeType), width: previewCompact ? 26 : 28, height: previewCompact ? 26 : 28 }]}>
-                      <Ionicons name={routeIcon(route.routeType)} size={previewCompact ? 14 : 16} color={accent} />
-                    </View>
-                    <Text style={[s.routeCardType, { color: isSel ? accent : colors.textSecondary, fontSize: previewCompact ? 11 : 12 }]}>{routeLabel(route.routeType, idx)}</Text>
-                    {isSel && <View style={[s.routeCardCheck, { backgroundColor: accent }]}><Ionicons name="checkmark" size={12} color="#fff" /></View>}
-                  </View>
-                  <Text style={[s.routeCardDuration, { color: colors.text, fontSize: previewCompact ? 18 : 22, lineHeight: previewCompact ? 20 : 24 }]}>{route.durationText}</Text>
-                  <Text style={[s.routeCardDist, { color: colors.textSecondary, marginBottom: previewCompact ? 0 : 8 }]}>{route.distanceText}</Text>
-                  {!previewCompact && traffic && traffic.level !== 'low' && (
-                    <View style={[s.routeTrafficBadge, { backgroundColor: traffic.level === 'heavy' ? '#FEF2F2' : '#FFFBEB' }]}>
-                      <Ionicons name="warning" size={10} color={traffic.level === 'heavy' ? '#DC2626' : '#D97706'} />
-                      <Text style={[s.routeTrafficTxt, { color: traffic.level === 'heavy' ? '#DC2626' : '#D97706' }]}>
-                        {traffic.level === 'heavy' ? 'Heavy' : 'Moderate'} traffic
-                      </Text>
-                    </View>
-                  )}
-                  {!previewCompact && (!traffic || traffic.level === 'low') && (
-                    <View style={[s.routeTrafficBadge, { backgroundColor: '#F0FDF4' }]}>
-                      <Ionicons name="checkmark-circle" size={10} color="#16A34A" />
-                      <Text style={[s.routeTrafficTxt, { color: '#16A34A' }]}>Clear roads</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            }}
-          />
-
-          {hasTallVehicle && (
-            <View style={s.truckRow}>
-              <Ionicons name="car-outline" size={16} color={colors.primary} />
-              <Text style={[s.truckLbl, { color: colors.primary }]}>Avoid low clearances ({typeof vehicleHeight === 'number' ? vehicleHeight.toFixed(1) : vehicleHeight ?? '—'}m)</Text>
-              <Switch value={avoidLowClearances} onValueChange={setAvoidLowClearances} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#fff" />
-            </View>
-          )}
-          <TouchableOpacity onPress={() => {
-            setSelectedPlaceId(null);
-            setSelectedPlace(null);
-            if (navNativeSdkEnabled() && nav.navigationData && location) {
-              const nearestIncident = nearbyIncidents.reduce<Incident | null>((best, inc) => {
-                const incDist = haversineMeters(location.lat, location.lng, inc.lat, inc.lng);
-                if (!best) return inc;
-                const bestDist = haversineMeters(location.lat, location.lng, best.lat, best.lng);
-                return incDist < bestDist ? inc : best;
-              }, null);
-              const nearestIncidentMiles = nearestIncident
-                ? haversineMeters(location.lat, location.lng, nearestIncident.lat, nearestIncident.lng) / 1609.34
-                : null;
-              const reportHint =
-                nearestIncident && nearestIncidentMiles != null && nearestIncidentMiles <= 2.5
-                  ? `${nearestIncident.title || nearestIncident.type} reported about ${nearestIncidentMiles.toFixed(1)} mi away.`
-                  : undefined;
-              const nativeParams = normalizeNativeNavParams({
-                origin: { lat: location.lat, lng: location.lng },
-                destination: {
-                  lat: nav.navigationData.destination.lat,
-                  lng: nav.navigationData.destination.lng,
-                  name: nav.navigationData.destination.name,
-                },
-                voiceMuted: navVoiceMuted,
-                drivingMode,
+      <RoutePreviewPanel
+        visible={nav.showRoutePreview && !!nav.navigationData && !nav.isNavigating}
+        navData={nav.navigationData ? { destination: nav.navigationData.destination } : null}
+        availableRoutes={nav.availableRoutes}
+        selectedRouteIndex={nav.selectedRouteIndex}
+        onSelectRoute={nav.handleRouteSelect}
+        detailsExpanded={routePreviewDetails}
+        onToggleDetails={() => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setRoutePreviewDetails((d) => !d);
+        }}
+        handlePanGesture={routePreviewHandlePan}
+        onDismiss={dismissRoutePreview}
+        onLayoutHeight={setRoutePreviewHeight}
+        insetsBottom={insets.bottom}
+        colors={colors}
+        isLight={isLight}
+        drivingMode={drivingMode}
+        modeConfig={modeConfig}
+        currentAddress={currentAddress}
+        selectedDestinationAddress={nav.selectedDestination?.address}
+        hasTallVehicle={hasTallVehicle}
+        vehicleHeight={vehicleHeight}
+        avoidLowClearances={avoidLowClearances}
+        setAvoidLowClearances={setAvoidLowClearances}
+        analyzeCongestion={analyzeCongestion}
+        onStartNavigationPress={() => {
+          setSelectedPlaceId(null);
+          setSelectedPlace(null);
+          if (navNativeSdkEnabled() && nav.navigationData && location) {
+            const nearestIncident = nearbyIncidents.reduce<Incident | null>((best, inc) => {
+              const incDist = haversineMeters(location.lat, location.lng, inc.lat, inc.lng);
+              if (!best) return inc;
+              const bestDist = haversineMeters(location.lat, location.lng, best.lat, best.lng);
+              return incDist < bestDist ? inc : best;
+            }, null);
+            const nearestIncidentMiles = nearestIncident
+              ? haversineMeters(location.lat, location.lng, nearestIncident.lat, nearestIncident.lng) / 1609.34
+              : null;
+            const reportHint =
+              nearestIncident && nearestIncidentMiles != null && nearestIncidentMiles <= 2.5
+                ? `${nearestIncident.title || nearestIncident.type} reported about ${nearestIncidentMiles.toFixed(1)} mi away.`
+                : undefined;
+            const nativeParams = normalizeNativeNavParams({
+              origin: { lat: location.lat, lng: location.lng },
+              destination: {
+                lat: nav.navigationData.destination.lat,
+                lng: nav.navigationData.destination.lng,
+                name: nav.navigationData.destination.name,
+              },
+              voiceMuted: navVoiceMuted,
+              drivingMode,
+            });
+            if (nativeParams) {
+              (rnNav as any).navigate('NativeNavigation', {
+                ...nativeParams,
+                ...(reportHint ? { reportHint } : {}),
               });
-              if (nativeParams) {
-                (rnNav as any).navigate('NativeNavigation', {
-                  ...nativeParams,
-                  ...(reportHint ? { reportHint } : {}),
-                });
-                nav.setShowRoutePreview(false);
-              } else {
-                nav.startNavigation();
-              }
+              nav.setShowRoutePreview(false);
             } else {
               nav.startNavigation();
             }
-          }} activeOpacity={0.85}>
-            <LinearGradient
-              colors={startGrad}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={s.startBtn}
-            >
-              <Ionicons name={routeIcon(selType) === 'flash' ? 'flash-outline' : routeIcon(selType) === 'leaf' ? 'leaf-outline' : 'navigate-outline'} size={18} color="#fff" />
-              <Text style={s.startBtnT}>
-                Start {routeLabel(selType, nav.selectedRouteIndex)}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </Animated.View>
-        );
-      })()}
+          } else {
+            nav.startNavigation();
+          }
+        }}
+        styles={s}
+      />
 
       {/* ═══ TRIP SUMMARY ═════════════════════════════════════════════════ */}
       <TripSummaryModal visible={!!activeTripSummary} onClose={dismissActiveTripSummary}>

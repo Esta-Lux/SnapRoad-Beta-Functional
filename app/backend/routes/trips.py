@@ -9,9 +9,14 @@ from models.schemas import TripResult, FuelLogCreate
 from middleware.auth import get_current_user, get_current_user_optional
 from pydantic import BaseModel
 from uuid import UUID, uuid4
-from services.mock_data import (
-    users_db, current_user_id, trips_db, fuel_logs, FUEL_PRICES, XP_CONFIG,
-    create_new_user,
+from services.trips_ports import (
+    ensure_user,
+    get_current_user_id,
+    get_fuel_logs_store,
+    get_fuel_prices,
+    get_trips_store,
+    get_users_store,
+    get_xp_config,
 )
 from routes.gamification import add_xp_to_user, recompute_profile_level_fields, sync_earned_driver_badges
 from config import ENVIRONMENT
@@ -21,6 +26,12 @@ from services.supabase_service import sb_get_profile
 from services.premium_access import require_premium_user
 
 _trips_log = logging.getLogger(__name__)
+users_db = get_users_store()
+current_user_id = get_current_user_id()
+trips_db = get_trips_store()
+fuel_logs = get_fuel_logs_store()
+FUEL_PRICES = get_fuel_prices()
+XP_CONFIG = get_xp_config()
 
 try:
     from openai import OpenAI
@@ -28,6 +39,9 @@ except Exception:  # pragma: no cover
     OpenAI = None
 
 router = APIRouter(prefix="/api", tags=["Trips"])
+trips_history_router = APIRouter()
+trips_fuel_router = APIRouter()
+trips_legacy_router = APIRouter()
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 OptionalUser = Annotated[Optional[dict], Depends(get_current_user_optional)]
@@ -172,7 +186,7 @@ def _get_trip_by_id_supabase(user: dict, trip_id: str) -> dict:
 
 # ==================== TRIP HISTORY ====================
 
-@router.get("/trips", responses=_LEGACY_503_RESPONSES)
+@trips_history_router.get("/trips", responses=_LEGACY_503_RESPONSES)
 def get_trips(
     user: OptionalUser,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -211,7 +225,7 @@ class EndTripBody(BaseModel):
     endLocation: str
 
 
-@router.post("/trips/start", responses=_LEGACY_503_RESPONSES)
+@trips_legacy_router.post("/trips/start", responses=_LEGACY_503_RESPONSES)
 def start_trip(body: StartTripBody):
     _legacy_trips_guard()
     new_id = str(uuid4())
@@ -235,7 +249,7 @@ def start_trip(body: StartTripBody):
     }
 
 
-@router.get("/trips/history", responses=_LEGACY_503_RESPONSES)
+@trips_history_router.get("/trips/history", responses=_LEGACY_503_RESPONSES)
 def get_trip_history(user: OptionalUser, limit: Annotated[int, Query(ge=1, le=100)] = 10):
     if ENVIRONMENT == "production":
         if not user:
@@ -253,7 +267,7 @@ def get_trip_history(user: OptionalUser, limit: Annotated[int, Query(ge=1, le=10
     }
 
 
-@router.get("/trips/analytics")
+@trips_history_router.get("/trips/analytics")
 def get_trip_analytics(user: CurrentUser):
     """Aggregate stats for the Rewards / Trip Analytics modal."""
     user_id = str(user.get("id") or "")
@@ -293,7 +307,7 @@ def get_trip_analytics(user: CurrentUser):
     }
 
 
-@router.get("/trips/history/recent")
+@trips_history_router.get("/trips/history/recent")
 def get_recent_trips_mobile(
     user: CurrentUser,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
@@ -333,7 +347,7 @@ def get_recent_trips_mobile(
     return {"success": True, "data": []}
 
 
-@router.get("/trips/weekly-insights", responses=_LEGACY_503_RESPONSES)
+@trips_history_router.get("/trips/weekly-insights", responses=_LEGACY_503_RESPONSES)
 def get_weekly_insights(user: OptionalUser):
     """Must be registered before `/trips/{trip_id}` so `weekly-insights` is not parsed as a UUID trip id."""
     if ENVIRONMENT == "production":
@@ -365,7 +379,7 @@ def get_weekly_insights(user: OptionalUser):
     }
 
 
-@router.get("/trips/{trip_id}", responses=_LEGACY_503_RESPONSES)
+@trips_history_router.get("/trips/{trip_id}", responses=_LEGACY_503_RESPONSES)
 def get_trip_by_id(trip_id: str, user: OptionalUser):
     if ENVIRONMENT == "production":
         if not user:
@@ -386,7 +400,7 @@ def get_trip_by_id(trip_id: str, user: OptionalUser):
     }
 
 
-@router.post("/trips/{trip_id}/end", responses=_LEGACY_503_RESPONSES)
+@trips_legacy_router.post("/trips/{trip_id}/end", responses=_LEGACY_503_RESPONSES)
 def end_trip(trip_id: str, body: EndTripBody):
     _legacy_trips_guard()
     trip = next((t for t in trips_db if t["id"] == trip_id), None)
@@ -590,7 +604,7 @@ def _read_profile_totals_after_trip(user_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-@router.post("/trips/complete", responses=_503_RESPONSES)
+@trips_history_router.post("/trips/complete", responses=_503_RESPONSES)
 def complete_trip(body: TripCompleteBody, user: CurrentUser):
     """Persist a completed trip to Supabase and update profile stats."""
     user_id = str(user.get("user_id") or user.get("id") or "").strip()
@@ -733,12 +747,10 @@ def _normalize_route_coords(raw) -> list:
     return []
 
 
-@router.post("/trips/complete-with-safety", responses=_LEGACY_503_RESPONSES)
+@trips_legacy_router.post("/trips/complete-with-safety", responses=_LEGACY_503_RESPONSES)
 def complete_trip_with_safety(trip: TripResult):
     _legacy_trips_guard()
-    if current_user_id not in users_db:
-        users_db[current_user_id] = create_new_user(current_user_id, "Driver")
-    user = users_db[current_user_id]
+    user = ensure_user(current_user_id, "Driver")
     metrics = trip.safety_metrics or {}
     is_safe_drive = metrics.get("hard_brakes", 0) == 0 and metrics.get("speeding_incidents", 0) == 0 and metrics.get("phone_usage", 0) == 0
     old_safety_score = user.get("safety_score", 85)
@@ -790,7 +802,7 @@ def complete_trip_with_safety(trip: TripResult):
     }
 
 
-@router.get("/trips/history/detailed", responses=_LEGACY_503_RESPONSES)
+@trips_legacy_router.get("/trips/history/detailed", responses=_LEGACY_503_RESPONSES)
 def get_detailed_trip_history(
     days: Annotated[int, Query(ge=1, le=365)] = 30,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
@@ -978,7 +990,7 @@ def _weekly_insights_supabase(user: dict) -> dict:
     }
 
 
-@router.post("/trips/{trip_id}/share", responses=_LEGACY_503_RESPONSES)
+@trips_legacy_router.post("/trips/{trip_id}/share", responses=_LEGACY_503_RESPONSES)
 def share_trip(trip_id: str):
     _legacy_trips_guard()
     trip = next((t for t in trips_db if str(t.get("id")) == str(trip_id)), None)
@@ -1019,6 +1031,7 @@ def _trip_miles_since(profile_id: str, since_iso: Optional[str]) -> float:
         )
         return round(sum(float(r.get("distance_miles") or 0) for r in (rows.data or [])), 2)
     except Exception:
+        _trips_log.warning("trip miles since fallback for profile_id=%s", profile_id, exc_info=True)
         total = 0.0
         since = str(since_iso)
         for t in trips_db:
@@ -1045,7 +1058,7 @@ def _fuel_get_latest_fill(uid: str) -> Optional[dict]:
         if r.data:
             return r.data[0]
     except Exception:
-        pass
+        _trips_log.debug("fuel latest fill fallback for uid=%s", uid, exc_info=True)
     return fuel_logs[0] if fuel_logs else None
 
 
@@ -1116,6 +1129,7 @@ def _fuel_history_paginated_response(user: dict, page: int, limit: int) -> dict:
             },
         }
     except Exception:
+        _trips_log.warning("fuel history fallback (memory) user=%s", _fuel_uid(user), exc_info=True)
         if ENVIRONMENT == "production":
             raise
         start = (page - 1) * limit
@@ -1134,7 +1148,7 @@ def _fuel_history_paginated_response(user: dict, page: int, limit: int) -> dict:
         }
 
 
-@router.get("/fuel/history")
+@trips_fuel_router.get("/fuel/history")
 def get_fuel_history(
     user: CurrentUser,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -1143,8 +1157,8 @@ def get_fuel_history(
     return _fuel_history_paginated_response(user, page, limit)
 
 
-@router.post("/fuel/logs")
-@router.post("/fuel/log")
+@trips_fuel_router.post("/fuel/logs")
+@trips_fuel_router.post("/fuel/log")
 def log_fuel(entry: FuelLogCreate, user: CurrentUser):
     uid = _fuel_uid(user)
     if not uid:
@@ -1219,6 +1233,7 @@ def log_fuel(entry: FuelLogCreate, user: CurrentUser):
         out = {**row, "mpg_this_fill": mpg_this_fill}
         return {"success": True, "message": "Fuel log entry added", "data": out}
     except Exception:
+        _trips_log.warning("fuel log insert fallback (memory) uid=%s", uid, exc_info=True)
         if ENVIRONMENT == "production":
             raise
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -1234,7 +1249,7 @@ def log_fuel(entry: FuelLogCreate, user: CurrentUser):
         return {"success": True, "message": "Fuel log entry added (dev/memory)", "data": new_entry}
 
 
-@router.get("/fuel/logs")
+@trips_fuel_router.get("/fuel/logs")
 def get_fuel_logs(
     user: CurrentUser,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -1243,7 +1258,7 @@ def get_fuel_logs(
     return _fuel_history_paginated_response(user, page, limit)
 
 
-@router.get("/fuel/trends")
+@trips_fuel_router.get("/fuel/trends")
 def get_fuel_trends(user: CurrentUser):
     try:
         sb = get_supabase()
@@ -1255,6 +1270,7 @@ def get_fuel_trends(user: CurrentUser):
         avg_price = total_spent / total_gallons if total_gallons > 0 else 0
         return {"success": True, "data": {"total_gallons": round(total_gallons, 1), "total_spent": round(total_spent, 2), "avg_price_per_gallon": round(avg_price, 2), "entries": len(items), "monthly_avg_gallons": round(total_gallons / max(1, len(items) // 30 + 1), 1)}}
     except Exception:
+        _trips_log.warning("fuel trends fallback (memory) uid=%s", _fuel_uid(user), exc_info=True)
         if ENVIRONMENT == "production":
             raise
         total_gallons = sum(f["gallons"] for f in fuel_logs)
@@ -1339,7 +1355,7 @@ def _stations_to_nearby(stations: list[dict], lat: float, lng: float) -> list[di
     return nearby
 
 
-@router.get("/fuel/prices")
+@trips_fuel_router.get("/fuel/prices")
 def get_fuel_prices(
     lat: Annotated[float, Query(description="Latitude")] = 39.9612,
     lng: Annotated[float, Query(description="Longitude")] = -82.9988,
@@ -1422,7 +1438,7 @@ def _compute_fuel_stats_from_items(items: list) -> dict:
     }
 
 
-@router.get("/fuel/stats")
+@trips_fuel_router.get("/fuel/stats")
 def get_fuel_stats(user: CurrentUser):
     try:
         sb = get_supabase()
@@ -1439,6 +1455,7 @@ def get_fuel_stats(user: CurrentUser):
         data.update(_fuel_odometer_suggestion(uid))
         return {"success": True, "data": data}
     except Exception:
+        _trips_log.warning("fuel stats fallback (memory) uid=%s", _fuel_uid(user), exc_info=True)
         if ENVIRONMENT == "production":
             raise
         data = _compute_fuel_stats_from_items(fuel_logs)
@@ -1508,7 +1525,7 @@ def _fuel_analytics_monthly_memory(month_span: int) -> list:
     return monthly_data
 
 
-@router.get("/fuel/analytics")
+@trips_fuel_router.get("/fuel/analytics")
 def get_fuel_analytics(user: CurrentUser, months: Annotated[int, Query(ge=1, le=24)] = 3):
     # Loop bound must not be user input directly (Sonar): cap with constant, iterate at most MAX_FUEL_ANALYTICS_MONTHS.
     month_span = min(months, MAX_FUEL_ANALYTICS_MONTHS)
@@ -1516,6 +1533,7 @@ def get_fuel_analytics(user: CurrentUser, months: Annotated[int, Query(ge=1, le=
         monthly_data = _fuel_analytics_monthly_supabase(_fuel_uid(user), month_span)
         return {"success": True, "data": {"monthly_breakdown": monthly_data}}
     except Exception:
+        _trips_log.warning("fuel analytics fallback (memory) uid=%s", _fuel_uid(user), exc_info=True)
         if ENVIRONMENT == "production":
             raise
         monthly_data = _fuel_analytics_monthly_memory(month_span)
@@ -1524,7 +1542,7 @@ def get_fuel_analytics(user: CurrentUser, months: Annotated[int, Query(ge=1, le=
 
 # ==================== INCIDENTS (legacy shim) ====================
 # Keep a non-conflicting legacy endpoint to avoid shadowing the dedicated incidents router.
-@router.post("/incidents/report-legacy", responses=_LEGACY_503_RESPONSES)
+@trips_legacy_router.post("/incidents/report-legacy", responses=_LEGACY_503_RESPONSES)
 def report_incident_legacy(incident: dict):
     _legacy_trips_guard()
     incident_type = str(incident.get("incident_type") or incident.get("type") or "unknown")
@@ -1532,7 +1550,7 @@ def report_incident_legacy(incident: dict):
 
 
 # ==================== 3D ROUTE HISTORY ====================
-@router.get("/routes/history-3d", responses=_LEGACY_503_RESPONSES)
+@trips_legacy_router.get("/routes/history-3d", responses=_LEGACY_503_RESPONSES)
 def get_route_history_3d(
     days: Annotated[int, Query(ge=1, le=365)] = 90,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
@@ -1561,6 +1579,11 @@ def get_route_history_3d(
     routes_3d.sort(key=lambda x: x["total_trips"], reverse=True)
     total_distance = sum(r["total_distance_miles"] for r in routes_3d)
     return {"success": True, "data": {"routes": routes_3d, "center": {"lat": 39.9612, "lng": -82.9988}, "total_unique_routes": len(routes_3d), "total_trips": sum(r["total_trips"] for r in routes_3d), "total_distance": total_distance}}
+
+
+router.include_router(trips_history_router)
+router.include_router(trips_fuel_router)
+router.include_router(trips_legacy_router)
 
 
 if ENVIRONMENT == "production":
