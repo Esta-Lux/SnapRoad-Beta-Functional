@@ -25,6 +25,7 @@ import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { NavigatingProvider, useNavigatingState } from './src/contexts/NavigatingContext';
 
 import MapScreen from './src/screens/MapScreen';
+import NativeNavigationScreen from './src/screens/NativeNavigationScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import RewardsScreen from './src/screens/RewardsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -112,6 +113,7 @@ function MapStackScreen() {
     <MapStack.Navigator screenOptions={{ headerShown: false }}>
       <MapStack.Screen name="MapMain" component={MapScreen} />
       <MapStack.Screen name="MapRedeem" component={MapScreen} />
+      <MapStack.Screen name="NativeNavigation" component={NativeNavigationScreen} />
     </MapStack.Navigator>
   );
 }

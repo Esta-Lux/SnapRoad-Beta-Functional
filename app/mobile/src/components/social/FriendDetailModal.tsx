@@ -40,7 +40,7 @@ type Props = {
     isLiveFresh: boolean;
     lastUpdated?: string;
   }) => void;
-  onViewOnMap: (friendId: string) => void;
+  onViewOnMap: () => void;
   onRemove: (friendId: string) => void;
   onClose: () => void;
 };
@@ -218,7 +218,7 @@ export default function FriendDetailModalContent({
       <TouchableOpacity
         style={[styles.btnSecondary, { backgroundColor: theme.surface, borderColor: theme.border }]}
         activeOpacity={0.88}
-        onPress={() => onViewOnMap(friend.friend_id)}
+        onPress={() => onViewOnMap()}
       >
         <Ionicons name="map-outline" size={20} color={theme.primary} />
         <Text style={[styles.btnSecondaryText, { color: theme.primary }]}>View on map</Text>

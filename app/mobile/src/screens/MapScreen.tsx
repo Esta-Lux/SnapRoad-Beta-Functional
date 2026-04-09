@@ -36,7 +36,12 @@ import {
   isMapboxPublicTokenConfigured,
   logMapboxAccessDiagnostics,
 } from '../config/mapbox';
-import { getDrivingLightPreset, usesStandardStyleConfiguration } from '../lib/mapboxDrivingStyle';
+import {
+  effectiveAlternateRouteLineColor,
+  effectiveNavRouteColors,
+  getDrivingLightPreset,
+  usesStandardStyleConfiguration,
+} from '../lib/mapboxDrivingStyle';
 import { clampStepTowardDeg } from '../navigation/bearingSmoothing';
 import RouteOverlay from '../components/map/RouteOverlay';
 import OfferMarkers from '../components/map/OfferMarkers';
@@ -100,6 +105,8 @@ import OrionChat, { type OrionPlaceSuggestion } from '../components/orion/OrionC
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigatingState } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
+import { navNativeSdkEnabled } from '../navigation/navFeatureFlags';
+import type { TripSummary } from '../hooks/useNavigation';
 import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import { storage } from '../utils/storage';
 import { logMapDataIssue } from '../utils/mapApiDiagnostics';
@@ -513,6 +520,8 @@ export default function MapScreen() {
   const reportCardTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigationTripIdRef = useRef<string>('');
   const lastLivePublishRef = useRef(0);
+  const mapLivePublishCoordsRef = useRef({ lat: 0, lng: 0, heading: 0, speed: 0 });
+  const mapLiveNavRef = useRef({ isNavigating: false, destinationName: undefined as string | undefined });
   const [ephemeralTurnHint, setEphemeralTurnHint] = useState<string | null>(null);
   const ephemeralHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceHintFiredStepRef = useRef<number>(-1);
@@ -611,6 +620,28 @@ export default function MapScreen() {
   // ── Sync nav state to tab bar ──
   useEffect(() => { setNavCtx(nav.isNavigating); }, [nav.isNavigating, setNavCtx]);
 
+  // ── Native navigation return handling ──
+  const [nativeNavTripSummary, setNativeNavTripSummary] = useState<TripSummary | null>(null);
+  const lastNativeNavNonceRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const result = route.params?.nativeNavResult as
+      | { tripSummary: TripSummary; arrived: boolean }
+      | undefined;
+    if (!result?.tripSummary) return;
+    const nonce = JSON.stringify(result.tripSummary.date + result.tripSummary.distance);
+    if (lastNativeNavNonceRef.current === nonce) return;
+    lastNativeNavNonceRef.current = nonce;
+    rnNav.setParams({ nativeNavResult: undefined } as any);
+    setNativeNavTripSummary(result.tripSummary);
+  }, [route.params?.nativeNavResult, rnNav]);
+
+  const activeTripSummary = nav.tripSummary ?? nativeNavTripSummary;
+  const dismissActiveTripSummary = useCallback(() => {
+    nav.dismissTripSummary();
+    setNativeNavTripSummary(null);
+  }, [nav]);
+
   // ─── Derived values ────────────────────────────────────────────────────────
 
   const mapStyleIndex = Math.min(styleOverride, MAP_STYLES.length - 1);
@@ -621,6 +652,15 @@ export default function MapScreen() {
   const mapLightPreset = useMemo(
     () => getDrivingLightPreset(drivingMode, isLight),
     [drivingMode, isLight],
+  );
+  const isSatelliteStyle = activeStyleURL.includes('standard-satellite');
+  const navRouteColors = useMemo(
+    () => effectiveNavRouteColors(modeConfig, mapLightPreset, isSatelliteStyle),
+    [modeConfig, mapLightPreset, isSatelliteStyle],
+  );
+  const altRouteLineColor = useMemo(
+    () => effectiveAlternateRouteLineColor(mapLightPreset, isSatelliteStyle),
+    [mapLightPreset, isSatelliteStyle],
   );
   const standardStyleImportsEnabled = usesStandardStyleConfiguration(activeStyleURL);
 
@@ -1112,6 +1152,12 @@ export default function MapScreen() {
     }
   }, [navDisplayCoord.lat, navDisplayCoord.lng, navDisplayHeading, nav.isNavigating, nav.updatePosition]);
 
+  mapLivePublishCoordsRef.current = { lat: location.lat, lng: location.lng, heading, speed };
+  mapLiveNavRef.current = {
+    isNavigating: nav.isNavigating,
+    destinationName: nav.selectedDestination?.name,
+  };
+
   useEffect(() => {
     if (!user?.isPremium) return;
     const sharingOn = storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
@@ -1152,6 +1198,53 @@ export default function MapScreen() {
     return () => { cancelled = true; };
   }, [user?.isPremium, location.lat, location.lng, heading, speed, nav.isNavigating, nav.selectedDestination?.name]);
 
+  useEffect(() => {
+    if (!user?.isPremium) return;
+    let cancelled = false;
+    const tick = () => {
+      const sharingOn = storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
+      if (!sharingOn) return;
+      const { lat, lng, heading: h, speed: sp } = mapLivePublishCoordsRef.current;
+      const { isNavigating, destinationName } = mapLiveNavRef.current;
+      const rLat = Math.round(lat * 1000);
+      const rLng = Math.round(lng * 1000);
+      if (rLat === 0 && rLng === 0) return;
+      const now = Date.now();
+      if (now - lastLivePublishRef.current < 25000) return;
+      lastLivePublishRef.current = now;
+      void (async () => {
+        let battery_pct: number | undefined;
+        try {
+          const lvl = await Battery.getBatteryLevelAsync();
+          if (cancelled) return;
+          battery_pct = Math.round(Math.max(0, Math.min(1, lvl)) * 100);
+        } catch {
+          /* optional */
+        }
+        if (cancelled) return;
+        try {
+          await api.post('/api/friends/location/update', {
+            lat,
+            lng,
+            heading: h,
+            speed_mph: sp,
+            is_navigating: isNavigating,
+            destination_name: destinationName ?? undefined,
+            is_sharing: true,
+            battery_pct,
+          });
+        } catch {
+          /* offline */
+        }
+      })();
+    };
+    const id = setInterval(tick, 28_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [user?.isPremium]);
+
   // Fix 1: Reset exploring state + traffic banner + camera lock when nav starts
   useEffect(() => {
     if (nav.isNavigating) {
@@ -1163,10 +1256,10 @@ export default function MapScreen() {
 
   // Trip end: show summary card directly (no gem bounce animation)
   useEffect(() => {
-    if (nav.tripSummary) {
+    if (activeTripSummary) {
       setShowGemOverlay(false);
     }
-  }, [nav.tripSummary]);
+  }, [activeTripSummary]);
 
   useEffect(() => {
     if (nav.showRoutePreview) {
@@ -2303,8 +2396,11 @@ export default function MapScreen() {
             pitch={
               nav.isNavigating || compassMode || exploreTracksUser ? undefined : modeConfig.explorePitch
             }
-            animationMode={nav.isNavigating && cameraLocked ? 'linearTo' : 'easeTo'}
-            animationDuration={camCtrl ? camCtrl.animationDuration : animDuration}
+            animationMode="easeTo"
+            animationDuration={
+              (camCtrl ? camCtrl.animationDuration : animDuration) +
+              (nav.isNavigating && cameraLocked ? 140 : 0)
+            }
             followUserLocation={(nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser}
             followUserMode={
               nav.isNavigating && cameraLocked
@@ -2393,9 +2489,9 @@ export default function MapScreen() {
                   <MGL.LineLayer
                     id={`alt-route-line-${idx}`}
                     style={{
-                      lineColor: '#9CA3AF',
+                      lineColor: altRouteLineColor,
                       lineWidth: 5,
-                      lineOpacity: 0.5,
+                      lineOpacity: isSatelliteStyle || mapLightPreset === 'night' ? 0.62 : 0.5,
                       lineCap: 'round',
                       lineJoin: 'round',
                     }}
@@ -2410,12 +2506,12 @@ export default function MapScreen() {
               polyline={nav.navigationData.polyline}
               isNavigating={nav.isNavigating}
               routeSplit={navigationRouteSplit}
-              routeColor={modeConfig.routeColor}
-              casingColor={modeConfig.routeCasing}
-              passedColor={modeConfig.passedColor}
+              routeColor={navRouteColors.routeColor}
+              casingColor={navRouteColors.routeCasing}
+              passedColor={navRouteColors.passedColor}
               routeWidth={modeConfig.routeWidth}
-              glowColor={modeConfig.routeGlowColor}
-              glowOpacity={modeConfig.routeGlowOpacity}
+              glowColor={navRouteColors.routeGlowColor}
+              glowOpacity={navRouteColors.routeGlowOpacity}
               congestion={nav.navigationData.congestion}
               showCongestion={
                 modeConfig.showCongestion && (nav.showRoutePreview || nav.isNavigating)
@@ -2473,18 +2569,21 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
-          {/* Native puck in all modes — same stable fused location as browse; turn guidance is turn cards only. */}
+          {/* Car puck image for navigation mode */}
+          <MapboxGL.Images images={{ navCarPuck: require('../../assets/images/nav-car-puck.png') }} />
+
           <MapboxGL.LocationPuck
             visible
             androidRenderMode="normal"
             puckBearingEnabled
             puckBearing={
-              nav.isNavigating && displaySpeedMph > 4
+              nav.isNavigating && displaySpeedMph > 10
                 ? 'course'
                 : 'heading'
             }
-            pulsing={{ isEnabled: false }}
-            scale={1.5}
+            topImage={nav.isNavigating ? 'navCarPuck' : undefined}
+            pulsing={{ isEnabled: !nav.isNavigating }}
+            scale={nav.isNavigating ? 0.7 : 1.55}
           />
         </MapboxGL.MapView>
       ) : (
@@ -3306,7 +3405,21 @@ export default function MapScreen() {
           <TouchableOpacity onPress={() => {
             setSelectedPlaceId(null);
             setSelectedPlace(null);
-            nav.startNavigation();
+            if (navNativeSdkEnabled() && nav.navigationData && location) {
+              (rnNav as any).navigate('NativeNavigation', {
+                origin: { lat: location.lat, lng: location.lng },
+                destination: {
+                  lat: nav.navigationData.destination.lat,
+                  lng: nav.navigationData.destination.lng,
+                  name: nav.navigationData.destination.name,
+                },
+                voiceMuted: navVoiceMuted,
+                drivingMode,
+              });
+              nav.setShowRoutePreview(false);
+            } else {
+              nav.startNavigation();
+            }
           }} activeOpacity={0.85}>
             <LinearGradient
               colors={startGrad}
@@ -3324,14 +3437,14 @@ export default function MapScreen() {
       })()}
 
       {/* ═══ TRIP SUMMARY ═════════════════════════════════════════════════ */}
-      <TripSummaryModal visible={!!nav.tripSummary} onClose={nav.dismissTripSummary}>
-        {nav.tripSummary ? (
+      <TripSummaryModal visible={!!activeTripSummary} onClose={dismissActiveTripSummary}>
+        {activeTripSummary ? (
           <>
             <Text style={[s.tripTitle, { color: colors.text }]}>
-              {nav.tripSummary.arrivedAtDestination ? "You've arrived" : 'Trip Summary'}
+              {activeTripSummary.arrivedAtDestination ? "You've arrived" : 'Trip Summary'}
             </Text>
-            <Text style={[s.tripRoute, { color: colors.textTertiary }]}>{nav.tripSummary.origin} → {nav.tripSummary.destination}</Text>
-            {nav.tripSummary.arrivedAtDestination && nav.tripSummary.counted !== false ? (
+            <Text style={[s.tripRoute, { color: colors.textTertiary }]}>{activeTripSummary.origin} → {activeTripSummary.destination}</Text>
+            {activeTripSummary.arrivedAtDestination && activeTripSummary.counted !== false ? (
               <Text
                 style={{
                   color: colors.textSecondary,
@@ -3344,7 +3457,7 @@ export default function MapScreen() {
                 Here’s how this trip looks in SnapRoad.
               </Text>
             ) : null}
-            {nav.tripSummary.counted === false && (
+            {activeTripSummary.counted === false && (
               <View style={{ backgroundColor: isLight ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.15)', borderRadius: 12, padding: 12, marginBottom: 12 }}>
                 <Text style={{ color: isLight ? '#92400E' : '#FBBF24', fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
                   This drive didn’t meet the minimum to count for gems or trip history. You need about 0.15 miles on the route, at
@@ -3354,11 +3467,11 @@ export default function MapScreen() {
             )}
             <View style={s.tripGrid}>
               {[
-                { l: 'Distance', v: `${(nav.tripSummary.distance ?? 0).toFixed(1)} mi`, c: colors.text },
-                { l: 'Time', v: formatDuration(nav.tripSummary.duration), c: colors.text },
-                { l: 'Safety', v: String(nav.tripSummary.safety_score), c: colors.success },
-                { l: 'Gems', v: `+${nav.tripSummary.gems_earned}`, c: colors.warning },
-                { l: 'XP', v: `+${nav.tripSummary.xp_earned}`, c: '#4f46e5' },
+                { l: 'Distance', v: `${(activeTripSummary.distance ?? 0).toFixed(1)} mi`, c: colors.text },
+                { l: 'Time', v: formatDuration(activeTripSummary.duration), c: colors.text },
+                { l: 'Safety', v: String(activeTripSummary.safety_score), c: colors.success },
+                { l: 'Gems', v: `+${activeTripSummary.gems_earned}`, c: colors.warning },
+                { l: 'XP', v: `+${activeTripSummary.xp_earned}`, c: '#4f46e5' },
               ].map((stat) => (
                 <View key={stat.l} style={[s.tripStat, { backgroundColor: colors.surfaceSecondary }]}>
                   <Text style={[s.tripStatL, { color: colors.textTertiary }]}>{stat.l}</Text>
@@ -3366,9 +3479,9 @@ export default function MapScreen() {
                 </View>
               ))}
             </View>
-            {nav.tripSummary.profile_totals &&
-            (nav.tripSummary.profile_totals.total_miles != null ||
-              nav.tripSummary.profile_totals.gems != null) ? (
+            {activeTripSummary.profile_totals &&
+            (activeTripSummary.profile_totals.total_miles != null ||
+              activeTripSummary.profile_totals.gems != null) ? (
               <Text
                 style={{
                   color: colors.textTertiary,
@@ -3379,15 +3492,15 @@ export default function MapScreen() {
                   lineHeight: 17,
                 }}
               >
-                {nav.tripSummary.profile_totals.total_miles != null
-                  ? `Lifetime miles: ${Number(nav.tripSummary.profile_totals.total_miles).toFixed(1)} mi`
+                {activeTripSummary.profile_totals.total_miles != null
+                  ? `Lifetime miles: ${Number(activeTripSummary.profile_totals.total_miles).toFixed(1)} mi`
                   : ''}
-                {nav.tripSummary.profile_totals.total_miles != null &&
-                nav.tripSummary.profile_totals.gems != null
+                {activeTripSummary.profile_totals.total_miles != null &&
+                activeTripSummary.profile_totals.gems != null
                   ? ' · '
                   : ''}
-                {nav.tripSummary.profile_totals.gems != null
-                  ? `Gems balance: ${nav.tripSummary.profile_totals.gems}`
+                {activeTripSummary.profile_totals.gems != null
+                  ? `Gems balance: ${activeTripSummary.profile_totals.gems}`
                   : ''}
               </Text>
             ) : null}
@@ -3395,7 +3508,7 @@ export default function MapScreen() {
               <TouchableOpacity style={[s.tripDone, { backgroundColor: 'rgba(59,130,246,0.12)', flex: 1 }]} onPress={() => setShowTripShare(true)}>
                 <Text style={[s.tripDoneT, { color: colors.primary }]}>Share</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[s.tripDone, { backgroundColor: colors.primary, flex: 2 }]} onPress={nav.dismissTripSummary}>
+              <TouchableOpacity style={[s.tripDone, { backgroundColor: colors.primary, flex: 2 }]} onPress={dismissActiveTripSummary}>
                 <Text style={s.tripDoneT}>Done</Text>
               </TouchableOpacity>
             </View>
@@ -3405,7 +3518,7 @@ export default function MapScreen() {
 
       {/* ═══ FLOATING BUTTONS (navigation) ════════════════════════════════ */}
 
-      {nav.isNavigating && !nav.showRoutePreview && !nav.tripSummary && (
+      {nav.isNavigating && !nav.showRoutePreview && !activeTripSummary && (
         <View style={[s.navFabCol, { bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 10 }]}>
           {!cameraLocked && (
             <TouchableOpacity
@@ -3447,19 +3560,7 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* ── Street name pill ── */}
-      {nav.isNavigating && !nav.showRoutePreview && currentStep?.name && (
-        <Animated.View
-          entering={FadeIn.duration(200)}
-          exiting={FadeOut.duration(150)}
-          style={[s.streetPill, { bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 10, backgroundColor: isLight ? 'rgba(255,255,255,0.88)' : 'rgba(20,28,44,0.88)' }]}
-        >
-          <Ionicons name="car-outline" size={12} color={colors.textTertiary} />
-          <Text style={[s.streetPillT, { color: colors.text }]} numberOfLines={1}>{currentStep.name}</Text>
-        </Animated.View>
-      )}
-
-      {!nav.isNavigating && !nav.showRoutePreview && !nav.tripSummary && !selectedPlace && !selectedPlaceId && (
+      {!nav.isNavigating && !nav.showRoutePreview && !activeTripSummary && !selectedPlace && !selectedPlaceId && (
         <TouchableOpacity style={[s.reportFab, {
           bottom: 40 + insets.bottom,
           right: 20,
@@ -3472,7 +3573,7 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      {!nav.showRoutePreview && !nav.tripSummary && !nav.isNavigating && !selectedPlace && !selectedPlaceId && (
+      {!nav.showRoutePreview && !activeTripSummary && !nav.isNavigating && !selectedPlace && !selectedPlaceId && (
         <TouchableOpacity
           style={[s.communityBtn, {
             bottom: 108 + insets.bottom,
@@ -3486,14 +3587,14 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      {!nav.isNavigating && isExploring && !isSearchFocused && !nav.showRoutePreview && !nav.tripSummary && (
+      {!nav.isNavigating && isExploring && !isSearchFocused && !nav.showRoutePreview && !activeTripSummary && (
         <TouchableOpacity style={[s.recenter, { top: insets.top + 88 }]} onPress={handleRecenter}>
           <Ionicons name="navigate" size={14} color="#fff" style={{ marginRight: 6 }} />
           <Text style={s.recenterT}>Recenter</Text>
         </TouchableOpacity>
       )}
 
-      {!nav.showRoutePreview && !nav.tripSummary && (user?.isPremium || nav.isNavigating) && (
+      {!nav.showRoutePreview && !activeTripSummary && (user?.isPremium || nav.isNavigating) && (
         <TouchableOpacity
           style={[s.orionFab, { top: insets.top + 236, right: 20 }]}
           onPress={() => {
@@ -3561,21 +3662,53 @@ export default function MapScreen() {
       )}
 
       {speed > 1 && !selectedPlace && !selectedPlaceId && (() => {
-        const currentSpeedLimit = nav.isNavigating && nav.navigationData?.maxspeeds
-          ? nav.navigationData.maxspeeds[Math.min(nav.currentStepIndex, nav.navigationData.maxspeeds.length - 1)]
-          : null;
-        const isOverSpeed = typeof currentSpeedLimit === 'number' && speed > currentSpeedLimit;
+        const rawLimit =
+          nav.isNavigating && nav.navigationData?.maxspeeds
+            ? nav.navigationData.maxspeeds[Math.min(nav.currentStepIndex, nav.navigationData.maxspeeds.length - 1)]
+            : null;
+        const currentSpeedLimit =
+          typeof rawLimit === 'number' && Number.isFinite(rawLimit) ? rawLimit : null;
+        const hasLimit = nav.isNavigating && currentSpeedLimit != null;
+        const isOverSpeed = hasLimit && speed > (currentSpeedLimit as number);
         return (
-          <View style={{ position: 'absolute', left: 14, bottom: (nav.isNavigating ? MAP_NAV_BOTTOM_INSET : 40) + insets.bottom, alignItems: 'center', gap: 6 }}>
-            {modeConfig.showSpeedLimit && currentSpeedLimit !== null && currentSpeedLimit !== undefined && nav.isNavigating && (
-              <View style={[s.speedLimitSign, isOverSpeed && { borderColor: '#FF3B30' }]}>
-                <Text style={s.speedLimitNum}>{currentSpeedLimit}</Text>
-                <Text style={s.speedLimitUnit}>LIMIT</Text>
-              </View>
-            )}
-            <View style={[s.speedBadge, { borderColor: isOverSpeed ? '#FF3B30' : modeConfig.etaAccentColor, backgroundColor: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.92)' }]}>
-              <Text style={[s.speedVal, { color: isOverSpeed ? '#FF3B30' : modeConfig.speedColor }]}>{Math.round(speed)}</Text>
+          <View
+            style={{
+              position: 'absolute',
+              left: 14,
+              bottom: (nav.isNavigating ? MAP_NAV_BOTTOM_INSET : 40) + insets.bottom,
+              alignItems: 'center',
+            }}
+          >
+            <View
+              style={[
+                s.speedBadge,
+                hasLimit && s.speedBadgeWithLimit,
+                {
+                  borderColor: isOverSpeed ? '#FF3B30' : modeConfig.etaAccentColor,
+                  backgroundColor: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.92)',
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  s.speedVal,
+                  hasLimit && s.speedValCompact,
+                  { color: isOverSpeed ? '#FF3B30' : modeConfig.speedColor },
+                ]}
+              >
+                {Math.round(speed)}
+              </Text>
               <Text style={[s.speedUnit, { color: colors.textTertiary }]}>mph</Text>
+              {hasLimit ? (
+                <Text
+                  style={[
+                    s.speedLimitInline,
+                    { color: isOverSpeed ? '#FF3B30' : colors.textTertiary },
+                  ]}
+                >
+                  LIMIT {currentSpeedLimit}
+                </Text>
+              ) : null}
             </View>
           </View>
         );
@@ -3862,7 +3995,7 @@ export default function MapScreen() {
           });
         }}
       />
-      <TripShare visible={showTripShare} onClose={() => setShowTripShare(false)} trip={nav.tripSummary ?? null} />
+      <TripShare visible={showTripShare} onClose={() => setShowTripShare(false)} trip={activeTripSummary ?? null} />
 
       <OrionChat
         visible={showOrion}
@@ -4151,8 +4284,6 @@ const s = StyleSheet.create({
   // Floating buttons
   navFabCol: { position: 'absolute', right: 16, zIndex: 12, gap: 12, alignItems: 'center' as const },
   navFab: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center' as const, alignItems: 'center' as const, ...shadow(8, 0.18) },
-  streetPill: { position: 'absolute', left: 16, zIndex: 10, flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, ...shadow(4, 0.1) },
-  streetPillT: { fontSize: 12, fontWeight: '600' as const, maxWidth: 160 },
   reportFab: { position: 'absolute', width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.94)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', ...shadow(8, 0.12) },
   communityBtn: { position: 'absolute', minHeight: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.94)', paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', ...shadow(8, 0.12) },
   communityT: { fontSize: 12, fontWeight: '700' },
@@ -4388,12 +4519,12 @@ const s = StyleSheet.create({
   turnCardCalm: { borderRadius: 24 },
   turnIconCalm: { backgroundColor: 'rgba(255,255,255,0.2)' },
   endBtnCalm: { backgroundColor: '#E05252', borderRadius: 16 },
-  speedLimitSign: { width: 44, height: 44, borderRadius: 22, borderWidth: 3, borderColor: '#DC2626', backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center', ...shadow(6, 0.2) },
-  speedLimitNum: { fontSize: 15, fontWeight: '900', color: '#000', lineHeight: 17 },
-  speedLimitUnit: { fontSize: 7, fontWeight: '700', color: '#666', letterSpacing: 0.5 },
-  speedBadge: { width: 58, height: 58, borderRadius: 29, borderWidth: 2.5, justifyContent: 'center', alignItems: 'center', ...shadow(10, 0.15) },
+  speedBadge: { minWidth: 58, minHeight: 58, borderRadius: 29, borderWidth: 2.5, justifyContent: 'center', alignItems: 'center', ...shadow(10, 0.15) },
+  speedBadgeWithLimit: { minWidth: 64, minHeight: 80, borderRadius: 32, paddingVertical: 10, paddingHorizontal: 8 },
   speedVal: { fontSize: 17, fontWeight: '800' },
+  speedValCompact: { fontSize: 16 },
   speedUnit: { fontSize: 9, fontWeight: '600', marginTop: -1 },
+  speedLimitInline: { fontSize: 8, fontWeight: '800', letterSpacing: 0.4, marginTop: 4, textTransform: 'uppercase' as const },
   layerBtn: { position: 'absolute', right: 16, width: 46, height: 46, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, ...shadow(8, 0.15), zIndex: 12 },
   locBanner: { position: 'absolute', alignSelf: 'center', backgroundColor: 'rgba(59,130,246,0.92)', paddingHorizontal: 18, paddingVertical: 9, borderRadius: 22 },
   mapLayerHint: {

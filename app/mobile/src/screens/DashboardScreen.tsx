@@ -153,6 +153,8 @@ export default function DashboardScreen() {
   const friendsTabActive = section === 'friends' && isFocused;
   const { location, heading, speed } = useLocation(false, { paused: !friendsTabActive });
   const dashboardLivePublishRef = useRef(0);
+  const dashboardLiveCoordsRef = useRef({ lat: location.lat, lng: location.lng, heading, speed });
+  dashboardLiveCoordsRef.current = { lat: location.lat, lng: location.lng, heading, speed };
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(true);
@@ -344,6 +346,50 @@ export default function DashboardScreen() {
       cancelled = true;
     };
   }, [user?.isPremium, friendsTabActive, isSharingLocation, location.lat, location.lng, heading, speed]);
+
+  /** Heartbeat while parked: GPS effect may not re-run when coordinates are static. */
+  useEffect(() => {
+    if (!user?.isPremium || !friendsTabActive || !isSharingLocation) return;
+    let cancelled = false;
+    const tick = () => {
+      const { lat, lng, heading: h, speed: sp } = dashboardLiveCoordsRef.current;
+      const rLat = Math.round(lat * 1000);
+      const rLng = Math.round(lng * 1000);
+      if (rLat === 0 && rLng === 0) return;
+      const now = Date.now();
+      if (now - dashboardLivePublishRef.current < 25_000) return;
+      dashboardLivePublishRef.current = now;
+      void (async () => {
+        let battery_pct: number | undefined;
+        try {
+          const lvl = await Battery.getBatteryLevelAsync();
+          if (cancelled) return;
+          battery_pct = Math.round(Math.max(0, Math.min(1, lvl)) * 100);
+        } catch {
+          /* optional */
+        }
+        if (cancelled) return;
+        try {
+          await api.post('/api/friends/location/update', {
+            lat,
+            lng,
+            heading: h,
+            speed_mph: sp,
+            is_navigating: false,
+            is_sharing: true,
+            battery_pct,
+          });
+        } catch {
+          /* offline */
+        }
+      })();
+    };
+    const id = setInterval(tick, 28_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [user?.isPremium, friendsTabActive, isSharingLocation]);
 
   const myCoord = useMemo(() => {
     if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return null;
@@ -763,12 +809,11 @@ export default function DashboardScreen() {
                 },
               });
             }}
-            onViewOnMap={(friendId) => {
+            onViewOnMap={() => {
+              const f = selectedFriend;
+              if (!f) return;
               setSelectedFriend(null);
-              navigation.getParent()?.navigate('Map', {
-                screen: 'MapMain',
-                params: { mapFocusFriend: { friendId, nonce: Date.now() } },
-              });
+              openFriendOnMap(f);
             }}
             onRemove={handleRemoveFriend}
           />

@@ -1,0 +1,211 @@
+diff --git a/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationModule.kt b/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationModule.kt
+index 54702f8..0a3704b 100644
+--- a/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationModule.kt
++++ b/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationModule.kt
+@@ -114,6 +114,10 @@ class ExpoMapboxNavigationModule : Module() {
+         view.setFollowingZoom(followingZoom)
+       }
+ 
++      Prop("drivingMode") { view: ExpoMapboxNavigationView, mode: String? ->
++        view.setDrivingMode(mode)
++      }
++
+       AsyncFunction("recenterMap") { view: ExpoMapboxNavigationView -> view.recenterMap() }
+     }
+   }
+diff --git a/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt b/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
+index 4e667fa..a85dec2 100644
+--- a/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
++++ b/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
+@@ -963,6 +963,40 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+         navigationCamera.requestNavigationCameraToFollowing()
+     }
+ 
++    private var currentDrivingMode: String = "adaptive"
++
++    fun setDrivingMode(mode: String?) {
++        currentDrivingMode = mode ?: "adaptive"
++        applySnapRoadManeuverTheme()
++    }
++
++    private fun getManeuverBgColor(): Int {
++        return when (currentDrivingMode) {
++            "calm" -> Color.parseColor("#6BA4E8")
++            "sport" -> Color.parseColor("#4A4063")
++            else -> Color.parseColor("#3B82F6")
++        }
++    }
++
++    private fun getManeuverTextColor(): Int {
++        return when (currentDrivingMode) {
++            "sport" -> Color.parseColor("#E8D5C4")
++            else -> Color.WHITE
++        }
++    }
++
++    private fun applySnapRoadManeuverTheme() {
++        val bgColor = getManeuverBgColor()
++        val textColor = getManeuverTextColor()
++        maneuverView.setBackgroundColor(bgColor)
++        for (i in 0 until (maneuverView as ViewGroup).childCount) {
++            val child = (maneuverView as ViewGroup).getChildAt(i)
++            if (child is TextView) {
++                child.setTextColor(textColor)
++            }
++        }
++    }
++
+     fun addCustomRasterLayer() {
+         val style = mapboxMap.getStyle() ?: return
+ 
+diff --git a/node_modules/@badatgil/expo-mapbox-navigation/build/ExpoMapboxNavigation.types.d.ts b/node_modules/@badatgil/expo-mapbox-navigation/build/ExpoMapboxNavigation.types.d.ts
+index 8abb17d..7723abd 100644
+--- a/node_modules/@badatgil/expo-mapbox-navigation/build/ExpoMapboxNavigation.types.d.ts
++++ b/node_modules/@badatgil/expo-mapbox-navigation/build/ExpoMapboxNavigation.types.d.ts
+@@ -64,6 +64,8 @@ export type ExpoMapboxNavigationViewProps = {
+     placeCustomRasterLayerAbove?: string;
+     disableAlternativeRoutes?: boolean;
+     followingZoom?: number;
++    /** SnapRoad driving mode — applies brand-specific route/banner colors. */
++    drivingMode?: 'calm' | 'adaptive' | 'sport';
+     onRouteProgressChanged?: (event: {
+         nativeEvent: ProgressEvent;
+     }) => void;
+diff --git a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationModule.swift b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationModule.swift
+index 965414e..ccd9a93 100644
+--- a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationModule.swift
++++ b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationModule.swift
+@@ -84,6 +84,10 @@ public class ExpoMapboxNavigationModule: Module {
+         view.controller.setFollowingZoom(followingZoom: followingZoom)
+       }
+ 
++      Prop("drivingMode") { (view: ExpoMapboxNavigationView, mode: String?) in
++        view.controller.setDrivingMode(mode: mode)
++      }
++
+       AsyncFunction("recenterMap") { (view: ExpoMapboxNavigationView) in
+         view.controller.recenterMap()
+       }
+diff --git a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
+index 8f841df..caa26c1 100644
+--- a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
++++ b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
+@@ -62,6 +62,47 @@ class ExpoMapboxNavigationViewController: UIViewController {
+     var isUsingRouteMatchingApi: Bool = false
+     var vehicleMaxHeight: Double? = nil
+     var vehicleMaxWidth: Double? = nil
++    var currentDrivingMode: String = "adaptive"
++
++    struct SnapRoadModeTheme {
++        let routeColor: String
++        let routeCasing: String
++        let maneuverBannerBg: UIColor
++        let maneuverBannerText: UIColor
++        let bottomBannerBg: UIColor
++        let bottomBannerText: UIColor
++        let accentColor: UIColor
++    }
++
++    static let modeThemes: [String: SnapRoadModeTheme] = [
++        "calm": SnapRoadModeTheme(
++            routeColor: "#6BB0E8",
++            routeCasing: "#3E7FC4",
++            maneuverBannerBg: UIColor(red: 0.42, green: 0.64, blue: 0.91, alpha: 1),
++            maneuverBannerText: .white,
++            bottomBannerBg: UIColor(red: 0.96, green: 0.97, blue: 0.98, alpha: 0.97),
++            bottomBannerText: UIColor(red: 0.12, green: 0.16, blue: 0.23, alpha: 1),
++            accentColor: UIColor(red: 0.29, green: 0.56, blue: 0.85, alpha: 1)
++        ),
++        "adaptive": SnapRoadModeTheme(
++            routeColor: "#3B82F6",
++            routeCasing: "#1E40AF",
++            maneuverBannerBg: UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1),
++            maneuverBannerText: .white,
++            bottomBannerBg: UIColor(red: 0.96, green: 0.97, blue: 0.98, alpha: 0.97),
++            bottomBannerText: UIColor(red: 0.12, green: 0.16, blue: 0.23, alpha: 1),
++            accentColor: UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1)
++        ),
++        "sport": SnapRoadModeTheme(
++            routeColor: "#C4956A",
++            routeCasing: "#2D2845",
++            maneuverBannerBg: UIColor(red: 0.29, green: 0.25, blue: 0.39, alpha: 1),
++            maneuverBannerText: UIColor(red: 0.91, green: 0.84, blue: 0.77, alpha: 1),
++            bottomBannerBg: UIColor(red: 0.14, green: 0.12, blue: 0.20, alpha: 0.97),
++            bottomBannerText: UIColor(red: 0.91, green: 0.84, blue: 0.77, alpha: 1),
++            accentColor: UIColor(red: 0.77, green: 0.58, blue: 0.42, alpha: 1)
++        ),
++    ]
+ 
+     var onRouteProgressChanged: EventDispatcher? = nil
+     var onCancelNavigation: EventDispatcher? = nil
+@@ -112,6 +153,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
+                     value: "#FFFFFF" 
+                 )
+ 
++                self.applySnapRoadRouteTheme()
++
+                self.onRouteProgressChanged?([
+                     "distanceRemaining": progressState!.routeProgress.distanceRemaining,
+                     "distanceTraveled": progressState!.routeProgress.distanceTraveled,
+@@ -301,6 +344,39 @@ class ExpoMapboxNavigationViewController: UIViewController {
+         }
+     }
+ 
++    func setDrivingMode(mode: String?) {
++        currentDrivingMode = mode ?? "adaptive"
++    }
++
++    func applySnapRoadRouteTheme() {
++        let theme = ExpoMapboxNavigationViewController.modeThemes[currentDrivingMode]
++            ?? ExpoMapboxNavigationViewController.modeThemes["adaptive"]!
++
++        let mapboxMap = navigationViewController?.navigationMapView?.mapView.mapboxMap
++        guard let map = mapboxMap else { return }
++
++        try? map.setLayerProperty(for: "com.mapbox.navigation.route.main", property: "line-color", value: theme.routeColor)
++        try? map.setLayerProperty(for: "com.mapbox.navigation.route.main.casing", property: "line-color", value: theme.routeCasing)
++    }
++
++    func applySnapRoadBannerTheme() {
++        let theme = ExpoMapboxNavigationViewController.modeThemes[currentDrivingMode]
++            ?? ExpoMapboxNavigationViewController.modeThemes["adaptive"]!
++
++        let navVC = navigationViewController
++        guard let navView = navVC?.navigationView else { return }
++
++        navView.topBannerContainerView.backgroundColor = theme.maneuverBannerBg
++        navView.bottomBannerContainerView.backgroundColor = theme.bottomBannerBg
++
++        for label in navView.topBannerContainerView.findViews(subclassOf: UILabel.self) {
++            label.textColor = theme.maneuverBannerText
++        }
++        for label in navView.bottomBannerContainerView.findViews(subclassOf: UILabel.self) {
++            label.textColor = theme.bottomBannerText
++        }
++    }
++
+     func update(){
+         calculateRoutesTask?.cancel()
+ 
+@@ -468,6 +544,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
+         let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self)[0]
+         cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
+ 
++        applySnapRoadBannerTheme()
++
+         navigationViewController.delegate = self
+         addChild(navigationViewController)
+         view.addSubview(navigationViewController.view)
+diff --git a/node_modules/@badatgil/expo-mapbox-navigation/src/ExpoMapboxNavigation.types.ts b/node_modules/@badatgil/expo-mapbox-navigation/src/ExpoMapboxNavigation.types.ts
+index 3e8b18b..2bb909a 100644
+--- a/node_modules/@badatgil/expo-mapbox-navigation/src/ExpoMapboxNavigation.types.ts
++++ b/node_modules/@badatgil/expo-mapbox-navigation/src/ExpoMapboxNavigation.types.ts
+@@ -54,6 +54,8 @@ export type ExpoMapboxNavigationViewProps = {
+   placeCustomRasterLayerAbove?: string;
+   disableAlternativeRoutes?: boolean;
+   followingZoom?: number;
++  /** SnapRoad driving mode — applies brand-specific route/banner colors. */
++  drivingMode?: 'calm' | 'adaptive' | 'sport';
+   onRouteProgressChanged?: (event: { nativeEvent: ProgressEvent }) => void;
+   onCancelNavigation?: () => void;
+   onWaypointArrival?: (event: {

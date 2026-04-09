@@ -8,6 +8,7 @@ import { badgeCategoryAccent, badgeIoniconsName } from '../../lib/badgeIcons';
 import type { GemTx, OffersRewardsView, UserOfferRedemption } from './types';
 import { displayOfferCategory } from '../../lib/offerCategories';
 import { rewardsStyles } from './styles';
+import { BadgeTileIcon } from './BadgeTileIcon';
 
 type ThemeProps = {
   cardBg: string;
@@ -366,18 +367,18 @@ export function BadgesPreview({
             onPress={() => onPressBadge(b)}
             activeOpacity={0.8}
           >
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                backgroundColor: b.earned ? `${accent}28` : `${sub}14`,
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}
-            >
-              <Ionicons name={b.earned ? iconName : 'lock-closed-outline'} size={24} color={b.earned ? accent : sub} />
-            </View>
+            <BadgeTileIcon
+              earned={b.earned}
+              iconName={iconName}
+              accent={accent}
+              sub={sub}
+              surfaceBg={cardBg}
+              progress={prog}
+              ringSize={52}
+              iconCell={44}
+              iconRadius={14}
+              iconSize={24}
+            />
             {!b.earned && prog > 0 && prog < 100 ? (
               <View style={[rewardsStyles.progressTrack, { width: '100%', marginTop: 6 }]}>
                 <View style={[rewardsStyles.progressBar, { width: `${prog}%`, backgroundColor: accent }]} />

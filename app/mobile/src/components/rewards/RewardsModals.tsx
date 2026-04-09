@@ -10,6 +10,7 @@ import { openMapsSearch } from '../../lib/mapsLinks';
 import { api } from '../../api/client';
 import { rewardsStyles } from './styles';
 import { badgeCategoryAccent, badgeIoniconsName } from '../../lib/badgeIcons';
+import { BadgeTileIcon } from './BadgeTileIcon';
 
 let QRCode: React.ComponentType<{ value: string; size: number; backgroundColor: string; color: string }> | null = null;
 try {
@@ -50,23 +51,21 @@ export function BadgeDetailModal({
           style={[rewardsStyles.modalCard, { backgroundColor: cardBg, borderWidth: 2, borderColor: selectedBadge?.earned ? `${accent}55` : `${primary}18` }]}
           onStartShouldSetResponder={() => true}
         >
-          <View
-            style={{
-              alignSelf: 'center',
-              width: 72,
-              height: 72,
-              borderRadius: 22,
-              backgroundColor: selectedBadge?.earned ? `${accent}22` : `${sub}18`,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 12,
-            }}
-          >
-            <Ionicons
-              name={selectedBadge?.earned ? iconName : 'lock-closed-outline'}
-              size={36}
-              color={selectedBadge?.earned ? accent : sub}
-            />
+          <View style={{ alignSelf: 'center', marginBottom: 12 }}>
+            {selectedBadge ? (
+              <BadgeTileIcon
+                earned={selectedBadge.earned}
+                iconName={iconName}
+                accent={accent}
+                sub={sub}
+                surfaceBg={cardBg}
+                progress={prog}
+                ringSize={88}
+                iconCell={72}
+                iconRadius={22}
+                iconSize={34}
+              />
+            ) : null}
           </View>
           <Text style={[rewardsStyles.modalTitle, { color: text }]}>{selectedBadge?.name}</Text>
           {selectedBadge?.category ? (
@@ -607,18 +606,18 @@ export function AllBadgesModal({
                     ]}
                     onPress={() => onSelectBadge(b)}
                   >
-                    <View
-                      style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 16,
-                        backgroundColor: b.earned ? `${accent}24` : `${sub}14`,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Ionicons name={b.earned ? iconName : 'lock-closed-outline'} size={28} color={b.earned ? accent : sub} />
-                    </View>
+                    <BadgeTileIcon
+                      earned={b.earned}
+                      iconName={iconName}
+                      accent={accent}
+                      sub={sub}
+                      surfaceBg={cardBg}
+                      progress={prog}
+                      ringSize={56}
+                      iconCell={48}
+                      iconRadius={16}
+                      iconSize={28}
+                    />
                     {!b.earned && prog > 0 ? (
                       <View style={[rewardsStyles.progressTrack, { width: '100%', marginTop: 6 }]}>
                         <View style={[rewardsStyles.progressBar, { width: `${prog}%`, backgroundColor: accent }]} />
