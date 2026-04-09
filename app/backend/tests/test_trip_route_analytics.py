@@ -5,8 +5,7 @@ Tests for SnapRoad new features: TripAnalytics, RouteHistory3D, CollapsibleOffer
 import requests
 import os
 
-# Use environment variable for BASE_URL
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'http://localhost:8001').rstrip('/')
+from tests.http_integration import INTEGRATION_BASE_URL as BASE_URL
 
 
 def _driver_auth_headers() -> dict:

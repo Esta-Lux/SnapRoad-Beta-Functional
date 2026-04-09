@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from main import app
+from tests.http_integration import normalize_api_base_url
 
 
 @pytest.fixture
@@ -17,7 +18,7 @@ def client() -> TestClient:
 
 @pytest.fixture
 def live_base_url() -> str:
-    url = (os.environ.get("REACT_APP_BACKEND_URL") or "").strip().rstrip("/")
-    if not url:
+    raw = (os.environ.get("REACT_APP_BACKEND_URL") or "").strip()
+    if not raw:
         pytest.skip("Set REACT_APP_BACKEND_URL for integration tests")
-    return url
+    return normalize_api_base_url(raw)

@@ -5,11 +5,8 @@ and navigation/tab rendering prerequisites
 """
 import pytest
 import requests
-import os
 
-# Get backend URL from environment
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', os.environ.get('VITE_BACKEND_URL', 'http://localhost:8001'))
-BASE_URL = BASE_URL.rstrip('/')
+from tests.http_integration import INTEGRATION_BASE_URL as BASE_URL
 
 
 class TestHealthEndpoint:

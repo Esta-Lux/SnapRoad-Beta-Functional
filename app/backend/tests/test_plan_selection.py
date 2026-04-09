@@ -6,13 +6,13 @@ Tests for:
 - POST /api/user/plan - User can select/change plan
 - GET /api/user/plan - Get user's current plan
 - GET /api/user/onboarding-status - Get onboarding completion status
-- POST /api/trips/complete - Duration-tier gems (optional: set TEST_USER_JWT + BASE_URL)
+- POST /api/trips/complete - Duration-tier gems (optional: set TEST_USER_JWT; uses integration BASE_URL)
 """
 import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+from tests.http_integration import INTEGRATION_BASE_URL as BASE_URL
 
 class TestPricingEndpoints:
     """Test pricing configuration endpoints"""
@@ -198,7 +198,6 @@ class TestTripCompletionWithMultiplier:
         "safety_score": 85,
     }
 
-    @pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL / BASE_URL not set")
     @pytest.mark.skipif(
         not os.environ.get("TEST_USER_JWT", "").strip(),
         reason="Set TEST_USER_JWT (Bearer token for a test user) to run trip completion tests",

@@ -4,10 +4,8 @@ Tests for SnapRoad Offer Boost feature: pricing, create boost, active boosts, ca
 All boost APIs are MOCKED with in-memory data
 """
 import requests
-import os
 
-# Use environment variable for BASE_URL
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'http://localhost:8001').rstrip('/')
+from tests.http_integration import INTEGRATION_BASE_URL as BASE_URL
 
 
 class TestBoostPricing:

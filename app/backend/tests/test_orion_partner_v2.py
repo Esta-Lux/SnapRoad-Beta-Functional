@@ -3,12 +3,9 @@
 
 import pytest
 import requests
-import os
 import time
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-if not BASE_URL:
-    BASE_URL = "http://localhost:8001"
+from tests.http_integration import INTEGRATION_BASE_URL as BASE_URL
 
 # Test partner credentials
 PARTNER_EMAIL = "partner@snaproad.com"

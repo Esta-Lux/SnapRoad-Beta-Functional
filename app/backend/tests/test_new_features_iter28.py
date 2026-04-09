@@ -5,10 +5,9 @@ Testing: Bulk offer upload, Gems on route, Offer redemption, On-route offers, Of
 
 import pytest
 import requests
-import os
 import uuid
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'http://localhost:8001').rstrip('/')
+from tests.http_integration import INTEGRATION_BASE_URL as BASE_URL
 
 
 class TestHealthAndBasicAPIs:

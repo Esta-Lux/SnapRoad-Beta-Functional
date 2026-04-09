@@ -4,7 +4,7 @@ Integration / contract tests against a running API (staging or local).
 Usage:
   REACT_APP_BACKEND_URL=https://your-api.example.com pytest tests/integration -m integration
 
-Skipped in CI unless you set the env var (e.g. repository variable for a staging URL).
+Skipped in CI unless ``REACT_APP_BACKEND_URL`` is set (e.g. from repository var ``STAGING_API_URL``).
 """
 import pytest
 import requests

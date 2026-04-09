@@ -1,6 +1,7 @@
 """
 Fast unit-style checks for CI + coverage (no live HTTP server, no Supabase required).
-Legacy tests under this folder that use requests + REACT_APP_BACKEND_URL stay optional in CI.
+Legacy HTTP tests use ``tests.http_integration`` (env: REACT_APP_BACKEND_URL, SNAPROAD_TEST_API_URL,
+VITE_BACKEND_URL; default http://127.0.0.1:8001). CI still runs only in-process smoke + ``tests/unit``.
 """
 
 from fastapi.testclient import TestClient

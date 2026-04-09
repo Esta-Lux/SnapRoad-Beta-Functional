@@ -15,7 +15,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+from tests.http_integration import INTEGRATION_BASE_URL as BASE_URL
 
 class TestHealthEndpoints:
     """Health check endpoints"""
