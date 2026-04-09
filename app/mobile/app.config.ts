@@ -173,14 +173,14 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
         "@rnmapbox/maps",
         {
           RNMapboxMapsImpl: "mapbox",
-          RNMapboxMapsVersion: "11.11.0",
+          RNMapboxMapsVersion: "11.18.2",
         },
       ],
       [
         "@badatgil/expo-mapbox-navigation",
         {
           accessToken: envAny(["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"], MAPBOX_PUBLIC_TOKEN_DEFAULT),
-          mapboxMapsVersion: "11.11.0",
+          mapboxMapsVersion: "11.18.2",
         },
       ],
       [
