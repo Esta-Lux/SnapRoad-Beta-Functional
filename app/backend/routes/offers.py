@@ -20,6 +20,7 @@ import asyncio
 import copy
 import uuid
 import logging
+import math
 from jose import JWTError, jwt
 from config import JWT_ALGORITHM, JWT_SECRET
 
@@ -31,8 +32,6 @@ logger = logging.getLogger(__name__)
 
 
 def _distance_meters(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    import math
-
     r = 6371000.0
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
@@ -455,8 +454,11 @@ def complete_offer_redemption(
                     new_total,
                     gc,
                 )
-                # Keep response aligned with persisted wallet state without mutating balance from stale assumptions.
-                new_total = _next_gem_total(user_id)
+                # Avoid an extra DB round-trip in redemption flow; derive a conservative total locally.
+                if rpc_current_gems is not None:
+                    new_total = max(0, rpc_current_gems - int(gc))
+                else:
+                    new_total = max(0, int(current_gems) - int(gc))
             data_out = {
                 "discount_percent": disc,
                 "gem_cost": gc,

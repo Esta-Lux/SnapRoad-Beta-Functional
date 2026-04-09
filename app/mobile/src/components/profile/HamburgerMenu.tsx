@@ -51,6 +51,9 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
   const cardBg = isLight ? '#ffffff' : '#1e293b';
   const text = isLight ? '#1e293b' : '#f8fafc';
   const sub = isLight ? '#64748b' : '#94a3b8';
+  const appVersion = Constants.expoConfig?.version ?? 'Unknown';
+  const copyrightYear = new Date().getFullYear();
+  const aboutMessage = `Version ${appVersion}\n\n\u00A9 ${copyrightYear} SnapRoad Inc.\nAll rights reserved.`;
 
   const items: MenuItem[] = [
     {
@@ -107,7 +110,7 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
       label: 'About',
       action: () => {
         runAfterMenuClose(onClose, () => {
-          Alert.alert('SnapRoad', 'Version 1.0.0\n\n\u00A9 2025 SnapRoad Inc.\nAll rights reserved.');
+          Alert.alert('SnapRoad', aboutMessage);
         });
       },
     },

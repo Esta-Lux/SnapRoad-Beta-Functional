@@ -43,11 +43,11 @@ The app can issue MapKit JS tokens so the map can use Apple MapKit. The **privat
 
 ## 3. Load .env when running the backend
 
-If you use `python-dotenv`, ensure the backend loads `app/backend/.env` on startup (e.g. in `main.py` or your run script). Then restart the backend so the new env vars are picked up.
+If you use `python-dotenv`, ensure the backend loads `app/backend/.env` on startup (e.g. in `server.py` or your run script). Then restart the backend so the new env vars are picked up.
 
 ## 4. Run backend with .env loaded
 
-Start the backend from `app/backend` so it loads `.env` (main.py loads it automatically). The frontend will request the token from `GET /api/mapkit/token?origin=<your-origin>`.
+Start the backend from `app/backend` so it loads `.env` (`server.py` loads it automatically). The frontend will request the token from `GET /api/mapkit/token?origin=<your-origin>`.
 
 ## 5. Frontend
 
