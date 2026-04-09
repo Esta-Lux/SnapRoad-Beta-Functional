@@ -109,6 +109,20 @@ class FriendRequest(BaseModel):
     user_id: str
 
 
+class FriendCategoryCreateBody(BaseModel):
+    name: str = Field(min_length=1, max_length=48)
+    color: Optional[str] = Field(default=None, min_length=4, max_length=16)
+
+
+class FriendCategoryUpdateBody(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=48)
+    color: Optional[str] = Field(default=None, min_length=4, max_length=16)
+
+
+class FriendCategoryMemberBody(BaseModel):
+    friend_id: str
+
+
 class LocationUpdateBody(BaseModel):
     lat: float
     lng: float

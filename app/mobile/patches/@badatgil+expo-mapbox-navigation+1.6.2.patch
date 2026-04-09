@@ -14,10 +14,46 @@ index 54702f8..0a3704b 100644
      }
    }
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt b/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
-index 4e667fa..a85dec2 100644
+index 4e667fa..2bd9485 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
 +++ b/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
-@@ -963,6 +963,40 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -106,9 +106,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+     // and gets null. Not set automatically for some reason.
+     // https://github.com/mapbox/mapbox-navigation-android/blob/188d4781b31bb328733eeca593edc8087e38d915/ui-utils/src/main/java/com/mapbox/navigation/ui/utils/internal/lifecycle/ViewLifecycleRegistry.kt#L67
+     init {
+-        this.setViewTreeLifecycleOwner(
+-                appContext.activityProvider?.currentActivity as LifecycleOwner
+-        )
++        val lifecycleOwner = appContext.activityProvider?.currentActivity as? LifecycleOwner
++        if (lifecycleOwner != null) {
++            this.setViewTreeLifecycleOwner(lifecycleOwner)
++        }
+     }
+ 
+     private var isMuted = false
+@@ -297,13 +298,20 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+     private val routesObserver =
+             object : RoutesObserver {
+                 override fun onRoutesChanged(result: RoutesUpdatedResult) {
++                    val mainRoute = result.navigationRoutes.firstOrNull()
++                    if (mainRoute == null) {
++                        viewportDataSource.clearRouteData()
++                        viewportDataSource.evaluate()
++                        return
++                    }
++
+                     onRoutesLoaded(
+                             mapOf(
+                                     "routes" to
+                                             mapOf(
+                                                     "mainRoute" to
+                                                             convertRoute(
+-                                                                    result.navigationRoutes.first()
++                                                                    mainRoute
+                                                             ),
+                                                     "alternativeRoutes" to
+                                                             result.navigationRoutes.drop(1).map {
+@@ -963,6 +971,41 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
          navigationCamera.requestNavigationCameraToFollowing()
      }
  
@@ -47,8 +83,9 @@ index 4e667fa..a85dec2 100644
 +        val bgColor = getManeuverBgColor()
 +        val textColor = getManeuverTextColor()
 +        maneuverView.setBackgroundColor(bgColor)
-+        for (i in 0 until (maneuverView as ViewGroup).childCount) {
-+            val child = (maneuverView as ViewGroup).getChildAt(i)
++        val maneuverContainer = maneuverView as? ViewGroup ?: return
++        for (i in 0 until maneuverContainer.childCount) {
++            val child = maneuverContainer.getChildAt(i)
 +            if (child is TextView) {
 +                child.setTextColor(textColor)
 +            }
@@ -99,7 +136,7 @@ index 965414e..ccd9a93 100644
          view.controller.recenterMap()
        }
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
-index 8f841df..caa26c1 100644
+index 8f841df..6326c0d 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 +++ b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 @@ -62,6 +62,47 @@ class ExpoMapboxNavigationViewController: UIViewController {
@@ -150,16 +187,63 @@ index 8f841df..caa26c1 100644
  
      var onRouteProgressChanged: EventDispatcher? = nil
      var onCancelNavigation: EventDispatcher? = nil
-@@ -112,6 +153,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -81,12 +122,12 @@ class ExpoMapboxNavigationViewController: UIViewController {
+     init() {
+         super.init(nibName: nil, bundle: nil)
+         mapboxNavigation = ExpoMapboxNavigationViewController.navigationProvider.mapboxNavigation
+-        routingProvider = mapboxNavigation!.routingProvider()
+-        navigation = mapboxNavigation!.navigation()
+-        tripSession = mapboxNavigation!.tripSession()
++        routingProvider = mapboxNavigation?.routingProvider()
++        navigation = mapboxNavigation?.navigation()
++        tripSession = mapboxNavigation?.tripSession()
+ 
+-        routeProgressCancellable = navigation!.routeProgress.sink { progressState in
+-            if(progressState != nil){
++        routeProgressCancellable = navigation?.routeProgress.sink { progressState in
++            guard let progressState else { return }
+ 
+ 
+                 // For some reason the maneuver arrows sometimes (not consistently) show up the same color as the route line making them invisible.
+@@ -112,16 +153,17 @@ class ExpoMapboxNavigationViewController: UIViewController {
                      value: "#FFFFFF" 
                  )
  
 +                self.applySnapRoadRouteTheme()
 +
                 self.onRouteProgressChanged?([
-                     "distanceRemaining": progressState!.routeProgress.distanceRemaining,
-                     "distanceTraveled": progressState!.routeProgress.distanceTraveled,
-@@ -301,6 +344,39 @@ class ExpoMapboxNavigationViewController: UIViewController {
+-                    "distanceRemaining": progressState!.routeProgress.distanceRemaining,
+-                    "distanceTraveled": progressState!.routeProgress.distanceTraveled,
+-                    "durationRemaining": progressState!.routeProgress.durationRemaining,
+-                    "fractionTraveled": progressState!.routeProgress.fractionTraveled,
++                    "distanceRemaining": progressState.routeProgress.distanceRemaining,
++                    "distanceTraveled": progressState.routeProgress.distanceTraveled,
++                    "durationRemaining": progressState.routeProgress.durationRemaining,
++                    "fractionTraveled": progressState.routeProgress.fractionTraveled,
+                 ])
+-            }
+         }
+ 
+-        waypointArrivalCancellable = navigation!.waypointsArrival.sink { arrivalStatus in
++        waypointArrivalCancellable = navigation?.waypointsArrival.sink { arrivalStatus in
+             let event = arrivalStatus.event
+             if event is WaypointArrivalStatus.Events.ToFinalDestination {
+                 self.onFinalDestinationArrival?()
+@@ -130,11 +172,11 @@ class ExpoMapboxNavigationViewController: UIViewController {
+             }
+         }
+ 
+-        reroutingCancellable = navigation!.rerouting.sink { rerouteStatus in
++        reroutingCancellable = navigation?.rerouting.sink { rerouteStatus in
+             self.onRouteChanged?()            
+         }
+ 
+-        sessionCancellable = tripSession!.session.sink { session in 
++        sessionCancellable = tripSession?.session.sink { session in
+             let state = session.state
+             switch state {
+                 case .activeGuidance(let activeGuidanceState):
+@@ -301,6 +343,39 @@ class ExpoMapboxNavigationViewController: UIViewController {
          }
      }
  
@@ -199,15 +283,103 @@ index 8f841df..caa26c1 100644
      func update(){
          calculateRoutesTask?.cancel()
  
-@@ -468,6 +544,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
-         let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self)[0]
-         cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
+@@ -322,6 +397,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
+     }
  
-+        applySnapRoadBannerTheme()
+     func calculateRoutes(waypoints: Array<Waypoint>){
++        guard let routingProvider else {
++            onRouteFailedToLoad?([
++                "errorMessage": "Routing provider unavailable."
++            ])
++            return
++        }
 +
+         let routeOptions = NavigationRouteOptions(
+             waypoints: waypoints, 
+             profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
+@@ -335,7 +417,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+         )
+ 
+         calculateRoutesTask = Task {
+-            switch await self.routingProvider!.calculateRoutes(options: routeOptions).result {
++            switch await routingProvider.calculateRoutes(options: routeOptions).result {
+             case .failure(let error):
+                 onRouteFailedToLoad?([
+                     "errorMessage": error.localizedDescription
+@@ -348,6 +430,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
+     }
+ 
+     func calculateMapMatchingRoutes(waypoints: Array<Waypoint>){
++        guard let routingProvider else {
++            onRouteFailedToLoad?([
++                "errorMessage": "Routing provider unavailable."
++            ])
++            return
++        }
++
+         let matchOptions = NavigationMatchOptions(
+             waypoints: waypoints, 
+             profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
+@@ -358,7 +447,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+ 
+ 
+         calculateRoutesTask = Task {
+-            switch await self.routingProvider!.calculateRoutes(options: matchOptions).result {
++            switch await routingProvider.calculateRoutes(options: matchOptions).result {
+             case .failure(let error):
+                 onRouteFailedToLoad?([
+                     "errorMessage": error.localizedDescription
+@@ -419,8 +508,15 @@ class ExpoMapboxNavigationViewController: UIViewController {
+         bottomBanner.distanceFormatter.locale = currentLocale
+         bottomBanner.dateFormatter.locale = currentLocale
+ 
++        guard let mapboxNavigation else {
++            onRouteFailedToLoad?([
++                "errorMessage": "Mapbox navigation unavailable."
++            ])
++            return
++        }
++
+         let navigationOptions = NavigationOptions(
+-            mapboxNavigation: self.mapboxNavigation!,
++            mapboxNavigation: mapboxNavigation,
+             voiceController: ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController,
+             eventsManager: ExpoMapboxNavigationViewController.navigationProvider.eventsManager(),
+             styles: [DayStyle()],
+@@ -455,8 +551,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
+             navigationMapView!.mapView.mapboxMap.setCamera(to: CameraOptions(center: initialLocation!, zoom: initialLocationZoom ?? 15))
+         }
+ 
+-        let style = currentMapStyle != nil ? StyleURI(rawValue: currentMapStyle!) : StyleURI.streets
+-        navigationMapView!.mapView.mapboxMap.loadStyle(style!, completion: { _ in
++        let style = currentMapStyle.flatMap { StyleURI(rawValue: $0) } ?? StyleURI.streets
++        navigationMapView!.mapView.mapboxMap.loadStyle(style, completion: { _ in
+             navigationMapView!.localizeLabels(locale: self.currentLocale)
+             do{
+                 try navigationMapView!.mapView.mapboxMap.localizeLabels(into: self.currentLocale)
+@@ -465,8 +561,11 @@ class ExpoMapboxNavigationViewController: UIViewController {
+         })
+         
+ 
+-        let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self)[0]
+-        cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
++        if let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self).first {
++            cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
++        }
++
++        applySnapRoadBannerTheme()
+ 
          navigationViewController.delegate = self
          addChild(navigationViewController)
-         view.addSubview(navigationViewController.view)
+@@ -479,7 +578,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+             navigationViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
+         ])
+         didMove(toParent: self)
+-        mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
++        mapboxNavigation.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
+     }
+ }
+ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/src/ExpoMapboxNavigation.types.ts b/node_modules/@badatgil/expo-mapbox-navigation/src/ExpoMapboxNavigation.types.ts
 index 3e8b18b..2bb909a 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/src/ExpoMapboxNavigation.types.ts

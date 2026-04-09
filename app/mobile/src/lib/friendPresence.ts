@@ -4,6 +4,22 @@ import type { Friend } from '../types';
 /** Normalize `/api/friends/list` row (handles `avatar_url`). */
 export function normalizeFriendFromApi(row: Record<string, unknown>): Friend {
   const fid = String(row.friend_id ?? row.id ?? '');
+  const rawCats = Array.isArray(row.categories) ? row.categories : [];
+  const categories = rawCats
+    .map((c) => {
+      if (!c || typeof c !== 'object') return null;
+      const cat = c as { id?: unknown; name?: unknown; color?: unknown; friend_count?: unknown };
+      const id = String(cat.id ?? '').trim();
+      const name = String(cat.name ?? '').trim();
+      if (!id || !name) return null;
+      return {
+        id,
+        name,
+        color: typeof cat.color === 'string' ? cat.color : undefined,
+        friend_count: cat.friend_count != null && Number.isFinite(Number(cat.friend_count)) ? Number(cat.friend_count) : undefined,
+      };
+    })
+    .filter((c): c is NonNullable<typeof c> => Boolean(c));
   return {
     id: fid,
     friend_id: fid,
@@ -25,6 +41,7 @@ export function normalizeFriendFromApi(row: Record<string, unknown>): Friend {
     is_navigating: Boolean(row.is_navigating),
     destination_name: typeof row.destination_name === 'string' ? row.destination_name : undefined,
     battery_pct: row.battery_pct != null && row.battery_pct !== '' ? Number(row.battery_pct) : null,
+    categories,
   };
 }
 

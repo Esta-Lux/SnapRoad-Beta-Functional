@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import type { FriendLocation } from '../../types';
 import { haversineMeters } from '../../utils/distance';
-import { hasValidFriendCoords } from '../../lib/friendPresence';
+import { FRIEND_LOC_STALE_MS, hasValidFriendCoords } from '../../lib/friendPresence';
 
 interface Props {
   friends: FriendLocation[];
@@ -14,7 +14,7 @@ interface Props {
 const LERP_MIN_METERS = 4;
 const LERP_DURATION_MS = 750;
 
-function useInterpolatedLatLng(lat: number, lng: number): { lat: number; lng: number } {
+function useInterpolatedLatLng(lat: number, lng: number, shouldLerp: boolean): { lat: number; lng: number } {
   const [display, setDisplay] = useState({ lat, lng });
   const displayRef = useRef(display);
   const rafRef = useRef<number | null>(null);
@@ -30,7 +30,7 @@ function useInterpolatedLatLng(lat: number, lng: number): { lat: number; lng: nu
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
-    if (d < LERP_MIN_METERS) {
+    if (!shouldLerp || d < LERP_MIN_METERS) {
       const next = { lat, lng };
       setDisplay(next);
       displayRef.current = next;
@@ -59,7 +59,7 @@ function useInterpolatedLatLng(lat: number, lng: number): { lat: number; lng: nu
     return () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
-  }, [lat, lng]);
+  }, [lat, lng, shouldLerp]);
 
   return display;
 }
@@ -73,7 +73,10 @@ function InterpolatedFriendMarker({
   friend: FriendLocation;
   onFriendTap?: (f: FriendLocation) => void;
 }) {
-  const { lat, lng } = useInterpolatedLatLng(friend.lat, friend.lng);
+  const last = Date.parse(friend.lastUpdated || '');
+  const isFresh = Number.isFinite(last) && Date.now() - last <= FRIEND_LOC_STALE_MS;
+  const shouldLerp = friend.isSharing && isFresh;
+  const { lat, lng } = useInterpolatedLatLng(friend.lat, friend.lng, shouldLerp);
 
   return (
     <MB.MarkerView

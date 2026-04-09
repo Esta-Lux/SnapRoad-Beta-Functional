@@ -131,6 +131,10 @@ function NativeNavigationScreenRoute(props: any) {
     const NativeNavigationScreen = require('./src/screens/NativeNavigationScreen').default as React.ComponentType<any>;
     return <NativeNavigationScreen {...props} />;
   } catch (error) {
+    Sentry.captureMessage('native_navigation_module_load_failed', {
+      level: 'error',
+      extra: { reason: error instanceof Error ? error.message : String(error) },
+    });
     console.error('[NativeNavigation] Failed to load screen', error);
     return <NativeNavigationUnavailableScreen {...props} />;
   }

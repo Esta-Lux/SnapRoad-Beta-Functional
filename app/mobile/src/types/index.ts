@@ -133,6 +133,14 @@ export interface Friend {
   is_navigating?: boolean;
   destination_name?: string;
   battery_pct?: number | null;
+  categories?: FriendCategory[];
+}
+
+export interface FriendCategory {
+  id: string;
+  name: string;
+  color?: string;
+  friend_count?: number;
 }
 
 /** Map tab: navigate with live-follow when `isLiveFresh` and updates remain fresh. */

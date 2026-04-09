@@ -24,7 +24,7 @@ import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { api } from '../api/client';
 import Skeleton from '../components/common/Skeleton';
 import Modal from '../components/common/Modal';
-import type { Friend } from '../types';
+import type { Friend, FriendCategory } from '../types';
 import { storage } from '../utils/storage';
 import { useLocation } from '../hooks/useLocation';
 import { supabase } from '../lib/supabase';
@@ -164,6 +164,11 @@ export default function DashboardScreen() {
   const [isSharingLocation, setIsSharingLocation] = useState(false);
   const [incomingReq, setIncomingReq] = useState<{ id: string; from_user_id: string; from_name?: string; from_email?: string }[]>([]);
   const [outgoingReq, setOutgoingReq] = useState<{ id: string; to_user_id: string; to_name?: string }[]>([]);
+  const [categories, setCategories] = useState<FriendCategory[]>([]);
+  const [activeCategoryId, setActiveCategoryId] = useState<string>('all');
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [categoryFriendTarget, setCategoryFriendTarget] = useState<Friend | null>(null);
   const [searchHits, setSearchHits] = useState<{ id: string; name: string; email?: string; friend_code?: string; is_friend?: boolean }[]>([]);
   const [addTargetId, setAddTargetId] = useState<string | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -199,6 +204,24 @@ export default function DashboardScreen() {
     }
   }, []);
 
+  const loadCategories = useCallback(async () => {
+    try {
+      const res = await api.get<any>('/api/friends/categories');
+      const data = (res.data as any)?.data ?? res.data;
+      const rows = Array.isArray(data) ? data : [];
+      setCategories(
+        rows.map((row) => ({
+          id: String(row.id ?? ''),
+          name: String(row.name ?? 'Category'),
+          color: typeof row.color === 'string' ? row.color : '#3B82F6',
+          friend_count: Number.isFinite(Number(row.friend_count)) ? Number(row.friend_count) : 0,
+        })).filter((c) => c.id),
+      );
+    } catch {
+      setCategories([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (section !== 'friends') return;
     let cancelled = false;
@@ -211,7 +234,7 @@ export default function DashboardScreen() {
         setIsSharingLocation(localOn);
       }
 
-      await Promise.all([loadFriends(), loadPending()]);
+      await Promise.all([loadFriends(), loadPending(), loadCategories()]);
 
       try {
         const r = await api.get<any>('/api/friends/location/sharing');
@@ -226,11 +249,12 @@ export default function DashboardScreen() {
         }
 
         if (localOn) {
+          const { lat, lng } = dashboardLiveCoordsRef.current;
           try {
             await api.put('/api/friends/location/sharing', {
               is_sharing: true,
-              lat: location.lat,
-              lng: location.lng,
+              lat,
+              lng,
             });
             if (!cancelled) {
               setIsSharingLocation(true);
@@ -256,7 +280,7 @@ export default function DashboardScreen() {
     return () => {
       cancelled = true;
     };
-  }, [section, loadFriends, loadPending, location.lat, location.lng]);
+  }, [section, loadFriends, loadPending, loadCategories]);
 
   useEffect(() => {
     if (!friendsTabActive) return;
@@ -270,37 +294,48 @@ export default function DashboardScreen() {
   }, [friendsTabActive, loadFriends]);
 
   useEffect(() => {
-    if (!friendsTabActive) return;
-    const id = setInterval(() => loadFriends({ silent: true }), 45_000);
-    return () => clearInterval(id);
-  }, [friendsTabActive, loadFriends]);
+    if (activeCategoryId === 'all') return;
+    if (categories.some((c) => c.id === activeCategoryId)) return;
+    setActiveCategoryId('all');
+  }, [categories, activeCategoryId]);
 
   useEffect(() => {
     if (!friendsTabActive) return;
+    const id = setInterval(() => {
+      loadFriends({ silent: true });
+      loadPending();
+      loadCategories();
+    }, 45_000);
+    return () => clearInterval(id);
+  }, [friendsTabActive, loadFriends, loadPending, loadCategories]);
+
+  useEffect(() => {
+    if (!friendsTabActive) return;
+    const applyLiveLocation = (row?: Record<string, unknown>) => {
+      if (!row?.user_id) return;
+      const uid = String(row.user_id);
+      setFriends((prev) =>
+        prev.map((f) => {
+          if (String(f.friend_id) !== uid) return f;
+          return {
+            ...f,
+            lat: row.lat != null ? Number(row.lat) : f.lat,
+            lng: row.lng != null ? Number(row.lng) : f.lng,
+            heading: row.heading != null ? Number(row.heading) : f.heading,
+            speed_mph: row.speed_mph != null ? Number(row.speed_mph) : f.speed_mph,
+            is_sharing: typeof row.is_sharing === 'boolean' ? row.is_sharing : f.is_sharing,
+            last_updated: typeof row.last_updated === 'string' ? row.last_updated : f.last_updated,
+            is_navigating: typeof row.is_navigating === 'boolean' ? row.is_navigating : f.is_navigating,
+            destination_name: typeof row.destination_name === 'string' ? row.destination_name : f.destination_name,
+            battery_pct: row.battery_pct != null && row.battery_pct !== '' ? Number(row.battery_pct) : f.battery_pct,
+          };
+        }),
+      );
+    };
     const channel = supabase
       .channel('dashboard-friend-locations')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, (payload: { new?: Record<string, unknown> }) => {
-        const row = payload.new;
-        if (!row?.user_id) return;
-        const uid = String(row.user_id);
-        setFriends((prev) =>
-          prev.map((f) => {
-            if (String(f.friend_id) !== uid) return f;
-            return {
-              ...f,
-              lat: row.lat != null ? Number(row.lat) : f.lat,
-              lng: row.lng != null ? Number(row.lng) : f.lng,
-              heading: row.heading != null ? Number(row.heading) : f.heading,
-              speed_mph: row.speed_mph != null ? Number(row.speed_mph) : f.speed_mph,
-              is_sharing: typeof row.is_sharing === 'boolean' ? row.is_sharing : f.is_sharing,
-              last_updated: typeof row.last_updated === 'string' ? row.last_updated : f.last_updated,
-              is_navigating: typeof row.is_navigating === 'boolean' ? row.is_navigating : f.is_navigating,
-              destination_name: typeof row.destination_name === 'string' ? row.destination_name : f.destination_name,
-              battery_pct: row.battery_pct != null && row.battery_pct !== '' ? Number(row.battery_pct) : f.battery_pct,
-            };
-          }),
-        );
-      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, (payload: { new?: Record<string, unknown> }) => applyLiveLocation(payload.new))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_locations' }, (payload: { new?: Record<string, unknown> }) => applyLiveLocation(payload.new))
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -406,9 +441,16 @@ export default function DashboardScreen() {
     [friends, myCoord],
   );
 
+  const filteredFriendListData = useMemo(() => {
+    if (activeCategoryId === 'all') return friendListData;
+    return friendListData.filter(({ friend }) =>
+      (friend.categories ?? []).some((cat) => cat.id === activeCategoryId),
+    );
+  }, [friendListData, activeCategoryId]);
+
   const liveFreshCount = useMemo(
-    () => friendListData.filter(({ presence }) => presence.isLiveFresh).length,
-    [friendListData],
+    () => filteredFriendListData.filter(({ presence }) => presence.isLiveFresh).length,
+    [filteredFriendListData],
   );
 
   const listTheme = useMemo<FriendListCardTheme>(
@@ -454,6 +496,40 @@ export default function DashboardScreen() {
     } else Alert.alert('Error', res.error ?? 'Could not add friend');
   }, [addTargetId, loadFriends, loadPending]);
 
+  const handleCreateCategory = useCallback(async () => {
+    const name = newCategoryName.trim();
+    if (!name) {
+      Alert.alert('Name required', 'Enter a category name.');
+      return;
+    }
+    const res = await api.post('/api/friends/categories', { name });
+    if (!res.success) {
+      Alert.alert('Could not create', res.error ?? 'Please try again.');
+      return;
+    }
+    setNewCategoryName('');
+    setShowCategoryModal(false);
+    await Promise.all([loadCategories(), loadFriends({ silent: true })]);
+  }, [newCategoryName, loadCategories, loadFriends]);
+
+  const assignFriendToCategory = useCallback(async (friendId: string, categoryId: string) => {
+    const res = await api.post(`/api/friends/categories/${categoryId}/members`, { friend_id: friendId });
+    if (!res.success) {
+      Alert.alert('Could not add friend', res.error ?? 'Please try again.');
+      return;
+    }
+    await Promise.all([loadCategories(), loadFriends({ silent: true })]);
+  }, [loadCategories, loadFriends]);
+
+  const removeFriendFromCategory = useCallback(async (friendId: string, categoryId: string) => {
+    const res = await api.delete(`/api/friends/categories/${categoryId}/members/${friendId}`);
+    if (!res.success) {
+      Alert.alert('Could not remove friend', res.error ?? 'Please try again.');
+      return;
+    }
+    await Promise.all([loadCategories(), loadFriends({ silent: true })]);
+  }, [loadCategories, loadFriends]);
+
   const handleRemoveFriend = useCallback(
     async (id: string) => {
       Alert.alert('Remove Friend', 'Are you sure?', [
@@ -465,11 +541,12 @@ export default function DashboardScreen() {
             await api.delete(`/api/friends/${id}`);
             setSelectedFriend(null);
             loadFriends();
+            loadCategories();
           },
         },
       ]);
     },
-    [loadFriends],
+    [loadFriends, loadCategories],
   );
 
   const openFriendOnMap = useCallback(
@@ -493,15 +570,25 @@ export default function DashboardScreen() {
 
   const renderFriend = useCallback(
     ({ item }: { item: (typeof friendListData)[0] }) => (
-      <FriendListCard
-        friend={item.friend}
-        presence={item.presence}
-        theme={listTheme}
-        onPress={setSelectedFriend}
-        onAvatarPress={openFriendOnMap}
-      />
+      <View style={styles.friendRowWrap}>
+        <FriendListCard
+          friend={item.friend}
+          presence={item.presence}
+          theme={listTheme}
+          onPress={setSelectedFriend}
+          onAvatarPress={openFriendOnMap}
+        />
+        <TouchableOpacity
+          style={[styles.bucketAssignBtn, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
+          onPress={() => setCategoryFriendTarget(item.friend)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="folder-open-outline" size={13} color={colors.textSecondary} />
+          <Text style={[styles.bucketAssignText, { color: colors.textSecondary }]}>Bucket</Text>
+        </TouchableOpacity>
+      </View>
     ),
-    [listTheme, openFriendOnMap],
+    [listTheme, openFriendOnMap, colors.surfaceSecondary, colors.border, colors.textSecondary],
   );
 
   const listKeyExtractor = useCallback((item: (typeof friendListData)[0]) => item.friend.id, []);
@@ -576,53 +663,113 @@ export default function DashboardScreen() {
 
       {section === 'friends' && (
         <View style={{ flex: 1 }}>
-          {(incomingReq.length > 0 || outgoingReq.length > 0) && (
-            <View style={{ paddingHorizontal: 16, marginBottom: 8, gap: 8 }}>
-              {incomingReq.map((r) => (
-                <View key={r.id} style={[styles.requestCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800' }}>{r.from_name ?? 'Friend request'}</Text>
-                    <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
-                      {r.from_email ? r.from_email : `Wants to connect`}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.reqBtn, { backgroundColor: colors.primary }]}
-                    onPress={async () => {
-                      const res = await api.post('/api/friends/accept', { friendship_id: r.id });
-                      if (res.success) {
-                        loadFriends();
+          <View style={{ paddingHorizontal: 16, marginBottom: 8, gap: 8 }}>
+            <Text style={[styles.subSectionLabel, { color: colors.textSecondary }]}>Requested</Text>
+            {incomingReq.length === 0 && outgoingReq.length === 0 ? (
+              <View style={[styles.requestEmpty, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                <Ionicons name="checkmark-circle-outline" size={16} color={colors.textSecondary} />
+                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>No pending requests</Text>
+              </View>
+            ) : (
+              <>
+                {incomingReq.map((r) => (
+                  <View key={r.id} style={[styles.requestCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800' }}>{r.from_name ?? 'Friend request'}</Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
+                        {r.from_email ? r.from_email : `Wants to connect`}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.reqBtn, { backgroundColor: colors.primary }]}
+                      onPress={async () => {
+                        const res = await api.post('/api/friends/accept', { friendship_id: r.id });
+                        if (res.success) {
+                          loadFriends();
+                          loadPending();
+                          loadCategories();
+                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        } else Alert.alert('Error', res.error ?? 'Could not accept');
+                      }}
+                    >
+                      <Text style={styles.reqBtnT}>Accept</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.reqBtn, { backgroundColor: colors.danger }]}
+                      onPress={async () => {
+                        await api.post('/api/friends/reject', { friendship_id: r.id });
                         loadPending();
-                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                      } else Alert.alert('Error', res.error ?? 'Could not accept');
-                    }}
-                  >
-                    <Text style={styles.reqBtnT}>Accept</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.reqBtn, { backgroundColor: colors.danger }]}
-                    onPress={async () => {
-                      await api.post('/api/friends/reject', { friendship_id: r.id });
-                      loadPending();
-                    }}
-                  >
-                    <Text style={styles.reqBtnT}>Decline</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-              {outgoingReq.map((r) => (
-                <View key={r.id} style={[styles.requestCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                  <Ionicons name="time-outline" size={18} color={colors.textSecondary} />
-                  <View style={{ flex: 1, marginLeft: 8 }}>
-                    <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Request pending</Text>
-                    <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
-                      Waiting for {r.to_name ?? 'them'} to accept
-                    </Text>
+                      }}
+                    >
+                      <Text style={styles.reqBtnT}>Decline</Text>
+                    </TouchableOpacity>
                   </View>
-                </View>
-              ))}
-            </View>
-          )}
+                ))}
+                {outgoingReq.map((r) => (
+                  <View key={r.id} style={[styles.requestCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                    <Ionicons name="time-outline" size={18} color={colors.textSecondary} />
+                    <View style={{ flex: 1, marginLeft: 8 }}>
+                      <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Request pending</Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
+                        Waiting for {r.to_name ?? 'them'} to accept
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
+          </View>
+          <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Friends buckets</Text>
+            <TouchableOpacity
+              style={[styles.newBucketBtn, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
+              activeOpacity={0.85}
+              onPress={() => setShowCategoryModal(true)}
+            >
+              <Ionicons name="add" size={14} color={colors.primary} />
+              <Text style={[styles.newBucketText, { color: colors.primary }]}>New bucket</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8 }}
+          >
+            <TouchableOpacity
+              style={[
+                styles.bucketChip,
+                {
+                  borderColor: activeCategoryId === 'all' ? colors.primary : colors.border,
+                  backgroundColor: activeCategoryId === 'all' ? `${colors.primary}20` : colors.surfaceSecondary,
+                },
+              ]}
+              onPress={() => setActiveCategoryId('all')}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.bucketChipText, { color: activeCategoryId === 'all' ? colors.primary : colors.textSecondary }]}>
+                All ({friendListData.length})
+              </Text>
+            </TouchableOpacity>
+            {categories.map((cat) => (
+              <TouchableOpacity
+                key={cat.id}
+                style={[
+                  styles.bucketChip,
+                  {
+                    borderColor: activeCategoryId === cat.id ? cat.color || colors.primary : colors.border,
+                    backgroundColor: activeCategoryId === cat.id ? `${cat.color || colors.primary}20` : colors.surfaceSecondary,
+                  },
+                ]}
+                onPress={() => setActiveCategoryId(cat.id)}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.bucketColorDot, { backgroundColor: cat.color || colors.primary }]} />
+                <Text style={[styles.bucketChipText, { color: activeCategoryId === cat.id ? cat.color || colors.primary : colors.textSecondary }]}>
+                  {cat.name} ({cat.friend_count ?? 0})
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
           <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Friends
@@ -656,7 +803,7 @@ export default function DashboardScreen() {
                 <Skeleton key={i} width="100%" height={72} borderRadius={14} />
               ))}
             </View>
-          ) : friends.length === 0 ? (
+          ) : filteredFriendListData.length === 0 ? (
             <View style={styles.emptyState}>
               <View style={[styles.emptyHero, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
                 <LinearGradient colors={[`${colors.primary}33`, `${colors.primary}08`]} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
@@ -666,21 +813,33 @@ export default function DashboardScreen() {
                   Add friends to share live location and navigate to each other on the map.
                 </Text>
               </View>
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>No friends yet</Text>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                {friends.length === 0 ? 'No friends yet' : 'No friends in this bucket'}
+              </Text>
               <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
-                Use Add Friend below — search by name, email, or 6-character friend code.
+                {friends.length === 0
+                  ? 'Use Add Friend below — search by name, email, or 6-character friend code.'
+                  : 'No friends in this bucket yet. Pick another bucket or assign friends.'}
               </Text>
             </View>
           ) : (
             <FlatList
-              data={friendListData}
+              data={filteredFriendListData}
               keyExtractor={listKeyExtractor}
               refreshControl={
-                <RefreshControl refreshing={friendsLoading} onRefresh={() => { loadFriends(); loadPending(); }} tintColor={colors.primary} />
+                <RefreshControl
+                  refreshing={friendsLoading}
+                  onRefresh={() => {
+                    loadFriends();
+                    loadPending();
+                    loadCategories();
+                  }}
+                  tintColor={colors.primary}
+                />
               }
               contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 80 }}
               ListHeaderComponent={
-                friendListData.length > 0 && friendListData.length <= 2 ? (
+                filteredFriendListData.length > 0 && filteredFriendListData.length <= 2 ? (
                   <View style={[styles.tipCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
                     <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
                     <Text style={[styles.tipText, { color: colors.textSecondary }]}>
@@ -785,6 +944,87 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </Modal>
 
+      <Modal visible={showCategoryModal} onClose={() => { setShowCategoryModal(false); setNewCategoryName(''); }} scrollable={false}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>Create bucket</Text>
+        <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 10, textAlign: 'center' }}>
+          Buckets help you filter friends quickly (for example: Family, Close Friends, Coworkers).
+        </Text>
+        <TextInput
+          style={[styles.modalInput, { color: colors.text, backgroundColor: colors.surfaceSecondary }]}
+          placeholder="Bucket name"
+          placeholderTextColor={colors.textSecondary}
+          value={newCategoryName}
+          onChangeText={setNewCategoryName}
+          maxLength={48}
+        />
+        <TouchableOpacity
+          style={[styles.modalBtn, { backgroundColor: newCategoryName.trim() ? colors.primary : colors.border }]}
+          onPress={handleCreateCategory}
+          activeOpacity={0.8}
+          disabled={!newCategoryName.trim()}
+        >
+          <Text style={styles.modalBtnText}>Create bucket</Text>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={!!categoryFriendTarget} onClose={() => setCategoryFriendTarget(null)} scrollable={false}>
+        {categoryFriendTarget ? (
+          <View>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Assign bucket</Text>
+            <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 12, textAlign: 'center' }}>
+              Add {categoryFriendTarget.name} to one or more buckets.
+            </Text>
+            <ScrollView style={{ maxHeight: 260 }}>
+              {categories.length === 0 ? (
+                <Text style={{ color: colors.textSecondary, textAlign: 'center', marginVertical: 12 }}>
+                  Create a bucket first.
+                </Text>
+              ) : (
+                categories.map((cat) => {
+                  const inCat = (categoryFriendTarget.categories ?? []).some((fcat) => fcat.id === cat.id);
+                  return (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={[
+                        styles.assignRow,
+                        {
+                          backgroundColor: colors.surfaceSecondary,
+                          borderColor: inCat ? cat.color || colors.primary : colors.border,
+                        },
+                      ]}
+                      onPress={async () => {
+                        if (inCat) {
+                          await removeFriendFromCategory(categoryFriendTarget.friend_id, cat.id);
+                        } else {
+                          await assignFriendToCategory(categoryFriendTarget.friend_id, cat.id);
+                        }
+                        setCategoryFriendTarget((prev) =>
+                          prev && prev.friend_id === categoryFriendTarget.friend_id
+                            ? {
+                                ...prev,
+                                categories: inCat
+                                  ? (prev.categories ?? []).filter((c) => c.id !== cat.id)
+                                  : [...(prev.categories ?? []), { id: cat.id, name: cat.name, color: cat.color }],
+                              }
+                            : prev,
+                        );
+                      }}
+                    >
+                      <View style={[styles.bucketColorDot, { backgroundColor: cat.color || colors.primary }]} />
+                      <Text style={{ flex: 1, color: colors.text, fontSize: 14, fontWeight: '700' }}>{cat.name}</Text>
+                      <Ionicons name={inCat ? 'checkmark-circle' : 'add-circle-outline'} size={18} color={inCat ? cat.color || colors.primary : colors.textSecondary} />
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+            <TouchableOpacity onPress={() => setCategoryFriendTarget(null)} style={styles.dismissTap} hitSlop={12}>
+              <Text style={[styles.dismiss, { color: colors.textSecondary }]}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+      </Modal>
+
       <Modal visible={!!selectedFriend} onClose={() => setSelectedFriend(null)} scrollable={false}>
         {selectedFriend ? (
           <FriendDetailModalContent
@@ -840,6 +1080,63 @@ const styles = StyleSheet.create({
 
   sectionHeader: { paddingHorizontal: 16, paddingVertical: 8 },
   sectionTitle: { fontSize: 16, fontWeight: '800' },
+  subSectionLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  requestEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  newBucketBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  newBucketText: { fontSize: 12, fontWeight: '700' },
+  bucketChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  bucketChipText: { fontSize: 12, fontWeight: '700' },
+  bucketColorDot: { width: 8, height: 8, borderRadius: 4 },
+  friendRowWrap: { marginBottom: 4 },
+  bucketAssignBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    gap: 4,
+    marginTop: -8,
+    marginRight: 10,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  bucketAssignText: { fontSize: 11, fontWeight: '700' },
+  assignRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  dismissTap: { alignItems: 'center', marginTop: 12, paddingVertical: 8 },
+  dismiss: { fontSize: 14, fontWeight: '600' },
   tipCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',

@@ -6,6 +6,9 @@ from typing import Annotated, Optional
 from datetime import datetime, timedelta, timezone
 from models.schemas import (
     FriendRequest,
+    FriendCategoryCreateBody,
+    FriendCategoryUpdateBody,
+    FriendCategoryMemberBody,
     RoadReport,
     LocationUpdateBody,
     LocationSharingBody,
@@ -30,6 +33,33 @@ CurrentUser = Annotated[dict, Depends(get_current_user)]
 _PROFILE_SEARCH_COLS = "id, name, full_name, email, friend_code"
 
 router = APIRouter(prefix="/api", tags=["Social"])
+
+FRIEND_CATEGORY_COLORS = {
+    "#3b82f6",
+    "#22c55e",
+    "#8b5cf6",
+    "#f59e0b",
+    "#ef4444",
+    "#14b8a6",
+    "#ec4899",
+    "#64748b",
+}
+
+
+def _normalize_category_color(color: Optional[str]) -> str:
+    val = (color or "#3B82F6").strip().lower()
+    if not val.startswith("#"):
+        val = f"#{val}"
+    if val not in FRIEND_CATEGORY_COLORS:
+        return "#3B82F6"
+    return val.upper()
+
+
+def _friendship_accepted(sb, uid: str, other_id: str) -> bool:
+    rel = sb.table("friendships").select("id").or_(
+        f"and(user_id_1.eq.{uid},user_id_2.eq.{other_id}),and(user_id_1.eq.{other_id},user_id_2.eq.{uid})"
+    ).eq("status", "accepted").limit(1).execute()
+    return bool(rel.data)
 
 
 # ==================== FRIENDS ====================
@@ -180,6 +210,21 @@ def get_friends_list(
         "id, name, full_name, avatar_url, level, gems, safety_score, friend_code"
     ).in_("id", friend_ids).execute()
     profile_map = {str(p["id"]): p for p in (profiles.data or [])}
+    cat_members_res = supabase.table("friend_category_members").select(
+        "friend_user_id, friend_category_id, friend_categories(id, name, color)"
+    ).in_("friend_user_id", friend_ids).execute()
+    cat_map: dict[str, list[dict]] = {}
+    for row in (cat_members_res.data or []):
+        fid = str(row.get("friend_user_id") or "")
+        raw_cat = row.get("friend_categories") or {}
+        cat = {
+            "id": str(raw_cat.get("id") or row.get("friend_category_id") or ""),
+            "name": raw_cat.get("name") or "Category",
+            "color": raw_cat.get("color") or "#3B82F6",
+        }
+        if not cat["id"]:
+            continue
+        cat_map.setdefault(fid, []).append(cat)
     out = []
     for fid in friend_ids:
         p = profile_map.get(fid, {})
@@ -193,6 +238,7 @@ def get_friends_list(
             "gems": p.get("gems", 0),
             "safety_score": p.get("safety_score", 0),
             "friend_code": p.get("friend_code"),
+            "categories": cat_map.get(fid, []),
         })
     loc_res = supabase.table("live_locations").select(
         "user_id, lat, lng, heading, speed_mph, is_sharing, last_updated, is_navigating, destination_name, battery_pct"
@@ -215,6 +261,132 @@ def get_friends_list(
         if bat is not None:
             row["battery_pct"] = int(bat)
     return {"success": True, "data": out}
+
+
+@router.get("/friends/categories", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def get_friend_categories(current_user: CurrentUser):
+    if not current_user:
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
+    uid = current_user["id"]
+    supabase = get_supabase()
+    cats_res = supabase.table("friend_categories").select(
+        "id, name, color, created_at"
+    ).eq("user_id", uid).order("name").execute()
+    cats = list(cats_res.data or [])
+    if not cats:
+        return {"success": True, "data": []}
+    cat_ids = [str(c.get("id")) for c in cats if c.get("id")]
+    counts_res = supabase.table("friend_category_members").select(
+        "friend_category_id"
+    ).in_("friend_category_id", cat_ids).execute()
+    counts: dict[str, int] = {}
+    for row in (counts_res.data or []):
+        cid = str(row.get("friend_category_id") or "")
+        if not cid:
+            continue
+        counts[cid] = counts.get(cid, 0) + 1
+    out = []
+    for c in cats:
+        cid = str(c.get("id") or "")
+        out.append({
+            "id": cid,
+            "name": c.get("name") or "Category",
+            "color": c.get("color") or "#3B82F6",
+            "friend_count": counts.get(cid, 0),
+            "created_at": c.get("created_at"),
+        })
+    return {"success": True, "data": out}
+
+
+@router.post("/friends/categories", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def create_friend_category(body: FriendCategoryCreateBody, current_user: CurrentUser):
+    if not current_user:
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
+    uid = current_user["id"]
+    supabase = get_supabase()
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Category name is required")
+    ins = supabase.table("friend_categories").insert({
+        "user_id": uid,
+        "name": name,
+        "color": _normalize_category_color(body.color),
+    }).execute()
+    created = (ins.data or [{}])[0]
+    return {"success": True, "data": created}
+
+
+@router.put("/friends/categories/{category_id}", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def update_friend_category(category_id: str, body: FriendCategoryUpdateBody, current_user: CurrentUser):
+    if not current_user:
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
+    uid = current_user["id"]
+    supabase = get_supabase()
+    payload: dict[str, object] = {}
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Category name cannot be empty")
+        payload["name"] = name
+    if body.color is not None:
+        payload["color"] = _normalize_category_color(body.color)
+    if not payload:
+        return {"success": True, "data": {"id": category_id}}
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat() + "Z"
+    res = supabase.table("friend_categories").update(payload).eq("id", category_id).eq("user_id", uid).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return {"success": True, "data": res.data[0]}
+
+
+@router.delete("/friends/categories/{category_id}", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def delete_friend_category(category_id: str, current_user: CurrentUser):
+    if not current_user:
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
+    uid = current_user["id"]
+    supabase = get_supabase()
+    supabase.table("friend_categories").delete().eq("id", category_id).eq("user_id", uid).execute()
+    return {"success": True}
+
+
+@router.post("/friends/categories/{category_id}/members", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def add_friend_to_category(category_id: str, body: FriendCategoryMemberBody, current_user: CurrentUser):
+    if not current_user:
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
+    uid = current_user["id"]
+    friend_id = body.friend_id.strip()
+    if not friend_id:
+        raise HTTPException(status_code=400, detail="friend_id is required")
+    supabase = get_supabase()
+    owns = supabase.table("friend_categories").select("id").eq("id", category_id).eq("user_id", uid).limit(1).execute()
+    if not owns.data:
+        raise HTTPException(status_code=404, detail="Category not found")
+    if not _friendship_accepted(supabase, uid, friend_id):
+        raise HTTPException(status_code=400, detail="Friend is not in accepted list")
+    supabase.table("friend_category_members").upsert({
+        "friend_category_id": category_id,
+        "friend_user_id": friend_id,
+    }).execute()
+    return {"success": True}
+
+
+@router.delete("/friends/categories/{category_id}/members/{friend_id}", responses={401: {"description": MSG_AUTH_REQUIRED}})
+def remove_friend_from_category(category_id: str, friend_id: str, current_user: CurrentUser):
+    if not current_user:
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
+    uid = current_user["id"]
+    supabase = get_supabase()
+    owns = supabase.table("friend_categories").select("id").eq("id", category_id).eq("user_id", uid).limit(1).execute()
+    if not owns.data:
+        raise HTTPException(status_code=404, detail="Category not found")
+    supabase.table("friend_category_members").delete().eq("friend_category_id", category_id).eq("friend_user_id", friend_id).execute()
+    return {"success": True}
 
 
 @router.get("/friends/requests", responses={401: {"description": MSG_AUTH_REQUIRED}})

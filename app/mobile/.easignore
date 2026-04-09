@@ -4,6 +4,8 @@ dist-export-test
 dist-export-*
 **/dist-export-*
 .eas-inspect-archive
+ios
+android
 android/.gradle
 android/build
 android/app/build

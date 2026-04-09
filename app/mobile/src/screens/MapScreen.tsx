@@ -102,10 +102,12 @@ import { formatDuration } from '../utils/format';
 import { speak, stopSpeaking } from '../utils/voice';
 import { api, API_BASE_URL } from '../api/client';
 import OrionChat, { type OrionPlaceSuggestion } from '../components/orion/OrionChat';
+import OrionQuickMic from '../components/orion/OrionQuickMic';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigatingState } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
 import { navNativeSdkEnabled } from '../navigation/navFeatureFlags';
+import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
 import type { TripSummary } from '../hooks/useNavigation';
 import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import { storage } from '../utils/storage';
@@ -573,6 +575,7 @@ export default function MapScreen() {
   const handledRedeemRouteRef = useRef<string | null>(null);
   const [showOrion, setShowOrion] = useState(false);
   const [orionPendingSuggestions, setOrionPendingSuggestions] = useState<OrionPlaceSuggestion[]>([]);
+  const [orionQuickReply, setOrionQuickReply] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [showConvoy, setShowConvoy] = useState(false);
   const [currentAddress, setCurrentAddress] = useState<string>('');
@@ -1856,6 +1859,66 @@ export default function MapScreen() {
     nav.navigationProgress,
     nav.liveEta?.distanceMiles,
     nav.liveEta?.etaMinutes,
+  ]);
+
+  useEffect(() => {
+    if (!orionQuickReply) return;
+    const t = setTimeout(() => setOrionQuickReply(null), nav.isNavigating ? 5500 : 4200);
+    return () => clearTimeout(t);
+  }, [orionQuickReply, nav.isNavigating]);
+
+  const orionContext = useMemo(() => ({
+    lat: location.lat,
+    lng: location.lng,
+    isNavigating: nav.isNavigating,
+    drivingMode,
+    destination: nav.navigationData?.destination?.name,
+    speed,
+    speedMph: speed,
+    currentAddress,
+    userName: user?.name || user?.email,
+    totalTrips: user?.totalTrips,
+    totalMiles: user?.totalMiles,
+    gems: user?.gems,
+    level: user?.level,
+    safetyScore: user?.safetyScore,
+    snapRoadScore: user?.snapRoadScore,
+    snapRoadTier: user?.snapRoadTier,
+    isPremium: user?.isPremium,
+    favoritePlacesSummary: orionFavoriteSummary || undefined,
+    currentRoute: orionCurrentRoute,
+    nearbyOffers: recommendedNearbyOffers.slice(0, 5).map((o) => ({
+      id: o.id,
+      title: o.business_name,
+      partner_name: o.business_name,
+      lat: o.lat,
+      lng: o.lng,
+    })),
+    weather: mapWeather.summary ?? undefined,
+    pendingOrionSuggestions: orionPendingSuggestions,
+  }), [
+    location.lat,
+    location.lng,
+    nav.isNavigating,
+    nav.navigationData?.destination?.name,
+    speed,
+    currentAddress,
+    user?.name,
+    user?.email,
+    user?.totalTrips,
+    user?.totalMiles,
+    user?.gems,
+    user?.level,
+    user?.safetyScore,
+    user?.snapRoadScore,
+    user?.snapRoadTier,
+    user?.isPremium,
+    drivingMode,
+    orionFavoriteSummary,
+    orionCurrentRoute,
+    recommendedNearbyOffers,
+    mapWeather.summary,
+    orionPendingSuggestions,
   ]);
 
   const handleStartDirections = useCallback(
@@ -3406,7 +3469,20 @@ export default function MapScreen() {
             setSelectedPlaceId(null);
             setSelectedPlace(null);
             if (navNativeSdkEnabled() && nav.navigationData && location) {
-              (rnNav as any).navigate('NativeNavigation', {
+              const nearestIncident = nearbyIncidents.reduce<Incident | null>((best, inc) => {
+                const incDist = haversineMeters(location.lat, location.lng, inc.lat, inc.lng);
+                if (!best) return inc;
+                const bestDist = haversineMeters(location.lat, location.lng, best.lat, best.lng);
+                return incDist < bestDist ? inc : best;
+              }, null);
+              const nearestIncidentMiles = nearestIncident
+                ? haversineMeters(location.lat, location.lng, nearestIncident.lat, nearestIncident.lng) / 1609.34
+                : null;
+              const reportHint =
+                nearestIncident && nearestIncidentMiles != null && nearestIncidentMiles <= 2.5
+                  ? `${nearestIncident.title || nearestIncident.type} reported about ${nearestIncidentMiles.toFixed(1)} mi away.`
+                  : undefined;
+              const nativeParams = normalizeNativeNavParams({
                 origin: { lat: location.lat, lng: location.lng },
                 destination: {
                   lat: nav.navigationData.destination.lat,
@@ -3416,7 +3492,15 @@ export default function MapScreen() {
                 voiceMuted: navVoiceMuted,
                 drivingMode,
               });
-              nav.setShowRoutePreview(false);
+              if (nativeParams) {
+                (rnNav as any).navigate('NativeNavigation', {
+                  ...nativeParams,
+                  ...(reportHint ? { reportHint } : {}),
+                });
+                nav.setShowRoutePreview(false);
+              } else {
+                nav.startNavigation();
+              }
             } else {
               nav.startNavigation();
             }
@@ -3595,22 +3679,63 @@ export default function MapScreen() {
       )}
 
       {!nav.showRoutePreview && !activeTripSummary && (user?.isPremium || nav.isNavigating) && (
-        <TouchableOpacity
+        <View
           style={[s.orionFab, { top: insets.top + 236, right: 20 }]}
-          onPress={() => {
-            if (user?.isPremium || nav.isNavigating) setShowOrion(true);
-          }}
-          activeOpacity={0.8}
         >
-          <LinearGradient colors={user?.isPremium ? ['#7C3AED', '#5B21B6'] : ['#6366F1', '#4F46E5']} style={s.orionGrad}>
-            <Ionicons name="mic-outline" size={22} color="#fff" />
-            {!user?.isPremium && nav.isNavigating && (
-              <View style={{ position: 'absolute', top: -2, right: -2, backgroundColor: '#3B82F6', borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="navigate" size={8} color="#fff" />
-              </View>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
+          <OrionQuickMic
+            visible={Boolean(user?.isPremium || nav.isNavigating)}
+            isPremium={Boolean(user?.isPremium)}
+            context={orionContext}
+            onOpenChat={() => setShowOrion(true)}
+            onSuggestions={(items) => setOrionPendingSuggestions(items)}
+            onReply={(text) => setOrionQuickReply(text)}
+            onAction={(action: {
+              type: string;
+              name?: string;
+              lat?: number;
+              lng?: number;
+              address?: string;
+            }) => {
+              if (action.type === 'navigate' && action.lat != null && action.lng != null) {
+                const dest = {
+                  name: action.name ?? 'Destination',
+                  address: typeof action.address === 'string' ? action.address : '',
+                  lat: action.lat,
+                  lng: action.lng,
+                };
+                handleStartDirections(dest);
+              } else if (action.type === 'add_stop' && action.lat && action.lng) {
+                nav.addWaypoint({ lat: action.lat, lng: action.lng, name: action.name ?? 'Stop' });
+              } else if (action.type === 'mode' && action.name) {
+                const m = action.name.toLowerCase();
+                if (m === 'calm' || m === 'adaptive' || m === 'sport') setDrivingMode(m as DrivingMode);
+              }
+            }}
+          />
+          {!user?.isPremium && nav.isNavigating && (
+            <View style={{ position: 'absolute', top: -2, right: -2, backgroundColor: '#3B82F6', borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="navigate" size={8} color="#fff" />
+            </View>
+          )}
+        </View>
+      )}
+
+      {nav.isNavigating && !!orionQuickReply && (
+        <View
+          style={[
+            s.orionReplyStrip,
+            {
+              top: insets.top + 188,
+              backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(15,23,42,0.9)',
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <Ionicons name="sparkles" size={14} color={colors.primary} />
+          <Text style={[s.orionReplyStripText, { color: colors.text }]} numberOfLines={2}>
+            {orionQuickReply}
+          </Text>
+        </View>
       )}
 
       {!nav.isNavigating && !nav.showRoutePreview && !selectedPlace && !selectedPlaceId && recommendedNearbyOffers.length > 0 && (
@@ -3997,66 +4122,39 @@ export default function MapScreen() {
       />
       <TripShare visible={showTripShare} onClose={() => setShowTripShare(false)} trip={activeTripSummary ?? null} />
 
-      <OrionChat
-        visible={showOrion}
-        onClose={() => setShowOrion(false)}
-        isPremium={user?.isPremium ?? false}
-        context={{
-          lat: location.lat,
-          lng: location.lng,
-          isNavigating: nav.isNavigating,
-          drivingMode,
-          destination: nav.navigationData?.destination?.name,
-          speed,
-          speedMph: speed,
-          currentAddress,
-          userName: user?.name || user?.email,
-          totalTrips: user?.totalTrips,
-          totalMiles: user?.totalMiles,
-          gems: user?.gems,
-          level: user?.level,
-          safetyScore: user?.safetyScore,
-          snapRoadScore: user?.snapRoadScore,
-          snapRoadTier: user?.snapRoadTier,
-          isPremium: user?.isPremium,
-          favoritePlacesSummary: orionFavoriteSummary || undefined,
-          currentRoute: orionCurrentRoute,
-          nearbyOffers: recommendedNearbyOffers.slice(0, 5).map((o) => ({
-            id: o.id,
-            title: o.business_name,
-            partner_name: o.business_name,
-            lat: o.lat,
-            lng: o.lng,
-          })),
-          weather: mapWeather.summary ?? undefined,
-          pendingOrionSuggestions: orionPendingSuggestions,
-        }}
-        onSuggestions={(items) => setOrionPendingSuggestions(items)}
-        onAction={(action: {
-          type: string;
-          name?: string;
-          lat?: number;
-          lng?: number;
-          address?: string;
-        }) => {
-          if (action.type === 'navigate' && action.lat != null && action.lng != null) {
-            setShowOrion(false);
-            const dest = {
-              name: action.name ?? 'Destination',
-              address: typeof action.address === 'string' ? action.address : '',
-              lat: action.lat,
-              lng: action.lng,
-            };
-            handleStartDirections(dest);
-          } else if (action.type === 'add_stop' && action.lat && action.lng) {
-            setShowOrion(false);
-            nav.addWaypoint({ lat: action.lat, lng: action.lng, name: action.name ?? 'Stop' });
-          } else if (action.type === 'mode' && action.name) {
-            const m = action.name.toLowerCase();
-            if (m === 'calm' || m === 'adaptive' || m === 'sport') setDrivingMode(m as DrivingMode);
-          }
-        }}
-      />
+      {showOrion && (
+        <OrionChat
+          visible={showOrion}
+          onClose={() => setShowOrion(false)}
+          isPremium={user?.isPremium ?? false}
+          context={orionContext}
+          onSuggestions={(items) => setOrionPendingSuggestions(items)}
+          onAction={(action: {
+            type: string;
+            name?: string;
+            lat?: number;
+            lng?: number;
+            address?: string;
+          }) => {
+            if (action.type === 'navigate' && action.lat != null && action.lng != null) {
+              setShowOrion(false);
+              const dest = {
+                name: action.name ?? 'Destination',
+                address: typeof action.address === 'string' ? action.address : '',
+                lat: action.lat,
+                lng: action.lng,
+              };
+              handleStartDirections(dest);
+            } else if (action.type === 'add_stop' && action.lat && action.lng) {
+              setShowOrion(false);
+              nav.addWaypoint({ lat: action.lat, lng: action.lng, name: action.name ?? 'Stop' });
+            } else if (action.type === 'mode' && action.name) {
+              const m = action.name.toLowerCase();
+              if (m === 'calm' || m === 'adaptive' || m === 'sport') setDrivingMode(m as DrivingMode);
+            }
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -4290,7 +4388,19 @@ const s = StyleSheet.create({
   recenter: { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)', paddingHorizontal: 22, paddingVertical: 10, borderRadius: 22, zIndex: 12 },
   recenterT: { color: '#fff', fontSize: 13, fontWeight: '700' },
   orionFab: { position: 'absolute', right: 16, zIndex: 12 },
-  orionGrad: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', ...shadow(16, 0.5) },
+  orionReplyStrip: {
+    position: 'absolute',
+    left: 16,
+    right: 78,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 13,
+  },
+  orionReplyStripText: { fontSize: 12, fontWeight: '600', marginLeft: 6, flexShrink: 1 },
   offerPill: { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 22, borderWidth: 1, ...shadow(10, 0.15), zIndex: 10 },
   offerPillT: { fontSize: 13, fontWeight: '700' },
   offerBadge: { borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 },
