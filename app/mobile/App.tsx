@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
 import React from 'react';
 import * as WebBrowser from 'expo-web-browser';
-import { ActivityIndicator, View, Text, Image, ScrollView, Platform, StyleSheet, Linking, Alert } from 'react-native';
+import { ActivityIndicator, View, Text, Image, ScrollView, Platform, StyleSheet, Linking, Alert, TouchableOpacity } from 'react-native';
 
 /** Lets in-app OAuth (Safari / Chrome Custom Tabs) hand off to `snaproad://auth` cleanly. */
 WebBrowser.maybeCompleteAuthSession();
@@ -25,7 +25,6 @@ import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { NavigatingProvider, useNavigatingState } from './src/contexts/NavigatingContext';
 
 import MapScreen from './src/screens/MapScreen';
-import NativeNavigationScreen from './src/screens/NativeNavigationScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import RewardsScreen from './src/screens/RewardsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -108,12 +107,41 @@ const ProfileStack = createStackNavigator();
 const PublicStack = createStackNavigator();
 const rootNavigationRef = createNavigationContainerRef();
 
+function NativeNavigationUnavailableScreen({ navigation }: { navigation: any }) {
+  return (
+    <View style={{ flex: 1, backgroundColor: '#0b1220', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+      <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 12 }}>Navigation unavailable</Text>
+      <Text style={{ color: '#cbd5e1', textAlign: 'center', lineHeight: 22, marginBottom: 20 }}>
+        Native navigation could not be loaded on this build. Please return to the map and try again.
+      </Text>
+      <TouchableOpacity
+        onPress={() => navigation.goBack()}
+        style={{ backgroundColor: '#2563eb', paddingVertical: 12, paddingHorizontal: 18, borderRadius: 10 }}
+        activeOpacity={0.85}
+      >
+        <Text style={{ color: '#fff', fontWeight: '700' }}>Back to map</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function NativeNavigationScreenRoute(props: any) {
+  try {
+    // Lazy require avoids loading the native navigation module during app startup.
+    const NativeNavigationScreen = require('./src/screens/NativeNavigationScreen').default as React.ComponentType<any>;
+    return <NativeNavigationScreen {...props} />;
+  } catch (error) {
+    console.error('[NativeNavigation] Failed to load screen', error);
+    return <NativeNavigationUnavailableScreen {...props} />;
+  }
+}
+
 function MapStackScreen() {
   return (
     <MapStack.Navigator screenOptions={{ headerShown: false }}>
       <MapStack.Screen name="MapMain" component={MapScreen} />
       <MapStack.Screen name="MapRedeem" component={MapScreen} />
-      <MapStack.Screen name="NativeNavigation" component={NativeNavigationScreen} />
+      <MapStack.Screen name="NativeNavigation" component={NativeNavigationScreenRoute} />
     </MapStack.Navigator>
   );
 }
