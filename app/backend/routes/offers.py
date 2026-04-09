@@ -421,22 +421,42 @@ def complete_offer_redemption(
             gc = int(rpc_payload.get("gem_cost") or gem_cost)
             disc = int(rpc_payload.get("discount_percent") or discount)
             new_total = int(rpc_payload.get("new_gem_total") or _next_gem_total(user_id))
-            expected_total = max(0, int(current_gems) - int(gc))
-            if new_total > expected_total:
-                # Guardrail: a redeem must never increase wallet balance.
-                correction = expected_total - new_total
-                corrected = False
+            rpc_current_gems_raw = rpc_payload.get("current_gems")
+            rpc_current_gems: Optional[int] = None
+            if rpc_current_gems_raw is not None:
                 try:
-                    sb.rpc("increment_gems", {"uid": user_id, "amount": correction}).execute()
-                    corrected = True
-                except Exception:
+                    rpc_current_gems = int(rpc_current_gems_raw)
+                except (TypeError, ValueError):
+                    rpc_current_gems = None
+
+            # Guardrail: a redeem must never increase wallet balance.
+            # Only apply write-side correction when we have an authoritative pre-redeem value from RPC.
+            if rpc_current_gems is not None:
+                expected_total = max(0, rpc_current_gems - int(gc))
+                if new_total > expected_total:
+                    correction = expected_total - new_total
+                    corrected = False
                     try:
-                        sb.table("profiles").update({"gems": expected_total}).eq("id", user_id).execute()
+                        sb.rpc("increment_gems", {"uid": user_id, "amount": correction}).execute()
                         corrected = True
                     except Exception:
-                        logger.warning("Redeem gem correction failed for user %s", user_id, exc_info=True)
-                if corrected:
-                    new_total = expected_total
+                        try:
+                            sb.table("profiles").update({"gems": expected_total}).eq("id", user_id).execute()
+                            corrected = True
+                        except Exception:
+                            logger.warning("Redeem gem correction failed for user %s", user_id, exc_info=True)
+                    if corrected:
+                        new_total = expected_total
+            elif new_total > int(current_gems):
+                logger.warning(
+                    "Skipping redeem correction without authoritative pre-balance; user=%s current_gems=%s new_gem_total=%s gem_cost=%s",
+                    user_id,
+                    current_gems,
+                    new_total,
+                    gc,
+                )
+                # Keep response aligned with persisted wallet state without mutating balance from stale assumptions.
+                new_total = _next_gem_total(user_id)
             data_out = {
                 "discount_percent": disc,
                 "gem_cost": gc,
@@ -753,7 +773,7 @@ def create_offer(offer: OfferCreate, user: CurrentUser):
     try:
         invalidate_offers_nearby_cache()
     except Exception:
-        pass
+        logger.warning("offers_nearby cache invalidation failed after create_offer", exc_info=True)
     return {"success": True, "data": created.data[0]}
 
 

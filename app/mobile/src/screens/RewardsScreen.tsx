@@ -151,13 +151,28 @@ export default function RewardsScreen() {
       ]);
       const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
       const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
-      updateUser({
-        gems: Number(profilePayload.gems ?? 0),
-        level: Number(profilePayload.level ?? 1),
-        totalMiles: Number(profilePayload.total_miles ?? 0),
-        totalTrips: Number(profilePayload.total_trips ?? 0),
-        safetyScore: Number(profilePayload.safety_score ?? 0),
-      });
+      if (profileRes?.success && profilePayload && typeof profilePayload === 'object') {
+        const patch: Partial<{
+          gems: number;
+          level: number;
+          totalMiles: number;
+          totalTrips: number;
+          safetyScore: number;
+        }> = {};
+        const nextGems = Number((profilePayload as { gems?: unknown }).gems);
+        if (Number.isFinite(nextGems)) patch.gems = nextGems;
+        const nextLevel = Number((profilePayload as { level?: unknown }).level);
+        if (Number.isFinite(nextLevel)) patch.level = nextLevel;
+        const nextMiles = Number((profilePayload as { total_miles?: unknown }).total_miles);
+        if (Number.isFinite(nextMiles)) patch.totalMiles = nextMiles;
+        const nextTrips = Number((profilePayload as { total_trips?: unknown }).total_trips);
+        if (Number.isFinite(nextTrips)) patch.totalTrips = nextTrips;
+        const nextSafety = Number((profilePayload as { safety_score?: unknown }).safety_score);
+        if (Number.isFinite(nextSafety)) patch.safetyScore = nextSafety;
+        if (Object.keys(patch).length > 0) {
+          updateUser(patch);
+        }
+      }
       const bData = unwrap(bRes);
       setBadges(Array.isArray(bData) ? bData : (bData?.badges ?? []));
       setOffers(Array.isArray(unwrap(oRes)) ? unwrap(oRes) : []);

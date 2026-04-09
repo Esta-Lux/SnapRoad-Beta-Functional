@@ -36,7 +36,7 @@ The app can issue MapKit JS tokens so the map can use Apple MapKit. The **privat
 3. For `MAPKIT_PRIVATE_KEY`, paste the **entire** contents of the .p8 file into one line, using `\n` for each newline, inside double quotes:
 
    ```
-   MAPKIT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIGTAgEAM...\n-----END PRIVATE KEY-----"
+   MAPKIT_PRIVATE_KEY="<apple-mapkit-private-key-pem>"
    ```
 
    (Use your real key; the above is only a pattern.)

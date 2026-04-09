@@ -475,9 +475,9 @@ STRIPE_SECRET_KEY=<stripe-secret-key>
 STRIPE_WEBHOOK_SECRET=whsec_your-webhook-secret
 
 # AI Image Generation (choose one)
-OPENAI_API_KEY=sk-your-openai-key
+OPENAI_API_KEY=<openai-api-key>
 # OR
-STABILITY_API_KEY=sk-your-stability-key
+STABILITY_API_KEY=<stability-api-key>
 
 # Email
 SENDGRID_API_KEY=SG.your-sendgrid-key

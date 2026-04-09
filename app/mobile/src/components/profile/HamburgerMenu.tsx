@@ -126,9 +126,9 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
         >
           <View style={styles.handle} />
 
-          {items.map((item, idx) => (
+          {items.map((item) => (
             <TouchableOpacity
-              key={idx}
+              key={item.label}
               style={styles.menuItem}
               onPress={item.action}
               activeOpacity={0.7}
