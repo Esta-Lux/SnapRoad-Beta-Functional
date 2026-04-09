@@ -9,6 +9,15 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../hooks/useLocation';
 import { api } from '../api/client';
+import {
+  parseNearbyOffers,
+  parseRedeemOfferPayload,
+  unwrapApiData as unwrapOffersApiData,
+} from '../api/dto/offers';
+import {
+  parseProfilePatch,
+  unwrapApiData as unwrapProfileApiData,
+} from '../api/dto/profileWallet';
 import type { Badge, Offer } from '../types';
 import RewardsHeader from '../components/rewards/RewardsHeader';
 import RewardsTabs from '../components/rewards/RewardsTabs';
@@ -139,7 +148,7 @@ export default function RewardsScreen() {
     setErrorMsg(null);
     try {
       const safeGet = async (url: string) => {
-        try { return await api.get<any>(url); } catch { return { success: false, data: null }; }
+        try { return await api.get(url); } catch { return { success: false, data: null }; }
       };
       const [profileRes, bRes, oRes, gRes, mineRes, sumRes] = await Promise.all([
         api.getProfile().catch(() => ({ success: false, data: null })),
@@ -149,44 +158,27 @@ export default function RewardsScreen() {
         safeGet('/api/offers/my-redemptions'),
         safeGet('/api/rewards/summary'),
       ]);
-      const unwrap = (r: any) => r?.data?.data ?? r?.data ?? [];
-      const profilePayload = (profileRes?.data as any)?.data ?? profileRes?.data ?? {};
-      if (profileRes?.success && profilePayload && typeof profilePayload === 'object') {
-        const patch: Partial<{
-          gems: number;
-          level: number;
-          totalMiles: number;
-          totalTrips: number;
-          safetyScore: number;
-        }> = {};
-        const nextGems = Number((profilePayload as { gems?: unknown }).gems);
-        if (Number.isFinite(nextGems)) patch.gems = nextGems;
-        const nextLevel = Number((profilePayload as { level?: unknown }).level);
-        if (Number.isFinite(nextLevel)) patch.level = nextLevel;
-        const nextMiles = Number((profilePayload as { total_miles?: unknown }).total_miles);
-        if (Number.isFinite(nextMiles)) patch.totalMiles = nextMiles;
-        const nextTrips = Number((profilePayload as { total_trips?: unknown }).total_trips);
-        if (Number.isFinite(nextTrips)) patch.totalTrips = nextTrips;
-        const nextSafety = Number((profilePayload as { safety_score?: unknown }).safety_score);
-        if (Number.isFinite(nextSafety)) patch.safetyScore = nextSafety;
-        if (Object.keys(patch).length > 0) {
-          updateUser(patch);
-        }
+      const unwrap = (r: { data?: unknown } | undefined) => unwrapProfileApiData(r?.data);
+      if (profileRes?.success) {
+        const patch = parseProfilePatch(profileRes?.data);
+        if (Object.keys(patch).length > 0) updateUser(patch);
       }
       const bData = unwrap(bRes);
-      setBadges(Array.isArray(bData) ? bData : (bData?.badges ?? []));
-      setOffers(Array.isArray(unwrap(oRes)) ? unwrap(oRes) : []);
+      const bRoot = bData && typeof bData === 'object' ? (bData as Record<string, unknown>) : null;
+      setBadges(Array.isArray(bData) ? bData : (Array.isArray(bRoot?.badges) ? (bRoot?.badges as Badge[]) : []));
+      setOffers(parseNearbyOffers(oRes?.data));
       if (mineRes?.success) {
         setMyRedemptions(parseMyRedemptionsResponse(unwrap(mineRes)));
       }
-      const gData = gRes?.data?.data ?? gRes?.data;
-      const ledgerBal = gData?.current_balance;
+      const gDataRaw = unwrapProfileApiData(gRes?.data);
+      const gData = gDataRaw && typeof gDataRaw === 'object' ? (gDataRaw as Record<string, unknown>) : {};
+      const ledgerBal = gData.current_balance;
       if (ledgerBal != null && ledgerBal !== '' && Number.isFinite(Number(ledgerBal))) {
         updateUser({ gems: Number(ledgerBal) });
       }
-      const tx = Array.isArray(gData?.recent_transactions) ? gData.recent_transactions : [];
+      const tx = Array.isArray(gData.recent_transactions) ? (gData.recent_transactions as Record<string, unknown>[]) : [];
       setGemTx(
-        tx.slice(0, 20).map((t: any, i: number) => ({
+        tx.slice(0, 20).map((t: Record<string, unknown>, i: number) => ({
           id: String(t.id ?? `tx-${i}`),
           type: t.type === 'earned' || t.type === 'spent' ? t.type : 'unknown',
           amount: Number(t.amount ?? 0),
@@ -224,9 +216,8 @@ export default function RewardsScreen() {
 
   const refreshNearbyOffers = useCallback(async (lat: number, lng: number) => {
     try {
-      const res = await api.get<any>(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=32.2`);
-      const raw = res?.data?.data ?? res?.data ?? [];
-      setOffers(Array.isArray(raw) ? raw : []);
+      const res = await api.get(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=32.2`);
+      setOffers(parseNearbyOffers(res?.data));
     } catch {
       /* keep existing offers */
     }
@@ -234,9 +225,9 @@ export default function RewardsScreen() {
 
   const refreshMyRedemptions = useCallback(async () => {
     try {
-      const res = await api.get<any>('/api/offers/my-redemptions');
+      const res = await api.get('/api/offers/my-redemptions');
       if (!res.success) return;
-      const raw = (res.data as any)?.data ?? res.data;
+      const raw = unwrapOffersApiData(res.data);
       setMyRedemptions(parseMyRedemptionsResponse(raw));
     } catch {
       /* keep list */
@@ -333,24 +324,23 @@ export default function RewardsScreen() {
     setRedeemingOfferId(String(offer.id));
     setErrorMsg(null);
     try {
-      const res = await api.post<any>(`/api/offers/${offer.id}/redeem`);
+      const res = await api.post(`/api/offers/${offer.id}/redeem`);
       if (!res.success) {
         setErrorMsg(res.error || 'Could not redeem this offer right now.');
         return;
       }
-      const rawRoot = res.data as { data?: Record<string, unknown> } | undefined;
-      const inner = (rawRoot && typeof rawRoot === 'object' && 'data' in rawRoot && rawRoot.data
-        ? rawRoot.data
-        : (rawRoot as Record<string, unknown>)) ?? {};
-      const gemCost = Number(inner.gem_cost ?? offer.gem_cost ?? offer.gems_reward ?? 0);
+      const inner = parseRedeemOfferPayload(res.data);
+      const gemCost = Number.isFinite(inner.gem_cost ?? NaN)
+        ? Number(inner.gem_cost)
+        : Number(offer.gem_cost ?? offer.gems_reward ?? 0);
       const newGemTotal = Number(inner.new_gem_total ?? NaN);
       const oid = String(offer.id);
       setRedeemQrByOfferId((prev) => ({
         ...prev,
         [oid]: {
-          qr_token: inner.qr_token != null ? String(inner.qr_token) : undefined,
-          claim_code: inner.claim_code != null ? String(inner.claim_code) : undefined,
-          expires_at: inner.expires_at != null ? String(inner.expires_at) : undefined,
+          qr_token: inner.qr_token,
+          claim_code: inner.claim_code,
+          expires_at: inner.expires_at,
         },
       }));
       setOffers((prev) =>
@@ -359,8 +349,8 @@ export default function RewardsScreen() {
             ? {
                 ...o,
                 redeemed: true,
-                redemption_id: inner.redemption_id != null ? String(inner.redemption_id) : o.redemption_id,
-                redemption: { status: 'verified', redeemed_at: inner.redeemed_at != null ? String(inner.redeemed_at) : undefined },
+                redemption_id: inner.redemption_id ?? o.redemption_id,
+                redemption: { status: 'verified', redeemed_at: inner.redeemed_at },
               }
             : o,
         ),
@@ -370,8 +360,8 @@ export default function RewardsScreen() {
           ? {
               ...prev,
               redeemed: true,
-              redemption_id: inner.redemption_id != null ? String(inner.redemption_id) : prev.redemption_id,
-              redemption: { status: 'verified', redeemed_at: inner.redeemed_at != null ? String(inner.redeemed_at) : undefined },
+              redemption_id: inner.redemption_id ?? prev.redemption_id,
+              redemption: { status: 'verified', redeemed_at: inner.redeemed_at },
             }
           : prev,
       );

@@ -68,6 +68,20 @@ from services.outbound_email import send_html_email, promotion_email_html
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Admin"], dependencies=[Depends(require_admin)])
+admin_platform_router = APIRouter()
+admin_concerns_router = APIRouter()
+admin_config_router = APIRouter()
+admin_incidents_router = APIRouter()
+admin_offers_router = APIRouter()
+admin_partners_router = APIRouter()
+admin_campaigns_router = APIRouter()
+admin_rewards_router = APIRouter()
+admin_users_router = APIRouter()
+admin_pricing_router = APIRouter()
+admin_boosts_router = APIRouter()
+admin_realtime_router = APIRouter()
+admin_photo_reports_router = APIRouter()
+admin_ops_router = APIRouter()
 
 AdminUser = Annotated[dict, Depends(require_admin)]
 
@@ -90,7 +104,7 @@ BOOST_PRICING_ADMIN = {
 
 # ==================== PLATFORM STATS ====================
 
-@router.get("/admin/stats")
+@admin_platform_router.get("/admin/stats")
 def get_admin_stats():
     stats = sb_get_platform_stats()
     trip_stats = sb_get_trips_stats()
@@ -114,7 +128,7 @@ def get_admin_stats():
     return {"success": True, "source": "supabase", "data": data}
 
 
-@router.get("/admin/wallet-ledger")
+@admin_platform_router.get("/admin/wallet-ledger")
 def admin_wallet_ledger(
     user_id: Annotated[Optional[str], Query(description="Filter by driver user_id")] = None,
     tx_type: Annotated[Optional[str], Query(description="Filter by tx_type e.g. trip_drive, offer_redeem")] = None,
@@ -145,7 +159,7 @@ def admin_wallet_ledger(
         return {"success": False, "message": "Could not load wallet ledger", "data": []}
 
 
-@router.get("/admin/redemptions")
+@admin_platform_router.get("/admin/redemptions")
 def admin_redemptions_list(
     user_id: Annotated[Optional[str], Query(description="Filter by driver user_id")] = None,
     status: Annotated[Optional[str], Query(description="Redemption status e.g. verified")] = None,
@@ -174,7 +188,7 @@ class AdminOfferStatusBody(BaseModel):
     status: str = Field(..., min_length=3, max_length=32)
 
 
-@router.post("/admin/offers/{offer_id}/status")
+@admin_offers_router.post("/admin/offers/{offer_id}/status")
 def admin_set_offer_status(offer_id: str, body: AdminOfferStatusBody):
     """
     Approve or pause offers: active | inactive | paused.
@@ -195,7 +209,7 @@ def admin_set_offer_status(offer_id: str, body: AdminOfferStatusBody):
 
 # ==================== CONCERNS (admin) ====================
 
-@router.get("/admin/concerns")
+@admin_concerns_router.get("/admin/concerns")
 def get_admin_concerns(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     severity: Annotated[Optional[str], Query()] = None,
@@ -205,7 +219,7 @@ def get_admin_concerns(
     return {"success": True, "data": {"concerns": concerns, "total": len(concerns)}}
 
 
-@router.post("/admin/concerns/{concern_id}/status")
+@admin_concerns_router.post("/admin/concerns/{concern_id}/status")
 def update_concern_status(concern_id: str, body: ConcernStatusBody):
     status = body.status.strip().lower()
     if status not in ("open", "in_progress", "resolved", "closed"):
@@ -218,7 +232,7 @@ def update_concern_status(concern_id: str, body: ConcernStatusBody):
 
 # ==================== LIVE USERS ====================
 
-@router.get("/admin/live-users")
+@admin_platform_router.get("/admin/live-users")
 def get_live_users():
     users = sb_get_live_users()
     return {"success": True, "data": {"users": users}}
@@ -236,7 +250,7 @@ _SKIP_USAGE_PREFIXES = (
 )
 
 
-@router.get("/admin/telemetry/app-usage")
+@admin_platform_router.get("/admin/telemetry/app-usage")
 def get_admin_app_usage_telemetry(limit: Annotated[int, Query(ge=50, le=500)] = 500):
     """
     Summarize recent HTTP telemetry into API area counts (driver/partner flows proxy).
@@ -410,7 +424,7 @@ async def _admin_health_realtime(results: dict) -> None:
         results["realtime"] = "down"
 
 
-@router.get("/admin/health")
+@admin_platform_router.get("/admin/health")
 async def get_admin_health():
     results: dict = {"api": "healthy"}
     _admin_health_supabase(results)
@@ -423,13 +437,13 @@ async def get_admin_health():
 
 # ==================== APP CONFIG (admin) ====================
 
-@router.get("/admin/config")
+@admin_config_router.get("/admin/config")
 def get_admin_config():
     config = sb_get_app_config()
     return {"success": True, "data": config}
 
 
-@router.post("/admin/config")
+@admin_config_router.post("/admin/config")
 def update_admin_config(body: dict, user: AdminUser):
     """Apply key/value pairs to app_config. Reserved keys: _reason, reason (ops runbook text for audit)."""
     updated_by = user.get("user_id") if user else None
@@ -472,20 +486,20 @@ def update_admin_config(body: dict, user: AdminUser):
     return {"success": True, "data": sb_get_app_config()}
 
 
-@router.get("/admin/config/detailed")
+@admin_config_router.get("/admin/config/detailed")
 def get_admin_config_detailed():
     """Config values plus per-key updated_at / updated_by for ops audit trail in UI."""
     cfg, meta = sb_get_app_config_with_meta()
     return {"success": True, "data": {"config": cfg, "meta": meta}}
 
 
-@router.get("/admin/map/road-reports")
+@admin_config_router.get("/admin/map/road-reports")
 def get_admin_map_road_reports(limit: Annotated[int, Query(ge=1, le=800)] = 400):
     reports = sb_get_road_reports_for_admin_map(limit=limit)
     return {"success": True, "data": {"reports": reports}}
 
 
-@router.get("/admin/map/partner-locations")
+@admin_config_router.get("/admin/map/partner-locations")
 def get_admin_map_partner_locations(limit: Annotated[int, Query(ge=1, le=1000)] = 500):
     locations = sb_get_partner_locations_for_admin_map(limit=limit)
     return {"success": True, "data": {"locations": locations}}
@@ -493,7 +507,7 @@ def get_admin_map_partner_locations(limit: Annotated[int, Query(ge=1, le=1000)] 
 
 # ==================== ANALYTICS ====================
 
-@router.get("/admin/analytics")
+@admin_platform_router.get("/admin/analytics")
 def get_admin_analytics():
     stats = sb_get_platform_stats()
     trip_stats = sb_get_trips_stats()
@@ -528,7 +542,7 @@ def get_admin_analytics():
 
 # ==================== REFERRAL ANALYTICS ====================
 
-@router.get("/admin/referral-analytics")
+@admin_platform_router.get("/admin/referral-analytics")
 def get_referral_analytics():
     data = sb_get_referral_analytics()
     return {"success": True, "data": data}
@@ -536,7 +550,7 @@ def get_referral_analytics():
 
 # ==================== FINANCE ====================
 
-@router.get("/admin/finance")
+@admin_platform_router.get("/admin/finance")
 def get_finance_data():
     summary = sb_get_finance_summary()
     return {"success": True, "data": {"summary": summary}}
@@ -544,13 +558,13 @@ def get_finance_data():
 
 # ==================== NOTIFICATIONS ====================
 
-@router.get("/admin/notifications")
+@admin_ops_router.get("/admin/notifications")
 def get_notifications(limit: Annotated[int, Query(ge=1, le=100)] = 50):
     data = sb_get_admin_notifications(limit=limit)
     return {"success": True, "data": data}
 
 
-@router.post("/admin/notifications")
+@admin_ops_router.post("/admin/notifications")
 def create_notification_endpoint(notification_data: dict):
     result = sb_create_notification(notification_data)
     if result:
@@ -558,7 +572,7 @@ def create_notification_endpoint(notification_data: dict):
     return {"success": False, "message": "Failed to create notification"}
 
 
-@router.patch("/admin/notifications/{notification_id}/read")
+@admin_ops_router.patch("/admin/notifications/{notification_id}/read")
 def mark_notification_read(notification_id: str):
     success = sb_mark_notification_read(notification_id)
     if success:
@@ -568,7 +582,7 @@ def mark_notification_read(notification_id: str):
 
 # ==================== LEGAL DOCUMENTS ====================
 
-@router.get("/admin/legal-documents")
+@admin_ops_router.get("/admin/legal-documents")
 def get_legal_documents():
     data = sb_get_legal_documents()
     return {"success": True, "data": data}
@@ -579,7 +593,7 @@ _LEGAL_DOC_KEYS = frozenset(
 )
 
 
-@router.post("/admin/legal-documents")
+@admin_ops_router.post("/admin/legal-documents")
 def create_legal_document(doc_data: dict):
     body = {k: v for k, v in doc_data.items() if k in _LEGAL_DOC_KEYS}
     created = sb_create_legal_document(body)
@@ -597,7 +611,7 @@ def create_legal_document(doc_data: dict):
     }
 
 
-@router.put("/admin/legal-documents/{doc_id}")
+@admin_ops_router.put("/admin/legal-documents/{doc_id}")
 def update_legal_document(doc_id: str, doc_data: dict):
     body = {k: v for k, v in doc_data.items() if k in _LEGAL_DOC_KEYS}
     body["last_updated"] = datetime.now(timezone.utc).isoformat()
@@ -610,13 +624,13 @@ def update_legal_document(doc_id: str, doc_data: dict):
 
 # ==================== SETTINGS ====================
 
-@router.get("/admin/settings")
+@admin_ops_router.get("/admin/settings")
 def get_settings():
     data = sb_get_settings()
     return {"success": True, "data": data}
 
 
-@router.post("/admin/settings")
+@admin_ops_router.post("/admin/settings")
 def update_settings(settings_data: dict):
     for key, value in settings_data.items():
         sb_update_setting(key, value)
@@ -626,7 +640,7 @@ def update_settings(settings_data: dict):
 
 # ==================== AUDIT LOG ====================
 
-@router.get("/admin/audit-log")
+@admin_ops_router.get("/admin/audit-log")
 def get_audit_log(limit: Annotated[int, Query(ge=1, le=100)] = 50):
     data = sb_get_audit_logs(limit=limit)
     return {"success": True, "data": data}
@@ -673,7 +687,7 @@ def _road_report_row_to_admin_item(row: dict) -> dict:
     }
 
 
-@router.get("/admin/incidents")
+@admin_incidents_router.get("/admin/incidents")
 def get_incidents(
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     status: Annotated[Optional[str], Query()] = None,
@@ -690,7 +704,7 @@ def get_incidents(
     return {"success": True, "data": merged[:limit]}
 
 
-@router.post("/admin/incidents/{incident_id}/moderate")
+@admin_incidents_router.post("/admin/incidents/{incident_id}/moderate")
 async def moderate_incident(incident_id: str, outcome: Annotated[str, Body(..., embed=True)]):
     if outcome not in ["approved", "rejected"]:
         return {"success": False, "message": "Invalid outcome. Must be 'approved' or 'rejected'"}
@@ -721,7 +735,7 @@ async def moderate_incident(incident_id: str, outcome: Annotated[str, Body(..., 
     return {"success": False, "message": "Could not update that report. Try refreshing the list."}
 
 
-@router.get("/admin/incidents/moderated")
+@admin_incidents_router.get("/admin/incidents/moderated")
 def get_moderated_incidents(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     approved = sb_get_incidents(status="approved", limit=limit)
     rejected = sb_get_incidents(status="rejected", limit=limit)
@@ -730,7 +744,7 @@ def get_moderated_incidents(limit: Annotated[int, Query(ge=1, le=100)] = 100):
 
 # ==================== OFFERS CRUD ====================
 
-@router.get("/admin/offers")
+@admin_offers_router.get("/admin/offers")
 def get_offers(
     status: Annotated[str, Query()] = "all",
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
@@ -741,7 +755,7 @@ def get_offers(
     return {"success": True, "data": data}
 
 
-@router.post("/admin/offers")
+@admin_offers_router.post("/admin/offers")
 def create_offer(offer_data: dict):
     offer_data.setdefault("status", "active")
     offer_data.setdefault("is_admin_offer", True)
@@ -765,7 +779,7 @@ _OFFER_OPTIONAL_KEYS = {
 }
 
 
-@router.post("/admin/offers/create")
+@admin_offers_router.post("/admin/offers/create")
 def admin_create_offer(offer: AdminOfferCreate):
     auto_gems = offer.base_gems if offer.base_gems is not None else calculate_auto_gems(offer.discount_percent, offer.is_free_item)
     premium_discount = offer.discount_percent
@@ -841,7 +855,7 @@ def _build_bulk_offer(item) -> dict:
     }
 
 
-@router.post("/admin/offers/bulk")
+@admin_offers_router.post("/admin/offers/bulk")
 def admin_bulk_offers(data: BulkOfferUpload):
     created = []
     for item in data.offers:
@@ -931,7 +945,7 @@ def _process_excel_rows(rows: list, col_map: dict) -> tuple[list, list]:
     return created, errors
 
 
-@router.post("/admin/offers/upload-excel")
+@admin_offers_router.post("/admin/offers/upload-excel")
 async def upload_excel_offers(file: Annotated[UploadFile, File()]):
     """Parse an Excel (.xlsx) file and create offers. Auto-calculates gems and discounts."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
@@ -974,7 +988,7 @@ async def upload_excel_offers(file: Annotated[UploadFile, File()]):
     }
 
 
-@router.get("/admin/offers/upload-template")
+@admin_offers_router.get("/admin/offers/upload-template")
 def download_upload_template():
     """Download a sample .xlsx template for bulk offer upload."""
     try:
@@ -1025,7 +1039,7 @@ def download_upload_template():
     )
 
 
-@router.put("/admin/offers/{offer_id}")
+@admin_offers_router.put("/admin/offers/{offer_id}")
 def update_offer(offer_id: str, offer_data: dict):
     success = sb_update_offer(offer_id, offer_data)
     if success:
@@ -1033,7 +1047,7 @@ def update_offer(offer_id: str, offer_data: dict):
     return {"success": False, "message": "Failed to update offer"}
 
 
-@router.delete("/admin/offers/{offer_id}")
+@admin_offers_router.delete("/admin/offers/{offer_id}")
 def delete_offer(offer_id: str):
     success = sb_delete_offer(offer_id)
     if success:
@@ -1042,7 +1056,7 @@ def delete_offer(offer_id: str):
     return {"success": False, "message": "Failed to delete offer"}
 
 
-@router.get("/admin/export/offers")
+@admin_offers_router.get("/admin/export/offers")
 def export_offers(format: str = "json"):
     offers = sb_get_offers(status="all")
     if format == "csv" and offers:
@@ -1052,7 +1066,7 @@ def export_offers(format: str = "json"):
     return {"success": True, "data": offers, "format": "json", "count": len(offers)}
 
 
-@router.get("/admin/export/users")
+@admin_users_router.get("/admin/export/users")
 def export_users(format: str = "json"):
     users = sb_list_profiles(limit=5000)
     if format == "csv" and users:
@@ -1062,7 +1076,7 @@ def export_users(format: str = "json"):
     return {"success": True, "data": users, "format": "json", "count": len(users)}
 
 
-@router.post("/admin/import/offers")
+@admin_offers_router.post("/admin/import/offers")
 def import_offers(import_data: OfferImport):
     imported = 0
     errors = []
@@ -1090,7 +1104,7 @@ def import_offers(import_data: OfferImport):
 
 # ==================== GROUPON / CJ AFFILIATE IMPORT ====================
 
-@router.post("/admin/offers/import-groupon")
+@admin_offers_router.post("/admin/offers/import-groupon")
 async def import_groupon_deals(
     area: Annotated[str, Query()] = "Columbus, OH",
     category: Annotated[Optional[str], Query()] = None,
@@ -1115,7 +1129,7 @@ async def import_groupon_deals(
     }
 
 
-@router.post("/admin/offers/approve-imports")
+@admin_offers_router.post("/admin/offers/approve-imports")
 def approve_imported_deals(deals: list[dict]):
     """
     Receive a list of pre-normalised deal dicts (from import-groupon preview)
@@ -1149,7 +1163,7 @@ def approve_imported_deals(deals: list[dict]):
 
 # ==================== YELP ENRICHMENT ====================
 
-@router.post("/admin/offers/{offer_id}/enrich-yelp")
+@admin_offers_router.post("/admin/offers/{offer_id}/enrich-yelp")
 async def enrich_offer_with_yelp(offer_id: str):
     """Fetch Yelp rating, reviews and photo for an offer and update it."""
     from services.yelp_service import enrich_offer
@@ -1176,13 +1190,13 @@ async def enrich_offer_with_yelp(offer_id: str):
 
 # ==================== PARTNERS CRUD ====================
 
-@router.get("/admin/partners")
+@admin_partners_router.get("/admin/partners")
 def get_partners(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     data = sb_get_partners(limit=limit)
     return {"success": True, "data": data}
 
 
-@router.post("/admin/partners")
+@admin_partners_router.post("/admin/partners")
 def create_partner(partner_data: dict):
     partner_data.setdefault("status", "pending")
     partner_data.setdefault("is_approved", False)
@@ -1193,7 +1207,7 @@ def create_partner(partner_data: dict):
     return {"success": False, "message": "Failed to create partner"}
 
 
-@router.put("/admin/partners/{partner_id}")
+@admin_partners_router.put("/admin/partners/{partner_id}")
 def update_partner(partner_id: str, partner_data: dict):
     body = dict(partner_data or {})
     if "plan" in body and body.get("plan") is not None:
@@ -1208,7 +1222,7 @@ def update_partner(partner_id: str, partner_data: dict):
     return {"success": False, "message": "Failed to update partner"}
 
 
-@router.delete("/admin/partners/{partner_id}")
+@admin_partners_router.delete("/admin/partners/{partner_id}")
 def delete_partner(partner_id: str):
     success = sb_delete_partner(partner_id)
     if success:
@@ -1217,7 +1231,7 @@ def delete_partner(partner_id: str):
     return {"success": False, "message": "Failed to delete partner"}
 
 
-@router.post("/admin/partners/{partner_id}/approve")
+@admin_partners_router.post("/admin/partners/{partner_id}/approve")
 def approve_partner(partner_id: str):
     success = sb_update_partner(partner_id, {"status": "active", "is_approved": True})
     if success:
@@ -1226,7 +1240,7 @@ def approve_partner(partner_id: str):
     return {"success": False, "message": "Failed to approve partner"}
 
 
-@router.post("/admin/partners/{partner_id}/suspend")
+@admin_partners_router.post("/admin/partners/{partner_id}/suspend")
 def suspend_partner(partner_id: str):
     success = sb_update_partner(partner_id, {"status": "suspended"})
     if success:
@@ -1237,13 +1251,13 @@ def suspend_partner(partner_id: str):
 
 # ==================== CAMPAIGNS CRUD ====================
 
-@router.get("/admin/campaigns")
+@admin_campaigns_router.get("/admin/campaigns")
 def get_campaigns(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     data = sb_get_campaigns(limit=limit)
     return {"success": True, "data": data}
 
 
-@router.post("/admin/campaigns")
+@admin_campaigns_router.post("/admin/campaigns")
 def create_campaign(campaign_data: dict):
     campaign_data.setdefault("status", "draft")
     result = sb_create_campaign(campaign_data)
@@ -1252,7 +1266,7 @@ def create_campaign(campaign_data: dict):
     return {"success": False, "message": "Failed to create campaign"}
 
 
-@router.put("/admin/campaigns/{campaign_id}")
+@admin_campaigns_router.put("/admin/campaigns/{campaign_id}")
 def update_campaign(campaign_id: str, campaign_data: dict):
     success = sb_update_campaign(campaign_id, campaign_data)
     if success:
@@ -1260,7 +1274,7 @@ def update_campaign(campaign_id: str, campaign_data: dict):
     return {"success": False, "message": "Failed to update campaign"}
 
 
-@router.delete("/admin/campaigns/{campaign_id}")
+@admin_campaigns_router.delete("/admin/campaigns/{campaign_id}")
 def delete_campaign(campaign_id: str):
     success = sb_delete_campaign(campaign_id)
     if success:
@@ -1268,7 +1282,7 @@ def delete_campaign(campaign_id: str):
     return {"success": False, "message": "Failed to delete campaign"}
 
 
-@router.post("/admin/campaigns/{campaign_id}/activate")
+@admin_campaigns_router.post("/admin/campaigns/{campaign_id}/activate")
 def activate_campaign(campaign_id: str):
     success = sb_update_campaign(campaign_id, {"status": "active"})
     if success:
@@ -1278,13 +1292,13 @@ def activate_campaign(campaign_id: str):
 
 # ==================== REWARDS CRUD ====================
 
-@router.get("/admin/rewards")
+@admin_rewards_router.get("/admin/rewards")
 def get_rewards(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     data = sb_get_rewards(limit=limit)
     return {"success": True, "data": data}
 
 
-@router.post("/admin/rewards")
+@admin_rewards_router.post("/admin/rewards")
 def create_reward(reward_data: dict):
     reward_data.setdefault("status", "active")
     result = sb_create_reward(reward_data)
@@ -1293,7 +1307,7 @@ def create_reward(reward_data: dict):
     return {"success": False, "message": "Failed to create reward"}
 
 
-@router.put("/admin/rewards/{reward_id}")
+@admin_rewards_router.put("/admin/rewards/{reward_id}")
 def update_reward(reward_id: str, reward_data: dict):
     success = sb_update_reward(reward_id, reward_data)
     if success:
@@ -1301,7 +1315,7 @@ def update_reward(reward_id: str, reward_data: dict):
     return {"success": False, "message": "Failed to update reward"}
 
 
-@router.delete("/admin/rewards/{reward_id}")
+@admin_rewards_router.delete("/admin/rewards/{reward_id}")
 def delete_reward(reward_id: str):
     success = sb_delete_reward(reward_id)
     if success:
@@ -1309,7 +1323,7 @@ def delete_reward(reward_id: str):
     return {"success": False, "message": "Failed to delete reward"}
 
 
-@router.post("/admin/rewards/{reward_id}/claim")
+@admin_rewards_router.post("/admin/rewards/{reward_id}/claim")
 def claim_reward(reward_id: str, user_data: dict):
     rewards = sb_get_rewards()
     reward = next((r for r in rewards if r["id"] == reward_id), None)
@@ -1336,7 +1350,7 @@ def _effective_partner_row_id_for_profile(u: dict) -> Optional[str]:
     return None
 
 
-@router.get("/admin/users")
+@admin_users_router.get("/admin/users")
 def get_users(limit: Annotated[int, Query(ge=1, le=2000)] = 500):
     data = sb_list_profiles(limit=limit)
     pids = []
@@ -1360,7 +1374,7 @@ def get_users(limit: Annotated[int, Query(ge=1, le=2000)] = 500):
     return {"success": True, "source": "supabase", "data": data, "total": len(data)}
 
 
-@router.put("/admin/users/{user_id}")
+@admin_users_router.put("/admin/users/{user_id}")
 def update_user(user_id: str, user_data: dict):
     body = dict(user_data or {})
     if "plan" in body or "is_premium" in body:
@@ -1410,7 +1424,7 @@ def update_user(user_id: str, user_data: dict):
     return {"success": False, "message": "Failed to update user"}
 
 
-@router.delete("/admin/users/{user_id}")
+@admin_users_router.delete("/admin/users/{user_id}")
 def delete_user(user_id: str):
     success = sb_delete_profile(user_id)
     if success:
@@ -1419,7 +1433,7 @@ def delete_user(user_id: str):
     return {"success": False, "message": "Failed to delete user"}
 
 
-@router.post("/admin/users/{user_id}/suspend")
+@admin_users_router.post("/admin/users/{user_id}/suspend")
 def suspend_user(user_id: str):
     success = sb_suspend_profile(user_id)
     if success:
@@ -1428,7 +1442,7 @@ def suspend_user(user_id: str):
     return {"success": False, "message": "Failed to suspend user"}
 
 
-@router.post("/admin/users/{user_id}/activate")
+@admin_users_router.post("/admin/users/{user_id}/activate")
 def activate_user(user_id: str):
     success = sb_activate_profile(user_id)
     if success:
@@ -1448,7 +1462,7 @@ class GrantPromotionBody(BaseModel):
     send_email: bool = False
 
 
-@router.post("/admin/promotions/grant")
+@admin_users_router.post("/admin/promotions/grant")
 def grant_promotions(body: GrantPromotionBody, admin: AdminUser):
     """
     Extend or start time-boxed access for drivers (premium/family benefits) or partners
@@ -1555,7 +1569,7 @@ def grant_promotions(body: GrantPromotionBody, admin: AdminUser):
 
 # ==================== PRICING ====================
 
-@router.get("/admin/pricing")
+@admin_pricing_router.get("/admin/pricing")
 def get_admin_pricing():
     settings = sb_get_settings()
     pricing = settings.get("pricing", {
@@ -1566,7 +1580,7 @@ def get_admin_pricing():
     return {"success": True, "data": pricing}
 
 
-@router.post("/admin/pricing")
+@admin_pricing_router.post("/admin/pricing")
 def update_admin_pricing(update: PricingUpdate):
     pricing = {}
     if update.founders_price is not None:
@@ -1581,7 +1595,7 @@ def update_admin_pricing(update: PricingUpdate):
 
 # ==================== BOOSTS ====================
 
-@router.post("/boosts/calculate")
+@admin_boosts_router.post("/boosts/calculate")
 def calculate_boost_cost(calc: BoostCalculate):
     duration_cost = BOOST_PRICING_ADMIN["base_daily_cost"] + max(0, calc.duration_days - 1) * BOOST_PRICING_ADMIN["additional_day_cost"]
     reach_increments = calc.reach_target // BOOST_PRICING_ADMIN["reach_increment"]
@@ -1595,7 +1609,7 @@ def calculate_boost_cost(calc: BoostCalculate):
     }}
 
 
-@router.post("/boosts/create")
+@admin_boosts_router.post("/boosts/create")
 def create_boost(boost: BoostCreate):
     calc = calculate_boost_cost(BoostCalculate(duration_days=boost.duration_days, reach_target=boost.reach_target))
     data = {
@@ -1613,7 +1627,7 @@ def create_boost(boost: BoostCreate):
     return {"success": False, "message": "Failed to create boost"}
 
 
-@router.get("/boosts")
+@admin_boosts_router.get("/boosts")
 def get_boosts(
     partner_id: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
@@ -1622,7 +1636,7 @@ def get_boosts(
     return {"success": True, "data": data}
 
 
-@router.get("/boosts/{boost_id}")
+@admin_boosts_router.get("/boosts/{boost_id}")
 def get_boost(boost_id: str):
     boosts = sb_get_boosts()
     boost = next((b for b in boosts if b["id"] == boost_id), None)
@@ -1631,7 +1645,7 @@ def get_boost(boost_id: str):
     return {"success": True, "data": boost}
 
 
-@router.delete("/boosts/{boost_id}")
+@admin_boosts_router.delete("/boosts/{boost_id}")
 def cancel_boost(boost_id: str):
     success = sb_cancel_boost(boost_id)
     if success:
@@ -1641,7 +1655,7 @@ def cancel_boost(boost_id: str):
 
 # ==================== ANALYTICS TRACKING ====================
 
-@router.post("/analytics/track")
+@admin_ops_router.post("/analytics/track")
 def track_analytics_event(event: AnalyticsEvent):
     offers = sb_get_offers(limit=500)
     offer = next((o for o in offers if str(o.get("id")) == str(event.offer_id)), None)
@@ -1658,7 +1672,7 @@ def track_analytics_event(event: AnalyticsEvent):
     return {"success": True, "message": "Event tracked", "data": tracked}
 
 
-@router.get("/analytics/dashboard")
+@admin_ops_router.get("/analytics/dashboard")
 def get_analytics_dashboard(
     business_id: Annotated[str, Query()] = "default_business",
     days: Annotated[int, Query(ge=1, le=366)] = 7,
@@ -1680,45 +1694,45 @@ def get_analytics_dashboard(
     }
 
 
-@router.get("/admin/fees/summary")
+@admin_realtime_router.get("/admin/fees/summary")
 def get_admin_fees_summary(month_year: Optional[str] = None):
     return {"success": True, "data": list_monthly_fee_summaries(month_year)}
 
 
-@router.get("/admin/fees/partner/{partner_id}")
+@admin_realtime_router.get("/admin/fees/partner/{partner_id}")
 def get_admin_partner_fee_history(partner_id: str, limit: Annotated[int, Query(ge=1, le=36)] = 12):
     return {"success": True, "data": get_partner_fee_history(partner_id, limit)}
 
 
-@router.get("/admin/offers/analytics")
+@admin_offers_router.get("/admin/offers/analytics")
 def get_admin_offer_analytics(limit: Annotated[int, Query(ge=1, le=500)] = 200):
     return {"success": True, "data": summarize_offer_analytics(limit)}
 
 
-@router.get("/admin/realtime/summary")
+@admin_realtime_router.get("/admin/realtime/summary")
 def get_admin_realtime_summary():
     return {"success": True, "data": today_realtime_summary()}
 
 
-@router.get("/admin/realtime/feed")
+@admin_realtime_router.get("/admin/realtime/feed")
 def get_admin_realtime_feed(limit: Annotated[int, Query(ge=1, le=200)] = 50):
     return {"success": True, "data": recent_offer_feed(limit)}
 
 
-@router.get("/admin/realtime/map-data")
+@admin_realtime_router.get("/admin/realtime/map-data")
 def get_admin_realtime_map_data():
     return {"success": True, "data": map_data_for_day()}
 
 
 # ==================== SUPABASE STATUS ====================
 
-@router.get("/admin/supabase/status")
+@admin_platform_router.get("/admin/supabase/status")
 def get_supabase_status():
     status = test_connection()
     return {"success": True, "data": status}
 
 
-@router.get("/admin/events")
+@admin_platform_router.get("/admin/events")
 def get_admin_events(limit: Annotated[int, Query(ge=1, le=100)] = 100):
     challenges = sb_get_challenges()[:limit]
     return {"success": True, "data": challenges}
@@ -1741,7 +1755,7 @@ def _photo_original_signed_url(supabase, storage_path: str) -> Optional[str]:
         return None
 
 
-@router.get("/admin/photo-reports/pending")
+@admin_photo_reports_router.get("/admin/photo-reports/pending")
 def admin_photo_reports_pending(limit: Annotated[int, Query(ge=1, le=200)] = 50):
     from database import get_supabase
 
@@ -1764,7 +1778,7 @@ def admin_photo_reports_pending(limit: Annotated[int, Query(ge=1, le=200)] = 50)
     return {"success": True, "data": {"reports": reports, "total": len(reports)}}
 
 
-@router.post("/admin/photo-reports/{report_id}/approve")
+@admin_photo_reports_router.post("/admin/photo-reports/{report_id}/approve")
 async def admin_photo_report_approve(report_id: str):
     import uuid
 
@@ -1852,7 +1866,7 @@ async def admin_photo_report_approve(report_id: str):
     return {"success": True, "message": "Published blurred image", "data": {"photo_url": photo_url}}
 
 
-@router.post("/admin/photo-reports/{report_id}/reject")
+@admin_photo_reports_router.post("/admin/photo-reports/{report_id}/reject")
 def admin_photo_report_reject(
     report_id: str,
     body: Annotated[AdminPhotoRejectBody, Body(default_factory=AdminPhotoRejectBody)],

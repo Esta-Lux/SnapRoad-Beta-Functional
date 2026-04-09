@@ -108,6 +108,19 @@ def _resolve_partner_portal_base(portal_origin: Optional[str]) -> str:
 
 
 router = APIRouter(prefix="/api", tags=["Partners"])
+partner_media_router = APIRouter()
+partner_profile_router = APIRouter()
+partner_locations_router = APIRouter()
+partner_offers_router = APIRouter()
+partner_boosts_router = APIRouter()
+partner_credits_router = APIRouter()
+partner_v2_auth_router = APIRouter()
+partner_v2_profile_router = APIRouter()
+partner_v2_team_router = APIRouter()
+partner_v2_referrals_router = APIRouter()
+partner_v2_finance_router = APIRouter()
+partner_v2_analytics_router = APIRouter()
+partner_v2_billing_router = APIRouter()
 
 
 PLAN_LOCATION_LIMITS = {
@@ -230,7 +243,7 @@ async def _download_google_place_photo(photo_reference: str, maxwidth: int) -> b
     return r.content
 
 
-@router.post("/partner/offers/upload-image", responses={403: {"description": "Partner access denied"}})
+@partner_media_router.post("/partner/offers/upload-image", responses={403: {"description": "Partner access denied"}})
 async def upload_partner_offer_image(
     user: CurrentPartner,
     partner_id: str = "default_partner",
@@ -242,7 +255,7 @@ async def upload_partner_offer_image(
     return {"success": True, "data": {"image_url": url}}
 
 
-@router.post("/partner/offers/import-google-photo", responses={403: {"description": "Partner access denied"}})
+@partner_media_router.post("/partner/offers/import-google-photo", responses={403: {"description": "Partner access denied"}})
 @limiter.limit("20/minute")
 async def import_google_offer_photo(
     request: Request,
@@ -256,7 +269,7 @@ async def import_google_offer_photo(
     return {"success": True, "data": {"image_url": url}}
 
 
-@router.post("/partner/offers/suggest-photo-from-location", responses={403: {"description": "Partner access denied"}})
+@partner_media_router.post("/partner/offers/suggest-photo-from-location", responses={403: {"description": "Partner access denied"}})
 @limiter.limit("20/minute")
 async def suggest_offer_photo_from_location(
     request: Request,
@@ -339,7 +352,7 @@ def _assert_partner_resource_owner(
 # `_assert_partner_resource_owner` for row-level resources) before any write. New endpoints must follow this.
 
 # ==================== PARTNER PLANS ====================
-@router.get("/partner/plans")
+@partner_profile_router.get("/partner/plans")
 def get_partner_plans():
     public = {
         k: v
@@ -350,7 +363,7 @@ def get_partner_plans():
 
 
 # ==================== PARTNER PROFILE ====================
-@router.get("/partner/profile", responses={403: {"description": "Partner access denied"}, 404: {"description": MSG_PARTNER_NOT_FOUND}})
+@partner_profile_router.get("/partner/profile", responses={403: {"description": "Partner access denied"}, 404: {"description": MSG_PARTNER_NOT_FOUND}})
 def get_partner_profile(user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
@@ -387,7 +400,7 @@ def get_partner_profile(user: CurrentPartner, partner_id: str = "default_partner
     return {"success": True, "data": data}
 
 
-@router.put("/partner/profile", responses={403: {"description": "Partner access denied"}})
+@partner_profile_router.put("/partner/profile", responses={403: {"description": "Partner access denied"}})
 def update_partner_profile(
     user: CurrentPartner,
     business_name: Optional[str] = None,
@@ -406,7 +419,7 @@ def update_partner_profile(
     return {"success": True, "message": "Profile updated"}
 
 
-@router.post("/partner/plan", responses={403: {"description": "Partner access denied"}})
+@partner_profile_router.post("/partner/plan", responses={403: {"description": "Partner access denied"}})
 def update_partner_plan(plan_update: PartnerPlanUpdate, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     if plan_update.plan == "internal":
@@ -427,7 +440,7 @@ def update_partner_plan(plan_update: PartnerPlanUpdate, user: CurrentPartner, pa
 
 
 # ==================== LOCATIONS ====================
-@router.get("/partner/locations", responses={403: {"description": "Partner access denied"}})
+@partner_locations_router.get("/partner/locations", responses={403: {"description": "Partner access denied"}})
 def get_partner_locations(
     user: CurrentPartner,
     partner_id: str = "default_partner",
@@ -447,7 +460,7 @@ def get_partner_locations(
     }
 
 
-@router.post("/partner/locations", responses={403: {"description": "Partner access denied"}})
+@partner_locations_router.post("/partner/locations", responses={403: {"description": "Partner access denied"}})
 def add_partner_location(location: PartnerLocation, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_partner_portal_entitled(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
@@ -474,7 +487,7 @@ def add_partner_location(location: PartnerLocation, user: CurrentPartner, partne
     return {"success": True, "message": f"Location '{location.name}' added successfully", "data": new_loc}
 
 
-@router.put("/partner/locations/{location_id}", responses=RESP_PARTNER_ACCESS_503)
+@partner_locations_router.put("/partner/locations/{location_id}", responses=RESP_PARTNER_ACCESS_503)
 def update_partner_location(location_id: str, location: PartnerLocation, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, MSG_NOT_YOUR_LOCATION)
@@ -490,7 +503,7 @@ def update_partner_location(location_id: str, location: PartnerLocation, user: C
     return {"success": True, "message": "Location updated"}
 
 
-@router.delete("/partner/locations/{location_id}", responses=RESP_PARTNER_ACCESS_503)
+@partner_locations_router.delete("/partner/locations/{location_id}", responses=RESP_PARTNER_ACCESS_503)
 def delete_partner_location(location_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, MSG_NOT_YOUR_LOCATION)
@@ -501,7 +514,7 @@ def delete_partner_location(location_id: str, user: CurrentPartner, partner_id: 
     return {"success": True, "message": "Location deleted"}
 
 
-@router.post("/partner/locations/{location_id}/set-primary", responses=RESP_PARTNER_ACCESS_503)
+@partner_locations_router.post("/partner/locations/{location_id}/set-primary", responses=RESP_PARTNER_ACCESS_503)
 def set_primary_location(location_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     _assert_partner_resource_owner("partner_locations", location_id, owned_partner_id, MSG_NOT_YOUR_LOCATION)
@@ -510,7 +523,7 @@ def set_primary_location(location_id: str, user: CurrentPartner, partner_id: str
 
 
 # ==================== PARTNER OFFERS ====================
-@router.post("/partner/offers", responses={403: {"description": "Partner access denied"}})
+@partner_offers_router.post("/partner/offers", responses={403: {"description": "Partner access denied"}})
 def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_partner_portal_entitled(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
@@ -575,7 +588,7 @@ def create_partner_offer(offer: PartnerOfferCreate, user: CurrentPartner, partne
     return {"success": True, "message": f"Offer created at {location['name']}", "data": new_offer}
 
 
-@router.get("/partner/offers", responses={403: {"description": "Partner access denied"}})
+@partner_offers_router.get("/partner/offers", responses={403: {"description": "Partner access denied"}})
 def get_partner_offers(
     user: CurrentPartner,
     partner_id: str = "default_partner",
@@ -586,7 +599,7 @@ def get_partner_offers(
     return {"success": True, "data": offers, "count": len(offers)}
 
 
-@router.put("/partner/offers/{offer_id}", responses=RESP_PARTNER_ACCESS_503)
+@partner_offers_router.put("/partner/offers/{offer_id}", responses=RESP_PARTNER_ACCESS_503)
 def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_partner_portal_entitled(user, partner_id)
     _assert_partner_resource_owner("offers", offer_id, owned_partner_id, "Not your offer")
@@ -642,7 +655,7 @@ def update_partner_offer(offer_id: str, offer: PartnerOfferCreate, user: Current
     return {"success": True, "message": "Offer updated successfully"}
 
 
-@router.delete("/partner/offers/{offer_id}", responses={403: {"description": "Partner access denied"}})
+@partner_offers_router.delete("/partner/offers/{offer_id}", responses={403: {"description": "Partner access denied"}})
 def delete_partner_offer(offer_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_partner_portal_entitled(user, partner_id)
     from services.supabase_service import _sb
@@ -655,12 +668,12 @@ def delete_partner_offer(offer_id: str, user: CurrentPartner, partner_id: str = 
 
 
 # ==================== BOOST SYSTEM ====================
-@router.get("/partner/boosts/pricing")
+@partner_boosts_router.get("/partner/boosts/pricing")
 def get_boost_pricing():
     return {"success": True, "data": {"packages": BOOST_PRICING, "currency": "USD"}}
 
 
-@router.post("/partner/boosts/create", responses=RESP_PARTNER_ACCESS_503)
+@partner_boosts_router.post("/partner/boosts/create", responses=RESP_PARTNER_ACCESS_503)
 def create_offer_boost(boost_req: BoostRequest, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_partner_portal_entitled(user, partner_id)
     _assert_partner_resource_owner("offers", str(boost_req.offer_id), owned_partner_id, "Not your offer")
@@ -713,7 +726,7 @@ def create_offer_boost(boost_req: BoostRequest, user: CurrentPartner, partner_id
     }
 
 
-@router.get("/partner/boosts/active", responses={403: {"description": "Partner access denied"}})
+@partner_boosts_router.get("/partner/boosts/active", responses={403: {"description": "Partner access denied"}})
 def get_active_boosts(
     user: CurrentPartner,
     partner_id: str = "default_partner",
@@ -742,7 +755,7 @@ def get_active_boosts(
     }
 
 
-@router.delete("/partner/boosts/{boost_id}", responses=RESP_PARTNER_ACCESS_503)
+@partner_boosts_router.delete("/partner/boosts/{boost_id}", responses=RESP_PARTNER_ACCESS_503)
 def cancel_boost(boost_id: str, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     _assert_partner_resource_owner("boosts", boost_id, owned_partner_id, "Not your boost")
@@ -751,7 +764,7 @@ def cancel_boost(boost_id: str, user: CurrentPartner, partner_id: str = "default
 
 
 # ==================== CREDITS ====================
-@router.get("/partner/credits", responses={403: {"description": "Partner access denied"}})
+@partner_credits_router.get("/partner/credits", responses={403: {"description": "Partner access denied"}})
 def get_partner_credits(user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
@@ -761,7 +774,7 @@ def get_partner_credits(user: CurrentPartner, partner_id: str = "default_partner
     return {"success": True, "data": {"balance": credits_val, "currency": "USD"}}
 
 
-@router.post("/partner/credits/add", responses={403: {"description": "Partner access denied"}})
+@partner_credits_router.post("/partner/credits/add", responses={403: {"description": "Partner access denied"}})
 def add_partner_credits(credits_req: BoostCreditsRequest, user: CurrentPartner, partner_id: str = "default_partner"):
     owned_partner_id = _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(owned_partner_id)
@@ -780,7 +793,7 @@ def add_partner_credits(credits_req: BoostCreditsRequest, user: CurrentPartner, 
 
 
 # ==================== PARTNER V2 ENDPOINTS ====================
-@router.post("/partner/v2/login", responses={401: {"description": "Invalid email or password"}, 403: {"description": "No partner account linked"}})
+@partner_v2_auth_router.post("/partner/v2/login", responses={401: {"description": "Invalid email or password"}, 403: {"description": "No partner account linked"}})
 @limiter.limit("10/minute")
 def partner_login_v2(request: Request, body: PartnerLoginRequest):
     user, _login_err = sb_login_user(body.email, body.password)
@@ -816,7 +829,7 @@ def partner_login_v2(request: Request, body: PartnerLoginRequest):
     return {"success": True, "token": token, "partner_id": partner_id, "business_name": business_name}
 
 
-@router.post("/partner/v2/register", responses=RESP_PARTNER_REGISTER_503)
+@partner_v2_auth_router.post("/partner/v2/register", responses=RESP_PARTNER_REGISTER_503)
 @limiter.limit("5/minute")
 def partner_register_v2(request: Request, body: PartnerRegisterRequest):
     existing = sb_get_user_by_email(body.email)
@@ -874,7 +887,7 @@ def partner_register_v2(request: Request, body: PartnerRegisterRequest):
         ) from e
 
 
-@router.get("/partner/v2/profile/{partner_id}", responses={403: {"description": "Partner access denied"}, 404: {"description": MSG_PARTNER_NOT_FOUND}})
+@partner_v2_profile_router.get("/partner/v2/profile/{partner_id}", responses={403: {"description": "Partner access denied"}, 404: {"description": MSG_PARTNER_NOT_FOUND}})
 def get_partner_profile_v2(partner_id: str, user: CurrentPartner):
     _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
@@ -895,7 +908,7 @@ def get_partner_profile_v2(partner_id: str, user: CurrentPartner):
     }
 
 
-@router.get("/partner/v2/team/{partner_id}", responses={403: {"description": "Partner access denied"}})
+@partner_v2_team_router.get("/partner/v2/team/{partner_id}", responses={403: {"description": "Partner access denied"}})
 def get_team_members(
     partner_id: str,
     user: CurrentPartner,
@@ -907,7 +920,7 @@ def get_team_members(
     return {"success": True, "data": team, "count": len(team)}
 
 
-@router.post("/partner/v2/team/{partner_id}/invite", responses={403: {"description": "Partner access denied"}})
+@partner_v2_team_router.post("/partner/v2/team/{partner_id}/invite", responses={403: {"description": "Partner access denied"}})
 def invite_team_member(partner_id: str, request: TeamInviteRequest, user: CurrentPartner):
     _require_owned_partner_id(user, partner_id)
     from services.partner_service import partner_service
@@ -917,7 +930,7 @@ def invite_team_member(partner_id: str, request: TeamInviteRequest, user: Curren
     return result
 
 
-@router.put("/partner/v2/team/{member_id}/role", responses={403: {"description": "Partner access denied"}, 404: {"description": "Member not found"}})
+@partner_v2_team_router.put("/partner/v2/team/{member_id}/role", responses={403: {"description": "Partner access denied"}, 404: {"description": "Member not found"}})
 def update_member_role(member_id: str, role: str, user: CurrentPartner):
     from services.partner_service import partner_service
     member = partner_service.get_team_member(member_id)
@@ -930,7 +943,7 @@ def update_member_role(member_id: str, role: str, user: CurrentPartner):
     return {"success": True}
 
 
-@router.delete("/partner/v2/team/{member_id}", responses={403: {"description": "Partner access denied"}, 404: {"description": "Member not found"}})
+@partner_v2_team_router.delete("/partner/v2/team/{member_id}", responses={403: {"description": "Partner access denied"}, 404: {"description": "Member not found"}})
 def revoke_team_access(member_id: str, user: CurrentPartner):
     from services.partner_service import partner_service
     member = partner_service.get_team_member(member_id)
@@ -943,7 +956,7 @@ def revoke_team_access(member_id: str, user: CurrentPartner):
     return {"success": True}
 
 
-@router.get("/partner/v2/referrals/{partner_id}", responses={403: {"description": "Partner access denied"}})
+@partner_v2_referrals_router.get("/partner/v2/referrals/{partner_id}", responses={403: {"description": "Partner access denied"}})
 def get_referrals(
     partner_id: str,
     user: CurrentPartner,
@@ -969,7 +982,7 @@ def get_referrals(
     }
 
 
-@router.post("/partner/v2/referrals/{partner_id}", responses={403: {"description": "Partner access denied"}})
+@partner_v2_referrals_router.post("/partner/v2/referrals/{partner_id}", responses={403: {"description": "Partner access denied"}})
 def send_referral(partner_id: str, request: ReferralRequest, user: CurrentPartner):
     from services.runtime_config import require_enabled
 
@@ -987,7 +1000,7 @@ def send_referral(partner_id: str, request: ReferralRequest, user: CurrentPartne
     return {"success": True, "referral_id": ref.get("id")}
 
 
-@router.post("/partner/v2/credits/{partner_id}/use", responses={400: {"description": "Insufficient credits or partner not found"}, 403: {"description": "Partner access denied"}})
+@partner_v2_finance_router.post("/partner/v2/credits/{partner_id}/use", responses={400: {"description": "Insufficient credits or partner not found"}, 403: {"description": "Partner access denied"}})
 def use_credits(partner_id: str, request: CreditUseRequest, user: CurrentPartner):
     _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
@@ -1005,7 +1018,7 @@ def use_credits(partner_id: str, request: CreditUseRequest, user: CurrentPartner
     }
 
 
-@router.post("/partner/v2/redeem", responses={403: {"description": "Partner access denied"}})
+@partner_v2_finance_router.post("/partner/v2/redeem", responses={403: {"description": "Partner access denied"}})
 def redeem_offer(
     request: QRRedemptionRequest,
     background_tasks: BackgroundTasks,
@@ -1042,7 +1055,7 @@ def redeem_offer(
 
 
 # ==================== TEAM LINKS ====================
-@router.post("/partner/v2/team-link/generate", responses={403: {"description": "Partner access denied"}, 404: {"description": MSG_PARTNER_NOT_FOUND}})
+@partner_v2_team_router.post("/partner/v2/team-link/generate", responses={403: {"description": "Partner access denied"}, 404: {"description": MSG_PARTNER_NOT_FOUND}})
 def generate_team_link(partner_id: str, user: CurrentPartner, label: str = "Team Link"):
     """Generate a shareable QR scan link for partner team members."""
     _require_owned_partner_id(user, partner_id)
@@ -1078,7 +1091,7 @@ def generate_team_link(partner_id: str, user: CurrentPartner, label: str = "Team
     }
 
 
-@router.get("/partner/v2/team-links/{partner_id}", responses={403: {"description": "Partner access denied"}})
+@partner_v2_team_router.get("/partner/v2/team-links/{partner_id}", responses={403: {"description": "Partner access denied"}})
 def list_team_links(
     partner_id: str,
     user: CurrentPartner,
@@ -1094,7 +1107,7 @@ def list_team_links(
     return {"success": True, "data": links, "count": len(links)}
 
 
-@router.delete("/partner/v2/team-link/{link_id}", responses={403: {"description": "Partner access denied"}, 404: {"description": "Team link not found"}, 500: {"description": "Failed to revoke team link"}})
+@partner_v2_team_router.delete("/partner/v2/team-link/{link_id}", responses={403: {"description": "Partner access denied"}, 404: {"description": "Team link not found"}, 500: {"description": "Failed to revoke team link"}})
 def revoke_team_link(link_id: str, user: CurrentPartner):
     from services.supabase_service import _sb
     _require_owned_partner_id(user)
@@ -1132,7 +1145,7 @@ def _extract_team_token(authorization: Optional[str], payload: dict) -> str:
     return token
 
 
-@router.post("/partner/v2/scan/validate", responses={403: {"description": "Missing or invalid team token"}, 500: {"description": "Unable to validate team link"}})
+@partner_v2_team_router.post("/partner/v2/scan/validate", responses={403: {"description": "Missing or invalid team token"}, 500: {"description": "Unable to validate team link"}})
 def validate_scan(payload: dict, authorization: Annotated[Optional[str], Header()] = None):
     """Validate a QR code scanned via a team link. Token auth instead of partner login."""
     from services.supabase_service import _sb
@@ -1237,7 +1250,7 @@ def _enrich_partner_redemptions(rows: list[dict]) -> list[dict]:
     return out
 
 
-@router.get("/partner/v2/redemptions/{partner_id}", responses={403: {"description": "Partner access denied"}})
+@partner_v2_finance_router.get("/partner/v2/redemptions/{partner_id}", responses={403: {"description": "Partner access denied"}})
 def get_recent_redemptions(
     partner_id: str,
     user: CurrentPartner,
@@ -1248,7 +1261,7 @@ def get_recent_redemptions(
     return {"success": True, "data": redemptions, "count": len(redemptions)}
 
 
-@router.get("/partner/v2/fees/{partner_id}", responses={403: {"description": "Partner access denied"}, 404: {"description": MSG_PARTNER_NOT_FOUND}})
+@partner_v2_finance_router.get("/partner/v2/fees/{partner_id}", responses={403: {"description": "Partner access denied"}, 404: {"description": MSG_PARTNER_NOT_FOUND}})
 def get_partner_fees(partner_id: str, user: CurrentPartner):
     _require_owned_partner_id(user, partner_id)
     partner = sb_get_partner(partner_id)
@@ -1274,7 +1287,7 @@ def get_partner_fees(partner_id: str, user: CurrentPartner):
     }
 
 
-@router.get("/partner/v2/invoices/{partner_id}", responses={403: {"description": "Partner access denied"}})
+@partner_v2_finance_router.get("/partner/v2/invoices/{partner_id}", responses={403: {"description": "Partner access denied"}})
 def get_partner_invoices(
     partner_id: str,
     user: CurrentPartner,
@@ -1297,7 +1310,7 @@ def get_partner_invoices(
     return {"success": True, "data": invoices}
 
 
-@router.post("/partner/v2/invoices/{partner_id}/generate", responses={403: {"description": "Partner access denied"}})
+@partner_v2_finance_router.post("/partner/v2/invoices/{partner_id}/generate", responses={403: {"description": "Partner access denied"}})
 def generate_partner_invoice(
     partner_id: str,
     user: CurrentPartner,
@@ -1335,7 +1348,7 @@ def generate_partner_invoice(
     return {"success": True, "data": row}
 
 
-@router.get("/partner/v2/analytics/{partner_id}", responses={403: {"description": "Partner access denied"}})
+@partner_v2_analytics_router.get("/partner/v2/analytics/{partner_id}", responses={403: {"description": "Partner access denied"}})
 def get_partner_analytics(partner_id: str, user: CurrentPartner):
     _require_owned_partner_id(user, partner_id)
     offers = sb_get_offers_by_partner(partner_id)
@@ -1376,7 +1389,7 @@ def get_partner_analytics(partner_id: str, user: CurrentPartner):
     }
 
 
-@router.get("/partner/v2/credits/history/{partner_id}", responses={403: {"description": "Partner access denied"}})
+@partner_v2_finance_router.get("/partner/v2/credits/history/{partner_id}", responses={403: {"description": "Partner access denied"}})
 def get_credit_history(
     partner_id: str,
     user: CurrentPartner,
@@ -1430,7 +1443,7 @@ def get_credit_history(
     }
 
 
-@router.get("/partner/v2/referrals/leaderboard")
+@partner_v2_referrals_router.get("/partner/v2/referrals/leaderboard")
 def get_referral_leaderboard(limit: Annotated[int, Query(ge=1, le=100)] = 10):
     """Top referrers across all partners."""
     partners = sb_get_partners(limit=100)
@@ -1463,7 +1476,7 @@ def get_referral_leaderboard(limit: Annotated[int, Query(ge=1, le=100)] = 10):
 
 
 # ==================== STRIPE PAYMENT ENDPOINTS ====================
-@router.post("/partner/v2/subscribe", responses={400: {"description": "Invalid plan"}, 403: {"description": "Partner access denied"}, 500: {"description": "Unable to create checkout session"}})
+@partner_v2_billing_router.post("/partner/v2/subscribe", responses={400: {"description": "Invalid plan"}, 403: {"description": "Partner access denied"}, 500: {"description": "Unable to create checkout session"}})
 def stripe_subscribe(
     user: CurrentPartner,
     partner_id: str = "default_partner",
@@ -1531,7 +1544,7 @@ def stripe_subscribe(
         raise HTTPException(status_code=500, detail="Unable to create subscription checkout session")
 
 
-@router.post("/partner/v2/boosts/purchase", responses={400: {"description": "Invalid boost type"}, 403: {"description": "Partner access denied"}, 500: {"description": "Unable to create boost checkout session"}})
+@partner_v2_billing_router.post("/partner/v2/boosts/purchase", responses={400: {"description": "Invalid boost type"}, 403: {"description": "Partner access denied"}, 500: {"description": "Unable to create boost checkout session"}})
 def stripe_boost_purchase(
     user: CurrentPartner,
     partner_id: str = "default_partner",
@@ -1581,7 +1594,7 @@ def stripe_boost_purchase(
         raise HTTPException(status_code=500, detail="Unable to create boost checkout session")
 
 
-@router.post("/partner/v2/credits/purchase", responses={400: {"description": "Invalid credits amount"}, 403: {"description": "Partner access denied"}, 500: {"description": "Unable to create credits checkout session"}})
+@partner_v2_billing_router.post("/partner/v2/credits/purchase", responses={400: {"description": "Invalid credits amount"}, 403: {"description": "Partner access denied"}, 500: {"description": "Unable to create credits checkout session"}})
 def stripe_credits_purchase(
     user: CurrentPartner,
     partner_id: str = "default_partner",
@@ -1627,3 +1640,18 @@ def stripe_credits_purchase(
     except Exception as e:
         logger.error(f"Stripe credits error: {e}")
         raise HTTPException(status_code=500, detail="Unable to create credits checkout session")
+
+
+router.include_router(partner_media_router)
+router.include_router(partner_profile_router)
+router.include_router(partner_locations_router)
+router.include_router(partner_offers_router)
+router.include_router(partner_boosts_router)
+router.include_router(partner_credits_router)
+router.include_router(partner_v2_auth_router)
+router.include_router(partner_v2_profile_router)
+router.include_router(partner_v2_team_router)
+router.include_router(partner_v2_referrals_router)
+router.include_router(partner_v2_finance_router)
+router.include_router(partner_v2_analytics_router)
+router.include_router(partner_v2_billing_router)
