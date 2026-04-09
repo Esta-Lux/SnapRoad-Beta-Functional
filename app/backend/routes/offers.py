@@ -455,10 +455,7 @@ def complete_offer_redemption(
                     gc,
                 )
                 # Avoid an extra DB round-trip in redemption flow; derive a conservative total locally.
-                if rpc_current_gems is not None:
-                    new_total = max(0, rpc_current_gems - int(gc))
-                else:
-                    new_total = max(0, int(current_gems) - int(gc))
+                new_total = max(0, int(current_gems) - int(gc))
             data_out = {
                 "discount_percent": disc,
                 "gem_cost": gc,
