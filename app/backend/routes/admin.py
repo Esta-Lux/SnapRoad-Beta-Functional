@@ -1908,3 +1908,19 @@ def admin_photo_report_reject(
         logger.exception("reject update: %s", e)
         return {"success": False, "message": "Database update failed"}
     return {"success": True, "message": "Report rejected"}
+
+
+router.include_router(admin_platform_router)
+router.include_router(admin_concerns_router)
+router.include_router(admin_config_router)
+router.include_router(admin_incidents_router)
+router.include_router(admin_offers_router)
+router.include_router(admin_partners_router)
+router.include_router(admin_campaigns_router)
+router.include_router(admin_rewards_router)
+router.include_router(admin_users_router)
+router.include_router(admin_pricing_router)
+router.include_router(admin_boosts_router)
+router.include_router(admin_realtime_router)
+router.include_router(admin_photo_reports_router)
+router.include_router(admin_ops_router)
