@@ -71,6 +71,18 @@ index 8abb17d..7723abd 100644
      onRouteProgressChanged?: (event: {
          nativeEvent: ProgressEvent;
      }) => void;
+diff --git a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigation.podspec b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigation.podspec
+index 2ec9d73..2f90eb7 100644
+--- a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigation.podspec
++++ b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigation.podspec
+@@ -33,7 +33,6 @@ Pod::Spec.new do |s|
+     'Frameworks/MapboxNavigationCore.xcframework',
+     'Frameworks/MapboxNavigationNative.xcframework',
+     'Frameworks/MapboxNavigationUIKit.xcframework',
+-    'Frameworks/Turf.xcframework',
+   ]
+ 
+   # Swift/Objective-C compatibility
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationModule.swift b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationModule.swift
 index 965414e..ccd9a93 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationModule.swift
