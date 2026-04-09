@@ -453,7 +453,7 @@ ENVIRONMENT=production
 # Database
 DATABASE_URL=postgresql://user:pass@host:5432/snaproad
 # OR
-MONGO_URL=mongodb+srv://user:pass@cluster.mongodb.net/snaproad
+MONGO_URL=<mongodb-atlas-connection-string>
 
 # Authentication
 JWT_SECRET=your-256-bit-secret-key-here
@@ -471,7 +471,7 @@ APPLE_MAPKIT_KEY_ID=your-key-id
 APPLE_MAPKIT_PRIVATE_KEY=your-p8-private-key-contents
 
 # Payments
-STRIPE_SECRET_KEY=sk_live_your-stripe-key
+STRIPE_SECRET_KEY=<stripe-secret-key>
 STRIPE_WEBHOOK_SECRET=whsec_your-webhook-secret
 
 # AI Image Generation (choose one)

@@ -29,9 +29,8 @@ const envAny = (names: string[], fallback = ""): string => {
   return fallback;
 };
 
-/** Default Mapbox public token when env is unset. Override with EXPO_PUBLIC_MAPBOX_TOKEN / EAS env; restrict this key in the Mapbox dashboard. */
-const MAPBOX_PUBLIC_TOKEN_DEFAULT =
-  "pk.eyJ1Ijoic25hcHJvYWQiLCJhIjoiY21rdDkxbXR0MTRiODNsb2Q4dDdoaHFraSJ9.gE8IUpGUVsu50hH30SYAtg";
+/** Default is empty; set EXPO_PUBLIC_MAPBOX_TOKEN / MAPBOX_PUBLIC_TOKEN via .env or EAS env. */
+const MAPBOX_PUBLIC_TOKEN_DEFAULT = "";
 
 const EAS_PROJECT_ID = "b800018b-79d3-4b8e-bbad-f5d628ee6a60";
 
