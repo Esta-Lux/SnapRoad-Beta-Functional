@@ -168,16 +168,9 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       // Native + EAS source map wiring; set SENTRY_ORG, SENTRY_PROJECT, SENTRY_AUTH_TOKEN on EAS for uploads.
       resolveSentryExpoPlugin(),
       [
-        "expo-build-properties",
-        {
-          ios: { useFrameworks: "static" },
-        },
-      ],
-      [
         "@rnmapbox/maps",
         {
           RNMapboxMapsImpl: "mapbox",
-          RNMapboxMapsVersion: "11.18.2",
         },
       ],
       [
