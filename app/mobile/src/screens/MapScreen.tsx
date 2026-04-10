@@ -2584,9 +2584,6 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
-          {/* Car puck image for navigation mode */}
-          <MapboxGL.Images images={{ navCarPuck: require('../../assets/images/nav-car-puck.png') }} />
-
           <MapboxGL.LocationPuck
             visible
             androidRenderMode="normal"
@@ -2596,9 +2593,8 @@ export default function MapScreen() {
                 ? 'course'
                 : 'heading'
             }
-            topImage={nav.isNavigating ? 'navCarPuck' : undefined}
             pulsing={{ isEnabled: !nav.isNavigating }}
-            scale={nav.isNavigating ? 0.7 : 1.55}
+            scale={1.55}
           />
         </MapboxGL.MapView>
       ) : (
