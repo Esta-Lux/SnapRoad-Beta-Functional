@@ -34,9 +34,18 @@ type NavSdkState = {
   progress: SdkProgressPayload | null;
   location: SdkLocationPayload | null;
   routePolyline: Coordinate[];
+  /** Last native voice instruction text (SDK TTS only — for HUD / subtitle). */
+  lastVoiceInstructionText: string | null;
+  lastProgressIngestAtMs: number;
 };
 
-const initial: NavSdkState = { progress: null, location: null, routePolyline: [] };
+const initial: NavSdkState = {
+  progress: null,
+  location: null,
+  routePolyline: [],
+  lastVoiceInstructionText: null,
+  lastProgressIngestAtMs: 0,
+};
 
 let state: NavSdkState = initial;
 const listeners = new Set<() => void>();
@@ -57,12 +66,28 @@ export function subscribeNavSdk(listener: () => void): () => void {
 }
 
 export function resetNavSdkState() {
-  state = { progress: null, location: null, routePolyline: [] };
+  state = {
+    progress: null,
+    location: null,
+    routePolyline: [],
+    lastVoiceInstructionText: null,
+    lastProgressIngestAtMs: 0,
+  };
   emit();
 }
 
 export function ingestSdkProgress(p: SdkProgressPayload) {
-  state = { ...state, progress: p };
+  state = {
+    ...state,
+    progress: p,
+    lastProgressIngestAtMs: Date.now(),
+  };
+  emit();
+}
+
+export function ingestSdkVoiceSubtitle(text: string | undefined) {
+  const t = text?.trim() || null;
+  state = { ...state, lastVoiceInstructionText: t };
   emit();
 }
 

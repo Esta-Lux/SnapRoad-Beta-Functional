@@ -226,5 +226,6 @@ export function computeNavigationProgressFrame({
     etaNaiveSeconds,
     isOffRoute,
     confidence,
+    instructionSource: 'js',
   };
 }

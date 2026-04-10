@@ -13,6 +13,7 @@ export {
   ingestSdkProgress,
   ingestSdkLocation,
   ingestSdkRoutePolyline,
+  ingestSdkVoiceSubtitle,
   getSdkNavigationProgress,
   getSdkMatchedCoordinate,
 } from './navSdkStore';

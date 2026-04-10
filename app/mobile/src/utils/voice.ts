@@ -2,6 +2,7 @@ import * as Speech from 'expo-speech';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import type { DrivingMode } from '../types';
 import { DRIVING_MODES } from '../constants/modes';
+import { shouldSuppressJsTurnGuidance } from '../navigation/navVoiceGate';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
@@ -136,6 +137,7 @@ export function speakGuidance(
   mode: DrivingMode = 'adaptive',
   language: string = 'en-US',
 ) {
+  if (shouldSuppressJsTurnGuidance()) return;
   if (!phrase.trim()) return;
   const normalized = phrase.trim().toLowerCase();
   const now = Date.now();

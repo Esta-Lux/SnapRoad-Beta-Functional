@@ -159,5 +159,6 @@ export function buildNavigationProgressFromSdk(args: {
     etaEpochMs: Date.now() + durRem * 1000,
     isOffRoute: false,
     confidence: 1,
+    instructionSource: 'sdk',
   };
 }

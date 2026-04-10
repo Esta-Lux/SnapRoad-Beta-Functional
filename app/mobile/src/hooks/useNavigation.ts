@@ -54,6 +54,8 @@ import {
   resetNavSdkState,
   subscribeNavSdk,
 } from '../navigation/navSdkStore';
+import { setNavLogicSdkTripActive } from '../navigation/navVoiceGate';
+import { logNavLogicSnapshot } from '../navigation/navLogicDebug';
 import { routeSummaryFromMapboxMetersSeconds } from '../utils/routeDisplay';
 import {
   DEFAULT_REFRESH_POLICY,
@@ -155,9 +157,15 @@ export function useNavigation(params: {
     voiceMutedRef.current = voiceMuted;
   }, [voiceMuted]);
 
+  const navSdkHeadlessRef = useRef(navSdkHeadless);
+  useLayoutEffect(() => {
+    navSdkHeadlessRef.current = navSdkHeadless;
+  }, [navSdkHeadless]);
+
   const navSpeak = useCallback(
     (phrase: string, priority: 'high' | 'normal' = 'normal', mode: DrivingMode = drivingMode) => {
       if (voiceMutedRef.current || !phrase.trim()) return;
+      if (navSdkHeadlessRef.current && isNavigatingRef.current) return;
       speak(phrase, priority, mode);
     },
     [drivingMode],
@@ -184,6 +192,16 @@ export function useNavigation(params: {
   const [isRerouting, setIsRerouting] = useState(false);
   const sdkActive = navSdkHeadless && isNavigating;
   const navSdkSnapshot = useSyncExternalStore(subscribeNavSdk, getNavSdkState, getNavSdkState);
+
+  useEffect(() => {
+    setNavLogicSdkTripActive(sdkActive);
+    return () => setNavLogicSdkTripActive(false);
+  }, [sdkActive]);
+
+  useEffect(() => {
+    logNavLogicSnapshot('mount');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot on mount
+  }, []);
   const navQualityEmitRef = useRef<{ atMs: number; progressBucket: number }>({ atMs: 0, progressBucket: -1 });
   /** Congestion snapshot before a directions request (nav); used after fetch for compare telemetry. */
   const congestionBeforeDirectionsRef = useRef<CongestionLevel[] | null>(null);
@@ -287,12 +305,28 @@ export function useNavigation(params: {
   }, [sdkActive, navSdkSnapshot.location, heading]);
 
   const liveEta = useMemo((): { distanceMiles: number; etaMinutes: number } | null => {
-    if (!isNavigating || !navigationProgress) return null;
-    return {
-      distanceMiles: Math.max(0, navigationProgress.distanceRemainingMeters / 1609.34),
-      etaMinutes: Math.max(0, navigationProgress.durationRemainingSeconds / 60),
-    };
-  }, [isNavigating, navigationProgress]);
+    if (!isNavigating) return null;
+    if (navigationProgress) {
+      return {
+        distanceMiles: Math.max(0, navigationProgress.distanceRemainingMeters / 1609.34),
+        etaMinutes: Math.max(0, navigationProgress.durationRemainingSeconds / 60),
+      };
+    }
+    if (sdkActive && navigationData) {
+      return {
+        distanceMiles: Math.max(0, navigationData.distance / 1609.34),
+        etaMinutes: Math.max(0, navigationData.duration / 60),
+      };
+    }
+    return null;
+  }, [
+    isNavigating,
+    navigationProgress?.distanceRemainingMeters,
+    navigationProgress?.durationRemainingSeconds,
+    sdkActive,
+    navigationData?.distance,
+    navigationData?.duration,
+  ]);
 
   const navigationDataRef = useRef(navigationData);
   useEffect(() => {
@@ -1188,6 +1222,10 @@ export function useNavigation(params: {
 
   const addWaypoint = useCallback(async (waypoint: Coordinate & { name?: string }) => {
     if (!isNavigatingRef.current || !navigationData?.destination) return;
+    if (navSdkHeadless) {
+      console.warn('addWaypoint: not supported while EXPO_PUBLIC_NAV_LOGIC_SDK trip is active');
+      return;
+    }
     navSpeak('Adding a stop. Rerouting.', 'high', drivingMode);
     setIsRerouting(true);
     try {
@@ -1226,7 +1264,7 @@ export function useNavigation(params: {
     } finally {
       setIsRerouting(false);
     }
-  }, [navigationData, userLocation, drivingMode, navSpeak]);
+  }, [navigationData, userLocation, drivingMode, navSpeak, navSdkHeadless]);
 
   useEffect(() => {
     if (!isNavigating || !navigationData?.distance || !routeProgress) return;
@@ -1352,5 +1390,12 @@ export function useNavigation(params: {
      * Prefer this over raw GPS + separate `liveEta` when showing navigation truth.
      */
     navigationProgressSnapshot,
+    /** Headless SDK diagnostics (Expo env + native ingest). Dev HUD only. */
+    sdkNavDiag: navSdkHeadless
+      ? {
+          lastProgressIngestAtMs: navSdkSnapshot.lastProgressIngestAtMs,
+          lastVoiceInstructionText: navSdkSnapshot.lastVoiceInstructionText,
+        }
+      : null,
   };
 }

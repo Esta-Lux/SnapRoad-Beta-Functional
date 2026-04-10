@@ -12,6 +12,7 @@ import {
   speechLocaleTag,
   usesMetricForSpeech,
 } from '../utils/distanceSpeech';
+import { navLogicSdkEnabled } from '../navigation/navFeatureFlags';
 
 type Args = {
   progress: NavigationProgress | null;
@@ -51,6 +52,7 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
   const localeTag = useMemo(() => speechLocaleTag(), []);
 
   useEffect(() => {
+    if (navLogicSdkEnabled()) return;
     if (!enabled || !progress?.nextStep) return;
     if (progress.nextStep.kind === 'arrive') return;
     if (isNavigationGuidanceSuppressed()) return;

@@ -1,5 +1,7 @@
 import type { DrivingMode } from '../types';
 import { speak } from '../utils/voice';
+import { navLogicSdkEnabled } from './navFeatureFlags';
+import { shouldSuppressJsTurnGuidance } from './navVoiceGate';
 
 let lastTurnByTurnPhrase: string | null = null;
 
@@ -25,5 +27,6 @@ export function getLastTurnByTurnPhrase(): string | null {
 /** Long-press / repeat: wins over background audio. */
 export function repeatLastTurnByTurn(drivingMode: DrivingMode, voiceMuted: boolean) {
   if (voiceMuted || !lastTurnByTurnPhrase) return;
+  if (navLogicSdkEnabled() && shouldSuppressJsTurnGuidance()) return;
   speak(lastTurnByTurnPhrase, 'high', drivingMode);
 }

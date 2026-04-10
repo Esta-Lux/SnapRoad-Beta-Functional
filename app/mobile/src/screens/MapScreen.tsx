@@ -127,7 +127,9 @@ import {
   ingestSdkLocation,
   ingestSdkProgress,
   ingestSdkRoutePolyline,
+  ingestSdkVoiceSubtitle,
 } from '../navigation/navEngine';
+import { directionsStepFromSdkProgress } from '../navigation/navSdkUiAdapter';
 import type { SdkLocationPayload, SdkProgressPayload } from '../navigation/navSdkStore';
 import { polylineFromSdkRoutes, type SdkRoutesNative } from '../navigation/navSdkGeometry';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
@@ -2581,6 +2583,9 @@ export default function MapScreen() {
           vehicleMaxHeight={avoidLowClearances && hasTallVehicle ? vehicleHeight : undefined}
           onRoutesLoaded={handleSdkRoutesLoaded}
           onRouteProgressChanged={(e: { nativeEvent: SdkProgressPayload }) => ingestSdkProgress(e.nativeEvent)}
+          onVoiceInstruction={(e: { nativeEvent: { text?: string } }) =>
+            ingestSdkVoiceSubtitle(e.nativeEvent.text)
+          }
           onNavigationLocationUpdate={(e: { nativeEvent: SdkLocationPayload }) =>
             ingestSdkLocation(e.nativeEvent)
           }
@@ -3003,13 +3008,30 @@ export default function MapScreen() {
       />
 
       {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
-      {nav.isNavigating && (currentStep || nav.navigationProgress?.banner) && (() => {
+      {nav.isNavigating &&
+        (currentStep ||
+          nav.navigationProgress?.banner ||
+          (navLogicSdkEnabled() && nav.navigationProgress?.instructionSource === 'sdk')) &&
+        (() => {
         const prog = nav.navigationProgress;
+        const useSdkTurnUi =
+          navLogicSdkEnabled() && prog?.instructionSource === 'sdk' && prog.nextStep;
+        const sdkSyntheticStep =
+          useSdkTurnUi && prog
+            ? directionsStepFromSdkProgress({
+                nextStep: prog.nextStep,
+                banner: prog.banner,
+                at: navDisplayCoord,
+              })
+            : null;
         const nextIdx = prog?.nextStep?.index;
         const nextManeuverCoord =
-          nextIdx != null && nav.navigationData?.steps
-            ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
-            : upcomingGuidanceStep;
+          useSdkTurnUi && sdkSyntheticStep
+            ? sdkSyntheticStep
+            : nextIdx != null && nav.navigationData?.steps
+              ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
+              : upcomingGuidanceStep;
+        const turnCurrentStep = useSdkTurnUi ? sdkSyntheticStep ?? currentStep : currentStep;
         const poly = nav.navigationData?.polyline;
         const liveDistMeters =
           prog != null && Number.isFinite(prog.nextStepDistanceMeters)
@@ -3018,7 +3040,7 @@ export default function MapScreen() {
               ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
               : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
                 ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
-                : (currentStep?.distanceMeters ?? 0);
+                : (turnCurrentStep?.distanceMeters ?? 0);
 
         const cardState = resolveTurnCardState({
           distanceToNextManeuverM: liveDistMeters,
@@ -3042,7 +3064,7 @@ export default function MapScreen() {
               secondary = undefined;
               break;
             case 'confirm':
-              primary = currentStep ? buildConfirmPrimary(currentStep) : banner!.primaryInstruction;
+              primary = turnCurrentStep ? buildConfirmPrimary(turnCurrentStep) : banner!.primaryInstruction;
               secondary = banner!.secondaryInstruction ?? undefined;
               if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
               break;
@@ -3057,18 +3079,18 @@ export default function MapScreen() {
         } else {
           switch (cardState) {
             case 'active':
-              primary = buildActivePrimary(nextManeuverCoord, destinationName) || currentStep?.instruction || '';
+              primary = buildActivePrimary(nextManeuverCoord, destinationName) || turnCurrentStep?.instruction || '';
               secondary = undefined;
               break;
             case 'preview': {
-              const p = buildPreviewPrimarySecondary(currentStep, nextManeuverCoord, destinationName);
+              const p = buildPreviewPrimarySecondary(turnCurrentStep, nextManeuverCoord, destinationName);
               primary = p.primary;
               secondary = p.secondary;
               if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
               break;
             }
             case 'confirm':
-              primary = buildConfirmPrimary(currentStep);
+              primary = buildConfirmPrimary(turnCurrentStep);
               secondary =
                 (drivingMode === 'calm' || drivingMode === 'adaptive') &&
                 nextManeuverCoord &&
@@ -3081,19 +3103,19 @@ export default function MapScreen() {
               secondary = undefined;
               break;
             default:
-              primary = buildActivePrimary(nextManeuverCoord, destinationName) || currentStep?.instruction || '';
+              primary = buildActivePrimary(nextManeuverCoord, destinationName) || turnCurrentStep?.instruction || '';
               secondary = undefined;
           }
         }
 
-        const maneuverIconKey = iconManeuverForState(cardState, currentStep, nextManeuverCoord);
+        const maneuverIconKey = iconManeuverForState(cardState, turnCurrentStep, nextManeuverCoord);
         const disambigName =
-          shouldShowRoadDisambiguation(currentStep?.name) ? (currentStep?.name ?? null) :
+          shouldShowRoadDisambiguation(turnCurrentStep?.name) ? (turnCurrentStep?.name ?? null) :
           shouldShowRoadDisambiguation(nextManeuverCoord?.name) ? (nextManeuverCoord?.name ?? null) :
           null;
 
         /** Align banner/lanes/icons with Mapbox step geometry (see `currentStepIndexAlongRoute`). */
-        const guidanceStep = pickGuidanceStep(cardState, currentStep, nextManeuverCoord);
+        const guidanceStep = pickGuidanceStep(cardState, turnCurrentStep, nextManeuverCoord);
         const actionableGuidanceStep =
           isActionableGuidanceStep(guidanceStep, true) ? guidanceStep : (isActionableGuidanceStep(nextManeuverCoord, true) ? nextManeuverCoord : undefined);
 
@@ -3115,8 +3137,8 @@ export default function MapScreen() {
                   return !m;
                 });
               }}
-              lanesJson={mergeLaneSources(actionableGuidanceStep, nextManeuverCoord, cardState === 'confirm' ? currentStep : undefined)}
-              step={actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? currentStep : undefined)}
+              lanesJson={mergeLaneSources(actionableGuidanceStep, nextManeuverCoord, cardState === 'confirm' ? turnCurrentStep : undefined)}
+              step={actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? turnCurrentStep : undefined)}
               roadDisambiguationLabel={disambigName}
               isSportBorder={isSport}
               speedMph={displaySpeedMph}
@@ -3181,6 +3203,8 @@ export default function MapScreen() {
           progress={nav.navigationProgress ?? null}
           currentStepIndex={nav.currentStepIndex}
           topInset={insets.top}
+          logicSdk={navLogicSdkEnabled()}
+          sdkDiag={nav.sdkNavDiag}
         />
       ) : null}
 
@@ -3191,6 +3215,7 @@ export default function MapScreen() {
         analyzeCongestion={analyzeCongestion}
         setDismissed={setTrafficBannerDismissed}
         fetchReroute={async () => {
+          if (navLogicSdkEnabled()) return { ok: false, message: 'Reroute is handled by Navigation SDK.' };
           if (!nav.navigationData?.destination) return { ok: false, message: 'Missing destination.' };
           return nav.fetchDirections(nav.navigationData.destination);
         }}
