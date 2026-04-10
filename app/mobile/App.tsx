@@ -24,7 +24,6 @@ import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { NavigatingProvider, useNavigatingState } from './src/contexts/NavigatingContext';
 
-import MapScreen from './src/screens/MapScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import RewardsScreen from './src/screens/RewardsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -67,28 +66,6 @@ import {
 const APP_IS_PRODUCTION =
   String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
 
-const sentryDsn = (process.env.EXPO_PUBLIC_SENTRY_DSN || '').trim();
-if (sentryDsn) {
-  Sentry.init({
-    dsn: sentryDsn,
-    // Never send default PII (e.g. email) in production store builds; OK for dev/staging diagnostics.
-    sendDefaultPii: !APP_IS_PRODUCTION,
-    /** Sends structured logs to Sentry (requires org feature + compatible SDK). */
-    enableLogs: true,
-    replaysSessionSampleRate: 0.1,
-    replaysOnErrorSampleRate: 1,
-    integrations: [
-      Sentry.consoleLoggingIntegration({ levels: ['log', 'warn', 'error'] }),
-      Sentry.mobileReplayIntegration(),
-      Sentry.feedbackIntegration(),
-    ],
-  });
-  /** Optional: set EXPO_PUBLIC_SENTRY_LOG_TEST=1 in .env and reload to send one confirmation log. */
-  if (String(process.env.EXPO_PUBLIC_SENTRY_LOG_TEST || '').trim() === '1') {
-    Sentry.logger.info('Sentry logs test', { log_source: 'sentry_test' });
-  }
-}
-
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -106,6 +83,19 @@ const RewardsStack = createStackNavigator();
 const ProfileStack = createStackNavigator();
 const PublicStack = createStackNavigator();
 const rootNavigationRef = createNavigationContainerRef();
+
+/** Map stack only — defer requiring MapScreen until the authenticated map tab loads (not at App.tsx parse time). */
+let mapScreenComponent: React.ComponentType<any> | null = null;
+function loadMapScreenOnce(): React.ComponentType<any> {
+  if (!mapScreenComponent) {
+    mapScreenComponent = require('./src/screens/MapScreen').default as React.ComponentType<any>;
+  }
+  return mapScreenComponent as React.ComponentType<any>;
+}
+function MapScreenLazy(props: Record<string, unknown>) {
+  const Screen = loadMapScreenOnce();
+  return <Screen {...props} />;
+}
 
 function NativeNavigationUnavailableScreen({ navigation }: { navigation: any }) {
   return (
@@ -143,8 +133,8 @@ function NativeNavigationScreenRoute(props: any) {
 function MapStackScreen() {
   return (
     <MapStack.Navigator screenOptions={{ headerShown: false }}>
-      <MapStack.Screen name="MapMain" component={MapScreen} />
-      <MapStack.Screen name="MapRedeem" component={MapScreen} />
+      <MapStack.Screen name="MapMain" component={MapScreenLazy} />
+      <MapStack.Screen name="MapRedeem" component={MapScreenLazy} />
       <MapStack.Screen name="NativeNavigation" component={NativeNavigationScreenRoute} />
     </MapStack.Navigator>
   );
@@ -607,7 +597,7 @@ function ApiConfigScreen({ message }: { message: string }) {
   );
 }
 
-export default Sentry.wrap(function App() {
+export default function App() {
   const apiConfigErr = getApiMisconfigurationMessage();
   if (apiConfigErr) {
     return <ApiConfigScreen message={apiConfigErr} />;
@@ -628,4 +618,4 @@ export default Sentry.wrap(function App() {
       </GestureHandlerRootView>
     </AppErrorBoundary>
   );
-});
+}

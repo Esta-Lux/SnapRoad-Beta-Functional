@@ -87,7 +87,13 @@ function resolveApiUrl(): string {
   }
 
   if (IS_PRODUCTION) {
-    throw new Error('Missing production API URL. Set EXPO_PUBLIC_API_URL to an HTTPS endpoint.');
+    // Never throw at module load: a rare Constants / env ordering issue would kill the app before splash.
+    const fallback = 'https://api.snaproad.app';
+    console.error(
+      '[SnapRoad] Production: missing EXPO_PUBLIC_API_URL and extra.apiUrl; using fallback',
+      fallback,
+    );
+    return fallback;
   }
 
   // 6. Physical device, no env, not on private LAN: use production API (override with EXPO_PUBLIC_API_URL for local/tunnel)
