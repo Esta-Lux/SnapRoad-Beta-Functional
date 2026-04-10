@@ -462,6 +462,54 @@ class ApiService {
     });
   }
 
+  /** Authenticated friend-duel history (P2P); avoids unauthenticated fetch hangs on /api/challenges/history. */
+  async getFriendChallengeHistory(limit = 100): Promise<
+    ApiResponse<{
+      success?: boolean;
+      data?: { challenges?: unknown[]; stats?: unknown; badges?: unknown[] };
+    }>
+  > {
+    return this.request(`/api/challenges/history?limit=${limit}`, {
+      method: 'GET',
+      timeoutMs: 15000,
+    });
+  }
+
+  /** Accept an incoming friend challenge (opponent only). */
+  async acceptFriendChallenge(challengeId: string): Promise<
+    ApiResponse<{
+      success?: boolean;
+      message?: string;
+      data?: { opponent_gems_remaining?: number; [key: string]: unknown };
+    }>
+  > {
+    return this.request(`/api/challenges/${encodeURIComponent(challengeId)}/accept`, {
+      method: 'POST',
+      timeoutMs: 20000,
+    });
+  }
+
+  /** Create a head-to-head friend challenge (auth + timeout; do not use raw fetch from UI). */
+  async createFriendChallenge(body: {
+    opponent_id: string;
+    stake: number;
+    duration_hours: number;
+    challenge_type?: string;
+    custom_message?: string | null;
+  }): Promise<
+    ApiResponse<{
+      success?: boolean;
+      message?: string;
+      data?: { challenger_gems_remaining?: number; [key: string]: unknown };
+    }>
+  > {
+    return this.request(`/api/challenges`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      timeoutMs: 20000,
+    });
+  }
+
   async getChallenges(): Promise<ApiResponse<Challenge[]>> {
     return this.request<Challenge[]>('/api/challenges');
   }

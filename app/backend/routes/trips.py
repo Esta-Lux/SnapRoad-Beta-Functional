@@ -692,6 +692,13 @@ def complete_trip(body: TripCompleteBody, user: CurrentUser):
         except Exception:
             _trips_log.debug("trip wallet ledger skipped", exc_info=True)
 
+    try:
+        from services.friend_challenge_service import bump_friend_challenge_scores_after_trip
+
+        bump_friend_challenge_scores_after_trip(user_id, safety)
+    except Exception:
+        _trips_log.debug("friend challenge score bump skipped", exc_info=True)
+
     payload = {
         "trip_id": trip_id,
         "counted": True,

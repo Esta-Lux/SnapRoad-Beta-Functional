@@ -1,4 +1,4 @@
-import { Users, Lock } from 'lucide-react'
+import { Users, Lock, Swords } from 'lucide-react'
 
 interface Props {
   isLight: boolean
@@ -7,6 +7,8 @@ interface Props {
   onUpgrade: () => void
   onOpenFriends: () => void
   onOpenFamily: () => void
+  /** Friend head-to-head duels: wins/losses after trips (see Challenge History). */
+  onOpenFriendChallenges?: () => void
 }
 
 export default function DashboardsTab({
@@ -16,6 +18,7 @@ export default function DashboardsTab({
   onUpgrade,
   onOpenFriends,
   onOpenFamily,
+  onOpenFriendChallenges,
 }: Props) {
   const bg = isLight ? '#f5f5f7' : '#0a0a0f'
   const card = isLight ? 'bg-white border-slate-200' : 'bg-slate-900/60 border-white/10'
@@ -81,6 +84,26 @@ export default function DashboardsTab({
               </button>
             </div>
           )}
+
+          {isPremium && onOpenFriendChallenges ? (
+            <div className={`mt-3 pt-3 border-t ${isLight ? 'border-slate-100' : 'border-white/10'}`}>
+              <div className={`flex items-center gap-2 mb-2 ${muted}`}>
+                <Swords size={14} className={isLight ? 'text-emerald-600' : 'text-emerald-400'} />
+                <span className="text-xs font-semibold">Friend challenges</span>
+              </div>
+              <p className={`text-xs ${muted} mb-2`}>
+                Duel a friend on safety score. Best trip during the window wins when the challenge ends. See results after each drive.
+              </p>
+              <button
+                type="button"
+                onClick={onOpenFriendChallenges}
+                className={`w-full px-3 py-2 rounded-xl text-sm font-semibold ${isLight ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}`}
+                data-testid="dashboard-friend-challenges"
+              >
+                Open challenge history
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {/* Family (Family or Premium) */}

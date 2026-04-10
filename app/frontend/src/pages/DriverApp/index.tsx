@@ -6550,6 +6550,7 @@ export default function DriverApp() {
           onUpgrade={() => setShowPlanSelection(true)}
           onOpenFriends={() => setShowFriendsHub(true)}
           onOpenFamily={() => setShowFamilyDashboard(true)}
+          onOpenFriendChallenges={() => setShowChallengeHistory(true)}
         />
       )}
         {activeTab === 'rewards' && renderRewards()}
@@ -7237,6 +7238,7 @@ export default function DriverApp() {
       <ChallengeHistory
         isOpen={showChallengeHistory}
         onClose={() => setShowChallengeHistory(false)}
+        onGemsUpdated={(gems) => setUserData((prev: any) => ({ ...prev, gems }))}
       />
       
       {/* Offer redemption bottom sheet (detail → QR → success) */}

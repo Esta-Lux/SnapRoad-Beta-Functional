@@ -37,6 +37,7 @@ import FriendListCard, { type FriendListCardTheme } from '../components/social/F
 import { SocialScreenHeader } from '../components/social/SocialScreenHeader';
 import FriendDetailModalContent from '../components/social/FriendDetailModal';
 import ChallengeModal from '../components/gamification/ChallengeModal';
+import FriendChallengeHistoryModal from '../components/gamification/FriendChallengeHistoryModal';
 import {
   fetchFriendsNormalized,
   fetchPendingRequests,
@@ -187,6 +188,7 @@ export default function DashboardScreen() {
   const [pendingExpanded, setPendingExpanded] = useState(false);
   const [challengeFriend, setChallengeFriend] = useState<Friend | null>(null);
   const [showChallengeModal, setShowChallengeModal] = useState(false);
+  const [showFriendChallengeHistory, setShowFriendChallengeHistory] = useState(false);
   const [searchHits, setSearchHits] = useState<{ id: string; name: string; email?: string; friend_code?: string; is_friend?: boolean }[]>([]);
   const [addTargetId, setAddTargetId] = useState<string | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -684,6 +686,35 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         ))}
       </Animated.View>
+
+      {section === 'friends' && (
+        <TouchableOpacity
+          activeOpacity={0.88}
+          onPress={() => setShowFriendChallengeHistory(true)}
+          style={[
+            styles.challengeHistoryCue,
+            {
+              marginHorizontal: 16,
+              marginTop: 8,
+              backgroundColor: isLight ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.18)',
+              borderColor: isLight ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.28)',
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Open friend challenge history"
+        >
+          <View style={[styles.challengeHistoryIcon, { backgroundColor: isLight ? 'rgba(245,158,11,0.22)' : 'rgba(245,158,11,0.28)' }]}>
+            <Ionicons name="trophy-outline" size={18} color="#D97706" />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[styles.challengeHistoryTitle, { color: colors.text }]}>Friend duels</Text>
+            <Text style={[styles.challengeHistorySub, { color: colors.textSecondary }]} numberOfLines={2}>
+              Wins, losses, and live scores. Challenge someone from a friend’s profile.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} style={{ opacity: 0.55 }} />
+        </TouchableOpacity>
+      )}
 
       {section === 'friends' && (
         <View style={{ flex: 1 }}>
@@ -1213,11 +1244,35 @@ export default function DashboardScreen() {
           }
         }}
       />
+
+      <FriendChallengeHistoryModal
+        visible={showFriendChallengeHistory}
+        onClose={() => setShowFriendChallengeHistory(false)}
+        onGemsUpdated={(gems) => updateUser({ gems })}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  challengeHistoryCue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  challengeHistoryIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  challengeHistoryTitle: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+  challengeHistorySub: { fontSize: 12, marginTop: 3, lineHeight: 16, fontWeight: '500' },
   toggleRow: {
     flexDirection: 'row',
     marginHorizontal: 16,

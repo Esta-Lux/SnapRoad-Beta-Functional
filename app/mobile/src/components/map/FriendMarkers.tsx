@@ -14,6 +14,15 @@ interface Props {
 const LERP_MIN_METERS = 4;
 const LERP_DURATION_MS = 750;
 
+function profileInitials(name: string): string {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]!.charAt(0)}${parts[1]!.charAt(0)}`.toUpperCase();
+  }
+  const one = parts[0] || '?';
+  return one.slice(0, 2).toUpperCase();
+}
+
 function useInterpolatedLatLng(lat: number, lng: number, shouldLerp: boolean): { lat: number; lng: number } {
   const [display, setDisplay] = useState({ lat, lng });
   const displayRef = useRef(display);
@@ -92,10 +101,15 @@ function InterpolatedFriendMarker({
             <Image source={{ uri: friend.avatar }} style={styles.avatarImg} />
           ) : (
             <View style={[styles.avatarFallback, friend.isFamilyMember && styles.avatarFallbackFamily]}>
-              <Ionicons name={friend.isFamilyMember ? 'people' : 'person'} size={16} color="#fff" />
+              <Text style={styles.avatarInitials}>{profileInitials(friend.name ?? '')}</Text>
             </View>
           )}
         </View>
+        {friend.isNavigating ? (
+          <View style={styles.navBadge}>
+            <Ionicons name="navigate" size={10} color="#fff" />
+          </View>
+        ) : null}
         <Text style={styles.name} numberOfLines={1}>
           {(friend.name ?? '').split(' ')[0]}
         </Text>
@@ -129,7 +143,25 @@ export default React.memo(function FriendMarkers({ friends, onFriendTap }: Props
 });
 
 const styles = StyleSheet.create({
-  wrap: { alignItems: 'center', minWidth: 56 },
+  wrap: { alignItems: 'center', minWidth: 56, position: 'relative' },
+  avatarInitials: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  navBadge: {
+    position: 'absolute',
+    top: -2,
+    right: 4,
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
   sosRing: {
     position: 'absolute',
     top: -2,

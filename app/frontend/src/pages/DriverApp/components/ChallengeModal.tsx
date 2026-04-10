@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Swords, X, Trophy, Clock, Gem, Shield, Zap, Check, AlertCircle } from 'lucide-react'
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || ''
+import api from '@/services/api'
 
 interface ChallengeModalProps {
   isOpen: boolean
@@ -59,35 +58,29 @@ export default function ChallengeModal({ isOpen, onClose, opponent, currentUserG
     setError(null)
 
     try {
-      const res = await fetch(`${API_URL}/api/challenges`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          opponent_id: opponent.id,
-          stake: selectedStake,
-          duration_hours: selectedDuration,
-        }),
+      const res = await api.createFriendChallenge({
+        opponent_id: opponent.id,
+        stake: selectedStake,
+        duration_hours: selectedDuration,
+        challenge_type: 'safest_drive',
       })
-      const data = await res.json()
-      
-      if (data.success) {
-        setSuccess(true)
-        setTimeout(() => {
-          onChallengeCreated()
-          onClose()
-          setSuccess(false)
-        }, 1500)
-      } else {
-        setError(data.message || 'Failed to create challenge')
+      if (!res.success) {
+        setError(res.error || 'Failed to create challenge')
+        return
       }
-    } catch (e) {
-      // Mock success for demo
+      const payload = res.data as { success?: boolean; message?: string; data?: unknown } | undefined
+      if (payload?.success === false) {
+        setError(typeof payload.message === 'string' ? payload.message : 'Failed to create challenge')
+        return
+      }
       setSuccess(true)
       setTimeout(() => {
         onChallengeCreated()
         onClose()
         setSuccess(false)
       }, 1500)
+    } catch {
+      setError('Network error. Try again.')
     } finally {
       setSending(false)
     }

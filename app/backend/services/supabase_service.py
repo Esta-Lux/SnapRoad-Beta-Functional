@@ -909,12 +909,18 @@ def sb_get_friend_challenge_for_opponent(challenge_id: str, opponent_id: str) ->
         return None
 
 
-def sb_update_friend_challenge(challenge_id: str, updates: dict) -> bool:
+def sb_update_friend_challenge(
+    challenge_id: str, updates: dict, *, expected_status: Optional[str] = None
+) -> bool:
+    """Update friend_challenges row. If expected_status is set, only rows still in that status are updated (atomic handoff)."""
     if not challenge_id or not updates:
         return False
     try:
-        _sb().table("friend_challenges").update(updates).eq("id", str(challenge_id).strip()).execute()
-        return True
+        q = _sb().table("friend_challenges").update(updates).eq("id", str(challenge_id).strip())
+        if expected_status:
+            q = q.eq("status", expected_status)
+        result = q.execute()
+        return bool(result.data)
     except Exception as e:
         logger.warning(f"sb_update_friend_challenge: {e}")
         return False

@@ -314,22 +314,47 @@ def _normalize_challenge_type(raw: Optional[str]) -> str:
     return "safest_drive"
 
 
-def _map_friend_challenge_row(r: dict) -> dict:
+def _map_friend_challenge_for_viewer(r: dict, viewer_id: str) -> dict:
+    """Map DB row to API shape with viewer-relative opponent name, scores, and won/lost/draw."""
     stake = int(r.get("stake_gems") or 0)
+    ch_id = str(r.get("challenger_id") or "")
+    op_id = str(r.get("opponent_id") or "")
+    vid = str(viewer_id or "").strip()
+    is_ch = vid == ch_id
+    opp_name = (r.get("opponent_name") or "Friend") if is_ch else (r.get("challenger_name") or "Friend")
+    ch_s = int(r.get("your_score") or 0)
+    op_s = int(r.get("opponent_score") or 0)
+    my_score = ch_s if is_ch else op_s
+    their_score = op_s if is_ch else ch_s
+    raw_status = str(r.get("status") or "")
+    display_status = raw_status
+    if raw_status == "completed":
+        w = r.get("winner_id")
+        if w:
+            display_status = "won" if str(w) == vid else "lost"
+        else:
+            display_status = "draw"
+
+    can_accept = raw_status == "pending" and vid == op_id
+    pending_outgoing = raw_status == "pending" and vid == ch_id
+
     return {
         "id": str(r.get("id")),
-        "challenger_id": str(r.get("challenger_id") or ""),
-        "opponent_id": str(r.get("opponent_id") or ""),
+        "challenger_id": ch_id,
+        "opponent_id": op_id,
         "challenger_name": r.get("challenger_name"),
-        "opponent_name": r.get("opponent_name"),
+        "opponent_name": opp_name,
         "stake": stake,
         "stake_gems": stake,
         "duration_hours": int(r.get("duration_hours") or 72),
         "challenge_type": r.get("challenge_type"),
         "custom_message": r.get("custom_message"),
-        "status": r.get("status"),
-        "your_score": r.get("your_score"),
-        "opponent_score": r.get("opponent_score"),
+        "status": display_status,
+        "raw_status": raw_status,
+        "can_accept": can_accept,
+        "pending_outgoing": pending_outgoing,
+        "your_score": my_score,
+        "opponent_score": their_score,
         "created_at": r.get("created_at"),
         "ends_at": r.get("ends_at"),
     }
@@ -446,11 +471,11 @@ def accept_challenge(challenge_id: str, auth_user: CurrentUser):
             raise HTTPException(status_code=400, detail=MSG_NOT_ENOUGH_GEMS)
         new_g = ag - stake
         _persist_user_fields(user_id, {"gems": new_g})
-        ok = sb_update_friend_challenge(str(row.get("id")), {"status": "active"})
+        ok = sb_update_friend_challenge(str(row.get("id")), {"status": "active"}, expected_status="pending")
         if not ok:
             _persist_user_fields(user_id, {"gems": ag})
             raise HTTPException(status_code=503, detail="Challenge service unavailable")
-        out = _map_friend_challenge_row({**row, "status": "active"})
+        out = _map_friend_challenge_for_viewer({**row, "status": "active"}, user_id)
         out["opponent_gems_remaining"] = new_g
         return {"success": True, "message": "Challenge accepted!", "data": out}
     try:
@@ -500,18 +525,35 @@ def get_challenge_history(
     user: CurrentUser,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
+    from services.friend_challenge_service import resolve_expired_active_friend_challenges
+
     user_id = str(user.get("id") or current_user_id)
+    try:
+        resolve_expired_active_friend_challenges()
+    except Exception:
+        logger.warning("resolve_expired_active_friend_challenges failed", exc_info=True)
     friend_rows = sb_list_friend_challenges_for_user(user_id, limit)
-    user_challenges = [_map_friend_challenge_row(r) for r in friend_rows]
+    user_challenges = [_map_friend_challenge_for_viewer(r, user_id) for r in friend_rows]
     if not user_challenges:
         db_challenges = sb_get_challenges(limit=200)
         source = db_challenges if db_challenges else challenges_db
-        user_challenges = [c for c in source if str(c.get("challenger_id")) == user_id or str(c.get("opponent_id")) == user_id]
-        user_challenges = user_challenges[:limit]
+        legacy = [c for c in source if str(c.get("challenger_id")) == user_id or str(c.get("opponent_id")) == user_id]
+        user_challenges = [_map_friend_challenge_for_viewer(c, user_id) for c in legacy[:limit]]
     wins = sum(1 for c in user_challenges if c.get("status") == "won")
     losses = sum(1 for c in user_challenges if c.get("status") == "lost")
-    total = wins + losses
-    stats = {"total_challenges": len(user_challenges), "wins": wins, "losses": losses, "draws": 0, "win_rate": round((wins / total * 100) if total > 0 else 0), "total_gems_won": wins * 100, "total_gems_lost": losses * 100, "current_streak": min(wins, 3), "best_streak": wins}
+    draws = sum(1 for c in user_challenges if c.get("status") == "draw")
+    total = wins + losses + draws
+    stats = {
+        "total_challenges": len(user_challenges),
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+        "win_rate": round((wins / total * 100) if total > 0 else 0),
+        "total_gems_won": wins * 100,
+        "total_gems_lost": losses * 100,
+        "current_streak": min(wins, 3),
+        "best_streak": wins,
+    }
     badges = [
         {"id": "first_win", "name": "First Victory", "description": "Win your first challenge", "icon": "trophy", "unlocked": wins >= 1},
         {"id": "win_streak_3", "name": "Hot Streak", "description": "Win 3 in a row", "icon": "flame", "unlocked": stats["best_streak"] >= 3},
