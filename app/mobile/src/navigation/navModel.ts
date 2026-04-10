@@ -88,6 +88,9 @@ export type NavigationProgress = {
   etaNaiveSeconds?: number;
   isOffRoute: boolean;
   confidence: number;
-  /** Set when progress is built from native Navigation SDK vs JS polyline engine. */
-  instructionSource?: 'sdk' | 'js';
+  /**
+   * `sdk` = native progress events; `sdk_waiting` = session on, first progress not yet received;
+   * `js` = JS polyline engine.
+   */
+  instructionSource?: 'sdk' | 'sdk_waiting' | 'js';
 };

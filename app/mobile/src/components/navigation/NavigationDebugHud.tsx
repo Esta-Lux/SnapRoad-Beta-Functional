@@ -5,6 +5,13 @@ import type { NavigationProgress } from '../../navigation/navModel';
 type SdkDiag = {
   lastProgressIngestAtMs: number;
   lastVoiceInstructionText: string | null;
+  sdkGuidancePhase?: 'idle' | 'waiting' | 'active';
+  telemetry?: {
+    startedAtMs: number;
+    progressEvents: number;
+    locationEvents: number;
+    voiceEvents: number;
+  };
 } | null;
 
 type Props = {
@@ -30,15 +37,22 @@ export default React.memo(function NavigationDebugHud({
 
   if (logicSdk) {
     const src = progress?.instructionSource ?? (progress ? '—' : 'none');
-    const active = progress?.instructionSource === 'sdk';
+    const phase = sdkDiag?.sdkGuidancePhase ?? '—';
+    const tel = sdkDiag?.telemetry;
+    const telSec =
+      tel && tel.startedAtMs > 0 ? Math.max(0.001, (Date.now() - tel.startedAtMs) / 1000) : 0;
+    const progPerSec = tel && telSec > 0 ? (tel.progressEvents / telSec).toFixed(1) : '—';
+    const locPerSec = tel && telSec > 0 ? (tel.locationEvents / telSec).toFixed(1) : '—';
+    const voicePerMin = tel && telSec > 0 ? ((tel.voiceEvents / telSec) * 60).toFixed(1) : '—';
     return (
       <View pointerEvents="none" style={[styles.wrap, { top: topInset + 120 }]}>
         <Text style={styles.lineBold}>
-          NAV SDK: {active ? 'ACTIVE' : 'WAITING'}
+          NAV SDK phase={phase} · UI src={src}
           {typeof ageMs === 'number' ? ` · progress Δ ${Math.round(ageMs / 100) / 10}s` : ''}
         </Text>
         <Text style={styles.line}>
-          instruction={src} · stepIdx={progress?.nextStep?.index ?? '—'} · cardIdx={currentStepIndex}
+          rates: progress≈{progPerSec}/s · location≈{locPerSec}/s · voice≈{voicePerMin}/min · stepIdx=
+          {progress?.nextStep?.index ?? '—'} · cardIdx={currentStepIndex}
         </Text>
         {sdkDiag?.lastVoiceInstructionText ? (
           <Text style={styles.line} numberOfLines={2}>

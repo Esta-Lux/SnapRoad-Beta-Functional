@@ -1343,6 +1343,7 @@ export default function MapScreen() {
   // Fix 5: Reroute when driving mode changes during active nav
   useEffect(() => {
     if (!nav.isNavigating || !nav.selectedDestination) return;
+    if (navLogicSdkEnabled()) return;
     void nav.fetchDirections(nav.selectedDestination).then((r) => {
       if (!r.ok && r.reason === 'route_failed') {
         Alert.alert('Could not refresh route', r.message ?? 'Driving mode changed but directions failed. Try stopping navigation and starting again.');
@@ -2744,7 +2745,11 @@ export default function MapScreen() {
 
           {nav.navigationData?.polyline && (
             <RouteOverlay
-              polyline={nav.navigationData.polyline}
+              polyline={
+                nav.sdkRoutePolylineForOverlay && nav.sdkRoutePolylineForOverlay.length >= 2
+                  ? nav.sdkRoutePolylineForOverlay
+                  : nav.navigationData.polyline
+              }
               isNavigating={nav.isNavigating}
               routeSplit={navigationRouteSplit}
               routeColor={navRouteColors.routeColor}
@@ -3008,14 +3013,42 @@ export default function MapScreen() {
       />
 
       {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
-      {nav.isNavigating &&
-        (currentStep ||
-          nav.navigationProgress?.banner ||
-          (navLogicSdkEnabled() && nav.navigationProgress?.instructionSource === 'sdk')) &&
-        (() => {
-        const prog = nav.navigationProgress;
+      {nav.isNavigating && nav.navigationProgress && (() => {
+        const prog = nav.navigationProgress!;
+        const instructionSrc = prog.instructionSource;
+
+        if (instructionSrc === 'sdk_waiting') {
+          return (
+            <View style={[s.turnWrap, { top: insets.top }]} key="nav-sdk-waiting">
+              <TurnInstructionCard
+                mode={drivingMode}
+                modeConfig={modeConfig}
+                state="preview"
+                distanceValue="—"
+                distanceUnit=""
+                primaryInstruction={prog.banner?.primaryInstruction ?? 'Starting navigation…'}
+                secondaryInstruction={undefined}
+                maneuverForIcon="straight"
+                isMuted={navVoiceMuted}
+                onMutePress={() => {
+                  setNavVoiceMuted((m) => {
+                    if (!m) stopSpeaking();
+                    return !m;
+                  });
+                }}
+                lanesJson={undefined}
+                step={undefined}
+                roadDisambiguationLabel={null}
+                isSportBorder={isSport}
+                speedMph={displaySpeedMph}
+              />
+            </View>
+          );
+        }
+
+        const logicSdkAuthoritativeUi = navLogicSdkEnabled() && instructionSrc === 'sdk';
         const useSdkTurnUi =
-          navLogicSdkEnabled() && prog?.instructionSource === 'sdk' && prog.nextStep;
+          navLogicSdkEnabled() && instructionSrc === 'sdk' && prog.nextStep;
         const sdkSyntheticStep =
           useSdkTurnUi && prog
             ? directionsStepFromSdkProgress({
@@ -3028,10 +3061,16 @@ export default function MapScreen() {
         const nextManeuverCoord =
           useSdkTurnUi && sdkSyntheticStep
             ? sdkSyntheticStep
-            : nextIdx != null && nav.navigationData?.steps
-              ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
-              : upcomingGuidanceStep;
-        const turnCurrentStep = useSdkTurnUi ? sdkSyntheticStep ?? currentStep : currentStep;
+            : logicSdkAuthoritativeUi
+              ? null
+              : nextIdx != null && nav.navigationData?.steps
+                ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
+                : upcomingGuidanceStep;
+        const turnCurrentStep = useSdkTurnUi
+          ? sdkSyntheticStep ?? currentStep
+          : logicSdkAuthoritativeUi
+            ? null
+            : currentStep;
         const poly = nav.navigationData?.polyline;
         const liveDistMeters =
           prog != null && Number.isFinite(prog.nextStepDistanceMeters)
@@ -3053,14 +3092,18 @@ export default function MapScreen() {
         const distParts = formatTurnDistanceForCard(liveDistMeters);
         const destinationName = nav.navigationData?.destination?.name ?? null;
         const banner = prog?.banner ?? null;
-        const useBannerCopy = !!banner && !!nextManeuverCoord;
+        const useBannerCopy =
+          !!banner && (!!nextManeuverCoord || (instructionSrc === 'sdk' && !!prog.nextStep));
 
         let primary: string;
         let secondary: string | undefined;
         if (useBannerCopy) {
           switch (cardState) {
             case 'cruise':
-              primary = buildCruisePrimary(nextManeuverCoord, destinationName);
+              primary =
+                nextManeuverCoord
+                  ? buildCruisePrimary(nextManeuverCoord, destinationName)
+                  : banner!.primaryInstruction;
               secondary = undefined;
               break;
             case 'confirm':
@@ -3137,8 +3180,20 @@ export default function MapScreen() {
                   return !m;
                 });
               }}
-              lanesJson={mergeLaneSources(actionableGuidanceStep, nextManeuverCoord, cardState === 'confirm' ? turnCurrentStep : undefined)}
-              step={actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? turnCurrentStep : undefined)}
+              lanesJson={
+                logicSdkAuthoritativeUi
+                  ? undefined
+                  : mergeLaneSources(
+                      actionableGuidanceStep,
+                      nextManeuverCoord,
+                      cardState === 'confirm' ? turnCurrentStep : undefined,
+                    )
+              }
+              step={
+                logicSdkAuthoritativeUi
+                  ? sdkSyntheticStep ?? undefined
+                  : actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? turnCurrentStep : undefined)
+              }
               roadDisambiguationLabel={disambigName}
               isSportBorder={isSport}
               speedMph={displaySpeedMph}

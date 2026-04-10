@@ -48,9 +48,11 @@ import type { NavigationProgress } from '../navigation/navModel';
 import { offRouteTuningForMode } from '../navigation/offRouteTuning';
 import { navEdgeEtaEnabled, navEtaBlendEnabled, navRefreshV2Enabled } from '../navigation/navFeatureFlags';
 import {
+  enterSdkGuidanceWaiting,
   getNavSdkState,
   getSdkMatchedCoordinate,
   getSdkNavigationProgress,
+  getSdkWaitingNavigationProgress,
   resetNavSdkState,
   subscribeNavSdk,
 } from '../navigation/navSdkStore';
@@ -283,7 +285,12 @@ export function useNavigation(params: {
 
   const sdkBuiltNavigationProgress = useMemo((): NavigationProgress | null => {
     if (!sdkActive || !navigationData) return null;
-    return getSdkNavigationProgress(navigationData);
+    const fromSdk = getSdkNavigationProgress(navigationData);
+    if (fromSdk) return fromSdk;
+    if (navSdkSnapshot.sdkGuidancePhase === 'waiting') {
+      return getSdkWaitingNavigationProgress(navigationData);
+    }
+    return null;
   }, [sdkActive, navigationData, navSdkSnapshot]);
 
   const navigationProgress: NavigationProgress | null =
@@ -369,6 +376,17 @@ export function useNavigation(params: {
       congestionBeforeDirectionsRef.current = [...navigationDataRef.current.congestion];
     } else {
       congestionBeforeDirectionsRef.current = null;
+    }
+
+    if (navSdkHeadlessRef.current && isNavigatingRef.current) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.warn('[Nav] fetchDirections skipped: Logic SDK owns routing during active navigation.');
+      }
+      return {
+        ok: false,
+        reason: 'route_failed',
+        message: 'Route updates are handled by the Navigation SDK.',
+      };
     }
 
     try {
@@ -768,6 +786,10 @@ export function useNavigation(params: {
     offRouteStreakRef.current = 0;
     arrivalNearStreakRef.current = 0;
     autoEndFromArrivalRef.current = false;
+    if (navSdkHeadless) {
+      resetNavSdkState();
+      enterSdkGuidanceWaiting();
+    }
     driftMsRef.current = 0;
     mismatchMsRef.current = 0;
     lastPolicyTickMsRef.current = Date.now();
@@ -1019,7 +1041,10 @@ export function useNavigation(params: {
     if (!isNavigating || !navigationData?.steps?.length || !navigationData.polyline?.length) {
       return;
     }
-    if (navSdkHeadless && navigationProgress?.nextStep) {
+    if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk_waiting') {
+      return;
+    }
+    if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk' && navigationProgress.nextStep) {
       const si = navigationProgress.nextStep.index;
       setCurrentStepIndex(Math.min(Math.max(0, si), navigationData.steps.length - 1));
       return;
@@ -1395,7 +1420,14 @@ export function useNavigation(params: {
       ? {
           lastProgressIngestAtMs: navSdkSnapshot.lastProgressIngestAtMs,
           lastVoiceInstructionText: navSdkSnapshot.lastVoiceInstructionText,
+          sdkGuidancePhase: navSdkSnapshot.sdkGuidancePhase,
+          telemetry: navSdkSnapshot.telemetry,
         }
       : null,
+    /** Prefer native `onRouteChanged` geometry on the map during logic-SDK trips. */
+    sdkRoutePolylineForOverlay:
+      navSdkHeadless && isNavigating && navSdkSnapshot.routePolyline.length >= 2
+        ? navSdkSnapshot.routePolyline
+        : null,
   };
 }

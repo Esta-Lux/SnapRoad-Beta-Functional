@@ -89,18 +89,21 @@ export function buildNavigationProgressFromSdk(args: {
   const cumulativeMeters = snap?.cumulativeMeters ?? frac * Math.max(1e-6, polylineLengthMeters(polyline));
 
   const stepIdxRaw = typeof progress.stepIndex === 'number' ? progress.stepIndex : 0;
-  const idx = Math.min(Math.max(0, stepIdxRaw), Math.max(0, steps.length - 1));
-  const ds = steps[idx] ?? null;
+  const idx =
+    steps.length > 0
+      ? Math.min(Math.max(0, stepIdxRaw), Math.max(0, steps.length - 1))
+      : Math.max(0, stepIdxRaw);
+  const ds = steps.length > 0 ? steps[idx] ?? null : null;
   const kind = mapManeuverKind(progress.maneuverType, progress.maneuverDirection);
   const distNext =
     typeof progress.distanceToNextManeuverMeters === 'number' && Number.isFinite(progress.distanceToNextManeuverMeters)
       ? Math.max(0, progress.distanceToNextManeuverMeters)
       : Math.max(0, progress.distanceRemaining * 0.02);
 
+  /** SDK strings only — never merge Mapbox Directions steps (avoids stale lanes / icons). */
   const primaryText =
     progress.primaryInstruction?.trim() ||
     progress.currentStepInstruction?.trim() ||
-    ds?.instruction ||
     'Continue';
   const secondaryText = progress.secondaryInstruction?.trim() || progress.thenInstruction?.trim() || undefined;
 
@@ -112,7 +115,7 @@ export function buildNavigationProgressFromSdk(args: {
     durationSeconds: ds?.durationSeconds ?? 0,
     kind,
     streetName: ds?.name ?? null,
-    instruction: ds?.instruction ?? progress.currentStepInstruction ?? null,
+    instruction: progress.currentStepInstruction?.trim() || progress.primaryInstruction?.trim() || null,
     displayInstruction: primaryText,
   };
 
@@ -160,5 +163,60 @@ export function buildNavigationProgressFromSdk(args: {
     isOffRoute: false,
     confidence: 1,
     instructionSource: 'sdk',
+  };
+}
+
+/** Before first native progress event: no maneuver text from JS Directions API. */
+export function buildSdkWaitingNavigationProgress(
+  navigationData: { polyline: Coordinate[]; distance: number; duration: number } | null,
+  routePolylineFromSdk: Coordinate[],
+): NavigationProgress | null {
+  if (!navigationData) return null;
+  const poly =
+    routePolylineFromSdk.length >= 2
+      ? routePolylineFromSdk
+      : navigationData.polyline?.length
+        ? navigationData.polyline
+        : [];
+  if (poly.length < 2) return null;
+  const first = poly[0]!;
+  const distRem = Math.max(0, navigationData.distance ?? 0);
+  const durRem = Math.max(0, Math.round(navigationData.duration ?? 0));
+  const now = Date.now();
+  return {
+    displayCoord: {
+      lat: first.lat,
+      lng: first.lng,
+      heading: undefined,
+      speedMps: undefined,
+      accuracy: null,
+      timestamp: now,
+    },
+    snapped: {
+      point: { lat: first.lat, lng: first.lng },
+      segmentIndex: 0,
+      t: 0,
+      distanceMeters: 0,
+      cumulativeMeters: 0,
+    },
+    traveledRoute: [first],
+    remainingRoute: poly,
+    maneuverRoute: [],
+    nextStep: null,
+    followingStep: null,
+    nextStepDistanceMeters: 0,
+    banner: {
+      primaryInstruction: 'Starting navigation…',
+      primaryDistanceMeters: 0,
+      primaryStreet: null,
+      secondaryInstruction: null,
+    },
+    distanceRemainingMeters: distRem,
+    modelDurationRemainingSeconds: durRem,
+    durationRemainingSeconds: durRem,
+    etaEpochMs: now + durRem * 1000,
+    isOffRoute: false,
+    confidence: 1,
+    instructionSource: 'sdk_waiting',
   };
 }

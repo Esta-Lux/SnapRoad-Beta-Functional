@@ -3,6 +3,7 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import type { DrivingMode } from '../types';
 import { DRIVING_MODES } from '../constants/modes';
 import { shouldSuppressJsTurnGuidance } from '../navigation/navVoiceGate';
+import { isSdkTripAuthoritative } from '../navigation/navSdkAuthority';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
@@ -138,6 +139,13 @@ export function speakGuidance(
   language: string = 'en-US',
 ) {
   if (shouldSuppressJsTurnGuidance()) return;
+  if (typeof __DEV__ !== 'undefined' && __DEV__ && isSdkTripAuthoritative()) {
+    const v = process.env.EXPO_PUBLIC_NAV_LOGIC_DEBUG;
+    if (v === '1' || v === 'true') {
+      // eslint-disable-next-line no-console
+      console.error('[Nav] speakGuidance invoked during SDK-authoritative trip (should be native TTS only)', phrase.slice(0, 80));
+    }
+  }
   if (!phrase.trim()) return;
   const normalized = phrase.trim().toLowerCase();
   const now = Date.now();

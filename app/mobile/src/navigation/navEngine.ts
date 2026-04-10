@@ -10,6 +10,7 @@ export {
   getNavSdkState,
   subscribeNavSdk,
   resetNavSdkState,
+  enterSdkGuidanceWaiting,
   ingestSdkProgress,
   ingestSdkLocation,
   ingestSdkRoutePolyline,
