@@ -179,10 +179,10 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       [
         "expo-build-properties",
         {
-          // Dynamic frameworks: fewer launch/link clashes with mixed native deps (Stripe, Sentry, Reanimated).
-          // Mapbox pods are switched to dynamic linkage by @rnmapbox/maps; static was the vendor README default
-          // but is higher-risk for the full app graph. If `pod install` / runtime fails, try `"static"` again.
-          ios: { useFrameworks: "dynamic" },
+          // Static frameworks: required for this app’s CocoaPods graph. `useFrameworks: "dynamic"` breaks linking
+          // for `@react-native-voice/voice` (undefined `_OBJC_CLASS_$_RCTEventEmitter` vs React-Core on EAS/Xcode).
+          // Matches `expo-mapbox-navigation` iOS setup guidance; Mapbox Maps pods still use dynamic linkage via @rnmapbox/maps hooks.
+          ios: { useFrameworks: "static" },
         },
       ],
       [

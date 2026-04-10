@@ -56,3 +56,7 @@ Use the **`production`** profile so `EXPO_PUBLIC_NAV_NATIVE_SDK=1` is applied.
 ## Podfile ENV dedupe
 
 `patches/@badatgil+expo-mapbox-navigation+1.6.2.patch` strips any existing `ENV['ExpoNavigationMapboxMapsVersion']` lines before re-injecting, so repeated prebuilds do not stack duplicate assignments.
+
+## iOS `useFrameworks`
+
+`app.config.ts` sets **`expo-build-properties` → `ios.useFrameworks: "static"`**. Do not switch to **`dynamic`** without retesting EAS: it has produced **linker failures** archiving `@react-native-voice/voice` (missing `RCTEventEmitter` from React-Core).
