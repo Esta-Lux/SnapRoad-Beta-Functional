@@ -21,6 +21,10 @@ if (!process.env.EAS_BUILD) {
   require("dotenv").config({ path: path.join(__dirname, ".env") });
 }
 
+/** Single source for marketing + runtime version (keep in sync with OTA `runtimeVersion`). */
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const appPkg = require("./package.json") as { version: string };
+
 const envAny = (names: string[], fallback = ""): string => {
   for (const name of names) {
     const value = process.env[name];
@@ -81,9 +85,9 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
     owner: "snaproad",
     slug: "snaproad",
     scheme: "snaproad",
-    version: "1.0.0",
+    version: appPkg.version,
     // Bare workflow: `policy` runtime versions are invalid; keep in sync with `version` for OTA.
-    runtimeVersion: "1.0.0",
+    runtimeVersion: appPkg.version,
     updates: { url: `https://u.expo.dev/${EAS_PROJECT_ID}` },
     orientation: "portrait",
     icon: "./assets/icon.png",
@@ -235,7 +239,8 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
         "https://expo.dev/accounts/snaproad/projects/snaproad",
       ),
       supportEmail: "support@snaproad.co",
-      iosAppStoreId: "",
+      /** App Store Connect numeric Apple ID (same as eas.json submit.production.ios.ascAppId). */
+      iosAppStoreId: "6761516426",
       androidPackage: "com.snaproad.app",
       eas: {
         projectId: EAS_PROJECT_ID,
