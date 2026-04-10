@@ -11,6 +11,10 @@ import {
   Switch,
   ScrollView,
   AppState,
+  Pressable,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,10 +32,21 @@ import type { Friend, FriendCategory } from '../types';
 import { storage } from '../utils/storage';
 import { useLocation } from '../hooks/useLocation';
 import { supabase } from '../lib/supabase';
-import { normalizeFriendFromApi, deriveFriendPresence } from '../lib/friendPresence';
+import { deriveFriendPresence } from '../lib/friendPresence';
 import FriendListCard, { type FriendListCardTheme } from '../components/social/FriendListCard';
+import { SocialScreenHeader } from '../components/social/SocialScreenHeader';
 import FriendDetailModalContent from '../components/social/FriendDetailModal';
+import ChallengeModal from '../components/gamification/ChallengeModal';
+import {
+  fetchFriendsNormalized,
+  fetchPendingRequests,
+  fetchFriendCategories,
+} from '../features/social/friendsApi';
 import type { MapFocusFriendParams } from '../types';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type Section = 'friends' | 'family';
 
@@ -145,7 +160,7 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
 
 export default function DashboardScreen() {
   const { isLight, colors } = useTheme();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
@@ -169,6 +184,9 @@ export default function DashboardScreen() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categoryFriendTarget, setCategoryFriendTarget] = useState<Friend | null>(null);
+  const [pendingExpanded, setPendingExpanded] = useState(false);
+  const [challengeFriend, setChallengeFriend] = useState<Friend | null>(null);
+  const [showChallengeModal, setShowChallengeModal] = useState(false);
   const [searchHits, setSearchHits] = useState<{ id: string; name: string; email?: string; friend_code?: string; is_friend?: boolean }[]>([]);
   const [addTargetId, setAddTargetId] = useState<string | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -177,10 +195,7 @@ export default function DashboardScreen() {
   const loadFriends = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setFriendsLoading(true);
     try {
-      const res = await api.get<any>('/api/friends/list');
-      const data = (res.data as any)?.data ?? res.data;
-      const raw = Array.isArray(data) ? data : [];
-      setFriends(raw.map((row: Record<string, unknown>) => normalizeFriendFromApi(row)));
+      setFriends(await fetchFriendsNormalized());
     } catch {
       if (!opts?.silent) setFriends([]);
     } finally {
@@ -189,37 +204,13 @@ export default function DashboardScreen() {
   }, []);
 
   const loadPending = useCallback(async () => {
-    try {
-      const [inc, out] = await Promise.all([
-        api.get<any>('/api/friends/requests'),
-        api.get<any>('/api/friends/requests/sent'),
-      ]);
-      const idata = (inc.data as any)?.data ?? inc.data;
-      const odata = (out.data as any)?.data ?? out.data;
-      setIncomingReq(Array.isArray(idata) ? idata : []);
-      setOutgoingReq(Array.isArray(odata) ? odata : []);
-    } catch {
-      setIncomingReq([]);
-      setOutgoingReq([]);
-    }
+    const { incoming, outgoing } = await fetchPendingRequests();
+    setIncomingReq(incoming);
+    setOutgoingReq(outgoing);
   }, []);
 
   const loadCategories = useCallback(async () => {
-    try {
-      const res = await api.get<any>('/api/friends/categories');
-      const data = (res.data as any)?.data ?? res.data;
-      const rows = Array.isArray(data) ? data : [];
-      setCategories(
-        rows.map((row) => ({
-          id: String(row.id ?? ''),
-          name: String(row.name ?? 'Category'),
-          color: typeof row.color === 'string' ? row.color : '#3B82F6',
-          friend_count: Number.isFinite(Number(row.friend_count)) ? Number(row.friend_count) : 0,
-        })).filter((c) => c.id),
-      );
-    } catch {
-      setCategories([]);
-    }
+    setCategories(await fetchFriendCategories());
   }, []);
 
   useEffect(() => {
@@ -455,13 +446,14 @@ export default function DashboardScreen() {
 
   const listTheme = useMemo<FriendListCardTheme>(
     () => ({
-      cardBg: colors.card,
+      cardBg: 'transparent',
       text: colors.text,
       sub: colors.textSecondary,
       primary: colors.primary,
       border: colors.border,
+      separator: isLight ? 'rgba(60,60,67,0.12)' : 'rgba(255,255,255,0.1)',
     }),
-    [colors.card, colors.text, colors.textSecondary, colors.primary, colors.border],
+    [colors.text, colors.textSecondary, colors.primary, colors.border, isLight],
   );
 
   const detailsTheme = useMemo(
@@ -569,27 +561,26 @@ export default function DashboardScreen() {
   );
 
   const renderFriend = useCallback(
-    ({ item }: { item: (typeof friendListData)[0] }) => (
-      <View style={styles.friendRowWrap}>
-        <FriendListCard
-          friend={item.friend}
-          presence={item.presence}
-          theme={listTheme}
-          onPress={setSelectedFriend}
-          onAvatarPress={openFriendOnMap}
-        />
-        <TouchableOpacity
-          style={[styles.bucketAssignBtn, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
-          onPress={() => setCategoryFriendTarget(item.friend)}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="folder-open-outline" size={13} color={colors.textSecondary} />
-          <Text style={[styles.bucketAssignText, { color: colors.textSecondary }]}>Bucket</Text>
-        </TouchableOpacity>
-      </View>
+    ({ item, index }: { item: (typeof friendListData)[0]; index: number }) => (
+      <FriendListCard
+        friend={item.friend}
+        presence={item.presence}
+        theme={listTheme}
+        onPress={setSelectedFriend}
+        onAvatarPress={openFriendOnMap}
+        onAssignBucket={setCategoryFriendTarget}
+        isLast={index === filteredFriendListData.length - 1}
+      />
     ),
-    [listTheme, openFriendOnMap, colors.surfaceSecondary, colors.border, colors.textSecondary],
+    [listTheme, openFriendOnMap, filteredFriendListData.length],
   );
+
+  const pendingTotal = incomingReq.length + outgoingReq.length;
+
+  const togglePendingExpanded = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setPendingExpanded((e) => !e);
+  }, []);
 
   const listKeyExtractor = useCallback((item: (typeof friendListData)[0]) => item.friend.id, []);
 
@@ -630,27 +621,60 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10 }}>
-        <Text style={{ color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }}>Social</Text>
-        <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4, lineHeight: 18 }}>
-          Friends, live location, and meetups. Open Convoy from the map menu anytime.
-        </Text>
+      <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 6 }}>
+        <SocialScreenHeader
+          title="Social"
+          subtitle={
+            section === 'friends'
+              ? 'Share location with people you trust—calmly, on your terms.'
+              : 'Family features are on the way. Preview what’s coming below.'
+          }
+          onAddPress={section === 'friends' ? () => setShowAddFriend(true) : undefined}
+          accentColor={colors.primary}
+          textColor={colors.text}
+          subColor={colors.textSecondary}
+        />
       </View>
 
-      <Animated.View entering={FadeInDown.duration(300).delay(50)} style={[styles.toggleRow, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+      <Animated.View
+        entering={FadeInDown.duration(280).delay(40)}
+        style={[
+          styles.toggleRow,
+          {
+            backgroundColor: isLight ? 'rgba(60,60,67,0.05)' : 'rgba(255,255,255,0.06)',
+            borderWidth: 0,
+          },
+        ]}
+      >
         {(['friends', 'family'] as Section[]).map((s) => (
           <TouchableOpacity
             key={s}
-            style={[styles.togglePill, section === s && { backgroundColor: s === 'family' ? '#7C3AED' : colors.primary }]}
+            style={[
+              styles.togglePill,
+              section === s && {
+                backgroundColor: s === 'family' ? '#7C3AED' : colors.primary,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.12,
+                shadowRadius: 3,
+                elevation: 2,
+              },
+            ]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               setSection(s);
             }}
-            activeOpacity={0.85}
+            activeOpacity={0.88}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <Ionicons name={s === 'friends' ? 'people-outline' : 'home-outline'} size={14} color={section === s ? '#fff' : colors.textSecondary} />
-              <Text style={[styles.toggleText, { color: section === s ? '#fff' : colors.textSecondary }]}>{s === 'friends' ? 'Friends' : 'Family'}</Text>
+              <Ionicons
+                name={s === 'friends' ? 'people-outline' : 'home-outline'}
+                size={13}
+                color={section === s ? '#fff' : colors.textSecondary}
+              />
+              <Text style={[styles.toggleText, { color: section === s ? '#fff' : colors.textSecondary }]}>
+                {s === 'friends' ? 'Friends' : 'Family'}
+              </Text>
               {s === 'family' && (
                 <View style={styles.comingSoonDot}>
                   <Text style={styles.comingSoonDotText}>Soon</Text>
@@ -663,120 +687,218 @@ export default function DashboardScreen() {
 
       {section === 'friends' && (
         <View style={{ flex: 1 }}>
-          <View style={{ paddingHorizontal: 16, marginBottom: 8, gap: 8 }}>
-            <Text style={[styles.subSectionLabel, { color: colors.textSecondary }]}>Requested</Text>
-            {incomingReq.length === 0 && outgoingReq.length === 0 ? (
-              <View style={[styles.requestEmpty, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                <Ionicons name="checkmark-circle-outline" size={16} color={colors.textSecondary} />
-                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>No pending requests</Text>
+          <View style={{ paddingHorizontal: 16, marginTop: 6, marginBottom: 10 }}>
+            {pendingTotal === 0 ? (
+              <View
+                style={[
+                  styles.requestEmpty,
+                  {
+                    backgroundColor: isLight ? 'rgba(60,60,67,0.04)' : 'rgba(255,255,255,0.05)',
+                    borderWidth: 0,
+                  },
+                ]}
+              >
+                <Ionicons name="checkmark-circle-outline" size={18} color={colors.textSecondary} style={{ opacity: 0.65 }} />
+                <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: '500' }}>No pending requests</Text>
               </View>
             ) : (
               <>
-                {incomingReq.map((r) => (
-                  <View key={r.id} style={[styles.requestCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800' }}>{r.from_name ?? 'Friend request'}</Text>
-                      <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
-                        {r.from_email ? r.from_email : `Wants to connect`}
+                <Pressable
+                  onPress={togglePendingExpanded}
+                  style={({ pressed }) => [
+                    styles.pendingSummary,
+                    {
+                      backgroundColor: isLight ? 'rgba(60,60,67,0.05)' : 'rgba(255,255,255,0.06)',
+                      opacity: pressed ? 0.92 : 1,
+                    },
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                    <View
+                      style={[
+                        styles.pendingIconWrap,
+                        { backgroundColor: isLight ? `${colors.primary}14` : `${colors.primary}22` },
+                      ]}
+                    >
+                      <Ionicons name="mail-unread-outline" size={18} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.pendingSummaryTitle, { color: colors.text }]}>Pending requests ({pendingTotal})</Text>
+                      <Text style={[styles.pendingSummarySub, { color: colors.textSecondary }]}>
+                        {pendingExpanded ? 'Tap to collapse' : 'Tap to review invites and sent requests'}
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      style={[styles.reqBtn, { backgroundColor: colors.primary }]}
-                      onPress={async () => {
-                        const res = await api.post('/api/friends/accept', { friendship_id: r.id });
-                        if (res.success) {
-                          loadFriends();
-                          loadPending();
-                          loadCategories();
-                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                        } else Alert.alert('Error', res.error ?? 'Could not accept');
-                      }}
-                    >
-                      <Text style={styles.reqBtnT}>Accept</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.reqBtn, { backgroundColor: colors.danger }]}
-                      onPress={async () => {
-                        await api.post('/api/friends/reject', { friendship_id: r.id });
-                        loadPending();
-                      }}
-                    >
-                      <Text style={styles.reqBtnT}>Decline</Text>
-                    </TouchableOpacity>
+                    <Ionicons
+                      name={pendingExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={20}
+                      color={colors.textSecondary}
+                      style={{ opacity: 0.5 }}
+                    />
                   </View>
-                ))}
-                {outgoingReq.map((r) => (
-                  <View key={r.id} style={[styles.requestCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                    <Ionicons name="time-outline" size={18} color={colors.textSecondary} />
-                    <View style={{ flex: 1, marginLeft: 8 }}>
-                      <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Request pending</Text>
-                      <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
-                        Waiting for {r.to_name ?? 'them'} to accept
-                      </Text>
-                    </View>
+                </Pressable>
+                {pendingExpanded ? (
+                  <View style={styles.pendingExpandedList}>
+                    {incomingReq.map((r, i) => (
+                      <View
+                        key={r.id}
+                        style={[
+                          styles.pendingDetailRow,
+                          {
+                            borderBottomColor: isLight ? 'rgba(60,60,67,0.1)' : 'rgba(255,255,255,0.08)',
+                          },
+                          i === incomingReq.length - 1 && outgoingReq.length === 0 ? { borderBottomWidth: 0 } : null,
+                        ]}
+                      >
+                        <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
+                          <Text style={[styles.pendingName, { color: colors.text }]} numberOfLines={1}>
+                            {r.from_name ?? 'Friend request'}
+                          </Text>
+                          <Text style={[styles.pendingMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                            {r.from_email ?? 'Wants to connect'}
+                          </Text>
+                        </View>
+                        <View style={styles.pendingActions}>
+                          <TouchableOpacity
+                            style={[styles.reqBtnCompact, { backgroundColor: colors.primary }]}
+                            onPress={async () => {
+                              const res = await api.post('/api/friends/accept', { friendship_id: r.id });
+                              if (res.success) {
+                                loadFriends();
+                                loadPending();
+                                loadCategories();
+                                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                              } else Alert.alert('Error', res.error ?? 'Could not accept');
+                            }}
+                          >
+                            <Text style={styles.reqBtnCompactT}>Accept</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.reqBtnCompact, { backgroundColor: colors.danger }]}
+                            onPress={async () => {
+                              await api.post('/api/friends/reject', { friendship_id: r.id });
+                              loadPending();
+                            }}
+                          >
+                            <Text style={styles.reqBtnCompactT}>Decline</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                    {outgoingReq.map((r, i) => (
+                      <View
+                        key={r.id}
+                        style={[
+                          styles.pendingDetailRow,
+                          {
+                            borderBottomColor: isLight ? 'rgba(60,60,67,0.1)' : 'rgba(255,255,255,0.08)',
+                          },
+                          i === outgoingReq.length - 1 ? { borderBottomWidth: 0 } : null,
+                        ]}
+                      >
+                        <Ionicons name="paper-plane-outline" size={16} color={colors.textSecondary} style={{ marginRight: 10, opacity: 0.55 }} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[styles.pendingMetaStrong, { color: colors.text }]} numberOfLines={1}>
+                            Sent to {r.to_name ?? 'friend'}
+                          </Text>
+                          <Text style={[styles.pendingMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                            Waiting for them to accept
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
                   </View>
-                ))}
+                ) : null}
               </>
             )}
           </View>
-          <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Friends buckets</Text>
-            <TouchableOpacity
-              style={[styles.newBucketBtn, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
-              activeOpacity={0.85}
-              onPress={() => setShowCategoryModal(true)}
-            >
-              <Ionicons name="add" size={14} color={colors.primary} />
-              <Text style={[styles.newBucketText, { color: colors.primary }]}>New bucket</Text>
-            </TouchableOpacity>
-          </View>
+
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8 }}
+            contentContainerStyle={styles.bucketScrollContent}
           >
             <TouchableOpacity
               style={[
-                styles.bucketChip,
+                styles.bucketChipPremium,
+                activeCategoryId === 'all' && styles.bucketChipPremiumActive,
                 {
-                  borderColor: activeCategoryId === 'all' ? colors.primary : colors.border,
-                  backgroundColor: activeCategoryId === 'all' ? `${colors.primary}20` : colors.surfaceSecondary,
+                  borderColor: activeCategoryId === 'all' ? colors.primary : 'transparent',
+                  backgroundColor:
+                    activeCategoryId === 'all'
+                      ? isLight
+                        ? `${colors.primary}18`
+                        : `${colors.primary}28`
+                      : isLight
+                        ? 'rgba(60,60,67,0.06)'
+                        : 'rgba(255,255,255,0.07)',
                 },
               ]}
-              onPress={() => setActiveCategoryId('all')}
-              activeOpacity={0.85}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setActiveCategoryId('all');
+              }}
+              activeOpacity={0.88}
             >
-              <Text style={[styles.bucketChipText, { color: activeCategoryId === 'all' ? colors.primary : colors.textSecondary }]}>
-                All ({friendListData.length})
+              <Text
+                style={[
+                  styles.bucketChipPremiumText,
+                  { color: activeCategoryId === 'all' ? colors.primary : colors.textSecondary },
+                ]}
+              >
+                All · {friendListData.length}
               </Text>
             </TouchableOpacity>
-            {categories.map((cat) => (
-              <TouchableOpacity
-                key={cat.id}
-                style={[
-                  styles.bucketChip,
-                  {
-                    borderColor: activeCategoryId === cat.id ? cat.color || colors.primary : colors.border,
-                    backgroundColor: activeCategoryId === cat.id ? `${cat.color || colors.primary}20` : colors.surfaceSecondary,
-                  },
-                ]}
-                onPress={() => setActiveCategoryId(cat.id)}
-                activeOpacity={0.85}
-              >
-                <View style={[styles.bucketColorDot, { backgroundColor: cat.color || colors.primary }]} />
-                <Text style={[styles.bucketChipText, { color: activeCategoryId === cat.id ? cat.color || colors.primary : colors.textSecondary }]}>
-                  {cat.name} ({cat.friend_count ?? 0})
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {categories.map((cat) => {
+              const active = activeCategoryId === cat.id;
+              const c = cat.color || colors.primary;
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.bucketChipPremium,
+                    active && styles.bucketChipPremiumActive,
+                    {
+                      borderColor: active ? c : 'transparent',
+                      backgroundColor: active ? `${c}24` : isLight ? 'rgba(60,60,67,0.06)' : 'rgba(255,255,255,0.07)',
+                    },
+                  ]}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setActiveCategoryId(cat.id);
+                  }}
+                  activeOpacity={0.88}
+                >
+                  <View style={[styles.bucketColorDot, { backgroundColor: c }]} />
+                  <Text style={[styles.bucketChipPremiumText, { color: active ? c : colors.textSecondary }]}>
+                    {cat.name} · {cat.friend_count ?? 0}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              style={[
+                styles.newBucketInline,
+                {
+                  borderColor: isLight ? 'rgba(60,60,67,0.1)' : 'rgba(255,255,255,0.12)',
+                },
+              ]}
+              onPress={() => setShowCategoryModal(true)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="add" size={16} color={colors.textSecondary} style={{ opacity: 0.75 }} />
+              <Text style={[styles.newBucketInlineText, { color: colors.textSecondary }]}>New bucket</Text>
+            </TouchableOpacity>
           </ScrollView>
-          <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Friends
-              {liveFreshCount > 0 ? ` · ${liveFreshCount} live` : ''}
-            </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: '600' }}>Share Location</Text>
+
+          <View style={[styles.friendsSectionHeader, { borderBottomColor: isLight ? 'rgba(60,60,67,0.08)' : 'rgba(255,255,255,0.07)' }]}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.friendsSectionTitle, { color: colors.text }]}>Friends</Text>
+              <Text style={[styles.friendsSectionCaption, { color: colors.textSecondary }]}>
+                {liveFreshCount > 0 ? `${liveFreshCount} sharing live now` : 'Your trusted circle'}
+              </Text>
+            </View>
+            <View style={styles.shareLocRow}>
+              <Text style={[styles.shareLocLabel, { color: colors.textSecondary }]}>Share my location</Text>
               <Switch
                 value={isSharingLocation}
                 onValueChange={async (v) => {
@@ -798,28 +920,36 @@ export default function DashboardScreen() {
           </View>
 
           {friendsLoading ? (
-            <View style={{ padding: 16, gap: 12 }}>
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} width="100%" height={72} borderRadius={14} />
+            <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 14 }}>
+              {[1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} width="100%" height={84} borderRadius={12} />
               ))}
             </View>
           ) : filteredFriendListData.length === 0 ? (
             <View style={styles.emptyState}>
-              <View style={[styles.emptyHero, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                <LinearGradient colors={[`${colors.primary}33`, `${colors.primary}08`]} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
-                <Ionicons name="people" size={32} color={colors.primary} />
+              <View
+                style={[
+                  styles.emptyHero,
+                  {
+                    backgroundColor: isLight ? 'rgba(60,60,67,0.04)' : 'rgba(255,255,255,0.05)',
+                    borderWidth: 0,
+                  },
+                ]}
+              >
+                <LinearGradient colors={[`${colors.primary}28`, `${colors.primary}06`]} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
+                <Ionicons name="people" size={32} color={colors.primary} style={{ opacity: 0.95 }} />
                 <Text style={[styles.emptyHeroTitle, { color: colors.text }]}>Grow your convoy</Text>
                 <Text style={[styles.emptyHeroSub, { color: colors.textSecondary }]}>
-                  Add friends to share live location and navigate to each other on the map.
+                  Invite friends to share live location and meet up on the map—without the noise.
                 </Text>
               </View>
               <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                {friends.length === 0 ? 'No friends yet' : 'No friends in this bucket'}
+                {friends.length === 0 ? 'No friends yet' : 'No friends in this filter'}
               </Text>
               <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
                 {friends.length === 0
-                  ? 'Use Add Friend below — search by name, email, or 6-character friend code.'
-                  : 'No friends in this bucket yet. Pick another bucket or assign friends.'}
+                  ? 'Tap the + button above to search by name, email, or friend code.'
+                  : 'Try another collection or assign someone with ··· on a friend’s row.'}
               </Text>
             </View>
           ) : (
@@ -837,13 +967,25 @@ export default function DashboardScreen() {
                   tintColor={colors.primary}
                 />
               }
-              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 80 }}
+              contentContainerStyle={{
+                paddingHorizontal: 16,
+                paddingTop: 6,
+                paddingBottom: insets.bottom + 28,
+              }}
               ListHeaderComponent={
                 filteredFriendListData.length > 0 && filteredFriendListData.length <= 2 ? (
-                  <View style={[styles.tipCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                    <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
+                  <View
+                    style={[
+                      styles.tipCard,
+                      {
+                        backgroundColor: isLight ? 'rgba(60,60,67,0.04)' : 'rgba(255,255,255,0.05)',
+                        borderWidth: 0,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="sparkles-outline" size={18} color={colors.primary} style={{ opacity: 0.85 }} />
                     <Text style={[styles.tipText, { color: colors.textSecondary }]}>
-                      Pull down to refresh. Turn on Share Location so friends can route to you in real time.
+                      Pull to refresh. Location sharing is controlled from the toggle above—only when you want it.
                     </Text>
                   </View>
                 ) : null
@@ -851,14 +993,6 @@ export default function DashboardScreen() {
               renderItem={renderFriend}
             />
           )}
-          <TouchableOpacity
-            style={[styles.addFriendBtn, { bottom: insets.bottom + 16, backgroundColor: colors.primary }]}
-            onPress={() => setShowAddFriend(true)}
-            activeOpacity={0.88}
-          >
-            <Ionicons name="person-add-outline" size={18} color="#fff" />
-            <Text style={styles.addFriendText}>Add Friend</Text>
-          </TouchableOpacity>
         </View>
       )}
 
@@ -1056,9 +1190,29 @@ export default function DashboardScreen() {
               openFriendOnMap(f);
             }}
             onRemove={handleRemoveFriend}
+            onChallenge={() => {
+              if (!selectedFriend) return;
+              setChallengeFriend(selectedFriend);
+              setShowChallengeModal(true);
+            }}
           />
         ) : null}
       </Modal>
+
+      <ChallengeModal
+        visible={showChallengeModal}
+        onClose={() => {
+          setShowChallengeModal(false);
+          setChallengeFriend(null);
+        }}
+        targetFriend={challengeFriend ? { id: challengeFriend.friend_id, name: challengeFriend.name } : null}
+        gemBalance={user?.gems ?? 0}
+        onChallenged={(remaining) => {
+          if (remaining != null && Number.isFinite(remaining)) {
+            updateUser({ gems: Math.max(0, Math.floor(remaining)) });
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -1067,64 +1221,98 @@ const styles = StyleSheet.create({
   toggleRow: {
     flexDirection: 'row',
     marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 4,
-    borderRadius: 14,
-    padding: 4,
-    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: 4,
+    marginBottom: 2,
+    borderRadius: 12,
+    padding: 3,
   },
-  togglePill: { flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: 'center' },
-  toggleText: { fontSize: 14, fontWeight: '700' },
+  togglePill: { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center' },
+  toggleText: { fontSize: 13, fontWeight: '600' },
   comingSoonDot: { backgroundColor: 'rgba(124,58,237,0.25)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
   comingSoonDotText: { color: '#C084FC', fontSize: 8, fontWeight: '800' },
 
-  sectionHeader: { paddingHorizontal: 16, paddingVertical: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: '800' },
-  subSectionLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
   requestEmpty: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-  newBucketBtn: {
+  pendingSummary: {
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  pendingIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingSummaryTitle: { fontSize: 16, fontWeight: '600', letterSpacing: -0.2 },
+  pendingSummarySub: { fontSize: 13, fontWeight: '500', marginTop: 3, lineHeight: 18 },
+  pendingExpandedList: { marginTop: 12, gap: 2, paddingBottom: 2 },
+  pendingDetailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  newBucketText: { fontSize: 12, fontWeight: '700' },
-  bucketChip: {
+  pendingName: { fontSize: 15, fontWeight: '600' },
+  pendingMeta: { fontSize: 13, fontWeight: '500', marginTop: 3, opacity: 0.9 },
+  pendingMetaStrong: { fontSize: 14, fontWeight: '600' },
+  pendingActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  reqBtnCompact: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
+  reqBtnCompactT: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  bucketScrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 14,
+    gap: 8,
+    alignItems: 'center',
+  },
+  bucketChipPremium: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    borderRadius: 14,
+    borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
   },
-  bucketChipText: { fontSize: 12, fontWeight: '700' },
-  bucketColorDot: { width: 8, height: 8, borderRadius: 4 },
-  friendRowWrap: { marginBottom: 4 },
-  bucketAssignBtn: {
+  bucketChipPremiumActive: {
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  bucketChipPremiumText: { fontSize: 13, fontWeight: '600' },
+  newBucketInline: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-end',
-    gap: 4,
-    marginTop: -8,
-    marginRight: 10,
-    borderRadius: 10,
+    gap: 5,
+    borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginLeft: 2,
   },
-  bucketAssignText: { fontSize: 11, fontWeight: '700' },
+  newBucketInlineText: { fontSize: 12, fontWeight: '600' },
+  friendsSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  friendsSectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.35 },
+  friendsSectionCaption: { fontSize: 13, fontWeight: '500', marginTop: 3, opacity: 0.92 },
+  shareLocRow: { alignItems: 'flex-end', gap: 6 },
+  shareLocLabel: { fontSize: 12, fontWeight: '600', textAlign: 'right' },
+  bucketColorDot: { width: 8, height: 8, borderRadius: 4 },
   assignRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1141,44 +1329,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    padding: 12,
-    borderRadius: 14,
-    marginBottom: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 12,
   },
-  tipText: { flex: 1, fontSize: 12, lineHeight: 17 },
+  tipText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '500' },
 
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, paddingHorizontal: 24 },
   emptyHero: {
     width: '100%',
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 20,
+    padding: 22,
     alignItems: 'center',
     marginBottom: 8,
-    borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
   emptyHeroTitle: { fontSize: 17, fontWeight: '800', marginTop: 10 },
   emptyHeroSub: { fontSize: 12, textAlign: 'center', lineHeight: 17, marginTop: 6 },
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 19 },
-
-  addFriendBtn: {
-    position: 'absolute',
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  addFriendText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   previewOverlayBadge: { alignItems: 'center', marginBottom: 12, marginTop: 4 },
   comingSoonPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },

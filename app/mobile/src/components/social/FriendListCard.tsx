@@ -1,9 +1,9 @@
 import React, { memo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Friend } from '../../types';
 import type { FriendPresence } from '../../lib/friendPresence';
-import { formatDistanceMeters, formatLastUpdatedShort, hasValidFriendCoords } from '../../lib/friendPresence';
+import { formatDistanceMeters, hasValidFriendCoords } from '../../lib/friendPresence';
 
 export type FriendListCardTheme = {
   cardBg: string;
@@ -11,6 +11,8 @@ export type FriendListCardTheme = {
   sub: string;
   primary: string;
   border: string;
+  /** Optional hairline between rows */
+  separator?: string;
 };
 
 type Props = {
@@ -20,27 +22,52 @@ type Props = {
   onPress: (f: Friend) => void;
   /** Opens map at friend — does not open detail modal. */
   onAvatarPress?: (f: Friend) => void;
+  /** Bucket / assign collections */
+  onAssignBucket?: (f: Friend) => void;
+  /** Omit bottom divider on last row */
+  isLast?: boolean;
 };
 
-function badgeColors(
-  badge: FriendPresence['badge'],
+function pillStyle(
+  tone: 'live' | 'active' | 'muted' | 'warn',
   primary: string,
 ): { bg: string; fg: string } {
-  switch (badge) {
-    case 'DRIVING':
-      return { bg: `${primary}22`, fg: primary };
-    case 'PARKED':
-      return { bg: 'rgba(52,199,89,0.18)', fg: '#34C759' };
-    case 'STALE':
-      return { bg: 'rgba(255,149,0,0.2)', fg: '#FF9500' };
-    case 'LIVE':
-      return { bg: `${primary}28`, fg: primary };
+  switch (tone) {
+    case 'live':
+      return { bg: 'rgba(52,199,89,0.14)', fg: '#34C759' };
+    case 'active':
+      return { bg: `${primary}18`, fg: primary };
+    case 'warn':
+      return { bg: 'rgba(255,149,0,0.16)', fg: '#FF9500' };
     default:
-      return { bg: 'rgba(142,142,147,0.2)', fg: '#8E8E93' };
+      return { bg: 'rgba(142,142,147,0.14)', fg: '#8E8E93' };
   }
 }
 
-const FriendListCard = memo(function FriendListCard({ friend, presence, theme, onPress, onAvatarPress }: Props) {
+function pillToneAndLabel(presence: FriendPresence, friend: Friend): { text: string; tone: 'live' | 'active' | 'muted' | 'warn' } {
+  if (friend.status === 'pending') return { text: 'Pending', tone: 'muted' };
+  if (presence.showLivePill) return { text: 'Live', tone: 'live' };
+  switch (presence.badge) {
+    case 'DRIVING':
+      return { text: 'Driving', tone: 'active' };
+    case 'PARKED':
+      return { text: 'Parked', tone: 'active' };
+    case 'STALE':
+      return { text: 'Stale', tone: 'warn' };
+    default:
+      return { text: presence.statusLabel, tone: 'muted' };
+  }
+}
+
+const FriendListCard = memo(function FriendListCard({
+  friend,
+  presence,
+  theme,
+  onPress,
+  onAvatarPress,
+  onAssignBucket,
+  isLast,
+}: Props) {
   const initials = (friend.name ?? 'U')
     .split(' ')
     .filter(Boolean)
@@ -50,19 +77,20 @@ const FriendListCard = memo(function FriendListCard({ friend, presence, theme, o
     .toUpperCase();
 
   const distLabel = formatDistanceMeters(presence.distanceFromMeM);
-  const awayLine =
-    distLabel && presence.distanceFromMeM != null && presence.distanceFromMeM > 0
-      ? `~${distLabel} away`
-      : '';
-  const liveBadge = badgeColors('LIVE', theme.primary);
-  const stateBadge = badgeColors(presence.badge, theme.primary);
+  const parts = [presence.sublabel].filter(Boolean);
+  if (distLabel && presence.distanceFromMeM != null && presence.distanceFromMeM > 0) {
+    parts.push(`~${distLabel}`);
+  }
+  const secondaryLine = parts.join(' · ');
 
-  const sharingWithCoords =
-    friend.is_sharing === true && hasValidFriendCoords(friend.lat, friend.lng);
+  const sharingWithCoords = friend.is_sharing === true && hasValidFriendCoords(friend.lat, friend.lng);
   const showBattery =
-    sharingWithCoords &&
-    friend.battery_pct != null &&
-    Number.isFinite(friend.battery_pct);
+    sharingWithCoords && friend.battery_pct != null && Number.isFinite(friend.battery_pct);
+
+  const { text: pillText, tone: pillTone } = pillToneAndLabel(presence, friend);
+  const { bg: pillBg, fg: pillFg } = pillStyle(pillTone, theme.primary);
+
+  const sep = theme.separator ?? theme.border;
 
   const AvatarInner = (
     <>
@@ -77,7 +105,7 @@ const FriendListCard = memo(function FriendListCard({ friend, presence, theme, o
   );
 
   return (
-    <View style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+    <View style={[styles.cell, { backgroundColor: theme.cardBg }, !isLast && { borderBottomColor: sep, borderBottomWidth: StyleSheet.hairlineWidth }]}>
       {onAvatarPress ? (
         <TouchableOpacity
           style={styles.avatarWrap}
@@ -93,90 +121,52 @@ const FriendListCard = memo(function FriendListCard({ friend, presence, theme, o
         <View style={styles.avatarWrap}>{AvatarInner}</View>
       )}
 
-      <TouchableOpacity
-        style={styles.rowMain}
+      <Pressable
+        style={({ pressed }) => [styles.rowPress, pressed && styles.rowPressActive]}
         onPress={() => onPress(friend)}
-        activeOpacity={0.72}
+        accessibilityRole="button"
+        accessibilityLabel={`${friend.name}, details`}
       >
         <View style={styles.mid}>
-          <View style={styles.titleRow}>
-            <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
-              {friend.name}
-            </Text>
-            <View style={styles.pillRow}>
-              {presence.showLivePill && (
-                <View style={[styles.pill, { backgroundColor: liveBadge.bg }]}>
-                  <View style={[styles.liveDot, { backgroundColor: liveBadge.fg }]} />
-                  <Text style={[styles.pillText, { color: liveBadge.fg }]}>LIVE</Text>
-                </View>
-              )}
-              <View style={[styles.pill, { backgroundColor: stateBadge.bg }]}>
-                <Text style={[styles.pillText, { color: stateBadge.fg }]}>
-                  {presence.badge === 'OFFLINE'
-                    ? 'OFF'
-                    : presence.badge === 'STALE'
-                      ? 'STALE'
-                      : presence.badge === 'DRIVING'
-                        ? 'DRV'
-                        : presence.badge === 'PARKED'
-                          ? 'IDLE'
-                          : presence.badge}
-                </Text>
-              </View>
-            </View>
-          </View>
-          <Text style={[styles.statusLine, { color: theme.primary }]} numberOfLines={1}>
-            {presence.statusLabel}
+          <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
+            {friend.name}
           </Text>
-          {awayLine ? (
-            <Text style={[styles.awayLine, { color: theme.text }]} numberOfLines={1}>
-              {awayLine}
+          <View style={[styles.pill, { backgroundColor: pillBg }]}>
+            {presence.showLivePill ? <View style={[styles.liveDot, { backgroundColor: pillFg }]} /> : null}
+            <Text style={[styles.pillText, { color: pillFg }]}>{pillText}</Text>
+          </View>
+          {secondaryLine ? (
+            <Text style={[styles.secondary, { color: theme.sub }]} numberOfLines={2}>
+              {secondaryLine}
             </Text>
           ) : null}
-          <Text style={[styles.subLine, { color: theme.sub }]} numberOfLines={2}>
-            {presence.sublabel}
-          </Text>
-          {friend.last_updated ? (
-            <Text style={[styles.timeLine, { color: theme.sub }]}>
-              Updated {presence.isStale ? '(stale) ' : ''}
-              {formatLastUpdatedShort(friend.last_updated)}
-            </Text>
+          {showBattery ? (
+            <View style={styles.batRow}>
+              <Ionicons
+                name={presence.isLiveFresh ? 'battery-charging-outline' : 'battery-half-outline'}
+                size={13}
+                color={friend.battery_pct! > 20 ? '#34C759' : '#FF9500'}
+              />
+              <Text style={[styles.batTxt, { color: theme.sub }]}>{Math.round(friend.battery_pct!)}%</Text>
+            </View>
           ) : null}
         </View>
 
-        <View style={styles.right}>
-          {distLabel ? (
-            <Text style={[styles.dist, { color: theme.text }]} numberOfLines={1}>
-              {distLabel}
-            </Text>
-          ) : (
-            <Text style={[styles.distMuted, { color: theme.sub }]} numberOfLines={1}>
-              —
-            </Text>
-          )}
-          {showBattery ? (
-            <View
-              style={[
-                styles.batRow,
-                !presence.isLiveFresh && presence.isStale && styles.batRowStale,
-              ]}
+        <View style={styles.trailing}>
+          {onAssignBucket ? (
+            <TouchableOpacity
+              onPress={() => onAssignBucket(friend)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 6 }}
+              style={styles.moreHit}
+              accessibilityRole="button"
+              accessibilityLabel={`Assign ${friend.name} to a bucket`}
             >
-              <Ionicons
-                name={presence.isLiveFresh ? 'battery-charging-outline' : 'battery-half-outline'}
-                size={14}
-                color={friend.battery_pct! > 20 ? '#34C759' : '#FF9500'}
-              />
-              <Text style={[styles.batTxt, { color: theme.sub }]}>
-                {Math.round(friend.battery_pct!)}%
-              </Text>
-            </View>
+              <Ionicons name="ellipsis-horizontal" size={20} color={theme.sub} style={{ opacity: 0.55 }} />
+            </TouchableOpacity>
           ) : null}
-          {showBattery && !presence.isLiveFresh && (
-            <Text style={[styles.batCaption, { color: theme.sub }]}>last reported</Text>
-          )}
           <Ionicons name="chevron-forward" size={18} color={theme.sub} style={styles.chevron} />
         </View>
-      </TouchableOpacity>
+      </Pressable>
     </View>
   );
 });
@@ -184,55 +174,47 @@ const FriendListCard = memo(function FriendListCard({ friend, presence, theme, o
 export default FriendListCard;
 
 const styles = StyleSheet.create({
-  card: {
+  cell: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
     paddingVertical: 14,
-    paddingHorizontal: 14,
-    marginBottom: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-    elevation: 2,
+    paddingHorizontal: 4,
   },
-  avatarWrap: { marginRight: 12 },
-  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', minWidth: 0 },
-  avatarImg: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#E8E8ED' },
+  avatarWrap: { marginRight: 14 },
+  avatarImg: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#E8E8ED' },
   avatarFallback: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarInitials: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  mid: { flex: 1, minWidth: 0 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
-  name: { fontSize: 16, fontWeight: '800', flexShrink: 1 },
-  pillRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 },
-  pill: {
+  avatarInitials: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  rowPress: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
+    minWidth: 0,
+    borderRadius: 12,
+  },
+  rowPressActive: { opacity: 0.88 },
+  mid: { flex: 1, minWidth: 0, gap: 5 },
+  name: { fontSize: 17, fontWeight: '600', letterSpacing: -0.25 },
+  pill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
-    gap: 3,
+    gap: 5,
   },
-  pillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.3 },
-  liveDot: { width: 5, height: 5, borderRadius: 3 },
-  statusLine: { fontSize: 12, fontWeight: '700', marginBottom: 2 },
-  awayLine: { fontSize: 13, fontWeight: '800', marginBottom: 2 },
-  subLine: { fontSize: 12, lineHeight: 16 },
-  timeLine: { fontSize: 11, marginTop: 4, opacity: 0.9 },
-  right: { alignItems: 'flex-end', paddingLeft: 8, minWidth: 64 },
-  dist: { fontSize: 13, fontWeight: '800' },
-  distMuted: { fontSize: 12, fontWeight: '600' },
-  batRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 4 },
-  batRowStale: { opacity: 0.72 },
-  batTxt: { fontSize: 10, fontWeight: '700' },
-  batCaption: { fontSize: 9, fontWeight: '600', marginTop: 2 },
-  chevron: { marginTop: 6, opacity: 0.45 },
+  pillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  liveDot: { width: 6, height: 6, borderRadius: 3 },
+  secondary: { fontSize: 13, fontWeight: '500', lineHeight: 18, opacity: 0.92 },
+  batRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  batTxt: { fontSize: 11, fontWeight: '600' },
+  trailing: { flexDirection: 'row', alignItems: 'center', paddingLeft: 4 },
+  moreHit: { paddingVertical: 8, paddingHorizontal: 4 },
+  chevron: { marginLeft: 2, opacity: 0.38 },
 });

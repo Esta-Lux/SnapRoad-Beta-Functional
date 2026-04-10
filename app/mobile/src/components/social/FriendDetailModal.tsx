@@ -43,6 +43,8 @@ type Props = {
   onViewOnMap: () => void;
   onRemove: (friendId: string) => void;
   onClose: () => void;
+  /** Head-to-head challenge (gems stake + message). */
+  onChallenge?: () => void;
 };
 
 export default function FriendDetailModalContent({
@@ -53,6 +55,7 @@ export default function FriendDetailModalContent({
   onViewOnMap,
   onRemove,
   onClose,
+  onChallenge,
 }: Props) {
   const presence = deriveFriendPresence(friend, myLocation);
   const [etaMin, setEtaMin] = useState<number | null>(null);
@@ -223,6 +226,17 @@ export default function FriendDetailModalContent({
         <Ionicons name="map-outline" size={20} color={theme.primary} />
         <Text style={[styles.btnSecondaryText, { color: theme.primary }]}>View on map</Text>
       </TouchableOpacity>
+
+      {onChallenge ? (
+        <TouchableOpacity
+          style={[styles.btnSecondary, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          activeOpacity={0.88}
+          onPress={onChallenge}
+        >
+          <Ionicons name="trophy-outline" size={20} color={theme.primary} />
+          <Text style={[styles.btnSecondaryText, { color: theme.primary }]}>Challenge</Text>
+        </TouchableOpacity>
+      ) : null}
 
       <TouchableOpacity
         style={[styles.btnDanger, { backgroundColor: theme.danger }]}

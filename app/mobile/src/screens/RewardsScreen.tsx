@@ -367,7 +367,7 @@ export default function RewardsScreen() {
       );
       if (user) {
         const fallbackTotal = Math.max(0, user.gems - gemCost);
-        const safeTotal = Number.isFinite(newGemTotal) ? Math.min(newGemTotal, fallbackTotal) : fallbackTotal;
+        const safeTotal = Number.isFinite(newGemTotal) ? Math.max(0, Math.floor(newGemTotal)) : fallbackTotal;
         updateUser({ gems: safeTotal });
       }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
