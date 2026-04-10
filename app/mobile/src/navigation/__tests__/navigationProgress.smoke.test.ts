@@ -35,6 +35,11 @@ const steps: DirectionsStep[] = [
     name: 'Oak',
     lat: 40.003,
     lng: -83.0,
+    bannerInstructions: [
+      {
+        primary: { text: 'Turn right onto Oak Avenue', type: 'turn', modifier: 'right' },
+      },
+    ],
   },
 ];
 
@@ -172,4 +177,28 @@ test('computeNavigationProgressFrame: tryGlobalReanchor corrects snap when local
   });
   assert.ok(localOnly?.snapped && withGlobal?.snapped);
   assert.ok(withGlobal!.snapped.segmentIndex > localOnly!.snapped.segmentIndex + 5);
+});
+
+test('banner primary text drives NavStep displayInstruction so banner matches voice/cards', () => {
+  const navSteps = buildNavStepsFromDirections(steps, poly);
+  assert.equal(navSteps[1]!.displayInstruction, 'Turn right onto Oak Avenue');
+  const route = poly.map((p) => ({ lat: p.lat, lng: p.lng }));
+  const frame = computeNavigationProgressFrame({
+    rawLocation: {
+      lat: 40.0005,
+      lng: -83.0,
+      heading: 0,
+      speedMps: 5,
+      accuracy: 10,
+      timestamp: Date.now(),
+    },
+    route,
+    steps: navSteps,
+    routeDurationSeconds: 600,
+    routeDistanceMeters: 222,
+    offRouteTuning: OFF_ROUTE_CONSERVATIVE,
+    previous: null,
+  });
+  assert.ok(frame?.banner);
+  assert.equal(frame!.banner!.primaryInstruction, 'Turn right onto Oak Avenue');
 });

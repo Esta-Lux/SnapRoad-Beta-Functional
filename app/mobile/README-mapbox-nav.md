@@ -7,8 +7,10 @@
 
 ## Production: native Mapbox Navigation SDK
 
-Set in **`eas.json`** → `build.production.env` → **`EXPO_PUBLIC_NAV_NATIVE_SDK": "1"`** (already in repo).  
-Runtime flag is read in `src/navigation/navFeatureFlags.ts`.
+Set in **`eas.json`** → `build.production.env` → **`EXPO_PUBLIC_NAV_NATIVE_SDK": "1"`** and **`EXPO_PUBLIC_NAV_LOGIC_SDK": "1"`** (TestFlight / production profile in repo).  
+Runtime flags are read in `src/navigation/navFeatureFlags.ts`. If the same key exists in Expo dashboard and `eas.json`, **`eas.json` wins** on EAS Build (see `app.config.ts` comment).
+
+**`EXPO_PUBLIC_NAV_LOGIC_SDK`** (optional): when `"1"`, SnapRoad runs a **headless** Mapbox Navigation session (off-screen `MapboxNavigationView` with `navigationLogicOnly`) so **routing, reroute, progress, and voice** come from the Navigation SDK while **`@rnmapbox/maps`** remains the only on-screen map. **If logic SDK is on, full-screen native navigation UI is disabled** even when `EXPO_PUBLIC_NAV_NATIVE_SDK=1`.
 
 Do **not** commit **`MAPBOX_DOWNLOADS_TOKEN`** or Mapbox **secret** tokens. Use EAS project env or local `.env` (gitignored).
 
@@ -51,7 +53,7 @@ For **App Store upload in one step**:
 npm run eas:ios:production:submit
 ```
 
-Use the **`production`** profile so `EXPO_PUBLIC_NAV_NATIVE_SDK=1` is applied.
+Use the **`production`** profile: it applies **`EXPO_PUBLIC_NAV_NATIVE_SDK=1`** and **`EXPO_PUBLIC_NAV_LOGIC_SDK=1`** so TestFlight uses headless SDK navigation on the in-app map (full-screen native UI stays off).
 
 ## Podfile ENV dedupe
 

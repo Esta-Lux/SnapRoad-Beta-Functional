@@ -2,7 +2,7 @@ import type { NavBannerModel, NavStep } from './navModel';
 import { phraseForManeuverKind } from './spokenManeuver';
 
 function primaryLine(step: NavStep): string {
-  const t = step.instruction?.trim();
+  const t = step.displayInstruction?.trim() || step.instruction?.trim();
   if (t) return t;
   const p = phraseForManeuverKind(step.kind);
   return p.charAt(0).toUpperCase() + p.slice(1);

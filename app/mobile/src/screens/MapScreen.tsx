@@ -122,7 +122,16 @@ import OrionQuickMic from '../components/orion/OrionQuickMic';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigatingState } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
-import { navNativeSdkEnabled } from '../navigation/navFeatureFlags';
+import { navLogicSdkEnabled, navNativeFullScreenEnabled } from '../navigation/navFeatureFlags';
+import {
+  ingestSdkLocation,
+  ingestSdkProgress,
+  ingestSdkRoutePolyline,
+} from '../navigation/navEngine';
+import type { SdkLocationPayload, SdkProgressPayload } from '../navigation/navSdkStore';
+import { polylineFromSdkRoutes, type SdkRoutesNative } from '../navigation/navSdkGeometry';
+import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
+import { routeProfileForPlatform } from '../hooks/useNativeNavBridge';
 import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
 import type { TripSummary } from '../hooks/useNavigation';
 import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
@@ -332,12 +341,80 @@ export default function MapScreen() {
     drivingMode,
     voiceMuted: navVoiceMuted,
     dynamicDestinationFollow: friendFollowSession?.mode === 'live',
+    navSdkHeadless: navLogicSdkEnabled(),
   });
   useNavigationSpeech({
     progress: nav.navigationProgress,
-    enabled: !navVoiceMuted && nav.isNavigating,
+    enabled: !navVoiceMuted && nav.isNavigating && !navLogicSdkEnabled(),
     drivingMode,
   });
+
+  const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
+  const [navLogicCoords, setNavLogicCoords] = useState<Array<{ latitude: number; longitude: number }>>([]);
+  const navLogicFollowingZoom = useMemo(() => {
+    switch (drivingMode) {
+      case 'calm':
+        return 16.5;
+      case 'sport':
+        return 17.5;
+      default:
+        return 17.0;
+    }
+  }, [drivingMode]);
+
+  useEffect(() => {
+    if (!navLogicSdkEnabled() || !nav.isNavigating || !nav.navigationData || !location) {
+      setNavLogicCoords([]);
+      return;
+    }
+    setNavLogicCoords([
+      { latitude: location.lat, longitude: location.lng },
+      {
+        latitude: nav.navigationData.destination.lat,
+        longitude: nav.navigationData.destination.lng,
+      },
+    ]);
+  }, [
+    nav.isNavigating,
+    nav.navigationData?.destination?.lat,
+    nav.navigationData?.destination?.lng,
+    location?.lat,
+    location?.lng,
+  ]);
+
+  useEffect(() => {
+    if (!nav.isNavigating) {
+      setNavLogicCoords([]);
+    }
+  }, [nav.isNavigating]);
+
+  const handleSdkRoutesLoaded = useCallback(
+    (event: { nativeEvent: { routes: SdkRoutesNative } }) => {
+      const routes = event.nativeEvent.routes;
+      const poly = polylineFromSdkRoutes(routes);
+      const mr = routes.mainRoute;
+      if (poly.length >= 2 && mr && typeof mr.distance === 'number' && typeof mr.expectedTravelTime === 'number') {
+        ingestSdkRoutePolyline(poly);
+        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime);
+      }
+    },
+    [nav.applySdkRouteGeometry],
+  );
+
+  const handleSdkRouteChanged = useCallback(
+    (event: { nativeEvent: { routes?: SdkRoutesNative } }) => {
+      const routes = event.nativeEvent.routes;
+      if (!routes?.mainRoute) return;
+      const poly = polylineFromSdkRoutes(routes);
+      const mr = routes.mainRoute;
+      if (poly.length >= 2 && typeof mr.distance === 'number' && typeof mr.expectedTravelTime === 'number') {
+        ingestSdkRoutePolyline(poly);
+        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime);
+      }
+    },
+    [nav.applySdkRouteGeometry],
+  );
+
   /** During nav, same as raw `location` (reliable puck/camera); turn/ETA still from `navigationProgress`. */
   const navDisplayCoord = nav.isNavigating ? nav.navigationProgressCoord : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
@@ -2489,6 +2566,31 @@ export default function MapScreen() {
         />
       )}
 
+      {navLogicSdkEnabled() && nav.isNavigating && navLogicCoords.length >= 2 ? (
+        <MapboxNavigationView
+          ref={navLogicRef}
+          style={{ position: 'absolute', width: 2, height: 2, opacity: 0, bottom: 0, right: 0, zIndex: -1 }}
+          pointerEvents="none"
+          navigationLogicOnly
+          coordinates={navLogicCoords}
+          mute={navVoiceMuted}
+          routeProfile={routeProfileForPlatform()}
+          drivingMode={drivingMode}
+          followingZoom={navLogicFollowingZoom}
+          disableAlternativeRoutes
+          vehicleMaxHeight={avoidLowClearances && hasTallVehicle ? vehicleHeight : undefined}
+          onRoutesLoaded={handleSdkRoutesLoaded}
+          onRouteProgressChanged={(e: { nativeEvent: SdkProgressPayload }) => ingestSdkProgress(e.nativeEvent)}
+          onNavigationLocationUpdate={(e: { nativeEvent: SdkLocationPayload }) =>
+            ingestSdkLocation(e.nativeEvent)
+          }
+          // @ts-expect-error Patched native module emits `{ reason, routes }`; published `.d.ts` still types `onRouteChanged` as no-arg.
+          onRouteChanged={handleSdkRouteChanged}
+          onFinalDestinationArrival={() => nav.stopNavigation()}
+          onCancelNavigation={() => nav.stopNavigation()}
+        />
+      ) : null}
+
       {/* ═══ MAP ═══════════════════════════════════════════════════════════ */}
       {mapOk && MapboxGL ? (
         <MapboxGL.MapView
@@ -3185,7 +3287,7 @@ export default function MapScreen() {
         onStartNavigationPress={() => {
           setSelectedPlaceId(null);
           setSelectedPlace(null);
-          if (navNativeSdkEnabled() && nav.navigationData && location) {
+          if (navNativeFullScreenEnabled() && nav.navigationData && location) {
             const nearestIncident = nearbyIncidents.reduce<Incident | null>((best, inc) => {
               const incDist = haversineMeters(location.lat, location.lng, inc.lat, inc.lng);
               if (!best) return inc;

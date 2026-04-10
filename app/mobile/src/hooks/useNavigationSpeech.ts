@@ -32,9 +32,17 @@ function buildUtterance(progress: NavigationProgress, metric: boolean): string |
   if (!step || step.kind === 'arrive') return null;
   const d = progress.nextStepDistanceMeters;
   const distancePart = distanceClauseForTurnSpeech(d, metric);
-  const street = step.streetName ? ` onto ${step.streetName}` : '';
-  const instruction = step.instruction?.trim() || phraseForManeuverKind(step.kind);
-  return `${distancePart}, ${instruction}${street}`;
+  const line =
+    step.displayInstruction?.trim() ||
+    step.instruction?.trim() ||
+    phraseForManeuverKind(step.kind);
+  const usedGenericPhrase =
+    !step.displayInstruction?.trim() && !step.instruction?.trim();
+  const street =
+    usedGenericPhrase && step.streetName?.trim()
+      ? ` onto ${step.streetName.trim()}`
+      : '';
+  return `${distancePart}, ${line}${street}`;
 }
 
 export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {

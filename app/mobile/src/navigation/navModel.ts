@@ -38,6 +38,11 @@ export type NavStep = {
   modifier?: string;
   streetName?: string | null;
   instruction?: string | null;
+  /**
+   * Single line for banner UI + turn speech: prefers Mapbox `bannerInstructions[0].primary.text`
+   * when present, else `instruction` (see {@link buildNavStepsFromDirections}).
+   */
+  displayInstruction?: string | null;
 };
 
 export type SnapPoint = {

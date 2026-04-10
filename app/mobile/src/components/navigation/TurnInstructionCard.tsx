@@ -153,10 +153,11 @@ export default React.memo(function TurnInstructionCard({
   const tcTextColor = modeConfig.turnCardTextColor;
   const d = DENSITY[mode];
 
+  /** Parent already uses the same display line as {@link useNavigationSpeech} (banner + NavStep). Prefer it so card and voice cannot disagree. */
   const primaryDisplay = useMemo(() => {
-    const bannerText = step?.bannerInstructions?.[0]?.primary?.text?.trim();
-    if (bannerText) return bannerText;
-    return primaryInstruction;
+    const fromParent = primaryInstruction?.trim();
+    if (fromParent) return fromParent;
+    return step?.bannerInstructions?.[0]?.primary?.text?.trim() || '';
   }, [step, primaryInstruction]);
 
   const effectiveLanes = useMemo(() => getLaneData(step) ?? lanesJson, [step, lanesJson]);

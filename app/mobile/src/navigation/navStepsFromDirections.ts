@@ -1,6 +1,7 @@
 import type { DirectionsStep } from '../lib/directions';
 import type { Coordinate } from '../types';
 import type { ManeuverKind, NavStep } from './navModel';
+import { getPrimaryBannerText } from './bannerInstructions';
 import { nearestSegmentIndex } from './navGeometry';
 
 function maneuverToKind(maneuver: string): ManeuverKind {
@@ -60,6 +61,10 @@ export function buildNavStepsFromDirections(steps: DirectionsStep[], polyline: C
 
     const segmentIndex = route.length >= 2 ? nearestSegmentIndex(route, pt) : 0;
 
+    const displayFromBanner = getPrimaryBannerText(step).trim();
+    const displayInstruction =
+      displayFromBanner || step.instruction?.trim() || null;
+
     return {
       index,
       segmentIndex,
@@ -70,6 +75,7 @@ export function buildNavStepsFromDirections(steps: DirectionsStep[], polyline: C
       modifier: step.maneuver,
       streetName: step.name ?? null,
       instruction: step.instruction || null,
+      displayInstruction,
     };
   });
 }

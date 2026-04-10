@@ -29,3 +29,17 @@ export function navServerEtaEnabled(): boolean {
 export function navNativeSdkEnabled(): boolean {
   return envBool('EXPO_PUBLIC_NAV_NATIVE_SDK', false);
 }
+
+/**
+ * Hybrid mode: Navigation SDK runs trip session + voice headless; UI stays on `@rnmapbox/maps`.
+ * When both this and {@link navNativeSdkEnabled} are true, hybrid wins — MapMain is not replaced
+ * by the full-screen native navigator.
+ */
+export function navLogicSdkEnabled(): boolean {
+  return envBool('EXPO_PUBLIC_NAV_LOGIC_SDK', false);
+}
+
+/** Full-screen `NativeNavigationScreen` — only when legacy native flag is on and hybrid is off. */
+export function navNativeFullScreenEnabled(): boolean {
+  return navNativeSdkEnabled() && !navLogicSdkEnabled();
+}

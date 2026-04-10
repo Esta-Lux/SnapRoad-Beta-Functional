@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect, useSyncExternalStore } from 'react';
 import type { Coordinate, DrivingMode } from '../types';
 import type {
   CongestionLevel,
@@ -47,6 +47,14 @@ import { buildNavStepsFromDirections } from '../navigation/navStepsFromDirection
 import type { NavigationProgress } from '../navigation/navModel';
 import { offRouteTuningForMode } from '../navigation/offRouteTuning';
 import { navEdgeEtaEnabled, navEtaBlendEnabled, navRefreshV2Enabled } from '../navigation/navFeatureFlags';
+import {
+  getNavSdkState,
+  getSdkMatchedCoordinate,
+  getSdkNavigationProgress,
+  resetNavSdkState,
+  subscribeNavSdk,
+} from '../navigation/navSdkStore';
+import { routeSummaryFromMapboxMetersSeconds } from '../utils/routeDisplay';
 import {
   DEFAULT_REFRESH_POLICY,
   decideTrafficRefresh,
@@ -126,6 +134,11 @@ export function useNavigation(params: {
   voiceMuted?: boolean;
   /** Live friend destination — marks routes as non-qualifying for gems. */
   dynamicDestinationFollow?: boolean;
+  /**
+   * When true (`EXPO_PUBLIC_NAV_LOGIC_SDK`), native Navigation SDK supplies progress, puck, and voice;
+   * JS reroute/refresh and progress math are bypassed during `isNavigating`.
+   */
+  navSdkHeadless?: boolean;
 }) {
   const {
     userLocation,
@@ -135,6 +148,7 @@ export function useNavigation(params: {
     drivingMode,
     voiceMuted = false,
     dynamicDestinationFollow = false,
+    navSdkHeadless = false,
   } = params;
   const voiceMutedRef = useRef(voiceMuted);
   useLayoutEffect(() => {
@@ -168,6 +182,8 @@ export function useNavigation(params: {
   const [tripSummary, setTripSummary] = useState<TripSummary | null>(null);
   const [selectedDestination, setSelectedDestination] = useState<GeocodeResult | null>(null);
   const [isRerouting, setIsRerouting] = useState(false);
+  const sdkActive = navSdkHeadless && isNavigating;
+  const navSdkSnapshot = useSyncExternalStore(subscribeNavSdk, getNavSdkState, getNavSdkState);
   const navQualityEmitRef = useRef<{ atMs: number; progressBucket: number }>({ atMs: 0, progressBucket: -1 });
   /** Congestion snapshot before a directions request (nav); used after fetch for compare telemetry. */
   const congestionBeforeDirectionsRef = useRef<CongestionLevel[] | null>(null);
@@ -220,7 +236,7 @@ export function useNavigation(params: {
   }, [navigationData?.polyline, navigationData?.edgeDurationSec, navStepsBuilt]);
 
   const rawForNavigationProgress = useMemo(() => {
-    if (!isNavigating || routePoints.length < 2) return null;
+    if (!isNavigating || routePoints.length < 2 || sdkActive) return null;
     return {
       lat: userLocation.lat,
       lng: userLocation.lng,
@@ -229,13 +245,13 @@ export function useNavigation(params: {
       accuracy: gpsAccuracy,
       timestamp: Date.now(),
     };
-  }, [isNavigating, routePoints.length, userLocation.lat, userLocation.lng, heading, speed, gpsAccuracy]);
+  }, [isNavigating, routePoints.length, sdkActive, userLocation.lat, userLocation.lng, heading, speed, gpsAccuracy]);
 
   const offRouteTuning = useMemo(() => offRouteTuningForMode(drivingMode), [drivingMode]);
 
-  const navigationProgress: NavigationProgress | null = useNavigationProgress({
+  const jsNavigationProgress = useNavigationProgress({
     rawLocation: rawForNavigationProgress,
-    route: routePoints,
+    route: sdkActive ? [] : routePoints,
     steps: navStepsBuilt,
     routeDurationSeconds: navigationData?.duration ?? 0,
     routeDistanceMeters: navigationData?.distance ?? 0,
@@ -247,17 +263,28 @@ export function useNavigation(params: {
     navEtaBlendEnabled: navEtaBlendEnabled(),
   });
 
-  /**
-   * Reliability rollback: raw GPS for progress/ETA/arrival (matches native LocationPuck),
-   * avoids smoothed coordinates lagging at stops and intersections.
-   * Banner/speech/ETA numbers still come from `navigationProgress` (single model).
-   */
-  const navigationProgressCoord: Coordinate = useMemo(
-    () => ({ lat: userLocation.lat, lng: userLocation.lng }),
-    [userLocation.lat, userLocation.lng],
-  );
+  const sdkBuiltNavigationProgress = useMemo((): NavigationProgress | null => {
+    if (!sdkActive || !navigationData) return null;
+    return getSdkNavigationProgress(navigationData);
+  }, [sdkActive, navigationData, navSdkSnapshot]);
 
-  const navigationDisplayHeading = heading;
+  const navigationProgress: NavigationProgress | null =
+    sdkBuiltNavigationProgress ?? jsNavigationProgress;
+
+  const navigationProgressCoord: Coordinate = useMemo(() => {
+    if (sdkActive) {
+      const c = getSdkMatchedCoordinate();
+      if (c) return c;
+    }
+    return { lat: userLocation.lat, lng: userLocation.lng };
+  }, [sdkActive, userLocation.lat, userLocation.lng, navSdkSnapshot.location]);
+
+  const navigationDisplayHeading = useMemo(() => {
+    if (sdkActive && navSdkSnapshot.location && navSdkSnapshot.location.course >= 0) {
+      return navSdkSnapshot.location.course;
+    }
+    return heading;
+  }, [sdkActive, navSdkSnapshot.location, heading]);
 
   const liveEta = useMemo((): { distanceMiles: number; etaMinutes: number } | null => {
     if (!isNavigating || !navigationProgress) return null;
@@ -448,6 +475,7 @@ export function useNavigation(params: {
   useEffect(() => {
     if (navRefreshV2Enabled()) return undefined;
     if (!isNavigating || !navigationData?.destination) return undefined;
+    if (navSdkHeadless) return undefined;
 
     const INTERVAL_MS = 180_000;
     const MIN_BETWEEN_MS = 150_000;
@@ -464,12 +492,13 @@ export function useNavigation(params: {
     }, INTERVAL_MS);
 
     return () => clearInterval(id);
-  }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng]);
+  }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng, navSdkHeadless]);
 
   /** Policy-driven refresh: drift, long-step, model speed mismatch, staleness — capped + debounced. */
   useEffect(() => {
     if (!navRefreshV2Enabled()) return undefined;
     if (!isNavigating || !navigationData?.destination) return undefined;
+    if (navSdkHeadless) return undefined;
 
     const pol = DEFAULT_REFRESH_POLICY;
     const id = setInterval(() => {
@@ -636,7 +665,7 @@ export function useNavigation(params: {
     }, pol.policyEvalIntervalMs);
 
     return () => clearInterval(id);
-  }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng, gpsAccuracy]);
+  }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng, gpsAccuracy, navSdkHeadless]);
 
   const handleRouteSelect = useCallback((routeTypeOrIndex: 'best' | 'eco' | 'alt' | number) => {
     if (!availableRoutes.length || !navigationData) return;
@@ -662,6 +691,27 @@ export function useNavigation(params: {
     routeModelRefreshedAtRef.current = Date.now();
     setRouteModelRefreshKey((k) => k + 1);
   }, [availableRoutes, navigationData]);
+
+  /** Apply geometry + length/time from native Navigation SDK after `onRoutesLoaded` / reroute. */
+  const applySdkRouteGeometry = useCallback(
+    (polyline: Coordinate[], distanceMeters: number, durationSeconds: number) => {
+      const sum = routeSummaryFromMapboxMetersSeconds(distanceMeters, durationSeconds);
+      setNavigationData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          polyline,
+          distance: distanceMeters,
+          duration: durationSeconds,
+          durationText: sum.durationText,
+          distanceText: sum.distanceText,
+        };
+      });
+      routeModelRefreshedAtRef.current = Date.now();
+      setRouteModelRefreshKey((k) => k + 1);
+    },
+    [],
+  );
 
   // --- Start / Stop navigation ---
   const startNavigation = useCallback(() => {
@@ -697,19 +747,22 @@ export function useNavigation(params: {
       ? (primaryVoiceAnnouncement(firstStep) || primaryInstructionText(firstStep))
       : '';
     const firstInstr = firstCue ? ` ${firstCue.replace(/\s+$/, '')}${/[.!?]$/.test(firstCue) ? '' : '.'}` : '';
-    if (drivingMode === 'sport') {
-      navSpeak(`${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
-    } else if (drivingMode === 'calm') {
-      const etaStr = etaMin < 60 ? `about ${etaMin} minutes` : `about ${Math.floor(etaMin / 60)} hours`;
-      navSpeak(`Navigating to ${dest}, ${etaStr} away.${firstInstr}`, 'high', drivingMode);
-    } else {
-      navSpeak(`Starting navigation to ${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
+    if (!navSdkHeadless) {
+      if (drivingMode === 'sport') {
+        navSpeak(`${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
+      } else if (drivingMode === 'calm') {
+        const etaStr = etaMin < 60 ? `about ${etaMin} minutes` : `about ${Math.floor(etaMin / 60)} hours`;
+        navSpeak(`Navigating to ${dest}, ${etaStr} away.${firstInstr}`, 'high', drivingMode);
+      } else {
+        navSpeak(`Starting navigation to ${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
+      }
     }
-  }, [navigationData, drivingMode, navSpeak]);
+  }, [navigationData, drivingMode, navSpeak, navSdkHeadless]);
 
   const stopNavigation = useCallback(() => {
     const sessionAge = Date.now() - navSessionStartRef.current;
     if (sessionAge < 3000) {
+      resetNavSdkState();
       setIsNavigating(false);
       isNavigatingRef.current = false;
       stopSpeaking();
@@ -727,6 +780,7 @@ export function useNavigation(params: {
       lastRerouteAtRef.current = 0;
       return;
     }
+    resetNavSdkState();
     setIsNavigating(false);
     isNavigatingRef.current = false;
     stopSpeaking();
@@ -896,13 +950,21 @@ export function useNavigation(params: {
 
   /** Single projection + traveled/remaining: drives step index, ETA, voice, reroute, and route split in MapScreen. */
   const routeProgress = useMemo((): NavigationRouteProgress | null => {
+    if (isNavigating && navSdkHeadless) return null;
     if (!isNavigating || !navigationData?.polyline || navigationData.polyline.length < 2) return null;
     return computeNavigationRouteProgress(
       navigationProgressCoord,
       navigationData.polyline,
       navigationData.distance ?? 0,
     );
-  }, [isNavigating, navigationData?.polyline, navigationData?.distance, navigationProgressCoord.lat, navigationProgressCoord.lng]);
+  }, [
+    isNavigating,
+    navSdkHeadless,
+    navigationData?.polyline,
+    navigationData?.distance,
+    navigationProgressCoord.lat,
+    navigationProgressCoord.lng,
+  ]);
 
   useEffect(() => {
     routeProgressRef.current = routeProgress;
@@ -923,6 +985,11 @@ export function useNavigation(params: {
     if (!isNavigating || !navigationData?.steps?.length || !navigationData.polyline?.length) {
       return;
     }
+    if (navSdkHeadless && navigationProgress?.nextStep) {
+      const si = navigationProgress.nextStep.index;
+      setCurrentStepIndex(Math.min(Math.max(0, si), navigationData.steps.length - 1));
+      return;
+    }
     const cumAlong =
       navigationProgress?.snapped?.cumulativeMeters ?? routeProgress?.cumFromStartMeters;
     if (cumAlong == null) return;
@@ -938,6 +1005,8 @@ export function useNavigation(params: {
     navigationData?.polyline,
     navigationProgress?.snapped?.cumulativeMeters,
     routeProgress?.cumFromStartMeters,
+    navSdkHeadless,
+    navigationProgress?.nextStep?.index,
   ]);
 
   // --- Arrival announcement ---
@@ -946,6 +1015,7 @@ export function useNavigation(params: {
       hasAnnouncedArrivalRef.current = false;
       return;
     }
+    if (navSdkHeadless) return;
     if (hasAnnouncedArrivalRef.current) return;
     if (navigationProgress?.nextStep?.kind !== 'arrive') return;
     const dest = navigationData.destination;
@@ -977,6 +1047,7 @@ export function useNavigation(params: {
 
   // --- Auto end at destination: arrival voice did not call stopNavigation before; users were stuck "navigating". ---
   useEffect(() => {
+    if (navSdkHeadless) return;
     if (!isNavigating || !navigationData?.destination) return;
     if (autoEndNavTriggeredRef.current) return;
     if (navigationProgress?.nextStep?.kind !== 'arrive') {
@@ -1026,6 +1097,10 @@ export function useNavigation(params: {
 
   // --- Off-route detection + auto-reroute (`streakRequired` from mode tuning; sport=3, calm/adaptive=4) ---
   useEffect(() => {
+    if (navSdkHeadless) {
+      offRouteStreakRef.current = 0;
+      return;
+    }
     if (!isNavigating || !navigationData?.destination || !navigationData?.polyline?.length || !navigationProgress) {
       offRouteStreakRef.current = 0;
       return;
@@ -1108,6 +1183,7 @@ export function useNavigation(params: {
     fetchDirections,
     navSpeak,
     offRouteTuning,
+    navSdkHeadless,
   ]);
 
   const addWaypoint = useCallback(async (waypoint: Coordinate & { name?: string }) => {
@@ -1185,6 +1261,7 @@ export function useNavigation(params: {
   ]);
 
   useEffect(() => {
+    if (navSdkHeadless) return;
     if (!isNavigating || !routeProgress) return;
     const speedMps = speed * 0.44704;
     const thresholdM =
@@ -1208,6 +1285,7 @@ export function useNavigation(params: {
   }, [
     gpsAccuracy,
     isNavigating,
+    navSdkHeadless,
     navigationData?.distance,
     routeProgress,
     speed,
@@ -1255,6 +1333,7 @@ export function useNavigation(params: {
     setSelectedDestination,
     fetchDirections,
     handleRouteSelect,
+    applySdkRouteGeometry,
     startNavigation,
     stopNavigation,
     dismissTripSummary,
