@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { api } from '../../api/client';
 import { getMapboxRouteOptions } from '../../lib/directions';
+import { parseOpenNowBooleanFromDetailsPayload } from '../../utils/placeHours';
 import { formatTime } from '../../utils/format';
 import { routeSummaryFromMapboxMetersSeconds } from '../../utils/routeDisplay';
 import { haversineMeters } from '../../utils/distance';
@@ -198,6 +199,7 @@ function normalizeDetail(placeId: string, d: Record<string, unknown>, summary?: 
   const reviewsRaw = (d.reviews as Record<string, unknown>[]) ?? [];
   const opening = (d.opening_hours as Record<string, unknown>) || {};
   const hoursLines = (d.hours as string[]) ?? (opening.weekday_text as string[]) ?? [];
+  const openNowResolved = parseOpenNowBooleanFromDetailsPayload(d);
   const lat = (d.lat as number) ?? (d.geometry as { location?: { lat?: number } })?.location?.lat ?? summary?.lat;
   const lng = (d.lng as number) ?? (d.geometry as { location?: { lng?: number } })?.location?.lng ?? summary?.lng;
 
@@ -253,7 +255,7 @@ function normalizeDetail(placeId: string, d: Record<string, unknown>, summary?: 
     total_reviews: (d.total_reviews ?? d.user_ratings_total) as number | undefined,
     price_level: d.price_level as number | undefined,
     types: (d.types as string[]) ?? [],
-    open_now: (d.open_now ?? opening.open_now) as boolean | null | undefined,
+    open_now: openNowResolved,
     hours: hoursLines,
     opening_hours: opening as PlaceDetailData['opening_hours'],
     reviews,

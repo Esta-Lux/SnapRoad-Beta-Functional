@@ -3,6 +3,7 @@ import { FlatList, Image, Text, TextInput, TouchableOpacity, View } from 'react-
 import { Ionicons } from '@expo/vector-icons';
 
 import type { GeocodeResult } from '../../lib/directions';
+import { formatOpenLabelForSearchRow } from '../../utils/placeHours';
 import type { SavedLocation } from '../../types';
 
 type Chip = {
@@ -186,7 +187,14 @@ export default function MapSearchTopBar(props: Props) {
                 const distText = dist != null ? (dist < 160 ? `${Math.round(dist * 3.281)} ft` : `${(dist / 1609.344).toFixed(1)} mi`) : '';
                 const suri = props.placePhotoThumbUri(item.photo_reference, 128);
                 const priceHint = props.searchResultPriceHint(item);
-                const openHint = item.open_now === true ? 'Open now' : item.open_now === false ? 'Closed' : '';
+                const isRecentList = !props.searchQuery.trim();
+                const openRow = formatOpenLabelForSearchRow(item, isRecentList);
+                const openColor =
+                  openRow.variant === 'open'
+                    ? '#22C55E'
+                    : openRow.variant === 'closed'
+                      ? '#EF4444'
+                      : props.colors.textTertiary;
                 return (
                   <TouchableOpacity style={[s.resultRow, { borderBottomColor: props.colors.border }]} onPress={() => props.onSelectResult(item)}>
                     <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: props.colors.surfaceSecondary, justifyContent: 'center', alignItems: 'center', marginRight: 10, overflow: 'hidden' }}>
@@ -196,7 +204,9 @@ export default function MapSearchTopBar(props: Props) {
                       <Text style={[s.resultName, { color: props.colors.text }]} numberOfLines={1}>{item.name}</Text>
                       <Text style={[s.resultAddr, { color: props.colors.textSecondary }]} numberOfLines={1}>{item.address}</Text>
                       {priceHint ? <Text style={{ color: props.colors.textTertiary, fontSize: 11, fontWeight: '600', marginTop: 2 }} numberOfLines={2}>{priceHint}</Text> : null}
-                      {openHint ? <Text style={{ color: openHint === 'Open now' ? '#22C55E' : props.colors.textTertiary, fontSize: 11, fontWeight: '600', marginTop: 2 }}>{openHint}</Text> : null}
+                      {openRow.label ? (
+                        <Text style={{ color: openColor, fontSize: 11, fontWeight: '600', marginTop: 2 }}>{openRow.label}</Text>
+                      ) : null}
                     </View>
                     {distText ? <Text style={{ color: props.colors.textTertiary, fontSize: 11, fontWeight: '600', marginLeft: 8 }}>{distText}</Text> : null}
                   </TouchableOpacity>

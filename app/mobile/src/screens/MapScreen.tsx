@@ -30,6 +30,12 @@ import {
   type GeocodeResult,
 } from '../lib/directions';
 import {
+  migratePersistedRecentSearch,
+  parseOpenNowBooleanFromDetailsPayload,
+  withOpenNowObservation,
+  isOpenNowFresh,
+} from '../utils/placeHours';
+import {
   emitAgentMapboxOtaSnapshot,
   getMapboxPublicToken,
   getMapboxTokenPublicPrefix,
@@ -528,6 +534,8 @@ export default function MapScreen() {
   const [showConvoy, setShowConvoy] = useState(false);
   const [currentAddress, setCurrentAddress] = useState<string>('');
   const [recentSearches, setRecentSearches] = useState<GeocodeResult[]>([]);
+  const recentSearchesRef = useRef<GeocodeResult[]>([]);
+  recentSearchesRef.current = recentSearches;
 
   // ── Layers ──
   const { showTraffic, showIncidents, showCameras, setShowTraffic, setShowIncidents, setShowCameras,
@@ -778,7 +786,15 @@ export default function MapScreen() {
     const saved = storage.getString('snaproad_driving_mode');
     if (saved === 'calm' || saved === 'adaptive' || saved === 'sport') setDrivingMode(saved as DrivingMode);
     const recent = storage.getString('snaproad_recent_searches');
-    if (recent) { try { setRecentSearches(JSON.parse(recent)); } catch {} }
+    if (recent) {
+      try {
+        const parsed = JSON.parse(recent) as unknown;
+        const arr = Array.isArray(parsed) ? parsed : [];
+        setRecentSearches(arr.map((x) => migratePersistedRecentSearch(x as GeocodeResult)));
+      } catch {
+        /* ignore */
+      }
+    }
   }, []);
 
   // Fix 6: Persist driving mode on change
@@ -1431,6 +1447,60 @@ export default function MapScreen() {
     });
   }, []);
 
+  /** Re-align Recent open/closed with `/api/places/details` (same source as PlaceDetailSheet). */
+  const refreshRecentOpenStatus = useCallback(async () => {
+    const list = recentSearchesRef.current;
+    if (list.length === 0) return;
+    const indices = list
+      .map((r, i) => ({ r, i }))
+      .filter(
+        ({ r }) =>
+          Boolean(r.place_id) &&
+          (!isOpenNowFresh(r.open_now_last_updated_at) || typeof r.open_now !== 'boolean'),
+      )
+      .slice(0, 15)
+      .map((x) => x.i);
+    if (indices.length === 0) return;
+
+    const next = [...list];
+    const concurrency = 4;
+    for (let k = 0; k < indices.length; k += concurrency) {
+      const batch = indices.slice(k, k + concurrency);
+      await Promise.all(
+        batch.map(async (i) => {
+          const r = next[i];
+          const pid = r.place_id;
+          if (!pid) return;
+          try {
+            const res = await api.get<Record<string, unknown>>(`/api/places/details/${pid}`);
+            if (!res.success || res.data == null) return;
+            const outer = res.data as { data?: Record<string, unknown> };
+            const d = outer.data ?? (res.data as Record<string, unknown>);
+            if (!d || typeof d !== 'object') return;
+            const open = parseOpenNowBooleanFromDetailsPayload(d);
+            next[i] = {
+              ...next[i],
+              open_now: open === null ? undefined : open,
+              open_now_last_updated_at: Date.now(),
+            };
+          } catch {
+            /* offline / quota */
+          }
+        }),
+      );
+    }
+    setRecentSearches(next);
+    storage.set('snaproad_recent_searches', JSON.stringify(next));
+  }, []);
+
+  useEffect(() => {
+    if (!mapTabFocused) return;
+    const t = setTimeout(() => {
+      void refreshRecentOpenStatus();
+    }, 700);
+    return () => clearTimeout(t);
+  }, [mapTabFocused, recentSearches.length, refreshRecentOpenStatus]);
+
   const handleSearchChange = useCallback((text: string) => {
     setSearchQuery(text);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -1463,17 +1533,19 @@ export default function MapScreen() {
         const root = res.data as any;
         const predictions = root?.data ?? root?.predictions ?? [];
         if (Array.isArray(predictions) && predictions.length > 0) {
-          const mapped: GeocodeResult[] = predictions.map((p: any) => ({
-            name: p.name || p.description || prep.query,
-            address: p.address || p.description || '',
-            lat: p.lat ?? 0,
-            lng: p.lng ?? 0,
-            placeType: p.types?.[0] ?? 'poi',
-            place_id: p.place_id,
-            photo_reference: typeof p.photo_reference === 'string' ? p.photo_reference : undefined,
-            open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
-            price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
-          }));
+          const mapped: GeocodeResult[] = predictions.map((p: any) =>
+            withOpenNowObservation({
+              name: p.name || p.description || prep.query,
+              address: p.address || p.description || '',
+              lat: p.lat ?? 0,
+              lng: p.lng ?? 0,
+              placeType: p.types?.[0] ?? 'poi',
+              place_id: p.place_id,
+              photo_reference: typeof p.photo_reference === 'string' ? p.photo_reference : undefined,
+              open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
+              price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
+            }),
+          );
           const merged = dedupeGeocodeResults([...localFirst, ...mapped]);
           setSearchResults(sortGeocodeByProximity(merged, loc));
           setIsSearching(false);
@@ -1513,17 +1585,18 @@ export default function MapScreen() {
       return;
     }
     const localFirst = localMatchesForSearchQuery(prep.query, savedPlaces, recentSearches);
-    const mapPred = (p: any): GeocodeResult => ({
-      name: p.name || p.description || prep.query,
-      address: p.address || p.description || '',
-      lat: p.lat ?? 0,
-      lng: p.lng ?? 0,
-      placeType: p.types?.[0] ?? 'poi',
-      place_id: p.place_id,
-      photo_reference: typeof p.photo_reference === 'string' ? p.photo_reference : undefined,
-      open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
-      price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
-    });
+    const mapPred = (p: any): GeocodeResult =>
+      withOpenNowObservation({
+        name: p.name || p.description || prep.query,
+        address: p.address || p.description || '',
+        lat: p.lat ?? 0,
+        lng: p.lng ?? 0,
+        placeType: p.types?.[0] ?? 'poi',
+        place_id: p.place_id,
+        photo_reference: typeof p.photo_reference === 'string' ? p.photo_reference : undefined,
+        open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
+        price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
+      });
 
     const bucket: GeocodeResult[] = [...localFirst];
 
@@ -1555,17 +1628,19 @@ export default function MapScreen() {
         const arr = Array.isArray(payload) ? payload : [];
         for (const p of arr) {
           const rec = p as Record<string, unknown>;
-          bucket.push({
-            name: String(rec.name ?? ''),
-            address: String(rec.address ?? ''),
-            lat: Number(rec.lat) || 0,
-            lng: Number(rec.lng) || 0,
-            place_id: rec.place_id != null ? String(rec.place_id) : undefined,
-            placeType: Array.isArray(rec.types) && rec.types[0] ? String(rec.types[0]) : undefined,
-            photo_reference: rec.photo_reference != null ? String(rec.photo_reference) : undefined,
-            open_now: typeof rec.open_now === 'boolean' ? rec.open_now : undefined,
-            price_level: typeof rec.price_level === 'number' ? rec.price_level : undefined,
-          });
+          bucket.push(
+            withOpenNowObservation({
+              name: String(rec.name ?? ''),
+              address: String(rec.address ?? ''),
+              lat: Number(rec.lat) || 0,
+              lng: Number(rec.lng) || 0,
+              place_id: rec.place_id != null ? String(rec.place_id) : undefined,
+              placeType: Array.isArray(rec.types) && rec.types[0] ? String(rec.types[0]) : undefined,
+              photo_reference: rec.photo_reference != null ? String(rec.photo_reference) : undefined,
+              open_now: typeof rec.open_now === 'boolean' ? rec.open_now : undefined,
+              price_level: typeof rec.price_level === 'number' ? rec.price_level : undefined,
+            }),
+          );
         }
       } catch {
         /* offline */
@@ -1621,28 +1696,61 @@ export default function MapScreen() {
     setIsSearchFocused(false);
     setIsExploring(false);
 
-    const updated = [result, ...recentSearches.filter((r) => r.name !== result.name)].slice(0, 10);
-    setRecentSearches(updated);
-    storage.set('snaproad_recent_searches', JSON.stringify(updated));
+    const buildRecentRow = (
+      base: GeocodeResult,
+      detail: Record<string, unknown> | null,
+      observedAt: number,
+    ): GeocodeResult => {
+      if (!detail) {
+        return { ...base, open_now: undefined, open_now_last_updated_at: undefined };
+      }
+      const open = parseOpenNowBooleanFromDetailsPayload(detail);
+      return {
+        ...base,
+        open_now: open === null ? undefined : open,
+        open_now_last_updated_at: observedAt,
+      };
+    };
 
     if (result.place_id) {
       let lat = Number(result.lat);
       let lng = Number(result.lng);
+      let detailRecord: Record<string, unknown> | null = null;
+      try {
+        const details = await api.get<any>(`/api/places/details/${result.place_id}`);
+        const d = details.data?.data ?? details.data;
+        if (d && typeof d === 'object') detailRecord = d as Record<string, unknown>;
+      } catch {
+        detailRecord = null;
+      }
+
       const hasCoords = () =>
         Number.isFinite(lat) &&
         Number.isFinite(lng) &&
         (Math.abs(lat) > 1e-6 || Math.abs(lng) > 1e-6);
-      if (!hasCoords()) {
-        try {
-          const details = await api.get<any>(`/api/places/details/${result.place_id}`);
-          const d = details.data?.data ?? details.data;
-          lat = Number(d?.lat ?? d?.geometry?.location?.lat);
-          lng = Number(d?.lng ?? d?.geometry?.location?.lng);
-        } catch {
-          lat = NaN;
-          lng = NaN;
+
+      if (detailRecord) {
+        const dlat = Number(
+          detailRecord.lat ?? (detailRecord.geometry as { location?: { lat?: number } })?.location?.lat,
+        );
+        const dlng = Number(
+          detailRecord.lng ?? (detailRecord.geometry as { location?: { lng?: number } })?.location?.lng,
+        );
+        if (!hasCoords() && Number.isFinite(dlat) && Number.isFinite(dlng)) {
+          lat = dlat;
+          lng = dlng;
         }
+      } else if (!hasCoords()) {
+        lat = NaN;
+        lng = NaN;
       }
+
+      const observedAt = Date.now();
+      const recentRow = buildRecentRow(result, detailRecord, observedAt);
+      const updated = [recentRow, ...recentSearches.filter((r) => r.name !== result.name)].slice(0, 10);
+      setRecentSearches(updated);
+      storage.set('snaproad_recent_searches', JSON.stringify(updated));
+
       if (hasCoords()) {
         cameraRef.current?.setCamera({ centerCoordinate: [lng, lat], zoomLevel: 16, pitch: 45, animationDuration: 800 });
       } else {
@@ -1651,6 +1759,8 @@ export default function MapScreen() {
           'Could not load coordinates for this place. Try another search result or open the listing again in a moment.',
         );
       }
+
+      const summaryOpen = detailRecord ? parseOpenNowBooleanFromDetailsPayload(detailRecord) : null;
       setSelectedPlace({
         name: result.name,
         address: result.address,
@@ -1659,11 +1769,20 @@ export default function MapScreen() {
         placeType: result.placeType,
         category: result.placeType ?? result.category,
         price_level: result.price_level,
-        open_now: result.open_now,
+        open_now: summaryOpen === null ? undefined : summaryOpen,
       });
       setSelectedPlaceId(result.place_id);
       return;
     }
+
+    const recentRowNoPid: GeocodeResult = {
+      ...result,
+      open_now: undefined,
+      open_now_last_updated_at: undefined,
+    };
+    const updatedNo = [recentRowNoPid, ...recentSearches.filter((r) => r.name !== result.name)].slice(0, 10);
+    setRecentSearches(updatedNo);
+    storage.set('snaproad_recent_searches', JSON.stringify(updatedNo));
 
     setSelectedPlace({
       name: result.name,
@@ -1672,7 +1791,7 @@ export default function MapScreen() {
       maki: result.maki,
       placeType: result.placeType,
       price_level: result.price_level,
-      open_now: result.open_now,
+      open_now: undefined,
       lat: result.lat,
       lng: result.lng,
     });

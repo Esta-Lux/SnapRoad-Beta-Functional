@@ -96,6 +96,8 @@ export interface GeocodeResult {
   /** Google Places photo ref — use `/api/places/_photo?ref=` */
   photo_reference?: string;
   open_now?: boolean;
+  /** When `open_now` was last observed (details API or search response); used for TTL in Recent list. */
+  open_now_last_updated_at?: number;
   price_level?: number;
 }
 
