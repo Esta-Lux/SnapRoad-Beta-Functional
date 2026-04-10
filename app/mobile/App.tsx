@@ -24,15 +24,7 @@ import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { NavigatingProvider, useNavigatingState } from './src/contexts/NavigatingContext';
 
-import DashboardScreen from './src/screens/DashboardScreen';
-import RewardsScreen from './src/screens/RewardsScreen';
-import ProfileScreen from './src/screens/ProfileScreen';
-import AuthScreen from './src/screens/AuthScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
-import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
-import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
-import AppTour from './src/components/gamification/AppTour';
-import DriverPromotionWelcomeSheet from './src/components/gamification/DriverPromotionWelcomeSheet';
 import LegalConsentGate from './src/components/legal/LegalConsentGate';
 import { storage } from './src/utils/storage';
 import {
@@ -48,20 +40,6 @@ import {
   logMapboxAccessDiagnostics,
   logMapboxStartupSourceOnce,
 } from './src/config/mapbox';
-
-/** Set before any MapView mounts — `useEffect` in screens runs too late for first paint. */
-(function mapboxEarlyAccessToken(): void {
-  try {
-    logMapboxStartupSourceOnce('App.tsx init');
-    logMapboxAccessDiagnostics('App.tsx early setAccessToken');
-    const token = getMapboxPublicToken();
-    if (MapboxGL && token) {
-      MapboxGL.setAccessToken(token);
-    }
-  } catch {
-    /* @rnmapbox optional in Expo Go */
-  }
-})();
 
 const APP_IS_PRODUCTION =
   String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -95,6 +73,59 @@ function loadMapScreenOnce(): React.ComponentType<any> {
 function MapScreenLazy(props: Record<string, unknown>) {
   const Screen = loadMapScreenOnce();
   return <Screen {...props} />;
+}
+
+let dashboardScreenComponent: React.ComponentType<any> | null = null;
+function loadDashboardScreenOnce(): React.ComponentType<any> {
+  if (!dashboardScreenComponent) {
+    dashboardScreenComponent = require('./src/screens/DashboardScreen').default as React.ComponentType<any>;
+  }
+  return dashboardScreenComponent as React.ComponentType<any>;
+}
+function DashboardScreenLazy(props: Record<string, unknown>) {
+  const Screen = loadDashboardScreenOnce();
+  return <Screen {...props} />;
+}
+
+let rewardsScreenComponent: React.ComponentType<any> | null = null;
+function loadRewardsScreenOnce(): React.ComponentType<any> {
+  if (!rewardsScreenComponent) {
+    rewardsScreenComponent = require('./src/screens/RewardsScreen').default as React.ComponentType<any>;
+  }
+  return rewardsScreenComponent as React.ComponentType<any>;
+}
+function RewardsScreenLazy(props: Record<string, unknown>) {
+  const Screen = loadRewardsScreenOnce();
+  return <Screen {...props} />;
+}
+
+let profileScreenComponent: React.ComponentType<any> | null = null;
+function loadProfileScreenOnce(): React.ComponentType<any> {
+  if (!profileScreenComponent) {
+    profileScreenComponent = require('./src/screens/ProfileScreen').default as React.ComponentType<any>;
+  }
+  return profileScreenComponent as React.ComponentType<any>;
+}
+function ProfileScreenLazy(props: Record<string, unknown>) {
+  const Screen = loadProfileScreenOnce();
+  return <Screen {...props} />;
+}
+
+let appTourComponent: React.ComponentType<any> | null = null;
+function loadAppTourOnce(): React.ComponentType<any> {
+  if (!appTourComponent) {
+    appTourComponent = require('./src/components/gamification/AppTour').default as React.ComponentType<any>;
+  }
+  return appTourComponent as React.ComponentType<any>;
+}
+
+let driverPromoSheetComponent: React.ComponentType<any> | null = null;
+function loadDriverPromoSheetOnce(): React.ComponentType<any> {
+  if (!driverPromoSheetComponent) {
+    driverPromoSheetComponent =
+      require('./src/components/gamification/DriverPromotionWelcomeSheet').default as React.ComponentType<any>;
+  }
+  return driverPromoSheetComponent as React.ComponentType<any>;
 }
 
 function NativeNavigationUnavailableScreen({ navigation }: { navigation: any }) {
@@ -143,7 +174,7 @@ function MapStackScreen() {
 function DashboardStackScreen() {
   return (
     <DashboardStack.Navigator screenOptions={{ headerShown: false }}>
-      <DashboardStack.Screen name="DashboardMain" component={DashboardScreen} />
+      <DashboardStack.Screen name="DashboardMain" component={DashboardScreenLazy} />
     </DashboardStack.Navigator>
   );
 }
@@ -151,7 +182,7 @@ function DashboardStackScreen() {
 function RewardsStackScreen() {
   return (
     <RewardsStack.Navigator screenOptions={{ headerShown: false }}>
-      <RewardsStack.Screen name="RewardsMain" component={RewardsScreen} />
+      <RewardsStack.Screen name="RewardsMain" component={RewardsScreenLazy} />
     </RewardsStack.Navigator>
   );
 }
@@ -159,8 +190,8 @@ function RewardsStackScreen() {
 function ProfileStackScreen() {
   return (
     <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
-      <ProfileStack.Screen name="ProfileMain" component={ProfileScreen} />
-      <ProfileStack.Screen name="ProfileBilling" component={ProfileScreen} />
+      <ProfileStack.Screen name="ProfileMain" component={ProfileScreenLazy} />
+      <ProfileStack.Screen name="ProfileBilling" component={ProfileScreenLazy} />
     </ProfileStack.Navigator>
   );
 }
@@ -188,6 +219,8 @@ function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={{
+        /** Without this, all four tabs mount at once and pull Map + Profile + Wallet + Dashboard native graphs — common TestFlight crash. */
+        lazy: true,
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textTertiary,
@@ -517,27 +550,50 @@ function RootNavigator() {
         <>
           <MainTabs />
           <LegalConsentGate />
-          <AppTour visible={showTour} onComplete={() => { setShowTour(false); storage.set('snaproad_tour_done', '1'); }} />
-          <DriverPromotionWelcomeSheet
-            visible={showDriverPromoWelcome}
-            promotionPlan={user?.promotion_plan}
-            promotionAccessUntil={user?.promotion_access_until}
-            onMaybeLater={acknowledgeDriverPromo}
-            onViewPlans={() => {
-              acknowledgeDriverPromo();
-              requestAnimationFrame(() => {
-                if (!rootNavigationRef.isReady()) return;
-                rootNavigationRef.dispatch(CommonActions.navigate({ name: 'Profile' }));
-              });
-            }}
-          />
+          {showTour ? (
+            (() => {
+              const AppTour = loadAppTourOnce();
+              return (
+                <AppTour visible onComplete={() => { setShowTour(false); storage.set('snaproad_tour_done', '1'); }} />
+              );
+            })()
+          ) : null}
+          {showDriverPromoWelcome ? (
+            (() => {
+              const DriverPromotionWelcomeSheet = loadDriverPromoSheetOnce();
+              return (
+                <DriverPromotionWelcomeSheet
+                  visible
+                  promotionPlan={user?.promotion_plan}
+                  promotionAccessUntil={user?.promotion_access_until}
+                  onMaybeLater={acknowledgeDriverPromo}
+                  onViewPlans={() => {
+                    acknowledgeDriverPromo();
+                    requestAnimationFrame(() => {
+                      if (!rootNavigationRef.isReady()) return;
+                      rootNavigationRef.dispatch(CommonActions.navigate({ name: 'Profile' }));
+                    });
+                  }}
+                />
+              );
+            })()
+          ) : null}
         </>
       ) : (
         <PublicStack.Navigator screenOptions={{ headerShown: false }}>
           <PublicStack.Screen name="Welcome" component={WelcomeScreen} />
-          <PublicStack.Screen name="Auth" component={AuthScreen} />
-          <PublicStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-          <PublicStack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+          <PublicStack.Screen
+            name="Auth"
+            getComponent={() => require('./src/screens/AuthScreen').default}
+          />
+          <PublicStack.Screen
+            name="ForgotPassword"
+            getComponent={() => require('./src/screens/ForgotPasswordScreen').default}
+          />
+          <PublicStack.Screen
+            name="ResetPassword"
+            getComponent={() => require('./src/screens/ResetPasswordScreen').default}
+          />
         </PublicStack.Navigator>
       )}
     </NavigationContainer>
@@ -599,6 +655,20 @@ function ApiConfigScreen({ message }: { message: string }) {
 
 export default function App() {
   const apiConfigErr = getApiMisconfigurationMessage();
+
+  React.useEffect(() => {
+    try {
+      logMapboxStartupSourceOnce('App mount');
+      logMapboxAccessDiagnostics('App mount setAccessToken');
+      const token = getMapboxPublicToken();
+      if (MapboxGL && token) {
+        MapboxGL.setAccessToken(token);
+      }
+    } catch {
+      /* @rnmapbox optional in Expo Go */
+    }
+  }, []);
+
   if (apiConfigErr) {
     return <ApiConfigScreen message={apiConfigErr} />;
   }

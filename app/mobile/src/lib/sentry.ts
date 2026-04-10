@@ -27,24 +27,34 @@ const sentryEnv =
         ? 'development'
         : appEnv || 'production';
 
+const sentryReplayEnabled =
+  String(process.env.EXPO_PUBLIC_SENTRY_REPLAY || '').trim() === '1';
+
 if (dsn) {
-  Sentry.init({
-    dsn,
-    debug: __DEV__,
-    environment: sentryEnv,
-    tracesSampleRate: isProduction ? 0.2 : 1,
-    enableAutoSessionTracking: true,
-    sendDefaultPii: !isProduction,
-    enableLogs: true,
-    replaysSessionSampleRate: isProduction ? 0.1 : 0,
-    replaysOnErrorSampleRate: 1,
-    integrations: [
+  try {
+    const integrations: NonNullable<Parameters<typeof Sentry.init>[0]>['integrations'] = [
       Sentry.consoleLoggingIntegration({ levels: ['log', 'warn', 'error'] }),
-      Sentry.mobileReplayIntegration(),
-      Sentry.feedbackIntegration(),
-    ],
-  });
-  if (String(process.env.EXPO_PUBLIC_SENTRY_LOG_TEST || '').trim() === '1') {
-    Sentry.logger.info('Sentry logs test', { log_source: 'sentry_test' });
+    ];
+    if (sentryReplayEnabled) {
+      integrations.push(Sentry.mobileReplayIntegration());
+      integrations.push(Sentry.feedbackIntegration());
+    }
+    Sentry.init({
+      dsn,
+      debug: __DEV__,
+      environment: sentryEnv,
+      tracesSampleRate: isProduction ? 0.2 : 1,
+      enableAutoSessionTracking: true,
+      sendDefaultPii: !isProduction,
+      enableLogs: true,
+      replaysSessionSampleRate: sentryReplayEnabled && isProduction ? 0.1 : 0,
+      replaysOnErrorSampleRate: sentryReplayEnabled ? 1 : 0,
+      integrations,
+    });
+    if (String(process.env.EXPO_PUBLIC_SENTRY_LOG_TEST || '').trim() === '1') {
+      Sentry.logger.info('Sentry logs test', { log_source: 'sentry_test' });
+    }
+  } catch (e) {
+    console.warn('[Sentry] init failed — continuing without error reporting', e);
   }
 }
