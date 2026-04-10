@@ -380,6 +380,26 @@ index 8f841df..6326c0d 100644
      }
  }
  extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
+diff --git a/node_modules/@badatgil/expo-mapbox-navigation/plugin/config.js b/node_modules/@badatgil/expo-mapbox-navigation/plugin/config.js
+index e67851c..b2ecedb 100644
+--- a/node_modules/@badatgil/expo-mapbox-navigation/plugin/config.js
++++ b/node_modules/@badatgil/expo-mapbox-navigation/plugin/config.js
+@@ -15,9 +15,14 @@ const path = require("path");
+  */
+ 
+ const applyPodfilePostInstallModifications = (src, mapboxMapsVersion) => {
++  // Drop any previous ENV line so re-running prebuild cannot stack duplicates (Ruby would use the last assignment).
++  const deduped = src.replace(
++    /^ENV\['ExpoNavigationMapboxMapsVersion'\] = '[^']*'\n/gm,
++    ""
++  );
+   return (
+     `ENV['ExpoNavigationMapboxMapsVersion'] = '${mapboxMapsVersion}'\n` +
+-    src.replace(
++    deduped.replace(
+       "post_install do |installer|",
+       `post_install do |installer|
+       installer.pods_project.targets.each do |target|
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/src/ExpoMapboxNavigation.types.ts b/node_modules/@badatgil/expo-mapbox-navigation/src/ExpoMapboxNavigation.types.ts
 index 3e8b18b..2bb909a 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/src/ExpoMapboxNavigation.types.ts

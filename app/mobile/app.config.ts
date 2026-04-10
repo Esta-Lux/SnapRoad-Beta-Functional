@@ -36,6 +36,14 @@ const envAny = (names: string[], fallback = ""): string => {
 /** Default is empty; set EXPO_PUBLIC_MAPBOX_TOKEN / MAPBOX_PUBLIC_TOKEN via .env or EAS env. */
 const MAPBOX_PUBLIC_TOKEN_DEFAULT = "";
 
+/**
+ * Single pin for @rnmapbox/maps + @badatgil/expo-mapbox-navigation on iOS and Android.
+ * The navigation module ships prebuilt iOS xcframeworks compiled against Mapbox Maps **11.11.0**
+ * (see upstream README / bundled Package.swift). Using a newer Maps line (e.g. 11.18.x) can cause
+ * launch crashes: dyld missing symbol `MapboxMap.cameraState` referenced from MapboxNavigationCore.
+ */
+const MAPBOX_MAPS_SDK_VERSION = "11.11.0";
+
 const EAS_PROJECT_ID = "b800018b-79d3-4b8e-bbad-f5d628ee6a60";
 
 const isProductionBuild = (): boolean => {
@@ -171,21 +179,24 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       [
         "expo-build-properties",
         {
-          ios: { useFrameworks: "static" },
+          // Dynamic frameworks: fewer launch/link clashes with mixed native deps (Stripe, Sentry, Reanimated).
+          // Mapbox pods are switched to dynamic linkage by @rnmapbox/maps; static was the vendor README default
+          // but is higher-risk for the full app graph. If `pod install` / runtime fails, try `"static"` again.
+          ios: { useFrameworks: "dynamic" },
         },
       ],
       [
         "@rnmapbox/maps",
         {
           RNMapboxMapsImpl: "mapbox",
-          RNMapboxMapsVersion: "11.18.2",
+          RNMapboxMapsVersion: MAPBOX_MAPS_SDK_VERSION,
         },
       ],
       [
         "@badatgil/expo-mapbox-navigation",
         {
           accessToken: envAny(["EXPO_PUBLIC_MAPBOX_TOKEN", "MAPBOX_PUBLIC_TOKEN"], MAPBOX_PUBLIC_TOKEN_DEFAULT),
-          mapboxMapsVersion: "11.18.2",
+          mapboxMapsVersion: MAPBOX_MAPS_SDK_VERSION,
         },
       ],
       [
