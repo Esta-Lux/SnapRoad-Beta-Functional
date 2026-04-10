@@ -857,6 +857,69 @@ def sb_create_challenge(data: dict) -> Optional[dict]:
         return None
 
 
+def sb_insert_friend_challenge(data: dict) -> Optional[dict]:
+    """Insert P2P row into friend_challenges (see sql/043_friend_challenges.sql)."""
+    try:
+        result = _sb().table("friend_challenges").insert(data).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_insert_friend_challenge: {e}")
+        return None
+
+
+def sb_list_friend_challenges_for_user(user_id: str, limit: int = 100) -> list:
+    if not user_id:
+        return []
+    try:
+        uid = str(user_id).strip()
+        q = (
+            _sb()
+            .table("friend_challenges")
+            .select("*")
+            .or_(f"challenger_id.eq.{uid},opponent_id.eq.{uid}")
+            .order("created_at", desc=True)
+            .limit(limit)
+        )
+        result = q.execute()
+        return result.data or []
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_list_friend_challenges_for_user: {e}")
+        return []
+
+
+def sb_get_friend_challenge_for_opponent(challenge_id: str, opponent_id: str) -> Optional[dict]:
+    if not challenge_id or not opponent_id:
+        return None
+    try:
+        result = (
+            _sb()
+            .table("friend_challenges")
+            .select("*")
+            .eq("id", str(challenge_id).strip())
+            .eq("opponent_id", str(opponent_id).strip())
+            .maybe_single()
+            .execute()
+        )
+        return result.data if result.data else None
+    except Exception as e:
+        if not _table_missing(e):
+            logger.error(f"sb_get_friend_challenge_for_opponent: {e}")
+        return None
+
+
+def sb_update_friend_challenge(challenge_id: str, updates: dict) -> bool:
+    if not challenge_id or not updates:
+        return False
+    try:
+        _sb().table("friend_challenges").update(updates).eq("id", str(challenge_id).strip()).execute()
+        return True
+    except Exception as e:
+        logger.warning(f"sb_update_friend_challenge: {e}")
+        return False
+
+
 # ─────────────────────────────────────────────
 # BADGES TABLE
 # ─────────────────────────────────────────────

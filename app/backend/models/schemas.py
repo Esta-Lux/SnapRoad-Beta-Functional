@@ -178,9 +178,13 @@ class XPEvent(BaseModel):
     event_id: Optional[str] = None
 
 class ChallengeCreate(BaseModel):
-    opponent_id: str
-    stake: int
-    duration_hours: int
+    """Create a head-to-head challenge. Stake 0 = no gem lock for creator (friendly duel)."""
+
+    opponent_id: str = Field(..., min_length=1)
+    stake: int = Field(default=0, ge=0, le=10000)
+    duration_hours: int = Field(default=72, ge=1, le=720)
+    challenge_type: str = Field(default="safest_drive", max_length=48)
+    custom_message: Optional[str] = Field(default=None, max_length=220)
 
 class GemGenerateRequest(BaseModel):
     trip_id: str

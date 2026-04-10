@@ -18,6 +18,10 @@ from services.supabase_service import (
     sb_update_profile,
     sb_create_challenge,
     sb_get_challenges,
+    sb_insert_friend_challenge,
+    sb_list_friend_challenges_for_user,
+    sb_get_friend_challenge_for_opponent,
+    sb_update_friend_challenge,
 )
 from services.premium_access import (
     MSG_PREMIUM_REQUIRED,
@@ -296,6 +300,41 @@ def get_community_badges(user: CurrentUser):
 
 
 # ==================== CHALLENGES ====================
+_ALLOWED_CHALLENGE_TYPES = frozenset({"safest_drive", "longest_trip", "most_gems_earned"})
+
+
+def _normalize_challenge_type(raw: Optional[str]) -> str:
+    s = (raw or "safest_drive").strip().lower().replace("-", "_").replace(" ", "_")
+    if s in _ALLOWED_CHALLENGE_TYPES:
+        return s
+    if "longest" in s:
+        return "longest_trip"
+    if "gem" in s:
+        return "most_gems_earned"
+    return "safest_drive"
+
+
+def _map_friend_challenge_row(r: dict) -> dict:
+    stake = int(r.get("stake_gems") or 0)
+    return {
+        "id": str(r.get("id")),
+        "challenger_id": str(r.get("challenger_id") or ""),
+        "opponent_id": str(r.get("opponent_id") or ""),
+        "challenger_name": r.get("challenger_name"),
+        "opponent_name": r.get("opponent_name"),
+        "stake": stake,
+        "stake_gems": stake,
+        "duration_hours": int(r.get("duration_hours") or 72),
+        "challenge_type": r.get("challenge_type"),
+        "custom_message": r.get("custom_message"),
+        "status": r.get("status"),
+        "your_score": r.get("your_score"),
+        "opponent_score": r.get("opponent_score"),
+        "created_at": r.get("created_at"),
+        "ends_at": r.get("ends_at"),
+    }
+
+
 @router.get("/challenges")
 def get_challenges(limit: Annotated[int, Query(ge=1, le=100)] = 50):
     return {"success": True, "data": challenges_data[:limit], "count": len(challenges_data[:limit])}
@@ -303,28 +342,91 @@ def get_challenges(limit: Annotated[int, Query(ge=1, le=100)] = 50):
 
 @router.post("/challenges", responses={400: {"description": MSG_NOT_ENOUGH_GEMS}, 404: {"description": "Opponent not found"}, 503: {"description": "Challenge service unavailable"}})
 def create_challenge(challenge: ChallengeCreate, auth_user: CurrentUser):
-    user_id = str(auth_user.get("id") or current_user_id)
+    user_id = str(auth_user.get("id") or current_user_id).strip()
+    opponent_id = str(challenge.opponent_id).strip()
+    if opponent_id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot challenge yourself")
     user = _user_state(user_id)
-    opponent = _user_state(str(challenge.opponent_id))
+    opponent = _user_state(opponent_id)
     if not opponent:
         raise HTTPException(status_code=404, detail="Opponent not found")
-    if user.get("gems", 0) < challenge.stake:
+    profile_opp = sb_get_profile(opponent_id) or {}
+    if ENVIRONMENT == "production" and not profile_opp.get("id"):
+        raise HTTPException(status_code=404, detail="Opponent not found")
+    stake = int(challenge.stake)
+    cg = int(user.get("gems", 0) or 0)
+    if cg < stake:
         raise HTTPException(status_code=400, detail=MSG_NOT_ENOUGH_GEMS)
-    _persist_user_fields(user_id, {"gems": user.get("gems", 0) - challenge.stake})
-    new_challenge = {"id": str(len(challenges_db) + 1), "challenger_id": user_id, "opponent_id": challenge.opponent_id, "challenger_name": user.get("name", "Unknown"), "opponent_name": opponent.get("name", "Unknown"), "stake": challenge.stake, "duration_hours": challenge.duration_hours, "status": "pending", "your_score": user.get("safety_score", 85), "opponent_score": opponent.get("safety_score", 85), "created_at": datetime.now().isoformat(), "ends_at": (datetime.now() + timedelta(hours=challenge.duration_hours)).isoformat()}
-    created = sb_create_challenge(new_challenge)
+
+    msg = challenge.custom_message
+    if msg is not None:
+        msg = str(msg).strip()
+        if not msg:
+            msg = None
+        elif len(msg) > 220:
+            msg = msg[:220]
+
+    ctype = _normalize_challenge_type(challenge.challenge_type)
+    duration = int(challenge.duration_hours)
+    ends_at = (datetime.now() + timedelta(hours=duration)).isoformat()
+    ch_name = str(user.get("name") or user.get("full_name") or "Driver")
+    op_name = str(opponent.get("name") or opponent.get("full_name") or profile_opp.get("full_name") or profile_opp.get("name") or "Friend")
+
+    new_gems = cg - stake
+    _persist_user_fields(user_id, {"gems": new_gems})
+    payload = {
+        "challenger_id": user_id,
+        "opponent_id": opponent_id,
+        "stake_gems": stake,
+        "duration_hours": duration,
+        "challenge_type": ctype,
+        "custom_message": msg,
+        "status": "pending",
+        "challenger_name": ch_name[:120],
+        "opponent_name": op_name[:120],
+        "your_score": int(user.get("safety_score", 85) or 85),
+        "opponent_score": int(opponent.get("safety_score", 85) or 85),
+        "ends_at": ends_at,
+    }
+    created = sb_insert_friend_challenge(payload)
     if created:
-        return {"success": True, "message": f"Challenge sent to {opponent.get('name')}!", "data": created}
+        out = {**created, "stake": stake, "challenger_gems_remaining": new_gems}
+        return {"success": True, "message": f"Challenge sent to {op_name}!", "data": out}
+
+    _persist_user_fields(user_id, {"gems": cg})
     if ENVIRONMENT == "production":
         raise HTTPException(status_code=503, detail="Challenge service unavailable")
+
+    nid = str(len(challenges_db) + 1)
+    new_challenge = {
+        "id": nid,
+        "challenger_id": user_id,
+        "opponent_id": opponent_id,
+        "challenger_name": ch_name,
+        "opponent_name": op_name,
+        "stake": stake,
+        "stake_gems": stake,
+        "duration_hours": duration,
+        "challenge_type": ctype,
+        "custom_message": msg,
+        "status": "pending",
+        "your_score": payload["your_score"],
+        "opponent_score": payload["opponent_score"],
+        "created_at": datetime.now().isoformat(),
+        "ends_at": ends_at,
+    }
     challenges_db.append(new_challenge)
-    return {"success": True, "message": f"Challenge sent to {opponent.get('name')}!", "data": new_challenge}
+    return {
+        "success": True,
+        "message": f"Challenge sent to {op_name}!",
+        "data": {**new_challenge, "challenger_gems_remaining": new_gems},
+    }
 
 
 def _deduct_stake_and_activate(user_id: str, challenge: dict) -> dict:
     """Deduct the stake from the user's gems, mark the challenge active, and return the response."""
     user = _user_state(user_id)
-    stake = int(challenge.get("stake") or 0)
+    stake = int(challenge.get("stake_gems") or challenge.get("stake") or 0)
     if user.get("gems", 0) < stake:
         raise HTTPException(status_code=400, detail=MSG_NOT_ENOUGH_GEMS)
     _persist_user_fields(user_id, {"gems": user.get("gems", 0) - stake})
@@ -335,10 +437,28 @@ def _deduct_stake_and_activate(user_id: str, challenge: dict) -> dict:
 @router.post("/challenges/{challenge_id}/accept", responses={400: {"description": MSG_NOT_ENOUGH_GEMS}, 404: {"description": "Challenge not found"}, 503: {"description": "Challenge service unavailable"}})
 def accept_challenge(challenge_id: str, auth_user: CurrentUser):
     user_id = str(auth_user.get("id") or current_user_id)
+    row = sb_get_friend_challenge_for_opponent(challenge_id, user_id)
+    if row and str(row.get("status")) == "pending":
+        stake = int(row.get("stake_gems") or 0)
+        acc = _user_state(user_id)
+        ag = int(acc.get("gems", 0) or 0)
+        if ag < stake:
+            raise HTTPException(status_code=400, detail=MSG_NOT_ENOUGH_GEMS)
+        new_g = ag - stake
+        _persist_user_fields(user_id, {"gems": new_g})
+        ok = sb_update_friend_challenge(str(row.get("id")), {"status": "active"})
+        if not ok:
+            _persist_user_fields(user_id, {"gems": ag})
+            raise HTTPException(status_code=503, detail="Challenge service unavailable")
+        out = _map_friend_challenge_row({**row, "status": "active"})
+        out["opponent_gems_remaining"] = new_g
+        return {"success": True, "message": "Challenge accepted!", "data": out}
     try:
         db_challenges = sb_get_challenges(limit=200)
         c = next((x for x in db_challenges if str(x.get("id")) == str(challenge_id) and str(x.get("opponent_id")) == user_id), None)
         if c:
+            stake = int(c.get("stake_gems") or c.get("stake") or 0)
+            c = {**c, "stake": stake, "stake_gems": stake}
             result = _deduct_stake_and_activate(user_id, c)
             try:
                 get_supabase().table("challenges").update({"status": "active"}).eq("id", c.get("id")).eq(
@@ -353,8 +473,10 @@ def accept_challenge(challenge_id: str, auth_user: CurrentUser):
         if ENVIRONMENT == "production":
             raise HTTPException(status_code=503, detail="Challenge service unavailable")
     for c in challenges_db:
-        if c["id"] == challenge_id and c["opponent_id"] == user_id:
-            return _deduct_stake_and_activate(user_id, c)
+        if str(c.get("id")) == str(challenge_id) and str(c.get("opponent_id")) == user_id:
+            stake = int(c.get("stake_gems") or c.get("stake") or 0)
+            cc = {**c, "stake": stake, "stake_gems": stake}
+            return _deduct_stake_and_activate(user_id, cc)
     raise HTTPException(status_code=404, detail="Challenge not found")
 
 
@@ -379,10 +501,13 @@ def get_challenge_history(
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     user_id = str(user.get("id") or current_user_id)
-    db_challenges = sb_get_challenges(limit=200)
-    source = db_challenges if db_challenges else challenges_db
-    user_challenges = [c for c in source if str(c.get("challenger_id")) == user_id or str(c.get("opponent_id")) == user_id]
-    user_challenges = user_challenges[:limit]
+    friend_rows = sb_list_friend_challenges_for_user(user_id, limit)
+    user_challenges = [_map_friend_challenge_row(r) for r in friend_rows]
+    if not user_challenges:
+        db_challenges = sb_get_challenges(limit=200)
+        source = db_challenges if db_challenges else challenges_db
+        user_challenges = [c for c in source if str(c.get("challenger_id")) == user_id or str(c.get("opponent_id")) == user_id]
+        user_challenges = user_challenges[:limit]
     wins = sum(1 for c in user_challenges if c.get("status") == "won")
     losses = sum(1 for c in user_challenges if c.get("status") == "lost")
     total = wins + losses
