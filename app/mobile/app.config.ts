@@ -39,8 +39,9 @@ const MAPBOX_PUBLIC_TOKEN_DEFAULT = "";
 /**
  * Single pin for @rnmapbox/maps + @badatgil/expo-mapbox-navigation on iOS and Android.
  * The navigation module ships prebuilt iOS xcframeworks compiled against Mapbox Maps **11.11.0**
- * (see upstream README / bundled Package.swift). Using a newer Maps line (e.g. 11.18.x) can cause
- * launch crashes: dyld missing symbol `MapboxMap.cameraState` referenced from MapboxNavigationCore.
+ * (see upstream README / bundled Package.swift). Newer Maps (e.g. 11.18.x) can dyld-crash vs NavigationCore.
+ * **@rnmapbox/maps 10.3.0** targets newer Maps APIs; `patches/@rnmapbox+maps+10.3.0.patch` stubs a few style
+ * setters absent in 11.11.0 so iOS compiles while JS keeps the same API surface.
  */
 const MAPBOX_MAPS_SDK_VERSION = "11.11.0";
 

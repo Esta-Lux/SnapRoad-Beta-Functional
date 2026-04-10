@@ -1,0 +1,17 @@
+diff --git a/node_modules/@react-native-voice/voice/react-native-voice.podspec b/node_modules/@react-native-voice/voice/react-native-voice.podspec
+index dc39651..dd4a7eb 100644
+--- a/node_modules/@react-native-voice/voice/react-native-voice.podspec
++++ b/node_modules/@react-native-voice/voice/react-native-voice.podspec
+@@ -16,4 +16,12 @@ Pod::Spec.new do |s|
+   s.source_files  = "ios/**/*.{h,m}"
+ 
+   s.dependency 'React-Core'
++
++  # Expo / use_frameworks :linkage => :static: build as a static pod so React-Core (RCTEventEmitter) resolves.
++  # Also relax modular headers; avoids archive link issues on newer Xcode iOS SDKs.
++  s.static_framework = true
++  s.pod_target_xcconfig = {
++    'CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES' => 'YES',
++    'DEFINES_MODULE' => 'YES',
++  }
+ end

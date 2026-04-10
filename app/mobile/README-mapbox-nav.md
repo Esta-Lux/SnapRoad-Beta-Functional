@@ -59,4 +59,34 @@ Use the **`production`** profile so `EXPO_PUBLIC_NAV_NATIVE_SDK=1` is applied.
 
 ## iOS `useFrameworks`
 
-`app.config.ts` sets **`expo-build-properties` → `ios.useFrameworks: "static"`**. Do not switch to **`dynamic`** without retesting EAS: it has produced **linker failures** archiving `@react-native-voice/voice` (missing `RCTEventEmitter` from React-Core).
+`app.config.ts` sets **`expo-build-properties` → `ios.useFrameworks: "static"`** (required for this CocoaPods graph). **`dynamic`** has broken **`@react-native-voice/voice`** (`RCTEventEmitter` / React-Core) during archive.
+
+## Patches (read this before changing versions)
+
+| Patch | Why |
+|-------|-----|
+| `patches/@rnmapbox+maps+10.3.0.patch` | **Compile:** MapboxMaps **11.11.0** lacks layer props that 10.3.0’s `RNMBXStyle.swift` sets (`fillPatternCrossFade`, `linePatternCrossFade`, `circleElevationReference`, `fillExtrusionPatternCrossFade`, `modelAllowDensityReduction`). Stubs no-op so EAS can compile; SnapRoad does not set these from JS. |
+| `patches/@react-native-voice+voice+3.2.4.patch` | **Link:** `static_framework` + modular-header flags so `react-native-voice` links **React-Core** (`RCTEventEmitter`) under Expo static frameworks and avoids flaky ld auto-link on newer Xcode SDKs (`CoreAudioTypes` / `UIUtilities` warnings). |
+| `patches/@badatgil+expo-mapbox-navigation+1.6.2.patch` | Dedupes `ExpoNavigationMapboxMapsVersion` in Podfile across prebuilds (+ existing SnapRoad native tweaks). |
+
+**Dependency pins (no `^`):** `@rnmapbox/maps` and `@react-native-voice/voice` are exact versions in `package.json` so patches stay aligned.
+
+## Preflight before `eas build` (iOS)
+
+From **`app/mobile`** (requires Xcode + CocoaPods locally for `pod install`):
+
+```bash
+rm -rf ios
+npx expo prebuild --platform ios --no-install
+grep -c "ExpoNavigationMapboxMapsVersion" ios/Podfile   # expect 1
+grep "RNMapboxMapsVersion" ios/Podfile                   # expect 11.11.0
+cd ios && pod install
+grep -n "MapboxMaps (" Podfile.lock
+# Confirm MapboxMaps resolves to 11.11.0. Optional: open workspace and build once to catch native compile errors early.
+```
+
+EAS (from **repo root**):
+
+```bash
+npm run eas:ios:production
+```
