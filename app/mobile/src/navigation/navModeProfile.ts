@@ -135,27 +135,27 @@ export function getVoiceNavTuning(mode: DrivingMode): VoiceNavTuning {
   switch (mode) {
     case 'calm':
       return {
-        preparatoryMaxM: 920,
-        advanceMaxM: 430,
-        advanceMinM: 100,
-        imminentM: 100,
+        preparatoryMaxM: 580,
+        advanceMaxM: 280,
+        advanceMinM: 105,
+        imminentM: 88,
         guidanceRateMultiplier: 0.94,
       };
     case 'sport':
       return {
-        preparatoryMaxM: 680,
-        advanceMaxM: 360,
-        advanceMinM: 82,
-        imminentM: 88,
+        preparatoryMaxM: 520,
+        advanceMaxM: 260,
+        advanceMinM: 78,
+        imminentM: 78,
         guidanceRateMultiplier: 1.06,
       };
     case 'adaptive':
     default:
       return {
-        preparatoryMaxM: 800,
-        advanceMaxM: 400,
-        advanceMinM: 95,
-        imminentM: 95,
+        preparatoryMaxM: 520,
+        advanceMaxM: 260,
+        advanceMinM: 100,
+        imminentM: 82,
         guidanceRateMultiplier: 1,
       };
   }
@@ -167,28 +167,28 @@ export function getTurnCardNavTuning(mode: DrivingMode): TurnCardNavTuning {
   switch (mode) {
     case 'calm':
       return {
-        activeManeuverMeters: 100,
-        previewBaseMaxM: 244,
-        previewBonusPerMph: 5.5,
-        previewDistanceCapM: 700,
-        confirmActiveMultiplier: 1.22,
+        activeManeuverMeters: 78,
+        previewBaseMaxM: 200,
+        previewBonusPerMph: 4.5,
+        previewDistanceCapM: 520,
+        confirmActiveMultiplier: 1.32,
       };
     case 'sport':
       return {
-        activeManeuverMeters: 82,
-        previewBaseMaxM: 244,
-        previewBonusPerMph: 5.5,
-        previewDistanceCapM: 420,
-        confirmActiveMultiplier: 1.08,
+        activeManeuverMeters: 68,
+        previewBaseMaxM: 190,
+        previewBonusPerMph: 4.2,
+        previewDistanceCapM: 360,
+        confirmActiveMultiplier: 1.12,
       };
     case 'adaptive':
     default:
       return {
-        activeManeuverMeters: 91,
-        previewBaseMaxM: 244,
-        previewBonusPerMph: 5.5,
-        previewDistanceCapM: 580,
-        confirmActiveMultiplier: 1.15,
+        activeManeuverMeters: 72,
+        previewBaseMaxM: 200,
+        previewBonusPerMph: 4.5,
+        previewDistanceCapM: 460,
+        confirmActiveMultiplier: 1.28,
       };
   }
 }

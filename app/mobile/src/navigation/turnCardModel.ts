@@ -7,8 +7,8 @@ export type TurnCardState = 'preview' | 'active' | 'confirm' | 'cruise';
 
 const FT_PER_M = 3.28084;
 
-/** Adaptive-mode default (~300 ft). Prefer {@link getTurnCardNavTuning} for mode-specific values. */
-export const ACTIVE_MANEUVER_METERS = 91;
+/** Adaptive-mode default (~236 ft). Prefer {@link getTurnCardNavTuning} for mode-specific values. */
+export const ACTIVE_MANEUVER_METERS = 72;
 
 export { previewDistanceMaxMeters };
 
@@ -84,7 +84,7 @@ export function buildChainInstruction(navStep: NavStep | null | undefined): stri
   if (!navStep?.nextManeuverKind) return null;
   if (
     navStep.nextManeuverDistanceMeters != null &&
-    navStep.nextManeuverDistanceMeters > 300
+    navStep.nextManeuverDistanceMeters > 240
   ) {
     return null;
   }

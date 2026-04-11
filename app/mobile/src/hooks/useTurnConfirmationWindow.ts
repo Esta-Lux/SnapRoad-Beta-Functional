@@ -25,9 +25,9 @@ export function useTurnConfirmationUntil(
     }
     if (currentStepIndex > prevIdxRef.current) {
       const ms =
-        drivingMode === 'calm' ? 4800 :
-        drivingMode === 'sport' ? 2400 :
-        3600;
+        drivingMode === 'calm' ? 6200 :
+        drivingMode === 'sport' ? 3200 :
+        5000;
       setConfirmUntil(Date.now() + ms);
     }
     prevIdxRef.current = currentStepIndex;

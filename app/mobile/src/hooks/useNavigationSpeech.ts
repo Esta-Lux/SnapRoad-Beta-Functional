@@ -81,9 +81,12 @@ function roundaboutPhrase(step: NavStep): string {
     : `At the roundabout, take the ${ord} exit`;
 }
 
+/** Only chain the *next* maneuver when it is close — avoids “then …” while the driver is still in the current leg. */
+const CHAIN_NEXT_MAX_M = 240;
+
 function chainPhrase(step: NavStep): string {
   if (!step.nextManeuverKind) return '';
-  if (step.nextManeuverDistanceMeters != null && step.nextManeuverDistanceMeters > 300) return '';
+  if (step.nextManeuverDistanceMeters != null && step.nextManeuverDistanceMeters > CHAIN_NEXT_MAX_M) return '';
 
   const chainable: Partial<Record<ManeuverKind, string>> = {
     turn_left: 'then turn left',
@@ -153,8 +156,13 @@ function buildUtterance(
   return `${distPart}, ${sigClause}${shieldPrefix}${line.charAt(0).toLowerCase() + line.slice(1)}${chainSuffix}.${laneSuffix}`;
 }
 
+/** After a step advances, suppress far/mid-distance cues so the next maneuver is not spoken until the driver settles. */
+const VOICE_POST_STEP_SUPPRESS_MS = 2800;
+
 export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
   const lastKey = useRef<string | null>(null);
+  const lastStepIndexRef = useRef<number | null>(null);
+  const suppressFarVoiceUntilRef = useRef(0);
   const metric = useMemo(() => usesMetricForSpeech(), []);
   const localeTag = useMemo(() => speechLocaleTag(), []);
   const voiceT = useMemo(() => getVoiceNavTuning(drivingMode), [drivingMode]);
@@ -165,6 +173,16 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
     if (progress.nextStep.kind === 'arrive') return;
     if (isNavigationGuidanceSuppressed()) return;
 
+    const stepIdx = progress.nextStep.index;
+    const prevIdx = lastStepIndexRef.current;
+    if (prevIdx !== stepIdx) {
+      if (prevIdx !== null && stepIdx > prevIdx) {
+        suppressFarVoiceUntilRef.current = Date.now() + VOICE_POST_STEP_SUPPRESS_MS;
+        lastKey.current = null;
+      }
+      lastStepIndexRef.current = stepIdx;
+    }
+
     const d = progress.nextStepDistanceMeters;
     const { imminentM, advanceMaxM, advanceMinM, preparatoryMaxM } = voiceT;
 
@@ -174,6 +192,14 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
     else if (d <= preparatoryMaxM && d > advanceMaxM) bucket = 'preparatory';
 
     if (!bucket) return;
+
+    const now = Date.now();
+    if (
+      (bucket === 'preparatory' || bucket === 'advance') &&
+      now < suppressFarVoiceUntilRef.current
+    ) {
+      return;
+    }
 
     const key = `${progress.nextStep.index}:${bucket}`;
     if (lastKey.current === key) return;
@@ -195,6 +221,8 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
   useEffect(() => {
     if (!enabled) {
       lastKey.current = null;
+      lastStepIndexRef.current = null;
+      suppressFarVoiceUntilRef.current = 0;
       setLastTurnByTurnPhrase(null);
     }
   }, [enabled]);
