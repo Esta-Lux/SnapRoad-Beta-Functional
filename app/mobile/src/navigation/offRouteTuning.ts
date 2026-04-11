@@ -21,14 +21,14 @@ export const OFF_ROUTE_CONSERVATIVE: OffRouteTuning = {
 export const OFF_ROUTE_CALM: OffRouteTuning = {
   maxSnapMeters: 58,
   minConfidence: 0.45,
-  streakRequired: 5,
+  streakRequired: 4,
 };
 
 /** Between calm and sport: balanced urban + highway. */
 export const OFF_ROUTE_ADAPTIVE: OffRouteTuning = {
   maxSnapMeters: 50,
   minConfidence: 0.52,
-  streakRequired: 4,
+  streakRequired: 3,
 };
 
 /** Tighter corridor — quicker reroute when truly off the line. */

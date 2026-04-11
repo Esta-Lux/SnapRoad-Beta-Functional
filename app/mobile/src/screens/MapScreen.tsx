@@ -722,8 +722,9 @@ export default function MapScreen() {
   const standardStyleImportsEnabled = usesStandardStyleConfiguration(activeStyleURL);
 
   const standardBasemapImportConfig = useMemo(
-    () => standardBasemapStyleImportConfig(mapLightPreset, isSatelliteStyle, drivingMode),
-    [mapLightPreset, isSatelliteStyle, drivingMode],
+    () =>
+      standardBasemapStyleImportConfig(mapLightPreset, isSatelliteStyle, drivingMode, nav.isNavigating),
+    [mapLightPreset, isSatelliteStyle, drivingMode, nav.isNavigating],
   );
 
   /** Keeps 3D extrusions and route line under label layers where the style exposes anchors. */
@@ -2659,6 +2660,7 @@ export default function MapScreen() {
           ) : null}
           {standardStyleImportsEnabled && MapboxGL.StyleImport ? (
             <MapboxGL.StyleImport
+              key={`basemap-${mapLightPreset}-${drivingMode}-${isSatelliteStyle ? 'sat' : 'std'}-${nav.isNavigating ? 'nav' : 'exp'}`}
               id="basemap"
               existing
               config={standardBasemapImportConfig}

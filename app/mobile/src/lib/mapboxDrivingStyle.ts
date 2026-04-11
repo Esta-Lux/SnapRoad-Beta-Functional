@@ -133,11 +133,47 @@ export function usesStandardStyleConfiguration(url: string): boolean {
 }
 
 /**
+ * Mapbox range 1–5. While browsing (not in turn-by-turn) we bias to 5 so storefronts / building names read.
+ * During navigation, Calm stays slightly lighter than Sport to reduce clutter near the route.
+ */
+function resolvePoiLabelDensity(drivingMode: DrivingMode, isNavigating: boolean): string {
+  if (!isNavigating) return '5';
+  if (drivingMode === 'sport') return '5';
+  if (drivingMode === 'calm') return '4';
+  return '4';
+}
+
+/**
+ * Standard-Satellite documents a smaller property set than Mapbox Standard; avoid passing Standard-only
+ * keys (e.g. show3dBuildings) so native StyleImport reliably applies label toggles.
+ *
+ * @see https://docs.mapbox.com/map-styles/standard/api/ (Standard vs Standard-Satellite tables)
+ */
+function standardSatelliteBasemapConfig(
+  lightPreset: MapboxLightPreset,
+  poiDensity: string,
+): Record<string, string> {
+  return {
+    lightPreset,
+    showRoadsAndTransit: 'true',
+    showPedestrianRoads: 'true',
+    showPlaceLabels: 'true',
+    showPointOfInterestLabels: 'true',
+    showRoadLabels: 'true',
+    showTransitLabels: 'true',
+    showAdminBoundaries: 'true',
+    colorModePointOfInterestLabels: 'default',
+    backgroundPointOfInterestLabels: 'circle',
+    densityPointOfInterestLabels: poiDensity,
+  };
+}
+
+/**
  * Basemap config for {@link usesStandardStyleConfiguration} styles (`StyleImport` id `basemap`).
  * Values are strings — required by `@rnmapbox/maps` StyleImport.
  *
  * Enables POI / place / road / transit labels, 3D buildings + landmarks (not only generic `show3dObjects`),
- * and tunes POI label density per driving mode so Calm / Adaptive / Sport read distinctly on the map.
+ * and tunes POI label density per driving mode + browse vs navigation.
  *
  * @see https://docs.mapbox.com/map-styles/standard/api/
  */
@@ -145,10 +181,14 @@ export function standardBasemapStyleImportConfig(
   lightPreset: MapboxLightPreset,
   isSatellite: boolean,
   drivingMode: DrivingMode = 'adaptive',
+  /** When `false` (map explore / browse), POI density is maximized for business & building labels. */
+  isNavigating = true,
 ): Record<string, string> {
-  /** Calm: fewer POI labels; Adaptive: balanced; Sport: maximum business/POI density (Mapbox range 1–5). */
-  const poiDensity = drivingMode === 'calm' ? '3' : drivingMode === 'sport' ? '5' : '4';
-  const cfg: Record<string, string> = {
+  const poiDensity = resolvePoiLabelDensity(drivingMode, isNavigating);
+  if (isSatellite) {
+    return standardSatelliteBasemapConfig(lightPreset, poiDensity);
+  }
+  return {
     lightPreset,
     show3dObjects: 'true',
     show3dBuildings: 'true',
@@ -164,8 +204,4 @@ export function standardBasemapStyleImportConfig(
     backgroundPointOfInterestLabels: 'circle',
     densityPointOfInterestLabels: poiDensity,
   };
-  if (isSatellite) {
-    cfg.showRoadsAndTransit = 'true';
-  }
-  return cfg;
 }

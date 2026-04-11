@@ -1248,7 +1248,7 @@ export function useNavigation(params: {
     stopNavigation,
   ]);
 
-  // --- Off-route detection + auto-reroute (`streakRequired` from mode tuning; sport=3, calm/adaptive=4) ---
+  // --- Off-route detection + auto-reroute (`streakRequired` from mode tuning; see offRouteTuning) ---
   useEffect(() => {
     if (navSdkHeadless) {
       offRouteStreakRef.current = 0;
@@ -1276,7 +1276,7 @@ export function useNavigation(params: {
     if (rerouteInFlightRef.current) return;
 
     const now = Date.now();
-    const cooldownMs = lastRerouteAtRef.current ? 2600 : 0;
+    const cooldownMs = lastRerouteAtRef.current ? 1800 : 0;
     if (cooldownMs > 0 && now - lastRerouteAtRef.current < cooldownMs) return;
 
     offRouteStreakRef.current = 0;
