@@ -45,6 +45,7 @@ import {
 import {
   effectiveNavRouteColors,
   getDrivingLightPreset,
+  standardBasemapStyleImportConfig,
   usesStandardStyleConfiguration,
 } from '../lib/mapboxDrivingStyle';
 import { clampStepTowardDeg } from '../navigation/bearingSmoothing';
@@ -701,6 +702,11 @@ export default function MapScreen() {
     [modeConfig, mapLightPreset, isSatelliteStyle, drivingMode],
   );
   const standardStyleImportsEnabled = usesStandardStyleConfiguration(activeStyleURL);
+
+  const standardBasemapImportConfig = useMemo(
+    () => standardBasemapStyleImportConfig(mapLightPreset, isSatelliteStyle),
+    [mapLightPreset, isSatelliteStyle],
+  );
 
   /** Keeps 3D extrusions and route line under label layers where the style exposes anchors. */
   const buildingsBelowLayerId = useMemo(
@@ -2627,10 +2633,7 @@ export default function MapScreen() {
             <MapboxGL.StyleImport
               id="basemap"
               existing
-              config={{
-                lightPreset: mapLightPreset,
-                show3dObjects: 'true',
-              }}
+              config={standardBasemapImportConfig}
             />
           ) : null}
           {/* Camera: Mapbox follow + useCameraController (single owner — no parallel setCamera nav hook). */}

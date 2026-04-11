@@ -131,3 +131,33 @@ export function getDrivingLightPreset(
 export function usesStandardStyleConfiguration(url: string): boolean {
   return url.includes('mapbox://styles/mapbox/standard');
 }
+
+/**
+ * Basemap config for {@link usesStandardStyleConfiguration} styles (`StyleImport` id `basemap`).
+ * Values are strings — required by `@rnmapbox/maps` StyleImport.
+ *
+ * Explicitly enables POI, place, road, transit, pedestrian, and landmark labels so
+ * stores and building/landmark names match Mapbox Standard defaults across light presets.
+ *
+ * @see https://docs.mapbox.com/map-styles/standard/api/
+ */
+export function standardBasemapStyleImportConfig(
+  lightPreset: MapboxLightPreset,
+  isSatellite: boolean,
+): Record<string, string> {
+  const cfg: Record<string, string> = {
+    lightPreset,
+    show3dObjects: 'true',
+    showPointOfInterestLabels: 'true',
+    showPlaceLabels: 'true',
+    showRoadLabels: 'true',
+    showTransitLabels: 'true',
+    showPedestrianRoads: 'true',
+    showLandmarkIcons: 'true',
+    showLandmarkIconLabels: 'true',
+  };
+  if (isSatellite) {
+    cfg.showRoadsAndTransit = 'true';
+  }
+  return cfg;
+}
