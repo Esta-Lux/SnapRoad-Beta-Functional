@@ -2,10 +2,7 @@ import { useMemo, useRef } from 'react';
 import { NavigationProgress, RawLocation, RoutePoint, NavStep } from '../navigation/navModel';
 import type { OffRouteTuning } from '../navigation/offRouteTuning';
 import { computeNavigationProgressFrame } from '../navigation/navigationProgressCore';
-import {
-  DEFAULT_PROGRESS_TUNING,
-  type ProgressTuning,
-} from '../navigation/navigationProgressMode';
+import { DEFAULT_PROGRESS_TUNING, type ProgressTuning } from '../navigation/navModeProfile';
 
 type Args = {
   rawLocation: RawLocation | null;

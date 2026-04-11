@@ -6,6 +6,7 @@ import { shouldSuppressJsTurnGuidance } from '../navigation/navVoiceGate';
 import { isSdkTripAuthoritative } from '../navigation/navSdkAuthority';
 import { markNavVoiceFromJs } from '../navigation/navSdkStore';
 import type { LaneInfo, ManeuverKind, RoadSignal } from '../navigation/navModel';
+import { getVoiceNavTuning } from '../navigation/navModeProfile';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
@@ -196,10 +197,12 @@ export function speakGuidance(
 
   markNavVoiceFromJs();
 
+  const voiceTune = getVoiceNavTuning(_mode);
+
   void (async () => {
     await configureAudioSessionForSpeechOutput();
     Speech.speak(phrase, {
-      rate: NAVIGATION_SPEECH_RATE,
+      rate: NAVIGATION_SPEECH_RATE * voiceTune.guidanceRateMultiplier,
       pitch: NAVIGATION_SPEECH_PITCH,
       language: language || 'en-US',
       onDone: onUtteranceFinished,

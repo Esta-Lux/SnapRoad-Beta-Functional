@@ -46,8 +46,7 @@ import {
 import { useNavigationProgress } from './useNavigationProgress';
 import { buildNavStepsFromDirections } from '../navigation/navStepsFromDirections';
 import type { NavigationProgress } from '../navigation/navModel';
-import { offRouteTuningForMode } from '../navigation/offRouteTuning';
-import { progressTuningForMode } from '../navigation/navigationProgressMode';
+import { buildNavModeProfile } from '../navigation/navModeProfile';
 import { navEdgeEtaEnabled, navEtaBlendEnabled, navRefreshV2Enabled } from '../navigation/navFeatureFlags';
 import {
   enterSdkGuidanceWaiting,
@@ -269,8 +268,7 @@ export function useNavigation(params: {
     };
   }, [isNavigating, routePoints.length, sdkActive, userLocation.lat, userLocation.lng, heading, speed, gpsAccuracy]);
 
-  const offRouteTuning = useMemo(() => offRouteTuningForMode(drivingMode), [drivingMode]);
-  const progressTuning = useMemo(() => progressTuningForMode(drivingMode), [drivingMode]);
+  const navModeProfile = useMemo(() => buildNavModeProfile(drivingMode), [drivingMode]);
 
   const jsNavigationProgress = useNavigationProgress({
     rawLocation: rawForNavigationProgress,
@@ -278,13 +276,13 @@ export function useNavigation(params: {
     steps: navStepsBuilt,
     routeDurationSeconds: navigationData?.duration ?? 0,
     routeDistanceMeters: navigationData?.distance ?? 0,
-    offRouteTuning,
+    offRouteTuning: navModeProfile.offRoute,
     edgeDurationSec: edgeDurationResolved,
     routeModelTick: routeModelRefreshKey,
     routeModelRefreshedAtMs: routeModelRefreshedAtRef.current,
     navEdgeEtaEnabled: navEdgeEtaEnabled(),
     navEtaBlendEnabled: navEtaBlendEnabled(),
-    progressTuning,
+    progressTuning: navModeProfile.progress,
   });
 
   const sdkBuiltNavigationProgress = useMemo((): NavigationProgress | null => {
@@ -1218,7 +1216,7 @@ export function useNavigation(params: {
       offRouteStreakRef.current = 0;
     }
 
-    const streakNeeded = offRouteTuning.streakRequired;
+    const streakNeeded = navModeProfile.offRoute.streakRequired;
     if (offRouteStreakRef.current < streakNeeded) return;
     if (rerouteInFlightRef.current) return;
 
@@ -1282,7 +1280,7 @@ export function useNavigation(params: {
     drivingMode,
     fetchDirections,
     navSpeak,
-    offRouteTuning,
+    navModeProfile.offRoute,
     navSdkHeadless,
   ]);
 

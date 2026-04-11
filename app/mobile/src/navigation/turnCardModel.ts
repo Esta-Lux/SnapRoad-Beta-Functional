@@ -1,20 +1,16 @@
 import type { DrivingMode } from '../types';
 import type { DirectionsStep } from '../lib/directions';
 import type { ManeuverKind, NavStep } from './navModel';
+import { getTurnCardNavTuning, previewDistanceMaxMeters } from './navModeProfile';
 
 export type TurnCardState = 'preview' | 'active' | 'confirm' | 'cruise';
 
 const FT_PER_M = 3.28084;
-/** ~300 ft — primary maneuver emphasis */
-export const ACTIVE_MANEUVER_METERS = 91;
-/** ~800 ft — city preview upper bound */
-const PREVIEW_BASE_MAX_M = 244;
 
-export function previewDistanceMaxMeters(speedMph: number, mode: DrivingMode): number {
-  const bonus = Math.max(0, speedMph - 28) * 5.5;
-  const cap = mode === 'sport' ? 420 : mode === 'calm' ? 700 : 580;
-  return Math.min(PREVIEW_BASE_MAX_M + bonus, cap);
-}
+/** Adaptive-mode default (~300 ft). Prefer {@link getTurnCardNavTuning} for mode-specific values. */
+export const ACTIVE_MANEUVER_METERS = 91;
+
+export { previewDistanceMaxMeters };
 
 /**
  * Stable, legible distance: 1000+ ft → 0.2 mi steps; 300–999 ft → 50 ft; under 300 → tighter buckets.
@@ -199,17 +195,21 @@ export function resolveTurnCardState(args: {
     nextStep,
   } = args;
 
+  const tc = getTurnCardNavTuning(mode);
+  const activeM = tc.activeManeuverMeters;
+  const confirmMult = tc.confirmActiveMultiplier;
+
   const hasUpcomingTurn = !!(
     nextStep &&
     nextStep.maneuver !== 'arrive' &&
     nextStep.maneuver !== 'depart'
   );
 
-  if (hasUpcomingTurn && d <= ACTIVE_MANEUVER_METERS) {
+  if (hasUpcomingTurn && d <= activeM) {
     return 'active';
   }
 
-  if (inConfirmationWindow && d > ACTIVE_MANEUVER_METERS * 1.15) {
+  if (inConfirmationWindow && d > activeM * confirmMult) {
     return 'confirm';
   }
 
@@ -219,7 +219,7 @@ export function resolveTurnCardState(args: {
     return 'cruise';
   }
 
-  if (hasUpcomingTurn && d > ACTIVE_MANEUVER_METERS) {
+  if (hasUpcomingTurn && d > activeM) {
     return 'preview';
   }
 
@@ -228,7 +228,7 @@ export function resolveTurnCardState(args: {
   }
 
   if (!hasUpcomingTurn && nextStep?.maneuver === 'arrive') {
-    return d > ACTIVE_MANEUVER_METERS ? 'cruise' : 'active';
+    return d > activeM ? 'cruise' : 'active';
   }
 
   if (!nextStep) {

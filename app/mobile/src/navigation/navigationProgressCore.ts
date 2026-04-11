@@ -12,7 +12,7 @@ import { effectiveMaxSnapMeters, type OffRouteTuning } from './offRouteTuning';
 import { remainingDurationSecondsFromNavSteps } from './navigationEta';
 import { remainingDurationSecondsFromEdges } from './navigationEtaEdges';
 import { blendModelWithObservedEta } from './etaObservedBlend';
-import { DEFAULT_PROGRESS_TUNING, type ProgressTuning } from './navigationProgressMode';
+import { DEFAULT_PROGRESS_TUNING, type ProgressTuning } from './navModeProfile';
 
 export type ComputeNavigationProgressArgs = {
   rawLocation: RawLocation;

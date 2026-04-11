@@ -13,17 +13,13 @@ import {
   usesMetricForSpeech,
 } from '../utils/distanceSpeech';
 import { navLogicSdkEnabled } from '../navigation/navFeatureFlags';
+import { getVoiceNavTuning } from '../navigation/navModeProfile';
 
 type Args = {
   progress: NavigationProgress | null;
   enabled: boolean;
   drivingMode: DrivingMode;
 };
-
-const PREPARATORY_MAX_M = 800;
-const ADVANCE_MAX_M = 400;
-const ADVANCE_MIN_M = 95;
-const IMMINENT_M = 95;
 
 function signalClause(signal: RoadSignal): string {
   switch (signal.kind) {
@@ -161,6 +157,7 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
   const lastKey = useRef<string | null>(null);
   const metric = useMemo(() => usesMetricForSpeech(), []);
   const localeTag = useMemo(() => speechLocaleTag(), []);
+  const voiceT = useMemo(() => getVoiceNavTuning(drivingMode), [drivingMode]);
 
   useEffect(() => {
     if (navLogicSdkEnabled()) return;
@@ -169,11 +166,12 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
     if (isNavigationGuidanceSuppressed()) return;
 
     const d = progress.nextStepDistanceMeters;
+    const { imminentM, advanceMaxM, advanceMinM, preparatoryMaxM } = voiceT;
 
     let bucket: 'preparatory' | 'advance' | 'imminent' | null = null;
-    if (d <= IMMINENT_M) bucket = 'imminent';
-    else if (d <= ADVANCE_MAX_M && d > ADVANCE_MIN_M) bucket = 'advance';
-    else if (d <= PREPARATORY_MAX_M && d > ADVANCE_MAX_M) bucket = 'preparatory';
+    if (d <= imminentM) bucket = 'imminent';
+    else if (d <= advanceMaxM && d > advanceMinM) bucket = 'advance';
+    else if (d <= preparatoryMaxM && d > advanceMaxM) bucket = 'preparatory';
 
     if (!bucket) return;
 
@@ -192,7 +190,7 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
     setLastTurnByTurnPhrase(phrase);
     speakGuidance(phrase, drivingMode, localeTag);
     lastKey.current = key;
-  }, [progress, enabled, drivingMode, metric, localeTag]);
+  }, [progress, enabled, drivingMode, metric, localeTag, voiceT]);
 
   useEffect(() => {
     if (!enabled) {

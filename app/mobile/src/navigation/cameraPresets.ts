@@ -1,5 +1,5 @@
 import type { DrivingMode } from '../types';
-import { getCameraConfig } from './navigationCamera';
+import { getCameraConfig } from './navigationCamera'; // re-exports from navModeProfile
 
 export type CameraPadding = {
   paddingTop: number;
