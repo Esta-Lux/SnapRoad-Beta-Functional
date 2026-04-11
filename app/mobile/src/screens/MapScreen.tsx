@@ -419,7 +419,7 @@ export default function MapScreen() {
     [nav.applySdkRouteGeometry],
   );
 
-  /** During nav, same as raw `location` (reliable puck/camera); turn/ETA still from `navigationProgress`. */
+  /** During nav: fused coord for puck/camera (`navigationProgressCoord` → snapped display when JS on-route). */
   const navDisplayCoord = nav.isNavigating ? nav.navigationProgressCoord : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
 
@@ -2614,10 +2614,15 @@ export default function MapScreen() {
           onTouchStart={handleMapTouch}
           onPress={handleMapPress}
         >
-          {navLogicSdkEnabled() && nav.isNavigating && nav.sdkNavLocation ? (
+          {nav.isNavigating && navLogicSdkEnabled() && nav.sdkNavLocation ? (
             <MapboxGL.CustomLocationProvider
               coordinate={[nav.sdkNavLocation.longitude, nav.sdkNavLocation.latitude]}
               heading={nav.sdkNavLocation.course >= 0 ? nav.sdkNavLocation.course : heading}
+            />
+          ) : nav.isNavigating && !navLogicSdkEnabled() ? (
+            <MapboxGL.CustomLocationProvider
+              coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
+              heading={navDisplayHeading}
             />
           ) : null}
           {standardStyleImportsEnabled && MapboxGL.StyleImport ? (
