@@ -466,6 +466,11 @@ export default function MapScreen() {
   // Sync nav.isNavigating → useLocation accuracy
   useEffect(() => { setIsNavActive(nav.isNavigating); }, [nav.isNavigating]);
 
+  /** Full Orion chat is explore-only; voice FAB stays on the map during navigation. */
+  useEffect(() => {
+    if (nav.isNavigating) setShowOrion(false);
+  }, [nav.isNavigating]);
+
   const wasNavigatingRef = useRef(false);
 
   useLayoutEffect(() => {
@@ -3611,12 +3616,13 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      {!nav.showRoutePreview && !activeTripSummary && (user?.isPremium || nav.isNavigating) && (
+      {!nav.showRoutePreview && !activeTripSummary && (
         <View
           style={[s.orionFab, { top: insets.top + 236, right: 20 }]}
         >
           <OrionQuickMic
-            visible={Boolean(user?.isPremium || nav.isNavigating)}
+            visible
+            interactionMode={nav.isNavigating ? 'navigation' : 'explore'}
             isPremium={Boolean(user?.isPremium)}
             context={orionContext}
             onOpenChat={() => setShowOrion(true)}
@@ -4055,7 +4061,7 @@ export default function MapScreen() {
       />
       <TripShare visible={showTripShare} onClose={() => setShowTripShare(false)} trip={activeTripSummary ?? null} />
 
-      {showOrion && (
+      {showOrion && !nav.isNavigating && (
         <OrionChat
           visible={showOrion}
           onClose={() => setShowOrion(false)}

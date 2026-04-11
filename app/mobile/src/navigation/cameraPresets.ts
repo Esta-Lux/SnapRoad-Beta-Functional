@@ -32,27 +32,32 @@ export const NAV_UI_HEIGHT = 120;
 
 const SPEED_ZOOM_CURVES: Record<DrivingMode, SpeedZoomPoint[]> = {
   calm: [
-    { speed: 0, zoom: 18.2 },
-    { speed: 10, zoom: 17.9 },
-    { speed: 25, zoom: 17.5 },
-    { speed: 45, zoom: 17.0 },
-    { speed: 65, zoom: 16.6 },
-    { speed: 80, zoom: 16.2 },
+    { speed: 0, zoom: 18.35 },
+    { speed: 8, zoom: 18.05 },
+    { speed: 18, zoom: 17.75 },
+    { speed: 30, zoom: 17.45 },
+    { speed: 45, zoom: 17.05 },
+    { speed: 60, zoom: 16.65 },
+    { speed: 75, zoom: 16.35 },
+    { speed: 90, zoom: 16.05 },
   ],
   adaptive: [
-    { speed: 0, zoom: 18.4 },
-    { speed: 15, zoom: 18.0 },
-    { speed: 35, zoom: 17.5 },
-    { speed: 55, zoom: 17.0 },
-    { speed: 75, zoom: 16.5 },
+    { speed: 0, zoom: 18.45 },
+    { speed: 12, zoom: 18.1 },
+    { speed: 28, zoom: 17.65 },
+    { speed: 42, zoom: 17.25 },
+    { speed: 58, zoom: 16.85 },
+    { speed: 72, zoom: 16.45 },
+    { speed: 88, zoom: 16.1 },
   ],
   sport: [
-    { speed: 0, zoom: 18.6 },
-    { speed: 20, zoom: 18.1 },
-    { speed: 40, zoom: 17.6 },
-    { speed: 60, zoom: 17.0 },
-    { speed: 80, zoom: 16.4 },
-    { speed: 100, zoom: 15.9 },
+    { speed: 0, zoom: 18.65 },
+    { speed: 15, zoom: 18.2 },
+    { speed: 32, zoom: 17.75 },
+    { speed: 48, zoom: 17.25 },
+    { speed: 65, zoom: 16.75 },
+    { speed: 82, zoom: 16.25 },
+    { speed: 100, zoom: 15.85 },
   ],
 };
 
@@ -152,9 +157,9 @@ export function getCameraPreset({
 
   let zoom = interpolateZoom(mph, curve);
   const maneuverZoomAdjustment =
-    nextManeuverDistanceMeters < 60 ? 0.35 : nextManeuverDistanceMeters < 120 ? 0.2 : 0;
+    nextManeuverDistanceMeters < 55 ? 0.42 : nextManeuverDistanceMeters < 115 ? 0.26 : 0;
   zoom += maneuverZoomAdjustment;
-  zoom = clamp(zoom, 15.4, 18.8);
+  zoom = clamp(zoom, 15.15, 18.92);
 
   const maneuverPitchAdjustment =
     nextManeuverDistanceMeters < 60 ? -6 : nextManeuverDistanceMeters < 120 ? -4 : 0;
@@ -192,8 +197,8 @@ export function getCameraPreset({
 export function getLiveNavigationCameraPreset(args: Args): CameraPreset {
   const base = getCameraPreset(args);
   const enh = getCameraConfig(args.mode, args.speedMps);
-  const zoom = clamp(base.zoom * 0.68 + (enh.zoom + 2.35) * 0.32, 15.1, 18.65);
-  const pitch = clamp(enh.pitch * 0.62 + base.pitch * 0.38, 38, 60);
+  const zoom = clamp(base.zoom * 0.63 + (enh.zoom + 2.42) * 0.37, 15.05, 18.75);
+  const pitch = clamp(enh.pitch * 0.64 + base.pitch * 0.36, 37, 61);
   return {
     zoom,
     pitch,

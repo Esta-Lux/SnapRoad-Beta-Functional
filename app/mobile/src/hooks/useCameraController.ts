@@ -15,10 +15,10 @@ interface CameraParams {
   safeAreaBottom: number;
 }
 
-/** Coarse buckets so zoom/pitch/padding do not churn every GPS tick (stabilizes follow puck). */
+/** Speed buckets (~3 mph) so zoom follows velocity without jittering every GPS tick. */
 function speedMphBucket(mph: number): number {
   const m = Math.max(0, mph);
-  return Math.round(m / 5) * 5;
+  return Math.round(m / 3) * 3;
 }
 
 function maneuverDistanceBucket(meters: number): number {
@@ -56,7 +56,7 @@ function paddingNear(
 
 function nearlySameCamera(a: CameraSettings, b: CameraSettings): boolean {
   return (
-    Math.abs(a.followZoomLevel - b.followZoomLevel) < 0.11 &&
+    Math.abs(a.followZoomLevel - b.followZoomLevel) < 0.09 &&
     Math.abs(a.followPitch - b.followPitch) < STEP_PITCH_EPS &&
     paddingNear(a.followPadding, b.followPadding, STEP_PAD_EPS)
   );

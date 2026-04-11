@@ -95,9 +95,9 @@ export default function MapSearchTopBar(props: Props) {
               onPress={props.onOpenOrion}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={{ marginLeft: 10, paddingLeft: 4 }}
-              accessibilityLabel="Open Orion"
+              accessibilityLabel="Open Orion chat"
             >
-              <Ionicons name="mic-outline" size={16} color={props.colors.textTertiary} />
+              <Ionicons name="chatbubbles-outline" size={16} color={props.colors.textTertiary} />
             </TouchableOpacity>
           )}
         </View>

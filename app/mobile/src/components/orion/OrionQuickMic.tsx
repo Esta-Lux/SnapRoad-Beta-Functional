@@ -42,9 +42,13 @@ const Voice = loadVoice();
 
 type OrionAction = { type: string; name?: string; lat?: number; lng?: number; address?: string };
 
+export type OrionQuickInteractionMode = 'explore' | 'navigation';
+
 interface Props {
   visible: boolean;
   isPremium: boolean;
+  /** Explore: tap opens full Orion chat; long-press starts voice. Navigation: tap is voice only (backend + TTS). */
+  interactionMode?: OrionQuickInteractionMode;
   context?: OrionContext;
   onOpenChat: () => void;
   onSuggestions?: (items: OrionPlaceSuggestion[]) => void;
@@ -55,6 +59,7 @@ interface Props {
 export default function OrionQuickMic({
   visible,
   isPremium,
+  interactionMode = 'navigation',
   context,
   onOpenChat,
   onSuggestions,
@@ -260,6 +265,57 @@ export default function OrionQuickMic({
 
   if (!visible) return null;
 
+  const navMode = interactionMode === 'navigation';
+
+  const handleFabPress = () => {
+    if (!navMode) {
+      if (isListening) {
+        void stopListening();
+        return;
+      }
+      onOpenChat();
+      return;
+    }
+    if (!Voice) {
+      onOpenChat();
+      return;
+    }
+    if (isListening) {
+      void stopListening();
+    } else {
+      void startListening();
+    }
+  };
+
+  const handleLongPress = () => {
+    if (navMode) return;
+    if (!Voice) {
+      onOpenChat();
+      return;
+    }
+    if (isListening) {
+      void stopListening();
+    } else {
+      void startListening();
+    }
+  };
+
+  const fabIcon = !navMode
+    ? isListening
+      ? 'radio'
+      : 'chatbubbles-outline'
+    : isListening
+      ? 'radio'
+      : 'mic-outline';
+
+  const fabA11y = navMode
+    ? isListening
+      ? 'Stop Orion voice'
+      : 'Start Orion voice — speaks reply from assistant'
+    : isListening
+      ? 'Stop Orion voice'
+      : 'Open Orion chat';
+
   return (
     <View style={styles.wrap}>
       {(isListening || isThinking) && (
@@ -272,23 +328,14 @@ export default function OrionQuickMic({
       )}
       <TouchableOpacity
         style={styles.fabTap}
-        onPress={() => {
-          if (!Voice) {
-            onOpenChat();
-            return;
-          }
-          if (isListening) {
-            void stopListening();
-          } else {
-            void startListening();
-          }
-        }}
-        onLongPress={onOpenChat}
+        onPress={handleFabPress}
+        onLongPress={navMode ? undefined : handleLongPress}
         activeOpacity={0.82}
-        accessibilityLabel={isListening ? 'Stop Orion listening' : 'Start Orion listening'}
+        accessibilityLabel={fabA11y}
+        accessibilityHint={!navMode ? 'Long press for voice without opening chat' : undefined}
       >
         <LinearGradient colors={isPremium ? ['#7C3AED', '#5B21B6'] : ['#6366F1', '#4F46E5']} style={styles.grad}>
-          <Ionicons name={isListening ? 'radio' : 'mic-outline'} size={22} color="#fff" />
+          <Ionicons name={fabIcon} size={22} color="#fff" />
         </LinearGradient>
       </TouchableOpacity>
     </View>
