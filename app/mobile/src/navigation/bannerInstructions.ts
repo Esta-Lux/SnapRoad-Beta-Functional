@@ -1,4 +1,5 @@
 import type { DirectionsStep } from '../lib/directions';
+import type { LaneInfo, LaneIndication } from './navModel';
 
 type StepLike = DirectionsStep | null | undefined;
 type CardState = 'preview' | 'active' | 'confirm' | 'cruise';
@@ -83,4 +84,38 @@ export function mergeLaneSources(...candidates: StepLike[]): string | undefined 
     if (s?.lanes && s.lanes.length > 2) return s.lanes;
   }
   return undefined;
+}
+
+function parseLaneIndication(raw: string): LaneIndication {
+  const s = (raw ?? '').toLowerCase().trim().replace(/-/g, ' ');
+  if (s === 'left' || s === 'merge left') return 'left';
+  if (s === 'slight left') return 'slight_left';
+  if (s === 'right' || s === 'merge right') return 'right';
+  if (s === 'slight right') return 'slight_right';
+  if (s === 'uturn' || s === 'u-turn' || s === 'u turn') return 'uturn';
+  return 'straight';
+}
+
+/**
+ * Parse legacy lane JSON from {@link getLaneData} / {@link mergeLaneSources} into {@link LaneInfo}.
+ */
+export function lanesFromLegacyJson(json: string | undefined | null): LaneInfo[] | null {
+  if (!json || typeof json !== 'string' || json.length < 2) return null;
+  try {
+    const arr = JSON.parse(json) as Array<{
+      indications?: string[];
+      directions?: string[];
+      valid?: boolean;
+      active?: boolean;
+    }>;
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    return arr.map((lane) => {
+      const rawDirs = lane.indications ?? lane.directions ?? [];
+      const indications = rawDirs.map((d) => parseLaneIndication(String(d)));
+      const active = Boolean(lane.valid ?? lane.active);
+      return { indications, active, preferred: false };
+    });
+  } catch {
+    return null;
+  }
 }

@@ -1,5 +1,6 @@
 import type { DrivingMode } from '../types';
 import type { DirectionsStep } from '../lib/directions';
+import type { ManeuverKind, NavStep } from './navModel';
 
 export type TurnCardState = 'preview' | 'active' | 'confirm' | 'cruise';
 
@@ -59,7 +60,11 @@ function maneuverWords(maneuver: string): string {
 export function buildActivePrimary(
   nextStep: DirectionsStep | null | undefined,
   destinationName?: string | null,
+  navStep?: NavStep | null,
 ): string {
+  if (navStep?.displayInstruction?.trim()) {
+    return navStep.displayInstruction.trim();
+  }
   if (!nextStep) return '';
   const dest = destinationName?.trim() || '';
   const instr = nextStep.instruction.replace(/\s+/g, ' ').trim();
@@ -76,6 +81,37 @@ export function buildActivePrimary(
   }
   if (nextStep.maneuver === 'arrive' && dest) return `Arrive at ${dest}`;
   return instr;
+}
+
+/** Build chain text from NavStep for the "then" row. */
+export function buildChainInstruction(navStep: NavStep | null | undefined): string | null {
+  if (!navStep?.nextManeuverKind) return null;
+  if (
+    navStep.nextManeuverDistanceMeters != null &&
+    navStep.nextManeuverDistanceMeters > 300
+  ) {
+    return null;
+  }
+
+  const kindToPhrase: Partial<Record<ManeuverKind, string>> = {
+    turn_left: 'Then turn left',
+    turn_right: 'Then turn right',
+    sharp_left: 'Then sharp left',
+    sharp_right: 'Then sharp right',
+    slight_left: 'Then bear left',
+    slight_right: 'Then bear right',
+    keep_left: 'Then keep left',
+    keep_right: 'Then keep right',
+    uturn: 'Then U-turn',
+    merge_left: 'Then merge left',
+    merge_right: 'Then merge right',
+  };
+
+  const phrase = kindToPhrase[navStep.nextManeuverKind];
+  if (!phrase) return null;
+
+  const road = navStep.nextManeuverStreet?.trim();
+  return road ? `${phrase} onto ${road}` : phrase;
 }
 
 function stripCompassNoise(s: string): string {
@@ -209,5 +245,15 @@ export function iconManeuverForState(
 ): string {
   if (state === 'confirm' || state === 'cruise') return 'straight';
   if (state === 'active' || state === 'preview') return nextStep?.maneuver ?? currentStep?.maneuver ?? 'straight';
+  return 'straight';
+}
+
+/** Returns ManeuverKind for the SVG icon — uses NavStep when available. */
+export function iconManeuverKindForState(
+  state: TurnCardState,
+  navStep: NavStep | null | undefined,
+): ManeuverKind {
+  if (state === 'confirm' || state === 'cruise') return 'straight';
+  if ((state === 'active' || state === 'preview') && navStep) return navStep.kind;
   return 'straight';
 }

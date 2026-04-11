@@ -91,7 +91,9 @@ import {
   buildPreviewPrimarySecondary,
   buildConfirmPrimary,
   buildCruisePrimary,
+  buildChainInstruction,
   iconManeuverForState,
+  iconManeuverKindForState,
   shouldShowRoadDisambiguation,
 } from '../navigation/turnCardModel';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
@@ -3044,6 +3046,7 @@ export default function MapScreen() {
                 primaryInstruction={prog.banner?.primaryInstruction ?? 'Starting navigation…'}
                 secondaryInstruction={undefined}
                 maneuverForIcon="straight"
+                maneuverKind="straight"
                 isMuted={navVoiceMuted}
                 onMutePress={() => {
                   setNavVoiceMuted((m) => {
@@ -3153,7 +3156,7 @@ export default function MapScreen() {
                 (drivingMode === 'calm' || drivingMode === 'adaptive') &&
                 nextManeuverCoord &&
                 nextManeuverCoord.maneuver !== 'arrive'
-                  ? `Then ${buildActivePrimary(nextManeuverCoord, destinationName)}`
+                  ? `Then ${buildActivePrimary(nextManeuverCoord, destinationName, prog.nextStep)}`
                   : undefined;
               break;
             case 'cruise':
@@ -3161,12 +3164,25 @@ export default function MapScreen() {
               secondary = undefined;
               break;
             default:
-              primary = buildActivePrimary(nextManeuverCoord, destinationName) || turnCurrentStep?.instruction || '';
+              primary =
+                buildActivePrimary(nextManeuverCoord, destinationName, prog.nextStep) ||
+                turnCurrentStep?.instruction ||
+                '';
               secondary = undefined;
           }
         }
 
         const maneuverIconKey = iconManeuverForState(cardState, turnCurrentStep, nextManeuverCoord);
+        const chainInstruction = buildChainInstruction(prog.nextStep);
+        const maneuverKindResolved =
+          banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
+        const signalResolved = banner?.signal ?? prog.nextStep?.signal;
+        const lanesResolved =
+          banner?.lanes?.length ? banner.lanes : prog.nextStep?.lanes?.length ? prog.nextStep.lanes : undefined;
+        const shieldsResolved =
+          banner?.shields?.length ? banner.shields : prog.nextStep?.shields?.length ? prog.nextStep.shields : undefined;
+        const roundaboutExitResolved =
+          banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
         const disambigName =
           shouldShowRoadDisambiguation(turnCurrentStep?.name) ? (turnCurrentStep?.name ?? null) :
           shouldShowRoadDisambiguation(nextManeuverCoord?.name) ? (nextManeuverCoord?.name ?? null) :
@@ -3188,6 +3204,12 @@ export default function MapScreen() {
               primaryInstruction={primary}
               secondaryInstruction={secondary}
               maneuverForIcon={maneuverIconKey}
+              maneuverKind={maneuverKindResolved}
+              signal={signalResolved}
+              lanes={lanesResolved}
+              shields={shieldsResolved}
+              roundaboutExitNumber={roundaboutExitResolved}
+              chainInstruction={chainInstruction}
               isMuted={navVoiceMuted}
               onMutePress={() => {
                 setNavVoiceMuted((m) => {

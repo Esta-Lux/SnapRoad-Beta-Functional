@@ -15,59 +15,12 @@ import type { DrivingMode } from '../../types';
 import type { ModeConfig } from '../../constants/modes';
 import type { TurnCardState } from '../../navigation/turnCardModel';
 import type { DirectionsStep } from '../../lib/directions';
-import { getBannerThenLine, getLaneData } from '../../navigation/bannerInstructions';
-
-function normalizeModifier(mod: string | undefined, maneuverKey: string): string {
-  const m = (mod || maneuverKey || '').toLowerCase().replace(/-/g, ' ');
-  return m;
-}
-
-function maneuverIconLegacy(maneuver: string | undefined, color: string, size: number): React.ReactElement {
-  const m = (maneuver ?? 'straight').toLowerCase();
-  if (m === 'arrive') return <Ionicons name="flag" size={size} color={color} />;
-  if (m === 'depart') return <Ionicons name="navigate" size={size} color={color} />;
-  if (m === 'u-turn' || m === 'uturn') return <Ionicons name="return-up-back-outline" size={size} color={color} />;
-  if (m === 'roundabout') return <Ionicons name="sync-outline" size={size} color={color} />;
-  if (m === 'merge') return <Ionicons name="git-merge-outline" size={size} color={color} />;
-  if (m.includes('sharp') && m.includes('left')) return <Ionicons name="arrow-undo" size={size} color={color} />;
-  if (m.includes('sharp') && m.includes('right')) return <Ionicons name="arrow-redo" size={size} color={color} />;
-  if (m.includes('left')) return <Ionicons name="arrow-back" size={size} color={color} />;
-  if (m.includes('right')) return <Ionicons name="arrow-forward" size={size} color={color} />;
-  return <Ionicons name="arrow-up" size={size} color={color} />;
-}
-
-function getBannerTurnIcon(
-  step: DirectionsStep | null | undefined,
-  maneuverForIcon: string,
-  color: string,
-  sz: number,
-): React.ReactElement {
-  const banner = step?.bannerInstructions?.[0];
-  const primary = banner?.primary;
-  const type = (primary?.type || '').toLowerCase();
-  const modifier = normalizeModifier(primary?.modifier, maneuverForIcon);
-
-  if (type === 'arrive') return <Ionicons name="flag" size={sz} color={color} />;
-  if (type === 'depart') return <Ionicons name="navigate" size={sz} color={color} />;
-  if (type === 'roundabout' || type === 'rotary') return <Ionicons name="sync-outline" size={sz} color={color} />;
-  if (type === 'merge') return <Ionicons name="git-merge-outline" size={sz} color={color} />;
-
-  if (modifier === 'uturn' || modifier === 'u turn') {
-    return <Ionicons name="return-up-back-outline" size={sz} color={color} />;
-  }
-  if (modifier === 'sharp left') return <Ionicons name="arrow-undo" size={sz} color={color} />;
-  if (modifier === 'left') return <Ionicons name="arrow-back" size={sz} color={color} />;
-  if (modifier === 'slight left') {
-    return <Ionicons name="arrow-up-outline" size={sz} color={color} style={{ transform: [{ rotate: '-35deg' }] }} />;
-  }
-  if (modifier === 'sharp right') return <Ionicons name="arrow-redo" size={sz} color={color} />;
-  if (modifier === 'right') return <Ionicons name="arrow-forward" size={sz} color={color} />;
-  if (modifier === 'slight right') {
-    return <Ionicons name="arrow-up-outline" size={sz} color={color} style={{ transform: [{ rotate: '35deg' }] }} />;
-  }
-
-  return maneuverIconLegacy(maneuverForIcon, color, sz);
-}
+import type { ManeuverKind, RoadSignal, LaneInfo, RoadShield } from '../../navigation/navModel';
+import { getBannerThenLine, getLaneData, lanesFromLegacyJson } from '../../navigation/bannerInstructions';
+import ManeuverIcon from './ManeuverIcon';
+import RoadSignalBadge from './RoadSignalBadge';
+import LaneGuidance from './LaneGuidance';
+import HighwayShieldBadge from './HighwayShieldBadge';
 
 const DENSITY: Record<
   DrivingMode,
@@ -123,11 +76,17 @@ export type TurnInstructionCardProps = {
   onMutePress: () => void;
   /** Fallback lanes JSON when banner has no lane components */
   lanesJson?: string;
-  /** Current step for banner / voice / lane banner data */
   step?: DirectionsStep | null;
   roadDisambiguationLabel?: string | null;
   isSportBorder: boolean;
   speedMph?: number;
+
+  maneuverKind?: ManeuverKind;
+  signal?: RoadSignal;
+  lanes?: LaneInfo[];
+  shields?: RoadShield[];
+  roundaboutExitNumber?: number | null;
+  chainInstruction?: string | null;
 };
 
 export default React.memo(function TurnInstructionCard({
@@ -138,7 +97,7 @@ export default React.memo(function TurnInstructionCard({
   distanceUnit,
   primaryInstruction,
   secondaryInstruction,
-  maneuverForIcon,
+  maneuverForIcon: _maneuverForIcon,
   isMuted,
   onMutePress,
   lanesJson,
@@ -146,6 +105,12 @@ export default React.memo(function TurnInstructionCard({
   roadDisambiguationLabel,
   isSportBorder,
   speedMph = 0,
+  maneuverKind,
+  signal,
+  lanes,
+  shields,
+  roundaboutExitNumber,
+  chainInstruction,
 }: TurnInstructionCardProps) {
   const tcGrad = modeConfig.turnCardGradient;
   const tcRadius = modeConfig.turnCardRadius;
@@ -153,14 +118,45 @@ export default React.memo(function TurnInstructionCard({
   const tcTextColor = modeConfig.turnCardTextColor;
   const d = DENSITY[mode];
 
-  /** Parent already uses the same display line as {@link useNavigationSpeech} (banner + NavStep). Prefer it so card and voice cannot disagree. */
   const primaryDisplay = useMemo(() => {
     const fromParent = primaryInstruction?.trim();
     if (fromParent) return fromParent;
     return step?.bannerInstructions?.[0]?.primary?.text?.trim() || '';
   }, [step, primaryInstruction]);
 
-  const effectiveLanes = useMemo(() => getLaneData(step) ?? lanesJson, [step, lanesJson]);
+  const hasRichManeuver = maneuverKind != null && maneuverKind !== 'unknown';
+
+  const effectiveLanes = useMemo((): LaneInfo[] | null => {
+    if (lanes?.length) return lanes;
+    const json = getLaneData(step) ?? lanesJson;
+    return lanesFromLegacyJson(json);
+  }, [lanes, step, lanesJson]);
+
+  const bannerThen = getBannerThenLine(step);
+  const thenText = useMemo(() => {
+    if (chainInstruction?.trim()) return chainInstruction.trim();
+    if (bannerThen?.trim()) return bannerThen.trim();
+    if (secondaryInstruction?.trim()) return secondaryInstruction.trim();
+    return null;
+  }, [chainInstruction, bannerThen, secondaryInstruction]);
+
+  const showThenRow =
+    !!thenText && (state === 'preview' || state === 'confirm' || state === 'active');
+
+  const showSignal =
+    signal &&
+    signal.kind !== 'none' &&
+    (state === 'active' || state === 'preview');
+
+  const showLanes =
+    effectiveLanes &&
+    effectiveLanes.length > 0 &&
+    (state === 'active' || state === 'preview');
+
+  const showShields =
+    shields &&
+    shields.length > 0 &&
+    (state === 'active' || state === 'preview' || state === 'cruise');
 
   const distScaleAnim = useSharedValue(1);
   const textOpacity = useSharedValue(1);
@@ -200,7 +196,7 @@ export default React.memo(function TurnInstructionCard({
   }));
 
   const speedBoost = speedMph > 58 && state !== 'cruise' && state !== 'confirm' ? 1.05 : 1;
-  const laneBoost = effectiveLanes && (state === 'active' || state === 'preview') ? 1.04 : 1;
+  const laneBoost = showLanes ? 1.04 : 1;
 
   const distFont = Math.round(42 * (state === 'active' ? 1.04 : 1) * d.distScale * speedBoost);
   const emphasizeArrow = state === 'active' || state === 'preview';
@@ -208,14 +204,7 @@ export default React.memo(function TurnInstructionCard({
   const iconRadius = emphasizeArrow ? 18 : 16;
   const iconGlyph = Math.round(34 * (emphasizeArrow ? 1 : 0.92) * laneBoost);
 
-  const bannerThen = getBannerThenLine(step);
-  const showThenRow =
-    !!bannerThen ||
-    (!!secondaryInstruction && (state === 'preview' || state === 'confirm' || state === 'active'));
-  const thenText = bannerThen || secondaryInstruction;
-
   const fadeMs = d.enterMs;
-  const hasBannerPrimary = !!step?.bannerInstructions?.[0]?.primary;
 
   return (
     <Animated.View entering={FadeIn.duration(fadeMs)} style={styles.wrap}>
@@ -240,7 +229,12 @@ export default React.memo(function TurnInstructionCard({
             borderColor: modeConfig.turnCardBorderColor ?? 'rgba(196,149,106,0.25)',
           },
           Platform.select({
-            ios: { shadowColor: tcShadowColor, shadowOpacity: mode === 'calm' ? 0.42 : 0.48, shadowRadius: mode === 'sport' ? 14 : 18, shadowOffset: { width: 0, height: mode === 'sport' ? 4 : 5 } },
+            ios: {
+              shadowColor: tcShadowColor,
+              shadowOpacity: mode === 'calm' ? 0.42 : 0.48,
+              shadowRadius: mode === 'sport' ? 14 : 18,
+              shadowOffset: { width: 0, height: mode === 'sport' ? 4 : 5 },
+            },
             android: { elevation: mode === 'sport' ? 12 : 14 },
             default: {},
           }),
@@ -272,16 +266,35 @@ export default React.memo(function TurnInstructionCard({
                 borderRadius: iconRadius,
                 backgroundColor: modeConfig.turnCardIconBg,
                 borderWidth: emphasizeArrow ? 2 : 1.5,
-                borderColor: emphasizeArrow ? 'rgba(255,255,255,0.34)' : 'rgba(255,255,255,0.22)',
+                borderColor: emphasizeArrow
+                  ? 'rgba(255,255,255,0.34)'
+                  : 'rgba(255,255,255,0.22)',
               },
             ]}
           >
-            {hasBannerPrimary
-              ? getBannerTurnIcon(step, maneuverForIcon, tcTextColor, iconGlyph)
-              : maneuverIconLegacy(maneuverForIcon, tcTextColor, iconGlyph)}
+            {hasRichManeuver ? (
+              <ManeuverIcon
+                kind={maneuverKind!}
+                size={iconGlyph}
+                color={tcTextColor}
+                exitNumber={roundaboutExitNumber}
+              />
+            ) : (
+              <Ionicons name="arrow-up" size={iconGlyph} color={tcTextColor} />
+            )}
           </View>
 
           <Animated.View style={[styles.textCol, textAnimatedStyle]}>
+            {showShields && (
+              <View style={styles.shieldRow}>
+                <HighwayShieldBadge
+                  shields={shields!}
+                  textColor={tcTextColor}
+                  maxShields={2}
+                />
+              </View>
+            )}
+
             <Text
               style={[
                 styles.primary,
@@ -290,11 +303,20 @@ export default React.memo(function TurnInstructionCard({
                   fontWeight: state === 'active' ? '800' : '700',
                 },
               ]}
-              numberOfLines={state === 'cruise' ? 2 : 2}
+              numberOfLines={2}
             >
               {primaryDisplay}
             </Text>
-            {thenText && showThenRow && state !== 'cruise' ? (
+
+            {showSignal && (
+              <RoadSignalBadge
+                kind={signal!.kind}
+                label={signal!.label}
+                textColor={tcTextColor}
+              />
+            )}
+
+            {showThenRow && (
               <View style={styles.thenRow}>
                 <Ionicons
                   name="return-down-forward-outline"
@@ -305,18 +327,14 @@ export default React.memo(function TurnInstructionCard({
                 <Text
                   style={[
                     styles.secondary,
-                    {
-                      color: tcTextColor,
-                      opacity: d.thenOpacity,
-                    },
+                    { color: tcTextColor, opacity: d.thenOpacity },
                   ]}
                   numberOfLines={1}
                 >
-                  {' '}
-                  {thenText}
+                  {' '}{thenText}
                 </Text>
               </View>
-            ) : null}
+            )}
           </Animated.View>
 
           <TouchableOpacity
@@ -324,21 +342,37 @@ export default React.memo(function TurnInstructionCard({
             onPress={onMutePress}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={16} color={tcTextColor} style={{ opacity: 0.85 }} />
+            <Ionicons
+              name={isMuted ? 'volume-mute' : 'volume-high'}
+              size={16}
+              color={tcTextColor}
+              style={{ opacity: 0.85 }}
+            />
           </TouchableOpacity>
         </View>
 
-        {roadDisambiguationLabel ? (
+        {showLanes && (
+          <LaneGuidance
+            lanes={effectiveLanes!}
+            activeColor={tcTextColor}
+            inactiveColor={tcTextColor}
+          />
+        )}
+
+        {roadDisambiguationLabel && !showShields && (
           <View style={styles.disambig}>
-            <View style={styles.shield}>
-              <Text style={[styles.shieldTxt, { color: tcTextColor }]} numberOfLines={1}>
+            <View style={styles.legacyShield}>
+              <Text
+                style={[styles.legacyShieldTxt, { color: tcTextColor }]}
+                numberOfLines={1}
+              >
                 {roadDisambiguationLabel.length > 12
                   ? `${roadDisambiguationLabel.slice(0, 10)}…`
                   : roadDisambiguationLabel}
               </Text>
             </View>
           </View>
-        ) : null}
+        )}
       </LinearGradient>
     </Animated.View>
   );
@@ -361,8 +395,14 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  iconBoxOuter: { justifyContent: 'center', alignItems: 'center', marginHorizontal: 14, flexShrink: 0 },
+  iconBoxOuter: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 14,
+    flexShrink: 0,
+  },
   textCol: { flex: 1, minWidth: 0 },
+  shieldRow: { marginBottom: 3 },
   primary: { fontSize: 22, letterSpacing: -0.3, lineHeight: 28 },
   thenRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 2 },
   secondary: { flex: 1, fontSize: 14, fontWeight: '700', lineHeight: 18 },
@@ -375,7 +415,7 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.16)',
   },
-  shield: {
+  legacyShield: {
     backgroundColor: 'rgba(255,255,255,0.20)',
     borderRadius: 4,
     paddingHorizontal: 6,
@@ -383,5 +423,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.30)',
   },
-  shieldTxt: { fontSize: 10, fontWeight: '700' },
+  legacyShieldTxt: { fontSize: 10, fontWeight: '700' },
 });
