@@ -13,7 +13,18 @@ const GEOCODING_BASE = 'https://api.mapbox.com/geocoding/v5/mapbox.places';
 export type DirectionsProfile = 'driving' | 'driving-traffic';
 
 export interface StepIntersection {
-  classes?: string[];  // e.g. ['traffic_signal'], ['stop_sign']
+  classes?: string[];
+  lanes?: Array<{
+    valid?: boolean;
+    active?: boolean;
+    indications?: string[];
+    valid_indication?: string;
+  }>;
+  traffic_signal?: boolean;
+  stop_sign?: boolean;
+  yield_sign?: boolean;
+  railway_crossing?: boolean;
+  toll_collection?: unknown;
 }
 
 export interface BannerInstructionItem {
@@ -50,6 +61,13 @@ export interface DirectionsStep {
   /** Raw Mapbox step duration (seconds), used for navigation ETA. */
   durationSeconds: number;
   maneuver: string;
+  /** Original Mapbox maneuver fields for rich NavStep (optional). */
+  mapboxManeuver?: {
+    type?: string;
+    modifier?: string;
+    bearing_after?: number;
+    exit?: number;
+  };
   /** Road name of this step (from Mapbox `step.name`). */
   name?: string;
   lanes?: string;
@@ -279,13 +297,22 @@ export function parseMapboxDirectionsRoute(
   for (const leg of route.legs) {
     for (const step of leg.steps) {
       const g = step.geometry?.coordinates;
+      const mv = step.maneuver;
       steps.push({
         instruction: mapboxStepPrimaryInstruction(step),
         distance: formatDistance(step.distance),
         distanceMeters: step.distance,
         duration: formatDuration(step.duration),
         durationSeconds: Math.max(0, step.duration ?? 0),
-        maneuver: mapboxManeuverToSimple(step.maneuver?.modifier, step.maneuver?.type),
+        maneuver: mapboxManeuverToSimple(mv?.modifier, mv?.type),
+        mapboxManeuver: mv
+          ? {
+              type: mv.type,
+              modifier: mv.modifier,
+              bearing_after: (mv as { bearing_after?: number }).bearing_after,
+              exit: (mv as { exit?: number }).exit,
+            }
+          : undefined,
         name: typeof step.name === 'string' && step.name ? step.name : undefined,
         lanes: step.intersections?.[0]?.lanes ? JSON.stringify(step.intersections[0].lanes) : undefined,
         lat: step.maneuver?.location?.[1] ?? 0,
@@ -293,9 +320,15 @@ export function parseMapboxDirectionsRoute(
         geometryCoordinates: Array.isArray(g) && g.length >= 2 ? g : undefined,
         intersections: Array.isArray(step.intersections)
           ? step.intersections.map((int: unknown) => {
-              const intRec = int as { classes?: string[] };
+              const r = int as Record<string, unknown>;
               return {
-                classes: Array.isArray(intRec.classes) ? intRec.classes : [],
+                classes: Array.isArray(r.classes) ? r.classes : [],
+                lanes: r.lanes as StepIntersection['lanes'],
+                traffic_signal: r.traffic_signal as boolean | undefined,
+                stop_sign: r.stop_sign as boolean | undefined,
+                yield_sign: r.yield_sign as boolean | undefined,
+                railway_crossing: r.railway_crossing as boolean | undefined,
+                toll_collection: r.toll_collection,
               };
             })
           : undefined,

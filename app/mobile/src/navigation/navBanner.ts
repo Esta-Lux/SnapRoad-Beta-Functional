@@ -1,5 +1,6 @@
 import type { NavBannerModel, NavStep } from './navModel';
 import { phraseForManeuverKind } from './spokenManeuver';
+import { bannerFieldsFromNavStep } from './navBannerFromStep';
 
 function primaryLine(step: NavStep): string {
   const t = step.displayInstruction?.trim() || step.instruction?.trim();
@@ -9,8 +10,8 @@ function primaryLine(step: NavStep): string {
 }
 
 /**
- * Primary = **only** the upcoming maneuver.
- * Secondary = optional “Then …” for the following step (never a competing bare turn without “Then”).
+ * Primary = upcoming maneuver only.
+ * Secondary = optional “Then …” for the following step.
  */
 export function buildNavBanner(
   next: NavStep | null,
@@ -20,9 +21,14 @@ export function buildNavBanner(
   if (!next) return null;
 
   const primaryInstruction = primaryLine(next);
-  let secondaryInstruction: string | null = null;
+  const rich = bannerFieldsFromNavStep(next);
+
+  let secondaryInstruction: string | null = rich?.secondaryInstruction ?? null;
   if (following) {
-    const ft = following.instruction?.trim() || phraseForManeuverKind(following.kind);
+    const ft =
+      following.displayInstruction?.trim() ||
+      following.instruction?.trim() ||
+      phraseForManeuverKind(following.kind);
     secondaryInstruction = `Then ${ft}`;
   }
 
@@ -31,5 +37,11 @@ export function buildNavBanner(
     primaryDistanceMeters,
     primaryStreet: next.streetName ?? null,
     secondaryInstruction,
+    subInstruction: rich?.subInstruction ?? null,
+    signal: rich?.signal,
+    lanes: rich?.lanes,
+    shields: rich?.shields,
+    maneuverKind: rich?.maneuverKind,
+    roundaboutExitNumber: rich?.roundaboutExitNumber,
   };
 }

@@ -1,61 +1,15 @@
 import type { DirectionsStep } from '../lib/directions';
 import type { ManeuverKind, NavBannerModel, NavStep } from './navModel';
+import { maneuverKeyFromKind } from './spokenManeuver';
 
 /** Matches `DirectionsStep.maneuver` / {@link iconManeuverForState} (substring checks). */
 function maneuverStringFromKind(kind: ManeuverKind): string {
-  switch (kind) {
-    case 'arrive':
-      return 'arrive';
-    case 'uturn':
-      return 'uturn';
-    case 'merge':
-      return 'merge';
-    case 'fork':
-      return 'fork';
-    case 'sharp_left':
-      return 'sharp left';
-    case 'sharp_right':
-      return 'sharp right';
-    case 'slight_left':
-      return 'slight left';
-    case 'slight_right':
-      return 'slight right';
-    case 'left':
-      return 'turn left';
-    case 'right':
-      return 'turn right';
-    case 'straight':
-    default:
-      return 'straight';
-  }
+  return maneuverKeyFromKind(kind);
 }
 
 /** Banner icon modifiers expect plain tokens (see TurnInstructionCard `getBannerTurnIcon`). */
 function bannerModifierFromKind(kind: ManeuverKind): string {
-  switch (kind) {
-    case 'uturn':
-      return 'uturn';
-    case 'merge':
-      return 'merge';
-    case 'sharp_left':
-      return 'sharp left';
-    case 'sharp_right':
-      return 'sharp right';
-    case 'slight_left':
-      return 'slight left';
-    case 'slight_right':
-      return 'slight right';
-    case 'left':
-      return 'left';
-    case 'right':
-      return 'right';
-    case 'arrive':
-      return 'arrive';
-    case 'fork':
-      return 'fork';
-    default:
-      return 'straight';
-  }
+  return maneuverKeyFromKind(kind);
 }
 
 /**

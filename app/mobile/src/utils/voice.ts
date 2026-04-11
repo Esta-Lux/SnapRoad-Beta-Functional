@@ -5,6 +5,7 @@ import { DRIVING_MODES } from '../constants/modes';
 import { shouldSuppressJsTurnGuidance } from '../navigation/navVoiceGate';
 import { isSdkTripAuthoritative } from '../navigation/navSdkAuthority';
 import { markNavVoiceFromJs } from '../navigation/navSdkStore';
+import type { LaneInfo, ManeuverKind, RoadSignal } from '../navigation/navModel';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
@@ -237,55 +238,85 @@ function naturalDistanceShort(meters: number): string {
   return `${miles.toFixed(1)} mi`;
 }
 
-function buildCalmPhrase(
-  core: string,
-  dist: number,
-  nextTurnDir?: string,
-): string {
+function buildCalmPhrase(core: string, dist: number, chain: string, laneSuffix: string): string {
   const d = naturalDistanceFull(dist);
   let base: string;
-  if (dist <= 60) {
-    base = `${core} right here.`;
-  } else if (dist <= 200) {
-    base = `${core.charAt(0).toUpperCase() + core.slice(1)} just ahead.`;
-  } else {
-    base = `${d.charAt(0).toUpperCase() + d.slice(1)}, please ${core.toLowerCase()}.`;
-  }
-  if (nextTurnDir && dist <= 400) {
-    base = base.replace(/\.$/, `, then ${nextTurnDir}.`);
-  }
-  return base;
+  if (dist <= 60) base = `${core} right here.`;
+  else if (dist <= 200) base = `${core.charAt(0).toUpperCase() + core.slice(1)} just ahead.`;
+  else base = `${d.charAt(0).toUpperCase() + d.slice(1)}, please ${core.toLowerCase()}.`;
+  return base.replace(/\.$/, `${chain}.`) + laneSuffix;
 }
 
-function buildAdaptivePhrase(
-  core: string,
-  dist: number,
-  nextTurnDir?: string,
-): string {
+function buildAdaptivePhrase(core: string, dist: number, chain: string, laneSuffix: string): string {
   const d = naturalDistanceFull(dist);
   let base: string;
-  if (dist <= 60) {
-    base = `${core}.`;
-  } else {
-    base = `${d.charAt(0).toUpperCase() + d.slice(1)}, ${core.toLowerCase()}.`;
-  }
-  if (nextTurnDir && dist <= 300) {
-    base = base.replace(/\.$/, `, then ${nextTurnDir}.`);
-  }
-  return base;
+  if (dist <= 60) base = `${core}.`;
+  else base = `${d.charAt(0).toUpperCase() + d.slice(1)}, ${core.toLowerCase()}.`;
+  return base.replace(/\.$/, `${chain}.`) + laneSuffix;
 }
 
-function buildSportPhrase(
-  core: string,
-  dist: number,
-  nextTurnDir?: string,
-): string {
+function buildSportPhrase(core: string, dist: number, chain: string, laneSuffix: string): string {
   const short = naturalDistanceShort(dist);
   let base = dist <= 60 ? `${core}.` : `${short}, ${core.toLowerCase()}.`;
-  if (nextTurnDir && dist <= 250) {
-    base = base.replace(/\.$/, `, then ${nextTurnDir}.`);
+  return base.replace(/\.$/, `${chain}.`) + laneSuffix;
+}
+
+function signalPrefix(signal?: RoadSignal): string {
+  if (!signal || signal.kind === 'none') return '';
+  switch (signal.kind) {
+    case 'traffic_light':
+      return 'at the light, ';
+    case 'stop_sign':
+      return 'at the stop sign, ';
+    case 'yield':
+      return 'at the yield, ';
+    case 'toll_booth':
+      return 'at the toll, ';
+    case 'railway_crossing':
+      return 'at the crossing, ';
+    default:
+      return '';
   }
-  return base;
+}
+
+function laneAdvice(lanes?: LaneInfo[]): string {
+  if (!lanes?.length) return '';
+  const active = lanes.filter((l) => l.active);
+  if (!active.length || active.length === lanes.length) return '';
+  const pos = lanes.indexOf(active[0]!);
+  const total = lanes.length;
+  if (active.length === 1) {
+    if (pos === 0) return ' Stay in the left lane.';
+    if (pos === total - 1) return ' Stay in the right lane.';
+    return '';
+  }
+  if (pos === 0) return ' Use the left lanes.';
+  if (pos + active.length >= total) return ' Use the right lanes.';
+  return '';
+}
+
+function chainHint(
+  nextKind?: ManeuverKind | null,
+  nextStreet?: string | null,
+  nextDist?: number | null,
+): string {
+  if (!nextKind) return '';
+  if (nextDist != null && nextDist > 300) return '';
+  const dirMap: Partial<Record<ManeuverKind, string>> = {
+    turn_left: 'turn left',
+    turn_right: 'turn right',
+    sharp_left: 'sharp left',
+    sharp_right: 'sharp right',
+    slight_left: 'bear left',
+    slight_right: 'bear right',
+    keep_left: 'keep left',
+    keep_right: 'keep right',
+    uturn: 'make a U-turn',
+  };
+  const chain = dirMap[nextKind];
+  if (!chain) return '';
+  const road = nextStreet ? ` onto ${nextStreet}` : '';
+  return `, then ${chain}${road}`;
 }
 
 export interface NextTurnInfo {
@@ -293,8 +324,20 @@ export interface NextTurnInfo {
   distanceMeters?: number;
 }
 
+export type NavStepSpeechData = {
+  signal?: RoadSignal;
+  lanes?: LaneInfo[];
+  roundaboutExitNumber?: number | null;
+  destinationRoad?: string | null;
+  shields?: Array<{ displayRef: string }>;
+  nextManeuverKind?: ManeuverKind | null;
+  nextManeuverStreet?: string | null;
+  nextManeuverDistanceMeters?: number | null;
+  kind?: ManeuverKind;
+};
+
 /**
- * Build a spoken turn instruction. Pass **live** remaining distance to the maneuver when available.
+ * Build a spoken turn instruction from NavStep-level fields when available.
  */
 export function formatTurnInstruction(
   instruction: string,
@@ -303,50 +346,117 @@ export function formatTurnInstruction(
   mode: DrivingMode = 'adaptive',
   intersections?: { classes?: string[] }[],
   nextTurn?: NextTurnInfo | null,
+  navStepData?: NavStepSpeechData,
 ): string {
   if (!instruction) return 'Continue';
 
   const dist = typeof distanceMeters === 'number' && distanceMeters > 0 ? distanceMeters : 400;
+  const signal = navStepData?.signal;
+  const lanes = navStepData?.lanes;
+  const kind = navStepData?.kind;
 
-  if (maneuver === 'arrive') {
+  if (maneuver === 'arrive' || kind === 'arrive') {
     if (mode === 'calm') return "You've arrived at your destination. Hope you had a peaceful drive.";
     if (mode === 'adaptive') return "You've arrived. Have a great day.";
     if (mode === 'sport') return 'Arrived.';
     return "You have arrived at your destination.";
   }
-  if (maneuver === 'depart') {
+  if (maneuver === 'depart' || kind === 'depart') {
     if (mode === 'calm') return "You're all set. Enjoy the drive.";
     if (mode === 'adaptive') return 'Starting navigation. Follow the route.';
     if (mode === 'sport') return 'Go.';
-    return "Head out and follow the route.";
+    return 'Head out and follow the route.';
   }
 
-  const hasLight = intersections?.some((i) => i.classes?.includes('traffic_signal')) ?? false;
-  const hasStop = intersections?.some((i) => i.classes?.includes('stop_sign')) ?? false;
+  if (
+    kind === 'roundabout_left' ||
+    kind === 'roundabout_right' ||
+    kind === 'roundabout_straight' ||
+    kind === 'rotary'
+  ) {
+    const exit = navStepData?.roundaboutExitNumber;
+    const ordinals: Record<number, string> = {
+      1: 'first',
+      2: 'second',
+      3: 'third',
+      4: 'fourth',
+      5: 'fifth',
+      6: 'sixth',
+    };
+    if (exit) {
+      const ord = ordinals[exit] ?? `${exit}th`;
+      const road = navStepData?.destinationRoad;
+      const exitPhrase = road
+        ? `at the roundabout, take the ${ord} exit onto ${road}`
+        : `at the roundabout, take the ${ord} exit`;
+      const chain = chainHint(
+        navStepData?.nextManeuverKind,
+        navStepData?.nextManeuverStreet,
+        navStepData?.nextManeuverDistanceMeters,
+      );
+      if (mode === 'calm') return buildCalmPhrase(exitPhrase, dist, chain, laneAdvice(lanes));
+      if (mode === 'sport') return buildSportPhrase(exitPhrase, dist, chain, laneAdvice(lanes));
+      return buildAdaptivePhrase(exitPhrase, dist, chain, laneAdvice(lanes));
+    }
+  }
 
   const manL = (maneuver ?? '').toLowerCase();
-  /** Prefer structured maneuver (Mapbox modifier) so banner copy like "keep right …" cannot flip L/R vs the step. */
   let dir: string | null = null;
   let sharpTurn = false;
   let slightTurn = false;
-  if (manL === 'u-turn' || manL.includes('u-turn')) dir = 'u-turn';
-  else if (manL.includes('roundabout')) dir = 'roundabout';
-  else if (manL.includes('merge')) dir = 'merge';
-  else if (manL === 'straight') dir = 'straight';
-  else if (manL.includes('sharp') && manL.includes('left')) {
-    dir = 'left';
-    sharpTurn = true;
-  } else if (manL.includes('sharp') && manL.includes('right')) {
-    dir = 'right';
-    sharpTurn = true;
-  } else if (manL.includes('slight') && manL.includes('left')) {
-    dir = 'left';
-    slightTurn = true;
-  } else if (manL.includes('slight') && manL.includes('right')) {
-    dir = 'right';
-    slightTurn = true;
-  } else if (/\bleft\b/.test(manL)) dir = 'left';
-  else if (/\bright\b/.test(manL)) dir = 'right';
+
+  if (kind) {
+    const kindDirMap: Partial<
+      Record<ManeuverKind, { dir: string; sharp?: boolean; slight?: boolean }>
+    > = {
+      turn_left: { dir: 'left' },
+      turn_right: { dir: 'right' },
+      sharp_left: { dir: 'left', sharp: true },
+      sharp_right: { dir: 'right', sharp: true },
+      slight_left: { dir: 'left', slight: true },
+      slight_right: { dir: 'right', slight: true },
+      uturn: { dir: 'u-turn' },
+      merge_left: { dir: 'merge' },
+      merge_right: { dir: 'merge' },
+      merge: { dir: 'merge' },
+      straight: { dir: 'straight' },
+      keep_left: { dir: 'left', slight: true },
+      keep_right: { dir: 'right', slight: true },
+      fork_left: { dir: 'left' },
+      fork_right: { dir: 'right' },
+      on_ramp_left: { dir: 'left' },
+      on_ramp_right: { dir: 'right' },
+      off_ramp_left: { dir: 'left' },
+      off_ramp_right: { dir: 'right' },
+    };
+    const mapped = kindDirMap[kind];
+    if (mapped) {
+      dir = mapped.dir;
+      sharpTurn = mapped.sharp ?? false;
+      slightTurn = mapped.slight ?? false;
+    }
+  }
+
+  if (!dir) {
+    if (manL === 'u-turn' || manL.includes('u-turn')) dir = 'u-turn';
+    else if (manL.includes('roundabout')) dir = 'roundabout';
+    else if (manL.includes('merge')) dir = 'merge';
+    else if (manL === 'straight') dir = 'straight';
+    else if (manL.includes('sharp') && manL.includes('left')) {
+      dir = 'left';
+      sharpTurn = true;
+    } else if (manL.includes('sharp') && manL.includes('right')) {
+      dir = 'right';
+      sharpTurn = true;
+    } else if (manL.includes('slight') && manL.includes('left')) {
+      dir = 'left';
+      slightTurn = true;
+    } else if (manL.includes('slight') && manL.includes('right')) {
+      dir = 'right';
+      slightTurn = true;
+    } else if (/\bleft\b/.test(manL)) dir = 'left';
+    else if (/\bright\b/.test(manL)) dir = 'right';
+  }
 
   const i = instruction.trim();
   if (!dir) {
@@ -360,25 +470,45 @@ export function formatTurnInstruction(
 
   if (!dir) return i;
 
-  const ontoMatch = i.match(/(?:onto|toward|on)\s+(.+)/i);
-  const roadName = ontoMatch?.[1]?.replace(/\.$/, '') ?? null;
+  const sigPre = signalPrefix(signal);
+  const legacyHasLight = !signal && (intersections?.some((ix) => ix.classes?.includes('traffic_signal')) ?? false);
+  const legacyHasStop = !signal && (intersections?.some((ix) => ix.classes?.includes('stop_sign')) ?? false);
+  const useLegacySignal = !signal || signal.kind === 'none';
 
-  let nextTurnDir: string | undefined;
-  if (nextTurn && typeof nextTurn.distanceMeters === 'number' && nextTurn.distanceMeters < 300) {
-    const nm = nextTurn.maneuver?.toLowerCase() ?? '';
-    if (/\bleft\b/.test(nm) && !/\bright\b/.test(nm)) nextTurnDir = 'turn left';
-    else if (/\bright\b/.test(nm) && !/\bleft\b/.test(nm)) nextTurnDir = 'turn right';
-  }
+  const ontoMatch = i.match(/(?:onto|toward|on)\s+(.+)/i);
+  const roadName = navStepData?.destinationRoad ?? ontoMatch?.[1]?.replace(/\.$/, '') ?? null;
+
+  const chain =
+    chainHint(
+      navStepData?.nextManeuverKind,
+      navStepData?.nextManeuverStreet,
+      navStepData?.nextManeuverDistanceMeters,
+    ) ||
+    (() => {
+      if (nextTurn && typeof nextTurn.distanceMeters === 'number' && nextTurn.distanceMeters < 300) {
+        const nm = nextTurn.maneuver?.toLowerCase() ?? '';
+        if (/\bleft\b/.test(nm) && !/\bright\b/.test(nm)) return ', then turn left';
+        if (/\bright\b/.test(nm) && !/\bleft\b/.test(nm)) return ', then turn right';
+      }
+      return '';
+    })();
+
+  const laneSuffix = laneAdvice(lanes);
 
   let core: string;
   const road = roadName ? ` onto ${roadName}` : '';
 
+  const shieldNote =
+    navStepData?.shields?.length && navStepData.shields[0]!.displayRef
+      ? ` toward ${navStepData.shields[0]!.displayRef}`
+      : '';
+
   if (dir === 'u-turn') {
-    core = 'make a U-turn';
+    core = `${sigPre}make a U-turn${shieldNote}`;
   } else if (dir === 'roundabout') {
-    core = 'take the roundabout';
+    core = `${sigPre}take the roundabout${road}`;
   } else if (dir === 'merge') {
-    core = `merge${road}`;
+    core = `${sigPre}merge${road}${shieldNote}`;
   } else if (dir === 'straight') {
     if (dist < 3000) return '';
     const miles = (dist / 1609.34).toFixed(1);
@@ -387,28 +517,21 @@ export function formatTurnInstruction(
     return `Continue straight for ${miles} miles.`;
   } else {
     const turnWord = dir === 'left' ? 'left' : 'right';
+    const signalLabel =
+      sigPre ||
+      (useLegacySignal && legacyHasLight ? 'at the light, ' : '') ||
+      (useLegacySignal && legacyHasStop ? 'at the stop sign, ' : '');
+
     if (sharpTurn) {
-      core = hasLight
-        ? `make a sharp ${turnWord} at the light${road}`
-        : hasStop
-          ? `make a sharp ${turnWord} at the stop sign${road}`
-          : `make a sharp ${turnWord}${road}`;
+      core = `${signalLabel}make a sharp ${turnWord}${road}${shieldNote}`;
     } else if (slightTurn) {
-      core = hasLight
-        ? `bear slightly ${turnWord} at the light${road}`
-        : hasStop
-          ? `bear slightly ${turnWord} at the stop sign${road}`
-          : `bear slightly ${turnWord}${road}`;
-    } else if (hasLight) {
-      core = `turn ${turnWord} at the light${road}`;
-    } else if (hasStop) {
-      core = `turn ${turnWord} at the stop sign${road}`;
+      core = `${signalLabel}bear slightly ${turnWord}${road}${shieldNote}`;
     } else {
-      core = `turn ${turnWord}${road}`;
+      core = `${signalLabel}turn ${turnWord}${road}${shieldNote}`;
     }
   }
 
-  if (mode === 'calm') return buildCalmPhrase(core, dist, nextTurnDir);
-  if (mode === 'sport') return buildSportPhrase(core, dist, nextTurnDir);
-  return buildAdaptivePhrase(core, dist, nextTurnDir);
+  if (mode === 'calm') return buildCalmPhrase(core, dist, chain, laneSuffix);
+  if (mode === 'sport') return buildSportPhrase(core, dist, chain, laneSuffix);
+  return buildAdaptivePhrase(core, dist, chain, laneSuffix);
 }

@@ -1,25 +1,17 @@
 import type { DirectionsStep } from '../lib/directions';
 import type { Coordinate } from '../types';
-import type { NavigationProgress, NavStep, ManeuverKind, NavBannerModel } from './navModel';
+import type { NavigationProgress, NavStep, NavBannerModel } from './navModel';
 import { polylineLengthMeters, projectOntoPolyline } from '../utils/distance';
 import type { SdkLocationPayload, SdkProgressPayload } from './navSdkStore';
+import { resolveManeuverKind } from './navStepsFromDirections';
 
-function mapManeuverKind(maneuverType?: string, maneuverDirection?: string): ManeuverKind {
-  const blob = `${maneuverType ?? ''} ${maneuverDirection ?? ''}`.toLowerCase();
-  if (blob.includes('arrive')) return 'arrive';
-  if (blob.includes('uturn') || blob.includes('u-turn')) return 'uturn';
-  if (blob.includes('roundabout') || blob.includes('rotary')) return 'merge';
-  if (blob.includes('merge')) return 'merge';
-  if (blob.includes('fork')) return 'fork';
-  if (blob.includes('sharp') && blob.includes('left')) return 'sharp_left';
-  if (blob.includes('sharp') && blob.includes('right')) return 'sharp_right';
-  if (blob.includes('slight') && blob.includes('left')) return 'slight_left';
-  if (blob.includes('slight') && blob.includes('right')) return 'slight_right';
-  if (blob.includes('left')) return 'left';
-  if (blob.includes('right')) return 'right';
-  if (blob.includes('straight') || blob.includes('continue')) return 'straight';
-  if (blob.includes('depart') || blob.includes('head')) return 'straight';
-  return 'straight';
+function mapSdkToRichKind(maneuverType?: string, maneuverDirection?: string) {
+  const t = String(maneuverType ?? '').toLowerCase();
+  const d = String(maneuverDirection ?? '').toLowerCase();
+  const blob = `${t} ${d}`;
+  if (blob.includes('arrive')) return resolveManeuverKind('arrive', '');
+  if (blob.includes('depart')) return resolveManeuverKind('depart', '');
+  return resolveManeuverKind(t || 'continue', d);
 }
 
 function splitPolylineRough(polyline: Coordinate[], fraction01: number): { traveled: Coordinate[]; remaining: Coordinate[] } {
@@ -94,7 +86,7 @@ export function buildNavigationProgressFromSdk(args: {
       ? Math.min(Math.max(0, stepIdxRaw), Math.max(0, steps.length - 1))
       : Math.max(0, stepIdxRaw);
   const ds = steps.length > 0 ? steps[idx] ?? null : null;
-  const kind = mapManeuverKind(progress.maneuverType, progress.maneuverDirection);
+  const kind = mapSdkToRichKind(progress.maneuverType, progress.maneuverDirection);
   const distNext =
     typeof progress.distanceToNextManeuverMeters === 'number' && Number.isFinite(progress.distanceToNextManeuverMeters)
       ? Math.max(0, progress.distanceToNextManeuverMeters)
@@ -110,13 +102,28 @@ export function buildNavigationProgressFromSdk(args: {
   const nextStep: NavStep | null = {
     index: idx,
     segmentIndex: Math.min(idx, Math.max(0, polyline.length - 2)),
-    distanceMetersFromStart: ds?.distanceMeters ?? 0,
+    kind,
+    rawType: String(progress.maneuverType ?? ''),
+    rawModifier: String(progress.maneuverDirection ?? ''),
+    bearingAfter: 0,
+    displayInstruction: primaryText,
+    secondaryInstruction: secondaryText ?? null,
+    subInstruction: null,
+    instruction: progress.currentStepInstruction?.trim() || progress.primaryInstruction?.trim() || '',
+    streetName: ds?.name ?? null,
+    destinationRoad: null,
+    shields: [],
+    signal: { kind: 'none', label: '' },
+    lanes: [],
+    roundaboutExitNumber: null,
+    distanceMetersFromStart: 0,
+    distanceMeters: ds?.distanceMeters ?? distNext,
     distanceMetersToNext: distNext,
     durationSeconds: ds?.durationSeconds ?? 0,
-    kind,
-    streetName: ds?.name ?? null,
-    instruction: progress.currentStepInstruction?.trim() || progress.primaryInstruction?.trim() || null,
-    displayInstruction: primaryText,
+    voiceAnnouncement: null,
+    nextManeuverKind: null,
+    nextManeuverStreet: null,
+    nextManeuverDistanceMeters: null,
   };
 
   const banner: NavBannerModel = {

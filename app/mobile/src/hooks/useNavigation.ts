@@ -301,8 +301,38 @@ export function useNavigation(params: {
       const c = getSdkMatchedCoordinate();
       if (c) return c;
     }
+
+    if (
+      isNavigating &&
+      !sdkActive &&
+      navigationProgress?.snapped &&
+      !navigationProgress.isOffRoute &&
+      navigationProgress.snapped.distanceMeters < 45
+    ) {
+      const dc = navigationProgress.displayCoord;
+      if (dc && Number.isFinite(dc.lat) && Number.isFinite(dc.lng)) {
+        return { lat: dc.lat, lng: dc.lng };
+      }
+      return {
+        lat: navigationProgress.snapped.point.lat,
+        lng: navigationProgress.snapped.point.lng,
+      };
+    }
+
     return { lat: userLocation.lat, lng: userLocation.lng };
-  }, [sdkActive, userLocation.lat, userLocation.lng, navSdkSnapshot.location]);
+  }, [
+    sdkActive,
+    isNavigating,
+    userLocation.lat,
+    userLocation.lng,
+    navSdkSnapshot.location,
+    navigationProgress?.snapped?.point?.lat,
+    navigationProgress?.snapped?.point?.lng,
+    navigationProgress?.snapped?.distanceMeters,
+    navigationProgress?.displayCoord?.lat,
+    navigationProgress?.displayCoord?.lng,
+    navigationProgress?.isOffRoute,
+  ]);
 
   const navigationDisplayHeading = useMemo(() => {
     if (sdkActive && navSdkSnapshot.location && navSdkSnapshot.location.course >= 0) {

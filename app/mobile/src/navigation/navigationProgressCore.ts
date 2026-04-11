@@ -8,7 +8,7 @@ import {
 } from './navGeometry';
 import type { NavigationProgress, RawLocation, RoutePoint, NavStep } from './navModel';
 import { buildNavBanner } from './navBanner';
-import type { OffRouteTuning } from './offRouteTuning';
+import { effectiveMaxSnapMeters, type OffRouteTuning } from './offRouteTuning';
 import { remainingDurationSecondsFromNavSteps } from './navigationEta';
 import { remainingDurationSecondsFromEdges } from './navigationEtaEdges';
 import { blendModelWithObservedEta } from './etaObservedBlend';
@@ -64,6 +64,33 @@ function bearingFallback(route: RoutePoint[], segmentIndex: number) {
   return bearingDegrees(route[i]!, route[i + 1]!);
 }
 
+/** Point along the polyline at `targetCum` meters from the start (linear per segment). */
+function coordinateAtCumulative(
+  route: RoutePoint[],
+  cumulative: number[],
+  targetCum: number,
+): RoutePoint | null {
+  if (route.length < 2 || cumulative.length < 2) return null;
+  const lastCum = cumulative[cumulative.length - 1] ?? 0;
+  if (targetCum >= lastCum - 1e-6) {
+    const end = route[route.length - 1]!;
+    return { lat: end.lat, lng: end.lng };
+  }
+  for (let i = 0; i < cumulative.length - 1; i++) {
+    const segStart = cumulative[i]!;
+    const segEnd = cumulative[i + 1]!;
+    if (targetCum >= segStart - 1e-6 && targetCum <= segEnd + 1e-6) {
+      const segLen = segEnd - segStart;
+      const t = segLen > 0.01 ? (targetCum - segStart) / segLen : 0;
+      return {
+        lat: route[i]!.lat + t * (route[i + 1]!.lat - route[i]!.lat),
+        lng: route[i]!.lng + t * (route[i + 1]!.lng - route[i]!.lng),
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * Pure navigation progress for one GPS tick (`useNavigationProgress` is a thin ref holder).
  * Returns `null` if snap fails — caller should retain `previous`.
@@ -98,12 +125,17 @@ export function computeNavigationProgressFrame({
     }
   }
 
+  const speed = rawLocation.speedMps ?? 0;
   const confidence = confidenceFrom(rawLocation, snap.distanceMeters);
+  const maxSnapEffective = effectiveMaxSnapMeters(
+    offRouteTuning,
+    speed,
+    rawLocation.accuracy ?? null,
+  );
   const isOffRoute =
-    snap.distanceMeters > offRouteTuning.maxSnapMeters &&
-    confidence < offRouteTuning.minConfidence;
+    snap.distanceMeters > maxSnapEffective && confidence < offRouteTuning.minConfidence;
 
-  const target = isOffRoute
+  const snapTarget = isOffRoute
     ? rawLocation
     : {
         ...rawLocation,
@@ -111,18 +143,48 @@ export function computeNavigationProgressFrame({
         lng: snap.point.lng,
       };
 
+  let biasedTarget: RawLocation = snapTarget;
+  if (!isOffRoute && speed > 3) {
+    const leadM = Math.min(22, speed * 0.3);
+    const advancedCum = snap.cumulativeMeters + leadM;
+    const totalRouteLen = cumulative[cumulative.length - 1] ?? 0;
+    if (advancedCum < totalRouteLen - 1e-3) {
+      const advanced = coordinateAtCumulative(route, cumulative, advancedCum);
+      if (advanced) {
+        biasedTarget = {
+          ...rawLocation,
+          lat: advanced.lat,
+          lng: advanced.lng,
+        };
+      }
+    }
+  }
+
   const prevDisplay = previous?.displayCoord ?? rawLocation;
-  const speed = rawLocation.speedMps ?? 0;
-  let alpha = 0.24;
-  if (speed < 1) alpha = 0.12;
-  else if (speed < 6) alpha = 0.18;
-  else alpha = 0.28;
-  if (snap.distanceMeters > 18) alpha = Math.min(0.52, alpha + 0.12);
-  if (snap.distanceMeters > 38) alpha = Math.min(0.6, alpha + 0.08);
+
+  let alpha: number;
+  if (speed < 1) {
+    alpha = 0.1;
+  } else if (speed < 4) {
+    alpha = 0.18;
+  } else if (speed < 8) {
+    alpha = 0.3;
+  } else if (speed < 14) {
+    alpha = 0.45;
+  } else if (speed < 22) {
+    alpha = 0.6;
+  } else if (speed < 30) {
+    alpha = 0.72;
+  } else {
+    alpha = 0.85;
+  }
+
+  if (snap.distanceMeters > 18) alpha = Math.min(0.88, alpha + 0.1);
+  if (snap.distanceMeters > 38) alpha = Math.min(0.92, alpha + 0.06);
 
   const displayCoord: RawLocation = {
-    lat: prevDisplay.lat + (target.lat - prevDisplay.lat) * alpha,
-    lng: prevDisplay.lng + (target.lng - prevDisplay.lng) * alpha,
+    lat: prevDisplay.lat + (biasedTarget.lat - prevDisplay.lat) * alpha,
+    lng: prevDisplay.lng + (biasedTarget.lng - prevDisplay.lng) * alpha,
     speedMps: rawLocation.speedMps ?? prevDisplay.speedMps ?? 0,
     accuracy: rawLocation.accuracy ?? prevDisplay.accuracy ?? null,
     timestamp: rawLocation.timestamp ?? Date.now(),
@@ -134,7 +196,9 @@ export function computeNavigationProgressFrame({
       ? rawLocation.heading
       : bearingFallback(route, snap.segmentIndex);
   const prevHeading = previous?.displayCoord?.heading ?? targetHeading ?? 0;
-  displayCoord.heading = headingBlend(prevHeading, targetHeading ?? prevHeading, speed < 2 ? 0.1 : 0.18);
+  const headingAlpha =
+    speed < 2 ? 0.1 : speed < 6 ? 0.15 : speed < 14 ? 0.22 : speed < 22 ? 0.3 : 0.38;
+  displayCoord.heading = headingBlend(prevHeading, targetHeading ?? prevHeading, headingAlpha);
 
   const { traveled, remaining } = splitRouteAtSnap(route, snap);
   const routeTotalMeters = cumulative[cumulative.length - 1] ?? 0;

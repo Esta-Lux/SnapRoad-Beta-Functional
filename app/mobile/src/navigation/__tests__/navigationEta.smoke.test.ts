@@ -2,28 +2,25 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { remainingDurationSecondsFromNavSteps } from '../navigationEta';
 import type { NavStep } from '../navModel';
+import { minimalNavStep } from './navStepTestFixtures';
 
 const steps: NavStep[] = [
-  {
+  minimalNavStep({
     index: 0,
     segmentIndex: 0,
     distanceMetersFromStart: 0,
     distanceMetersToNext: 1000,
     durationSeconds: 120,
     kind: 'straight',
-    streetName: null,
-    instruction: null,
-  },
-  {
+  }),
+  minimalNavStep({
     index: 1,
     segmentIndex: 1,
     distanceMetersFromStart: 1000,
     distanceMetersToNext: 500,
     durationSeconds: 180,
-    kind: 'right',
-    streetName: null,
-    instruction: null,
-  },
+    kind: 'turn_right',
+  }),
 ];
 
 test('remainingDuration: at start equals sum of step durations', () => {

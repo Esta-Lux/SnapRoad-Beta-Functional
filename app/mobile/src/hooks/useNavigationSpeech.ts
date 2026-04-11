@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { DrivingMode } from '../types';
 import { speakGuidance } from '../utils/voice';
-import { NavigationProgress } from '../navigation/navModel';
+import type { NavigationProgress, NavStep, ManeuverKind, RoadSignal, LaneInfo } from '../navigation/navModel';
 import { phraseForManeuverKind } from '../navigation/spokenManeuver';
 import {
   setLastTurnByTurnPhrase,
@@ -20,30 +20,141 @@ type Args = {
   drivingMode: DrivingMode;
 };
 
-/**
- * Two spoken cues per maneuver: farther (~≤400m) and imminent (≤95m).
- * Avoids stacking 3–4 distance buckets on every turn.
- */
+const PREPARATORY_MAX_M = 800;
 const ADVANCE_MAX_M = 400;
 const ADVANCE_MIN_M = 95;
 const IMMINENT_M = 95;
 
-function buildUtterance(progress: NavigationProgress, metric: boolean): string | null {
+function signalClause(signal: RoadSignal): string {
+  switch (signal.kind) {
+    case 'traffic_light':
+      return 'at the traffic light, ';
+    case 'stop_sign':
+      return 'at the stop sign, ';
+    case 'yield':
+      return 'at the yield, ';
+    case 'railway_crossing':
+      return 'at the railway crossing, ';
+    case 'toll_booth':
+      return 'at the toll booth, ';
+    default:
+      return '';
+  }
+}
+
+function laneHint(lanes: LaneInfo[]): string {
+  if (!lanes.length) return '';
+  const active = lanes.filter((l) => l.active);
+  if (!active.length) return '';
+
+  const positions = active.map((lane) => lanes.indexOf(lane));
+  const total = lanes.length;
+  if (total <= 1) return '';
+
+  const leftmost = Math.min(...positions);
+  const rightmost = Math.max(...positions);
+
+  if (active.length === 1) {
+    if (leftmost === 0) return ' Use the left lane.';
+    if (leftmost === total - 1) return ' Use the right lane.';
+    if (total <= 3 && leftmost === 1) return ' Use the middle lane.';
+    return ` Use lane ${leftmost + 1} from the left.`;
+  }
+
+  if (leftmost === 0 && rightmost < total - 1) return ' Use the left lanes.';
+  if (rightmost === total - 1 && leftmost > 0) return ' Use the right lanes.';
+  return '';
+}
+
+function roundaboutPhrase(step: NavStep): string {
+  const exit = step.roundaboutExitNumber;
+  if (!exit) return 'Enter the roundabout';
+
+  const ordinals: Record<number, string> = {
+    1: 'first',
+    2: 'second',
+    3: 'third',
+    4: 'fourth',
+    5: 'fifth',
+    6: 'sixth',
+  };
+  const ord = ordinals[exit] ?? `${exit}th`;
+  const road = step.destinationRoad ?? step.streetName;
+  return road
+    ? `At the roundabout, take the ${ord} exit onto ${road}`
+    : `At the roundabout, take the ${ord} exit`;
+}
+
+function chainPhrase(step: NavStep): string {
+  if (!step.nextManeuverKind) return '';
+  if (step.nextManeuverDistanceMeters != null && step.nextManeuverDistanceMeters > 300) return '';
+
+  const chainable: Partial<Record<ManeuverKind, string>> = {
+    turn_left: 'then turn left',
+    turn_right: 'then turn right',
+    sharp_left: 'then make a sharp left',
+    sharp_right: 'then make a sharp right',
+    slight_left: 'then bear left',
+    slight_right: 'then bear right',
+    keep_left: 'then keep left',
+    keep_right: 'then keep right',
+    uturn: 'then make a U-turn',
+    merge_left: 'then merge left',
+    merge_right: 'then merge right',
+  };
+
+  const phrase = chainable[step.nextManeuverKind];
+  if (!phrase) return '';
+
+  const road = step.nextManeuverStreet;
+  return road ? `${phrase} onto ${road}` : phrase;
+}
+
+function buildUtterance(
+  progress: NavigationProgress,
+  bucket: 'preparatory' | 'advance' | 'imminent',
+  metric: boolean,
+): string | null {
   const step = progress.nextStep;
   if (!step || step.kind === 'arrive') return null;
+
   const d = progress.nextStepDistanceMeters;
-  const distancePart = distanceClauseForTurnSpeech(d, metric);
+  const distPart = distanceClauseForTurnSpeech(d, metric);
+
+  if (
+    step.kind === 'roundabout_left' ||
+    step.kind === 'roundabout_right' ||
+    step.kind === 'roundabout_straight' ||
+    step.kind === 'rotary'
+  ) {
+    const core = roundaboutPhrase(step);
+    const chain = bucket === 'imminent' ? chainPhrase(step) : '';
+    const chainSuffix = chain ? `, ${chain}` : '';
+    if (bucket === 'imminent') return `${core}${chainSuffix}.`;
+    return `${distPart}, ${core.charAt(0).toLowerCase() + core.slice(1)}${chainSuffix}.`;
+  }
+
   const line =
     step.displayInstruction?.trim() ||
     step.instruction?.trim() ||
     phraseForManeuverKind(step.kind);
-  const usedGenericPhrase =
-    !step.displayInstruction?.trim() && !step.instruction?.trim();
-  const street =
-    usedGenericPhrase && step.streetName?.trim()
-      ? ` onto ${step.streetName.trim()}`
-      : '';
-  return `${distancePart}, ${line}${street}`;
+
+  const sigClause = bucket === 'advance' ? signalClause(step.signal) : '';
+  const laneSuffix = bucket === 'imminent' ? laneHint(step.lanes) : '';
+  const chain = bucket === 'imminent' ? chainPhrase(step) : '';
+  const chainSuffix = chain ? `, ${chain}` : '';
+
+  let shieldPrefix = '';
+  if (bucket !== 'imminent' && step.shields.length > 0) {
+    const s = step.shields[0]!;
+    shieldPrefix = s.displayRef ? `toward ${s.displayRef}, ` : '';
+  }
+
+  if (bucket === 'imminent') {
+    return `${sigClause}${line}${chainSuffix}.${laneSuffix}`;
+  }
+
+  return `${distPart}, ${sigClause}${shieldPrefix}${line.charAt(0).toLowerCase() + line.slice(1)}${chainSuffix}.${laneSuffix}`;
 }
 
 export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
@@ -59,16 +170,23 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
 
     const d = progress.nextStepDistanceMeters;
 
-    let bucket: 'advance' | 'imminent' | null = null;
+    let bucket: 'preparatory' | 'advance' | 'imminent' | null = null;
     if (d <= IMMINENT_M) bucket = 'imminent';
     else if (d <= ADVANCE_MAX_M && d > ADVANCE_MIN_M) bucket = 'advance';
+    else if (d <= PREPARATORY_MAX_M && d > ADVANCE_MAX_M) bucket = 'preparatory';
 
     if (!bucket) return;
 
     const key = `${progress.nextStep.index}:${bucket}`;
     if (lastKey.current === key) return;
 
-    const phrase = buildUtterance(progress, metric);
+    let phrase: string | null = null;
+    if (bucket === 'preparatory' && progress.nextStep.voiceAnnouncement) {
+      phrase = progress.nextStep.voiceAnnouncement;
+    }
+    if (!phrase) {
+      phrase = buildUtterance(progress, bucket, metric);
+    }
     if (!phrase) return;
 
     setLastTurnByTurnPhrase(phrase);

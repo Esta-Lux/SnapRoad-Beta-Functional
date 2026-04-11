@@ -7,6 +7,7 @@ import {
 } from '../navigationEtaEdges';
 import type { NavStep } from '../navModel';
 import type { Coordinate } from '../../types';
+import { minimalNavStep } from './navStepTestFixtures';
 
 test('remainingDurationSecondsFromEdges: prorates current edge', () => {
   const cum = [0, 100, 250, 400];
@@ -26,26 +27,22 @@ test('buildEdgeDurationSecFromSteps splits step duration by edge length', () => 
     { lat: 40.002, lng: -83.0 },
   ];
   const steps: NavStep[] = [
-    {
+    minimalNavStep({
       index: 0,
       segmentIndex: 0,
       distanceMetersFromStart: 0,
       distanceMetersToNext: 200,
       durationSeconds: 100,
       kind: 'straight',
-      streetName: null,
-      instruction: null,
-    },
-    {
+    }),
+    minimalNavStep({
       index: 1,
       segmentIndex: 1,
       distanceMetersFromStart: 200,
       distanceMetersToNext: 0,
       durationSeconds: 50,
       kind: 'arrive',
-      streetName: null,
-      instruction: null,
-    },
+    }),
   ];
   const edges = buildEdgeDurationSecFromSteps(poly, steps);
   assert.ok(edges && edges.length === 2);
@@ -60,26 +57,22 @@ test('resolveEdgeDurationSec prefers Mapbox annotation array', () => {
     { lat: 0.002, lng: 0 },
   ];
   const steps: NavStep[] = [
-    {
+    minimalNavStep({
       index: 0,
       segmentIndex: 0,
       distanceMetersFromStart: 0,
       distanceMetersToNext: 300,
       durationSeconds: 99,
       kind: 'straight',
-      streetName: null,
-      instruction: null,
-    },
-    {
+    }),
+    minimalNavStep({
       index: 1,
       segmentIndex: 1,
       distanceMetersFromStart: 300,
       distanceMetersToNext: 0,
       durationSeconds: 1,
       kind: 'arrive',
-      streetName: null,
-      instruction: null,
-    },
+    }),
   ];
   const ann = [40, 50];
   const r = resolveEdgeDurationSec({

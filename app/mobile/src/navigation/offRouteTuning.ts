@@ -28,3 +28,27 @@ export function offRouteTuningForMode(mode: DrivingMode): OffRouteTuning {
   if (mode === 'sport') return OFF_ROUTE_AGGRESSIVE;
   return OFF_ROUTE_CONSERVATIVE;
 }
+
+/**
+ * Speed-aware snap corridor: at highway speed, GPS scatter is larger,
+ * so widen the distance threshold vs base tuning to reduce false off-route.
+ */
+export function effectiveMaxSnapMeters(
+  base: OffRouteTuning,
+  speedMps: number,
+  accuracyM: number | null,
+): number {
+  let max = base.maxSnapMeters;
+
+  if (speedMps > 22) {
+    max += Math.min(20, (speedMps - 22) * 1.2);
+  } else if (speedMps > 14) {
+    max += Math.min(10, (speedMps - 14) * 0.8);
+  }
+
+  if (typeof accuracyM === 'number' && accuracyM > 30) {
+    max += Math.min(15, (accuracyM - 30) * 0.25);
+  }
+
+  return max;
+}

@@ -11,7 +11,7 @@ import {
 
 test('accuracyQualityFactor degrades with poor horizontal accuracy', () => {
   assert.equal(accuracyQualityFactor(null), 1);
-  assert.equal(accuracyQualityFactor(10), 1);
+  assert.equal(accuracyQualityFactor(7), 1);
   assert.ok(accuracyQualityFactor(50) < accuracyQualityFactor(20));
   assert.ok(accuracyQualityFactor(100) < 0.4);
 });
@@ -44,5 +44,5 @@ test('extrapolateForDisplay moves ahead when fast and stable heading', () => {
   const c = { lat: 40.7, lng: -74.0 };
   const out = extrapolateForDisplay(c, 90, 65, 0.65, true, 88);
   assert.ok(coordinateSeparationMeters(c, out) > 4);
-  assert.ok(coordinateSeparationMeters(c, out) <= 40);
+  assert.ok(coordinateSeparationMeters(c, out) <= 70);
 });

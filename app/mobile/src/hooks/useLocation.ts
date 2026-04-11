@@ -42,8 +42,8 @@ function haversineMeters(a: Coordinate, b: Coordinate): number {
 }
 
 /**
- * Adaptive EMA toward raw GPS: heavy damping when essentially stopped (minimize wander),
- * high blend when moving fast (minimize lag). `smoothedSpeedMph` avoids regime flicker from noisy GPS speed.
+ * Adaptive EMA toward raw GPS — higher alpha at speed, speed-proportional max-jump,
+ * tighter anti-wander when nearly stopped.
  */
 function blendTowardGps(
   prev: Coordinate,
@@ -57,24 +57,29 @@ function blendTowardGps(
 ): Coordinate {
   const dist = haversineMeters(prev, raw);
   const speedMps = Math.max(0, speedMph) / 2.237;
-  /** Use both reported and smoothed speed so highway isn’t under-reacted when speed readout lags. */
   const vRegime = Math.max(smoothedSpeedMph, speedMph * 0.9);
 
-  let base = isNavigating ? 2.6 + speedMps * dtSec * 2.35 : 2.0 + speedMps * dtSec * 2.75;
-  const accExtra = typeof accuracyM === 'number' ? Math.min(46, accuracyM * 0.42) : 15;
-  let maxJump = Math.min(165, base + accExtra);
+  let base = isNavigating
+    ? 3.0 + speedMps * dtSec * 2.6
+    : 2.0 + speedMps * dtSec * 2.75;
+  const accExtra = typeof accuracyM === 'number' ? Math.min(50, accuracyM * 0.45) : 15;
+  let maxJump = Math.min(220, base + accExtra);
+
   if (vRegime < 2.5 && speedMph < 4) {
-    maxJump = Math.min(maxJump, 16 + (typeof accuracyM === 'number' ? accuracyM * 0.55 : 12));
+    maxJump = Math.min(maxJump, 18 + (typeof accuracyM === 'number' ? accuracyM * 0.55 : 12));
   }
   if (vRegime > 42) {
-    maxJump = Math.min(210, maxJump + speedMps * dtSec * 0.45);
+    maxJump = Math.min(280, maxJump + speedMps * dtSec * 0.6);
+  }
+  if (vRegime > 60) {
+    maxJump = Math.min(350, maxJump + speedMps * dtSec * 0.4);
   }
 
   if (dist > maxJump && speedMph < 6) {
     return prev;
   }
   if (dist > maxJump * 1.22 && speedMph < 26) {
-    const t = 0.11;
+    const t = 0.14;
     return {
       lat: prev.lat + (raw.lat - prev.lat) * t,
       lng: prev.lng + (raw.lng - prev.lng) * t,
@@ -83,36 +88,41 @@ function blendTowardGps(
 
   let a: number;
   if (vRegime < 1.4 && speedMph < 2.8) {
-    a = 0.052;
+    a = 0.048;
   } else if (vRegime < 5) {
     a = isNavigating ? 0.2 : 0.16;
-  } else if (vRegime < 22) {
-    a = isNavigating ? 0.5 : 0.38;
+  } else if (vRegime < 15) {
+    a = isNavigating ? 0.42 : 0.32;
+  } else if (vRegime < 30) {
+    a = isNavigating ? 0.62 : 0.45;
   } else if (vRegime < 48) {
-    a = isNavigating ? 0.72 : 0.52;
+    a = isNavigating ? 0.78 : 0.55;
+  } else if (vRegime < 65) {
+    a = isNavigating ? 0.88 : 0.65;
   } else {
-    a = isNavigating ? 0.88 : 0.62;
+    a = isNavigating ? 0.92 : 0.72;
   }
 
   if (typeof accuracyM === 'number') {
-    if (accuracyM > 62) a *= vRegime > 38 ? 0.88 : 0.52;
-    else if (accuracyM > 36) a *= vRegime > 38 ? 0.94 : 0.74;
-    else if (accuracyM < 15 && vRegime > 18) a = Math.min(0.92, a * 1.06);
+    if (accuracyM > 62) a *= vRegime > 38 ? 0.85 : 0.48;
+    else if (accuracyM > 36) a *= vRegime > 38 ? 0.92 : 0.7;
+    else if (accuracyM < 12 && vRegime > 18) a = Math.min(0.94, a * 1.08);
+    else if (accuracyM < 8 && vRegime > 40) a = Math.min(0.95, a * 1.1);
   }
 
-  if (smoothedSpeedMph < 1.8 && speedMph < 3 && dist < Math.max(2.2, (accuracyM ?? 12) * 0.38)) {
-    a *= 0.42;
+  if (smoothedSpeedMph < 1.8 && speedMph < 3 && dist < Math.max(2.0, (accuracyM ?? 12) * 0.35)) {
+    a *= 0.38;
   }
 
   a *= qualityScale;
-  a = Math.min(0.94, Math.max(0.032, a));
+  a = Math.min(0.95, Math.max(0.028, a));
 
   let lat = prev.lat + (raw.lat - prev.lat) * a;
   let lng = prev.lng + (raw.lng - prev.lng) * a;
   const stepAfter = haversineMeters(prev, { lat, lng });
 
   if (smoothedSpeedMph < 2.2 && speedMph < 5 && dist < 14) {
-    const maxStep = Math.min(3, Math.max(0.55, (accuracyM ?? 14) * 0.2));
+    const maxStep = Math.min(2.8, Math.max(0.45, (accuracyM ?? 14) * 0.18));
     if (stepAfter > maxStep) {
       const t = maxStep / stepAfter;
       lat = prev.lat + (lat - prev.lat) * t;
@@ -225,13 +235,11 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       }));
     } catch {}
 
-    /** Non-nav used Balanced + 5s — speed readout lagged vs dashboard; High + 2s matches nav feel better. */
     const accuracy = isNavigating
       ? Location.Accuracy.BestForNavigation
       : Location.Accuracy.Highest;
-    /** Nav: tight spacing + adaptive blend — fast motion uses high alpha so extra samples help accuracy. */
-    const timeInterval = isNavigating ? 650 : 2000;
-    const distanceInterval = isNavigating ? 1 : 8;
+    const timeInterval = isNavigating ? 500 : 2000;
+    const distanceInterval = isNavigating ? 0.5 : 8;
 
     watchRef.current = await Location.watchPositionAsync(
       {
@@ -305,7 +313,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
           let newHeading = prev.heading;
           if (useGpsCourse) {
             const hAlpha =
-              speedMph < 12 ? 0.22 : speedMph < 35 ? 0.32 : 0.42;
+              speedMph < 12 ? 0.22 : speedMph < 25 ? 0.3 : speedMph < 45 ? 0.4 : 0.52;
             if (!hasHeadingRef.current) {
               smoothedRef.current = gpsHeading;
               hasHeadingRef.current = true;
@@ -357,6 +365,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
               dtSec,
               true,
               displayHeadingPrevRef.current,
+              acc ?? null,
             );
             displayHeadingPrevRef.current = newHeading;
           } else {
