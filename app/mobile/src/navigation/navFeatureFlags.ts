@@ -43,3 +43,8 @@ export function navLogicSdkEnabled(): boolean {
 export function navNativeFullScreenEnabled(): boolean {
   return navNativeSdkEnabled() && !navLogicSdkEnabled();
 }
+
+/** Release-safe nav diagnostics overlay (HUD) — set `EXPO_PUBLIC_NAV_LOGIC_DEBUG=1` in EAS env and rebuild. */
+export function navLogicDebugEnabled(): boolean {
+  return envBool('EXPO_PUBLIC_NAV_LOGIC_DEBUG', false);
+}

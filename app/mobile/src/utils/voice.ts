@@ -4,6 +4,7 @@ import type { DrivingMode } from '../types';
 import { DRIVING_MODES } from '../constants/modes';
 import { shouldSuppressJsTurnGuidance } from '../navigation/navVoiceGate';
 import { isSdkTripAuthoritative } from '../navigation/navSdkAuthority';
+import { markNavVoiceFromJs } from '../navigation/navSdkStore';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
@@ -93,6 +94,20 @@ export async function configureAudioSessionForVoiceInput(): Promise<void> {
 const ORION_SPEECH_RATE = 0.96;
 const ORION_SPEECH_PITCH = 1.0;
 
+/** Turn-by-turn + trip messages: one rate regardless of calm/sport/adaptive. */
+const NAVIGATION_SPEECH_RATE = 0.96;
+const NAVIGATION_SPEECH_PITCH = 1.0;
+
+export type SpeakRateSource = 'driving' | 'navigation_fixed';
+
+export type SpeakOptions = {
+  /**
+   * `driving` — calm/sport/adaptive from {@link DRIVING_MODES} (Orion, ambient offers).
+   * `navigation_fixed` — normal nav rate (not tied to driving mode).
+   */
+  rateSource?: SpeakRateSource;
+};
+
 function speechRateForMode(mode: DrivingMode): number {
   return DRIVING_MODES[mode]?.speechRate ?? ORION_SPEECH_RATE;
 }
@@ -105,8 +120,21 @@ function onUtteranceFinished() {
   void restoreDefaultAudioSession();
 }
 
-export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', mode: DrivingMode = 'adaptive') {
+export function speak(
+  phrase: string,
+  priority: 'high' | 'normal' = 'normal',
+  mode: DrivingMode = 'adaptive',
+  opts?: SpeakOptions,
+) {
   if (!phrase.trim()) return;
+  const rateSource = opts?.rateSource ?? 'driving';
+  if (rateSource === 'navigation_fixed' && isSdkTripAuthoritative()) {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      // eslint-disable-next-line no-console
+      console.warn('[Nav] blocked JS Speech.speak(navigation) during SDK-authoritative trip', phrase.slice(0, 72));
+    }
+    return;
+  }
   const normalized = phrase.trim().toLowerCase();
   const now = Date.now();
   if (normalized === lastSpokenPhrase && now - lastSpokenAt < MIN_GAP_MS) return;
@@ -116,11 +144,19 @@ export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', mo
 
   if (priority === 'high') Speech.stop();
 
+  const rate =
+    rateSource === 'navigation_fixed' ? NAVIGATION_SPEECH_RATE : speechRateForMode(mode);
+  const pitch =
+    rateSource === 'navigation_fixed' ? NAVIGATION_SPEECH_PITCH : speechPitchForMode(mode);
+  if (rateSource === 'navigation_fixed') {
+    markNavVoiceFromJs();
+  }
+
   void (async () => {
     await configureAudioSessionForSpeechOutput();
     Speech.speak(phrase, {
-      rate: speechRateForMode(mode),
-      pitch: speechPitchForMode(mode),
+      rate,
+      pitch,
       language: 'en-US',
       onDone: onUtteranceFinished,
       onStopped: onUtteranceFinished,
@@ -135,16 +171,19 @@ export function speak(phrase: string, priority: 'high' | 'normal' = 'normal', mo
  */
 export function speakGuidance(
   phrase: string,
-  mode: DrivingMode = 'adaptive',
+  _mode: DrivingMode = 'adaptive',
   language: string = 'en-US',
 ) {
   if (shouldSuppressJsTurnGuidance()) return;
-  if (typeof __DEV__ !== 'undefined' && __DEV__ && isSdkTripAuthoritative()) {
-    const v = process.env.EXPO_PUBLIC_NAV_LOGIC_DEBUG;
-    if (v === '1' || v === 'true') {
-      // eslint-disable-next-line no-console
-      console.error('[Nav] speakGuidance invoked during SDK-authoritative trip (should be native TTS only)', phrase.slice(0, 80));
+  if (isSdkTripAuthoritative()) {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      const v = process.env.EXPO_PUBLIC_NAV_LOGIC_DEBUG;
+      if (v === '1' || v === 'true') {
+        // eslint-disable-next-line no-console
+        console.error('[Nav] speakGuidance invoked during SDK-authoritative trip (should be native TTS only)', phrase.slice(0, 80));
+      }
     }
+    return;
   }
   if (!phrase.trim()) return;
   const normalized = phrase.trim().toLowerCase();
@@ -154,11 +193,13 @@ export function speakGuidance(
   lastSpokenPhrase = normalized;
   lastSpokenAt = now;
 
+  markNavVoiceFromJs();
+
   void (async () => {
     await configureAudioSessionForSpeechOutput();
     Speech.speak(phrase, {
-      rate: speechRateForMode(mode),
-      pitch: speechPitchForMode(mode),
+      rate: NAVIGATION_SPEECH_RATE,
+      pitch: NAVIGATION_SPEECH_PITCH,
       language: language || 'en-US',
       onDone: onUtteranceFinished,
       onStopped: onUtteranceFinished,

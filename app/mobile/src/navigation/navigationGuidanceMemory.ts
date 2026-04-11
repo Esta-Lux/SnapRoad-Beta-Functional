@@ -28,5 +28,5 @@ export function getLastTurnByTurnPhrase(): string | null {
 export function repeatLastTurnByTurn(drivingMode: DrivingMode, voiceMuted: boolean) {
   if (voiceMuted || !lastTurnByTurnPhrase) return;
   if (navLogicSdkEnabled() && shouldSuppressJsTurnGuidance()) return;
-  speak(lastTurnByTurnPhrase, 'high', drivingMode);
+  speak(lastTurnByTurnPhrase, 'high', drivingMode, { rateSource: 'navigation_fixed' });
 }

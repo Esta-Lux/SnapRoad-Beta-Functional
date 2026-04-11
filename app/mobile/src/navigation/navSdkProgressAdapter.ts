@@ -163,6 +163,7 @@ export function buildNavigationProgressFromSdk(args: {
     isOffRoute: false,
     confidence: 1,
     instructionSource: 'sdk',
+    routePolyline: polyline,
   };
 }
 
@@ -218,5 +219,6 @@ export function buildSdkWaitingNavigationProgress(
     isOffRoute: false,
     confidence: 1,
     instructionSource: 'sdk_waiting',
+    routePolyline: poly,
   };
 }

@@ -3,6 +3,8 @@
 # We run `eas env:pull production` to sync Expo → Environment variables (production)
 # into app/mobile/.env, then source it for the bundler.
 # Optional: repository secret EXPO_PUBLIC_MAPBOX_TOKEN overrides the pulled Mapbox token.
+# EXPO_PUBLIC_NAV_LOGIC_DEBUG is exported after sourcing .env so the OTA JS bundle inlines it
+# (no native rebuild). Toggle in this workflow or app/mobile/eas.json.
 # https://docs.expo.dev/eas/environment-variables/
 name: EAS Update
 
@@ -115,6 +117,7 @@ jobs:
           if [ -n "${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}" ]; then
             export EXPO_PUBLIC_MAPBOX_TOKEN="${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}"
           fi
+          export EXPO_PUBLIC_NAV_LOGIC_DEBUG=1
           SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
           if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
           npx eas-cli update --channel production --environment production --platform android --non-interactive --message "${SAFE_MSG}-android"

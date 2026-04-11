@@ -168,7 +168,7 @@ export function useNavigation(params: {
     (phrase: string, priority: 'high' | 'normal' = 'normal', mode: DrivingMode = drivingMode) => {
       if (voiceMutedRef.current || !phrase.trim()) return;
       if (navSdkHeadlessRef.current && isNavigatingRef.current) return;
-      speak(phrase, priority, mode);
+      speak(phrase, priority, mode, { rateSource: 'navigation_fixed' });
     },
     [drivingMode],
   );
@@ -287,14 +287,14 @@ export function useNavigation(params: {
     if (!sdkActive || !navigationData) return null;
     const fromSdk = getSdkNavigationProgress(navigationData);
     if (fromSdk) return fromSdk;
-    if (navSdkSnapshot.sdkGuidancePhase === 'waiting') {
-      return getSdkWaitingNavigationProgress(navigationData);
-    }
-    return null;
+    /** Do not fall back to JS Directions progress while native session is starting or between ticks. */
+    if (navSdkSnapshot.sdkGuidancePhase === 'idle') return null;
+    return getSdkWaitingNavigationProgress(navigationData);
   }, [sdkActive, navigationData, navSdkSnapshot]);
 
-  const navigationProgress: NavigationProgress | null =
-    sdkBuiltNavigationProgress ?? jsNavigationProgress;
+  const navigationProgress: NavigationProgress | null = sdkActive
+    ? sdkBuiltNavigationProgress
+    : jsNavigationProgress;
 
   const navigationProgressCoord: Coordinate = useMemo(() => {
     if (sdkActive) {
@@ -1420,14 +1420,12 @@ export function useNavigation(params: {
       ? {
           lastProgressIngestAtMs: navSdkSnapshot.lastProgressIngestAtMs,
           lastVoiceInstructionText: navSdkSnapshot.lastVoiceInstructionText,
+          lastNavVoiceSource: navSdkSnapshot.lastNavVoiceSource,
           sdkGuidancePhase: navSdkSnapshot.sdkGuidancePhase,
           telemetry: navSdkSnapshot.telemetry,
         }
       : null,
-    /** Prefer native `onRouteChanged` geometry on the map during logic-SDK trips. */
-    sdkRoutePolylineForOverlay:
-      navSdkHeadless && isNavigating && navSdkSnapshot.routePolyline.length >= 2
-        ? navSdkSnapshot.routePolyline
-        : null,
+    /** Native matched location for map puck (`CustomLocationProvider`) — null when not in logic SDK mode. */
+    sdkNavLocation: navSdkHeadless ? navSdkSnapshot.location : null,
   };
 }

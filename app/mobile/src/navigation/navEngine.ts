@@ -14,7 +14,9 @@ export {
   ingestSdkProgress,
   ingestSdkLocation,
   ingestSdkRoutePolyline,
+  ingestSdkRouteChangedEvent,
   ingestSdkVoiceSubtitle,
+  markNavVoiceFromJs,
   getSdkNavigationProgress,
   getSdkMatchedCoordinate,
 } from './navSdkStore';

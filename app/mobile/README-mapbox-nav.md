@@ -55,6 +55,10 @@ npm run eas:ios:production:submit
 
 Use the **`production`** profile: it applies **`EXPO_PUBLIC_NAV_NATIVE_SDK=1`** and **`EXPO_PUBLIC_NAV_LOGIC_SDK=1`** so TestFlight uses headless SDK navigation on the in-app map (full-screen native UI stays off).
 
+### Logic-SDK diagnostics HUD (EAS / release)
+
+**`EXPO_PUBLIC_NAV_LOGIC_DEBUG`**: when `"1"`, the map shows the nav diagnostics HUD during active navigation. It is inlined at **JS bundle** time (`eas update` / Metro), so you can ship it via **OTA without a native rebuild**. This repo sets it in **`app/mobile/eas.json`** (per build profile) and the **GitHub `EAS Update` workflow** exports `EXPO_PUBLIC_NAV_LOGIC_DEBUG=1` when publishing production OTAs. For a **local** OTA from the repo root, run `export EXPO_PUBLIC_NAV_LOGIC_DEBUG=1` before `npm run eas:update:production` (or add the same key to Expo → Environment variables → production and `eas env:pull` before updating). The overlay lists env flags (LOGIC / NATIVE), resolved mode (`HEADLESS_LOGIC` vs `JS_GUIDANCE`), SDK trip phase, instruction source, native event counters, last voice pipeline, and progress age.
+
 ## Podfile ENV dedupe
 
 `patches/@badatgil+expo-mapbox-navigation+1.6.2.patch` strips any existing `ENV['ExpoNavigationMapboxMapsVersion']` lines before re-injecting, so repeated prebuilds do not stack duplicate assignments.

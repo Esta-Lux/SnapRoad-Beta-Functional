@@ -21,7 +21,8 @@
       "env": {
         "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
-        "API_URL": "https://api.snaproad.app"
+        "API_URL": "https://api.snaproad.app",
+        "EXPO_PUBLIC_NAV_LOGIC_DEBUG": "1"
       },
       "ios": {
         "simulator": false
@@ -51,7 +52,8 @@
       "env": {
         "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
-        "API_URL": "https://api.snaproad.app"
+        "API_URL": "https://api.snaproad.app",
+        "EXPO_PUBLIC_NAV_LOGIC_DEBUG": "1"
       },
       "android": {
         "buildType": "apk"
@@ -67,7 +69,8 @@
         "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
         "API_URL": "https://api.snaproad.app",
         "EXPO_PUBLIC_NAV_NATIVE_SDK": "1",
-        "EXPO_PUBLIC_NAV_LOGIC_SDK": "1"
+        "EXPO_PUBLIC_NAV_LOGIC_SDK": "1",
+        "EXPO_PUBLIC_NAV_LOGIC_DEBUG": "1"
       }
     }
   }

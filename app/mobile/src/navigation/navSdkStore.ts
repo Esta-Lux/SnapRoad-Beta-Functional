@@ -10,6 +10,8 @@ export type SdkTelemetrySnapshot = {
   progressEvents: number;
   locationEvents: number;
   voiceEvents: number;
+  /** Native `onRouteChanged` (reroute / refresh) — should increment during SDK trips. */
+  routeChangedEvents: number;
 };
 
 export type SdkProgressPayload = {
@@ -45,6 +47,8 @@ type NavSdkState = {
   routePolyline: Coordinate[];
   /** Last native voice instruction text (SDK TTS only — for HUD / subtitle). */
   lastVoiceInstructionText: string | null;
+  /** Which pipeline last produced a navigation voice line (HUD). */
+  lastNavVoiceSource: 'sdk' | 'js' | 'none';
   lastProgressIngestAtMs: number;
   sdkGuidancePhase: SdkGuidancePhase;
   telemetry: SdkTelemetrySnapshot;
@@ -55,9 +59,16 @@ const initial: NavSdkState = {
   location: null,
   routePolyline: [],
   lastVoiceInstructionText: null,
+  lastNavVoiceSource: 'none',
   lastProgressIngestAtMs: 0,
   sdkGuidancePhase: 'idle',
-  telemetry: { startedAtMs: 0, progressEvents: 0, locationEvents: 0, voiceEvents: 0 },
+  telemetry: {
+    startedAtMs: 0,
+    progressEvents: 0,
+    locationEvents: 0,
+    voiceEvents: 0,
+    routeChangedEvents: 0,
+  },
 };
 
 let state: NavSdkState = initial;
@@ -84,9 +95,16 @@ export function resetNavSdkState() {
     location: null,
     routePolyline: [],
     lastVoiceInstructionText: null,
+    lastNavVoiceSource: 'none',
     lastProgressIngestAtMs: 0,
     sdkGuidancePhase: 'idle',
-    telemetry: { startedAtMs: 0, progressEvents: 0, locationEvents: 0, voiceEvents: 0 },
+    telemetry: {
+      startedAtMs: 0,
+      progressEvents: 0,
+      locationEvents: 0,
+      voiceEvents: 0,
+      routeChangedEvents: 0,
+    },
   };
   emit();
 }
@@ -97,8 +115,22 @@ export function enterSdkGuidanceWaiting() {
   state = {
     ...state,
     sdkGuidancePhase: 'waiting',
-    telemetry: { startedAtMs: now, progressEvents: 0, locationEvents: 0, voiceEvents: 0 },
+    telemetry: {
+      startedAtMs: now,
+      progressEvents: 0,
+      locationEvents: 0,
+      voiceEvents: 0,
+      routeChangedEvents: 0,
+    },
+    lastNavVoiceSource: 'none',
   };
+  emit();
+}
+
+/** Native reroute / route refresh (`onRouteChanged`). */
+export function ingestSdkRouteChangedEvent() {
+  const tel = { ...state.telemetry, routeChangedEvents: state.telemetry.routeChangedEvents + 1 };
+  state = { ...state, telemetry: tel };
   emit();
 }
 
@@ -117,7 +149,18 @@ export function ingestSdkProgress(p: SdkProgressPayload) {
 export function ingestSdkVoiceSubtitle(text: string | undefined) {
   const t = text?.trim() || null;
   const tel = { ...state.telemetry, voiceEvents: state.telemetry.voiceEvents + 1 };
-  state = { ...state, lastVoiceInstructionText: t, telemetry: tel };
+  state = {
+    ...state,
+    lastVoiceInstructionText: t,
+    lastNavVoiceSource: 'sdk',
+    telemetry: tel,
+  };
+  emit();
+}
+
+/** expo-speech navigation line (turn prompts, trip messages) — not SDK TTS. */
+export function markNavVoiceFromJs() {
+  state = { ...state, lastNavVoiceSource: 'js' };
   emit();
 }
 

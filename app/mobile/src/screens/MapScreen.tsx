@@ -122,10 +122,11 @@ import OrionQuickMic from '../components/orion/OrionQuickMic';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigatingState } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
-import { navLogicSdkEnabled, navNativeFullScreenEnabled } from '../navigation/navFeatureFlags';
+import { navLogicDebugEnabled, navLogicSdkEnabled, navNativeFullScreenEnabled } from '../navigation/navFeatureFlags';
 import {
   ingestSdkLocation,
   ingestSdkProgress,
+  ingestSdkRouteChangedEvent,
   ingestSdkRoutePolyline,
   ingestSdkVoiceSubtitle,
 } from '../navigation/navEngine';
@@ -405,6 +406,7 @@ export default function MapScreen() {
 
   const handleSdkRouteChanged = useCallback(
     (event: { nativeEvent: { routes?: SdkRoutesNative } }) => {
+      ingestSdkRouteChangedEvent();
       const routes = event.nativeEvent.routes;
       if (!routes?.mainRoute) return;
       const poly = polylineFromSdkRoutes(routes);
@@ -2570,6 +2572,7 @@ export default function MapScreen() {
       )}
 
       {navLogicSdkEnabled() && nav.isNavigating && navLogicCoords.length >= 2 ? (
+        // Headless native session: this module has no separate “createSession” API — the hidden view drives logic + voice.
         <MapboxNavigationView
           ref={navLogicRef}
           style={{ position: 'absolute', width: 2, height: 2, opacity: 0, bottom: 0, right: 0, zIndex: -1 }}
@@ -2611,6 +2614,12 @@ export default function MapScreen() {
           onTouchStart={handleMapTouch}
           onPress={handleMapPress}
         >
+          {navLogicSdkEnabled() && nav.isNavigating && nav.sdkNavLocation ? (
+            <MapboxGL.CustomLocationProvider
+              coordinate={[nav.sdkNavLocation.longitude, nav.sdkNavLocation.latitude]}
+              heading={nav.sdkNavLocation.course >= 0 ? nav.sdkNavLocation.course : heading}
+            />
+          ) : null}
           {standardStyleImportsEnabled && MapboxGL.StyleImport ? (
             <MapboxGL.StyleImport
               id="basemap"
@@ -2746,8 +2755,9 @@ export default function MapScreen() {
           {nav.navigationData?.polyline && (
             <RouteOverlay
               polyline={
-                nav.sdkRoutePolylineForOverlay && nav.sdkRoutePolylineForOverlay.length >= 2
-                  ? nav.sdkRoutePolylineForOverlay
+                nav.navigationProgress?.routePolyline?.length &&
+                nav.navigationProgress.routePolyline.length >= 2
+                  ? nav.navigationProgress.routePolyline
                   : nav.navigationData.polyline
               }
               isNavigating={nav.isNavigating}
@@ -3253,13 +3263,16 @@ export default function MapScreen() {
         </Animated.View>
       )}
 
-      {typeof __DEV__ !== 'undefined' && __DEV__ && nav.isNavigating && !nav.showRoutePreview ? (
+      {(navLogicDebugEnabled() || (typeof __DEV__ !== 'undefined' && __DEV__)) &&
+      nav.isNavigating &&
+      !nav.showRoutePreview ? (
         <NavigationDebugHud
           progress={nav.navigationProgress ?? null}
           currentStepIndex={nav.currentStepIndex}
           topInset={insets.top}
           logicSdk={navLogicSdkEnabled()}
           sdkDiag={nav.sdkNavDiag}
+          extendedDiag={navLogicDebugEnabled()}
         />
       ) : null}
 

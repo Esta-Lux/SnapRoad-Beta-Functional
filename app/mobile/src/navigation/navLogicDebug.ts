@@ -1,4 +1,5 @@
 import {
+  navLogicDebugEnabled,
   navLogicSdkEnabled,
   navNativeFullScreenEnabled,
   navNativeSdkEnabled,
@@ -7,13 +8,10 @@ import {
 let lastLogMs = 0;
 
 /**
- * __DEV__ only, throttled. Logs nav flag snapshot + logic mode selection.
- * Set `EXPO_PUBLIC_NAV_LOGIC_DEBUG=1` in .env to enable (requires Metro restart).
+ * Throttled console snapshot when `EXPO_PUBLIC_NAV_LOGIC_DEBUG=1` (release EAS or local Metro).
  */
 export function logNavLogicSnapshot(reason: string, extra?: Record<string, unknown>) {
-  if (typeof __DEV__ === 'undefined' || !__DEV__) return;
-  const v = process.env.EXPO_PUBLIC_NAV_LOGIC_DEBUG;
-  if (v !== '1' && v !== 'true') return;
+  if (!navLogicDebugEnabled()) return;
   const now = Date.now();
   if (now - lastLogMs < 1200 && reason !== 'mount') return;
   lastLogMs = now;

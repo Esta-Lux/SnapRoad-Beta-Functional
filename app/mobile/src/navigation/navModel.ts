@@ -93,4 +93,6 @@ export type NavigationProgress = {
    * `js` = JS polyline engine.
    */
   instructionSource?: 'sdk' | 'sdk_waiting' | 'js';
+  /** Full route geometry for map line when logic comes from the Navigation SDK (JS path leaves unset). */
+  routePolyline?: RoutePoint[];
 };
