@@ -82,6 +82,10 @@ export type TurnInstructionCardProps = {
   speedMph?: number;
 
   maneuverKind?: ManeuverKind;
+  /** Raw Mapbox maneuver `type` (preferred for turn glyph when set). */
+  maneuverType?: string;
+  /** Raw Mapbox maneuver `modifier` (paired with maneuverType). */
+  maneuverModifier?: string;
   signal?: RoadSignal;
   lanes?: LaneInfo[];
   shields?: RoadShield[];
@@ -106,6 +110,8 @@ export default React.memo(function TurnInstructionCard({
   isSportBorder,
   speedMph = 0,
   maneuverKind,
+  maneuverType,
+  maneuverModifier,
   signal,
   lanes,
   shields,
@@ -124,7 +130,9 @@ export default React.memo(function TurnInstructionCard({
     return step?.bannerInstructions?.[0]?.primary?.text?.trim() || '';
   }, [step, primaryInstruction]);
 
-  const hasRichManeuver = maneuverKind != null && maneuverKind !== 'unknown';
+  const hasRawManeuver = !!(maneuverType?.trim() || maneuverModifier?.trim());
+  const hasKindManeuver = maneuverKind != null && maneuverKind !== 'unknown';
+  const hasRichManeuver = hasRawManeuver || hasKindManeuver;
 
   const effectiveLanes = useMemo((): LaneInfo[] | null => {
     if (lanes?.length) return lanes;
@@ -274,7 +282,9 @@ export default React.memo(function TurnInstructionCard({
           >
             {hasRichManeuver ? (
               <ManeuverIcon
-                kind={maneuverKind!}
+                type={maneuverType ?? ''}
+                modifier={maneuverModifier ?? ''}
+                fallbackKind={maneuverKind}
                 size={iconGlyph}
                 color={tcTextColor}
                 exitNumber={roundaboutExitNumber}

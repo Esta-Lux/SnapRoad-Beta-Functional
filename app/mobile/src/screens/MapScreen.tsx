@@ -3206,6 +3206,8 @@ export default function MapScreen() {
               secondaryInstruction={secondary}
               maneuverForIcon={maneuverIconKey}
               maneuverKind={maneuverKindResolved}
+              maneuverType={prog.nextStep?.rawType ?? ''}
+              maneuverModifier={prog.nextStep?.rawModifier ?? ''}
               signal={signalResolved}
               lanes={lanesResolved}
               shields={shieldsResolved}
