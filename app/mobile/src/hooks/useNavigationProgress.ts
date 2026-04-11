@@ -2,6 +2,10 @@ import { useMemo, useRef } from 'react';
 import { NavigationProgress, RawLocation, RoutePoint, NavStep } from '../navigation/navModel';
 import type { OffRouteTuning } from '../navigation/offRouteTuning';
 import { computeNavigationProgressFrame } from '../navigation/navigationProgressCore';
+import {
+  DEFAULT_PROGRESS_TUNING,
+  type ProgressTuning,
+} from '../navigation/navigationProgressMode';
 
 type Args = {
   rawLocation: RawLocation | null;
@@ -16,6 +20,7 @@ type Args = {
   routeModelRefreshedAtMs?: number;
   navEdgeEtaEnabled?: boolean;
   navEtaBlendEnabled?: boolean;
+  progressTuning?: ProgressTuning;
 };
 
 export function useNavigationProgress({
@@ -30,6 +35,7 @@ export function useNavigationProgress({
   routeModelRefreshedAtMs = 0,
   navEdgeEtaEnabled = false,
   navEtaBlendEnabled = false,
+  progressTuning = DEFAULT_PROGRESS_TUNING,
 }: Args): NavigationProgress | null {
   const prevRef = useRef<NavigationProgress | null>(null);
   const prevSpeedRef = useRef<number | null>(null);
@@ -102,6 +108,7 @@ export function useNavigationProgress({
             }
           : undefined,
       tryGlobalReanchor,
+      progressTuning,
     });
 
     if (!next) {
@@ -122,5 +129,6 @@ export function useNavigationProgress({
     routeModelRefreshedAtMs,
     navEdgeEtaEnabled,
     navEtaBlendEnabled,
+    progressTuning,
   ]);
 }

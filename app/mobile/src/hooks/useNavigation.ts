@@ -47,6 +47,7 @@ import { useNavigationProgress } from './useNavigationProgress';
 import { buildNavStepsFromDirections } from '../navigation/navStepsFromDirections';
 import type { NavigationProgress } from '../navigation/navModel';
 import { offRouteTuningForMode } from '../navigation/offRouteTuning';
+import { progressTuningForMode } from '../navigation/navigationProgressMode';
 import { navEdgeEtaEnabled, navEtaBlendEnabled, navRefreshV2Enabled } from '../navigation/navFeatureFlags';
 import {
   enterSdkGuidanceWaiting,
@@ -269,6 +270,7 @@ export function useNavigation(params: {
   }, [isNavigating, routePoints.length, sdkActive, userLocation.lat, userLocation.lng, heading, speed, gpsAccuracy]);
 
   const offRouteTuning = useMemo(() => offRouteTuningForMode(drivingMode), [drivingMode]);
+  const progressTuning = useMemo(() => progressTuningForMode(drivingMode), [drivingMode]);
 
   const jsNavigationProgress = useNavigationProgress({
     rawLocation: rawForNavigationProgress,
@@ -282,6 +284,7 @@ export function useNavigation(params: {
     routeModelRefreshedAtMs: routeModelRefreshedAtRef.current,
     navEdgeEtaEnabled: navEdgeEtaEnabled(),
     navEtaBlendEnabled: navEtaBlendEnabled(),
+    progressTuning,
   });
 
   const sdkBuiltNavigationProgress = useMemo((): NavigationProgress | null => {

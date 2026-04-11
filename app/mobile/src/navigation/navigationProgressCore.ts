@@ -12,6 +12,7 @@ import { effectiveMaxSnapMeters, type OffRouteTuning } from './offRouteTuning';
 import { remainingDurationSecondsFromNavSteps } from './navigationEta';
 import { remainingDurationSecondsFromEdges } from './navigationEtaEdges';
 import { blendModelWithObservedEta } from './etaObservedBlend';
+import { DEFAULT_PROGRESS_TUNING, type ProgressTuning } from './navigationProgressMode';
 
 export type ComputeNavigationProgressArgs = {
   rawLocation: RawLocation;
@@ -36,6 +37,8 @@ export type ComputeNavigationProgressArgs = {
    * to the route by at least ~12m vs the local window snap.
    */
   tryGlobalReanchor?: boolean;
+  /** Driving-mode puck / snap tuning; defaults preserve legacy single-curve behavior. */
+  progressTuning?: ProgressTuning;
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -107,11 +110,18 @@ export function computeNavigationProgressFrame({
   useEdgeEta,
   etaBlend,
   tryGlobalReanchor = false,
+  progressTuning = DEFAULT_PROGRESS_TUNING,
 }: ComputeNavigationProgressArgs): NavigationProgress | null {
   const cumulative = cumulativeRouteMeters(route);
   const prevSegment = previous?.snapped?.segmentIndex ?? 0;
   /** Wider window reduces wrong-edge snaps on sharp corners before global re-anchor kicks in. */
-  let snap = snapToRoute(rawLocation, route, cumulative, prevSegment, 52);
+  let snap = snapToRoute(
+    rawLocation,
+    route,
+    cumulative,
+    prevSegment,
+    progressTuning.snapLookaheadSegments,
+  );
   if (!snap) return null;
 
   if (tryGlobalReanchor) {
@@ -145,7 +155,10 @@ export function computeNavigationProgressFrame({
 
   let biasedTarget: RawLocation = snapTarget;
   if (!isOffRoute && speed > 3) {
-    const leadM = Math.min(22, speed * 0.3);
+    const leadM = Math.min(
+      progressTuning.leadCapMeters,
+      speed * 0.3 * progressTuning.leadScale,
+    );
     const advancedCum = snap.cumulativeMeters + leadM;
     const totalRouteLen = cumulative[cumulative.length - 1] ?? 0;
     if (advancedCum < totalRouteLen - 1e-3) {
@@ -181,6 +194,9 @@ export function computeNavigationProgressFrame({
 
   if (snap.distanceMeters > 18) alpha = Math.min(0.88, alpha + 0.1);
   if (snap.distanceMeters > 38) alpha = Math.min(0.92, alpha + 0.06);
+
+  alpha = alpha + progressTuning.alphaOffset;
+  alpha = Math.max(0.06, Math.min(0.92, alpha));
 
   const displayCoord: RawLocation = {
     lat: prevDisplay.lat + (biasedTarget.lat - prevDisplay.lat) * alpha,
