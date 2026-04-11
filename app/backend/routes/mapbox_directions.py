@@ -62,6 +62,8 @@ class MapboxRoutesBody(BaseModel):
     exclude: Optional[str] = None
     max_height_m: Optional[float] = Field(default=None, ge=0, le=10)
     alternatives: bool = True
+    # Client-supplied epoch ms — not sent to Mapbox; avoids stale identical OD POST bodies behind intermediaries.
+    cache_bust_ms: Optional[int] = Field(default=None)
 
 
 @router.post("/mapbox-routes")
@@ -98,7 +100,7 @@ async def post_mapbox_routes(
 
     client = _get_http()
     try:
-        r = await client.get(url)
+        r = await client.get(url, headers={"Cache-Control": "no-cache"})
     except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail=f"Mapbox request failed: {e!s}") from e
 

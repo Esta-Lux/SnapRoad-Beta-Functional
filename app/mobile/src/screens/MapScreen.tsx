@@ -2129,11 +2129,19 @@ export default function MapScreen() {
       setSelectedPlace(null);
       setSelectedPlaceId(null);
       nav.setSelectedDestination({ name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng });
+      nav.resetRoutePlanningState();
+      const tripJustEnded = nav.lastTripEndedAtMs > 0 && Date.now() - nav.lastTripEndedAtMs < 120_000;
+      if (tripJustEnded) {
+        await new Promise<void>((r) => setTimeout(r, 1500));
+      }
       const routeResult = await nav.fetchDirections(
         { name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng },
         origin,
         { maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined },
       );
+      if (routeResult.ok) {
+        nav.clearLastTripEndedMark();
+      }
       if (!routeResult.ok) {
         const detail = routeResult.message ?? 'Try again in a moment.';
         if (routeResult.reason === 'no_mapbox') {

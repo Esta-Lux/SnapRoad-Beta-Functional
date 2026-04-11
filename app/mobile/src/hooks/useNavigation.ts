@@ -190,6 +190,8 @@ export function useNavigation(params: {
   const [availableRoutes, setAvailableRoutes] = useState<DirectionsResult[]>([]);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
   const [showRoutePreview, setShowRoutePreview] = useState(false);
+  /** Set when a navigation session ends — used to delay + hard-refresh the next route fetch from the new origin. */
+  const [lastTripEndedAtMs, setLastTripEndedAtMs] = useState(0);
   const [tripSummary, setTripSummary] = useState<TripSummary | null>(null);
   const [selectedDestination, setSelectedDestination] = useState<GeocodeResult | null>(null);
   const [isRerouting, setIsRerouting] = useState(false);
@@ -863,7 +865,11 @@ export function useNavigation(params: {
       stopSpeaking();
       setNavigationData(null);
       setAvailableRoutes([]);
+      setSelectedRouteIndex(0);
+      setShowRoutePreview(false);
+      setIsRerouting(false);
       setSelectedDestination(null);
+      setLastTripEndedAtMs(Date.now());
       tripStartTimeRef.current = null;
       prevLocationRef.current = null;
       hasAnnouncedArrivalRef.current = false;
@@ -873,6 +879,8 @@ export function useNavigation(params: {
       offRouteStreakRef.current = 0;
       rerouteInFlightRef.current = false;
       lastRerouteAtRef.current = 0;
+      routeModelRefreshedAtRef.current = Date.now();
+      setRouteModelRefreshKey((k) => k + 1);
       return;
     }
     resetNavSdkState();
@@ -917,11 +925,17 @@ export function useNavigation(params: {
 
     setNavigationData(null);
     setAvailableRoutes([]);
+    setSelectedRouteIndex(0);
+    setShowRoutePreview(false);
+    setIsRerouting(false);
     setSelectedDestination(null);
+    setLastTripEndedAtMs(Date.now());
     offRouteStreakRef.current = 0;
     rerouteInFlightRef.current = false;
     tripStartTimeRef.current = null;
     prevLocationRef.current = null;
+    routeModelRefreshedAtRef.current = Date.now();
+    setRouteModelRefreshKey((k) => k + 1);
 
     const qualifiesTrip =
       !dynamicDest
@@ -1027,6 +1041,32 @@ export function useNavigation(params: {
     setAvailableRoutes([]);
     setSelectedRouteIndex(0);
     setSelectedDestination(null);
+  }, []);
+
+  /**
+   * Clears stale route geometry / alternates before a new `fetchDirections` (e.g. after ending a trip).
+   * Does not clear `selectedDestination` — set destination first, then call this, then fetch.
+   */
+  const resetRoutePlanningState = useCallback(() => {
+    setNavigationData(null);
+    setAvailableRoutes([]);
+    setSelectedRouteIndex(0);
+    setShowRoutePreview(false);
+    setIsRerouting(false);
+    rerouteInFlightRef.current = false;
+    lastRerouteAtRef.current = 0;
+    lastTrafficRefreshAtRef.current = 0;
+    lastDebouncedTrafficAttemptMsRef.current = 0;
+    trafficRefreshHistoryRef.current = [];
+    driftMsRef.current = 0;
+    mismatchMsRef.current = 0;
+    lastPolicyTickMsRef.current = Date.now();
+    routeModelRefreshedAtRef.current = Date.now();
+    setRouteModelRefreshKey((k) => k + 1);
+  }, []);
+
+  const clearLastTripEndedMark = useCallback(() => {
+    setLastTripEndedAtMs(0);
   }, []);
 
   // --- Update position (called by MapScreen on each GPS tick) ---
@@ -1430,6 +1470,9 @@ export function useNavigation(params: {
     showRoutePreview,
     setShowRoutePreview,
     cancelRoutePreview,
+    resetRoutePlanningState,
+    lastTripEndedAtMs,
+    clearLastTripEndedMark,
     tripSummary,
     selectedDestination,
     setSelectedDestination,

@@ -652,6 +652,7 @@ async function fetchMapboxTrafficRoutesFromBackend(
           ? Math.max(0, Math.min(10, options.maxHeightMeters))
           : undefined,
       alternatives: alt,
+      cache_bust_ms: Date.now(),
     });
     const routes = res.success && res.data && Array.isArray(res.data.routes) ? res.data.routes : null;
     if (!routes?.length) return null;
@@ -690,7 +691,7 @@ async function fetchMapboxTrafficRoutesRaw(
   const timeoutMs = options.timeoutMs ?? 12000;
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
     const json = (await res.json().catch(() => ({}))) as MapboxDirectionsJson;
     if (!res.ok) return [];
     return (json.routes ?? []) as RawRoute[];
