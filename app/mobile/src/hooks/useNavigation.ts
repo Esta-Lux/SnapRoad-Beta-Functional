@@ -338,12 +338,27 @@ export function useNavigation(params: {
     navigationProgress?.isOffRoute,
   ]);
 
+  /** Puck / camera bearing: SDK course, else route-blended heading from progress (not raw compass alone). */
   const navigationDisplayHeading = useMemo(() => {
     if (sdkActive && navSdkSnapshot.location && navSdkSnapshot.location.course >= 0) {
       return navSdkSnapshot.location.course;
     }
+    const blended = navigationProgress?.displayCoord?.heading;
+    if (
+      isNavigating &&
+      typeof blended === 'number' &&
+      Number.isFinite(blended)
+    ) {
+      return blended;
+    }
     return heading;
-  }, [sdkActive, navSdkSnapshot.location, heading]);
+  }, [
+    sdkActive,
+    navSdkSnapshot.location,
+    heading,
+    isNavigating,
+    navigationProgress?.displayCoord?.heading,
+  ]);
 
   const liveEta = useMemo((): { distanceMiles: number; etaMinutes: number } | null => {
     if (!isNavigating) return null;

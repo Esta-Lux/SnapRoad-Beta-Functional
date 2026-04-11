@@ -440,6 +440,19 @@ export default function MapScreen() {
   const displaySpeedMph = nav.isNavigating
     ? Math.max(0, (nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704) * 2.236936)
     : speed;
+
+  /**
+   * LocationPuck beam: with CustomLocationProvider we pass a single `heading` — native `course` mode
+   * reads GPS COG and fights that value. Use `heading` whenever custom coords are injected.
+   */
+  const locationPuckBearing = useMemo((): 'heading' | 'course' => {
+    const sdkNav = navLogicSdkEnabled();
+    const customLocationActive =
+      nav.isNavigating && ((sdkNav && nav.sdkNavLocation) || !sdkNav);
+    if (customLocationActive) return 'heading';
+    return displaySpeedMph > 10 ? 'course' : 'heading';
+  }, [nav.isNavigating, nav.sdkNavLocation, displaySpeedMph]);
+
   const fusedSpeedMpsNav =
     nav.isNavigating
       ? Math.max(0, nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704)
@@ -2853,11 +2866,7 @@ export default function MapScreen() {
             visible
             androidRenderMode="normal"
             puckBearingEnabled
-            puckBearing={
-              nav.isNavigating && displaySpeedMph > 10
-                ? 'course'
-                : 'heading'
-            }
+            puckBearing={locationPuckBearing}
             pulsing={{ isEnabled: !nav.isNavigating }}
             scale={1.55}
           />
