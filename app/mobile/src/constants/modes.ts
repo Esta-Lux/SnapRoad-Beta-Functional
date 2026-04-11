@@ -76,7 +76,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
 
     routeColor: '#6BB0E8',
     routeCasing: '#3E7FC4',
-    passedColor: '#B8D4EF',
+    passedColor: '#94A3B8',
     routeWidth: 7,
     routeGlowColor: '#6BB0E8',
     routeGlowOpacity: 0.12,

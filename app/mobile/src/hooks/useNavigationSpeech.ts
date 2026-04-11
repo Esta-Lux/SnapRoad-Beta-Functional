@@ -157,7 +157,7 @@ function buildUtterance(
 }
 
 /** After a step advances, suppress far/mid-distance cues so the next maneuver is not spoken until the driver settles. */
-const VOICE_POST_STEP_SUPPRESS_MS = 2800;
+const VOICE_POST_STEP_SUPPRESS_MS = 3200;
 
 export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
   const lastKey = useRef<string | null>(null);

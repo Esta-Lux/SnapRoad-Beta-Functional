@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import type { DrivingMode } from '../types';
-import { getCameraPreset, getLiveNavigationCameraPreset } from '../navigation/cameraPresets';
+import { getLiveNavigationCameraPreset } from '../navigation/cameraPresets';
 
 interface CameraParams {
   /** Speed in mph (from `useLocation`). */
@@ -15,10 +15,10 @@ interface CameraParams {
   safeAreaBottom: number;
 }
 
-/** Speed buckets (~3 mph) so zoom follows velocity without jittering every GPS tick. */
+/** Speed buckets (~5 mph) — smoother than 3 mph with typical GPS noise, still tracks speed bands. */
 function speedMphBucket(mph: number): number {
   const m = Math.max(0, mph);
-  return Math.round(m / 3) * 3;
+  return Math.round(m / 5) * 5;
 }
 
 function maneuverDistanceBucket(meters: number): number {
@@ -26,7 +26,7 @@ function maneuverDistanceBucket(meters: number): number {
   const m = Math.min(2000, meters);
   if (m < 70) return Math.round(m / 18) * 18;
   if (m < 200) return Math.round(m / 32) * 32;
-  return Math.round(m / 50) * 50;
+  return Math.round(m / 80) * 80;
 }
 
 export interface CameraSettings {
@@ -83,26 +83,18 @@ export function useCameraController({
   const computed = useMemo(() => {
     if (!isNavigating || !cameraLocked) return null;
 
-    const hasFusedSpeed = fusedSpeedMps != null && Number.isFinite(fusedSpeedMps);
-    const speedMpsForPreset = hasFusedSpeed
+    const fusedOk = fusedSpeedMps != null && Number.isFinite(fusedSpeedMps);
+    const speedMpsForPreset = fusedOk
       ? Math.max(0, fusedSpeedMps as number)
       : Math.max(0, speedB) * MPH_TO_MPS;
 
-    const preset = hasFusedSpeed
-      ? getLiveNavigationCameraPreset({
-            mode: drivingMode,
-            speedMps: speedMpsForPreset,
-            nextManeuverDistanceMeters: maneuverB,
-            safeAreaTop,
-            safeAreaBottom,
-          })
-        : getCameraPreset({
-            mode: drivingMode,
-            speedMps: speedMpsForPreset,
-            nextManeuverDistanceMeters: maneuverB,
-            safeAreaTop,
-            safeAreaBottom,
-          });
+    const preset = getLiveNavigationCameraPreset({
+      mode: drivingMode,
+      speedMps: speedMpsForPreset,
+      nextManeuverDistanceMeters: maneuverB,
+      safeAreaTop,
+      safeAreaBottom,
+    });
 
     return {
       followZoomLevel: Math.round(preset.zoom * 4) / 4,

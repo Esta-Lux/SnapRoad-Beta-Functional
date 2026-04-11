@@ -135,7 +135,7 @@ export function getVoiceNavTuning(mode: DrivingMode): VoiceNavTuning {
   switch (mode) {
     case 'calm':
       return {
-        preparatoryMaxM: 580,
+        preparatoryMaxM: 540,
         advanceMaxM: 280,
         advanceMinM: 105,
         imminentM: 88,
@@ -143,7 +143,7 @@ export function getVoiceNavTuning(mode: DrivingMode): VoiceNavTuning {
       };
     case 'sport':
       return {
-        preparatoryMaxM: 520,
+        preparatoryMaxM: 485,
         advanceMaxM: 260,
         advanceMinM: 78,
         imminentM: 78,
@@ -152,7 +152,7 @@ export function getVoiceNavTuning(mode: DrivingMode): VoiceNavTuning {
     case 'adaptive':
     default:
       return {
-        preparatoryMaxM: 520,
+        preparatoryMaxM: 500,
         advanceMaxM: 260,
         advanceMinM: 100,
         imminentM: 82,

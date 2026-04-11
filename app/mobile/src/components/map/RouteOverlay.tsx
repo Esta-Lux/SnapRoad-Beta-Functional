@@ -165,6 +165,8 @@ export default React.memo(function RouteOverlay({
     : routeColor;
 
   const lineOpacity = isRerouting ? 0.35 : 1.0;
+  const passedLineWidth = Math.max(4, routeWidth - 1.5);
+  const passedLineOpacity = 0.78 * lineOpacity;
   const effectiveGlowColor = glowColor || routeColor;
 
   if (routeRenderVariant === 'minimal') {
@@ -236,8 +238,8 @@ export default React.memo(function RouteOverlay({
         filter={['==', ['get', 'segment'], 'passed']}
         style={{
           lineColor: passedColor,
-          lineWidth: routeWidth,
-          lineOpacity: 0.85,
+          lineWidth: passedLineWidth,
+          lineOpacity: passedLineOpacity,
           lineCap: 'round',
           lineJoin: 'round',
         }}

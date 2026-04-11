@@ -191,18 +191,20 @@ export function getCameraPreset({
 }
 
 /**
- * Live navigation: keep UI-aware padding/zoom from {@link getCameraPreset}, blend pitch/zoom/animation
- * with {@link getCameraConfig} so Calm / Adaptive / Sport feel distinct during follow mode.
+ * Live navigation: same zoom / pitch / padding as {@link getCameraPreset} (speed curves + maneuver nudges).
+ * {@link getCameraConfig} uses low browse-style zoom (~14) — blending it here pulled follow zoom down and felt inconsistent.
+ * We only blend animation duration so Calm / Adaptive / Sport still differ in how snappy the camera eases.
  */
 export function getLiveNavigationCameraPreset(args: Args): CameraPreset {
   const base = getCameraPreset(args);
   const enh = getCameraConfig(args.mode, args.speedMps);
-  const zoom = clamp(base.zoom * 0.63 + (enh.zoom + 2.42) * 0.37, 15.05, 18.75);
-  const pitch = clamp(enh.pitch * 0.64 + base.pitch * 0.36, 37, 61);
+  const animationDuration = Math.round(
+    clamp(base.animationDuration * 0.52 + enh.animationDuration * 0.48, 320, 980),
+  );
   return {
-    zoom,
-    pitch,
+    zoom: base.zoom,
+    pitch: base.pitch,
     padding: base.padding,
-    animationDuration: enh.animationDuration,
+    animationDuration,
   };
 }
