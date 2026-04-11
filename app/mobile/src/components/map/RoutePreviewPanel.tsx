@@ -4,14 +4,16 @@ import Animated, { Easing, SlideInDown, SlideOutDown } from 'react-native-reanim
 import { GestureDetector } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import type { RouteKind } from '../../lib/directions';
 
-type RouteType = 'best' | 'eco' | 'alt';
 type TrafficSummary = { level: 'heavy' | 'moderate' | 'low'; delayMin: number } | null;
 
 type PreviewRoute = {
   durationText: string;
   distanceText: string;
-  routeType?: RouteType;
+  routeType?: RouteKind;
+  routeLabel?: string;
+  routeReason?: string;
   congestion?: string[];
 };
 
@@ -57,37 +59,49 @@ export default function RoutePreviewPanel(props: Props) {
   if (!props.visible || !props.navData) return null;
   const previewCompact = !props.detailsExpanded;
   const selectedRoute = props.availableRoutes[props.selectedRouteIndex];
-  const selType = selectedRoute?.routeType ?? 'best';
+  const selType = selectedRoute?.routeType ?? 'fastest';
   const s = props.styles;
 
-  const routeLabel = (rt?: RouteType, idx?: number): string => {
-    if (rt === 'best') return 'Fastest';
+  const routeLabel = (rt?: RouteKind, idx?: number): string => {
+    if (rt === 'fastest') return 'Fastest';
+    if (rt === 'no_highways') return 'No Highways';
+    if (rt === 'avoid_tolls') return 'Avoid Tolls';
     if (rt === 'eco') return 'Eco';
     const i = idx ?? 1;
     return i <= 1 ? 'Alternate' : `Alternate ${i}`;
   };
-  const routeIcon = (rt?: RouteType): 'flash' | 'leaf' | 'navigate' => {
-    if (rt === 'best') return 'flash';
+  const routeIcon = (rt?: RouteKind): 'flash' | 'leaf' | 'navigate' | 'car-outline' | 'cash-outline' => {
+    if (rt === 'fastest') return 'flash';
+    if (rt === 'no_highways') return 'car-outline';
+    if (rt === 'avoid_tolls') return 'cash-outline';
     if (rt === 'eco') return 'leaf';
     return 'navigate';
   };
-  const routeAccent = (rt?: RouteType): string => {
-    if (rt === 'best') return '#2563EB';
-    if (rt === 'eco') return '#16A34A';
+  const routeAccent = (rt?: RouteKind): string => {
+    if (rt === 'fastest') return '#2563EB';
+    if (rt === 'no_highways') return '#16A34A';
+    if (rt === 'avoid_tolls') return '#D4A843';
+    if (rt === 'eco') return '#14B8A6';
     return '#8B5CF6';
   };
-  const routeAccentBg = (rt?: RouteType): string => {
-    if (rt === 'best') return '#EFF6FF';
-    if (rt === 'eco') return '#F0FDF4';
+  const routeAccentBg = (rt?: RouteKind): string => {
+    if (rt === 'fastest') return '#EFF6FF';
+    if (rt === 'no_highways') return '#F0FDF4';
+    if (rt === 'avoid_tolls') return '#FFFBEB';
+    if (rt === 'eco') return '#F0FDFA';
     return '#F5F3FF';
   };
 
   const startGrad: [string, string] =
     selType === 'eco'
-      ? ['#16A34A', '#15803D']
-      : selType === 'best'
-      ? ['#2563EB', '#1D4ED8']
-      : ['#7C3AED', '#6D28D9'];
+      ? ['#14B8A6', '#0D9488']
+      : selType === 'fastest'
+        ? ['#2563EB', '#1D4ED8']
+        : selType === 'no_highways'
+          ? ['#16A34A', '#15803D']
+          : selType === 'avoid_tolls'
+            ? ['#D4A843', '#B8860B']
+            : ['#7C3AED', '#6D28D9'];
 
   return (
     <Animated.View
@@ -131,11 +145,6 @@ export default function RoutePreviewPanel(props: Props) {
       <Text style={[s.previewTitle, { color: props.colors.text, marginBottom: props.drivingMode === 'calm' ? 4 : 8 }]} numberOfLines={1}>
         {props.navData.destination.name ?? 'Destination'}
       </Text>
-      {props.drivingMode === 'calm' ? (
-        <Text style={{ fontSize: 12, fontWeight: '600', color: props.colors.textSecondary, marginBottom: previewCompact ? 6 : 10 }}>
-          Less highway when travel time is about the same.
-        </Text>
-      ) : null}
       {!previewCompact ? (
         <View style={{ marginBottom: 14, gap: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
@@ -194,7 +203,9 @@ export default function RoutePreviewPanel(props: Props) {
                 <View style={[s.routeCardIcon, { backgroundColor: routeAccentBg(route.routeType), width: previewCompact ? 26 : 28, height: previewCompact ? 26 : 28 }]}>
                   <Ionicons name={routeIcon(route.routeType)} size={previewCompact ? 14 : 16} color={accent} />
                 </View>
-                <Text style={[s.routeCardType, { color: isSel ? accent : props.colors.textSecondary, fontSize: previewCompact ? 11 : 12 }]}>{routeLabel(route.routeType, idx)}</Text>
+                <Text style={[s.routeCardType, { color: isSel ? accent : props.colors.textSecondary, fontSize: previewCompact ? 11 : 12 }]}>
+                  {route.routeLabel ?? routeLabel(route.routeType, idx)}
+                </Text>
                 {isSel && <View style={[s.routeCardCheck, { backgroundColor: accent }]}><Ionicons name="checkmark" size={12} color="#fff" /></View>}
               </View>
               <Text style={[s.routeCardDuration, { color: props.colors.text, fontSize: previewCompact ? 18 : 22, lineHeight: previewCompact ? 20 : 24 }]}>{route.durationText}</Text>
@@ -229,8 +240,24 @@ export default function RoutePreviewPanel(props: Props) {
       )}
       <TouchableOpacity onPress={props.onStartNavigationPress} activeOpacity={0.85}>
         <LinearGradient colors={startGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.startBtn}>
-          <Ionicons name={routeIcon(selType) === 'flash' ? 'flash-outline' : routeIcon(selType) === 'leaf' ? 'leaf-outline' : 'navigate-outline'} size={18} color="#fff" />
-          <Text style={s.startBtnT}>Start {routeLabel(selType, props.selectedRouteIndex)}</Text>
+          <Ionicons
+            name={
+              routeIcon(selType) === 'flash'
+                ? 'flash-outline'
+                : routeIcon(selType) === 'leaf'
+                  ? 'leaf-outline'
+                  : routeIcon(selType) === 'car-outline'
+                    ? 'car-outline'
+                    : routeIcon(selType) === 'cash-outline'
+                      ? 'cash-outline'
+                      : 'navigate-outline'
+            }
+            size={18}
+            color="#fff"
+          />
+          <Text style={s.startBtnT}>
+            Start {selectedRoute?.routeLabel ?? routeLabel(selType, props.selectedRouteIndex)}
+          </Text>
         </LinearGradient>
       </TouchableOpacity>
     </Animated.View>

@@ -1,13 +1,13 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import type { DirectionsResult } from '../../lib/directions';
+import type { DirectionsResult, RouteKind } from '../../lib/directions';
 import type { ThemeColors } from '../../contexts/ThemeContext';
 
 interface Props {
   routes: DirectionsResult[];
   selectedIndex: number;
-  onSelect: (routeType: 'best' | 'eco' | 'alt') => void;
+  onSelect: (routeType: RouteKind | 'best') => void;
   colors: ThemeColors;
 }
 
@@ -18,13 +18,26 @@ export default function RouteOptions({ routes, selectedIndex, onSelect, colors }
     <View style={styles.row}>
       {routes.slice(0, 2).map((route, i) => {
         const label =
-          route.routeType === 'eco' ? 'Eco' : route.routeType === 'alt' ? 'Alt' : 'Best route';
+          route.routeType === 'eco'
+            ? 'Eco'
+            : route.routeType === 'alt'
+              ? 'Alt'
+              : route.routeType === 'no_highways'
+                ? 'No highway'
+                : route.routeType === 'avoid_tolls'
+                  ? 'No tolls'
+                  : route.routeType === 'fastest'
+                    ? 'Fastest'
+                    : 'Route';
         const selected = selectedIndex === i;
         return (
           <TouchableOpacity
             key={i}
             style={[styles.btn, { backgroundColor: selected ? colors.primary : colors.surfaceSecondary }]}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onSelect(route.routeType ?? 'best'); }}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onSelect(route.routeType === 'fastest' ? 'best' : route.routeType ?? 'fastest');
+            }}
             activeOpacity={0.7}
           >
             <Text style={[styles.label, { color: selected ? '#fff' : colors.text }]}>{label}</Text>

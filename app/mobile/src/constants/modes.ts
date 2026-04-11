@@ -194,12 +194,13 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     color: '#4A4063',
     icon: 'speedometer-outline',
 
-    routeColor: '#FFFFFF',
-    routeCasing: '#F0EEFF',
-    passedColor: '#C8C2DC',
-    routeWidth: 6,
-    routeGlowColor: '#FFFFFF',
-    routeGlowOpacity: 0.14,
+    /** High-contrast “racing” line: white-on-white was hard to see on Standard/dusk. */
+    routeColor: '#FF5A1F',
+    routeCasing: '#0C0A0F',
+    passedColor: '#64748B',
+    routeWidth: 8,
+    routeGlowColor: '#FF8A4A',
+    routeGlowOpacity: 0.34,
 
     turnCardGradient: ['#4A4063', '#2D2845'],
     turnCardRadius: 16,

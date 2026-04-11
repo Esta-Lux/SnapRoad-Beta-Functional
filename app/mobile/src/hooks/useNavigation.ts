@@ -6,6 +6,7 @@ import type {
   DirectionsStep,
   GeocodeResult,
   RawRoute,
+  RouteKind,
 } from '../lib/directions';
 import {
   getMapboxRouteOptions,
@@ -394,14 +395,6 @@ export function useNavigation(params: {
       return { ok: false, reason: 'invalid_input', message: 'Invalid start or destination coordinates.' };
     }
 
-    if (!isMapboxDirectionsConfigured()) {
-      return {
-        ok: false,
-        reason: 'no_mapbox',
-        message: 'Add EXPO_PUBLIC_MAPBOX_TOKEN (.env / EAS env) or rebuild so extra.mapboxPublicToken is set.',
-      };
-    }
-
     if (isNavigatingRef.current && navigationDataRef.current?.congestion?.length) {
       congestionBeforeDirectionsRef.current = [...navigationDataRef.current.congestion];
     } else {
@@ -426,7 +419,13 @@ export function useNavigation(params: {
         fastSingleRoute: opts?.fastSingleRoute,
       });
       if (!options.length || !options[0].polyline.length) {
-        return { ok: false, reason: 'route_failed', message: 'No route could be computed.' };
+        return {
+          ok: false,
+          reason: 'route_failed',
+          message: isMapboxDirectionsConfigured()
+            ? 'No route could be computed.'
+            : 'No route could be computed. Set EXPO_PUBLIC_MAPBOX_TOKEN or configure the API Mapbox proxy (MAPBOX_ACCESS_TOKEN).',
+        };
       }
 
       setAvailableRoutes(options);
@@ -749,11 +748,20 @@ export function useNavigation(params: {
     return () => clearInterval(id);
   }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng, gpsAccuracy, navSdkHeadless]);
 
-  const handleRouteSelect = useCallback((routeTypeOrIndex: 'best' | 'eco' | 'alt' | number) => {
+  const handleRouteSelect = useCallback((
+    routeTypeOrIndex: RouteKind | 'best' | 'eco' | 'alt' | number,
+  ) => {
     if (!availableRoutes.length || !navigationData) return;
     const index = typeof routeTypeOrIndex === 'number'
       ? Math.max(0, Math.min(routeTypeOrIndex, availableRoutes.length - 1))
-      : Math.max(0, availableRoutes.findIndex((r) => r.routeType === routeTypeOrIndex));
+      : Math.max(
+          0,
+          availableRoutes.findIndex((r) => {
+            const want: RouteKind =
+              routeTypeOrIndex === 'best' ? 'fastest' : (routeTypeOrIndex as RouteKind);
+            return r.routeType === want;
+          }),
+        );
     setSelectedRouteIndex(index);
     const r = availableRoutes[index];
     if (!r?.polyline?.length || !navigationData) return;

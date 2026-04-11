@@ -43,7 +43,6 @@ import {
   logMapboxAccessDiagnostics,
 } from '../config/mapbox';
 import {
-  effectiveAlternateRouteLineColor,
   effectiveNavRouteColors,
   getDrivingLightPreset,
   usesStandardStyleConfiguration,
@@ -78,6 +77,7 @@ import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '..
 import { useNavigationSpeech } from '../hooks/useNavigationSpeech';
 import { repeatLastTurnByTurn } from '../navigation/navigationGuidanceMemory';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
+import { getRoutePolylineStyle } from '../lib/routePolylineStyle';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
 import NavigationDebugHud from '../components/navigation/NavigationDebugHud';
 import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
@@ -697,12 +697,8 @@ export default function MapScreen() {
   );
   const isSatelliteStyle = activeStyleURL.includes('standard-satellite');
   const navRouteColors = useMemo(
-    () => effectiveNavRouteColors(modeConfig, mapLightPreset, isSatelliteStyle),
-    [modeConfig, mapLightPreset, isSatelliteStyle],
-  );
-  const altRouteLineColor = useMemo(
-    () => effectiveAlternateRouteLineColor(mapLightPreset, isSatelliteStyle),
-    [mapLightPreset, isSatelliteStyle],
+    () => effectiveNavRouteColors(modeConfig, mapLightPreset, isSatelliteStyle, drivingMode),
+    [modeConfig, mapLightPreset, isSatelliteStyle, drivingMode],
   );
   const standardStyleImportsEnabled = usesStandardStyleConfiguration(activeStyleURL);
 
@@ -2725,6 +2721,11 @@ export default function MapScreen() {
             return nav.availableRoutes.map((route, idx) => {
               if (idx === nav.selectedRouteIndex) return null;
               if (!route.polyline || route.polyline.length < 2) return null;
+              const pl = getRoutePolylineStyle(route.routeType, false);
+              const lineOpacity = Math.min(
+                0.85,
+                pl.opacity * (isSatelliteStyle || mapLightPreset === 'night' ? 1.35 : 1.15),
+              );
               const geo: GeoJSON.FeatureCollection = {
                 type: 'FeatureCollection',
                 features: [{
@@ -2747,9 +2748,9 @@ export default function MapScreen() {
                   <MGL.LineLayer
                     id={`alt-route-line-${idx}`}
                     style={{
-                      lineColor: altRouteLineColor,
-                      lineWidth: 5,
-                      lineOpacity: isSatelliteStyle || mapLightPreset === 'night' ? 0.62 : 0.5,
+                      lineColor: pl.color,
+                      lineWidth: pl.width,
+                      lineOpacity,
                       lineCap: 'round',
                       lineJoin: 'round',
                     }}

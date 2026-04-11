@@ -2,6 +2,11 @@ import type { DrivingMode } from '../types';
 import type { ModeConfig } from '../constants/modes';
 import { DRIVING_MODES } from '../constants/modes';
 
+function passthroughRouteColors(modeConfig: ModeConfig): EffectiveRouteColors {
+  const { routeColor, routeCasing, passedColor, routeGlowColor, routeGlowOpacity } = modeConfig;
+  return { routeColor, routeCasing, passedColor, routeGlowColor, routeGlowOpacity };
+}
+
 export type MapboxLightPreset = 'dawn' | 'day' | 'dusk' | 'night';
 
 export type EffectiveRouteColors = {
@@ -18,19 +23,25 @@ function isNearWhiteRouteLine(hex: string): boolean {
 }
 
 /**
- * Keeps the driven route readable on Mapbox Standard (night / dusk) and on satellite,
- * especially Sport mode’s white core line.
+ * Keeps the driven route readable on Mapbox Standard (night / dusk) and on satellite.
+ * Sport uses a dedicated high-contrast palette from {@link DRIVING_MODES.sport} — do not
+ * remap it to the generic “night blue” line.
  */
 export function effectiveNavRouteColors(
   modeConfig: ModeConfig,
   mapLightPreset: MapboxLightPreset,
   isSatellite: boolean,
+  drivingMode?: DrivingMode,
 ): EffectiveRouteColors {
   const { routeColor, routeCasing, passedColor, routeGlowColor, routeGlowOpacity } = modeConfig;
   const whiteCore = isNearWhiteRouteLine(routeColor);
   const dawnOrDay = mapLightPreset === 'dawn' || mapLightPreset === 'day';
   const dusk = mapLightPreset === 'dusk';
   const night = mapLightPreset === 'night';
+
+  if (drivingMode === 'sport') {
+    return passthroughRouteColors(modeConfig);
+  }
 
   if (isSatellite) {
     if (whiteCore) {
