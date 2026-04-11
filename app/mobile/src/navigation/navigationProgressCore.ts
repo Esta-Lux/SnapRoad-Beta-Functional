@@ -253,6 +253,16 @@ export function computeNavigationProgressFrame({
     speed < 2 ? 0.1 : speed < 6 ? 0.15 : speed < 14 ? 0.22 : speed < 22 ? 0.3 : 0.38;
   displayCoord.heading = headingBlend(prevHeading, targetHeading ?? prevHeading, headingAlpha);
 
+  /** Puck tracks the road immediately; heading matches the smoothed beam used for navigation UI. */
+  const puckCoord: RawLocation = {
+    lat: biasedTarget.lat,
+    lng: biasedTarget.lng,
+    speedMps: rawLocation.speedMps ?? displayCoord.speedMps ?? 0,
+    accuracy: rawLocation.accuracy ?? displayCoord.accuracy ?? null,
+    timestamp: rawLocation.timestamp ?? Date.now(),
+    heading: displayCoord.heading,
+  };
+
   const { traveled, remaining } = splitRouteAtSnap(route, snap);
   const routeTotalMeters = cumulative[cumulative.length - 1] ?? 0;
   const distanceRemainingMeters = Math.max(0, routeTotalMeters - snap.cumulativeMeters);
@@ -326,6 +336,7 @@ export function computeNavigationProgressFrame({
 
   return {
     displayCoord,
+    puckCoord,
     snapped: snap,
     traveledRoute: traveled,
     remainingRoute: remaining,

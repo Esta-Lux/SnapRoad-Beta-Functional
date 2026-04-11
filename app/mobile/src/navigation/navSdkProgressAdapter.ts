@@ -147,6 +147,7 @@ export function buildNavigationProgressFromSdk(args: {
 
   return {
     displayCoord,
+    puckCoord: displayCoord,
     snapped:
       snap ??
       ({
@@ -191,15 +192,17 @@ export function buildSdkWaitingNavigationProgress(
   const distRem = Math.max(0, navigationData.distance ?? 0);
   const durRem = Math.max(0, Math.round(navigationData.duration ?? 0));
   const now = Date.now();
+  const waitingCoord = {
+    lat: first.lat,
+    lng: first.lng,
+    heading: undefined,
+    speedMps: undefined,
+    accuracy: null,
+    timestamp: now,
+  };
   return {
-    displayCoord: {
-      lat: first.lat,
-      lng: first.lng,
-      heading: undefined,
-      speedMps: undefined,
-      accuracy: null,
-      timestamp: now,
-    },
+    displayCoord: waitingCoord,
+    puckCoord: waitingCoord,
     snapped: {
       point: { lat: first.lat, lng: first.lng },
       segmentIndex: 0,

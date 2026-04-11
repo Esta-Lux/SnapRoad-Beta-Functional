@@ -156,6 +156,11 @@ export type NavBannerModel = {
 
 export type NavigationProgress = {
   displayCoord: RawLocation | null;
+  /**
+   * Map puck / CustomLocationProvider: on-route snap + optional lead-ahead, **no** display EMA smoothing.
+   * `displayCoord` stays smoothed for stable camera/heading blending; puck was lagging when both used display.
+   */
+  puckCoord: RawLocation | null;
   snapped: SnapPoint | null;
   traveledRoute: RoutePoint[];
   remainingRoute: RoutePoint[];

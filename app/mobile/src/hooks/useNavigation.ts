@@ -313,9 +313,9 @@ export function useNavigation(params: {
       !navigationProgress.isOffRoute &&
       navigationProgress.snapped.distanceMeters < 45
     ) {
-      const dc = navigationProgress.displayCoord;
-      if (dc && Number.isFinite(dc.lat) && Number.isFinite(dc.lng)) {
-        return { lat: dc.lat, lng: dc.lng };
+      const pc = navigationProgress.puckCoord;
+      if (pc && Number.isFinite(pc.lat) && Number.isFinite(pc.lng)) {
+        return { lat: pc.lat, lng: pc.lng };
       }
       return {
         lat: navigationProgress.snapped.point.lat,
@@ -333,8 +333,8 @@ export function useNavigation(params: {
     navigationProgress?.snapped?.point?.lat,
     navigationProgress?.snapped?.point?.lng,
     navigationProgress?.snapped?.distanceMeters,
-    navigationProgress?.displayCoord?.lat,
-    navigationProgress?.displayCoord?.lng,
+    navigationProgress?.puckCoord?.lat,
+    navigationProgress?.puckCoord?.lng,
     navigationProgress?.isOffRoute,
   ]);
 

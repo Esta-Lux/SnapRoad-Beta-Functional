@@ -68,6 +68,7 @@ test('computeNavigationProgressFrame: on route yields banner and sane next-step 
   assert.ok(typeof a.modelDurationRemainingSeconds === 'number');
   assert.ok(a.nextStepDistanceMeters >= 0);
   assert.ok(a.banner?.primaryInstruction);
+  assert.ok(a.puckCoord && Number.isFinite(a.puckCoord.lat));
 });
 
 test('computeNavigationProgressFrame: far from polyline flags off-route under aggressive tuning', () => {
