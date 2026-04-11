@@ -722,8 +722,8 @@ export default function MapScreen() {
   const standardStyleImportsEnabled = usesStandardStyleConfiguration(activeStyleURL);
 
   const standardBasemapImportConfig = useMemo(
-    () => standardBasemapStyleImportConfig(mapLightPreset, isSatelliteStyle),
-    [mapLightPreset, isSatelliteStyle],
+    () => standardBasemapStyleImportConfig(mapLightPreset, isSatelliteStyle, drivingMode),
+    [mapLightPreset, isSatelliteStyle, drivingMode],
   );
 
   /** Keeps 3D extrusions and route line under label layers where the style exposes anchors. */
@@ -1192,25 +1192,27 @@ export default function MapScreen() {
   // Crash detection removed — SOS endpoints (/api/family/sos, /api/concerns/submit) do not exist.
   // Will be re-implemented when family/emergency features are built with real backend support.
 
-  // Fix 7: Supabase realtime for friend locations
+  // Fix 7: Supabase realtime for friend locations (INSERT + UPDATE — first share often INSERTs a row).
   useEffect(() => {
+    const applyRealtimeRow = (payload: { new?: unknown }) => {
+      const upd = parseLiveLocationUpdate(payload?.new);
+      if (!upd) return;
+      setFriendLocations((prev) => mergeLiveLocationUpdate(prev, {
+        friend_id: upd.friendId,
+        lat: upd.lat,
+        lng: upd.lng,
+        speed_mph: upd.speedMph,
+        heading: upd.heading,
+        is_sharing: upd.isSharing,
+        is_navigating: upd.isNavigating,
+        destination_name: upd.destinationName,
+        battery_pct: upd.batteryPct,
+        last_updated: upd.lastUpdated,
+      }));
+    };
     const channel = supabase.channel('friend-locations')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, (payload) => {
-        const upd = parseLiveLocationUpdate(payload?.new);
-        if (!upd) return;
-        setFriendLocations((prev) => mergeLiveLocationUpdate(prev, {
-          friend_id: upd.friendId,
-          lat: upd.lat,
-          lng: upd.lng,
-          speed_mph: upd.speedMph,
-          heading: upd.heading,
-          is_sharing: upd.isSharing,
-          is_navigating: upd.isNavigating,
-          destination_name: upd.destinationName,
-          battery_pct: upd.batteryPct,
-          last_updated: upd.lastUpdated,
-        }));
-      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, applyRealtimeRow)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_locations' }, applyRealtimeRow)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);

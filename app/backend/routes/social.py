@@ -248,6 +248,7 @@ def get_friends_list(
         fid = row["friend_id"]
         ll = loc_map.get(fid)
         if not ll:
+            row["is_sharing"] = False
             continue
         row["lat"] = ll.get("lat")
         row["lng"] = ll.get("lng")
@@ -579,10 +580,14 @@ def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
             now = datetime.now(timezone.utc).isoformat() + "Z"
             existing = sb.table("live_locations").select("user_id, lat, lng").eq("user_id", uid).limit(1).execute()
             if existing.data and len(existing.data) > 0:
-                sb.table("live_locations").update({
+                update_payload: dict[str, object] = {
                     "is_sharing": body.is_sharing,
                     "last_updated": now,
-                }).eq("user_id", uid).execute()
+                }
+                if body.lat is not None and body.lng is not None:
+                    update_payload["lat"] = float(body.lat)
+                    update_payload["lng"] = float(body.lng)
+                sb.table("live_locations").update(update_payload).eq("user_id", uid).execute()
             elif body.is_sharing:
                 lat = float(body.lat) if body.lat is not None else 0.0
                 lng = float(body.lng) if body.lng is not None else 0.0

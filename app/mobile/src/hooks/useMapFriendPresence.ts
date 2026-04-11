@@ -24,7 +24,7 @@ export function mergeLiveLocationUpdate(
   prev: FriendLocation[],
   payloadNew: Record<string, unknown>,
 ): FriendLocation[] {
-  const friendId = String(payloadNew.friend_id ?? '');
+  const friendId = String(payloadNew.friend_id ?? payloadNew.user_id ?? '');
   if (!friendId) return prev;
   return prev.map((f) => {
     if (f.id !== friendId) return f;

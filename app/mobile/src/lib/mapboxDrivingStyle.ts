@@ -136,18 +136,23 @@ export function usesStandardStyleConfiguration(url: string): boolean {
  * Basemap config for {@link usesStandardStyleConfiguration} styles (`StyleImport` id `basemap`).
  * Values are strings — required by `@rnmapbox/maps` StyleImport.
  *
- * Explicitly enables POI, place, road, transit, pedestrian, and landmark labels so
- * stores and building/landmark names match Mapbox Standard defaults across light presets.
+ * Enables POI / place / road / transit labels, 3D buildings + landmarks (not only generic `show3dObjects`),
+ * and tunes POI label density per driving mode so Calm / Adaptive / Sport read distinctly on the map.
  *
  * @see https://docs.mapbox.com/map-styles/standard/api/
  */
 export function standardBasemapStyleImportConfig(
   lightPreset: MapboxLightPreset,
   isSatellite: boolean,
+  drivingMode: DrivingMode = 'adaptive',
 ): Record<string, string> {
+  /** Calm: fewer POI labels; Adaptive: balanced; Sport: maximum business/POI density (Mapbox range 1–5). */
+  const poiDensity = drivingMode === 'calm' ? '3' : drivingMode === 'sport' ? '5' : '4';
   const cfg: Record<string, string> = {
     lightPreset,
     show3dObjects: 'true',
+    show3dBuildings: 'true',
+    show3dLandmarks: 'true',
     showPointOfInterestLabels: 'true',
     showPlaceLabels: 'true',
     showRoadLabels: 'true',
@@ -155,6 +160,9 @@ export function standardBasemapStyleImportConfig(
     showPedestrianRoads: 'true',
     showLandmarkIcons: 'true',
     showLandmarkIconLabels: 'true',
+    colorModePointOfInterestLabels: 'default',
+    backgroundPointOfInterestLabels: 'circle',
+    densityPointOfInterestLabels: poiDensity,
   };
   if (isSatellite) {
     cfg.showRoadsAndTransit = 'true';

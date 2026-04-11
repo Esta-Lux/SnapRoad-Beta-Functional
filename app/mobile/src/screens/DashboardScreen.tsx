@@ -169,6 +169,8 @@ export default function DashboardScreen() {
   const friendsTabActive = section === 'friends' && isFocused;
   const { location, heading, speed } = useLocation(false, { paused: !friendsTabActive });
   const dashboardLivePublishRef = useRef(0);
+  /** User enabled sharing before GPS was ready — push coords + full update once `myCoord` exists. */
+  const shareLocationNeedsCoordsSyncRef = useRef(false);
   const dashboardLiveCoordsRef = useRef({ lat: location.lat, lng: location.lng, heading, speed });
   dashboardLiveCoordsRef.current = { lat: location.lat, lng: location.lng, heading, speed };
 
@@ -424,6 +426,46 @@ export default function DashboardScreen() {
     if (location.lat === 0 && location.lng === 0) return null;
     return { lat: location.lat, lng: location.lng };
   }, [location.lat, location.lng]);
+
+  useEffect(() => {
+    if (!user?.isPremium || !isSharingLocation || !myCoord) return;
+    if (!shareLocationNeedsCoordsSyncRef.current) return;
+    shareLocationNeedsCoordsSyncRef.current = false;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await api.put('/api/friends/location/sharing', {
+          is_sharing: true,
+          lat: myCoord.lat,
+          lng: myCoord.lng,
+        });
+        if (cancelled) return;
+        let battery_pct: number | undefined;
+        try {
+          const lvl = await Battery.getBatteryLevelAsync();
+          if (cancelled) return;
+          battery_pct = Math.round(Math.max(0, Math.min(1, lvl)) * 100);
+        } catch {
+          /* optional */
+        }
+        if (cancelled) return;
+        await api.post('/api/friends/location/update', {
+          lat: myCoord.lat,
+          lng: myCoord.lng,
+          heading,
+          speed_mph: speed,
+          is_navigating: false,
+          is_sharing: true,
+          battery_pct,
+        });
+      } catch {
+        /* offline */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.isPremium, isSharingLocation, myCoord, heading, speed]);
 
   const friendListData = useMemo(
     () =>
@@ -935,6 +977,8 @@ export default function DashboardScreen() {
                 onValueChange={async (v) => {
                   setIsSharingLocation(v);
                   storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
+                  if (v && !myCoord) shareLocationNeedsCoordsSyncRef.current = true;
+                  else shareLocationNeedsCoordsSyncRef.current = false;
                   try {
                     await api.put('/api/friends/location/sharing', {
                       is_sharing: v,

@@ -14,7 +14,8 @@ export type LiveLocationUpdate = {
 export function parseLiveLocationUpdate(payloadNew: unknown): LiveLocationUpdate | null {
   if (!payloadNew || typeof payloadNew !== 'object') return null;
   const row = payloadNew as Record<string, unknown>;
-  const friendId = String(row.friend_id ?? '').trim();
+  /** `live_locations` rows use `user_id` (the sharer); legacy payloads may use `friend_id`. */
+  const friendId = String(row.user_id ?? row.friend_id ?? '').trim();
   if (!friendId) return null;
   return {
     friendId,
