@@ -84,9 +84,11 @@ export function useCameraController({
     if (!isNavigating || !cameraLocked) return null;
 
     const fusedOk = fusedSpeedMps != null && Number.isFinite(fusedSpeedMps);
-    const speedMpsForPreset = fusedOk
-      ? Math.max(0, fusedSpeedMps as number)
-      : Math.max(0, speedB) * MPH_TO_MPS;
+    /** 5 mph buckets from fused speed — sub-mph GPS jitter was thrashing zoom/pitch. */
+    const mphForPreset = fusedOk
+      ? Math.round((Math.max(0, fusedSpeedMps as number) * 2.236936) / 5) * 5
+      : speedB;
+    const speedMpsForPreset = Math.max(0, mphForPreset) * MPH_TO_MPS;
 
     const preset = getLiveNavigationCameraPreset({
       mode: drivingMode,

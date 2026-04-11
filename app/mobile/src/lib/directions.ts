@@ -36,7 +36,10 @@ export interface BannerInstructionItem {
     text?: string;
     imageBaseURL?: string;
     directions?: string[];
+    indications?: string[];
     active?: boolean;
+    valid_indication?: string;
+    validIndication?: string;
   }>;
 }
 
@@ -335,6 +338,19 @@ export function mapboxStepPrimaryInstruction(step: MapboxLegStep): string {
   return '';
 }
 
+/** Match intersection lane extraction: prefer the last intersection that carries lane arrays (decision point). */
+function lanesJsonFromIntersections(step: {
+  intersections?: Array<{ lanes?: unknown }>;
+}): string | undefined {
+  const ixns = step.intersections;
+  if (!Array.isArray(ixns) || !ixns.length) return undefined;
+  for (let i = ixns.length - 1; i >= 0; i--) {
+    const lanes = ixns[i]?.lanes;
+    if (Array.isArray(lanes) && lanes.length) return JSON.stringify(lanes);
+  }
+  return undefined;
+}
+
 export function parseMapboxDirectionsRoute(
   route: RawRoute,
   metaInput?: ParseMetaInput,
@@ -369,7 +385,7 @@ export function parseMapboxDirectionsRoute(
             }
           : undefined,
         name: typeof step.name === 'string' && step.name ? step.name : undefined,
-        lanes: step.intersections?.[0]?.lanes ? JSON.stringify(step.intersections[0].lanes) : undefined,
+        lanes: lanesJsonFromIntersections(step),
         lat: step.maneuver?.location?.[1] ?? 0,
         lng: step.maneuver?.location?.[0] ?? 0,
         geometryCoordinates: Array.isArray(g) && g.length >= 2 ? g : undefined,

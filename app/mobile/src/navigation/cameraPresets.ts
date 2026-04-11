@@ -175,11 +175,15 @@ export function getCameraPreset({
     paddingTop += cfg.turnApproachPadBoost;
   }
 
+  // RHD: a touch more right inset at speed keeps the puck slightly left of center — cleaner forward field
+  // of view without the “side-chase” feel from symmetric padding alone.
+  const highwaySideNudge = Math.min(26, Math.max(0, mph - 24) * 0.4);
+
   const padding: CameraPadding = {
     paddingTop,
     paddingBottom,
     paddingLeft: cfg.padLeft,
-    paddingRight: cfg.padRight,
+    paddingRight: cfg.padRight + highwaySideNudge,
   };
 
   return {

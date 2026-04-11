@@ -29,9 +29,14 @@ export type LaneIndication = 'left' | 'slight_left' | 'straight' | 'slight_right
 
 export interface LaneInfo {
   indications: LaneIndication[];
+  /**
+   * Glyph for this lane when Mapbox provides `valid_indication` (may differ from `indications[0]`
+   * when a lane allows multiple movements).
+   */
+  displayIndication?: LaneIndication;
   /** This lane is valid for the current maneuver. */
   active: boolean;
-  /** Preferred lane (Mapbox `active_direction` match). */
+  /** Preferred lane (Mapbox `active_direction` / `valid_indication` match). */
   preferred: boolean;
 }
 

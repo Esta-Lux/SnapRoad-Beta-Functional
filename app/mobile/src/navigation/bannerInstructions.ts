@@ -1,5 +1,6 @@
 import type { DirectionsStep } from '../lib/directions';
 import type { LaneInfo, LaneIndication } from './navModel';
+import { parseLaneIndication } from './laneIndication';
 
 type StepLike = DirectionsStep | null | undefined;
 type CardState = 'preview' | 'active' | 'confirm' | 'cruise';
@@ -86,16 +87,6 @@ export function mergeLaneSources(...candidates: StepLike[]): string | undefined 
   return undefined;
 }
 
-function parseLaneIndication(raw: string): LaneIndication {
-  const s = (raw ?? '').toLowerCase().trim().replace(/-/g, ' ');
-  if (s === 'left' || s === 'merge left') return 'left';
-  if (s === 'slight left') return 'slight_left';
-  if (s === 'right' || s === 'merge right') return 'right';
-  if (s === 'slight right') return 'slight_right';
-  if (s === 'uturn' || s === 'u-turn' || s === 'u turn') return 'uturn';
-  return 'straight';
-}
-
 /**
  * Parse legacy lane JSON from {@link getLaneData} / {@link mergeLaneSources} into {@link LaneInfo}.
  */
@@ -107,13 +98,22 @@ export function lanesFromLegacyJson(json: string | undefined | null): LaneInfo[]
       directions?: string[];
       valid?: boolean;
       active?: boolean;
+      valid_indication?: string;
+      validIndication?: string;
     }>;
     if (!Array.isArray(arr) || arr.length === 0) return null;
     return arr.map((lane) => {
       const rawDirs = lane.indications ?? lane.directions ?? [];
       const indications = rawDirs.map((d) => parseLaneIndication(String(d)));
+      const viRaw = lane.valid_indication ?? lane.validIndication;
+      const displayIndication: LaneIndication = viRaw
+        ? parseLaneIndication(String(viRaw))
+        : indications[0] ?? 'straight';
       const active = Boolean(lane.valid ?? lane.active);
-      return { indications, active, preferred: false };
+      const preferred = Boolean(
+        viRaw && indications.includes(parseLaneIndication(String(viRaw))),
+      );
+      return { indications, displayIndication, active, preferred };
     });
   } catch {
     return null;

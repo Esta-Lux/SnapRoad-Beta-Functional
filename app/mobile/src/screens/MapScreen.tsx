@@ -2686,7 +2686,7 @@ export default function MapScreen() {
             animationMode="easeTo"
             animationDuration={
               (camCtrl ? camCtrl.animationDuration : animDuration) +
-              (nav.isNavigating && cameraLocked ? 140 : 0)
+              (nav.isNavigating && cameraLocked ? 90 : 0)
             }
             followUserLocation={(nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser}
             followUserMode={

@@ -6,7 +6,6 @@
 import type { DirectionsStep } from '../lib/directions';
 import type { Coordinate } from '../types';
 import type {
-  LaneIndication,
   LaneInfo,
   ManeuverKind,
   NavStep,
@@ -14,6 +13,7 @@ import type {
   RoadSignal,
   RoadSignalKind,
 } from './navModel';
+import { parseLaneIndication } from './laneIndication';
 import { nearestSegmentIndex } from './navGeometry';
 
 const MANEUVER_MAP: Record<string, Record<string, ManeuverKind>> = {
@@ -174,16 +174,6 @@ function extractRoadSignal(step: DirectionsStep): RoadSignal {
   return { kind: 'none', label: '' };
 }
 
-function parseLaneIndication(raw: string): LaneIndication {
-  const s = raw.toLowerCase().trim();
-  if (s === 'left') return 'left';
-  if (s === 'slight left') return 'slight_left';
-  if (s === 'right') return 'right';
-  if (s === 'slight right') return 'slight_right';
-  if (s === 'uturn' || s === 'u-turn') return 'uturn';
-  return 'straight';
-}
-
 function extractLanes(step: DirectionsStep): LaneInfo[] {
   const ixns = step.intersections as
     | Array<{
@@ -213,12 +203,16 @@ function extractLanes(step: DirectionsStep): LaneInfo[] {
 
   return ixnWithLanes.lanes.map((lane) => {
     const indications = (lane.indications ?? []).map(parseLaneIndication);
-    const preferred = lane.valid_indication
-      ? indications.includes(parseLaneIndication(lane.valid_indication))
-      : Boolean(lane.valid);
+    const vi = lane.valid_indication;
+    const displayIndication = vi
+      ? parseLaneIndication(vi)
+      : indications[0] ?? 'straight';
+    const active = Boolean(lane.valid ?? lane.active);
+    const preferred = Boolean(vi && indications.includes(parseLaneIndication(vi)));
     return {
       indications,
-      active: Boolean(lane.valid),
+      displayIndication,
+      active,
       preferred,
     };
   });

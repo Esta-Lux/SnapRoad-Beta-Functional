@@ -14,6 +14,7 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import Svg, { Path, G } from 'react-native-svg';
 import type { LaneInfo, LaneIndication } from '../../navigation/navModel';
+import { primaryLaneGlyph } from '../../navigation/laneIndication';
 
 interface Props {
   lanes: LaneInfo[];
@@ -36,16 +37,20 @@ const ARROW_PATHS: Record<LaneIndication, string> = {
 };
 
 function LaneArrow({
-  indications,
-  active,
-  preferred,
+  lane,
   activeColor,
   inactiveColor,
-}: LaneInfo & { activeColor: string; inactiveColor: string }) {
-  const primaryIndication = indications[0] ?? 'straight';
+}: {
+  lane: LaneInfo;
+  activeColor: string;
+  inactiveColor: string;
+}) {
+  const { indications, active, preferred } = lane;
+  const primaryIndication = primaryLaneGlyph(lane);
   const path = ARROW_PATHS[primaryIndication] ?? ARROW_PATHS.straight;
   const color = active ? activeColor : inactiveColor;
   const opacity = active ? 1.0 : 0.3;
+  const secondaryIndication = indications.find((g) => g !== primaryIndication);
 
   return (
     <View
@@ -57,9 +62,9 @@ function LaneArrow({
     >
       <Svg width={18} height={18} viewBox={`0 0 ${VB} ${VB}`} style={{ opacity }}>
         <Path d={path} fill={color} />
-        {indications.length > 1 && indications[1] ? (
+        {secondaryIndication ? (
           <G transform="translate(3.5, 3.5) scale(0.55)">
-            <Path d={ARROW_PATHS[indications[1]] ?? ''} fill={color} opacity={0.45} />
+            <Path d={ARROW_PATHS[secondaryIndication] ?? ''} fill={color} opacity={0.45} />
           </G>
         ) : null}
       </Svg>
@@ -75,9 +80,7 @@ export default React.memo(function LaneGuidance({ lanes, activeColor, inactiveCo
       {lanes.map((lane, i) => (
         <LaneArrow
           key={i}
-          indications={lane.indications}
-          active={lane.active}
-          preferred={lane.preferred}
+          lane={lane}
           activeColor={activeColor}
           inactiveColor={inactiveColor}
         />
