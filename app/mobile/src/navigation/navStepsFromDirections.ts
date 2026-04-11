@@ -198,10 +198,20 @@ function extractLanes(step: DirectionsStep): LaneInfo[] {
 
   if (!ixns?.length) return [];
 
-  const last = ixns[ixns.length - 1];
-  if (!last?.lanes?.length) return [];
+  /** Prefer the decision-point intersection (usually last with lanes); fall back backward. */
+  let ixnWithLanes:
+    | (typeof ixns)[number]
+    | undefined;
+  for (let i = ixns.length - 1; i >= 0; i--) {
+    const ix = ixns[i];
+    if (ix?.lanes?.length) {
+      ixnWithLanes = ix;
+      break;
+    }
+  }
+  if (!ixnWithLanes?.lanes?.length) return [];
 
-  return last.lanes.map((lane) => {
+  return ixnWithLanes.lanes.map((lane) => {
     const indications = (lane.indications ?? []).map(parseLaneIndication);
     const preferred = lane.valid_indication
       ? indications.includes(parseLaneIndication(lane.valid_indication))

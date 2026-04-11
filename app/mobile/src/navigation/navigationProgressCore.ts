@@ -14,6 +14,43 @@ import { remainingDurationSecondsFromEdges } from './navigationEtaEdges';
 import { blendModelWithObservedEta } from './etaObservedBlend';
 import { DEFAULT_PROGRESS_TUNING, type ProgressTuning } from './navModeProfile';
 
+/**
+ * Skip depart / plain continue-without-lanes so the banner matches the next real turn
+ * (same idea as {@link routeGeometry.isActionableGuidanceStep} on DirectionsStep).
+ */
+export function isNavStepActionableForBanner(s: NavStep): boolean {
+  if (s.kind === 'depart') return false;
+  if (s.kind === 'arrive') return true;
+  if (s.kind === 'notification') return false;
+  if (s.kind === 'continue' || s.kind === 'straight') {
+    return (s.lanes?.length ?? 0) > 0;
+  }
+  return true;
+}
+
+/**
+ * Next maneuver step: the step whose segment still contains the snap point, then skip
+ * non-actionable steps (depart). Matches polyline / map geometry.
+ *
+ * The previous logic (`distanceMetersFromStart > snap`) picked the *following* step while the
+ * user was still inside the current step — one step ahead, which flipped left/right vs the route.
+ */
+export function pickNextNavStepAlongRoute(steps: NavStep[], snapCumulativeMeters: number): NavStep | null {
+  if (!steps.length) return null;
+  const snap = Math.max(0, snapCumulativeMeters);
+  const idx = steps.findIndex((s) => {
+    const end = s.distanceMetersFromStart + (s.distanceMeters ?? 0);
+    return snap < end;
+  });
+  if (idx === -1) {
+    const arrive = steps.find((s) => s.kind === 'arrive');
+    return arrive ?? steps[steps.length - 1] ?? null;
+  }
+  let j = idx;
+  while (j < steps.length && !isNavStepActionableForBanner(steps[j]!)) j++;
+  return steps[j] ?? null;
+}
+
 export type ComputeNavigationProgressArgs = {
   rawLocation: RawLocation;
   route: RoutePoint[];
@@ -269,8 +306,7 @@ export function computeNavigationProgressFrame({
 
   const etaEpochMs = Date.now() + durationRemainingSeconds * 1000;
 
-  const nextStepRaw =
-    steps.find((s) => s.distanceMetersFromStart > snap.cumulativeMeters) ?? null;
+  const nextStepRaw = pickNextNavStepAlongRoute(steps, snap.cumulativeMeters);
   const nextStepDistanceMeters = nextStepRaw
     ? Math.max(0, nextStepRaw.distanceMetersFromStart - snap.cumulativeMeters)
     : 0;
