@@ -6,9 +6,9 @@ import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { api } from '../../api/client';
 import {
-  configureAudioSession,
   configureAudioSessionForVoiceInput,
   restoreDefaultAudioSession,
+  speakOrionReply,
   stopSpeaking,
 } from '../../utils/voice';
 import type { OrionContext, OrionPlaceSuggestion } from './OrionChat';
@@ -90,15 +90,7 @@ export default function OrionQuickMic({
       Speech.stop();
       stopSpeaking();
       orionSpeakingRef.current = true;
-      void configureAudioSession();
-      Speech.speak(reply, {
-        rate: 0.96,
-        pitch: 1,
-        language: 'en-US',
-        onDone: finish,
-        onStopped: finish,
-        onError: finish,
-      });
+      speakOrionReply(reply, finish);
     } catch {
       finish();
     }

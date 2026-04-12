@@ -283,7 +283,7 @@ class ApiService {
 
       const parsed = await parseApiResponseBody(response);
       if (!parsed.ok) {
-        return { success: false, error: parsed.error };
+        return { success: false, error: parsed.error, statusCode: response.status };
       }
       const data = parsed.data;
 
@@ -320,7 +320,7 @@ class ApiService {
             })
             .filter(Boolean);
           const err = msgs.length ? msgs.join(' | ') : 'Request failed';
-          return { success: false, error: err };
+          return { success: false, error: err, statusCode: response.status };
         }
 
         const detail =
@@ -353,7 +353,7 @@ class ApiService {
           // Never surface internal server messages to end users.
           normalized = 'Something went wrong on our side. Please try again later.';
         }
-        return { success: false, error: normalized };
+        return { success: false, error: normalized, statusCode: response.status };
       }
 
       return { success: true, data: data as T };

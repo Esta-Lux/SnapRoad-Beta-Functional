@@ -2,6 +2,8 @@ export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  /** Present when `success` is false and the HTTP status is known. */
+  statusCode?: number;
 }
 
 export interface User {

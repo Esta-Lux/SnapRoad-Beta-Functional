@@ -7,6 +7,7 @@ import { isSdkTripAuthoritative } from '../navigation/navSdkAuthority';
 import { markNavVoiceFromJs } from '../navigation/navSdkStore';
 import type { LaneInfo, ManeuverKind, RoadSignal } from '../navigation/navModel';
 import { getVoiceNavTuning } from '../navigation/navModeProfile';
+import { getPreferredTtsVoiceIdentifier } from './ttsVoicePreference';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
@@ -201,13 +202,36 @@ export function speakGuidance(
 
   void (async () => {
     await configureAudioSessionForSpeechOutput();
+    const voiceId = await getPreferredTtsVoiceIdentifier();
     Speech.speak(phrase, {
       rate: NAVIGATION_SPEECH_RATE * voiceTune.guidanceRateMultiplier,
       pitch: NAVIGATION_SPEECH_PITCH,
       language: language || 'en-US',
+      ...(voiceId ? { voice: voiceId } : {}),
       onDone: onUtteranceFinished,
       onStopped: onUtteranceFinished,
       onError: onUtteranceFinished,
+    });
+  })();
+}
+
+/**
+ * Orion assistant replies: same male-voice preference as nav; uses {@link configureAudioSession}
+ * (CarPlay-friendly mixing) like the previous Orion inline `Speech.speak`.
+ */
+export function speakOrionReply(text: string, onFinish?: () => void) {
+  if (!text.trim()) return;
+  void (async () => {
+    await configureAudioSession();
+    const voiceId = await getPreferredTtsVoiceIdentifier();
+    Speech.speak(text.trim(), {
+      rate: 0.96,
+      pitch: 1,
+      language: 'en-US',
+      ...(voiceId ? { voice: voiceId } : {}),
+      onDone: onFinish,
+      onStopped: onFinish,
+      onError: onFinish,
     });
   })();
 }

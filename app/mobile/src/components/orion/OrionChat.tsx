@@ -21,9 +21,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../api/client';
 import {
-  configureAudioSession,
   configureAudioSessionForVoiceInput,
   restoreDefaultAudioSession,
+  speakOrionReply,
   stopSpeaking,
 } from '../../utils/voice';
 
@@ -162,15 +162,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
       Speech.stop();
       stopSpeaking();
       orionSpeakingRef.current = true;
-      void configureAudioSession();
-      Speech.speak(reply, {
-        rate: 0.96,
-        pitch: 1,
-        language: 'en-US',
-        onDone: finish,
-        onStopped: finish,
-        onError: finish,
-      });
+      speakOrionReply(reply, finish);
     } catch {
       orionSpeakingRef.current = false;
       void restoreDefaultAudioSession();

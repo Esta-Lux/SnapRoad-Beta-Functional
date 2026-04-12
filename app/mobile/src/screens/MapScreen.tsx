@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMe
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
   Platform, Keyboard, Alert, Switch, Pressable, Image, Dimensions,
-  AppState,
+  AppState, InteractionManager,
 } from 'react-native';
 import Animated, {
   FadeIn, FadeOut, SlideInDown, SlideOutDown,
@@ -146,7 +146,7 @@ import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react
 import type { MapStackParamList, MapStackScreenNavigationProp } from '../navigation/types';
 import { storage } from '../utils/storage';
 import { logMapDataIssue } from '../utils/mapApiDiagnostics';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import type { DrivingMode, Incident, SavedLocation, Offer, FriendLocation } from '../types';
 import {
   mapFriendsApiToLocations,
@@ -154,10 +154,12 @@ import {
 } from '../hooks/useMapFriendPresence';
 import { dedupeGeocodeResults, localMatchesForSearchQuery } from '../hooks/useMapSearchSession';
 import { useNearbyOffersOnMap } from '../hooks/useNearbyOffersOnMap';
+import { usePublicAppConfig } from '../hooks/usePublicAppConfig';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
+const MAP_SHARE_INVITE_BANNER_DISMISS_KEY = 'snaproad_map_share_banner_dismissed';
 
 
 function placePhotoThumbUri(photoRef?: string, maxWidth = 96): string | undefined {
@@ -386,6 +388,55 @@ export default function MapScreen() {
     friendFollowSessionRef.current = friendFollowSession;
   }, [friendFollowSession]);
 
+  const { friendTrackingEnabled, liveLocationPublishingEnabled, refresh: refreshPublicAppConfig } =
+    usePublicAppConfig(mapTabFocused);
+  const [shareLocEpoch, setShareLocEpoch] = useState(0);
+  const [livePublishPaused503, setLivePublishPaused503] = useState(false);
+  const [shareInviteBannerDismissed, setShareInviteBannerDismissed] = useState(
+    () => storage.getString(MAP_SHARE_INVITE_BANNER_DISMISS_KEY) === '1',
+  );
+
+  const shareLocationStorageOn = useMemo(() => {
+    void shareLocEpoch;
+    return storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
+  }, [shareLocEpoch]);
+
+  const mapCoordsOk = useMemo(() => {
+    const rLat = Math.round(location.lat * 1000);
+    const rLng = Math.round(location.lng * 1000);
+    return !(rLat === 0 && rLng === 0);
+  }, [location.lat, location.lng]);
+
+  const canPublishFriendLocation = Boolean(
+    user?.isPremium &&
+      friendTrackingEnabled &&
+      liveLocationPublishingEnabled &&
+      !livePublishPaused503,
+  );
+
+  useEffect(() => {
+    if (liveLocationPublishingEnabled) setLivePublishPaused503(false);
+  }, [liveLocationPublishingEnabled]);
+
+  const refreshFriendLocations = useCallback(() => {
+    if (!user?.isPremium) {
+      setFriendLocations([]);
+      return;
+    }
+    api
+      .get('/api/friends/list')
+      .then((r) => {
+        if (!r.success) {
+          logMapDataIssue('GET /api/friends/list', r.error);
+          return;
+        }
+        setFriendLocations(mapFriendsApiToLocations(unwrapOffersApiData(r.data)));
+      })
+      .catch((e) => logMapDataIssue('GET /api/friends/list', e));
+  }, [user?.isPremium]);
+
+  const friendLocationsVisible = friendTrackingEnabled ? friendLocations : [];
+
   // ── Navigation hook ──
   const nav = useDriveNavigation({
     userLocation: location,
@@ -402,6 +453,43 @@ export default function MapScreen() {
     enabled: !navVoiceMuted && nav.isNavigating && !navLogicSdkEnabled(),
     drivingMode,
   });
+
+  const enableShareLocationFromMap = useCallback(async () => {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {
+      /* optional */
+    }
+    storage.set(SHARE_LOC_STORAGE_KEY, '1');
+    setShareLocEpoch((n) => n + 1);
+    try {
+      await api.put('/api/friends/location/sharing', {
+        is_sharing: true,
+        lat: location.lat,
+        lng: location.lng,
+      });
+    } catch {
+      /* offline — local preference still on */
+    }
+    let battery_pct: number | undefined;
+    try {
+      const lvl = await Battery.getBatteryLevelAsync();
+      battery_pct = Math.round(Math.max(0, Math.min(1, lvl)) * 100);
+    } catch {
+      /* optional */
+    }
+    const res = await api.post('/api/friends/location/update', {
+      lat: location.lat,
+      lng: location.lng,
+      heading,
+      speed_mph: speed,
+      is_navigating: nav.isNavigating,
+      destination_name: nav.selectedDestination?.name ?? undefined,
+      is_sharing: true,
+      battery_pct,
+    });
+    if (!res.success && res.statusCode === 503) setLivePublishPaused503(true);
+  }, [location.lat, location.lng, heading, speed, nav.isNavigating, nav.selectedDestination?.name]);
 
   const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
   const [navLogicCoords, setNavLogicCoords] = useState<Array<{ latitude: number; longitude: number }>>([]);
@@ -568,6 +656,8 @@ export default function MapScreen() {
   const [isExploring, setIsExploring] = useState(false);
   const [compassMode, setCompassMode] = useState(false);
   const [followMode, setFollowMode] = useState<'free' | 'follow' | 'heading'>('follow');
+  /** Bumps when a nav session starts so Mapbox Camera remounts (clears preview fitBounds stuck state). */
+  const [navCameraSessionKey, setNavCameraSessionKey] = useState(0);
   /** Single distance field for maneuver-aware presets (must match banner/speech). */
   const nextManeuverDistanceMeters = useMemo(() => {
     const d = nav.navigationProgress?.nextStepDistanceMeters;
@@ -964,24 +1054,50 @@ export default function MapScreen() {
   // Fix 6: Persist driving mode on change
   useEffect(() => { storage.set('snaproad_driving_mode', drivingMode); }, [drivingMode]);
 
-  // Fetch saved places + friends on mount (friends require Premium; API enforces too)
+  // Fetch saved places + friends (Premium); list also refreshes on Map focus + interval (see below).
   useEffect(() => {
     refreshSavedPlaces();
     if (!user?.isPremium) {
       setFriendLocations([]);
       return;
     }
-    api
-      .get('/api/friends/list')
-      .then((r) => {
-        if (!r.success) {
-          logMapDataIssue('GET /api/friends/list', r.error);
-          return;
-        }
-        setFriendLocations(mapFriendsApiToLocations(unwrapOffersApiData(r.data)));
-      })
-      .catch((e) => logMapDataIssue('GET /api/friends/list', e));
-  }, [refreshSavedPlaces, user?.isPremium]);
+    refreshFriendLocations();
+  }, [refreshSavedPlaces, user?.isPremium, refreshFriendLocations]);
+
+  useEffect(() => {
+    if (!mapTabFocused || !user?.isPremium) return;
+    refreshFriendLocations();
+  }, [mapTabFocused, user?.isPremium, refreshFriendLocations]);
+
+  useEffect(() => {
+    if (!mapTabFocused || !user?.isPremium) return;
+    const id = setInterval(refreshFriendLocations, 60_000);
+    return () => clearInterval(id);
+  }, [mapTabFocused, user?.isPremium, refreshFriendLocations]);
+
+  /** If local share preference was never set, align with server so Map publishing matches Dashboard / API. */
+  useEffect(() => {
+    if (!mapTabFocused || !user?.isPremium) return;
+    const raw = storage.getString(SHARE_LOC_STORAGE_KEY);
+    if (raw === '1' || raw === '0') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await api.get('/api/friends/location/sharing');
+        if (cancelled || !r.success) return;
+        const inner = unwrapOffersApiData(r.data) as { is_sharing?: boolean } | null;
+        const v = inner && typeof inner.is_sharing === 'boolean' ? inner.is_sharing : null;
+        if (v == null) return;
+        storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
+        setShareLocEpoch((n) => n + 1);
+      } catch {
+        /* offline */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mapTabFocused, user?.isPremium]);
 
   // Fix 8: Offers refresh on significant location change (~1km)
   useEffect(() => {
@@ -1255,6 +1371,7 @@ export default function MapScreen() {
 
   // Fix 7: Supabase realtime for friend locations (INSERT + UPDATE — first share often INSERTs a row).
   useEffect(() => {
+    if (!friendTrackingEnabled || !supabaseConfigured) return;
     const applyRealtimeRow = (payload: { new?: unknown }) => {
       const upd = parseLiveLocationUpdate(payload?.new);
       if (!upd) return;
@@ -1284,7 +1401,7 @@ export default function MapScreen() {
       mapAppRef.prev = next;
     });
     return () => { appSub.remove(); supabase.removeChannel(channel); };
-  }, []);
+  }, [friendTrackingEnabled, supabaseConfigured]);
 
   // Fix 14: Camera tick + odometry. `navDisplayCoord` is SDK-matched when `navLogicSdkEnabled` (single engine); else JS snap.
   useEffect(() => {
@@ -1304,7 +1421,7 @@ export default function MapScreen() {
   };
 
   useEffect(() => {
-    if (!user?.isPremium) return;
+    if (!user?.isPremium || !canPublishFriendLocation) return;
     const sharingOn = storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
     if (!sharingOn) return;
     const rLat = Math.round(location.lat * 1000);
@@ -1325,26 +1442,33 @@ export default function MapScreen() {
         /* optional */
       }
       if (cancelled) return;
-      try {
-        await api.post('/api/friends/location/update', {
-          lat: location.lat,
-          lng: location.lng,
-          heading,
-          speed_mph: speed,
-          is_navigating: nav.isNavigating,
-          destination_name: nav.selectedDestination?.name ?? undefined,
-          is_sharing: true,
-          battery_pct,
-        });
-      } catch {
-        /* offline */
-      }
+      const res = await api.post('/api/friends/location/update', {
+        lat: location.lat,
+        lng: location.lng,
+        heading,
+        speed_mph: speed,
+        is_navigating: nav.isNavigating,
+        destination_name: nav.selectedDestination?.name ?? undefined,
+        is_sharing: true,
+        battery_pct,
+      });
+      if (!res.success && res.statusCode === 503) setLivePublishPaused503(true);
     })();
     return () => { cancelled = true; };
-  }, [user?.isPremium, location.lat, location.lng, heading, speed, nav.isNavigating, nav.selectedDestination?.name]);
+  }, [
+    user?.isPremium,
+    canPublishFriendLocation,
+    shareLocEpoch,
+    location.lat,
+    location.lng,
+    heading,
+    speed,
+    nav.isNavigating,
+    nav.selectedDestination?.name,
+  ]);
 
   useEffect(() => {
-    if (!user?.isPremium) return;
+    if (!user?.isPremium || !canPublishFriendLocation) return;
     let cancelled = false;
     const tick = () => {
       const sharingOn = storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
@@ -1367,20 +1491,17 @@ export default function MapScreen() {
           /* optional */
         }
         if (cancelled) return;
-        try {
-          await api.post('/api/friends/location/update', {
-            lat,
-            lng,
-            heading: h,
-            speed_mph: sp,
-            is_navigating: isNavigating,
-            destination_name: destinationName ?? undefined,
-            is_sharing: true,
-            battery_pct,
-          });
-        } catch {
-          /* offline */
-        }
+        const res = await api.post('/api/friends/location/update', {
+          lat,
+          lng,
+          heading: h,
+          speed_mph: sp,
+          is_navigating: isNavigating,
+          destination_name: destinationName ?? undefined,
+          is_sharing: true,
+          battery_pct,
+        });
+        if (!res.success && res.statusCode === 503) setLivePublishPaused503(true);
       })();
     };
     const id = setInterval(tick, 28_000);
@@ -1388,55 +1509,63 @@ export default function MapScreen() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [user?.isPremium]);
+  }, [user?.isPremium, canPublishFriendLocation, shareLocEpoch]);
 
-  // Fix 1: Reset exploring state + traffic banner + camera lock when nav starts.
-  // Also explicitly jump camera to user location to break out of fitBounds preview.
-  const wasNavForCameraResetRef = useRef(false);
-  const prevShowRoutePreviewRef = useRef(nav.showRoutePreview);
-  useEffect(() => {
-    const wasPreview = prevShowRoutePreviewRef.current;
-    prevShowRoutePreviewRef.current = nav.showRoutePreview;
-
+  // Fix 1: On nav start (false→true), force follow + remount Camera (preview fitBounds leaves native
+  // camera stuck until follow re-binds). useLayoutEffect bumps session key before paint; imperative
+  // flyTo runs after interactions so it does not race the preview bounds animation.
+  const prevIsNavigatingForCameraRef = useRef(false);
+  useLayoutEffect(() => {
     if (!nav.isNavigating) {
-      wasNavForCameraResetRef.current = false;
+      prevIsNavigatingForCameraRef.current = false;
       return;
     }
+    const enteringNav = !prevIsNavigatingForCameraRef.current;
+    prevIsNavigatingForCameraRef.current = true;
+    if (!enteringNav) return;
 
+    setNavCameraSessionKey((k) => k + 1);
     setIsExploring(false);
     setTrafficBannerDismissed(false);
     setCameraLocked(true);
+    userInteracting.current = false;
+    setFollowMode('follow');
+  }, [nav.isNavigating]);
 
-    const startedFromPreview = wasPreview && !nav.showRoutePreview;
-    if (startedFromPreview) {
-      userInteracting.current = false;
-      setFollowMode('follow');
-    }
+  useEffect(() => {
+    if (!nav.isNavigating) return;
 
-    // False→true isNavigating: snap camera to fused puck (not raw GPS) and break preview fitBounds.
-    if (!wasNavForCameraResetRef.current) {
+    let cancelled = false;
+
+    const runSnap = () => {
+      if (cancelled) return;
       const pad = camCtrlRef.current?.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
       const zoom = camCtrlRef.current?.followZoomLevel ?? modeConfig.navZoom;
       const pitch = camCtrlRef.current?.followPitch ?? modeConfig.navPitch;
-      const duration = startedFromPreview ? 720 : 650;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const c = navDisplayCoordRef.current;
-          const h = navDisplayHeadingRef.current;
-          cameraRef.current?.setCamera({
-            centerCoordinate: [c.lng, c.lat],
-            heading: h,
-            zoomLevel: zoom,
-            pitch,
-            padding: pad,
-            animationMode: 'flyTo',
-            animationDuration: duration,
-          });
-        });
+      const c = navDisplayCoordRef.current;
+      const h = navDisplayHeadingRef.current;
+      cameraRef.current?.setCamera({
+        centerCoordinate: [c.lng, c.lat],
+        heading: h,
+        zoomLevel: zoom,
+        pitch,
+        padding: pad,
+        animationMode: 'flyTo',
+        animationDuration: 700,
       });
-    }
-    wasNavForCameraResetRef.current = true;
-  }, [nav.isNavigating, nav.showRoutePreview]);
+    };
+
+    InteractionManager.runAfterInteractions(() => {
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(runSnap);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nav.isNavigating, navCameraSessionKey]);
 
   // Trip end: show summary card directly (no gem bounce animation)
   useEffect(() => {
@@ -2775,6 +2904,7 @@ export default function MapScreen() {
           ) : null}
           {/* Camera: Mapbox follow + useCameraController (single owner — no parallel setCamera nav hook). */}
           <MapboxGL.Camera
+            key={nav.isNavigating ? `nav-follow-${navCameraSessionKey}` : 'map-camera-explore'}
             ref={cameraRef}
             defaultSettings={{
               centerCoordinate: stableCenter,
@@ -2948,7 +3078,7 @@ export default function MapScreen() {
             <CameraMarkers cameras={cameraLocations} onCameraTap={(cam) => setSelectedTrafficCamera(cam)} />
           )}
           <FriendMarkers
-            friends={friendLocations}
+            friends={friendLocationsVisible}
             onFriendTap={(f) => {
               const fresh = isLiveShareFresh(f.isSharing, f.lastUpdated || undefined, f.lat, f.lng);
               Alert.alert(f.name, 'What would you like to do?', [
@@ -3492,6 +3622,46 @@ export default function MapScreen() {
         }}
         styles={s}
       />
+
+      {!nav.isNavigating && !nav.showRoutePreview && user?.isPremium && friendTrackingEnabled && (!liveLocationPublishingEnabled || livePublishPaused503) ? (
+        <View style={[s.friendMapBanner, { top: insets.top + 54, left: 12, right: 12, zIndex: 14 }]}>
+          <Ionicons name="pause-circle-outline" size={18} color="#FBBF24" style={{ marginRight: 8 }} />
+          <Text style={s.friendMapBannerText} numberOfLines={3}>
+            Live location sharing is paused. Friends may not see your position until this is restored.
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              void refreshPublicAppConfig();
+              setLivePublishPaused503(false);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={s.friendMapBannerLink}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {!nav.isNavigating && !nav.showRoutePreview && user?.isPremium && friendTrackingEnabled && liveLocationPublishingEnabled && !livePublishPaused503 && mapCoordsOk && !shareLocationStorageOn && !shareInviteBannerDismissed ? (
+        <View style={[s.friendMapBanner, s.friendMapBannerInvite, { top: insets.top + 54, left: 12, right: 12, zIndex: 14 }]}>
+          <Ionicons name="people-outline" size={18} color="#A78BFA" style={{ marginRight: 8 }} />
+          <Text style={s.friendMapBannerText} numberOfLines={3}>
+            Share your location so friends can see you on the map.
+          </Text>
+          <TouchableOpacity onPress={() => { void enableShareLocationFromMap(); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={s.friendMapBannerLink}>Enable</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              storage.set(MAP_SHARE_INVITE_BANNER_DISMISS_KEY, '1');
+              setShareInviteBannerDismissed(true);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{ marginLeft: 4 }}
+          >
+            <Text style={s.friendMapBannerMuted}>Later</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {nav.isNavigating && ephemeralTurnHint ? (
         <Animated.View
@@ -4180,7 +4350,7 @@ export default function MapScreen() {
       <ConvoyMode
         visible={showConvoy}
         onClose={() => setShowConvoy(false)}
-        members={friendLocations.map((f) => ({ id: f.id, name: f.name, lat: f.lat, lng: f.lng }))}
+        members={friendLocationsVisible.map((f) => ({ id: f.id, name: f.name, lat: f.lat, lng: f.lng }))}
         onStartConvoy={(dest) => {
           setShowConvoy(false);
           void handleSelectResult({ name: dest.name, address: '', lat: dest.lat, lng: dest.lng });
@@ -4348,6 +4518,26 @@ const s = StyleSheet.create({
     }),
   },
   reroutingText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
+  friendMapBanner: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15,23,42,0.92)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    gap: 4,
+    ...shadow(10, 0.2),
+  },
+  friendMapBannerInvite: {
+    borderColor: 'rgba(167,139,250,0.35)',
+  },
+  friendMapBannerText: { flex: 1, color: '#f8fafc', fontSize: 13, fontWeight: '600' },
+  friendMapBannerLink: { color: '#60a5fa', fontWeight: '800', fontSize: 13 },
+  friendMapBannerMuted: { color: '#94a3b8', fontWeight: '600', fontSize: 13 },
 
   // ─── Unified ETA bar: single compact row ────────────────────────────────
   etaBarUnified: {
