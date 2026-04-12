@@ -17,7 +17,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useLocation } from '../hooks/useLocation';
-import { useNavigation as useNav } from '../hooks/useNavigation';
+import { useDriveNavigation } from '../hooks/useDriveNavigation';
 import { usePassiveDriveGems } from '../hooks/usePassiveDriveGems';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -123,7 +123,7 @@ import { parseLiveLocationUpdate } from '../api/dto/realtime';
 import OrionChat, { type OrionPlaceSuggestion } from '../components/orion/OrionChat';
 import OrionQuickMic from '../components/orion/OrionQuickMic';
 import TripSummaryModal from '../components/common/Modal';
-import { useNavigatingState } from '../contexts/NavigatingContext';
+import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
 import { navLogicDebugEnabled, navLogicSdkEnabled, navNativeFullScreenEnabled } from '../navigation/navFeatureFlags';
 import {
@@ -139,8 +139,10 @@ import { polylineFromSdkRoutes, type SdkRoutesNative } from '../navigation/navSd
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import { routeProfileForPlatform } from '../hooks/useNativeNavBridge';
 import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
-import type { TripSummary } from '../hooks/useNavigation';
+import type { TripSummary } from '../hooks/useDriveNavigation';
+import type { RouteProp } from '@react-navigation/native';
 import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
+import type { MapStackParamList, MapStackScreenNavigationProp } from '../navigation/types';
 import { storage } from '../utils/storage';
 import { logMapDataIssue } from '../utils/mapApiDiagnostics';
 import { supabase } from '../lib/supabase';
@@ -343,12 +345,12 @@ const RECOMMENDED_OFFER_MAX_METERS = 20 * 1609.34;
 
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
-  const rnNav = useRNNavigation();
+  const rnNav = useRNNavigation<MapStackScreenNavigationProp>();
   const mapTabFocused = useIsFocused();
-  const { isNavigating: ctxNavigating, setIsNavigating: setNavCtx } = useNavigatingState();
+  const { isNavigating: ctxNavigating, setIsNavigating: setNavCtx } = useNavigationMode();
   const [isNavActive, setIsNavActive] = useState(false);
   const { isLight, colors } = useTheme();
-  const route = useRoute<any>();
+  const route = useRoute<RouteProp<MapStackParamList, 'MapMain' | 'MapRedeem'>>();
   const { user, updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
   /** Keep GPS alive on other tabs when logged in so passive + profile miles stay accurate (battery tradeoff). */
   const { location, heading, speed, accuracy, isLocating, permissionDenied } = useLocation(isNavActive, {
@@ -384,7 +386,7 @@ export default function MapScreen() {
   }, [friendFollowSession]);
 
   // ── Navigation hook ──
-  const nav = useNav({
+  const nav = useDriveNavigation({
     userLocation: location,
     speed,
     heading,
@@ -738,7 +740,7 @@ export default function MapScreen() {
     const nonce = JSON.stringify(result.tripSummary.date + result.tripSummary.distance);
     if (lastNativeNavNonceRef.current === nonce) return;
     lastNativeNavNonceRef.current = nonce;
-    rnNav.setParams({ nativeNavResult: undefined } as any);
+    rnNav.setParams({ nativeNavResult: undefined } as never);
     setNativeNavTripSummary(result.tripSummary);
   }, [route.params?.nativeNavResult, rnNav]);
 
@@ -2249,7 +2251,7 @@ export default function MapScreen() {
     if (!isFinite(p.lat) || !isFinite(p.lng) || (Math.abs(p.lat) < 1e-6 && Math.abs(p.lng) < 1e-6)) return;
     if (lastNavigateFriendNonceRef.current === p.nonce) return;
     lastNavigateFriendNonceRef.current = p.nonce;
-    rnNav.setParams({ navigateToFriend: undefined } as any);
+    rnNav.setParams({ navigateToFriend: undefined } as never);
     const fid = p.friendId ?? '';
     const fresh =
       typeof p.isLiveFresh === 'boolean'
@@ -2270,7 +2272,7 @@ export default function MapScreen() {
     if (!p?.friendId || p.nonce == null) return;
     if (lastMapFocusFriendNonceRef.current === p.nonce) return;
     lastMapFocusFriendNonceRef.current = p.nonce;
-    rnNav.setParams({ mapFocusFriend: undefined } as any);
+    rnNav.setParams({ mapFocusFriend: undefined } as never);
     const fl = friendLocations.find((f) => String(f.id) === String(p.friendId));
     let lat: number | undefined;
     let lng: number | undefined;
@@ -3523,7 +3525,7 @@ export default function MapScreen() {
               drivingMode,
             });
             if (nativeParams) {
-              (rnNav as any).navigate('NativeNavigation', {
+              rnNav.navigate('NativeNavigation', {
                 ...nativeParams,
                 ...(reportHint ? { reportHint } : {}),
               });
@@ -4020,7 +4022,7 @@ export default function MapScreen() {
                           'Traffic cameras on the map are included with SnapRoad Premium. Upgrade to enable this layer.',
                           [
                             { text: 'Not now', style: 'cancel' },
-                            { text: 'Upgrade', onPress: () => rnNav.navigate('Profile' as never) },
+                            { text: 'Upgrade', onPress: () => rnNav.navigate('Profile', { screen: 'ProfileMain' }) },
                           ],
                         );
                         return;
@@ -4060,7 +4062,7 @@ export default function MapScreen() {
         onNavigate={(screen) => {
           /* Menu already closed by HamburgerMenu before this runs (deferred). */
           if (screen === 'Profile' || screen === 'Help') {
-            rnNav.navigate('Profile' as never);
+            rnNav.navigate('Profile', { screen: 'ProfileMain' });
           } else if (screen === 'PlaceAlerts') {
             (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Profile', {
               screen: 'ProfileMain',
@@ -4075,7 +4077,7 @@ export default function MapScreen() {
             if (!user?.isPremium) {
               Alert.alert('Premium feature', 'Convoy and friend meetups require SnapRoad Premium.', [
                 { text: 'Not now', style: 'cancel' },
-                { text: 'Upgrade', onPress: () => rnNav.navigate('Profile' as never) },
+                { text: 'Upgrade', onPress: () => rnNav.navigate('Profile', { screen: 'ProfileMain' }) },
               ]);
               return;
             }
@@ -4084,11 +4086,11 @@ export default function MapScreen() {
             if (!user?.isPremium) {
               Alert.alert('Premium feature', 'Friends and live location require SnapRoad Premium.', [
                 { text: 'Not now', style: 'cancel' },
-                { text: 'Upgrade', onPress: () => rnNav.navigate('Profile' as never) },
+                { text: 'Upgrade', onPress: () => rnNav.navigate('Profile', { screen: 'ProfileMain' }) },
               ]);
               return;
             }
-            rnNav.navigate('Dashboards' as never);
+            rnNav.navigate('Dashboards', { screen: 'DashboardMain' });
           }
         }}
       />

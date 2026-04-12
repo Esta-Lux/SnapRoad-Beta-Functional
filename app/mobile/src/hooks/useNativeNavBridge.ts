@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { tripGemsFromDurationMinutes } from '../utils/tripGems';
-import type { TripSummary } from './useNavigation';
+import type { TripSummary } from './useDriveNavigation';
 
 export interface NativeNavDestination {
   lat: number;

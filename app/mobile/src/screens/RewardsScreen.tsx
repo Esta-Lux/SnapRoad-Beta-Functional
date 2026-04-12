@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
+import type { RewardsStackScreenNavigationProp } from '../navigation/types';
 import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -94,7 +95,7 @@ function parseMyRedemptionsResponse(raw: unknown): UserOfferRedemption[] {
 }
 
 export default function RewardsScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<RewardsStackScreenNavigationProp>();
   const rewardsFocused = useIsFocused();
   const { colors, isLight, shadow } = useTheme();
   const { user, updateUser, statsVersion } = useAuth();
@@ -479,7 +480,7 @@ export default function RewardsScreen() {
           {!user?.isPremium && (
             <TouchableOpacity
               activeOpacity={0.88}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); (navigation as { navigate: (n: string) => void }).navigate('Profile'); }}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('Profile', { screen: 'ProfileMain' }); }}
               style={{ marginHorizontal: 16, marginBottom: 14, borderRadius: 18, overflow: 'hidden', ...shadow(8) }}
             >
               <LinearGradient

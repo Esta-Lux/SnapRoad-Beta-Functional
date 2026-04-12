@@ -25,6 +25,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
+import type { DashboardStackScreenNavigationProp } from '../navigation/types';
 import { api } from '../api/client';
 import Skeleton from '../components/common/Skeleton';
 import Modal from '../components/common/Modal';
@@ -162,7 +163,7 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
 export default function DashboardScreen() {
   const { isLight, colors } = useTheme();
   const { user, updateUser } = useAuth();
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<DashboardStackScreenNavigationProp>();
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const [section, setSection] = useState<Section>('friends');

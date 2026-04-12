@@ -19,6 +19,7 @@ export function NavigatingProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useNavigatingState() {
+/** Tab chrome / global “driving session” flag — hide tab bar while true. */
+export function useNavigationMode() {
   return useContext(NavigatingContext);
 }

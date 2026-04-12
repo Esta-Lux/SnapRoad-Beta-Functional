@@ -5,7 +5,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import type { RouteProp } from '@react-navigation/native';
 import { useNavigation, useRoute, useFocusEffect, useIsFocused } from '@react-navigation/native';
+import type { ProfileStackParamList, ProfileStackScreenNavigationProp } from '../navigation/types';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -55,8 +57,8 @@ import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileS
 import PlaceAlertsDashboardModal from '../components/profile/PlaceAlertsDashboardModal';
 
 export default function ProfileScreen() {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
+  const navigation = useNavigation<ProfileStackScreenNavigationProp>();
+  const route = useRoute<RouteProp<ProfileStackParamList, keyof ProfileStackParamList>>();
   const profileFocused = useIsFocused();
   const { location } = useLocation(false, { paused: !profileFocused });
   const { isLight, colors, toggleTheme } = useTheme();
@@ -165,7 +167,8 @@ export default function ProfileScreen() {
       }
       await logout();
       Alert.alert('Account Deleted', 'Your SnapRoad account has been deleted.');
-      navigation.navigate('Welcome');
+      // Public `Welcome` is not on MainTabParamList; after logout the tree remounts — navigation call is best-effort.
+      (navigation as { navigate: (name: string) => void }).navigate('Welcome');
     } finally {
       setDeletingAccount(false);
     }
