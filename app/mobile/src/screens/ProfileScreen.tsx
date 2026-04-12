@@ -58,7 +58,7 @@ import PlaceAlertsDashboardModal from '../components/profile/PlaceAlertsDashboar
 
 export default function ProfileScreen() {
   const navigation = useNavigation<ProfileStackScreenNavigationProp>();
-  const route = useRoute<RouteProp<ProfileStackParamList, keyof ProfileStackParamList>>();
+  const route = useRoute<RouteProp<ProfileStackParamList, 'ProfileMain'>>();
   const profileFocused = useIsFocused();
   const { location } = useLocation(false, { paused: !profileFocused });
   const { isLight, colors, toggleTheme } = useTheme();

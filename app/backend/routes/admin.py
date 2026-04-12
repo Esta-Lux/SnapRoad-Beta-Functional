@@ -1553,7 +1553,7 @@ def grant_promotions(body: GrantPromotionBody, admin: AdminUser):
             f"users={updated_users} partners={updated_partners} days={body.days} email={body.send_email}",
         )
     except Exception:
-        pass
+        logger.debug("audit log for PROMOTION_GRANTED failed (non-critical)")
 
     return {
         "success": True,

@@ -879,7 +879,7 @@ def get_personalized_offers(
             if exp < datetime.now(timezone.utc):
                 continue
         except Exception:
-            continue
+            continue  # nosec B112
         if not _coord_ok(offer.get("lat"), offer.get("lng")):
             continue
         o_lat = float(offer["lat"])

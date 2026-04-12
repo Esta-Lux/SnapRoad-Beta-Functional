@@ -643,7 +643,7 @@ export default function DashboardScreen() {
           </Text>
           <TouchableOpacity
             activeOpacity={0.9}
-            onPress={() => navigation.navigate('Profile')}
+            onPress={() => navigation.navigate('Profile', { screen: 'ProfileMain' })}
             style={{ marginTop: 22 }}
           >
             <LinearGradient
