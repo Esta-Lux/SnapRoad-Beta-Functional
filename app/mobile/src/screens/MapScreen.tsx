@@ -208,13 +208,40 @@ const MAP_STYLES = [
   { key: 'satellite', label: 'Satellite', url: 'mapbox://styles/mapbox/standard-satellite', icon: 'earth-outline' as const },
 ] as const;
 
-/** Android RNMBXCameraManager.setFollowPadding calls asMap() — undefined breaks Fabric (ClassCastException). */
+/**
+ * Android RNMBXCameraManager.setFollowPadding calls asMap() — undefined breaks Fabric (ClassCastException).
+ * Non-navigation fallback is zero; during navigation, use {@link navFallbackFollowPadding} so the puck
+ * sits at the bottom third even before the first `useCameraController` tick.
+ */
 const MAPBOX_DEFAULT_FOLLOW_PADDING = {
   paddingTop: 0,
   paddingRight: 0,
   paddingBottom: 0,
   paddingLeft: 0,
 } as const;
+
+/**
+ * Mode-aware follow-padding used when the puck-follow camera is active but
+ * `useCameraController` has not yet produced a preset (e.g. first render frame
+ * after navigation starts). Uses the mode's `cameraPaddingBottom` so the puck
+ * sits at the bottom third from the very first frame.
+ */
+function navFallbackFollowPadding(
+  mc: { cameraPaddingBottom: number },
+  safeBottom: number,
+): {
+  paddingTop: number;
+  paddingBottom: number;
+  paddingLeft: number;
+  paddingRight: number;
+} {
+  return {
+    paddingTop: 330,
+    paddingBottom: mc.cameraPaddingBottom > 0 ? mc.cameraPaddingBottom + safeBottom : 90 + safeBottom,
+    paddingLeft: 28,
+    paddingRight: 28,
+  };
+}
 
 const REPORT_TYPES = [
   { type: 'police', label: 'Police', icon: 'shield-outline' as const },
@@ -242,6 +269,24 @@ function analyzeCongestion(congestion?: string[]): {
   if (heavyRatio > 0.08 || modRatio > 0.35)
                           return { level: 'moderate', delayMin: Math.max(1, Math.round((heavyRatio * 10) + (modRatio * 4))), heavyRatio };
   return { level: 'low', delayMin: 0, heavyRatio };
+}
+
+/**
+ * Check whether any of the upcoming congestion edges (within ~`lookAheadEdges` of
+ * the current segment) are heavy or severe. Used to boost turn card preview distance.
+ */
+function hasSevereCongestionAhead(
+  congestion: string[] | undefined,
+  currentSegIdx: number,
+  lookAheadEdges = 12,
+): boolean {
+  if (!congestion || congestion.length === 0) return false;
+  const from = Math.max(0, currentSegIdx);
+  const to = Math.min(congestion.length, from + lookAheadEdges);
+  for (let i = from; i < to; i++) {
+    if (congestion[i] === 'heavy' || congestion[i] === 'severe') return true;
+  }
+  return false;
 }
 
 function timeAgo(iso: string): string {
@@ -2703,22 +2748,32 @@ export default function MapScreen() {
             followPitch={
               camCtrl
                 ? camCtrl.followPitch
-                : exploreTracksUser
-                  ? modeConfig.explorePitch
-                  : compassMode
-                    ? 45
-                    : undefined
+                : nav.isNavigating && cameraLocked
+                  ? modeConfig.navPitch
+                  : exploreTracksUser
+                    ? modeConfig.explorePitch
+                    : compassMode
+                      ? 45
+                      : undefined
             }
             followZoomLevel={
               camCtrl
                 ? camCtrl.followZoomLevel
-                : exploreTracksUser
-                  ? modeConfig.exploreZoom
-                  : compassMode
-                    ? 15
-                    : undefined
+                : nav.isNavigating && cameraLocked
+                  ? modeConfig.navZoom
+                  : exploreTracksUser
+                    ? modeConfig.exploreZoom
+                    : compassMode
+                      ? 15
+                      : undefined
             }
-            followPadding={camCtrl?.followPadding ?? MAPBOX_DEFAULT_FOLLOW_PADDING}
+            followPadding={
+              camCtrl
+                ? camCtrl.followPadding
+                : nav.isNavigating && cameraLocked
+                  ? navFallbackFollowPadding(modeConfig, insets.bottom)
+                  : MAPBOX_DEFAULT_FOLLOW_PADDING
+            }
           />
 
           {/* Terrain: Standard + Satellite (classic streets/dark URLs removed). */}
@@ -3137,6 +3192,10 @@ export default function MapScreen() {
           mode: drivingMode,
           inConfirmationWindow: inConfirmWindow,
           nextStep: nextManeuverCoord,
+          congestionNearManeuver: hasSevereCongestionAhead(
+            nav.navigationData?.congestion,
+            nav.navigationProgress?.snapped?.segmentIndex ?? 0,
+          ),
         });
 
         const distParts = formatTurnDistanceForCard(liveDistMeters);

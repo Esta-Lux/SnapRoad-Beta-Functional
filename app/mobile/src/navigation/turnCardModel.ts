@@ -10,6 +10,13 @@ const FT_PER_M = 3.28084;
 /** Adaptive-mode default (~236 ft). Prefer {@link getTurnCardNavTuning} for mode-specific values. */
 export const ACTIVE_MANEUVER_METERS = 72;
 
+/**
+ * Preview distance multiplier when heavy/severe congestion is detected near the
+ * next maneuver. In congested traffic the driver approaches slowly and needs
+ * more time to read the instruction, so we show the card 25% earlier.
+ */
+const CONGESTION_PREVIEW_BOOST = 1.25;
+
 export { previewDistanceMaxMeters };
 
 /**
@@ -186,6 +193,12 @@ export function resolveTurnCardState(args: {
   mode: DrivingMode;
   inConfirmationWindow: boolean;
   nextStep: DirectionsStep | null | undefined;
+  /**
+   * When the road ahead has severe/heavy congestion near the next maneuver,
+   * pass `true` to show the turn card earlier (user is approaching slowly,
+   * needs more time to read the instruction).
+   */
+  congestionNearManeuver?: boolean;
 }): TurnCardState {
   const {
     distanceToNextManeuverM: d,
@@ -193,6 +206,7 @@ export function resolveTurnCardState(args: {
     mode,
     inConfirmationWindow,
     nextStep,
+    congestionNearManeuver = false,
   } = args;
 
   const tc = getTurnCardNavTuning(mode);
@@ -213,7 +227,8 @@ export function resolveTurnCardState(args: {
     return 'confirm';
   }
 
-  const pMax = previewDistanceMaxMeters(speedMph, mode);
+  const pMax = previewDistanceMaxMeters(speedMph, mode)
+    * (congestionNearManeuver ? CONGESTION_PREVIEW_BOOST : 1);
 
   if (hasUpcomingTurn && d > pMax) {
     return 'cruise';

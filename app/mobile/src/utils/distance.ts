@@ -450,11 +450,24 @@ export function stepEndCumulativeMeters(steps: DirectionsStep[]): number[] {
 /**
  * Current step index from distance along the polyline (`cumFromStartMeters` from {@link projectOntoPolyline}),
  * keeping turn cards / lanes in sync with the rendered route.
+ *
+ * When `prevStepIndex` is supplied the function applies forward-only hysteresis:
+ * the index can only regress if the user is more than `hysteresisBackM` meters
+ * before the previous step boundary. This prevents oscillation at maneuver points
+ * caused by ±10 m GPS jitter.
+ *
+ * @param steps Mapbox directions steps for the active route.
+ * @param cumAlongPolylineMeters Cumulative meters along the polyline (from route start).
+ * @param polyline Full route polyline coordinates.
+ * @param prevStepIndex Previous step index to apply hysteresis against. Omit on first call.
+ * @param hysteresisBackM Meters behind the previous step boundary before allowing regression (default 30).
  */
 export function currentStepIndexAlongRoute(
   steps: DirectionsStep[],
   cumAlongPolylineMeters: number,
   polyline: Coordinate[],
+  prevStepIndex?: number,
+  hysteresisBackM = 30,
 ): number {
   if (!steps.length) return 0;
   const ends = stepEndCumulativeMeters(steps);
@@ -465,10 +478,24 @@ export function currentStepIndexAlongRoute(
     u = (u / pLen) * gTotal;
   }
   const EPS = 5;
+  let idx = Math.max(0, ends.length - 1);
   for (let i = 0; i < ends.length; i++) {
-    if (u < ends[i]! - EPS) return i;
+    if (u < ends[i]! - EPS) {
+      idx = i;
+      break;
+    }
   }
-  return Math.max(0, ends.length - 1);
+
+  // Hysteresis: don't regress to an earlier step unless clearly behind its boundary.
+  if (prevStepIndex != null && idx < prevStepIndex) {
+    // Boundary of the step we want to regress to — the maneuver point user supposedly hasn't reached.
+    const prevBoundary = prevStepIndex > 0 ? (ends[prevStepIndex - 1] ?? 0) : 0;
+    if (u >= prevBoundary - hysteresisBackM) {
+      return prevStepIndex;
+    }
+  }
+
+  return idx;
 }
 
 /** Passed into {@link buildRouteSplitRingsFromProgress} from navigation (monotonic cumulative progress). */

@@ -30,6 +30,18 @@ type SpeedZoomPoint = { speed: number; zoom: number };
 /** Reserved top UI space (turn banner / cards) to keep route context visible ahead. */
 export const NAV_UI_HEIGHT = 120;
 
+// SPORT high-speed camera constants
+/** MPH threshold above which SPORT mode extends the camera look-ahead. */
+const SPORT_HIGH_SPEED_MPH = 60;
+/** Maximum zoom pullback (zoom levels) at very high SPORT speeds. */
+const SPORT_MAX_ZOOM_PULLBACK = 0.3;
+/** Zoom reduction per MPH above {@link SPORT_HIGH_SPEED_MPH}. */
+const SPORT_ZOOM_RATE_PER_MPH = 0.008;
+/** Maximum extra top-padding (px) added for SPORT look-ahead. */
+const SPORT_MAX_PAD_TOP_BOOST = 50;
+/** Top-padding increase per MPH above {@link SPORT_HIGH_SPEED_MPH}. */
+const SPORT_PAD_RATE_PER_MPH = 1.5;
+
 const SPEED_ZOOM_CURVES: Record<DrivingMode, SpeedZoomPoint[]> = {
   calm: [
     { speed: 0, zoom: 18.35 },
@@ -159,11 +171,28 @@ export function getCameraPreset({
   const maneuverZoomAdjustment =
     nextManeuverDistanceMeters < 55 ? 0.42 : nextManeuverDistanceMeters < 115 ? 0.26 : 0;
   zoom += maneuverZoomAdjustment;
+
+  // SPORT: at highway speeds pull back zoom slightly so more road is visible.
+  if (mode === 'sport' && mph > SPORT_HIGH_SPEED_MPH) {
+    zoom -= Math.min(SPORT_MAX_ZOOM_PULLBACK, (mph - SPORT_HIGH_SPEED_MPH) * SPORT_ZOOM_RATE_PER_MPH);
+  }
+
   zoom = clamp(zoom, 15.15, 18.92);
 
-  const maneuverPitchAdjustment =
-    nextManeuverDistanceMeters < 60 ? -6 : nextManeuverDistanceMeters < 120 ? -4 : 0;
-  const pitch = clamp(cfg.basePitch + maneuverPitchAdjustment, cfg.minPitch, cfg.maxPitch);
+  // ADAPTIVE: interpolate pitch between minPitch (standing) and maxPitch (highway),
+  // giving users the "reactive" camera feel the mode name implies.
+  let pitch: number;
+  if (mode === 'adaptive') {
+    const speedFraction = clamp(mph / 70, 0, 1);
+    const basePitch = cfg.minPitch + speedFraction * (cfg.maxPitch - cfg.minPitch);
+    const maneuverPitchAdj =
+      nextManeuverDistanceMeters < 60 ? -6 : nextManeuverDistanceMeters < 120 ? -4 : 0;
+    pitch = clamp(basePitch + maneuverPitchAdj, cfg.minPitch, cfg.maxPitch);
+  } else {
+    const maneuverPitchAdjustment =
+      nextManeuverDistanceMeters < 60 ? -6 : nextManeuverDistanceMeters < 120 ? -4 : 0;
+    pitch = clamp(cfg.basePitch + maneuverPitchAdjustment, cfg.minPitch, cfg.maxPitch);
+  }
 
   // Mapbox follow-padding behavior: larger bottom padding moves the puck UP.
   // For a lower puck position, bias to larger top padding and moderate bottom padding.
@@ -173,6 +202,11 @@ export function getCameraPreset({
   let paddingBottom = cfg.basePadBottom + safeAreaBottom;
   if (nextManeuverDistanceMeters < cfg.turnApproachMeters) {
     paddingTop += cfg.turnApproachPadBoost;
+  }
+
+  // SPORT: at high speed add extra top padding (look-ahead) so more road extends ahead.
+  if (mode === 'sport' && mph > SPORT_HIGH_SPEED_MPH) {
+    paddingTop += Math.min(SPORT_MAX_PAD_TOP_BOOST, (mph - SPORT_HIGH_SPEED_MPH) * SPORT_PAD_RATE_PER_MPH);
   }
 
   // RHD: a touch more right inset at speed keeps the puck slightly left of center — cleaner forward field
