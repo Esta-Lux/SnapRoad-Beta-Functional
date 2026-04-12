@@ -84,7 +84,13 @@ import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navig
 import NavigationDebugHud from '../components/navigation/NavigationDebugHud';
 import { labelAnchorLayerIdForStyleUrl, RouteLineLayerIds } from '../map/mapLayerRegistry';
 import NavigationUserSymbolLayers from '../components/map/NavigationUserSymbolLayers';
-import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
+import {
+  getPrimaryBannerText,
+  getSecondaryBannerText,
+  isActionableGuidanceStep,
+  mergeLaneSources,
+  pickGuidanceStep,
+} from '../navigation/bannerInstructions';
 import { isLiveShareFresh } from '../lib/friendPresence';
 import type { MapFocusFriendParams, NavigateToFriendParams } from '../types';
 import {
@@ -97,6 +103,7 @@ import {
   buildChainInstruction,
   iconManeuverForState,
   iconManeuverKindForState,
+  resolveManeuverFieldsForTurnCard,
   shouldShowRoadDisambiguation,
 } from '../navigation/turnCardModel';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
@@ -3428,6 +3435,16 @@ export default function MapScreen() {
         const distParts = formatTurnDistanceForCard(liveDistMeters);
         const destinationName = nav.navigationData?.destination?.name ?? null;
         const banner = prog?.banner ?? null;
+        /** When polyline "next" lags behind route step index, rich UI follows the true upcoming step. */
+        const progressNavStepForRich =
+          nextStepIsCurrentStep && prog.followingStep ? prog.followingStep : prog.nextStep;
+        const maneuverFields = resolveManeuverFieldsForTurnCard({
+          nextManeuverCoord,
+          instructionSource: instructionSrc ?? 'js',
+          progNext: prog.nextStep,
+        });
+        const chainStepForBuild =
+          nextStepIsCurrentStep && prog.followingStep ? prog.followingStep : prog.nextStep;
         const useBannerCopy =
           !!banner && (!!nextManeuverCoord || (instructionSrc === 'sdk' && !!prog.nextStep));
 
@@ -3449,11 +3466,19 @@ export default function MapScreen() {
               break;
             case 'preview':
             case 'active':
-            default:
-              primary = banner!.primaryInstruction;
-              secondary = banner!.secondaryInstruction ?? undefined;
+            default: {
+              if (nextStepIsCurrentStep && nextManeuverCoord) {
+                const fromStep = getPrimaryBannerText(nextManeuverCoord).trim();
+                primary = fromStep || banner!.primaryInstruction;
+                secondary =
+                  getSecondaryBannerText(nextManeuverCoord) ?? banner!.secondaryInstruction ?? undefined;
+              } else {
+                primary = banner!.primaryInstruction;
+                secondary = banner!.secondaryInstruction ?? undefined;
+              }
               if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
               break;
+            }
           }
         } else {
           switch (cardState) {
@@ -3491,16 +3516,32 @@ export default function MapScreen() {
         }
 
         const maneuverIconKey = iconManeuverForState(cardState, turnCurrentStep, nextManeuverCoord);
-        const chainInstruction = buildChainInstruction(prog.nextStep);
+        const chainInstruction = buildChainInstruction(chainStepForBuild);
         const maneuverKindResolved =
-          banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
-        const signalResolved = banner?.signal ?? prog.nextStep?.signal;
+          nextManeuverCoord != null
+            ? maneuverFields.kind
+            : banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
+        const signalResolved = banner?.signal ?? progressNavStepForRich?.signal;
         const lanesResolved =
-          banner?.lanes?.length ? banner.lanes : prog.nextStep?.lanes?.length ? prog.nextStep.lanes : undefined;
+          nextStepIsCurrentStep && progressNavStepForRich?.lanes?.length
+            ? progressNavStepForRich.lanes
+            : banner?.lanes?.length
+              ? banner.lanes
+              : prog.nextStep?.lanes?.length
+                ? prog.nextStep.lanes
+                : undefined;
         const shieldsResolved =
-          banner?.shields?.length ? banner.shields : prog.nextStep?.shields?.length ? prog.nextStep.shields : undefined;
+          nextStepIsCurrentStep && progressNavStepForRich?.shields?.length
+            ? progressNavStepForRich.shields
+            : banner?.shields?.length
+              ? banner.shields
+              : prog.nextStep?.shields?.length
+                ? prog.nextStep.shields
+                : undefined;
         const roundaboutExitResolved =
-          banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
+          nextStepIsCurrentStep && progressNavStepForRich?.roundaboutExitNumber != null
+            ? progressNavStepForRich.roundaboutExitNumber
+            : banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
         const disambigName =
           shouldShowRoadDisambiguation(turnCurrentStep?.name) ? (turnCurrentStep?.name ?? null) :
           shouldShowRoadDisambiguation(nextManeuverCoord?.name) ? (nextManeuverCoord?.name ?? null) :
@@ -3523,8 +3564,8 @@ export default function MapScreen() {
               secondaryInstruction={secondary}
               maneuverForIcon={maneuverIconKey}
               maneuverKind={maneuverKindResolved}
-              maneuverType={prog.nextStep?.rawType ?? ''}
-              maneuverModifier={prog.nextStep?.rawModifier ?? ''}
+              maneuverType={maneuverFields.rawType}
+              maneuverModifier={maneuverFields.rawModifier}
               signal={signalResolved}
               lanes={lanesResolved}
               shields={shieldsResolved}

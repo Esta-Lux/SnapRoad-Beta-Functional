@@ -2,6 +2,7 @@ import type { DrivingMode } from '../types';
 import type { DirectionsStep } from '../lib/directions';
 import type { ManeuverKind, NavStep } from './navModel';
 import { getTurnCardNavTuning, previewDistanceMaxMeters } from './navModeProfile';
+import { navManeuverFieldsFromDirectionsStep } from './navStepsFromDirections';
 
 export type TurnCardState = 'preview' | 'active' | 'confirm' | 'cruise';
 
@@ -288,4 +289,36 @@ export function iconManeuverKindForState(
   if (state === 'confirm' || state === 'cruise') return 'straight';
   if ((state === 'active' || state === 'preview') && navStep) return navStep.kind;
   return 'straight';
+}
+
+/**
+ * Turn-card glyph fields aligned with the card's next maneuver step when that
+ * step carries Mapbox maneuver data; SDK synthetic steps fall back to progNext.
+ */
+export function resolveManeuverFieldsForTurnCard(args: {
+  nextManeuverCoord: DirectionsStep | null | undefined;
+  instructionSource: string;
+  progNext: NavStep | null | undefined;
+}): { rawType: string; rawModifier: string; kind: ManeuverKind } {
+  const { nextManeuverCoord, instructionSource, progNext } = args;
+  if (nextManeuverCoord) {
+    const mm = nextManeuverCoord.mapboxManeuver;
+    const hasMapbox = mm != null && (mm.type != null || mm.modifier != null);
+    if (instructionSource === 'sdk' && !hasMapbox && progNext) {
+      return {
+        rawType: progNext.rawType,
+        rawModifier: progNext.rawModifier,
+        kind: progNext.kind,
+      };
+    }
+    return navManeuverFieldsFromDirectionsStep(nextManeuverCoord);
+  }
+  if (progNext) {
+    return {
+      rawType: progNext.rawType,
+      rawModifier: progNext.rawModifier,
+      kind: progNext.kind,
+    };
+  }
+  return { rawType: '', rawModifier: '', kind: 'straight' };
 }

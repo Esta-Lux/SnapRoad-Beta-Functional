@@ -127,6 +127,19 @@ function rawTypeModifierFromStep(step: DirectionsStep): { rawType: string; rawMo
   return { rawType: 'continue', rawModifier: 'straight' };
 }
 
+/**
+ * Raw Mapbox maneuver + {@link ManeuverKind} for a Directions API step.
+ * Use this for turn-card glyphs so icons match the same step as distance / primary copy.
+ */
+export function navManeuverFieldsFromDirectionsStep(step: DirectionsStep): {
+  rawType: string;
+  rawModifier: string;
+  kind: ManeuverKind;
+} {
+  const { rawType, rawModifier } = rawTypeModifierFromStep(step);
+  return { rawType, rawModifier, kind: resolveManeuverKind(rawType, rawModifier) };
+}
+
 function extractRoadSignal(step: DirectionsStep): RoadSignal {
   const ixns = step.intersections as
     | Array<{
