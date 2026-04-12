@@ -1383,18 +1383,19 @@ export default function MapScreen() {
       // When transitioning into navigation (e.g. from route preview fitBounds),
       // Mapbox Camera's followUserLocation alone may not re-center; issue an
       // explicit setCamera to snap the viewport to the user's current location.
+      // Deps intentionally limited to nav.isNavigating — we only want this
+      // camera jump on the false→true transition, using whatever location/
+      // heading/preset values are current in this render cycle.
       if (!wasNavigatingRef.current) {
         const pad = camCtrl?.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
-        requestAnimationFrame(() => {
-          cameraRef.current?.setCamera({
-            centerCoordinate: [location.lng, location.lat],
-            heading: heading,
-            zoomLevel: camCtrl?.followZoomLevel ?? modeConfig.navZoom,
-            pitch: camCtrl?.followPitch ?? modeConfig.navPitch,
-            padding: pad,
-            animationMode: 'flyTo',
-            animationDuration: 650,
-          });
+        cameraRef.current?.setCamera({
+          centerCoordinate: [location.lng, location.lat],
+          heading: heading,
+          zoomLevel: camCtrl?.followZoomLevel ?? modeConfig.navZoom,
+          pitch: camCtrl?.followPitch ?? modeConfig.navPitch,
+          padding: pad,
+          animationMode: 'flyTo',
+          animationDuration: 650,
         });
       }
     }
