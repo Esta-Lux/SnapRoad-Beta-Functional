@@ -87,7 +87,7 @@ const FriendListCard = memo(function FriendListCard({
   const sharingWithCoords = friend.is_sharing === true && hasValidFriendCoords(friend.lat, friend.lng);
   const showBattery =
     sharingWithCoords && friend.battery_pct != null && Number.isFinite(friend.battery_pct);
-  const showLastUpdated = lastUpdatedLabel && friend.status !== 'pending';
+  const showLastUpdated = lastUpdatedLabel && friend.status !== 'pending' && !presence.isLiveFresh;
 
   const { text: pillText, tone: pillTone } = pillToneAndLabel(presence, friend);
   const { bg: pillBg, fg: pillFg } = pillStyle(pillTone, theme.primary);
@@ -154,7 +154,7 @@ const FriendListCard = memo(function FriendListCard({
                   <Text style={[styles.batTxt, { color: theme.sub }]}>{Math.round(friend.battery_pct!)}%</Text>
                 </View>
               ) : null}
-              {showLastUpdated && !presence.isLiveFresh ? (
+              {showLastUpdated ? (
                 <Text style={[styles.metaTimestamp, { color: theme.sub }]}>{lastUpdatedLabel}</Text>
               ) : null}
             </View>

@@ -280,11 +280,12 @@ export default function DashboardScreen() {
 
   /** Re-render friend timestamps every 15 s so "just now" → "1m ago" updates live. */
   const [, setTickClock] = useState(0);
+  const hasFriends = friends.length > 0;
   useEffect(() => {
-    if (!friendsTabActive || friends.length === 0) return;
+    if (!friendsTabActive || !hasFriends) return;
     const id = setInterval(() => setTickClock((n) => n + 1), 15_000);
     return () => clearInterval(id);
-  }, [friendsTabActive, friends.length]);
+  }, [friendsTabActive, hasFriends]);
 
   useEffect(() => {
     if (!friendsTabActive) return;
@@ -343,10 +344,12 @@ export default function DashboardScreen() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_locations' }, (payload: { new?: Record<string, unknown> }) => applyLiveLocation(payload.new))
       .subscribe();
     /** Re-subscribe after app returns from background — the websocket may have gone stale. */
+    const channelAppRef = { prev: AppState.currentState };
     const appSub = AppState.addEventListener('change', (next) => {
-      if (appStateRef.current.match(/inactive|background/) && next === 'active') {
+      if (channelAppRef.prev.match(/inactive|background/) && next === 'active') {
         try { channel.subscribe(); } catch { /* safe */ }
       }
+      channelAppRef.prev = next;
     });
     return () => {
       appSub.remove();
