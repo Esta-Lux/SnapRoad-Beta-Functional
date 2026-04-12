@@ -2,6 +2,7 @@ import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMe
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
   Platform, Keyboard, Alert, Switch, Pressable, Image, Dimensions,
+  AppState,
 } from 'react-native';
 import Animated, {
   FadeIn, FadeOut, SlideInDown, SlideOutDown,
@@ -1264,7 +1265,15 @@ export default function MapScreen() {
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, applyRealtimeRow)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_locations' }, applyRealtimeRow)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    /** Re-subscribe after app returns from background — the websocket may have gone stale. */
+    const mapAppRef = { prev: AppState.currentState };
+    const appSub = AppState.addEventListener('change', (next) => {
+      if (mapAppRef.prev.match(/inactive|background/) && next === 'active') {
+        try { channel.subscribe(); } catch { /* safe */ }
+      }
+      mapAppRef.prev = next;
+    });
+    return () => { appSub.remove(); supabase.removeChannel(channel); };
   }, []);
 
   // Fix 14: GPS feed with jitter threshold (route progress uses lat/lng only — do not spam on heading noise).

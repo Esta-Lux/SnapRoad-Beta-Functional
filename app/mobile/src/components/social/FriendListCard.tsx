@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Image, Pressable } from 'reac
 import { Ionicons } from '@expo/vector-icons';
 import type { Friend } from '../../types';
 import type { FriendPresence } from '../../lib/friendPresence';
-import { formatDistanceMeters, hasValidFriendCoords } from '../../lib/friendPresence';
+import { formatDistanceMeters, hasValidFriendCoords, formatLastUpdatedShort } from '../../lib/friendPresence';
 
 export type FriendListCardTheme = {
   cardBg: string;
@@ -77,6 +77,7 @@ const FriendListCard = memo(function FriendListCard({
     .toUpperCase();
 
   const distLabel = formatDistanceMeters(presence.distanceFromMeM);
+  const lastUpdatedLabel = formatLastUpdatedShort(friend.last_updated);
   const parts = [presence.sublabel].filter(Boolean);
   if (distLabel && presence.distanceFromMeM != null && presence.distanceFromMeM > 0) {
     parts.push(`~${distLabel}`);
@@ -86,6 +87,7 @@ const FriendListCard = memo(function FriendListCard({
   const sharingWithCoords = friend.is_sharing === true && hasValidFriendCoords(friend.lat, friend.lng);
   const showBattery =
     sharingWithCoords && friend.battery_pct != null && Number.isFinite(friend.battery_pct);
+  const showLastUpdated = lastUpdatedLabel && friend.status !== 'pending';
 
   const { text: pillText, tone: pillTone } = pillToneAndLabel(presence, friend);
   const { bg: pillBg, fg: pillFg } = pillStyle(pillTone, theme.primary);
@@ -140,14 +142,21 @@ const FriendListCard = memo(function FriendListCard({
               {secondaryLine}
             </Text>
           ) : null}
-          {showBattery ? (
-            <View style={styles.batRow}>
-              <Ionicons
-                name={presence.isLiveFresh ? 'battery-charging-outline' : 'battery-half-outline'}
-                size={13}
-                color={friend.battery_pct! > 20 ? '#34C759' : '#FF9500'}
-              />
-              <Text style={[styles.batTxt, { color: theme.sub }]}>{Math.round(friend.battery_pct!)}%</Text>
+          {(showBattery || showLastUpdated) ? (
+            <View style={styles.metaRow}>
+              {showBattery ? (
+                <View style={styles.batRow}>
+                  <Ionicons
+                    name={presence.isLiveFresh ? 'battery-charging-outline' : 'battery-half-outline'}
+                    size={13}
+                    color={friend.battery_pct! > 20 ? '#34C759' : '#FF9500'}
+                  />
+                  <Text style={[styles.batTxt, { color: theme.sub }]}>{Math.round(friend.battery_pct!)}%</Text>
+                </View>
+              ) : null}
+              {showLastUpdated && !presence.isLiveFresh ? (
+                <Text style={[styles.metaTimestamp, { color: theme.sub }]}>{lastUpdatedLabel}</Text>
+              ) : null}
             </View>
           ) : null}
         </View>
@@ -212,8 +221,10 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
   liveDot: { width: 6, height: 6, borderRadius: 3 },
   secondary: { fontSize: 13, fontWeight: '500', lineHeight: 18, opacity: 0.92 },
-  batRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  batRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   batTxt: { fontSize: 11, fontWeight: '600' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 },
+  metaTimestamp: { fontSize: 11, fontWeight: '500', opacity: 0.7 },
   trailing: { flexDirection: 'row', alignItems: 'center', paddingLeft: 4 },
   moreHit: { paddingVertical: 8, paddingHorizontal: 4 },
   chevron: { marginLeft: 2, opacity: 0.38 },

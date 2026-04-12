@@ -278,16 +278,25 @@ export default function DashboardScreen() {
     };
   }, [section, loadFriends, loadPending, loadCategories]);
 
+  /** Re-render friend timestamps every 15 s so "just now" → "1m ago" updates live. */
+  const [, setTickClock] = useState(0);
+  useEffect(() => {
+    if (!friendsTabActive || friends.length === 0) return;
+    const id = setInterval(() => setTickClock((n) => n + 1), 15_000);
+    return () => clearInterval(id);
+  }, [friendsTabActive, friends.length]);
+
   useEffect(() => {
     if (!friendsTabActive) return;
     const sub = AppState.addEventListener('change', (next) => {
       if (appStateRef.current.match(/inactive|background/) && next === 'active') {
         loadFriends({ silent: true });
+        loadPending();
       }
       appStateRef.current = next;
     });
     return () => sub.remove();
-  }, [friendsTabActive, loadFriends]);
+  }, [friendsTabActive, loadFriends, loadPending]);
 
   useEffect(() => {
     if (activeCategoryId === 'all') return;
@@ -333,7 +342,14 @@ export default function DashboardScreen() {
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, (payload: { new?: Record<string, unknown> }) => applyLiveLocation(payload.new))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_locations' }, (payload: { new?: Record<string, unknown> }) => applyLiveLocation(payload.new))
       .subscribe();
+    /** Re-subscribe after app returns from background — the websocket may have gone stale. */
+    const appSub = AppState.addEventListener('change', (next) => {
+      if (appStateRef.current.match(/inactive|background/) && next === 'active') {
+        try { channel.subscribe(); } catch { /* safe */ }
+      }
+    });
     return () => {
+      appSub.remove();
       supabase.removeChannel(channel);
     };
   }, [friendsTabActive]);
@@ -964,18 +980,29 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </ScrollView>
 
-          <View style={[styles.friendsSectionHeader, { borderBottomColor: isLight ? 'rgba(60,60,67,0.08)' : 'rgba(255,255,255,0.07)' }]}>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={[styles.friendsSectionTitle, { color: colors.text }]}>Friends</Text>
-              <Text style={[styles.friendsSectionCaption, { color: colors.textSecondary }]}>
-                {liveFreshCount > 0 ? `${liveFreshCount} sharing live now` : 'Your trusted circle'}
-              </Text>
-            </View>
-            <View style={styles.shareLocRow}>
-              <Text style={[styles.shareLocLabel, { color: colors.textSecondary }]}>Share my location</Text>
+          <View style={[styles.shareLocCard, { backgroundColor: isLight ? (isSharingLocation ? 'rgba(52,199,89,0.08)' : 'rgba(60,60,67,0.04)') : (isSharingLocation ? 'rgba(52,199,89,0.12)' : 'rgba(255,255,255,0.05)') }]}>
+            <View style={styles.shareLocCardInner}>
+              <View style={[styles.shareLocIcon, { backgroundColor: isSharingLocation ? 'rgba(52,199,89,0.18)' : (isLight ? 'rgba(60,60,67,0.08)' : 'rgba(255,255,255,0.1)') }]}>
+                <Ionicons
+                  name={isSharingLocation ? 'location' : 'location-outline'}
+                  size={20}
+                  color={isSharingLocation ? '#34C759' : colors.textSecondary}
+                />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[styles.shareLocTitle, { color: colors.text }]}>
+                  {isSharingLocation ? 'Sharing your location' : 'Location sharing off'}
+                </Text>
+                <Text style={[styles.shareLocCaption, { color: colors.textSecondary }]}>
+                  {isSharingLocation
+                    ? `Visible to ${friends.length} friend${friends.length !== 1 ? 's' : ''}`
+                    : 'Friends cannot see where you are'}
+                </Text>
+              </View>
               <Switch
                 value={isSharingLocation}
                 onValueChange={async (v) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   setIsSharingLocation(v);
                   storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
                   if (v && !myCoord) shareLocationNeedsCoordsSyncRef.current = true;
@@ -989,9 +1016,22 @@ export default function DashboardScreen() {
                     /* preference stays in local storage */
                   }
                 }}
-                trackColor={{ false: colors.border, true: colors.primary }}
+                trackColor={{ false: colors.border, true: '#34C759' }}
                 thumbColor="#fff"
               />
+            </View>
+          </View>
+
+          <View style={[styles.friendsSectionHeader, { borderBottomColor: isLight ? 'rgba(60,60,67,0.08)' : 'rgba(255,255,255,0.07)' }]}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.friendsSectionTitle, { color: colors.text }]}>Friends</Text>
+              <Text style={[styles.friendsSectionCaption, { color: colors.textSecondary }]}>
+                {liveFreshCount > 0
+                  ? `${liveFreshCount} live now · ${friends.length} total`
+                  : friends.length > 0
+                    ? `${friends.length} friend${friends.length !== 1 ? 's' : ''}`
+                    : 'Your trusted circle'}
+              </Text>
             </View>
           </View>
 
@@ -1403,15 +1443,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 10,
     paddingBottom: 12,
     gap: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   friendsSectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.35 },
   friendsSectionCaption: { fontSize: 13, fontWeight: '500', marginTop: 3, opacity: 0.92 },
-  shareLocRow: { alignItems: 'flex-end', gap: 6 },
-  shareLocLabel: { fontSize: 12, fontWeight: '600', textAlign: 'right' },
+  shareLocCard: {
+    marginHorizontal: 16,
+    marginTop: 4,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  shareLocCardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  shareLocIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareLocTitle: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+  shareLocCaption: { fontSize: 12, fontWeight: '500', marginTop: 2, opacity: 0.9 },
   bucketColorDot: { width: 8, height: 8, borderRadius: 4 },
   assignRow: {
     flexDirection: 'row',
