@@ -34,6 +34,13 @@ export interface CameraSettings {
   followPitch: number;
   followPadding: { paddingBottom: number; paddingTop: number; paddingLeft: number; paddingRight: number };
   animationDuration: number;
+  /**
+   * Separate (shorter) duration for bearing / heading animation.
+   * The Mapbox Camera `FollowWithCourse` handles bearing natively, so this is
+   * provided for manual `setCamera({ heading })` calls (e.g. compass mode) and
+   * any future consumer that controls bearing independently from framing.
+   */
+  bearingAnimationDuration: number;
 }
 
 const MPH_TO_MPS = 0.44704;
@@ -107,6 +114,9 @@ export function useCameraController({
       followPitch: Math.round(preset.pitch),
       followPadding: preset.padding,
       animationDuration: preset.animationDuration,
+      bearingAnimationDuration: Math.round(
+        Math.min(preset.animationDuration * 0.55, 400),
+      ),
     };
   }, [
     speedB,

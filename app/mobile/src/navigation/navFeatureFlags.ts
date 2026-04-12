@@ -36,7 +36,7 @@ export function navNativeSdkEnabled(): boolean {
  * by the full-screen native navigator.
  */
 export function navLogicSdkEnabled(): boolean {
-  return envBool('EXPO_PUBLIC_NAV_LOGIC_SDK', false);
+  return envBool('EXPO_PUBLIC_NAV_LOGIC_SDK', true);
 }
 
 /** Full-screen `NativeNavigationScreen` — only when legacy native flag is on and hybrid is off. */

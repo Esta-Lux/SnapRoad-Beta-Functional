@@ -896,6 +896,8 @@ export default function MapScreen() {
   );
   const confirmUntil = useTurnConfirmationUntil(nav.isNavigating, nav.currentStepIndex, drivingMode);
   const inConfirmWindow = Date.now() < confirmUntil;
+  /** Tracks when turn-card state last entered 'active' for minimum dwell enforcement. */
+  const turnCardActiveEnteredAtRef = useRef<number | undefined>(undefined);
   const isAmbient = !nav.isNavigating && speed > 6.7;
   const hasNativeMapbox = isMapAvailable() && MapboxGL !== null;
   const mapboxTokenOk = isMapboxPublicTokenConfigured();
@@ -3186,6 +3188,7 @@ export default function MapScreen() {
                 ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
                 : (turnCurrentStep?.distanceMeters ?? 0);
 
+        const turnCardNow = Date.now();
         const cardState = resolveTurnCardState({
           distanceToNextManeuverM: liveDistMeters,
           speedMph: displaySpeedMph,
@@ -3196,7 +3199,18 @@ export default function MapScreen() {
             nav.navigationData?.congestion,
             nav.navigationProgress?.snapped?.segmentIndex ?? 0,
           ),
+          activeEnteredAtMs: turnCardActiveEnteredAtRef.current,
+          nowMs: turnCardNow,
         });
+        /* Update the dwell-tracking ref: record the moment we first enter
+         * 'active'; clear it when we leave so the next entry starts fresh. */
+        if (cardState === 'active') {
+          if (turnCardActiveEnteredAtRef.current == null) {
+            turnCardActiveEnteredAtRef.current = turnCardNow;
+          }
+        } else {
+          turnCardActiveEnteredAtRef.current = undefined;
+        }
 
         const distParts = formatTurnDistanceForCard(liveDistMeters);
         const destinationName = nav.navigationData?.destination?.name ?? null;

@@ -72,6 +72,7 @@ import {
   updateMismatchSustained,
 } from '../navigation/routeRefreshPolicy';
 import { resolveEdgeDurationSec } from '../navigation/navigationEtaEdges';
+import { effectiveMaxSnapMeters } from '../navigation/offRouteTuning';
 import * as Haptics from 'expo-haptics';
 
 /** Aligned voice + auto-end: "near destination" along remaining route (`navStepsFromDirections` maps `arrive`). */
@@ -229,6 +230,14 @@ export function useDriveNavigation(params: {
   const offRouteStreakRef = useRef(0);
   /** Require consecutive arrival samples before auto-end (GPS flicker). */
   const arrivalNearStreakRef = useRef(0);
+
+  // --- Pre-fetch reroute on drift ---
+  /** Last 3 snap distances for worsening-trend detection. */
+  const driftSnapHistoryRef = useRef<number[]>([]);
+  /** Cached pre-fetched route result, invalidated on each GPS tick if not used. */
+  const prefetchedRerouteRef = useRef<{ result: FetchDirectionsResult; atMs: number } | null>(null);
+  /** Whether a speculative pre-fetch is currently in flight. */
+  const prefetchInFlightRef = useRef(false);
 
   const routePoints = useMemo(
     () =>
@@ -850,6 +859,9 @@ export function useDriveNavigation(params: {
     setShowRoutePreview(false);
     offRouteStreakRef.current = 0;
     arrivalNearStreakRef.current = 0;
+    driftSnapHistoryRef.current = [];
+    prefetchedRerouteRef.current = null;
+    prefetchInFlightRef.current = false;
     autoEndFromArrivalRef.current = false;
     if (navSdkHeadless) {
       resetNavSdkState();
@@ -903,6 +915,9 @@ export function useDriveNavigation(params: {
       offRouteStreakRef.current = 0;
       rerouteInFlightRef.current = false;
       lastRerouteAtRef.current = 0;
+      driftSnapHistoryRef.current = [];
+      prefetchedRerouteRef.current = null;
+      prefetchInFlightRef.current = false;
       routeModelRefreshedAtRef.current = Date.now();
       setRouteModelRefreshKey((k) => k + 1);
       return;
@@ -956,6 +971,9 @@ export function useDriveNavigation(params: {
     setLastTripEndedAtMs(Date.now());
     offRouteStreakRef.current = 0;
     rerouteInFlightRef.current = false;
+    driftSnapHistoryRef.current = [];
+    prefetchedRerouteRef.current = null;
+    prefetchInFlightRef.current = false;
     tripStartTimeRef.current = null;
     prevLocationRef.current = null;
     routeModelRefreshedAtRef.current = Date.now();
@@ -1265,22 +1283,73 @@ export function useDriveNavigation(params: {
   ]);
 
   // --- Off-route detection + auto-reroute (`streakRequired` from mode tuning; see offRouteTuning) ---
+  // Includes speculative pre-fetch: when snap distance exceeds 60% of the off-route
+  // threshold AND trend is worsening over 3 ticks, fire a background Directions API
+  // call. If the user is confirmed off-route, the pre-fetched result is used immediately
+  // (saves ~1–2 s of perceived reroute latency).
   useEffect(() => {
     if (navSdkHeadless) {
       offRouteStreakRef.current = 0;
+      driftSnapHistoryRef.current = [];
       return;
     }
     if (!isNavigating || !navigationData?.destination || !navigationData?.polyline?.length || !navigationProgress) {
       offRouteStreakRef.current = 0;
+      driftSnapHistoryRef.current = [];
       return;
     }
 
     const speedMps = speed * 0.44704;
     if (speedMps < 0.85) {
       offRouteStreakRef.current = 0;
+      driftSnapHistoryRef.current = [];
       return;
     }
 
+    /* --- Drift pre-fetch logic -------------------------------------------------- */
+    const snapDist = navigationProgress.snapped?.distanceMeters ?? Infinity;
+    const hist = driftSnapHistoryRef.current;
+    hist.push(snapDist);
+    if (hist.length > 3) hist.shift();
+
+    const offRouteThreshold = effectiveMaxSnapMeters(
+      navModeProfile.offRoute,
+      speedMps,
+      typeof gpsAccuracy === 'number' ? gpsAccuracy : null,
+    );
+    const prefetchThreshold = offRouteThreshold * 0.6;
+
+    // Worsening trend: 3 consecutive increasing snap distances
+    const trendWorsening =
+      hist.length === 3 && hist[0]! < hist[1]! && hist[1]! < hist[2]!;
+
+    if (
+      Number.isFinite(snapDist) &&
+      snapDist >= prefetchThreshold &&
+      trendWorsening &&
+      !prefetchInFlightRef.current &&
+      !rerouteInFlightRef.current &&
+      !prefetchedRerouteRef.current
+    ) {
+      prefetchInFlightRef.current = true;
+      const dest = navigationData.destination;
+      fetchDirections(dest, userLocation, { fastSingleRoute: true }).then(
+        (res) => {
+          prefetchedRerouteRef.current = { result: res, atMs: Date.now() };
+          prefetchInFlightRef.current = false;
+        },
+        () => {
+          prefetchInFlightRef.current = false;
+        },
+      );
+    }
+
+    // If back on route, discard stale pre-fetch
+    if (!navigationProgress.isOffRoute) {
+      prefetchedRerouteRef.current = null;
+    }
+
+    /* --- Standard streak-based off-route detection ------------------------------ */
     if (navigationProgress.isOffRoute) {
       offRouteStreakRef.current += 1;
     } else {
@@ -1296,6 +1365,7 @@ export function useDriveNavigation(params: {
     if (cooldownMs > 0 && now - lastRerouteAtRef.current < cooldownMs) return;
 
     offRouteStreakRef.current = 0;
+    driftSnapHistoryRef.current = [];
     rerouteInFlightRef.current = true;
     setIsRerouting(true);
     const rerouteMsg = drivingMode === 'calm' ? 'Let me find you a new route.' : 'Rerouting.';
@@ -1318,13 +1388,23 @@ export function useDriveNavigation(params: {
     const reroute = async () => {
       try {
         const dest = navigationData.destination;
-        const timeout = new Promise<FetchDirectionsResult>((resolve) =>
-          setTimeout(() => resolve({ ok: false, reason: 'route_failed', message: 'Reroute timed out.' }), 8000),
-        );
-        const res = await Promise.race([
-          fetchDirections(dest, userLocation, { fastSingleRoute: true }),
-          timeout,
-        ]);
+        /* Use pre-fetched result if available and fresh (< 5 s old). */
+        const cached = prefetchedRerouteRef.current;
+        const usePrefetch = cached?.result.ok && now - cached.atMs < 5000;
+        prefetchedRerouteRef.current = null;
+
+        let res: FetchDirectionsResult;
+        if (usePrefetch) {
+          res = cached!.result;
+        } else {
+          const timeout = new Promise<FetchDirectionsResult>((resolve) =>
+            setTimeout(() => resolve({ ok: false, reason: 'route_failed', message: 'Reroute timed out.' }), 8000),
+          );
+          res = await Promise.race([
+            fetchDirections(dest, userLocation, { fastSingleRoute: true }),
+            timeout,
+          ]);
+        }
         if (res.ok) {
           const t = Date.now();
           lastRerouteAtRef.current = t;
