@@ -1373,7 +1373,7 @@ export default function MapScreen() {
 
   // Fix 1: Reset exploring state + traffic banner + camera lock when nav starts.
   // Also explicitly jump camera to user location to break out of fitBounds preview.
-  const wasNavigatingRef = useRef(false);
+  const wasNavForCameraResetRef = useRef(false);
   useEffect(() => {
     if (nav.isNavigating) {
       setIsExploring(false);
@@ -1386,7 +1386,7 @@ export default function MapScreen() {
       // Deps intentionally limited to nav.isNavigating — we only want this
       // camera jump on the false→true transition, using whatever location/
       // heading/preset values are current in this render cycle.
-      if (!wasNavigatingRef.current) {
+      if (!wasNavForCameraResetRef.current) {
         const pad = camCtrl?.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
         // Defer the imperative setCamera to the next frame so the Mapbox
         // Camera component's declarative prop changes (followUserLocation,
@@ -1406,7 +1406,7 @@ export default function MapScreen() {
         });
       }
     }
-    wasNavigatingRef.current = nav.isNavigating;
+    wasNavForCameraResetRef.current = nav.isNavigating;
   }, [nav.isNavigating]);
 
   // Trip end: show summary card directly (no gem bounce animation)
