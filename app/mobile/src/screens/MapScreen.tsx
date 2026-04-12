@@ -1371,13 +1371,42 @@ export default function MapScreen() {
     };
   }, [user?.isPremium]);
 
-  // Fix 1: Reset exploring state + traffic banner + camera lock when nav starts
+  // Fix 1: Reset exploring state + traffic banner + camera lock when nav starts.
+  // Also explicitly jump camera to user location to break out of fitBounds preview.
+  const wasNavigatingRef = useRef(false);
   useEffect(() => {
     if (nav.isNavigating) {
       setIsExploring(false);
       setTrafficBannerDismissed(false);
       setCameraLocked(true);   // re-lock camera each time navigation begins
+
+      // When transitioning into navigation (e.g. from route preview fitBounds),
+      // Mapbox Camera's followUserLocation alone may not re-center; issue an
+      // explicit setCamera to snap the viewport to the user's current location.
+      // Deps intentionally limited to nav.isNavigating — we only want this
+      // camera jump on the false→true transition, using whatever location/
+      // heading/preset values are current in this render cycle.
+      if (!wasNavigatingRef.current) {
+        const pad = camCtrl?.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
+        // Defer the imperative setCamera to the next frame so the Mapbox
+        // Camera component's declarative prop changes (followUserLocation,
+        // followPitch, etc.) are committed to the native view first.
+        // Without this, the fly-to can race with the prop-driven update
+        // and get silently overridden.
+        requestAnimationFrame(() => {
+          cameraRef.current?.setCamera({
+            centerCoordinate: [location.lng, location.lat],
+            heading: heading,
+            zoomLevel: camCtrl?.followZoomLevel ?? modeConfig.navZoom,
+            pitch: camCtrl?.followPitch ?? modeConfig.navPitch,
+            padding: pad,
+            animationMode: 'flyTo',
+            animationDuration: 650,
+          });
+        });
+      }
     }
+    wasNavigatingRef.current = nav.isNavigating;
   }, [nav.isNavigating]);
 
   // Trip end: show summary card directly (no gem bounce animation)
@@ -3165,12 +3194,19 @@ export default function MapScreen() {
               })
             : null;
         const nextIdx = prog?.nextStep?.index;
+        // When prog.nextStep points to the step the user is already inside
+        // (nextIdx <= currentStepIndex), the "next maneuver" for the card
+        // should be the UPCOMING step, not the one we're already traversing.
+        // Using the current step causes liveDistMeters ≈ 0 and the card gets
+        // stuck in 'active' showing a just-completed turn.
+        const nextStepIsCurrentStep =
+          nextIdx != null && nextIdx <= nav.currentStepIndex;
         const nextManeuverCoord =
           useSdkTurnUi && sdkSyntheticStep
             ? sdkSyntheticStep
             : logicSdkAuthoritativeUi
               ? null
-              : nextIdx != null && nav.navigationData?.steps
+              : nextIdx != null && !nextStepIsCurrentStep && nav.navigationData?.steps
                 ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
                 : upcomingGuidanceStep;
         const turnCurrentStep = useSdkTurnUi
@@ -3179,8 +3215,11 @@ export default function MapScreen() {
             ? null
             : currentStep;
         const poly = nav.navigationData?.polyline;
+        // When the progress step matches the current step, skip
+        // prog.nextStepDistanceMeters (≈ 0) and compute the polyline
+        // distance to the true upcoming maneuver instead.
         const liveDistMeters =
-          prog != null && Number.isFinite(prog.nextStepDistanceMeters)
+          prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep
             ? prog.nextStepDistanceMeters
             : poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
               ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
