@@ -82,7 +82,8 @@ import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import { getRoutePolylineStyle } from '../lib/routePolylineStyle';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
 import NavigationDebugHud from '../components/navigation/NavigationDebugHud';
-import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
+import { labelAnchorLayerIdForStyleUrl, RouteLineLayerIds } from '../map/mapLayerRegistry';
+import NavigationUserSymbolLayers from '../components/map/NavigationUserSymbolLayers';
 import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
 import { isLiveShareFresh } from '../lib/friendPresence';
 import type { MapFocusFriendParams, NavigateToFriendParams } from '../types';
@@ -561,6 +562,9 @@ export default function MapScreen() {
   /** During nav: fused coord for puck/camera (`navigationProgressCoord` → snapped display when JS on-route). */
   const navDisplayCoord = nav.isNavigating ? nav.navigationProgressCoord : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
+  /** GPU SymbolLayer arrow needs a route line layer to anchor above; fall back to LocationPuck if missing. */
+  const showGpuNavUserArrow =
+    nav.isNavigating && Boolean(nav.navigationData?.polyline && nav.navigationData.polyline.length >= 2);
 
   /** Passed / ahead route styling while navigating — same snap as turn/ETA (`navigationProgress`). */
   const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
@@ -3114,8 +3118,18 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
+          <NavigationUserSymbolLayers
+            visible={Boolean(showGpuNavUserArrow && hasNativeMapbox && MapboxGL)}
+            lng={navDisplayCoord.lng}
+            lat={navDisplayCoord.lat}
+            bearingDeg={navDisplayHeading}
+            accuracyMeters={accuracy}
+            routeColor={navRouteColors.routeColor}
+            routeCasing={navRouteColors.routeCasing}
+            aboveLayerID={RouteLineLayerIds.ahead}
+          />
           <MapboxGL.LocationPuck
-            visible
+            visible={!nav.isNavigating || !showGpuNavUserArrow}
             androidRenderMode="normal"
             puckBearingEnabled
             puckBearing={locationPuckBearing}

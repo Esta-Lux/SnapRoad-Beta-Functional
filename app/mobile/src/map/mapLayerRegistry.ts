@@ -32,6 +32,15 @@ export const IncidentHeatmapIds = {
   layer: 'incident-heatmap',
 } as const;
 
+/** GPU SymbolLayer user arrow during navigation (above route line). */
+export const NavigationUserLayerIds = {
+  source: 'sr-nav-user',
+  sourceAccuracy: 'sr-nav-user-acc',
+  imageName: 'srNavUserArrow',
+  layerArrow: 'sr-nav-user-arrow',
+  layerAcc: 'sr-nav-user-acc',
+} as const;
+
 /** Stable label layer to insert 3D buildings / route below (matches MapScreen `buildingsBelowLayerId`). */
 export function labelAnchorLayerIdForStyleUrl(activeStyleURL: string): string | undefined {
   const u = activeStyleURL;

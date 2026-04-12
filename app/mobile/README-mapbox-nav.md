@@ -5,12 +5,19 @@
 - **Mapbox Maps iOS/Android** are pinned once in `app.config.ts` as `MAPBOX_MAPS_SDK_VERSION` (**11.11.0**).
 - **`@rnmapbox/maps`** and **`@badatgil/expo-mapbox-navigation`** both use that constant so CocoaPods / Gradle resolve the same Maps line as the vendored iOS Navigation xcframeworks.
 
-## Production: native Mapbox Navigation SDK
+## Production: JS-first navigation (default)
 
-Set in **`eas.json`** → `build.production.env` → **`EXPO_PUBLIC_NAV_NATIVE_SDK": "1"`** and **`EXPO_PUBLIC_NAV_LOGIC_SDK": "1"`** (TestFlight / production profile in repo).  
-Runtime flags are read in `src/navigation/navFeatureFlags.ts`. If the same key exists in Expo dashboard and `eas.json`, **`eas.json` wins** on EAS Build (see `app.config.ts` comment).
+**Default behavior** (when `EXPO_PUBLIC_NAV_LOGIC_SDK` is unset or `"0"`): turn-by-turn uses the **JavaScript** pipeline — Mapbox **Directions API**, `useDriveNavigation` / `useNavigationProgress`, custom map UI, and expo-speech / JS voice — with **no** headless Mapbox Navigation SDK session.
 
-**`EXPO_PUBLIC_NAV_LOGIC_SDK`** (optional): when `"1"`, SnapRoad runs a **headless** Mapbox Navigation session (off-screen `MapboxNavigationView` with `navigationLogicOnly`) so **routing, reroute, progress, and voice** come from the Navigation SDK while **`@rnmapbox/maps`** remains the only on-screen map. **If logic SDK is on, full-screen native navigation UI is disabled** even when `EXPO_PUBLIC_NAV_NATIVE_SDK=1`.
+Runtime flags are read in [`src/navigation/navFeatureFlags.ts`](src/navigation/navFeatureFlags.ts). If the same key exists in Expo dashboard and `eas.json`, **`eas.json` wins** on EAS Build (see `app.config.ts` comment).
+
+## Optional: headless Mapbox Navigation SDK
+
+Set **`EXPO_PUBLIC_NAV_LOGIC_SDK=1`** (e.g. in EAS env or local `.env`) to enable a **headless** Mapbox Navigation session (off-screen `MapboxNavigationView` with `navigationLogicOnly`) so **routing, reroute, progress, and native voice** can come from the Navigation SDK while **`@rnmapbox/maps`** remains the on-screen map. **If logic SDK is on, full-screen native navigation UI is disabled** even when `EXPO_PUBLIC_NAV_NATIVE_SDK=1`.
+
+The **`production`** profile in [`eas.json`](eas.json) sets **`EXPO_PUBLIC_NAV_LOGIC_SDK": "0"`** so store builds use JS-first navigation unless you override in the Expo dashboard.
+
+**`EXPO_PUBLIC_NAV_NATIVE_SDK`**: when `"1"`, “Start navigation” can use native SDK UIs depending on other flags; with logic SDK off, the custom RN flow remains primary. Coordinate with `navFeatureFlags.ts` when experimenting.
 
 Do **not** commit **`MAPBOX_DOWNLOADS_TOKEN`** or Mapbox **secret** tokens. Use EAS project env or local `.env` (gitignored).
 
@@ -53,7 +60,7 @@ For **App Store upload in one step**:
 npm run eas:ios:production:submit
 ```
 
-Use the **`production`** profile: it applies **`EXPO_PUBLIC_NAV_NATIVE_SDK=1`** and **`EXPO_PUBLIC_NAV_LOGIC_SDK=1`** so TestFlight uses headless SDK navigation on the in-app map (full-screen native UI stays off).
+Use the **`production`** profile: it applies **`EXPO_PUBLIC_NAV_NATIVE_SDK=1`** with **`EXPO_PUBLIC_NAV_LOGIC_SDK=0`** so TestFlight / App Store builds use **JS-first** navigation on the in-app map. Set **`EXPO_PUBLIC_NAV_LOGIC_SDK=1`** in EAS or Expo env if you need headless SDK experiments.
 
 ### Logic-SDK diagnostics HUD (EAS / release)
 

@@ -10,7 +10,11 @@ Layer 1 is React Navigation (tabs + stacks). Layer 2 is turn-by-turn / Mapbox (`
 
 ## Phase 1b — SDK vs JS single engine (ongoing)
 
-Production path when `EXPO_PUBLIC_NAV_LOGIC_SDK=1`:
+**Default (since 2026):** `EXPO_PUBLIC_NAV_LOGIC_SDK` defaults to **off** in [`navFeatureFlags.ts`](../src/navigation/navFeatureFlags.ts) and in [`eas.json`](../eas.json) production env. Production uses the **JavaScript** Directions + `useNavigationProgress` pipeline unless you set `EXPO_PUBLIC_NAV_LOGIC_SDK=1`.
+
+While navigating with a route on the map, the user position is drawn as a **GPU `SymbolLayer`** arrow ([`NavigationUserSymbolLayers.tsx`](../src/components/map/NavigationUserSymbolLayers.tsx)) above the route line; `LocationPuck` is hidden for that case. If the route is temporarily missing, the puck remains visible.
+
+Opt-in headless SDK path when `EXPO_PUBLIC_NAV_LOGIC_SDK=1`:
 
 - Hidden `MapboxNavigationView` (`navigationLogicOnly`) feeds `navSdkStore` (`ingestSdkProgress`, `ingestSdkLocation`, …).
 - `useDriveNavigation` selects **`sdkBuiltNavigationProgress`** over JS `useNavigationProgress` while `sdkActive`.
