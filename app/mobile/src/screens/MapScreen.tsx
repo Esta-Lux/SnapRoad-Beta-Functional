@@ -613,6 +613,16 @@ export default function MapScreen() {
     wasNavigatingForOdomRef.current = nav.isNavigating;
   }, [nav.isNavigating, navDisplayCoord.lat, navDisplayCoord.lng, navDisplayHeading]);
 
+  const navDisplayCoordRef = useRef(navDisplayCoord);
+  const navDisplayHeadingRef = useRef(navDisplayHeading);
+  useEffect(() => {
+    navDisplayCoordRef.current = navDisplayCoord;
+    navDisplayHeadingRef.current = navDisplayHeading;
+  }, [navDisplayCoord.lat, navDisplayCoord.lng, navDisplayHeading]);
+
+  const camCtrlRef = useRef(camCtrl);
+  camCtrlRef.current = camCtrl;
+
   // ── Reports ──
   const [nearbyIncidents, setNearbyIncidents] = useState<Incident[]>([]);
   const [activeReportCard, setActiveReportCard] = useState<Incident | null>(null);
@@ -1383,40 +1393,50 @@ export default function MapScreen() {
   // Fix 1: Reset exploring state + traffic banner + camera lock when nav starts.
   // Also explicitly jump camera to user location to break out of fitBounds preview.
   const wasNavForCameraResetRef = useRef(false);
+  const prevShowRoutePreviewRef = useRef(nav.showRoutePreview);
   useEffect(() => {
-    if (nav.isNavigating) {
-      setIsExploring(false);
-      setTrafficBannerDismissed(false);
-      setCameraLocked(true);   // re-lock camera each time navigation begins
+    const wasPreview = prevShowRoutePreviewRef.current;
+    prevShowRoutePreviewRef.current = nav.showRoutePreview;
 
-      // When transitioning into navigation (e.g. from route preview fitBounds),
-      // Mapbox Camera's followUserLocation alone may not re-center; issue an
-      // explicit setCamera to snap the viewport to the user's current location.
-      // Deps intentionally limited to nav.isNavigating — we only want this
-      // camera jump on the false→true transition, using whatever location/
-      // heading/preset values are current in this render cycle.
-      if (!wasNavForCameraResetRef.current) {
-        const pad = camCtrl?.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
-        // Defer the imperative setCamera to the next frame so the Mapbox
-        // Camera component's declarative prop changes (followUserLocation,
-        // followPitch, etc.) are committed to the native view first.
-        // Without this, the fly-to can race with the prop-driven update
-        // and get silently overridden.
+    if (!nav.isNavigating) {
+      wasNavForCameraResetRef.current = false;
+      return;
+    }
+
+    setIsExploring(false);
+    setTrafficBannerDismissed(false);
+    setCameraLocked(true);
+
+    const startedFromPreview = wasPreview && !nav.showRoutePreview;
+    if (startedFromPreview) {
+      userInteracting.current = false;
+      setFollowMode('follow');
+    }
+
+    // False→true isNavigating: snap camera to fused puck (not raw GPS) and break preview fitBounds.
+    if (!wasNavForCameraResetRef.current) {
+      const pad = camCtrlRef.current?.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
+      const zoom = camCtrlRef.current?.followZoomLevel ?? modeConfig.navZoom;
+      const pitch = camCtrlRef.current?.followPitch ?? modeConfig.navPitch;
+      const duration = startedFromPreview ? 720 : 650;
+      requestAnimationFrame(() => {
         requestAnimationFrame(() => {
+          const c = navDisplayCoordRef.current;
+          const h = navDisplayHeadingRef.current;
           cameraRef.current?.setCamera({
-            centerCoordinate: [location.lng, location.lat],
-            heading: heading,
-            zoomLevel: camCtrl?.followZoomLevel ?? modeConfig.navZoom,
-            pitch: camCtrl?.followPitch ?? modeConfig.navPitch,
+            centerCoordinate: [c.lng, c.lat],
+            heading: h,
+            zoomLevel: zoom,
+            pitch,
             padding: pad,
             animationMode: 'flyTo',
-            animationDuration: 650,
+            animationDuration: duration,
           });
         });
-      }
+      });
     }
-    wasNavForCameraResetRef.current = nav.isNavigating;
-  }, [nav.isNavigating]);
+    wasNavForCameraResetRef.current = true;
+  }, [nav.isNavigating, nav.showRoutePreview]);
 
   // Trip end: show summary card directly (no gem bounce animation)
   useEffect(() => {
@@ -2892,6 +2912,7 @@ export default function MapScreen() {
 
           {nav.navigationData?.polyline && (
             <RouteOverlay
+              key={`route-${nav.routeModelRefreshKey}-${nav.navigationData.polyline.length}`}
               polyline={
                 nav.navigationProgress?.routePolyline?.length &&
                 nav.navigationProgress.routePolyline.length >= 2

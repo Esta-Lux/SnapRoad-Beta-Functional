@@ -272,6 +272,14 @@ export function useDriveNavigation(params: {
 
   const routeModelRefreshedAtRef = useRef(Date.now());
   const [routeModelRefreshKey, setRouteModelRefreshKey] = useState(0);
+  /** JS-only: periodic tick so `useNavigationProgress` recomputes distance/voice when GPS rounds to the same lat/lng. */
+  const [jsNavProgressTick, setJsNavProgressTick] = useState(0);
+
+  useEffect(() => {
+    if (!isNavigating || sdkActive) return;
+    const id = setInterval(() => setJsNavProgressTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [isNavigating, sdkActive]);
 
   const edgeDurationResolved = useMemo(() => {
     if (sdkActive) return null;
@@ -1175,7 +1183,7 @@ export function useDriveNavigation(params: {
 
   // --- Step index tracking (polyline-aligned; matches Mapbox geometry + turn cards) ---
   useEffect(() => {
-    if (!isNavigating || !navigationData?.steps?.length || !navigationData.polyline?.length) {
+    if (!isNavigating || !navigationData?.polyline?.length) {
       return;
     }
     if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk_waiting') {
@@ -1183,9 +1191,13 @@ export function useDriveNavigation(params: {
     }
     if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk' && navigationProgress.nextStep) {
       const si = navigationProgress.nextStep.index;
-      setCurrentStepIndex(Math.min(Math.max(0, si), navigationData.steps.length - 1));
+      const maxStep = navigationData.steps?.length
+        ? navigationData.steps.length - 1
+        : Math.max(0, si);
+      setCurrentStepIndex(Math.min(Math.max(0, si), maxStep));
       return;
     }
+    if (!navigationData.steps?.length) return;
     const rawCum =
       navigationProgress?.snapped?.cumulativeMeters ?? routeProgress?.cumFromStartMeters;
     if (rawCum == null) return;
@@ -1627,6 +1639,8 @@ export function useDriveNavigation(params: {
      * Prefer this over raw GPS + separate `liveEta` when showing navigation truth.
      */
     navigationProgressSnapshot,
+    /** Bumps when route geometry/ETA model refreshes (JS reroute, SDK `applySdkRouteGeometry`). Map overlay keys may use this. */
+    routeModelRefreshKey,
     /** Headless SDK diagnostics (Expo env + native ingest). Dev HUD only. */
     sdkNavDiag: navSdkHeadless
       ? {
