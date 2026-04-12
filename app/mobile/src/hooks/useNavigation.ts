@@ -518,6 +518,7 @@ export function useNavigation(params: {
         offRouteStreakRef.current = 0;
         if (!opts?.fastSingleRoute) {
           traveledRef.current = 0;
+          cumAlongHighWaterRef.current = 0;
           setTraveledDistanceMeters(0);
           prevLocationRef.current = null;
           hasAnnouncedArrivalRef.current = false;
@@ -563,6 +564,13 @@ export function useNavigation(params: {
   useEffect(() => {
     currentStepIndexRef.current = currentStepIndex;
   }, [currentStepIndex]);
+
+  /**
+   * High-water mark for cumulative-meters-along-route, ensuring GPS jitter never
+   * regresses the value fed into step index / route split calculations.
+   * Reset when a new route starts (isNavigating transitions).
+   */
+  const cumAlongHighWaterRef = useRef(0);
 
   const driftMsRef = useRef(0);
   const mismatchMsRef = useRef(0);
@@ -832,6 +840,7 @@ export function useNavigation(params: {
     setIsNavigating(true);
     isNavigatingRef.current = true;
     traveledRef.current = 0;
+    cumAlongHighWaterRef.current = 0;
     setTraveledDistanceMeters(0);
     prevLocationRef.current = null;
     setCurrentStepIndex(0);
@@ -1143,13 +1152,20 @@ export function useNavigation(params: {
       setCurrentStepIndex(Math.min(Math.max(0, si), navigationData.steps.length - 1));
       return;
     }
-    const cumAlong =
+    const rawCum =
       navigationProgress?.snapped?.cumulativeMeters ?? routeProgress?.cumFromStartMeters;
-    if (cumAlong == null) return;
+    if (rawCum == null) return;
+
+    // Enforce monotonic cumulative meters — GPS jitter can cause small decreases
+    // that flip the step index back and forth (oscillation).
+    const cumAlong = Math.max(rawCum, cumAlongHighWaterRef.current);
+    cumAlongHighWaterRef.current = cumAlong;
+
     const idx = currentStepIndexAlongRoute(
       navigationData.steps,
       cumAlong,
       navigationData.polyline,
+      currentStepIndexRef.current,
     );
     setCurrentStepIndex(Math.min(idx, navigationData.steps.length - 1));
   }, [
@@ -1358,6 +1374,7 @@ export function useNavigation(params: {
       if (route?.geometry?.coordinates?.length) {
         const dr = parseMapboxDirectionsRoute(route as RawRoute);
         traveledRef.current = 0;
+        cumAlongHighWaterRef.current = 0;
         setTraveledDistanceMeters(0);
         prevLocationRef.current = null;
         setCurrentStepIndex(0);
