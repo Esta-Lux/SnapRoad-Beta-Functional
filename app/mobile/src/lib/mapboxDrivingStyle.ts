@@ -133,14 +133,13 @@ export function usesStandardStyleConfiguration(url: string): boolean {
 }
 
 /**
- * Mapbox range 1–5. While browsing (not in turn-by-turn) we bias to 5 so storefronts / building names read.
- * During navigation, Calm stays slightly lighter than Sport to reduce clutter near the route.
+ * Mapbox range 1–5. Keep at max (5) across browse AND navigation so nearby
+ * storefronts, building names, and business labels stay readable while driving.
+ * Prior approach dropped to 4 during nav for calm/adaptive, making the map feel
+ * empty — users rely on visible POI context for orientation.
  */
-function resolvePoiLabelDensity(drivingMode: DrivingMode, isNavigating: boolean): string {
-  if (!isNavigating) return '5';
-  if (drivingMode === 'sport') return '5';
-  if (drivingMode === 'calm') return '4';
-  return '4';
+function resolvePoiLabelDensity(_drivingMode: DrivingMode, _isNavigating: boolean): string {
+  return '5';
 }
 
 /**
@@ -198,6 +197,7 @@ export function standardBasemapStyleImportConfig(
     showRoadLabels: 'true',
     showTransitLabels: 'true',
     showPedestrianRoads: 'true',
+    showAdminBoundaries: 'true',
     showLandmarkIcons: 'true',
     showLandmarkIconLabels: 'true',
     colorModePointOfInterestLabels: 'default',
