@@ -75,6 +75,20 @@ import { resolveEdgeDurationSec } from '../navigation/navigationEtaEdges';
 import { effectiveMaxSnapMeters } from '../navigation/offRouteTuning';
 import * as Haptics from 'expo-haptics';
 
+/**
+ * Turn-by-turn orchestration for SnapRoad.
+ *
+ * **Single engine rule (critical):** When `navSdkHeadless` is true (`EXPO_PUBLIC_NAV_LOGIC_SDK`) and a trip is
+ * active, **Mapbox Navigation SDK** (hidden `MapboxNavigationView` + `navSdkStore`) is the sole authority for
+ * matched location, route progress, reroute, and (unless suppressed) voice. The JS pipeline
+ * (`useNavigationProgress`, off-route streak reroute, traffic refresh intervals) is **bypassed** — do not
+ * blend or “fall back” to raw GPS progress during that window except the explicit waiting UI from
+ * `getSdkWaitingNavigationProgress`.
+ *
+ * When `navSdkHeadless` is false, JS snap/progress (`useNavigationProgress` + `navigationProgressCore`) owns
+ * puck/ETA/off-route for the custom RN map experience.
+ */
+
 /** Aligned voice + auto-end: "near destination" along remaining route (`navStepsFromDirections` maps `arrive`). */
 const ARRIVAL_NEAR_ROUTE_MI = 0.08;
 function applyTripCompleteProfileToUser(updateUser: (u: Partial<User>) => void, profile: unknown) {
@@ -247,25 +261,27 @@ export function useDriveNavigation(params: {
     [navigationData?.polyline],
   );
 
-  const navStepsBuilt = useMemo(
-    () =>
-      navigationData?.steps?.length && navigationData.polyline?.length
-        ? buildNavStepsFromDirections(navigationData.steps, navigationData.polyline)
-        : [],
-    [navigationData?.steps, navigationData?.polyline],
-  );
+  const navStepsBuilt = useMemo(() => {
+    if (sdkActive) {
+      return [];
+    }
+    return navigationData?.steps?.length && navigationData.polyline?.length
+      ? buildNavStepsFromDirections(navigationData.steps, navigationData.polyline)
+      : [];
+  }, [sdkActive, navigationData?.steps, navigationData?.polyline]);
 
   const routeModelRefreshedAtRef = useRef(Date.now());
   const [routeModelRefreshKey, setRouteModelRefreshKey] = useState(0);
 
   const edgeDurationResolved = useMemo(() => {
+    if (sdkActive) return null;
     if (!navigationData?.polyline?.length || !navStepsBuilt.length) return null;
     return resolveEdgeDurationSec({
       polyline: navigationData.polyline,
       navSteps: navStepsBuilt,
       mapboxEdgeDurationSec: navigationData.edgeDurationSec,
     });
-  }, [navigationData?.polyline, navigationData?.edgeDurationSec, navStepsBuilt]);
+  }, [sdkActive, navigationData?.polyline, navigationData?.edgeDurationSec, navStepsBuilt]);
 
   const rawForNavigationProgress = useMemo(() => {
     if (!isNavigating || routePoints.length < 2 || sdkActive) return null;

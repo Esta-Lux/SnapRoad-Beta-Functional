@@ -8,6 +8,18 @@ Layer 1 is React Navigation (tabs + stacks). Layer 2 is turn-by-turn / Mapbox (`
 - Rename tab-bar driving flag hook: `useNavigationMode` (was `useNavigatingState`).
 - Add `src/navigation/types.ts` for param lists and composite navigation props.
 
+## Phase 1b — SDK vs JS single engine (ongoing)
+
+Production path when `EXPO_PUBLIC_NAV_LOGIC_SDK=1`:
+
+- Hidden `MapboxNavigationView` (`navigationLogicOnly`) feeds `navSdkStore` (`ingestSdkProgress`, `ingestSdkLocation`, …).
+- `useDriveNavigation` selects **`sdkBuiltNavigationProgress`** over JS `useNavigationProgress` while `sdkActive`.
+- JS **off-route reroute**, **traffic refresh** intervals, and **JS arrival auto-end** are skipped when `navSdkHeadless` — SDK handles reroute/arrival (`onRouteChanged`, `onFinalDestinationArrival`).
+- `MapScreen` uses **`CustomLocationProvider`** with `nav.sdkNavLocation` when the SDK has matched fixes.
+- Expensive **`buildNavStepsFromDirections`** / edge ETA resolution are skipped during active SDK trips where they are unused.
+
+See module comment at top of `src/hooks/useDriveNavigation.ts` and `src/navigation/navSdkAuthority.ts`.
+
 ## Phase 2 (next — optional)
 
 **Coordinator + focus behavior** — implement only after **UX sign-off**:

@@ -1276,7 +1276,7 @@ export default function MapScreen() {
     return () => { appSub.remove(); supabase.removeChannel(channel); };
   }, []);
 
-  // Fix 14: GPS feed with jitter threshold (route progress uses lat/lng only — do not spam on heading noise).
+  // Fix 14: Camera tick + odometry. `navDisplayCoord` is SDK-matched when `navLogicSdkEnabled` (single engine); else JS snap.
   useEffect(() => {
     const moveThresholdM = nav.isNavigating ? 0.45 : 1.5;
     const moved = haversineMeters(lastCameraUpdate.current.lat, lastCameraUpdate.current.lng, navDisplayCoord.lat, navDisplayCoord.lng) > moveThresholdM;
