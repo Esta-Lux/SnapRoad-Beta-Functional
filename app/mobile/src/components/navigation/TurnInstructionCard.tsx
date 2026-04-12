@@ -22,6 +22,9 @@ import RoadSignalBadge from './RoadSignalBadge';
 import LaneGuidance from './LaneGuidance';
 import HighwayShieldBadge from './HighwayShieldBadge';
 
+/** Hold previous lane data for this duration (ms) to prevent flicker during source transitions. */
+const LANE_DEBOUNCE_MS = 300;
+
 const DENSITY: Record<
   DrivingMode,
   {
@@ -165,8 +168,8 @@ export default React.memo(function TurnInstructionCard({
       return rawLanes;
     }
 
-    /* Within same step: debounce — hold previous for 300 ms. */
-    if (now - prev.changedAt < 300) {
+    /* Within same step: debounce — hold previous briefly. */
+    if (now - prev.changedAt < LANE_DEBOUNCE_MS) {
       return prev.data;
     }
     debouncedLanesRef.current = { data: rawLanes, changedAt: now, prevStepInstruction: step?.instruction };

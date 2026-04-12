@@ -232,17 +232,11 @@ export function resolveTurnCardState(args: {
     nextStep.maneuver !== 'depart'
   );
 
-  if (hasUpcomingTurn && d <= activeM) {
-    return 'active';
-  }
-
-  /* If we recently entered active, hold the state even if distance moved past
-   * the threshold — prevents flash-through at highway speed. */
-  if (
-    hasUpcomingTurn &&
-    typeof activeEnteredAtMs === 'number' &&
-    nowMs - activeEnteredAtMs < MIN_ACTIVE_DWELL_MS
-  ) {
+  /* Return 'active' when within active distance OR within the minimum dwell
+   * window (prevents flash-through at highway speed). */
+  const inDwellWindow =
+    typeof activeEnteredAtMs === 'number' && nowMs - activeEnteredAtMs < MIN_ACTIVE_DWELL_MS;
+  if (hasUpcomingTurn && (d <= activeM || inDwellWindow)) {
     return 'active';
   }
 

@@ -295,12 +295,11 @@ export function computeNavigationProgressFrame({
    * "traveled" line matches where the puck is drawn, not the raw snap point.
    * This fixes the visual bug where the green traveled line lags behind the puck.
    */
-  const biasedCum = !isOffRoute && speed > 3
-    ? Math.min(
-        snap.cumulativeMeters + Math.min(progressTuning.leadCapMeters, speed * 0.3 * progressTuning.leadScale),
-        cumulative[cumulative.length - 1] ?? snap.cumulativeMeters,
-      )
-    : snap.cumulativeMeters;
+  const routeEndCum = cumulative[cumulative.length - 1] ?? snap.cumulativeMeters;
+  const leadAheadMeters = !isOffRoute && speed > 3
+    ? Math.min(progressTuning.leadCapMeters, speed * 0.3 * progressTuning.leadScale)
+    : 0;
+  const biasedCum = Math.min(snap.cumulativeMeters + leadAheadMeters, routeEndCum);
   const displaySnapForSplit: typeof snap = { ...snap, cumulativeMeters: biasedCum };
   const { traveled, remaining } = splitRouteAtSnap(route, displaySnapForSplit);
   const routeTotalMeters = cumulative[cumulative.length - 1] ?? 0;

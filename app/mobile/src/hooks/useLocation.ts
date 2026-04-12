@@ -21,6 +21,15 @@ interface LocationState {
 }
 
 const UNKNOWN_LOCATION: Coordinate = { lat: 0, lng: 0 };
+/** Smoothed speed (mph) below which the puck position freezes to suppress GPS wander. */
+const STATIONARY_SPEED_THRESHOLD_MPH = 1.0;
+/** Raw speed (mph) below which the puck position freezes to suppress GPS wander. */
+const STATIONARY_RAW_SPEED_THRESHOLD_MPH = 1.5;
+/** Distance (m) below which GPS drift is ignored when the device is near-stationary. */
+const STATIONARY_DISTANCE_THRESHOLD_M = 5;
+/** Speed (mph) below which compass heading is completely frozen during navigation. */
+const COMPASS_FREEZE_SPEED_MPH = 2;
+
 const HEADING_SMOOTHING = 0.2;
 const SPEED_SMOOTHING = 0.25;
 const LOW_SPEED_JUMP_METERS = 120;
@@ -61,7 +70,7 @@ function blendTowardGps(
    * the previous coordinate to eliminate puck jitter at traffic lights,
    * parking, etc.
    */
-  if (smoothedSpeedMph < 1.0 && speedMph < 1.5 && dist < 5) {
+  if (smoothedSpeedMph < STATIONARY_SPEED_THRESHOLD_MPH && speedMph < STATIONARY_RAW_SPEED_THRESHOLD_MPH && dist < STATIONARY_DISTANCE_THRESHOLD_M) {
     return prev;
   }
 
@@ -400,7 +409,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
         /** Same threshold as GPS course: above this, COG drives bearing; ignore compass jitter. */
         if (prev.speed > 5) return prev;
         /** Freeze heading entirely when nearly stopped — compass is too noisy to be useful. */
-        if (isNavigating && prev.speed < 2) return prev;
+        if (isNavigating && prev.speed < COMPASS_FREEZE_SPEED_MPH) return prev;
         const compassAlpha =
           isNavigating && prev.speed < 5
             ? 0.07
