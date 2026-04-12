@@ -199,6 +199,14 @@ export function resolveTurnCardState(args: {
    * needs more time to read the instruction).
    */
   congestionNearManeuver?: boolean;
+  /**
+   * Timestamp (epoch ms) when the state last transitioned to 'active'.
+   * Used to enforce a minimum dwell time so the card doesn't flash by
+   * at highway speed.
+   */
+  activeEnteredAtMs?: number;
+  /** Current timestamp (epoch ms); defaults to Date.now(). */
+  nowMs?: number;
 }): TurnCardState {
   const {
     distanceToNextManeuverM: d,
@@ -207,11 +215,16 @@ export function resolveTurnCardState(args: {
     inConfirmationWindow,
     nextStep,
     congestionNearManeuver = false,
+    activeEnteredAtMs,
+    nowMs = Date.now(),
   } = args;
 
   const tc = getTurnCardNavTuning(mode);
   const activeM = tc.activeManeuverMeters;
   const confirmMult = tc.confirmActiveMultiplier;
+
+  /** Minimum dwell: once 'active', hold for at least 3 s regardless of speed. */
+  const MIN_ACTIVE_DWELL_MS = 3000;
 
   const hasUpcomingTurn = !!(
     nextStep &&
@@ -220,6 +233,16 @@ export function resolveTurnCardState(args: {
   );
 
   if (hasUpcomingTurn && d <= activeM) {
+    return 'active';
+  }
+
+  /* If we recently entered active, hold the state even if distance moved past
+   * the threshold — prevents flash-through at highway speed. */
+  if (
+    hasUpcomingTurn &&
+    typeof activeEnteredAtMs === 'number' &&
+    nowMs - activeEnteredAtMs < MIN_ACTIVE_DWELL_MS
+  ) {
     return 'active';
   }
 

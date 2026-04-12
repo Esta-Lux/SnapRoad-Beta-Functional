@@ -184,4 +184,10 @@ export type NavigationProgress = {
   confidence: number;
   instructionSource?: 'sdk' | 'sdk_waiting' | 'js';
   routePolyline?: RoutePoint[];
+  /**
+   * Cumulative meters along the polyline at which the display position sits.
+   * Consumers should use this (not `snapped.cumulativeMeters`) for route-line
+   * split so the "traveled" / "remaining" break aligns with the visible puck.
+   */
+  displayCumulativeMeters?: number;
 };

@@ -79,6 +79,10 @@ export function useCameraController({
   const speedB = speedMphBucket(speedMph);
   const maneuverB = maneuverDistanceBucket(nextManeuverDistanceMeters);
   const stableRef = useRef<CameraSettings | null>(null);
+  /** Temporal hysteresis: last time the camera settings actually changed. */
+  const lastCameraChangeMs = useRef(0);
+  /** Minimum milliseconds between camera-setting changes to prevent jitter. */
+  const MIN_CAMERA_UPDATE_INTERVAL_MS = 600;
 
   const computed = useMemo(() => {
     if (!isNavigating || !cameraLocked) return null;
@@ -118,13 +122,20 @@ export function useCameraController({
   return useMemo(() => {
     if (!computed) {
       stableRef.current = null;
+      lastCameraChangeMs.current = 0;
       return null;
     }
     const prev = stableRef.current;
     if (prev && nearlySameCamera(prev, computed)) {
       return prev;
     }
+    /* Temporal hysteresis: suppress rapid camera changes within the cooldown. */
+    const now = Date.now();
+    if (prev && now - lastCameraChangeMs.current < MIN_CAMERA_UPDATE_INTERVAL_MS) {
+      return prev;
+    }
     stableRef.current = computed;
+    lastCameraChangeMs.current = now;
     return computed;
   }, [computed]);
 }

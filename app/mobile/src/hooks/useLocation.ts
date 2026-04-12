@@ -22,8 +22,6 @@ interface LocationState {
 
 const UNKNOWN_LOCATION: Coordinate = { lat: 0, lng: 0 };
 const HEADING_SMOOTHING = 0.2;
-/** Nav + slow: stronger compass damping to prevent spin/wobble (< ~5 mph). */
-const HEADING_SMOOTHING_SLOW_NAV = 0.1;
 const SPEED_SMOOTHING = 0.25;
 const LOW_SPEED_JUMP_METERS = 120;
 /** Max MPH change accepted per ~1s navigation tick (dampens GPS speed spikes). */
@@ -56,6 +54,17 @@ function blendTowardGps(
   qualityScale: number,
 ): Coordinate {
   const dist = haversineMeters(prev, raw);
+
+  /* ── Dead zone: freeze position when effectively stationary ────────────
+   * GPS wanders 2–5 m even at standstill.  When both smoothed and raw
+   * speed are near-zero AND the device hasn't moved significantly, keep
+   * the previous coordinate to eliminate puck jitter at traffic lights,
+   * parking, etc.
+   */
+  if (smoothedSpeedMph < 1.0 && speedMph < 1.5 && dist < 5) {
+    return prev;
+  }
+
   const speedMps = Math.max(0, speedMph) / 2.237;
   const vRegime = Math.max(smoothedSpeedMph, speedMph * 0.9);
 
@@ -390,12 +399,12 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       setState((prev) => {
         /** Same threshold as GPS course: above this, COG drives bearing; ignore compass jitter. */
         if (prev.speed > 5) return prev;
+        /** Freeze heading entirely when nearly stopped — compass is too noisy to be useful. */
+        if (isNavigating && prev.speed < 2) return prev;
         const compassAlpha =
-          isNavigating && prev.speed < 2.5
+          isNavigating && prev.speed < 5
             ? 0.07
-            : isNavigating && prev.speed < 5
-              ? HEADING_SMOOTHING_SLOW_NAV
-              : HEADING_SMOOTHING;
+            : HEADING_SMOOTHING;
         if (!hasHeadingRef.current) {
           smoothedRef.current = deg;
           hasHeadingRef.current = true;

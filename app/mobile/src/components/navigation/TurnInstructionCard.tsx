@@ -134,11 +134,44 @@ export default React.memo(function TurnInstructionCard({
   const hasKindManeuver = maneuverKind != null && maneuverKind !== 'unknown';
   const hasRichManeuver = hasRawManeuver || hasKindManeuver;
 
-  const effectiveLanes = useMemo((): LaneInfo[] | null => {
+  const rawLanes = useMemo((): LaneInfo[] | null => {
     if (lanes?.length) return lanes;
     const json = getLaneData(step) ?? lanesJson;
     return lanesFromLegacyJson(json);
   }, [lanes, step, lanesJson]);
+
+  /**
+   * Debounced lanes: hold previous lane data for 300 ms after a change to
+   * prevent 1-frame flicker when the step index advances and lane sources
+   * briefly disagree.
+   */
+  const debouncedLanesRef = useRef<{
+    data: LaneInfo[] | null;
+    changedAt: number;
+    prevStepInstruction: string | undefined;
+  }>({ data: null, changedAt: 0, prevStepInstruction: undefined });
+
+  const effectiveLanes = useMemo((): LaneInfo[] | null => {
+    const now = Date.now();
+    const prev = debouncedLanesRef.current;
+    const stepChanged = step?.instruction !== prev.prevStepInstruction;
+    const lanesChanged = JSON.stringify(rawLanes) !== JSON.stringify(prev.data);
+
+    if (!lanesChanged) return prev.data;
+
+    /* Accept immediately when the step actually advanced (expected lane change). */
+    if (stepChanged) {
+      debouncedLanesRef.current = { data: rawLanes, changedAt: now, prevStepInstruction: step?.instruction };
+      return rawLanes;
+    }
+
+    /* Within same step: debounce — hold previous for 300 ms. */
+    if (now - prev.changedAt < 300) {
+      return prev.data;
+    }
+    debouncedLanesRef.current = { data: rawLanes, changedAt: now, prevStepInstruction: step?.instruction };
+    return rawLanes;
+  }, [rawLanes, step]);
 
   const bannerThen = getBannerThenLine(step);
   const thenText = useMemo(() => {
