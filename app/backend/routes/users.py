@@ -237,7 +237,7 @@ def delete_account(auth_user: dict = Depends(get_current_user)):
         "name": "Deleted User",
         "full_name": "Deleted User",
         "status": "deleted",
-        "password_hash": None,
+        "password_hash": None,  # nosec B105
         "plan": "basic",
         "is_premium": False,
         "gem_multiplier": 1,

@@ -268,7 +268,7 @@ async def dispatch_commute_alerts(request: Request):
             try:
                 sb.table("commute_routes").update({"last_push_date": str(today_utc)}).eq("id", route["id"]).execute()
             except Exception:
-                pass
+                logger.debug("failed to update last_push_date for commute route %s", route["id"])
             sent += 1
     return {"success": True, "dispatched": sent, "checked": len(routes)}
 

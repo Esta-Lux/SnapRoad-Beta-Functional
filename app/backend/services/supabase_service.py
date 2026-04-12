@@ -101,7 +101,7 @@ def compute_extended_promotion_until_iso(existing_until_raw: Optional[object], d
             if cur > base:
                 base = cur
         except Exception:
-            pass
+            logger.debug("failed to parse existing premium_until for extension")
     end = base + timedelta(days=max(1, min(int(days), 730)))
     return end.isoformat()
 
@@ -714,7 +714,7 @@ def sb_create_offer(data: dict) -> Optional[dict]:
             try:
                 invalidate_offers_nearby_cache()
             except Exception:
-                pass
+                logger.debug("offers cache invalidation failed (non-critical)")
             return rows[0]
         pid = data.get("partner_id")
         if pid:
@@ -731,7 +731,7 @@ def sb_create_offer(data: dict) -> Optional[dict]:
                 try:
                     invalidate_offers_nearby_cache()
                 except Exception:
-                    pass
+                    logger.debug("offers cache invalidation failed (non-critical)")
                 return got[0]
         return None
     except Exception as e:
@@ -750,7 +750,7 @@ def sb_update_offer(offer_id: str, updates: dict) -> bool:
         try:
             invalidate_offers_nearby_cache()
         except Exception:
-            pass
+            logger.debug("offers cache invalidation failed (non-critical)")
         return True
     except Exception as e:
         logger.warning(f"sb_update_offer: {e}")
@@ -763,7 +763,7 @@ def sb_delete_offer(offer_id: str) -> bool:
         try:
             invalidate_offers_nearby_cache()
         except Exception:
-            pass
+            logger.debug("offers cache invalidation failed (non-critical)")
         return True
     except Exception as e:
         logger.warning(f"sb_delete_offer: {e}")

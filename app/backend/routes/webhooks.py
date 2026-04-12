@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def _ws_extract_bearer_raw(websocket: WebSocket, *, allow_query_token: bool) -> str:
-    token = ""
+    token = ""  # nosec B105
     if allow_query_token:
         token = (websocket.query_params.get("token") or "").strip()
     if not token:

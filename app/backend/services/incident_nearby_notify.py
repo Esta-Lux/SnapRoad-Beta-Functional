@@ -84,7 +84,7 @@ def notify_drivers_near_incident(
             if tsv < fresh_before:
                 continue
         except Exception:
-            continue
+            continue  # nosec B112
         if _haversine_miles(float(lat), float(lng), float(la), float(lo)) > _RADIUS_MI:
             continue
         payload.append(

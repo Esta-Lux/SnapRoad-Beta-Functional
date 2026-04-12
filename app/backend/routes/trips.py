@@ -964,7 +964,7 @@ def _week_trip_dicts_from_supabase(user_id: str) -> list:
             if dt < cutoff:
                 continue
         except Exception:
-            continue
+            continue  # nosec B112
         out.append({
             "date": dt.strftime("%Y-%m-%d"),
             "distance_miles": r.get("distance_miles", 0),
