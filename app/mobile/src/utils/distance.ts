@@ -455,6 +455,12 @@ export function stepEndCumulativeMeters(steps: DirectionsStep[]): number[] {
  * the index can only regress if the user is more than `hysteresisBackM` meters
  * before the previous step boundary. This prevents oscillation at maneuver points
  * caused by ±10 m GPS jitter.
+ *
+ * @param steps Mapbox directions steps for the active route.
+ * @param cumAlongPolylineMeters Cumulative meters along the polyline (from route start).
+ * @param polyline Full route polyline coordinates.
+ * @param prevStepIndex Previous step index to apply hysteresis against. Omit on first call.
+ * @param hysteresisBackM Meters behind the previous step boundary before allowing regression (default 30).
  */
 export function currentStepIndexAlongRoute(
   steps: DirectionsStep[],

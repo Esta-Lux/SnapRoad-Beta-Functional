@@ -516,9 +516,9 @@ export function useNavigation(params: {
 
       if (isNavigatingRef.current) {
         offRouteStreakRef.current = 0;
+        cumAlongHighWaterRef.current = 0;
         if (!opts?.fastSingleRoute) {
           traveledRef.current = 0;
-          cumAlongHighWaterRef.current = 0;
           setTraveledDistanceMeters(0);
           prevLocationRef.current = null;
           hasAnnouncedArrivalRef.current = false;
