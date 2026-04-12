@@ -1319,9 +1319,11 @@ export function useDriveNavigation(params: {
     );
     const prefetchThreshold = offRouteThreshold * 0.6;
 
-    // Worsening trend: 3 consecutive increasing snap distances
+    // Worsening trend: 3 consecutive increasing finite snap distances
     const trendWorsening =
-      hist.length === 3 && hist[0]! < hist[1]! && hist[1]! < hist[2]!;
+      hist.length === 3 &&
+      Number.isFinite(hist[0]) && Number.isFinite(hist[1]) && Number.isFinite(hist[2]) &&
+      hist[0]! < hist[1]! && hist[1]! < hist[2]!;
 
     if (
       Number.isFinite(snapDist) &&
@@ -1390,12 +1392,12 @@ export function useDriveNavigation(params: {
         const dest = navigationData.destination;
         /* Use pre-fetched result if available and fresh (< 5 s old). */
         const cached = prefetchedRerouteRef.current;
-        const usePrefetch = cached?.result.ok && now - cached.atMs < 5000;
+        const usePrefetch = cached != null && cached.result.ok && now - cached.atMs < 5000;
         prefetchedRerouteRef.current = null;
 
         let res: FetchDirectionsResult;
         if (usePrefetch) {
-          res = cached!.result;
+          res = cached.result;
         } else {
           const timeout = new Promise<FetchDirectionsResult>((resolve) =>
             setTimeout(() => resolve({ ok: false, reason: 'route_failed', message: 'Reroute timed out.' }), 8000),
