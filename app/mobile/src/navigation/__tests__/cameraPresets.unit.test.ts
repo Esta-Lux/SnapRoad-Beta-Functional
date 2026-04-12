@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getCameraPreset } from '../cameraPresets';
 
-test('getCameraPreset: faster travel adds right padding nudge (RHD forward view)', () => {
+test('getCameraPreset: symmetric horizontal padding; faster travel adds top look-ahead', () => {
   const low = getCameraPreset({
     mode: 'adaptive',
     speedMps: 8,
@@ -17,8 +17,9 @@ test('getCameraPreset: faster travel adds right padding nudge (RHD forward view)
     safeAreaTop: 0,
     safeAreaBottom: 0,
   });
-  assert.ok(high.padding.paddingRight > low.padding.paddingRight);
-  assert.equal(low.padding.paddingLeft, high.padding.paddingLeft);
+  assert.equal(high.padding.paddingRight, high.padding.paddingLeft);
+  assert.equal(low.padding.paddingRight, low.padding.paddingLeft);
+  assert.ok(high.padding.paddingTop > low.padding.paddingTop);
 });
 
 test('getCameraPreset: maneuver approach increases top padding', () => {

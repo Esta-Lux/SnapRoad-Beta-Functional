@@ -48,3 +48,8 @@ export function navNativeFullScreenEnabled(): boolean {
 export function navLogicDebugEnabled(): boolean {
   return envBool('EXPO_PUBLIC_NAV_LOGIC_DEBUG', false);
 }
+
+/** Lane UI + lane phrases in TTS — default off (set EXPO_PUBLIC_NAV_LANE_UI=1 to enable). */
+export function navLaneGuidanceUiEnabled(): boolean {
+  return envBool('EXPO_PUBLIC_NAV_LANE_UI', false);
+}

@@ -77,6 +77,7 @@ import RoutePreviewPanel from '../components/map/RoutePreviewPanel';
 import { projectAhead, getCameraConfig } from '../navigation/navigationCamera';
 import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import { useNavigationSpeech } from '../hooks/useNavigationSpeech';
+import { useSmoothedNavArrow } from '../hooks/useSmoothedNavArrow';
 import { repeatLastTurnByTurn } from '../navigation/navigationGuidanceMemory';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import { getRoutePolylineStyle } from '../lib/routePolylineStyle';
@@ -134,7 +135,12 @@ import OrionQuickMic from '../components/orion/OrionQuickMic';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
-import { navLogicDebugEnabled, navLogicSdkEnabled, navNativeFullScreenEnabled } from '../navigation/navFeatureFlags';
+import {
+  navLaneGuidanceUiEnabled,
+  navLogicDebugEnabled,
+  navLogicSdkEnabled,
+  navNativeFullScreenEnabled,
+} from '../navigation/navFeatureFlags';
 import {
   ingestSdkLocation,
   ingestSdkProgress,
@@ -460,6 +466,11 @@ export default function MapScreen() {
     progress: nav.navigationProgress,
     enabled: !navVoiceMuted && nav.isNavigating && !navLogicSdkEnabled(),
     drivingMode,
+    routeSteps: nav.navigationData?.steps,
+    routePolyline: nav.navigationData?.polyline,
+    currentStepIndex: nav.currentStepIndex,
+    userCoord: nav.navigationProgressCoord,
+    navigationSteps: nav.navigationSteps,
   });
 
   const enableShareLocationFromMap = useCallback(async () => {
@@ -572,6 +583,12 @@ export default function MapScreen() {
   /** GPU SymbolLayer arrow needs a route line layer to anchor above; fall back to LocationPuck if missing. */
   const showGpuNavUserArrow =
     nav.isNavigating && Boolean(nav.navigationData?.polyline && nav.navigationData.polyline.length >= 2);
+  const navArrowSmoothed = useSmoothedNavArrow(
+    Boolean(showGpuNavUserArrow && nav.isNavigating),
+    navDisplayCoord.lat,
+    navDisplayCoord.lng,
+    Number.isFinite(navDisplayHeading) ? navDisplayHeading : 0,
+  );
 
   /** Passed / ahead route styling while navigating — same snap as turn/ETA (`navigationProgress`). */
   const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
@@ -3127,9 +3144,9 @@ export default function MapScreen() {
 
           <NavigationUserSymbolLayers
             visible={Boolean(showGpuNavUserArrow && hasNativeMapbox && MapboxGL)}
-            lng={navDisplayCoord.lng}
-            lat={navDisplayCoord.lat}
-            bearingDeg={navDisplayHeading}
+            lng={navArrowSmoothed.lng}
+            lat={navArrowSmoothed.lat}
+            bearingDeg={navArrowSmoothed.headingDeg}
             accuracyMeters={accuracy}
             routeColor={navRouteColors.routeColor}
             routeCasing={navRouteColors.routeCasing}
@@ -3332,6 +3349,7 @@ export default function MapScreen() {
       {nav.isNavigating && nav.navigationProgress && (() => {
         const prog = nav.navigationProgress!;
         const instructionSrc = prog.instructionSource;
+        const laneUi = navLaneGuidanceUiEnabled();
 
         if (instructionSrc === 'sdk_waiting') {
           return (
@@ -3522,8 +3540,9 @@ export default function MapScreen() {
             ? maneuverFields.kind
             : banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
         const signalResolved = banner?.signal ?? progressNavStepForRich?.signal;
-        const lanesResolved =
-          nextStepIsCurrentStep && progressNavStepForRich?.lanes?.length
+        const lanesResolved = !laneUi
+          ? undefined
+          : nextStepIsCurrentStep && progressNavStepForRich?.lanes?.length
             ? progressNavStepForRich.lanes
             : banner?.lanes?.length
               ? banner.lanes
@@ -3579,7 +3598,7 @@ export default function MapScreen() {
                 });
               }}
               lanesJson={
-                logicSdkAuthoritativeUi
+                logicSdkAuthoritativeUi || !laneUi
                   ? undefined
                   : mergeLaneSources(
                       actionableGuidanceStep,

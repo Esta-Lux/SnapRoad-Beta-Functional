@@ -1626,6 +1626,8 @@ export function useDriveNavigation(params: {
     dismissTripSummary,
     updatePosition,
     addWaypoint,
+    /** Rich steps aligned with the route polyline (JS nav) — speech + UI can map Directions indices to NavStep. */
+    navigationSteps: navStepsBuilt,
     /** Single navigation core: puck, split, ETA, turn — null when not navigating. */
     navigationProgress,
     /** Same as {@link navigationProgress} — kept for callers expecting `fusedNavState`. */
