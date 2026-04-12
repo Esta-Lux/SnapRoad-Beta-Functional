@@ -1388,14 +1388,21 @@ export default function MapScreen() {
       // heading/preset values are current in this render cycle.
       if (!wasNavigatingRef.current) {
         const pad = camCtrl?.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
-        cameraRef.current?.setCamera({
-          centerCoordinate: [location.lng, location.lat],
-          heading: heading,
-          zoomLevel: camCtrl?.followZoomLevel ?? modeConfig.navZoom,
-          pitch: camCtrl?.followPitch ?? modeConfig.navPitch,
-          padding: pad,
-          animationMode: 'flyTo',
-          animationDuration: 650,
+        // Defer the imperative setCamera to the next frame so the Mapbox
+        // Camera component's declarative prop changes (followUserLocation,
+        // followPitch, etc.) are committed to the native view first.
+        // Without this, the fly-to can race with the prop-driven update
+        // and get silently overridden.
+        requestAnimationFrame(() => {
+          cameraRef.current?.setCamera({
+            centerCoordinate: [location.lng, location.lat],
+            heading: heading,
+            zoomLevel: camCtrl?.followZoomLevel ?? modeConfig.navZoom,
+            pitch: camCtrl?.followPitch ?? modeConfig.navPitch,
+            padding: pad,
+            animationMode: 'flyTo',
+            animationDuration: 650,
+          });
         });
       }
     }
