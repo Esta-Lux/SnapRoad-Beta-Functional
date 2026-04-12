@@ -1,7 +1,7 @@
 /**
  * Mapbox Navigation SDK (native) → JS bridge helpers for SnapRoad’s headless mode.
  *
- * State and ingestion live in {@link navSdkStore.ts}. `useNavigation` subscribes when
+ * State and ingestion live in {@link navSdkStore.ts}. {@link useDriveNavigation} subscribes when
  * `EXPO_PUBLIC_NAV_LOGIC_SDK` is enabled. MapScreen mounts a hidden `MapboxNavigationView`
  * with `navigationLogicOnly` and forwards native events into the store.
  */

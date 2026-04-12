@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import type { RewardsStackScreenNavigationProp } from '../../navigation/types';
 import { api } from '../../api/client';
 import type { GemTx } from './types';
 import { displayOfferCategory } from '../../lib/offerCategories';
@@ -62,7 +63,7 @@ export default function GemActivityDetailModal({
   isLight,
   onClose,
 }: Props) {
-  const navigation = useNavigation();
+  const navigation = useNavigation<RewardsStackScreenNavigationProp>();
   const overlay = isLight ? 'rgba(15,23,42,0.45)' : 'rgba(2,6,23,0.72)';
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
@@ -239,7 +240,7 @@ export default function GemActivityDetailModal({
         ) : null}
         <TouchableOpacity
           style={[styles.dirBtn, { backgroundColor: `${primary}14`, borderColor: `${primary}35` }]}
-          onPress={() => (navigation as { navigate: (n: string) => void }).navigate('Profile')}
+          onPress={() => navigation.navigate('Profile', { screen: 'ProfileMain' })}
           activeOpacity={0.85}
         >
           <Ionicons name="analytics-outline" size={18} color={primary} />

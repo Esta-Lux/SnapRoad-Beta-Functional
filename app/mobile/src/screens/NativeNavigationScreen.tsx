@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet, StatusBar, useColorScheme, TouchableOpacity, Text } from 'react-native';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
+import type { RouteProp } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
 import { useNavigation as useRNNavigation, useRoute } from '@react-navigation/native';
+import type { MapStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigatingState } from '../contexts/NavigatingContext';
+import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useAuth } from '../contexts/AuthContext';
 import type { DrivingMode } from '../types';
 import {
@@ -24,9 +27,9 @@ const NAV_MAP_STYLE = 'mapbox://styles/mapbox/standard';
  * and returns trip summary data to MapScreen on exit.
  */
 export default function NativeNavigationScreen() {
-  const rnNav = useRNNavigation<any>();
-  const route = useRoute<any>();
-  const { setIsNavigating } = useNavigatingState();
+  const rnNav = useRNNavigation<StackNavigationProp<MapStackParamList>>();
+  const route = useRoute<RouteProp<MapStackParamList, 'NativeNavigation'>>();
+  const { setIsNavigating } = useNavigationMode();
   const { user } = useAuth();
   const didExitRef = useRef(false);
   const didHandleInvalidParamsRef = useRef(false);

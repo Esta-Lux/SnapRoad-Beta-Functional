@@ -2,7 +2,7 @@ import { navLogicSdkEnabled } from './navFeatureFlags';
 
 /**
  * While a headless Mapbox Navigation trip is active, turn-by-turn must be SDK voice only.
- * Updated from {@link useNavigation} — do not import that hook here.
+ * Updated from {@link useDriveNavigation} — do not import that hook here.
  */
 let logicSdkTripActive = false;
 

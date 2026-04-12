@@ -129,7 +129,7 @@ export interface TripSummary {
   };
 }
 
-export function useNavigation(params: {
+export function useDriveNavigation(params: {
   userLocation: Coordinate;
   speed: number;
   heading: number;

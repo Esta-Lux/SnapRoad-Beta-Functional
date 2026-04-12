@@ -22,7 +22,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
-import { NavigatingProvider, useNavigatingState } from './src/contexts/NavigatingContext';
+import { NavigatingProvider, useNavigationMode } from './src/contexts/NavigatingContext';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import LegalConsentGate from './src/components/legal/LegalConsentGate';
@@ -214,7 +214,7 @@ async function registerForPushNotifications(): Promise<string | null> {
 
 function MainTabs() {
   const { colors, isLight } = useTheme();
-  const { isNavigating } = useNavigatingState();
+  const { isNavigating } = useNavigationMode();
 
   return (
     <Tab.Navigator

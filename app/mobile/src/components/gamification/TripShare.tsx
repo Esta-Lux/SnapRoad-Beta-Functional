@@ -8,7 +8,7 @@ import { formatDuration } from '../../utils/format';
 
 interface TripData {
   distance: number;
-  /** Minutes (matches trip summary / `useNavigation`). */
+  /** Minutes (matches trip summary / `useDriveNavigation`). */
   duration: number;
   safety_score: number;
   gems_earned: number;
