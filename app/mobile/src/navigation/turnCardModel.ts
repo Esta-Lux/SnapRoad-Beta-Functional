@@ -186,6 +186,12 @@ export function resolveTurnCardState(args: {
   mode: DrivingMode;
   inConfirmationWindow: boolean;
   nextStep: DirectionsStep | null | undefined;
+  /**
+   * When the road ahead has severe/heavy congestion near the next maneuver,
+   * pass `true` to show the turn card earlier (user is approaching slowly,
+   * needs more time to read the instruction).
+   */
+  congestionNearManeuver?: boolean;
 }): TurnCardState {
   const {
     distanceToNextManeuverM: d,
@@ -193,6 +199,7 @@ export function resolveTurnCardState(args: {
     mode,
     inConfirmationWindow,
     nextStep,
+    congestionNearManeuver = false,
   } = args;
 
   const tc = getTurnCardNavTuning(mode);
@@ -213,7 +220,10 @@ export function resolveTurnCardState(args: {
     return 'confirm';
   }
 
-  const pMax = previewDistanceMaxMeters(speedMph, mode);
+  const pMax = previewDistanceMaxMeters(speedMph, mode)
+    // Congestion boost: when the ahead segment has heavy/severe congestion,
+    // the driver approaches slower and needs the card earlier — widen preview by ~25%.
+    * (congestionNearManeuver ? 1.25 : 1);
 
   if (hasUpcomingTurn && d > pMax) {
     return 'cruise';

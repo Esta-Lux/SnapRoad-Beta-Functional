@@ -159,11 +159,28 @@ export function getCameraPreset({
   const maneuverZoomAdjustment =
     nextManeuverDistanceMeters < 55 ? 0.42 : nextManeuverDistanceMeters < 115 ? 0.26 : 0;
   zoom += maneuverZoomAdjustment;
+
+  // SPORT: at highway speeds (>60 mph) pull back zoom slightly so more road is visible.
+  if (mode === 'sport' && mph > 60) {
+    zoom -= Math.min(0.3, (mph - 60) * 0.008);
+  }
+
   zoom = clamp(zoom, 15.15, 18.92);
 
-  const maneuverPitchAdjustment =
-    nextManeuverDistanceMeters < 60 ? -6 : nextManeuverDistanceMeters < 120 ? -4 : 0;
-  const pitch = clamp(cfg.basePitch + maneuverPitchAdjustment, cfg.minPitch, cfg.maxPitch);
+  // ADAPTIVE: interpolate pitch between minPitch (standing) and maxPitch (highway),
+  // giving users the "reactive" camera feel the mode name implies.
+  let pitch: number;
+  if (mode === 'adaptive') {
+    const speedFraction = clamp(mph / 70, 0, 1);
+    const basePitch = cfg.minPitch + speedFraction * (cfg.maxPitch - cfg.minPitch);
+    const maneuverPitchAdj =
+      nextManeuverDistanceMeters < 60 ? -6 : nextManeuverDistanceMeters < 120 ? -4 : 0;
+    pitch = clamp(basePitch + maneuverPitchAdj, cfg.minPitch, cfg.maxPitch);
+  } else {
+    const maneuverPitchAdjustment =
+      nextManeuverDistanceMeters < 60 ? -6 : nextManeuverDistanceMeters < 120 ? -4 : 0;
+    pitch = clamp(cfg.basePitch + maneuverPitchAdjustment, cfg.minPitch, cfg.maxPitch);
+  }
 
   // Mapbox follow-padding behavior: larger bottom padding moves the puck UP.
   // For a lower puck position, bias to larger top padding and moderate bottom padding.
@@ -173,6 +190,11 @@ export function getCameraPreset({
   let paddingBottom = cfg.basePadBottom + safeAreaBottom;
   if (nextManeuverDistanceMeters < cfg.turnApproachMeters) {
     paddingTop += cfg.turnApproachPadBoost;
+  }
+
+  // SPORT: at >60 mph add extra top padding (look-ahead) so more road extends ahead.
+  if (mode === 'sport' && mph > 60) {
+    paddingTop += Math.min(50, (mph - 60) * 1.5);
   }
 
   // RHD: a touch more right inset at speed keeps the puck slightly left of center — cleaner forward field

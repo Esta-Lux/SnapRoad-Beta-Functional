@@ -269,6 +269,24 @@ function analyzeCongestion(congestion?: string[]): {
   return { level: 'low', delayMin: 0, heavyRatio };
 }
 
+/**
+ * Check whether any of the upcoming congestion edges (within ~`lookAheadEdges` of
+ * the current segment) are heavy or severe. Used to boost turn card preview distance.
+ */
+function hasSevereCongestionAhead(
+  congestion: string[] | undefined,
+  currentSegIdx: number,
+  lookAheadEdges = 12,
+): boolean {
+  if (!congestion || congestion.length === 0) return false;
+  const from = Math.max(0, currentSegIdx);
+  const to = Math.min(congestion.length, from + lookAheadEdges);
+  for (let i = from; i < to; i++) {
+    if (congestion[i] === 'heavy' || congestion[i] === 'severe') return true;
+  }
+  return false;
+}
+
 function timeAgo(iso: string): string {
   const diff = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   if (diff < 1) return 'just now';
@@ -3172,6 +3190,10 @@ export default function MapScreen() {
           mode: drivingMode,
           inConfirmationWindow: inConfirmWindow,
           nextStep: nextManeuverCoord,
+          congestionNearManeuver: hasSevereCongestionAhead(
+            nav.navigationData?.congestion,
+            nav.navigationProgress?.snapped?.segmentIndex ?? 0,
+          ),
         });
 
         const distParts = formatTurnDistanceForCard(liveDistMeters);
