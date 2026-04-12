@@ -21,9 +21,16 @@ interface LocationState {
 }
 
 const UNKNOWN_LOCATION: Coordinate = { lat: 0, lng: 0 };
+/** Smoothed speed (mph) below which the puck position freezes to suppress GPS wander. */
+const STATIONARY_SPEED_THRESHOLD_MPH = 1.0;
+/** Raw speed (mph) below which the puck position freezes to suppress GPS wander. */
+const STATIONARY_RAW_SPEED_THRESHOLD_MPH = 1.5;
+/** Distance (m) below which GPS drift is ignored when the device is near-stationary. */
+const STATIONARY_DISTANCE_THRESHOLD_M = 5;
+/** Speed (mph) below which compass heading is completely frozen during navigation. */
+const COMPASS_FREEZE_SPEED_MPH = 2;
+
 const HEADING_SMOOTHING = 0.2;
-/** Nav + slow: stronger compass damping to prevent spin/wobble (< ~5 mph). */
-const HEADING_SMOOTHING_SLOW_NAV = 0.1;
 const SPEED_SMOOTHING = 0.25;
 const LOW_SPEED_JUMP_METERS = 120;
 /** Max MPH change accepted per ~1s navigation tick (dampens GPS speed spikes). */
@@ -56,6 +63,17 @@ function blendTowardGps(
   qualityScale: number,
 ): Coordinate {
   const dist = haversineMeters(prev, raw);
+
+  /* ── Dead zone: freeze position when effectively stationary ────────────
+   * GPS wanders 2–5 m even at standstill.  When both smoothed and raw
+   * speed are near-zero AND the device hasn't moved significantly, keep
+   * the previous coordinate to eliminate puck jitter at traffic lights,
+   * parking, etc.
+   */
+  if (smoothedSpeedMph < STATIONARY_SPEED_THRESHOLD_MPH && speedMph < STATIONARY_RAW_SPEED_THRESHOLD_MPH && dist < STATIONARY_DISTANCE_THRESHOLD_M) {
+    return prev;
+  }
+
   const speedMps = Math.max(0, speedMph) / 2.237;
   const vRegime = Math.max(smoothedSpeedMph, speedMph * 0.9);
 
@@ -390,12 +408,12 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       setState((prev) => {
         /** Same threshold as GPS course: above this, COG drives bearing; ignore compass jitter. */
         if (prev.speed > 5) return prev;
+        /** Freeze heading entirely when nearly stopped — compass is too noisy to be useful. */
+        if (isNavigating && prev.speed < COMPASS_FREEZE_SPEED_MPH) return prev;
         const compassAlpha =
-          isNavigating && prev.speed < 2.5
+          isNavigating && prev.speed < 5
             ? 0.07
-            : isNavigating && prev.speed < 5
-              ? HEADING_SMOOTHING_SLOW_NAV
-              : HEADING_SMOOTHING;
+            : HEADING_SMOOTHING;
         if (!hasHeadingRef.current) {
           smoothedRef.current = deg;
           hasHeadingRef.current = true;

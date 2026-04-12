@@ -212,28 +212,44 @@ export function computeNavigationProgressFrame({
 
   const prevDisplay = previous?.displayCoord ?? rawLocation;
 
+  /**
+   * Display-coordinate EMA.
+   *
+   * `useLocation` already applies adaptive EMA + outlier rejection to the raw GPS.
+   * When the snap is close to the route (< 15 m) the incoming location is high-quality
+   * and only needs a light pass-through alpha (0.75–0.95 depending on speed) so the
+   * puck doesn't double-lag.  The heavier smoothing curve is retained only when the
+   * user is far from the polyline (poor snap / off-route approach) where raw location
+   * is less trustworthy.
+   */
   let alpha: number;
-  if (speed < 1) {
-    alpha = 0.1;
-  } else if (speed < 4) {
-    alpha = 0.18;
-  } else if (speed < 8) {
-    alpha = 0.3;
-  } else if (speed < 14) {
-    alpha = 0.45;
-  } else if (speed < 22) {
-    alpha = 0.6;
-  } else if (speed < 30) {
-    alpha = 0.72;
+  if (!isOffRoute && snap.distanceMeters < 15) {
+    /* On-route, good snap → near pass-through (useLocation already smoothed). */
+    alpha = clamp(0.75 + speed / 100, 0.75, 0.95);
   } else {
-    alpha = 0.85;
+    /* Far from route or off-route → heavier smoothing on display coord. */
+    if (speed < 1) {
+      alpha = 0.1;
+    } else if (speed < 4) {
+      alpha = 0.18;
+    } else if (speed < 8) {
+      alpha = 0.3;
+    } else if (speed < 14) {
+      alpha = 0.45;
+    } else if (speed < 22) {
+      alpha = 0.6;
+    } else if (speed < 30) {
+      alpha = 0.72;
+    } else {
+      alpha = 0.85;
+    }
+
+    if (snap.distanceMeters > 18) alpha = Math.min(0.88, alpha + 0.1);
+    if (snap.distanceMeters > 38) alpha = Math.min(0.92, alpha + 0.06);
   }
 
-  if (snap.distanceMeters > 18) alpha = Math.min(0.88, alpha + 0.1);
-  if (snap.distanceMeters > 38) alpha = Math.min(0.92, alpha + 0.06);
-
   alpha = alpha + progressTuning.alphaOffset;
-  alpha = Math.max(0.06, Math.min(0.92, alpha));
+  alpha = Math.max(0.06, Math.min(0.95, alpha));
 
   const displayCoord: RawLocation = {
     lat: prevDisplay.lat + (biasedTarget.lat - prevDisplay.lat) * alpha,
@@ -249,9 +265,20 @@ export function computeNavigationProgressFrame({
       ? rawLocation.heading
       : bearingFallback(route, snap.segmentIndex);
   const prevHeading = previous?.displayCoord?.heading ?? targetHeading ?? 0;
+
+  /*
+   * Heading dead zone: suppress small bearing changes (< 3°) to prevent camera
+   * spin / wobble from GPS course noise at moderate-to-low speed.  At highway
+   * speed the threshold narrows to let the camera track gentle lane changes.
+   */
+  const headingDeadZone = speed < 8 ? 3 : speed < 20 ? 2 : 1;
+  const headingDelta = ((targetHeading - prevHeading + 540) % 360) - 180;
   const headingAlpha =
     speed < 2 ? 0.1 : speed < 6 ? 0.15 : speed < 14 ? 0.22 : speed < 22 ? 0.3 : 0.38;
-  displayCoord.heading = headingBlend(prevHeading, targetHeading ?? prevHeading, headingAlpha);
+  displayCoord.heading =
+    Math.abs(headingDelta) < headingDeadZone
+      ? prevHeading
+      : headingBlend(prevHeading, targetHeading ?? prevHeading, headingAlpha);
 
   /** Puck tracks the road immediately; heading matches the smoothed beam used for navigation UI. */
   const puckCoord: RawLocation = {
@@ -263,7 +290,18 @@ export function computeNavigationProgressFrame({
     heading: displayCoord.heading,
   };
 
-  const { traveled, remaining } = splitRouteAtSnap(route, snap);
+  /**
+   * Route-line split: use the biased (lead-ahead) cumulative position so the
+   * "traveled" line matches where the puck is drawn, not the raw snap point.
+   * This fixes the visual bug where the green traveled line lags behind the puck.
+   */
+  const routeEndCum = cumulative[cumulative.length - 1] ?? snap.cumulativeMeters;
+  const leadAheadMeters = !isOffRoute && speed > 3
+    ? Math.min(progressTuning.leadCapMeters, speed * 0.3 * progressTuning.leadScale)
+    : 0;
+  const biasedCum = Math.min(snap.cumulativeMeters + leadAheadMeters, routeEndCum);
+  const displaySnapForSplit: typeof snap = { ...snap, cumulativeMeters: biasedCum };
+  const { traveled, remaining } = splitRouteAtSnap(route, displaySnapForSplit);
   const routeTotalMeters = cumulative[cumulative.length - 1] ?? 0;
   const distanceRemainingMeters = Math.max(0, routeTotalMeters - snap.cumulativeMeters);
   let modelDurationRemainingSeconds = remainingDurationSecondsFromNavSteps({
@@ -314,6 +352,44 @@ export function computeNavigationProgressFrame({
     etaNaiveSeconds = blended.naiveSec;
   }
 
+  /* ── ETA smoothing + monotonicity ──────────────────────────────────────
+   * Smooth with light EMA (α 0.3) so step-boundary recalculations and
+   * small traffic updates don't cause the ETA to visibly jump.
+   *
+   * Monotonicity constraint: for non-reroute updates the ETA should not
+   * increase by more than the wall-clock time elapsed since the previous
+   * frame.  This prevents "ETA going up while driving" glitches.  Cap the
+   * maximum single-frame change at ±30 s.
+   */
+  const ETA_EMA_ALPHA = 0.3;
+  const ETA_MAX_CHANGE_SEC = 30;
+  if (previous != null && typeof previous.durationRemainingSeconds === 'number' && !isOffRoute) {
+    const prevEta = previous.durationRemainingSeconds;
+    const nowTs = typeof rawLocation.timestamp === 'number' ? rawLocation.timestamp : Date.now();
+    const prevTs = previous.displayCoord?.timestamp;
+    const elapsedSec =
+      typeof prevTs === 'number' && Number.isFinite(prevTs)
+        ? Math.max(0, (nowTs - prevTs) / 1000)
+        : 1;
+
+    // EMA
+    let smoothed = prevEta * (1 - ETA_EMA_ALPHA) + durationRemainingSeconds * ETA_EMA_ALPHA;
+
+    // Monotonicity: don't increase by more than elapsed time
+    const maxAllowedIncrease = elapsedSec;
+    if (smoothed > prevEta + maxAllowedIncrease) {
+      smoothed = prevEta + maxAllowedIncrease;
+    }
+
+    // Cap large jumps
+    const delta = smoothed - prevEta;
+    if (Math.abs(delta) > ETA_MAX_CHANGE_SEC) {
+      smoothed = prevEta + Math.sign(delta) * ETA_MAX_CHANGE_SEC;
+    }
+
+    durationRemainingSeconds = Math.max(0, smoothed);
+  }
+
   const etaEpochMs = Date.now() + durationRemainingSeconds * 1000;
 
   const nextStepRaw = pickNextNavStepAlongRoute(steps, snap.cumulativeMeters);
@@ -354,5 +430,6 @@ export function computeNavigationProgressFrame({
     isOffRoute,
     confidence,
     instructionSource: 'js',
+    displayCumulativeMeters: biasedCum,
   };
 }
