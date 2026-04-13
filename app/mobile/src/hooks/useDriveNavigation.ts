@@ -339,13 +339,9 @@ export function useDriveNavigation(params: {
       if (c) return c;
     }
 
-    if (
-      isNavigating &&
-      !sdkActive &&
-      navigationProgress?.snapped &&
-      !navigationProgress.isOffRoute &&
-      navigationProgress.snapped.distanceMeters < 45
-    ) {
+    /* On-route: always use snapped puck (polyline + lead-ahead). The old <45 m gate let the
+     * LocationPuck drift off the line in the 45–corridor band while still “on route”. */
+    if (isNavigating && !sdkActive && navigationProgress?.snapped && !navigationProgress.isOffRoute) {
       const pc = navigationProgress.puckCoord;
       if (pc && Number.isFinite(pc.lat) && Number.isFinite(pc.lng)) {
         return { lat: pc.lat, lng: pc.lng };
@@ -1311,8 +1307,8 @@ export function useDriveNavigation(params: {
   ]);
 
   // --- Off-route detection + auto-reroute (`streakRequired` from mode tuning; see offRouteTuning) ---
-  // Includes speculative pre-fetch: when snap distance exceeds 60% of the off-route
-  // threshold AND trend is worsening over 3 ticks, fire a background Directions API
+  // Includes speculative pre-fetch: when snap distance exceeds ~52% of the off-route
+  // threshold AND trend is worsening over 2 ticks, fire a background Directions API
   // call. If the user is confirmed off-route, the pre-fetched result is used immediately
   // (saves ~1–2 s of perceived reroute latency).
   useEffect(() => {
@@ -1338,20 +1334,22 @@ export function useDriveNavigation(params: {
     const snapDist = navigationProgress.snapped?.distanceMeters ?? Infinity;
     const hist = driftSnapHistoryRef.current;
     hist.push(snapDist);
-    if (hist.length > 3) hist.shift();
+    if (hist.length > 2) hist.shift();
 
     const offRouteThreshold = effectiveMaxSnapMeters(
       navModeProfile.offRoute,
       speedMps,
       typeof gpsAccuracy === 'number' ? gpsAccuracy : null,
     );
-    const prefetchThreshold = offRouteThreshold * 0.6;
+    /** Start prefetch earlier so a confirmed off-route reroute often hits cache (~1 s saved). */
+    const prefetchThreshold = offRouteThreshold * 0.52;
 
-    // Worsening trend: 3 consecutive increasing finite snap distances
+    // Worsening trend: last two ticks show snap distance increasing (drift away from corridor)
     const trendWorsening =
-      hist.length === 3 &&
-      Number.isFinite(hist[0]) && Number.isFinite(hist[1]) && Number.isFinite(hist[2]) &&
-      hist[0]! < hist[1]! && hist[1]! < hist[2]!;
+      hist.length === 2 &&
+      Number.isFinite(hist[0]) &&
+      Number.isFinite(hist[1]) &&
+      hist[0]! < hist[1]!;
 
     if (
       Number.isFinite(snapDist) &&
@@ -1391,7 +1389,8 @@ export function useDriveNavigation(params: {
     if (rerouteInFlightRef.current) return;
 
     const now = Date.now();
-    const cooldownMs = lastRerouteAtRef.current ? 1800 : 0;
+    /** Short gap between reroutes so legitimate multi-correction trips still recover quickly. */
+    const cooldownMs = lastRerouteAtRef.current ? 1100 : 0;
     if (cooldownMs > 0 && now - lastRerouteAtRef.current < cooldownMs) return;
 
     offRouteStreakRef.current = 0;

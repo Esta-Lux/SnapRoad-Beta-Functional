@@ -12,30 +12,30 @@ export type OffRouteTuning = {
 
 /** Wider tolerance — shared default / tests (legacy “non-sport”). */
 export const OFF_ROUTE_CONSERVATIVE: OffRouteTuning = {
-  maxSnapMeters: 55,
-  minConfidence: 0.52,
-  streakRequired: 4,
-};
-
-/** Fewer false positives: wait longer before auto-reroute (comfort drivers). */
-export const OFF_ROUTE_CALM: OffRouteTuning = {
-  maxSnapMeters: 58,
-  minConfidence: 0.45,
-  streakRequired: 4,
-};
-
-/** Between calm and sport: balanced urban + highway. */
-export const OFF_ROUTE_ADAPTIVE: OffRouteTuning = {
   maxSnapMeters: 50,
   minConfidence: 0.52,
   streakRequired: 3,
 };
 
+/** Fewer false positives: wait longer before auto-reroute (comfort drivers). */
+export const OFF_ROUTE_CALM: OffRouteTuning = {
+  maxSnapMeters: 52,
+  minConfidence: 0.45,
+  streakRequired: 3,
+};
+
+/** Between calm and sport: balanced urban + highway. */
+export const OFF_ROUTE_ADAPTIVE: OffRouteTuning = {
+  maxSnapMeters: 44,
+  minConfidence: 0.52,
+  streakRequired: 2,
+};
+
 /** Tighter corridor — quicker reroute when truly off the line. */
 export const OFF_ROUTE_AGGRESSIVE: OffRouteTuning = {
-  maxSnapMeters: 40,
+  maxSnapMeters: 34,
   minConfidence: 0.65,
-  streakRequired: 3,
+  streakRequired: 2,
 };
 
 export function offRouteTuningForMode(mode: DrivingMode): OffRouteTuning {
