@@ -3,7 +3,7 @@ import type { Coordinate } from '../types';
 import type { NavigationProgress, NavStep, NavBannerModel } from './navModel';
 import { polylineLengthMeters, projectOntoPolyline } from '../utils/distance';
 import type { SdkLocationPayload, SdkProgressPayload } from './navSdkStore';
-import { resolveManeuverKind } from './navStepsFromDirections';
+import { navStepFromDirectionsAtIndex, resolveManeuverKind } from './navStepsFromDirections';
 
 function mapSdkToRichKind(maneuverType?: string, maneuverDirection?: string) {
   const t = String(maneuverType ?? '').toLowerCase();
@@ -86,6 +86,8 @@ export function buildNavigationProgressFromSdk(args: {
       ? Math.min(Math.max(0, stepIdxRaw), Math.max(0, steps.length - 1))
       : Math.max(0, stepIdxRaw);
   const ds = steps.length > 0 ? steps[idx] ?? null : null;
+  const followingStep =
+    steps.length > 0 && idx + 1 < steps.length ? navStepFromDirectionsAtIndex(steps, polyline, idx + 1) : null;
   const kind = mapSdkToRichKind(progress.maneuverType, progress.maneuverDirection);
   const distNext =
     typeof progress.distanceToNextManeuverMeters === 'number' && Number.isFinite(progress.distanceToNextManeuverMeters)
@@ -121,9 +123,9 @@ export function buildNavigationProgressFromSdk(args: {
     distanceMetersToNext: distNext,
     durationSeconds: ds?.durationSeconds ?? 0,
     voiceAnnouncement: null,
-    nextManeuverKind: null,
-    nextManeuverStreet: null,
-    nextManeuverDistanceMeters: null,
+    nextManeuverKind: followingStep?.kind ?? null,
+    nextManeuverStreet: followingStep?.streetName ?? null,
+    nextManeuverDistanceMeters: followingStep != null ? distNext : null,
   };
 
   const banner: NavBannerModel = {
@@ -161,7 +163,7 @@ export function buildNavigationProgressFromSdk(args: {
     remainingRoute: remaining.length >= 2 ? remaining : polyline.slice(-2),
     maneuverRoute: [],
     nextStep,
-    followingStep: null,
+    followingStep,
     nextStepDistanceMeters: distNext,
     banner,
     distanceRemainingMeters: distRem,
