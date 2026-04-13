@@ -6,13 +6,14 @@ import {
   sliceRouteWindow,
   bearingDegrees,
 } from './navGeometry';
-import type { NavigationProgress, RawLocation, RoutePoint, NavStep } from './navModel';
+import type { NavigationProgress, RawLocation, RoutePoint, NavStep, SnapPoint } from './navModel';
 import { buildNavBanner } from './navBanner';
 import { effectiveMaxSnapMeters, type OffRouteTuning } from './offRouteTuning';
 import { remainingDurationSecondsFromNavSteps } from './navigationEta';
 import { remainingDurationSecondsFromEdges } from './navigationEtaEdges';
 import { blendModelWithObservedEta } from './etaObservedBlend';
 import { DEFAULT_PROGRESS_TUNING, type ProgressTuning } from './navModeProfile';
+import { segmentAndTFromCumAlongPolyline } from '../utils/distance';
 
 /**
  * Skip depart / plain continue-without-lanes so the banner matches the next real turn
@@ -303,7 +304,18 @@ export function computeNavigationProgressFrame({
     ? Math.min(progressTuning.leadCapMeters, speed * 0.3 * progressTuning.leadScale)
     : 0;
   const biasedCum = Math.min(snap.cumulativeMeters + leadAheadMeters, routeEndCum);
-  const displaySnapForSplit: typeof snap = { ...snap, cumulativeMeters: biasedCum };
+  const splitPos = segmentAndTFromCumAlongPolyline(biasedCum, route);
+  const splitPoint = coordinateAtCumulative(route, cumulative, biasedCum);
+  const displaySnapForSplit: SnapPoint =
+    splitPos && splitPoint
+      ? {
+          point: splitPoint,
+          segmentIndex: splitPos.segmentIndex,
+          t: splitPos.tOnSegment,
+          distanceMeters: snap.distanceMeters,
+          cumulativeMeters: biasedCum,
+        }
+      : { ...snap, cumulativeMeters: biasedCum };
   const { traveled, remaining } = splitRouteAtSnap(route, displaySnapForSplit);
   const routeTotalMeters = cumulative[cumulative.length - 1] ?? 0;
   const distanceRemainingMeters = Math.max(0, routeTotalMeters - snap.cumulativeMeters);
@@ -417,6 +429,7 @@ export function computeNavigationProgressFrame({
     displayCoord,
     puckCoord,
     snapped: snap,
+    routeSplitSnap: displaySnapForSplit,
     traveledRoute: traveled,
     remainingRoute: remaining,
     maneuverRoute,

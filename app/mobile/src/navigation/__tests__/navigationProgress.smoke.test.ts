@@ -69,6 +69,9 @@ test('computeNavigationProgressFrame: on route yields banner and sane next-step 
   assert.ok(a.nextStepDistanceMeters >= 0);
   assert.ok(a.banner?.primaryInstruction);
   assert.ok(a.puckCoord && Number.isFinite(a.puckCoord.lat));
+  assert.ok(a.routeSplitSnap);
+  assert.ok(a.routeSplitSnap!.cumulativeMeters >= a.snapped!.cumulativeMeters);
+  assert.ok(a.displayCumulativeMeters != null && a.routeSplitSnap!.cumulativeMeters === a.displayCumulativeMeters);
 });
 
 test('computeNavigationProgressFrame: far from polyline flags off-route under aggressive tuning', () => {

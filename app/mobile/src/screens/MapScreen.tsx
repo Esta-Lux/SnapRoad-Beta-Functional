@@ -571,13 +571,13 @@ export default function MapScreen() {
   /** Passed / ahead route styling while navigating — same snap as turn/ETA (`navigationProgress`). */
   const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
     if (!nav.isNavigating) return null;
-    const s = nav.navigationProgress?.snapped;
+    const s = nav.navigationProgress?.routeSplitSnap;
     if (!s) return null;
     return { segmentIndex: s.segmentIndex, tOnSegment: s.t };
   }, [
     nav.isNavigating,
-    nav.navigationProgress?.snapped?.segmentIndex,
-    nav.navigationProgress?.snapped?.t,
+    nav.navigationProgress?.routeSplitSnap?.segmentIndex,
+    nav.navigationProgress?.routeSplitSnap?.t,
   ]);
   const displaySpeedMph = nav.isNavigating
     ? Math.max(0, (nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704) * 2.236936)

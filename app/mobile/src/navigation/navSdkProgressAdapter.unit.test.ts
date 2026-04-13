@@ -63,6 +63,10 @@ test('buildNavigationProgressFromSdk sets followingStep from Directions when ste
   });
   assert.ok(prog);
   assert.ok(prog.followingStep);
+  assert.ok(prog.routeSplitSnap);
+  assert.equal(prog.routeSplitSnap!.cumulativeMeters, prog.snapped!.cumulativeMeters);
+  assert.equal(prog.routeSplitSnap!.segmentIndex, prog.snapped!.segmentIndex);
+  assert.ok(Math.abs(prog.routeSplitSnap!.t - prog.snapped!.t) < 0.05);
   assert.equal(prog.followingStep.index, 1);
   assert.equal(prog.followingStep.kind, 'turn_left');
   assert.equal(prog.followingStep.streetName, 'Valencia St');

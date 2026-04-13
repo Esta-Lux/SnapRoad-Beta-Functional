@@ -167,6 +167,13 @@ export type NavigationProgress = {
    */
   puckCoord: RawLocation | null;
   snapped: SnapPoint | null;
+  /**
+   * Authoritative position for the passed/ahead route split shown on the map.
+   * This may differ from `snapped` when the visible puck is intentionally biased
+   * ahead along the polyline; consumers should use this instead of guessing from
+   * `snapped` so the trail break stays attached to the puck.
+   */
+  routeSplitSnap?: SnapPoint | null;
   traveledRoute: RoutePoint[];
   remainingRoute: RoutePoint[];
   maneuverRoute: RoutePoint[];

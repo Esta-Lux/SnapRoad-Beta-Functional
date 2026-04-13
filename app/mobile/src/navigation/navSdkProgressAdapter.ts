@@ -1,7 +1,12 @@
 import type { DirectionsStep } from '../lib/directions';
 import type { Coordinate } from '../types';
 import type { NavigationProgress, NavStep, NavBannerModel } from './navModel';
-import { polylineLengthMeters, projectOntoPolyline } from '../utils/distance';
+import {
+  coordinateAtCumulativeMeters,
+  polylineLengthMeters,
+  projectOntoPolyline,
+  segmentAndTFromCumAlongPolyline,
+} from '../utils/distance';
 import type { SdkLocationPayload, SdkProgressPayload } from './navSdkStore';
 import { navStepFromDirectionsAtIndex, resolveManeuverKind } from './navStepsFromDirections';
 
@@ -102,6 +107,25 @@ export function buildNavigationProgressFromSdk(args: {
       }
     : null;
   const cumulativeMeters = snap?.cumulativeMeters ?? frac * Math.max(1e-6, polylineLengthMeters(polyline));
+  const routeSplitPos = segmentAndTFromCumAlongPolyline(cumulativeMeters, polyline);
+  const routeSplitPoint = coordinateAtCumulativeMeters(polyline, cumulativeMeters);
+  const routeSplitSnap =
+    routeSplitPos && routeSplitPoint
+      ? {
+          point: routeSplitPoint,
+          segmentIndex: routeSplitPos.segmentIndex,
+          t: routeSplitPos.tOnSegment,
+          distanceMeters: snap?.distanceMeters ?? 0,
+          cumulativeMeters,
+        }
+      : snap ??
+        {
+          point: { lat: polyline[0]!.lat, lng: polyline[0]!.lng },
+          segmentIndex: 0,
+          t: 0,
+          distanceMeters: 0,
+          cumulativeMeters,
+        };
 
   const stepIdxRaw = typeof progress.stepIndex === 'number' ? progress.stepIndex : 0;
   const idx =
@@ -183,6 +207,7 @@ export function buildNavigationProgressFromSdk(args: {
         distanceMeters: 0,
         cumulativeMeters,
       }),
+    routeSplitSnap,
     traveledRoute: traveled,
     remainingRoute: remaining.length >= 2 ? remaining : polyline.slice(-2),
     maneuverRoute: [],
@@ -230,6 +255,13 @@ export function buildSdkWaitingNavigationProgress(
     displayCoord: waitingCoord,
     puckCoord: waitingCoord,
     snapped: {
+      point: { lat: first.lat, lng: first.lng },
+      segmentIndex: 0,
+      t: 0,
+      distanceMeters: 0,
+      cumulativeMeters: 0,
+    },
+    routeSplitSnap: {
       point: { lat: first.lat, lng: first.lng },
       segmentIndex: 0,
       t: 0,
