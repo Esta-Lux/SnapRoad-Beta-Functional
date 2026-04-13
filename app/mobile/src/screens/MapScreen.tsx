@@ -370,6 +370,11 @@ export default function MapScreen() {
     mode: 'live' | 'last_known';
     startedLive: boolean;
   } | null>(null);
+  /**
+   * Historical friend-follow override state.
+   * Engine authority is now locked to `EXPO_PUBLIC_NAV_LOGIC_SDK` so this flag should stay false.
+   */
+  const [forceJsNavForFriendFollow, setForceJsNavForFriendFollow] = useState(false);
   const friendFollowLastDestRef = useRef<{ lat: number; lng: number } | null>(null);
   const friendFollowLastRerouteRef = useRef(0);
   const friendFollowRerouteBusyRef = useRef(false);
@@ -377,6 +382,8 @@ export default function MapScreen() {
   useEffect(() => {
     friendFollowSessionRef.current = friendFollowSession;
   }, [friendFollowSession]);
+  // Keep Navigation SDK as the single authority for every session while the flag is on.
+  const navLogicSdkSessionEnabled = navLogicSdkEnabled();
 
   const { friendTrackingEnabled, liveLocationPublishingEnabled, refresh: refreshPublicAppConfig } =
     usePublicAppConfig(mapTabFocused);
@@ -435,12 +442,13 @@ export default function MapScreen() {
     gpsAccuracy: accuracy,
     drivingMode,
     voiceMuted: navVoiceMuted,
-    dynamicDestinationFollow: friendFollowSession?.mode === 'live',
-    navSdkHeadless: navLogicSdkEnabled(),
+    dynamicDestinationFollow:
+      Boolean(friendFollowSession?.startedLive) && friendFollowSession?.mode === 'live',
+    navSdkHeadless: navLogicSdkSessionEnabled,
   });
   useNavigationSpeech({
     progress: nav.navigationProgress,
-    enabled: !navVoiceMuted && nav.isNavigating && !navLogicSdkEnabled(),
+    enabled: !navVoiceMuted && nav.isNavigating && !navLogicSdkSessionEnabled,
     drivingMode,
     routeSteps: nav.navigationData?.steps,
     routePolyline: nav.navigationData?.polyline,
@@ -504,7 +512,7 @@ export default function MapScreen() {
   }, [drivingMode]);
 
   useEffect(() => {
-    if (!navLogicSdkEnabled() || !nav.isNavigating || !nav.navigationData || !location) {
+    if (!navLogicSdkSessionEnabled || !nav.isNavigating || !nav.navigationData || !location) {
       setNavLogicCoords([]);
       navLogicCoordsSetRef.current = false;
       return;
@@ -523,6 +531,7 @@ export default function MapScreen() {
       },
     ]);
   }, [
+    navLogicSdkSessionEnabled,
     nav.isNavigating,
     nav.navigationData?.destination?.lat,
     nav.navigationData?.destination?.lng,
@@ -588,12 +597,12 @@ export default function MapScreen() {
    * reads GPS COG and fights that value. Use `heading` whenever custom coords are injected.
    */
   const locationPuckBearing = useMemo((): 'heading' | 'course' => {
-    const sdkNav = navLogicSdkEnabled();
+    const sdkNav = navLogicSdkSessionEnabled;
     const customLocationActive =
       nav.isNavigating && ((sdkNav && nav.sdkNavLocation) || !sdkNav);
     if (customLocationActive) return 'heading';
     return displaySpeedMph > 10 ? 'course' : 'heading';
-  }, [nav.isNavigating, nav.sdkNavLocation, displaySpeedMph]);
+  }, [nav.isNavigating, nav.sdkNavLocation, displaySpeedMph, navLogicSdkSessionEnabled]);
 
   const fusedSpeedMpsNav =
     nav.isNavigating
@@ -1613,13 +1622,13 @@ export default function MapScreen() {
   // Fix 5: Reroute when driving mode changes during active nav
   useEffect(() => {
     if (!nav.isNavigating || !nav.selectedDestination) return;
-    if (navLogicSdkEnabled()) return;
+    if (navLogicSdkSessionEnabled) return;
     void nav.fetchDirections(nav.selectedDestination).then((r) => {
       if (!r.ok && r.reason === 'route_failed') {
         Alert.alert('Could not refresh route', r.message ?? 'Driving mode changed but directions failed. Try stopping navigation and starting again.');
       }
     });
-  }, [drivingMode]);
+  }, [drivingMode, nav, navLogicSdkSessionEnabled]);
 
   // Animate report card timer whenever a new report card shows
   useEffect(() => {
@@ -2380,6 +2389,10 @@ export default function MapScreen() {
         return;
       }
       if (!opts?.preserveFriendFollow) {
+        // Re-assert default engine for normal destinations immediately.
+        // Without this, a previous live friend-follow session can leave the JS override
+        // active long enough for the next route/trip to run on the JS pipeline.
+        setForceJsNavForFriendFollow(false);
         setFriendFollowSession(null);
         friendFollowLastDestRef.current = null;
         friendFollowLastRerouteRef.current = 0;
@@ -2424,6 +2437,8 @@ export default function MapScreen() {
         void handleStartDirections({ name: p.name, address: `Meet ${p.name}`, lat: p.lat, lng: p.lng });
         return;
       }
+      // Keep SDK authority locked for all sessions (including friend-follow).
+      setForceJsNavForFriendFollow(false);
       setFriendFollowSession({
         friendId: p.friendId,
         name: p.name,
@@ -2502,6 +2517,7 @@ export default function MapScreen() {
     friendFollowNavActiveRef.current = active;
     if (wasActive && !active) {
       setFriendFollowSession(null);
+      setForceJsNavForFriendFollow(false);
       friendFollowLastDestRef.current = null;
       friendFollowLastRerouteRef.current = 0;
       friendFollowRerouteBusyRef.current = false;
@@ -2516,7 +2532,10 @@ export default function MapScreen() {
     const fresh = isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng);
     setFriendFollowSession((prev) => {
       if (!prev) return prev;
-      const mode: 'live' | 'last_known' = fresh && fl.isSharing ? 'live' : 'last_known';
+      // If the session did not START in live mode, keep it on last-known routing for the whole
+      // trip. Switching an SDK-led trip to a dynamic destination mid-session is unsupported.
+      const mode: 'live' | 'last_known' =
+        prev.startedLive && fresh && fl.isSharing ? 'live' : 'last_known';
       return prev.mode === mode ? prev : { ...prev, mode };
     });
   }, [friendLocations, nav.isNavigating]);
@@ -2524,6 +2543,7 @@ export default function MapScreen() {
   useEffect(() => {
     const sess = friendFollowSessionRef.current;
     if (!nav.isNavigating || !sess) return;
+    if (!sess.startedLive || !forceJsNavForFriendFollow) return;
     const fl = friendLocations.find((x) => String(x.id) === String(sess.friendId));
     if (!fl) return;
     const fresh = isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng);
@@ -2550,7 +2570,7 @@ export default function MapScreen() {
       .finally(() => {
         friendFollowRerouteBusyRef.current = false;
       });
-  }, [friendLocations, nav.isNavigating, avoidLowClearances, vehicleHeight]);
+  }, [friendLocations, nav.isNavigating, avoidLowClearances, vehicleHeight, forceJsNavForFriendFollow]);
 
   /** Copy for live friend follow; trips do not earn gems (`dynamicDestination` on route). */
   const friendFollowContextLine = useMemo(() => {
@@ -2847,7 +2867,7 @@ export default function MapScreen() {
         />
       )}
 
-      {navLogicSdkEnabled() && nav.isNavigating && navLogicCoords.length >= 2 ? (
+      {navLogicSdkSessionEnabled && nav.isNavigating && navLogicCoords.length >= 2 ? (
         // Headless native session: this module has no separate “createSession” API — the hidden view drives logic + voice.
         <MapboxNavigationView
           ref={navLogicRef}
@@ -2883,19 +2903,19 @@ export default function MapScreen() {
           style={s.map}
           styleURL={activeStyleURL}
           projection={activeStyleURL.includes('standard-satellite') ? 'mercator' : 'globe'}
-          logoEnabled={false}
-          attributionEnabled={false}
+          logoEnabled
+          attributionEnabled
           compassEnabled
           onCameraChanged={handleMapCameraChanged}
           onTouchStart={handleMapTouch}
           onPress={handleMapPress}
         >
-          {nav.isNavigating && navLogicSdkEnabled() && nav.sdkNavLocation ? (
+          {nav.isNavigating && navLogicSdkSessionEnabled && nav.sdkNavLocation ? (
             <MapboxGL.CustomLocationProvider
               coordinate={[nav.sdkNavLocation.longitude, nav.sdkNavLocation.latitude]}
               heading={nav.sdkNavLocation.course >= 0 ? nav.sdkNavLocation.course : heading}
             />
-          ) : nav.isNavigating && !navLogicSdkEnabled() ? (
+          ) : nav.isNavigating && !navLogicSdkSessionEnabled ? (
             <MapboxGL.CustomLocationProvider
               coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
               heading={navDisplayHeading}
