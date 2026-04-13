@@ -179,8 +179,11 @@ export function computeNavigationProgressFrame({
     speed,
     rawLocation.accuracy ?? null,
   );
-  const isOffRoute =
+  const corridorOff =
     snap.distanceMeters > maxSnapEffective && confidence < offRouteTuning.minConfidence;
+  /** Beyond ~32% past the snap corridor, always off-route (avoids rare stuck “on route” when confidence stays high). */
+  const catastrophicOff = snap.distanceMeters > maxSnapEffective * 1.32;
+  const isOffRoute = corridorOff || catastrophicOff;
 
   const snapTarget = isOffRoute
     ? rawLocation
