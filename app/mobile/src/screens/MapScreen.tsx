@@ -370,14 +370,7 @@ export default function MapScreen() {
     mode: 'live' | 'last_known';
     startedLive: boolean;
   } | null>(null);
-  /**
-   * Historical friend-follow override state.
-   * Engine authority is now locked to `EXPO_PUBLIC_NAV_LOGIC_SDK` so this flag should stay false.
-   */
-  const [forceJsNavForFriendFollow, setForceJsNavForFriendFollow] = useState(false);
   const friendFollowLastDestRef = useRef<{ lat: number; lng: number } | null>(null);
-  const friendFollowLastRerouteRef = useRef(0);
-  const friendFollowRerouteBusyRef = useRef(false);
   const friendFollowSessionRef = useRef<typeof friendFollowSession>(null);
   useEffect(() => {
     friendFollowSessionRef.current = friendFollowSession;
@@ -608,13 +601,6 @@ export default function MapScreen() {
     nav.isNavigating
       ? Math.max(0, nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704)
       : null;
-  const navFetchRef = useRef(nav.fetchDirections);
-  const navSetDestRef = useRef(nav.setSelectedDestination);
-  useEffect(() => {
-    navFetchRef.current = nav.fetchDirections;
-    navSetDestRef.current = nav.setSelectedDestination;
-  }, [nav.fetchDirections, nav.setSelectedDestination]);
-
   usePassiveDriveGems({
     enabled: Boolean(user?.id),
     mapFocused: true,
@@ -2389,14 +2375,8 @@ export default function MapScreen() {
         return;
       }
       if (!opts?.preserveFriendFollow) {
-        // Re-assert default engine for normal destinations immediately.
-        // Without this, a previous live friend-follow session can leave the JS override
-        // active long enough for the next route/trip to run on the JS pipeline.
-        setForceJsNavForFriendFollow(false);
         setFriendFollowSession(null);
         friendFollowLastDestRef.current = null;
-        friendFollowLastRerouteRef.current = 0;
-        friendFollowRerouteBusyRef.current = false;
       }
       setSelectedPlace(null);
       setSelectedPlaceId(null);
@@ -2437,8 +2417,6 @@ export default function MapScreen() {
         void handleStartDirections({ name: p.name, address: `Meet ${p.name}`, lat: p.lat, lng: p.lng });
         return;
       }
-      // Keep SDK authority locked for all sessions (including friend-follow).
-      setForceJsNavForFriendFollow(false);
       setFriendFollowSession({
         friendId: p.friendId,
         name: p.name,
@@ -2446,7 +2424,6 @@ export default function MapScreen() {
         startedLive: p.isLiveFresh,
       });
       friendFollowLastDestRef.current = { lat: p.lat, lng: p.lng };
-      friendFollowLastRerouteRef.current = Date.now();
       void handleStartDirections(
         { name: p.name, address: `Meet ${p.name}`, lat: p.lat, lng: p.lng },
         { preserveFriendFollow: true },
@@ -2517,10 +2494,7 @@ export default function MapScreen() {
     friendFollowNavActiveRef.current = active;
     if (wasActive && !active) {
       setFriendFollowSession(null);
-      setForceJsNavForFriendFollow(false);
       friendFollowLastDestRef.current = null;
-      friendFollowLastRerouteRef.current = 0;
-      friendFollowRerouteBusyRef.current = false;
     }
   }, [nav.isNavigating, nav.showRoutePreview]);
 
@@ -2539,38 +2513,6 @@ export default function MapScreen() {
       return prev.mode === mode ? prev : { ...prev, mode };
     });
   }, [friendLocations, nav.isNavigating]);
-
-  useEffect(() => {
-    const sess = friendFollowSessionRef.current;
-    if (!nav.isNavigating || !sess) return;
-    if (!sess.startedLive || !forceJsNavForFriendFollow) return;
-    const fl = friendLocations.find((x) => String(x.id) === String(sess.friendId));
-    if (!fl) return;
-    const fresh = isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng);
-    if (!fresh || !fl.isSharing) return;
-
-    const last = friendFollowLastDestRef.current;
-    if (!last) return;
-    const moved = haversineMeters(last.lat, last.lng, fl.lat, fl.lng);
-    const now = Date.now();
-    if (moved < 125) return;
-    if (now - friendFollowLastRerouteRef.current < 52_000) return;
-    if (friendFollowRerouteBusyRef.current) return;
-
-    friendFollowRerouteBusyRef.current = true;
-    friendFollowLastRerouteRef.current = now;
-    friendFollowLastDestRef.current = { lat: fl.lat, lng: fl.lng };
-
-    const place = { name: sess.name, address: `Meet ${sess.name}`, lat: fl.lat, lng: fl.lng };
-    navSetDestRef.current({ name: place.name, address: place.address, lat: place.lat, lng: place.lng });
-    void navFetchRef
-      .current(place, locationRef.current, {
-        maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined,
-      })
-      .finally(() => {
-        friendFollowRerouteBusyRef.current = false;
-      });
-  }, [friendLocations, nav.isNavigating, avoidLowClearances, vehicleHeight, forceJsNavForFriendFollow]);
 
   /** Copy for live friend follow; trips do not earn gems (`dynamicDestination` on route). */
   const friendFollowContextLine = useMemo(() => {
@@ -2903,8 +2845,8 @@ export default function MapScreen() {
           style={s.map}
           styleURL={activeStyleURL}
           projection={activeStyleURL.includes('standard-satellite') ? 'mercator' : 'globe'}
-          logoEnabled
-          attributionEnabled
+          logoEnabled={false}
+          attributionEnabled={false}
           compassEnabled
           onCameraChanged={handleMapCameraChanged}
           onTouchStart={handleMapTouch}
