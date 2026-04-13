@@ -317,6 +317,7 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     if (!friendsTabActive) return;
+
     const applyLiveLocation = (row?: Record<string, unknown>) => {
       if (!row?.user_id) return;
       const uid = String(row.user_id);
@@ -330,7 +331,11 @@ export default function DashboardScreen() {
             heading: row.heading != null ? Number(row.heading) : f.heading,
             speed_mph: row.speed_mph != null ? Number(row.speed_mph) : f.speed_mph,
             is_sharing: typeof row.is_sharing === 'boolean' ? row.is_sharing : f.is_sharing,
-            last_updated: typeof row.last_updated === 'string' ? row.last_updated : f.last_updated,
+            // Fallback to current time when last_updated is absent so deriveFriendPresence
+            // treats a fresh realtime event as live-fresh rather than stale.
+            last_updated: typeof row.last_updated === 'string'
+              ? row.last_updated
+              : new Date().toISOString(),
             is_navigating: typeof row.is_navigating === 'boolean' ? row.is_navigating : f.is_navigating,
             destination_name: typeof row.destination_name === 'string' ? row.destination_name : f.destination_name,
             battery_pct: row.battery_pct != null && row.battery_pct !== '' ? Number(row.battery_pct) : f.battery_pct,
@@ -338,24 +343,44 @@ export default function DashboardScreen() {
         }),
       );
     };
+
+    // Unique channel name prevents silent drop when the component re-mounts rapidly
+    // (e.g. fast tab switch) before the previous removeChannel cleanup resolves.
+    const channelName = `dashboard-friend-locs-${Date.now()}`;
     const channel = supabase
-      .channel('dashboard-friend-locations')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, (payload: { new?: Record<string, unknown> }) => applyLiveLocation(payload.new))
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_locations' }, (payload: { new?: Record<string, unknown> }) => applyLiveLocation(payload.new))
+      .channel(channelName)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, (payload: { new?: Record<string, unknown> }) => {
+        applyLiveLocation(payload.new);
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_locations' }, (payload: { new?: Record<string, unknown> }) => {
+        applyLiveLocation(payload.new);
+        // INSERT means a friend just started sharing for the first time — their row may not
+        // exist in local friends state yet, so trigger a silent list refresh.
+        loadFriends({ silent: true });
+      })
       .subscribe();
+
     /** Re-subscribe after app returns from background — the websocket may have gone stale. */
     const channelAppRef = { prev: AppState.currentState };
     const appSub = AppState.addEventListener('change', (next) => {
       if (channelAppRef.prev.match(/inactive|background/) && next === 'active') {
-        try { channel.subscribe(); } catch { /* safe */ }
+        // Refresh the Supabase session so RLS auth.uid() resolves correctly before
+        // re-subscribing, then pull a silent friends update to catch any missed events.
+        supabase.auth.getSession().then(() => {
+          try { channel.subscribe(); } catch { /* safe */ }
+          loadFriends({ silent: true });
+        }).catch(() => {
+          try { channel.subscribe(); } catch { /* safe */ }
+        });
       }
       channelAppRef.prev = next;
     });
+
     return () => {
       appSub.remove();
       supabase.removeChannel(channel);
     };
-  }, [friendsTabActive]);
+  }, [friendsTabActive, loadFriends]);
 
   /** Mirror Map tab: publish GPS + battery while Social friends tab is open and sharing (Premium). */
   useEffect(() => {
@@ -750,35 +775,6 @@ export default function DashboardScreen() {
       </Animated.View>
 
       {section === 'friends' && (
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={() => setShowFriendChallengeHistory(true)}
-          style={[
-            styles.challengeHistoryCue,
-            {
-              marginHorizontal: 16,
-              marginTop: 8,
-              backgroundColor: isLight ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.18)',
-              borderColor: isLight ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.28)',
-            },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Open friend challenge history"
-        >
-          <View style={[styles.challengeHistoryIcon, { backgroundColor: isLight ? 'rgba(245,158,11,0.22)' : 'rgba(245,158,11,0.28)' }]}>
-            <Ionicons name="trophy-outline" size={18} color="#D97706" />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[styles.challengeHistoryTitle, { color: colors.text }]}>Friend duels</Text>
-            <Text style={[styles.challengeHistorySub, { color: colors.textSecondary }]} numberOfLines={2}>
-              Wins, losses, and live scores. Challenge someone from a friend’s profile.
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} style={{ opacity: 0.55 }} />
-        </TouchableOpacity>
-      )}
-
-      {section === 'friends' && (
         <View style={{ flex: 1 }}>
           <View style={{ paddingHorizontal: 16, marginTop: 6, marginBottom: 10 }}>
             {pendingTotal === 0 ? (
@@ -905,6 +901,48 @@ export default function DashboardScreen() {
             )}
           </View>
 
+          <View style={[styles.shareLocCard, { backgroundColor: isLight ? (isSharingLocation ? 'rgba(52,199,89,0.08)' : 'rgba(60,60,67,0.04)') : (isSharingLocation ? 'rgba(52,199,89,0.12)' : 'rgba(255,255,255,0.05)') }]}>
+            <View style={styles.shareLocCardInner}>
+              <View style={[styles.shareLocIcon, { backgroundColor: isSharingLocation ? 'rgba(52,199,89,0.18)' : (isLight ? 'rgba(60,60,67,0.08)' : 'rgba(255,255,255,0.1)') }]}>
+                <Ionicons
+                  name={isSharingLocation ? 'location' : 'location-outline'}
+                  size={20}
+                  color={isSharingLocation ? '#34C759' : colors.textSecondary}
+                />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[styles.shareLocTitle, { color: colors.text }]}>
+                  {isSharingLocation ? 'Sharing your location' : 'Location sharing off'}
+                </Text>
+                <Text style={[styles.shareLocCaption, { color: colors.textSecondary }]}>
+                  {isSharingLocation
+                    ? `Visible to ${friends.length} friend${friends.length !== 1 ? 's' : ''}`
+                    : 'Friends cannot see where you are'}
+                </Text>
+              </View>
+              <Switch
+                value={isSharingLocation}
+                onValueChange={async (v) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setIsSharingLocation(v);
+                  storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
+                  if (v && !myCoord) shareLocationNeedsCoordsSyncRef.current = true;
+                  else shareLocationNeedsCoordsSyncRef.current = false;
+                  try {
+                    await api.put('/api/friends/location/sharing', {
+                      is_sharing: v,
+                      ...(v && myCoord ? { lat: myCoord.lat, lng: myCoord.lng } : {}),
+                    });
+                  } catch {
+                    /* preference stays in local storage */
+                  }
+                }}
+                trackColor={{ false: colors.border, true: '#34C759' }}
+                thumbColor="#fff"
+              />
+            </View>
+          </View>
+
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -983,59 +1021,19 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </ScrollView>
 
-          <View style={[styles.shareLocCard, { backgroundColor: isLight ? (isSharingLocation ? 'rgba(52,199,89,0.08)' : 'rgba(60,60,67,0.04)') : (isSharingLocation ? 'rgba(52,199,89,0.12)' : 'rgba(255,255,255,0.05)') }]}>
-            <View style={styles.shareLocCardInner}>
-              <View style={[styles.shareLocIcon, { backgroundColor: isSharingLocation ? 'rgba(52,199,89,0.18)' : (isLight ? 'rgba(60,60,67,0.08)' : 'rgba(255,255,255,0.1)') }]}>
-                <Ionicons
-                  name={isSharingLocation ? 'location' : 'location-outline'}
-                  size={20}
-                  color={isSharingLocation ? '#34C759' : colors.textSecondary}
-                />
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={[styles.shareLocTitle, { color: colors.text }]}>
-                  {isSharingLocation ? 'Sharing your location' : 'Location sharing off'}
-                </Text>
-                <Text style={[styles.shareLocCaption, { color: colors.textSecondary }]}>
-                  {isSharingLocation
-                    ? `Visible to ${friends.length} friend${friends.length !== 1 ? 's' : ''}`
-                    : 'Friends cannot see where you are'}
-                </Text>
-              </View>
-              <Switch
-                value={isSharingLocation}
-                onValueChange={async (v) => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setIsSharingLocation(v);
-                  storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
-                  if (v && !myCoord) shareLocationNeedsCoordsSyncRef.current = true;
-                  else shareLocationNeedsCoordsSyncRef.current = false;
-                  try {
-                    await api.put('/api/friends/location/sharing', {
-                      is_sharing: v,
-                      ...(v && myCoord ? { lat: myCoord.lat, lng: myCoord.lng } : {}),
-                    });
-                  } catch {
-                    /* preference stays in local storage */
-                  }
-                }}
-                trackColor={{ false: colors.border, true: '#34C759' }}
-                thumbColor="#fff"
-              />
-            </View>
-          </View>
-
           <View style={[styles.friendsSectionHeader, { borderBottomColor: isLight ? 'rgba(60,60,67,0.08)' : 'rgba(255,255,255,0.07)' }]}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[styles.friendsSectionTitle, { color: colors.text }]}>Friends</Text>
               <Text style={[styles.friendsSectionCaption, { color: colors.textSecondary }]}>
-                {liveFreshCount > 0
-                  ? `${liveFreshCount} live now · ${friends.length} total`
-                  : friends.length > 0
-                    ? `${friends.length} friend${friends.length !== 1 ? 's' : ''}`
-                    : 'Your trusted circle'}
+                {friends.length === 0 ? 'Your trusted circle' : `${friends.length} friend${friends.length !== 1 ? 's' : ''}`}
               </Text>
             </View>
+            {liveFreshCount > 0 && (
+              <View style={styles.liveBadge}>
+                <View style={styles.liveBadgeDot} />
+                <Text style={styles.liveBadgeText}>{liveFreshCount} live</Text>
+              </View>
+            )}
           </View>
 
           {friendsLoading ? (
@@ -1059,7 +1057,7 @@ export default function DashboardScreen() {
                 <Ionicons name="people" size={32} color={colors.primary} style={{ opacity: 0.95 }} />
                 <Text style={[styles.emptyHeroTitle, { color: colors.text }]}>Grow your convoy</Text>
                 <Text style={[styles.emptyHeroSub, { color: colors.textSecondary }]}>
-                  Invite friends to share live location and meet up on the map—without the noise.
+                  Share live location and meet up on the map with people you trust.
                 </Text>
               </View>
               <Text style={[styles.emptyTitle, { color: colors.text }]}>
@@ -1067,9 +1065,22 @@ export default function DashboardScreen() {
               </Text>
               <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
                 {friends.length === 0
-                  ? 'Tap the + button above to search by name, email, or friend code.'
-                  : 'Try another collection or assign someone with ··· on a friend’s row.'}
+                  ? 'Search by name, email, or 6-character friend code to connect.'
+                  : 'Try another collection or assign someone using the menu on a friend row.'}
               </Text>
+              {friends.length === 0 && (
+                <TouchableOpacity
+                  style={[styles.emptyAddBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setShowAddFriend(true);
+                  }}
+                  activeOpacity={0.88}
+                >
+                  <Ionicons name="person-add-outline" size={17} color="#fff" />
+                  <Text style={styles.emptyAddBtnText}>Add your first friend</Text>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             <FlatList
@@ -1104,10 +1115,38 @@ export default function DashboardScreen() {
                   >
                     <Ionicons name="sparkles-outline" size={18} color={colors.primary} style={{ opacity: 0.85 }} />
                     <Text style={[styles.tipText, { color: colors.textSecondary }]}>
-                      Pull to refresh. Location sharing is controlled from the toggle above—only when you want it.
+                      Pull to refresh. Location sharing is controlled from the toggle above.
                     </Text>
                   </View>
                 ) : null
+              }
+              ListFooterComponent={
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  onPress={() => setShowFriendChallengeHistory(true)}
+                  style={[
+                    styles.challengeHistoryCue,
+                    {
+                      marginTop: 8,
+                      marginBottom: 8,
+                      backgroundColor: isLight ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.18)',
+                      borderColor: isLight ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.28)',
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open friend challenge history"
+                >
+                  <View style={[styles.challengeHistoryIcon, { backgroundColor: isLight ? 'rgba(245,158,11,0.22)' : 'rgba(245,158,11,0.28)' }]}>
+                    <Ionicons name="trophy-outline" size={18} color="#D97706" />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.challengeHistoryTitle, { color: colors.text }]}>Friend duels</Text>
+                    <Text style={[styles.challengeHistorySub, { color: colors.textSecondary }]} numberOfLines={2}>
+                      Wins, losses, and live scores. Challenge from a friend's profile.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} style={{ opacity: 0.55 }} />
+                </TouchableOpacity>
               }
               renderItem={renderFriend}
             />
@@ -1453,6 +1492,22 @@ const styles = StyleSheet.create({
   },
   friendsSectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.35 },
   friendsSectionCaption: { fontSize: 13, fontWeight: '500', marginTop: 3, opacity: 0.92 },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(52,199,89,0.14)',
+    borderRadius: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  liveBadgeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#34C759',
+  },
+  liveBadgeText: { fontSize: 11, fontWeight: '700', color: '#34C759', letterSpacing: 0.2 },
   shareLocCard: {
     marginHorizontal: 16,
     marginTop: 4,
@@ -1511,6 +1566,16 @@ const styles = StyleSheet.create({
   emptyHeroSub: { fontSize: 12, textAlign: 'center', lineHeight: 17, marginTop: 6 },
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 19 },
+  emptyAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 20,
+    paddingHorizontal: 22,
+    paddingVertical: 13,
+    borderRadius: 14,
+  },
+  emptyAddBtnText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
 
   previewOverlayBadge: { alignItems: 'center', marginBottom: 12, marginTop: 4 },
   comingSoonPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },

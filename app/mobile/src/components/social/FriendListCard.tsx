@@ -106,8 +106,11 @@ const FriendListCard = memo(function FriendListCard({
     </>
   );
 
+  // Live-fresh rows get a very subtle green tint to stand out at a glance.
+  const cellBg = presence.isLiveFresh ? 'rgba(52,199,89,0.06)' : theme.cardBg;
+
   return (
-    <View style={[styles.cell, { backgroundColor: theme.cardBg }, !isLast && { borderBottomColor: sep, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+    <View style={[styles.cell, { backgroundColor: cellBg }, !isLast && { borderBottomColor: sep, borderBottomWidth: StyleSheet.hairlineWidth }]}>
       {onAvatarPress ? (
         <TouchableOpacity
           style={styles.avatarWrap}

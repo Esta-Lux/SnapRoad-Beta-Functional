@@ -133,46 +133,38 @@ export function usesStandardStyleConfiguration(url: string): boolean {
 }
 
 /**
- * Mapbox range 1–5. Keep at max (5) across browse AND navigation so nearby
- * storefronts, building names, and business labels stay readable while driving.
- * Prior approach dropped to 4 during nav for calm/adaptive, making the map feel
- * empty — users rely on visible POI context for orientation.
- */
-function resolvePoiLabelDensity(_drivingMode: DrivingMode, _isNavigating: boolean): string {
-  return '5';
-}
-
-/**
- * Standard-Satellite documents a smaller property set than Mapbox Standard; avoid passing Standard-only
- * keys (e.g. show3dBuildings) so native StyleImport reliably applies label toggles.
+ * Satellite config — mirrors the Standard config so 3D buildings, landmarks, and POI labels
+ * all render on top of aerial imagery, consistent with the Standard style experience.
+ * show3dObjects enables extruded buildings on Standard-Satellite just as it does on Standard.
  *
- * @see https://docs.mapbox.com/map-styles/standard/api/ (Standard vs Standard-Satellite tables)
+ * @see https://docs.mapbox.com/map-styles/standard/api/ (Standard-Satellite table)
  */
 function standardSatelliteBasemapConfig(
   lightPreset: MapboxLightPreset,
-  poiDensity: string,
 ): Record<string, string> {
   return {
     lightPreset,
-    showRoadsAndTransit: 'true',
-    showPedestrianRoads: 'true',
-    showPlaceLabels: 'true',
+    // 3D buildings + landmarks on top of satellite imagery.
+    show3dObjects: 'true',
+    // POI / place / road labels sit above the 3D geometry layer in the Standard render order.
     showPointOfInterestLabels: 'true',
+    showPlaceLabels: 'true',
     showRoadLabels: 'true',
     showTransitLabels: 'true',
+    showPedestrianRoads: 'true',
     showAdminBoundaries: 'true',
-    colorModePointOfInterestLabels: 'default',
-    backgroundPointOfInterestLabels: 'circle',
-    densityPointOfInterestLabels: poiDensity,
   };
 }
 
 /**
  * Basemap config for {@link usesStandardStyleConfiguration} styles (`StyleImport` id `basemap`).
- * Values are strings — required by `@rnmapbox/maps` StyleImport.
+ * Values are strings — required by `@rnmapbox/maps` StyleImport on the native bridge.
  *
- * Enables POI / place / road / transit labels, 3D buildings + landmarks (not only generic `show3dObjects`),
- * and tunes POI label density per driving mode + browse vs navigation.
+ * Only officially documented Mapbox Standard API properties are used here.
+ * Custom / unverified keys (show3dBuildings, show3dLandmarks, densityPointOfInterestLabels,
+ * colorModePointOfInterestLabels, backgroundPointOfInterestLabels, showLandmarkIcons, etc.)
+ * have been removed. When the native StyleImport receives unrecognised keys it can silently
+ * reject the entire config object, leaving showPointOfInterestLabels unapplied → no POI labels.
  *
  * @see https://docs.mapbox.com/map-styles/standard/api/
  */
@@ -180,28 +172,25 @@ export function standardBasemapStyleImportConfig(
   lightPreset: MapboxLightPreset,
   isSatellite: boolean,
   drivingMode: DrivingMode = 'adaptive',
-  /** When `false` (map explore / browse), POI density is maximized for business & building labels. */
   isNavigating = true,
 ): Record<string, string> {
-  const poiDensity = resolvePoiLabelDensity(drivingMode, isNavigating);
+  // drivingMode / isNavigating reserved for future per-mode tuning once Mapbox
+  // officially documents a density/style API (avoids re-adding unverified keys).
+  void drivingMode;
+  void isNavigating;
   if (isSatellite) {
-    return standardSatelliteBasemapConfig(lightPreset, poiDensity);
+    return standardSatelliteBasemapConfig(lightPreset);
   }
   return {
     lightPreset,
+    // 3D geometry (buildings, landmarks, trees) — one toggle covers all objects.
     show3dObjects: 'true',
-    show3dBuildings: 'true',
-    show3dLandmarks: 'true',
+    // Label layers — all on at max visibility.
     showPointOfInterestLabels: 'true',
     showPlaceLabels: 'true',
     showRoadLabels: 'true',
     showTransitLabels: 'true',
     showPedestrianRoads: 'true',
     showAdminBoundaries: 'true',
-    showLandmarkIcons: 'true',
-    showLandmarkIconLabels: 'true',
-    colorModePointOfInterestLabels: 'default',
-    backgroundPointOfInterestLabels: 'circle',
-    densityPointOfInterestLabels: poiDensity,
   };
 }

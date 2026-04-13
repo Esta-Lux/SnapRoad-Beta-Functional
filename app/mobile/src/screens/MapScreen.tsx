@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMe
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
   Platform, Keyboard, Alert, Switch, Pressable, Image, Dimensions,
-  AppState, InteractionManager,
+  AppState,
 } from 'react-native';
 import Animated, {
   FadeIn, FadeOut, SlideInDown, SlideOutDown,
@@ -488,6 +488,10 @@ export default function MapScreen() {
 
   const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
   const [navLogicCoords, setNavLogicCoords] = useState<Array<{ latitude: number; longitude: number }>>([]);
+  // Prevents navLogicCoords from being updated on every GPS tick once set for a session.
+  // Updating coordinates on each GPS update restarts the native SDK session → replays the
+  // start announcement alongside the ongoing voice → the "two voices" bug.
+  const navLogicCoordsSetRef = useRef(false);
   const navLogicFollowingZoom = useMemo(() => {
     switch (drivingMode) {
       case 'calm':
@@ -502,8 +506,15 @@ export default function MapScreen() {
   useEffect(() => {
     if (!navLogicSdkEnabled() || !nav.isNavigating || !nav.navigationData || !location) {
       setNavLogicCoords([]);
+      navLogicCoordsSetRef.current = false;
       return;
     }
+    // Only set coords ONCE per nav session — the native SDK tracks the user's GPS
+    // position internally. Passing new coordinates on every GPS tick (location.lat/lng
+    // changing) causes the SDK to restart the session and replay the start announcement,
+    // which is heard on top of ongoing voice guidance → two voices.
+    if (navLogicCoordsSetRef.current) return;
+    navLogicCoordsSetRef.current = true;
     setNavLogicCoords([
       { latitude: location.lat, longitude: location.lng },
       {
@@ -522,6 +533,7 @@ export default function MapScreen() {
   useEffect(() => {
     if (!nav.isNavigating) {
       setNavLogicCoords([]);
+      navLogicCoordsSetRef.current = false;
     }
   }, [nav.isNavigating]);
 
@@ -1531,7 +1543,13 @@ export default function MapScreen() {
 
     let cancelled = false;
 
-    const runSnap = () => {
+    // Single rAF is enough to flush the current render cycle. The previous
+    // InteractionManager + double-rAF + 700ms flyTo chain was causing ~1s lag
+    // because it waited for the preview sheet dismiss animation to drain the
+    // interaction queue before flying to the user's position.
+    // defaultSettings now starts the remounted Camera at navDisplayCoordRef so
+    // even if this flyTo is slightly late the camera is already at the right spot.
+    requestAnimationFrame(() => {
       if (cancelled) return;
       const pad =
         camCtrlRef.current?.followPadding ??
@@ -1547,14 +1565,7 @@ export default function MapScreen() {
         pitch,
         padding: pad,
         animationMode: 'flyTo',
-        animationDuration: 700,
-      });
-    };
-
-    InteractionManager.runAfterInteractions(() => {
-      if (cancelled) return;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(runSnap);
+        animationDuration: 350,
       });
     });
 
@@ -2892,7 +2903,7 @@ export default function MapScreen() {
           ) : null}
           {standardStyleImportsEnabled && MapboxGL.StyleImport ? (
             <MapboxGL.StyleImport
-              key={`basemap-${mapLightPreset}-${drivingMode}-${isSatelliteStyle ? 'sat' : 'std'}-${nav.isNavigating ? 'nav' : 'exp'}`}
+              key={`basemap-${mapLightPreset}-${isSatelliteStyle ? 'sat' : 'std'}`}
               id="basemap"
               existing
               config={standardBasemapImportConfig}
@@ -2902,11 +2913,21 @@ export default function MapScreen() {
           <MapboxGL.Camera
             key={nav.isNavigating ? `nav-follow-${navCameraSessionKey}` : 'map-camera-explore'}
             ref={cameraRef}
-            defaultSettings={{
-              centerCoordinate: stableCenter,
-              zoomLevel: modeConfig.exploreZoom,
-              pitch: modeConfig.explorePitch,
-            }}
+            defaultSettings={
+              nav.isNavigating
+                ? {
+                    // Start the remounted nav camera AT the user's current position so there
+                    // is no lag before followUserLocation kicks in or the flyTo resolves.
+                    centerCoordinate: [navDisplayCoordRef.current.lng, navDisplayCoordRef.current.lat],
+                    zoomLevel: camCtrlRef.current?.followZoomLevel ?? modeConfig.navZoom,
+                    pitch: camCtrlRef.current?.followPitch ?? modeConfig.navPitch,
+                  }
+                : {
+                    centerCoordinate: stableCenter,
+                    zoomLevel: modeConfig.exploreZoom,
+                    pitch: modeConfig.explorePitch,
+                  }
+            }
             centerCoordinate={
               nav.isNavigating || isExploring || compassMode || exploreTracksUser ? undefined : stableCenter
             }
@@ -2918,8 +2939,10 @@ export default function MapScreen() {
             }
             animationMode="easeTo"
             animationDuration={
-              (camCtrl ? camCtrl.animationDuration : animDuration) +
-              (nav.isNavigating && cameraLocked ? 90 : 0)
+              nav.isNavigating && cameraLocked
+                ? 0  // Native followUserLocation handles smooth tracking; zero-duration prevents
+                     // followZoom/Pitch/Padding prop updates from firing competing animations.
+                : (camCtrl ? camCtrl.animationDuration : animDuration)
             }
             followUserLocation={(nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser}
             followUserMode={
