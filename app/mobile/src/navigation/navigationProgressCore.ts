@@ -318,9 +318,10 @@ export function computeNavigationProgressFrame({
       : { ...snap, cumulativeMeters: biasedCum };
   const { traveled, remaining } = splitRouteAtSnap(route, displaySnapForSplit);
   const routeTotalMeters = cumulative[cumulative.length - 1] ?? 0;
-  const distanceRemainingMeters = Math.max(0, routeTotalMeters - snap.cumulativeMeters);
+  const progressCumForUi = isOffRoute ? snap.cumulativeMeters : displaySnapForSplit.cumulativeMeters;
+  const distanceRemainingMeters = Math.max(0, routeTotalMeters - progressCumForUi);
   let modelDurationRemainingSeconds = remainingDurationSecondsFromNavSteps({
-    snapCumulativeMetersAlongPolyline: snap.cumulativeMeters,
+    snapCumulativeMetersAlongPolyline: progressCumForUi,
     polylineTotalMeters: routeTotalMeters,
     routeDistanceMetersApi: routeDistanceMeters > 1 ? routeDistanceMeters : routeTotalMeters,
     steps,
@@ -335,7 +336,7 @@ export function computeNavigationProgressFrame({
     edgeDur.some((x) => x > 0);
   if (edgeOk) {
     modelDurationRemainingSeconds = remainingDurationSecondsFromEdges({
-      snapCumulativeMetersAlongPolyline: snap.cumulativeMeters,
+      snapCumulativeMetersAlongPolyline: progressCumForUi,
       cumulativeVertexMeters: cumulative,
       edgeDurationSec: edgeDur!,
     });
@@ -407,9 +408,9 @@ export function computeNavigationProgressFrame({
 
   const etaEpochMs = Date.now() + durationRemainingSeconds * 1000;
 
-  const nextStepRaw = pickNextNavStepAlongRoute(steps, snap.cumulativeMeters);
+  const nextStepRaw = pickNextNavStepAlongRoute(steps, progressCumForUi);
   const nextStepDistanceMeters = nextStepRaw
-    ? Math.max(0, nextStepRaw.distanceMetersFromStart - snap.cumulativeMeters)
+    ? Math.max(0, nextStepRaw.distanceMetersFromStart - progressCumForUi)
     : 0;
   const nextStep = nextStepRaw
     ? { ...nextStepRaw, distanceMetersToNext: nextStepDistanceMeters }

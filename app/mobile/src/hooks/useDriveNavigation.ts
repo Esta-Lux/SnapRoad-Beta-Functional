@@ -335,6 +335,10 @@ export function useDriveNavigation(params: {
 
   const navigationProgressCoord: Coordinate = useMemo(() => {
     if (sdkActive) {
+      const split = navigationProgress?.routeSplitSnap?.point;
+      if (split && Number.isFinite(split.lat) && Number.isFinite(split.lng)) {
+        return { lat: split.lat, lng: split.lng };
+      }
       const c = getSdkMatchedCoordinate();
       if (c) return c;
     }
@@ -359,6 +363,8 @@ export function useDriveNavigation(params: {
     userLocation.lat,
     userLocation.lng,
     navSdkSnapshot.location,
+    navigationProgress?.routeSplitSnap?.point?.lat,
+    navigationProgress?.routeSplitSnap?.point?.lng,
     navigationProgress?.snapped?.point?.lat,
     navigationProgress?.snapped?.point?.lng,
     navigationProgress?.snapped?.distanceMeters,

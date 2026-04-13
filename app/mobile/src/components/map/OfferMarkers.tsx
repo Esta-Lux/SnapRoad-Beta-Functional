@@ -3,6 +3,7 @@ import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import type { Offer } from '../../types';
+import { sortAndCapMarkers, type MarkerCoordinate } from './markerDensity';
 
 /**
  * Hide offer gems when zoomed out — keeps the map calm (traffic cameras stay visible at all zooms).
@@ -13,6 +14,7 @@ interface Props {
   offers: Offer[];
   onOfferTap?: (offer: Offer) => void;
   zoomLevel: number;
+  referenceCoordinate?: MarkerCoordinate | null;
 }
 
 function tierColors(d: number): { inner: string; outer: string; border: string } {
@@ -25,16 +27,15 @@ function tierColors(d: number): { inner: string; outer: string; border: string }
 /**
  * Partner offers as compact MarkerView + Ionicons diamond (same footprint as traffic cameras).
  */
-export default React.memo(function OfferMarkers({ offers, onOfferTap, zoomLevel }: Props) {
+export default React.memo(function OfferMarkers({ offers, onOfferTap, zoomLevel, referenceCoordinate = null }: Props) {
   const markers = useMemo(() => {
-    const filtered = offers.filter((o) => {
-      const la = Number(o.lat);
-      const lo = Number(o.lng);
-      return Number.isFinite(la) && Number.isFinite(lo) && !(Math.abs(la) < 1e-7 && Math.abs(lo) < 1e-7);
-    });
-    const cap = zoomLevel >= 15.5 ? 90 : zoomLevel >= 14.25 ? 55 : 32;
-    return filtered.slice(0, cap);
-  }, [offers, zoomLevel]);
+    return sortAndCapMarkers(
+      offers.map((o) => ({ ...o, lat: Number(o.lat), lng: Number(o.lng) })),
+      referenceCoordinate,
+      zoomLevel,
+      'offer',
+    );
+  }, [offers, referenceCoordinate, zoomLevel]);
 
   if (!isMapAvailable() || !MapboxGL || !markers.length || zoomLevel < OFFER_MARKERS_MIN_ZOOM) return null;
   const MB = MapboxGL;

@@ -24,8 +24,11 @@ function speedMphBucket(mph: number): number {
 function maneuverDistanceBucket(meters: number): number {
   if (!Number.isFinite(meters) || meters <= 0) return 400;
   const m = Math.min(2000, meters);
-  if (m < 70) return Math.round(m / 18) * 18;
-  if (m < 200) return Math.round(m / 32) * 32;
+  // Near maneuvers, use finer buckets so camera framing keeps pace with the turn card
+  // and ETA strip instead of lagging by a half-second cooldown + coarse 32m steps.
+  if (m < 48) return Math.round(m / 8) * 8;
+  if (m < 120) return Math.round(m / 14) * 14;
+  if (m < 220) return Math.round(m / 24) * 24;
   return Math.round(m / 80) * 80;
 }
 
@@ -88,9 +91,6 @@ export function useCameraController({
   const stableRef = useRef<CameraSettings | null>(null);
   /** Temporal hysteresis: last time the camera settings actually changed. */
   const lastCameraChangeMs = useRef(0);
-  /** Minimum milliseconds between camera-setting changes to prevent jitter. */
-  const MIN_CAMERA_UPDATE_INTERVAL_MS = 600;
-
   const computed = useMemo(() => {
     if (!isNavigating || !cameraLocked) return null;
 
@@ -128,6 +128,12 @@ export function useCameraController({
     safeAreaTop,
     safeAreaBottom,
   ]);
+  const minCameraUpdateIntervalMs = useMemo(() => {
+    if (!isNavigating || !cameraLocked) return 600;
+    if (maneuverB <= 80) return 180;
+    if (maneuverB <= 180) return 320;
+    return 600;
+  }, [isNavigating, cameraLocked, maneuverB]);
 
   return useMemo(() => {
     if (!computed) {
@@ -141,11 +147,11 @@ export function useCameraController({
     }
     /* Temporal hysteresis: suppress rapid camera changes within the cooldown. */
     const now = Date.now();
-    if (prev && now - lastCameraChangeMs.current < MIN_CAMERA_UPDATE_INTERVAL_MS) {
+    if (prev && now - lastCameraChangeMs.current < minCameraUpdateIntervalMs) {
       return prev;
     }
     stableRef.current = computed;
     lastCameraChangeMs.current = now;
     return computed;
-  }, [computed]);
+  }, [computed, minCameraUpdateIntervalMs]);
 }

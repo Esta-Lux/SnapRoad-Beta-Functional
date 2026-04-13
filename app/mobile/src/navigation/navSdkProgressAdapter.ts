@@ -194,10 +194,15 @@ export function buildNavigationProgressFromSdk(args: {
     accuracy: location?.horizontalAccuracy ?? null,
     timestamp: location?.timestamp ?? Date.now(),
   };
+  const puckCoord = {
+    ...displayCoord,
+    lat: routeSplitSnap.point.lat,
+    lng: routeSplitSnap.point.lng,
+  };
 
   return {
     displayCoord,
-    puckCoord: displayCoord,
+    puckCoord,
     snapped:
       snap ??
       ({
@@ -223,6 +228,7 @@ export function buildNavigationProgressFromSdk(args: {
     confidence: 1,
     instructionSource: 'sdk',
     routePolyline: polyline,
+    displayCumulativeMeters: cumulativeMeters,
   };
 }
 
@@ -288,5 +294,6 @@ export function buildSdkWaitingNavigationProgress(
     confidence: 1,
     instructionSource: 'sdk_waiting',
     routePolyline: poly,
+    displayCumulativeMeters: 0,
   };
 }

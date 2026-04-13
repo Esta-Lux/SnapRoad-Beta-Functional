@@ -369,14 +369,23 @@ export default function MapScreen() {
     name: string;
     mode: 'live' | 'last_known';
     startedLive: boolean;
+    engine: 'sdk_snapshot' | 'js_live' | 'js_snapshot';
   } | null>(null);
   const friendFollowLastDestRef = useRef<{ lat: number; lng: number } | null>(null);
+  const friendFollowLastRerouteRef = useRef(0);
+  const friendFollowRerouteBusyRef = useRef(false);
   const friendFollowSessionRef = useRef<typeof friendFollowSession>(null);
   useEffect(() => {
     friendFollowSessionRef.current = friendFollowSession;
   }, [friendFollowSession]);
-  // Keep Navigation SDK as the single authority for every session while the flag is on.
-  const navLogicSdkSessionEnabled = navLogicSdkEnabled();
+  // Explicit per-session engine choice. Launch-safe default:
+  // - normal trips: SDK authoritative when enabled
+  // - friend-follow: SDK routes to a snapshot destination at start; JS-only sessions can do
+  //   live moving-destination reroutes when the whole app is already running JS navigation.
+  const navLogicSdkSessionEnabled =
+    navLogicSdkEnabled() &&
+    friendFollowSession?.engine !== 'js_live' &&
+    friendFollowSession?.engine !== 'js_snapshot';
 
   const { friendTrackingEnabled, liveLocationPublishingEnabled, refresh: refreshPublicAppConfig } =
     usePublicAppConfig(mapTabFocused);
@@ -436,7 +445,9 @@ export default function MapScreen() {
     drivingMode,
     voiceMuted: navVoiceMuted,
     dynamicDestinationFollow:
-      Boolean(friendFollowSession?.startedLive) && friendFollowSession?.mode === 'live',
+      friendFollowSession?.engine === 'js_live' &&
+      Boolean(friendFollowSession?.startedLive) &&
+      friendFollowSession?.mode === 'live',
     navSdkHeadless: navLogicSdkSessionEnabled,
   });
   useNavigationSpeech({
@@ -584,6 +595,13 @@ export default function MapScreen() {
   const displaySpeedMph = nav.isNavigating
     ? Math.max(0, (nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704) * 2.236936)
     : speed;
+  const markerFocusCoordinate = useMemo(
+    () =>
+      nav.isNavigating
+        ? navDisplayCoord
+        : location,
+    [nav.isNavigating, navDisplayCoord.lat, navDisplayCoord.lng, location.lat, location.lng],
+  );
 
   /**
    * LocationPuck beam: with CustomLocationProvider we pass a single `heading` — native `course` mode
@@ -2377,6 +2395,8 @@ export default function MapScreen() {
       if (!opts?.preserveFriendFollow) {
         setFriendFollowSession(null);
         friendFollowLastDestRef.current = null;
+        friendFollowLastRerouteRef.current = 0;
+        friendFollowRerouteBusyRef.current = false;
       }
       setSelectedPlace(null);
       setSelectedPlaceId(null);
@@ -2417,13 +2437,22 @@ export default function MapScreen() {
         void handleStartDirections({ name: p.name, address: `Meet ${p.name}`, lat: p.lat, lng: p.lng });
         return;
       }
+      const engine: 'sdk_snapshot' | 'js_live' | 'js_snapshot' =
+        navLogicSdkEnabled()
+          ? 'sdk_snapshot'
+          : p.isLiveFresh
+            ? 'js_live'
+            : 'js_snapshot';
       setFriendFollowSession({
         friendId: p.friendId,
         name: p.name,
-        mode: p.isLiveFresh ? 'live' : 'last_known',
+        mode: engine === 'js_live' ? 'live' : 'last_known',
         startedLive: p.isLiveFresh,
+        engine,
       });
       friendFollowLastDestRef.current = { lat: p.lat, lng: p.lng };
+      friendFollowLastRerouteRef.current = Date.now();
+      friendFollowRerouteBusyRef.current = false;
       void handleStartDirections(
         { name: p.name, address: `Meet ${p.name}`, lat: p.lat, lng: p.lng },
         { preserveFriendFollow: true },
@@ -2495,6 +2524,8 @@ export default function MapScreen() {
     if (wasActive && !active) {
       setFriendFollowSession(null);
       friendFollowLastDestRef.current = null;
+      friendFollowLastRerouteRef.current = 0;
+      friendFollowRerouteBusyRef.current = false;
     }
   }, [nav.isNavigating, nav.showRoutePreview]);
 
@@ -2506,13 +2537,44 @@ export default function MapScreen() {
     const fresh = isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng);
     setFriendFollowSession((prev) => {
       if (!prev) return prev;
-      // If the session did not START in live mode, keep it on last-known routing for the whole
-      // trip. Switching an SDK-led trip to a dynamic destination mid-session is unsupported.
       const mode: 'live' | 'last_known' =
-        prev.startedLive && fresh && fl.isSharing ? 'live' : 'last_known';
+        prev.engine === 'js_live' && prev.startedLive && fresh && fl.isSharing
+          ? 'live'
+          : 'last_known';
       return prev.mode === mode ? prev : { ...prev, mode };
     });
   }, [friendLocations, nav.isNavigating]);
+
+  useEffect(() => {
+    const sess = friendFollowSessionRef.current;
+    if (!sess || !nav.isNavigating) return;
+    if (sess.engine !== 'js_live' || sess.mode !== 'live') return;
+    const fl = friendLocations.find((x) => String(x.id) === String(sess.friendId));
+    if (!fl) return;
+    const fresh = isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng);
+    if (!fresh || !fl.isSharing) return;
+
+    const last = friendFollowLastDestRef.current;
+    if (!last) return;
+    const moved = haversineMeters(last.lat, last.lng, fl.lat, fl.lng);
+    const now = Date.now();
+    if (moved < 125) return;
+    if (now - friendFollowLastRerouteRef.current < 52_000) return;
+    if (friendFollowRerouteBusyRef.current) return;
+
+    friendFollowRerouteBusyRef.current = true;
+    friendFollowLastRerouteRef.current = now;
+    friendFollowLastDestRef.current = { lat: fl.lat, lng: fl.lng };
+    const place = { name: sess.name, address: `Meet ${sess.name}`, lat: fl.lat, lng: fl.lng };
+    nav.setSelectedDestination({ name: place.name, address: place.address, lat: place.lat, lng: place.lng });
+    void nav.fetchDirections(
+      place,
+      locationRef.current,
+      { maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined },
+    ).finally(() => {
+      friendFollowRerouteBusyRef.current = false;
+    });
+  }, [friendLocations, nav, nav.isNavigating, avoidLowClearances, vehicleHeight]);
 
   /** Copy for live friend follow; trips do not earn gems (`dynamicDestination` on route). */
   const friendFollowContextLine = useMemo(() => {
@@ -2522,6 +2584,12 @@ export default function MapScreen() {
       ? isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng)
       : false;
     const name = friendFollowSession.name;
+    if (friendFollowSession.engine === 'sdk_snapshot') {
+      if (fl && fresh && fl.isSharing && friendFollowSession.startedLive) {
+        return `Routing to ${name}'s latest live location snapshot`;
+      }
+      return `Routing to ${name}'s latest known location`;
+    }
     if (fl && fresh && fl.isSharing && friendFollowSession.mode === 'live') {
       return `Following ${name} live`;
     }
@@ -2854,7 +2922,7 @@ export default function MapScreen() {
         >
           {nav.isNavigating && navLogicSdkSessionEnabled && nav.sdkNavLocation ? (
             <MapboxGL.CustomLocationProvider
-              coordinate={[nav.sdkNavLocation.longitude, nav.sdkNavLocation.latitude]}
+              coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
               heading={nav.sdkNavLocation.course >= 0 ? nav.sdkNavLocation.course : heading}
             />
           ) : nav.isNavigating && !navLogicSdkSessionEnabled ? (
@@ -3048,18 +3116,37 @@ export default function MapScreen() {
           )}
 
           {!nav.isNavigating && (
-            <OfferMarkers offers={recommendedNearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
+            <OfferMarkers
+              offers={recommendedNearbyOffers}
+              zoomLevel={mapZoomLevel}
+              referenceCoordinate={markerFocusCoordinate}
+              onOfferTap={setSelectedOffer}
+            />
           )}
-          {showIncidents && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
-            if ((inc.upvotes ?? 0) < 0) return false;
-            if (inc.type === 'construction') return showConstruction;
-            return true;
-          })} onIncidentTap={setActiveReportCard} />}
+          {showIncidents && (
+            <ReportMarkers
+              incidents={nearbyIncidents.filter((inc) => {
+                if ((inc.upvotes ?? 0) < 0) return false;
+                if (inc.type === 'construction') return showConstruction;
+                return true;
+              })}
+              zoomLevel={mapZoomLevel}
+              referenceCoordinate={markerFocusCoordinate}
+              onIncidentTap={setActiveReportCard}
+            />
+          )}
           {user?.isPremium && showCameras && !nav.isNavigating && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
-            <CameraMarkers cameras={cameraLocations} onCameraTap={(cam) => setSelectedTrafficCamera(cam)} />
+            <CameraMarkers
+              cameras={cameraLocations}
+              zoomLevel={mapZoomLevel}
+              referenceCoordinate={markerFocusCoordinate}
+              onCameraTap={(cam) => setSelectedTrafficCamera(cam)}
+            />
           )}
           <FriendMarkers
             friends={friendLocationsVisible}
+            zoomLevel={mapZoomLevel}
+            referenceCoordinate={markerFocusCoordinate}
             onFriendTap={(f) => {
               const fresh = isLiveShareFresh(f.isSharing, f.lastUpdated || undefined, f.lat, f.lng);
               Alert.alert(f.name, 'What would you like to do?', [

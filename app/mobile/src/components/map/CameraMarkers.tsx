@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
+import { sortAndCapMarkers, type MarkerCoordinate } from './markerDensity';
 
 /** OHGO still frame (same fields as backend `camera_views`). */
 export interface CameraViewFeed {
@@ -23,6 +24,8 @@ export interface CameraLocation {
 
 interface Props {
   cameras: CameraLocation[];
+  zoomLevel: number;
+  referenceCoordinate?: MarkerCoordinate | null;
   onCameraTap?: (c: CameraLocation) => void;
 }
 
@@ -30,8 +33,8 @@ interface Props {
  * Traffic cameras as MarkerView + Ionicons (no CircleLayer dots).
  * Intentionally compact so they don’t dominate the map.
  */
-export default React.memo(function CameraMarkers({ cameras, onCameraTap }: Props) {
-  const list = cameras.filter((c) => isFinite(c.lat) && isFinite(c.lng));
+export default React.memo(function CameraMarkers({ cameras, zoomLevel, referenceCoordinate = null, onCameraTap }: Props) {
+  const list = sortAndCapMarkers(cameras, referenceCoordinate, zoomLevel, 'camera');
   if (!isMapAvailable() || !MapboxGL || list.length === 0) return null;
   const MB = MapboxGL;
 

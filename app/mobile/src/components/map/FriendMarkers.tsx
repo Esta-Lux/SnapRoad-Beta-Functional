@@ -5,10 +5,13 @@ import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import type { FriendLocation } from '../../types';
 import { haversineMeters } from '../../utils/distance';
 import { FRIEND_LOC_STALE_MS, hasValidFriendCoords } from '../../lib/friendPresence';
+import { sortAndCapMarkers, type MarkerCoordinate } from './markerDensity';
 
 interface Props {
   friends: FriendLocation[];
   onFriendTap?: (f: FriendLocation) => void;
+  zoomLevel: number;
+  referenceCoordinate?: MarkerCoordinate | null;
 }
 
 const LERP_MIN_METERS = 4;
@@ -77,14 +80,16 @@ function InterpolatedFriendMarker({
   MB,
   friend,
   onFriendTap,
+  allowInterpolation,
 }: {
   MB: NonNullable<typeof MapboxGL>;
   friend: FriendLocation;
   onFriendTap?: (f: FriendLocation) => void;
+  allowInterpolation: boolean;
 }) {
   const last = Date.parse(friend.lastUpdated || '');
   const isFresh = Number.isFinite(last) && Date.now() - last <= FRIEND_LOC_STALE_MS;
-  const shouldLerp = friend.isSharing && isFresh;
+  const shouldLerp = allowInterpolation && friend.isSharing && isFresh;
   const { lat, lng } = useInterpolatedLatLng(friend.lat, friend.lng, shouldLerp);
 
   return (
@@ -125,18 +130,38 @@ function InterpolatedFriendMarker({
  * Friend locations: MarkerView + circular avatar (MarkerView, not PointAnnotation).
  * Coordinates ease between GPS samples so pins don’t jump.
  */
-export default React.memo(function FriendMarkers({ friends, onFriendTap }: Props) {
+export default React.memo(function FriendMarkers({
+  friends,
+  onFriendTap,
+  zoomLevel,
+  referenceCoordinate = null,
+}: Props) {
   // Pins need valid GPS. Show when sharing, or when navigating with a live coordinate (common when share flag lags).
-  const visible = friends.filter(
-    (f) => hasValidFriendCoords(f.lat, f.lng) && (f.isSharing || f.isNavigating),
+  const visible = sortAndCapMarkers(
+    friends
+      .filter((f) => hasValidFriendCoords(f.lat, f.lng) && (f.isSharing || f.isNavigating))
+      .sort((a, b) => {
+        const aPriority = Number(Boolean(a.isNavigating)) * 4 + Number(Boolean(a.isSharing)) * 2;
+        const bPriority = Number(Boolean(b.isNavigating)) * 4 + Number(Boolean(b.isSharing)) * 2;
+        return bPriority - aPriority;
+      }),
+    referenceCoordinate,
+    zoomLevel,
+    'friend',
   );
   if (!isMapAvailable() || !MapboxGL || !visible.length) return null;
   const MB = MapboxGL;
 
   return (
     <>
-      {visible.map((f) => (
-        <InterpolatedFriendMarker key={f.id} MB={MB} friend={f} onFriendTap={onFriendTap} />
+      {visible.map((f, idx) => (
+        <InterpolatedFriendMarker
+          key={f.id}
+          MB={MB}
+          friend={f}
+          onFriendTap={onFriendTap}
+          allowInterpolation={idx < 12}
+        />
       ))}
     </>
   );
