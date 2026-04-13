@@ -78,15 +78,15 @@ import * as Haptics from 'expo-haptics';
 /**
  * Turn-by-turn orchestration for SnapRoad.
  *
- * **Single engine rule (critical):** When `navSdkHeadless` is true (`EXPO_PUBLIC_NAV_LOGIC_SDK`) and a trip is
- * active, **Mapbox Navigation SDK** (hidden `MapboxNavigationView` + `navSdkStore`) is the sole authority for
- * matched location, route progress, reroute, and (unless suppressed) voice. The JS pipeline
- * (`useNavigationProgress`, off-route streak reroute, traffic refresh intervals) is **bypassed** — do not
- * blend or “fall back” to raw GPS progress during that window except the explicit waiting UI from
+ * **Single engine rule (critical):** When `navSdkHeadless` is true (default: `EXPO_PUBLIC_NAV_LOGIC_SDK` unset
+ * or `1`) and a trip is active, **Mapbox Navigation SDK** (hidden `MapboxNavigationView` + `navSdkStore`) is
+ * the sole authority for matched location, route progress, reroute, and (unless suppressed) voice. The JS
+ * pipeline (`useNavigationProgress`, off-route streak reroute, traffic refresh intervals) is **bypassed** —
+ * do not blend or “fall back” to raw GPS progress during that window except the explicit waiting UI from
  * `getSdkWaitingNavigationProgress`.
  *
- * When `navSdkHeadless` is false, JS snap/progress (`useNavigationProgress` + `navigationProgressCore`) owns
- * puck/ETA/off-route for the custom RN map experience.
+ * When `navSdkHeadless` is false (`EXPO_PUBLIC_NAV_LOGIC_SDK=0`), JS snap/progress (`useNavigationProgress` +
+ * `navigationProgressCore`) owns puck/ETA/off-route for the custom RN map experience.
  */
 
 /** Aligned voice + auto-end: "near destination" along remaining route (`navStepsFromDirections` maps `arrive`). */

@@ -1,5 +1,6 @@
 /**
- * EXPO_PUBLIC_* vars are inlined at bundle time. Defaults favor safe rollout (off).
+ * EXPO_PUBLIC_* vars are inlined at bundle time. Most flags default off; logic SDK defaults on
+ * (see {@link navLogicSdkEnabled}).
  */
 function envBool(key: string, defaultVal: boolean): boolean {
   const v = process.env[key];
@@ -34,9 +35,14 @@ export function navNativeSdkEnabled(): boolean {
  * Hybrid mode: Navigation SDK runs trip session + voice headless; UI stays on `@rnmapbox/maps`.
  * When both this and {@link navNativeSdkEnabled} are true, hybrid wins — MapMain is not replaced
  * by the full-screen native navigator.
+ *
+ * **Default on:** matched location, reroute, progress, and native TTS come from the Navigation SDK
+ * during trips (single authority). Set `EXPO_PUBLIC_NAV_LOGIC_SDK=0` for JS-only Directions +
+ * `useNavigationProgress` (e.g. Expo Go / experiments). Requires a **dev client** build with native
+ * Mapbox Navigation, not Expo Go.
  */
 export function navLogicSdkEnabled(): boolean {
-  return envBool('EXPO_PUBLIC_NAV_LOGIC_SDK', false);
+  return envBool('EXPO_PUBLIC_NAV_LOGIC_SDK', true);
 }
 
 /** Full-screen `NativeNavigationScreen` — only when legacy native flag is on and hybrid is off. */

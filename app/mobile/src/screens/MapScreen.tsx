@@ -77,14 +77,12 @@ import RoutePreviewPanel from '../components/map/RoutePreviewPanel';
 import { projectAhead, getCameraConfig } from '../navigation/navigationCamera';
 import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import { useNavigationSpeech } from '../hooks/useNavigationSpeech';
-import { useSmoothedNavArrow } from '../hooks/useSmoothedNavArrow';
 import { repeatLastTurnByTurn } from '../navigation/navigationGuidanceMemory';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import { getRoutePolylineStyle } from '../lib/routePolylineStyle';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
 import NavigationDebugHud from '../components/navigation/NavigationDebugHud';
-import { labelAnchorLayerIdForStyleUrl, RouteLineLayerIds } from '../map/mapLayerRegistry';
-import NavigationUserSymbolLayers from '../components/map/NavigationUserSymbolLayers';
+import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
 import {
   getPrimaryBannerText,
   getSecondaryBannerText,
@@ -580,16 +578,6 @@ export default function MapScreen() {
   /** During nav: fused coord for puck/camera (`navigationProgressCoord` → snapped display when JS on-route). */
   const navDisplayCoord = nav.isNavigating ? nav.navigationProgressCoord : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
-  /** GPU SymbolLayer arrow needs a route line layer to anchor above; fall back to LocationPuck if missing. */
-  const showGpuNavUserArrow =
-    nav.isNavigating && Boolean(nav.navigationData?.polyline && nav.navigationData.polyline.length >= 2);
-  const navArrowSmoothed = useSmoothedNavArrow(
-    Boolean(showGpuNavUserArrow && nav.isNavigating),
-    navDisplayCoord.lat,
-    navDisplayCoord.lng,
-    Number.isFinite(navDisplayHeading) ? navDisplayHeading : 0,
-  );
-
   /** Passed / ahead route styling while navigating — same snap as turn/ETA (`navigationProgress`). */
   const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
     if (!nav.isNavigating) return null;
@@ -3142,23 +3130,17 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
-          <NavigationUserSymbolLayers
-            visible={Boolean(showGpuNavUserArrow && hasNativeMapbox && MapboxGL)}
-            lng={navArrowSmoothed.lng}
-            lat={navArrowSmoothed.lat}
-            bearingDeg={navArrowSmoothed.headingDeg}
-            accuracyMeters={accuracy}
-            routeColor={navRouteColors.routeColor}
-            routeCasing={navRouteColors.routeCasing}
-            aboveLayerID={RouteLineLayerIds.ahead}
-          />
           <MapboxGL.LocationPuck
-            visible={!nav.isNavigating || !showGpuNavUserArrow}
-            androidRenderMode="normal"
+            visible
+            androidRenderMode={Platform.OS === 'android' && nav.isNavigating ? 'gps' : 'normal'}
             puckBearingEnabled
             puckBearing={locationPuckBearing}
-            pulsing={{ isEnabled: !nav.isNavigating }}
-            scale={1.55}
+            pulsing={
+              nav.isNavigating
+                ? { isEnabled: true, color: navRouteColors.routeColor, radius: 'accuracy' }
+                : { isEnabled: true }
+            }
+            scale={nav.isNavigating ? 1.68 : 1.55}
           />
         </MapboxGL.MapView>
       ) : (
@@ -3345,7 +3327,7 @@ export default function MapScreen() {
         searchResultPriceHint={searchResultPriceHint}
       />
 
-      {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
+      {/* ═══ TURN CARD — distance, glyph, banner, and rich fields share one reconciled maneuver (JS + SDK). ═ */}
       {nav.isNavigating && nav.navigationProgress && (() => {
         const prog = nav.navigationProgress!;
         const instructionSrc = prog.instructionSource;
@@ -3384,14 +3366,6 @@ export default function MapScreen() {
         const logicSdkAuthoritativeUi = navLogicSdkEnabled() && instructionSrc === 'sdk';
         const useSdkTurnUi =
           navLogicSdkEnabled() && instructionSrc === 'sdk' && prog.nextStep;
-        const sdkSyntheticStep =
-          useSdkTurnUi && prog
-            ? directionsStepFromSdkProgress({
-                nextStep: prog.nextStep,
-                banner: prog.banner,
-                at: navDisplayCoord,
-              })
-            : null;
         const nextIdx = prog?.nextStep?.index;
         // When prog.nextStep points to the step the user is already inside
         // (nextIdx <= currentStepIndex), the "next maneuver" for the card
@@ -3400,6 +3374,23 @@ export default function MapScreen() {
         // stuck in 'active' showing a just-completed turn.
         const nextStepIsCurrentStep =
           nextIdx != null && nextIdx <= nav.currentStepIndex;
+        const sdkNavStepForSynthetic =
+          useSdkTurnUi && nextStepIsCurrentStep && prog.followingStep
+            ? prog.followingStep
+            : prog.nextStep;
+        const sdkRouteStepForSynthetic =
+          sdkNavStepForSynthetic != null && nav.navigationData?.steps?.length
+            ? (nav.navigationData.steps[sdkNavStepForSynthetic.index] ?? null)
+            : null;
+        const sdkSyntheticStep =
+          useSdkTurnUi && prog && sdkNavStepForSynthetic
+            ? directionsStepFromSdkProgress({
+                nextStep: sdkNavStepForSynthetic,
+                banner: prog.banner,
+                at: navDisplayCoord,
+                routeStep: sdkRouteStepForSynthetic,
+              })
+            : null;
         const nextManeuverCoord =
           useSdkTurnUi && sdkSyntheticStep
             ? sdkSyntheticStep
@@ -3414,17 +3405,58 @@ export default function MapScreen() {
             ? null
             : currentStep;
         const poly = nav.navigationData?.polyline;
+        const anchorToUserM =
+          nextManeuverCoord != null &&
+          Number.isFinite(nextManeuverCoord.lat) &&
+          Number.isFinite(nextManeuverCoord.lng)
+            ? haversineMeters(
+                navDisplayCoord.lat,
+                navDisplayCoord.lng,
+                nextManeuverCoord.lat,
+                nextManeuverCoord.lng,
+              )
+            : Number.POSITIVE_INFINITY;
+        /** Synthetic SDK rows used to use puck lat/lng — along-route to self is ~0; fall back to SDK distance. */
+        const maneuverAnchorDegenerate = anchorToUserM < 12;
+        const sdkDistToNextManeuver =
+          useSdkTurnUi && sdkNavStepForSynthetic != null && Number.isFinite(sdkNavStepForSynthetic.distanceMetersToNext)
+            ? Math.max(0, sdkNavStepForSynthetic.distanceMetersToNext)
+            : null;
         // When the progress step matches the current step, skip
         // prog.nextStepDistanceMeters (≈ 0) and compute the polyline
         // distance to the true upcoming maneuver instead.
-        const liveDistMeters =
-          prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep
-            ? prog.nextStepDistanceMeters
-            : poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-              ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
-              : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-                ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
-                : (turnCurrentStep?.distanceMeters ?? 0);
+        let liveDistMeters: number;
+        if (prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep) {
+          liveDistMeters = prog.nextStepDistanceMeters;
+        } else if (
+          poly &&
+          poly.length >= 2 &&
+          nextManeuverCoord != null &&
+          Number.isFinite(nextManeuverCoord.lat) &&
+          Number.isFinite(nextManeuverCoord.lng) &&
+          !maneuverAnchorDegenerate
+        ) {
+          liveDistMeters = alongRouteDistanceMeters(poly, navDisplayCoord, {
+            lat: nextManeuverCoord.lat,
+            lng: nextManeuverCoord.lng,
+          });
+        } else if (sdkDistToNextManeuver != null && (maneuverAnchorDegenerate || nextStepIsCurrentStep)) {
+          liveDistMeters = sdkDistToNextManeuver;
+        } else if (
+          nextManeuverCoord != null &&
+          Number.isFinite(nextManeuverCoord.lat) &&
+          Number.isFinite(nextManeuverCoord.lng) &&
+          !maneuverAnchorDegenerate
+        ) {
+          liveDistMeters = haversineMeters(
+            navDisplayCoord.lat,
+            navDisplayCoord.lng,
+            nextManeuverCoord.lat,
+            nextManeuverCoord.lng,
+          );
+        } else {
+          liveDistMeters = Math.max(0, turnCurrentStep?.distanceMeters ?? 0);
+        }
 
         const turnCardNow = Date.now();
         const cardState = resolveTurnCardState({
@@ -3458,8 +3490,7 @@ export default function MapScreen() {
           nextStepIsCurrentStep && prog.followingStep ? prog.followingStep : prog.nextStep;
         const maneuverFields = resolveManeuverFieldsForTurnCard({
           nextManeuverCoord,
-          instructionSource: instructionSrc ?? 'js',
-          progNext: prog.nextStep,
+          progNext: progressNavStepForRich ?? prog.nextStep,
         });
         const chainStepForBuild =
           nextStepIsCurrentStep && prog.followingStep ? prog.followingStep : prog.nextStep;

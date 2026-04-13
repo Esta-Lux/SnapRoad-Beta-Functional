@@ -10,11 +10,11 @@ Layer 1 is React Navigation (tabs + stacks). Layer 2 is turn-by-turn / Mapbox (`
 
 ## Phase 1b — SDK vs JS single engine (ongoing)
 
-**Default (since 2026):** `EXPO_PUBLIC_NAV_LOGIC_SDK` defaults to **off** in [`navFeatureFlags.ts`](../src/navigation/navFeatureFlags.ts) and in [`eas.json`](../eas.json) production env. Production uses the **JavaScript** Directions + `useNavigationProgress` pipeline unless you set `EXPO_PUBLIC_NAV_LOGIC_SDK=1`.
+**Default:** `EXPO_PUBLIC_NAV_LOGIC_SDK` defaults to **on** in [`navFeatureFlags.ts`](../src/navigation/navFeatureFlags.ts) and **`eas.json`** production env. Active trips use the **headless Mapbox Navigation SDK** for matched location, progress, reroute, and native voice; RN map + turn UI **subscribe** to `navSdkStore` / `sdkBuiltNavigationProgress`. Set **`EXPO_PUBLIC_NAV_LOGIC_SDK=0`** for **JavaScript-only** Directions + `useNavigationProgress` (e.g. Expo Go, A/B tests).
 
-While navigating with a route on the map, the user position is drawn as a **GPU `SymbolLayer`** arrow ([`NavigationUserSymbolLayers.tsx`](../src/components/map/NavigationUserSymbolLayers.tsx)) above the route line; `LocationPuck` is hidden for that case. If the route is temporarily missing, the puck remains visible.
+During navigation, user position is the native **`LocationPuck`**: Android uses **`gps`** render mode for a clear navigation arrow while a trip is active; iOS uses the default puck with `puckBearing` from `CustomLocationProvider` / fused heading. A subtle **accuracy pulse** (route-colored) runs while navigating. `navDisplayCoord` / SDK matched location still drive map follow and turn UI when logic SDK is on.
 
-Opt-in headless SDK path when `EXPO_PUBLIC_NAV_LOGIC_SDK=1`:
+Headless SDK path (default when logic SDK on):
 
 - Hidden `MapboxNavigationView` (`navigationLogicOnly`) feeds `navSdkStore` (`ingestSdkProgress`, `ingestSdkLocation`, …).
 - `useDriveNavigation` selects **`sdkBuiltNavigationProgress`** over JS `useNavigationProgress` while `sdkActive`.

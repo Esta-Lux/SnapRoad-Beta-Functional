@@ -292,26 +292,18 @@ export function iconManeuverKindForState(
 }
 
 /**
- * Turn-card glyph fields aligned with the card's next maneuver step when that
- * step carries Mapbox maneuver data; SDK synthetic steps fall back to progNext.
+ * Turn-card glyph fields from the same {@link nextManeuverCoord} the card uses for distance
+ * (Mapbox `mapboxManeuver`, else `maneuver` string). {@link progNext} is only used when there
+ * is no step row (e.g. waiting / no geometry).
  */
 export function resolveManeuverFieldsForTurnCard(args: {
   nextManeuverCoord: DirectionsStep | null | undefined;
-  instructionSource: string;
   progNext: NavStep | null | undefined;
 }): { rawType: string; rawModifier: string; kind: ManeuverKind } {
-  const { nextManeuverCoord, instructionSource, progNext } = args;
+  const { nextManeuverCoord, progNext } = args;
   if (nextManeuverCoord) {
-    const mm = nextManeuverCoord.mapboxManeuver;
-    const hasMapbox = mm != null && (mm.type != null || mm.modifier != null);
-    if (instructionSource === 'sdk' && !hasMapbox && progNext) {
-      return {
-        rawType: progNext.rawType,
-        rawModifier: progNext.rawModifier,
-        kind: progNext.kind,
-      };
-    }
-    return navManeuverFieldsFromDirectionsStep(nextManeuverCoord);
+    const fields = navManeuverFieldsFromDirectionsStep(nextManeuverCoord);
+    if (fields.kind !== 'unknown') return fields;
   }
   if (progNext) {
     return {
