@@ -53,6 +53,29 @@ function haversineQuick(lat1: number, lng1: number, lat2: number, lng2: number):
   return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
+function normText(v?: string | null): string {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+/**
+ * Native SDK progress owns the live maneuver. We only reuse rich fields from a
+ * REST Directions-derived NavStep when it very likely represents the SAME step.
+ * Otherwise stale route rows can freeze the icon / signal while SDK distance updates.
+ */
+function routeNavStepMatchesSdk(
+  routeStep: NavStep | null,
+  sdkKind: NavStep['kind'],
+  sdkInstruction?: string | null,
+): routeStep is NavStep {
+  if (!routeStep) return false;
+  if (routeStep.kind !== sdkKind) return false;
+  const sdkInstr = normText(sdkInstruction);
+  const routeStreet = normText(routeStep.streetName);
+  if (!sdkInstr) return true;
+  if (!routeStreet) return normText(routeStep.displayInstruction) === sdkInstr;
+  return sdkInstr.includes(routeStreet) || normText(routeStep.displayInstruction) === sdkInstr;
+}
+
 export function buildNavigationProgressFromSdk(args: {
   progress: SdkProgressPayload;
   location: SdkLocationPayload | null;
@@ -85,21 +108,22 @@ export function buildNavigationProgressFromSdk(args: {
     steps.length > 0
       ? Math.min(Math.max(0, stepIdxRaw), Math.max(0, steps.length - 1))
       : Math.max(0, stepIdxRaw);
-  const ds = steps.length > 0 ? steps[idx] ?? null : null;
-  const followingStep =
-    steps.length > 0 && idx + 1 < steps.length ? navStepFromDirectionsAtIndex(steps, polyline, idx + 1) : null;
   const kind = mapSdkToRichKind(progress.maneuverType, progress.maneuverDirection);
-  const distNext =
-    typeof progress.distanceToNextManeuverMeters === 'number' && Number.isFinite(progress.distanceToNextManeuverMeters)
-      ? Math.max(0, progress.distanceToNextManeuverMeters)
-      : Math.max(0, progress.distanceRemaining * 0.02);
-
-  /** SDK strings only — never merge Mapbox Directions steps (avoids stale lanes / icons). */
   const primaryText =
     progress.primaryInstruction?.trim() ||
     progress.currentStepInstruction?.trim() ||
     'Continue';
   const secondaryText = progress.secondaryInstruction?.trim() || progress.thenInstruction?.trim() || undefined;
+  const ds = steps.length > 0 ? steps[idx] ?? null : null;
+  const routeNavStep =
+    steps.length > 0 ? navStepFromDirectionsAtIndex(steps, polyline, idx) : null;
+  const matchingRouteNavStep = routeNavStepMatchesSdk(routeNavStep, kind, primaryText) ? routeNavStep : null;
+  const followingStep =
+    steps.length > 0 && idx + 1 < steps.length ? navStepFromDirectionsAtIndex(steps, polyline, idx + 1) : null;
+  const distNext =
+    typeof progress.distanceToNextManeuverMeters === 'number' && Number.isFinite(progress.distanceToNextManeuverMeters)
+      ? Math.max(0, progress.distanceToNextManeuverMeters)
+      : Math.max(0, progress.distanceRemaining * 0.02);
 
   const nextStep: NavStep | null = {
     index: idx,
@@ -107,21 +131,21 @@ export function buildNavigationProgressFromSdk(args: {
     kind,
     rawType: String(progress.maneuverType ?? ''),
     rawModifier: String(progress.maneuverDirection ?? ''),
-    bearingAfter: 0,
+    bearingAfter: matchingRouteNavStep?.bearingAfter ?? 0,
     displayInstruction: primaryText,
     secondaryInstruction: secondaryText ?? null,
     subInstruction: null,
     instruction: progress.currentStepInstruction?.trim() || progress.primaryInstruction?.trim() || '',
-    streetName: ds?.name ?? null,
-    destinationRoad: null,
-    shields: [],
-    signal: { kind: 'none', label: '' },
-    lanes: [],
-    roundaboutExitNumber: null,
-    distanceMetersFromStart: 0,
-    distanceMeters: ds?.distanceMeters ?? distNext,
+    streetName: matchingRouteNavStep?.streetName ?? ds?.name ?? null,
+    destinationRoad: matchingRouteNavStep?.destinationRoad ?? null,
+    shields: matchingRouteNavStep?.shields ?? [],
+    signal: matchingRouteNavStep?.signal ?? { kind: 'none', label: '' },
+    lanes: matchingRouteNavStep?.lanes ?? [],
+    roundaboutExitNumber: matchingRouteNavStep?.roundaboutExitNumber ?? null,
+    distanceMetersFromStart: matchingRouteNavStep?.distanceMetersFromStart ?? 0,
+    distanceMeters: matchingRouteNavStep?.distanceMeters ?? ds?.distanceMeters ?? distNext,
     distanceMetersToNext: distNext,
-    durationSeconds: ds?.durationSeconds ?? 0,
+    durationSeconds: matchingRouteNavStep?.durationSeconds ?? ds?.durationSeconds ?? 0,
     voiceAnnouncement: null,
     nextManeuverKind: followingStep?.kind ?? null,
     nextManeuverStreet: followingStep?.streetName ?? null,

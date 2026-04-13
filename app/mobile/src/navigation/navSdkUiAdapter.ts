@@ -1,5 +1,6 @@
 import type { DirectionsStep } from '../lib/directions';
 import type { NavBannerModel, NavStep } from './navModel';
+import { navManeuverFieldsFromDirectionsStep, resolveManeuverKind } from './navStepsFromDirections';
 import { maneuverKeyFromKind } from './spokenManeuver';
 
 /** Matches `DirectionsStep.maneuver` / {@link iconManeuverForState} (substring checks). */
@@ -10,6 +11,20 @@ function maneuverStringFromKind(kind: ManeuverKind): string {
 /** Banner icon modifiers expect plain tokens (see TurnInstructionCard `getBannerTurnIcon`). */
 function bannerModifierFromKind(kind: ManeuverKind): string {
   return maneuverKeyFromKind(kind);
+}
+
+function normText(v?: string | null): string {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+function routeStepMatchesSdk(routeStep: DirectionsStep | null | undefined, nextStep: NavStep): routeStep is DirectionsStep {
+  if (!routeStep) return false;
+  const routeFields = navManeuverFieldsFromDirectionsStep(routeStep);
+  if (routeFields.kind === 'unknown' || routeFields.kind !== nextStep.kind) return false;
+  const sdkStreet = normText(nextStep.streetName);
+  const routeStreet = normText(routeStep.name);
+  if (!sdkStreet || !routeStreet) return true;
+  return sdkStreet === routeStreet;
 }
 
 /**
@@ -35,7 +50,7 @@ export function directionsStepFromSdkProgress(args: {
     '';
   if (!instruction && nextStep.kind !== 'arrive') return null;
 
-  const rs = routeStep ?? null;
+  const rs = routeStepMatchesSdk(routeStep, nextStep) ? routeStep : null;
   const useRouteAnchor =
     rs != null &&
     Number.isFinite(rs.lat) &&
@@ -44,9 +59,19 @@ export function directionsStepFromSdkProgress(args: {
   const lat = useRouteAnchor ? rs!.lat : at.lat;
   const lng = useRouteAnchor ? rs!.lng : at.lng;
 
-  const mm = rs?.mapboxManeuver;
+  const routeMm = rs?.mapboxManeuver;
+  const rawFieldsMatchKind =
+    !!(nextStep.rawType || nextStep.rawModifier) &&
+    resolveManeuverKind(nextStep.rawType, nextStep.rawModifier) === nextStep.kind;
   const mapboxManeuver =
-    mm != null && (mm.type != null || mm.modifier != null) ? { ...mm } : undefined;
+    routeMm != null && (routeMm.type != null || routeMm.modifier != null)
+      ? { ...routeMm }
+      : rawFieldsMatchKind
+          ? {
+              type: nextStep.rawType || undefined,
+              modifier: nextStep.rawModifier || undefined,
+            }
+          : undefined;
 
   return {
     instruction: instruction || 'Arrive at destination',

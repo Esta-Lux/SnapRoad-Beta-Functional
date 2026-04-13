@@ -15,7 +15,10 @@ function baseStep(overrides: Partial<DirectionsStep> & Pick<DirectionsStep, 'ins
     lng: overrides.lng ?? -122.42,
     name: overrides.name,
     mapboxManeuver: overrides.mapboxManeuver,
+    lanes: overrides.lanes,
+    intersections: overrides.intersections,
     bannerInstructions: overrides.bannerInstructions,
+    voiceInstructions: overrides.voiceInstructions,
   };
 }
 
@@ -94,4 +97,51 @@ test('buildNavigationProgressFromSdk leaves followingStep null on last step', ()
   });
   assert.ok(prog);
   assert.equal(prog.followingStep, null);
+});
+
+test('buildNavigationProgressFromSdk reuses rich turn metadata only for matching SDK step', () => {
+  const steps: DirectionsStep[] = [
+    baseStep({
+      instruction: 'Turn right onto Oak Ave',
+      name: 'Oak Ave',
+      lat: 37.771,
+      lng: -122.419,
+      mapboxManeuver: { type: 'turn', modifier: 'right', exit: 2 },
+      distanceMeters: 120,
+      intersections: [
+        {
+          traffic_signal: true,
+          lanes: [{ indications: ['right'], valid: true, valid_indication: 'right' }],
+        },
+      ],
+      bannerInstructions: [
+        {
+          primary: {
+            text: 'Turn right onto Oak Ave',
+            components: [{ type: 'icon', text: 'I-80' }],
+          },
+        },
+      ],
+    }),
+  ];
+  const prog = buildNavigationProgressFromSdk({
+    progress: {
+      distanceRemaining: 1200,
+      distanceTraveled: 50,
+      durationRemaining: 120,
+      fractionTraveled: 0.1,
+      stepIndex: 0,
+      primaryInstruction: 'Turn right onto Oak Ave',
+      maneuverType: 'turn',
+      maneuverDirection: 'right',
+      distanceToNextManeuverMeters: 90,
+    },
+    location: null,
+    polyline: poly,
+    steps,
+  });
+  assert.ok(prog?.nextStep);
+  assert.equal(prog.nextStep.signal.kind, 'traffic_light');
+  assert.equal(prog.nextStep.lanes.length, 1);
+  assert.equal(prog.nextStep.roundaboutExitNumber, 2);
 });

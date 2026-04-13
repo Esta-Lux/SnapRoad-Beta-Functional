@@ -96,3 +96,42 @@ test('resolveManeuverFieldsForTurnCard prefers synthetic maneuver string over st
   assert.equal(fields.rawType, 'turn');
   assert.equal(fields.rawModifier, 'left');
 });
+
+test('directionsStepFromSdkProgress does not let stale route step override SDK maneuver', () => {
+  const next = navStep({
+    index: 3,
+    kind: 'turn_left',
+    rawType: 'turn',
+    rawModifier: 'left',
+    displayInstruction: 'Turn left onto Pine St',
+    streetName: 'Pine St',
+    distanceMetersToNext: 42,
+  });
+  const staleRouteStep: DirectionsStep = {
+    instruction: 'Turn right onto Oak Ave',
+    distance: '',
+    distanceMeters: 100,
+    duration: '',
+    durationSeconds: 20,
+    maneuver: 'turn',
+    name: 'Oak Ave',
+    lat: 40.758,
+    lng: -73.9855,
+    mapboxManeuver: { type: 'turn', modifier: 'right' },
+  };
+  const ds = directionsStepFromSdkProgress({
+    nextStep: next,
+    banner: {
+      ...banner,
+      primaryInstruction: 'Turn left onto Pine St',
+      primaryStreet: 'Pine St',
+    },
+    at: { lat: 40.7, lng: -73.9 },
+    routeStep: staleRouteStep,
+  });
+  assert.ok(ds);
+  assert.equal(ds.mapboxManeuver?.type, 'turn');
+  assert.equal(ds.mapboxManeuver?.modifier, 'left');
+  assert.equal(ds.lat, 40.7);
+  assert.equal(ds.lng, -73.9);
+});
