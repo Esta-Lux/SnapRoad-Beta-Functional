@@ -27,8 +27,20 @@ type Args = {
 
 type SpeedZoomPoint = { speed: number; zoom: number };
 
-/** Reserved top UI space (turn banner / cards) to keep route context visible ahead. */
-export const NAV_UI_HEIGHT = 120;
+/**
+ * Reserved top space for the floating turn instruction card (primary row + optional
+ * lane strip / “then” line). Keeps forward road framed below the card instead of under it.
+ */
+export const NAV_TURN_CARD_RESERVE_PX = 168;
+
+/**
+ * Bottom map chrome while navigating: {@link NavigationStatusStrip} + End button + margins.
+ * FAB column offsets should stay at or above this so controls do not overlap the strip.
+ */
+export const NAV_MAP_BOTTOM_CHROME_PX = 224;
+
+/** @deprecated Use {@link NAV_TURN_CARD_RESERVE_PX} */
+export const NAV_UI_HEIGHT = NAV_TURN_CARD_RESERVE_PX;
 
 // SPORT high-speed camera constants
 /** MPH threshold above which SPORT mode extends the camera look-ahead. */
@@ -93,7 +105,7 @@ const MODE_CONFIG: Record<
     basePitch: 52,
     minPitch: 42,
     maxPitch: 58,
-    basePadBottom: 100,
+    basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
     padTop: 350,
     padLeft: 30,
     padRight: 30,
@@ -106,7 +118,7 @@ const MODE_CONFIG: Record<
     basePitch: 50,
     minPitch: 40,
     maxPitch: 56,
-    basePadBottom: 90,
+    basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
     padTop: 330,
     padLeft: 28,
     padRight: 28,
@@ -119,7 +131,7 @@ const MODE_CONFIG: Record<
     basePitch: 54,
     minPitch: 42,
     maxPitch: 60,
-    basePadBottom: 80,
+    basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
     padTop: 310,
     padLeft: 24,
     padRight: 24,
@@ -242,4 +254,22 @@ export function getLiveNavigationCameraPreset(args: Args): CameraPreset {
     padding: base.padding,
     animationDuration,
   };
+}
+
+/**
+ * Follow padding for the first navigation frames (before speed/maneuver-driven camera updates)
+ * or when `camCtrl` is null — same formula as {@link getCameraPreset} to avoid padding jumps.
+ */
+export function getNavigationFollowPaddingFallback(
+  mode: DrivingMode,
+  safeAreaTop: number,
+  safeAreaBottom: number,
+): CameraPadding {
+  return getCameraPreset({
+    mode,
+    speedMps: 0,
+    nextManeuverDistanceMeters: 400,
+    safeAreaTop,
+    safeAreaBottom,
+  }).padding;
 }

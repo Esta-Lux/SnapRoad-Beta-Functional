@@ -13,12 +13,13 @@ import type { DrivingMode } from '../../types';
 import type { ModeConfig } from '../../constants/modes';
 import { formatDistance } from '../../utils/distance';
 import { formatDuration } from '../../utils/format';
+import { NAV_MAP_BOTTOM_CHROME_PX } from '../../navigation/cameraPresets';
 
 /**
  * Vertical offset above the safe area for nav FABs / street pill so they clear the status strip
- * (ETA rows + voice + End navigation — taller than a single bar).
+ * (ETA rows + voice + End navigation — taller than a single bar). Matches follow-camera bottom reserve.
  */
-export const MAP_NAV_BOTTOM_INSET = 220;
+export const MAP_NAV_BOTTOM_INSET = NAV_MAP_BOTTOM_CHROME_PX;
 
 type LiveEta = { distanceMiles: number; etaMinutes: number };
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getCameraPreset } from '../cameraPresets';
+import { getCameraPreset, getNavigationFollowPaddingFallback } from '../cameraPresets';
 
 test('getCameraPreset: symmetric horizontal padding; faster travel adds top look-ahead', () => {
   const low = getCameraPreset({
@@ -39,4 +39,16 @@ test('getCameraPreset: maneuver approach increases top padding', () => {
   });
   assert.ok(near.padding.paddingTop > cruise.padding.paddingTop);
   assert.ok(near.zoom >= cruise.zoom);
+});
+
+test('getNavigationFollowPaddingFallback matches getCameraPreset for initial nav frame', () => {
+  const preset = getCameraPreset({
+    mode: 'adaptive',
+    speedMps: 0,
+    nextManeuverDistanceMeters: 400,
+    safeAreaTop: 47,
+    safeAreaBottom: 34,
+  });
+  const fb = getNavigationFollowPaddingFallback('adaptive', 47, 34);
+  assert.deepEqual(fb, preset.padding);
 });

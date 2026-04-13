@@ -81,6 +81,7 @@ import { repeatLastTurnByTurn } from '../navigation/navigationGuidanceMemory';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import { getRoutePolylineStyle } from '../lib/routePolylineStyle';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
+import { getNavigationFollowPaddingFallback } from '../navigation/cameraPresets';
 import NavigationDebugHud from '../components/navigation/NavigationDebugHud';
 import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
 import {
@@ -225,8 +226,8 @@ const MAP_STYLES = [
 
 /**
  * Android RNMBXCameraManager.setFollowPadding calls asMap() — undefined breaks Fabric (ClassCastException).
- * Non-navigation fallback is zero; during navigation, use {@link navFallbackFollowPadding} so the puck
- * sits at the bottom third even before the first `useCameraController` tick.
+ * Non-navigation fallback is zero; during navigation, use {@link getNavigationFollowPaddingFallback}
+ * so the puck clears the same top/bottom chrome as `useCameraController` on the first frame.
  */
 const MAPBOX_DEFAULT_FOLLOW_PADDING = {
   paddingTop: 0,
@@ -234,29 +235,6 @@ const MAPBOX_DEFAULT_FOLLOW_PADDING = {
   paddingBottom: 0,
   paddingLeft: 0,
 } as const;
-
-/**
- * Mode-aware follow-padding used when the puck-follow camera is active but
- * `useCameraController` has not yet produced a preset (e.g. first render frame
- * after navigation starts). Uses the mode's `cameraPaddingBottom` so the puck
- * sits at the bottom third from the very first frame.
- */
-function navFallbackFollowPadding(
-  mc: { cameraPaddingBottom: number },
-  safeBottom: number,
-): {
-  paddingTop: number;
-  paddingBottom: number;
-  paddingLeft: number;
-  paddingRight: number;
-} {
-  return {
-    paddingTop: 330,
-    paddingBottom: mc.cameraPaddingBottom > 0 ? mc.cameraPaddingBottom + safeBottom : 90 + safeBottom,
-    paddingLeft: 28,
-    paddingRight: 28,
-  };
-}
 
 const REPORT_TYPES = [
   { type: 'police', label: 'Police', icon: 'shield-outline' as const },
@@ -1555,7 +1533,9 @@ export default function MapScreen() {
 
     const runSnap = () => {
       if (cancelled) return;
-      const pad = camCtrlRef.current?.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
+      const pad =
+        camCtrlRef.current?.followPadding ??
+        getNavigationFollowPaddingFallback(drivingMode, insets.top, insets.bottom);
       const zoom = camCtrlRef.current?.followZoomLevel ?? modeConfig.navZoom;
       const pitch = camCtrlRef.current?.followPitch ?? modeConfig.navPitch;
       const c = navDisplayCoordRef.current;
@@ -2977,7 +2957,7 @@ export default function MapScreen() {
               camCtrl
                 ? camCtrl.followPadding
                 : nav.isNavigating && cameraLocked
-                  ? navFallbackFollowPadding(modeConfig, insets.bottom)
+                  ? getNavigationFollowPaddingFallback(drivingMode, insets.top, insets.bottom)
                   : MAPBOX_DEFAULT_FOLLOW_PADDING
             }
           />

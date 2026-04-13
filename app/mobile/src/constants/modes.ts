@@ -109,7 +109,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     navZoom: 16.5,
     explorePitch: 35,
     exploreZoom: 14,
-    cameraPaddingBottom: 250,
+    /** Approx. nav bottom chrome (see `NAV_MAP_BOTTOM_CHROME_PX` in cameraPresets); follow padding uses presets. */
+    cameraPaddingBottom: 228,
 
     speechRate: 0.88,
     speechPitch: 0.95,
@@ -169,7 +170,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     navZoom: 17,
     explorePitch: 45,
     exploreZoom: 15,
-    cameraPaddingBottom: 280,
+    /** Aligned with `NAV_MAP_BOTTOM_CHROME_PX` in cameraPresets for nav follow framing. */
+    cameraPaddingBottom: 228,
 
     speechRate: 1.02,
     speechPitch: 1.0,
@@ -233,7 +235,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     navZoom: 17.5,
     explorePitch: 50,
     exploreZoom: 15.5,
-    cameraPaddingBottom: 300,
+    cameraPaddingBottom: 228,
 
     speechRate: 1.14,
     speechPitch: 1.05,
