@@ -22,6 +22,10 @@ index 54702f8..46de385 100644
 +        view.setDrivingMode(mode)
 +      }
 +
++      Prop("appTheme") { view: ExpoMapboxNavigationView, theme: String? ->
++        view.setAppTheme(theme)
++      }
++
 +      Prop("navigationLogicOnly") { view: ExpoMapboxNavigationView, value: Boolean? ->
 +        view.setNavigationLogicOnly(value)
 +      }
@@ -334,9 +338,15 @@ index 4e667fa..eea2b10 100644
      }
  
 +    private var currentDrivingMode: String = "adaptive"
++    private var currentAppTheme: String = "dark"
 +
 +    fun setDrivingMode(mode: String?) {
 +        currentDrivingMode = mode ?: "adaptive"
++        applySnapRoadManeuverTheme()
++    }
++
++    fun setAppTheme(theme: String?) {
++        currentAppTheme = if (theme == "light") "light" else "dark"
 +        applySnapRoadManeuverTheme()
 +    }
 +
@@ -381,6 +391,7 @@ index 4e667fa..eea2b10 100644
 +    private fun getManeuverBgColor(): Int {
 +        return when (currentDrivingMode) {
 +            "calm" -> Color.parseColor("#6BA4E8")
++            "adaptive" -> if (currentAppTheme == "light") Color.parseColor("#3B82F6") else Color.parseColor("#1E40AF")
 +            "sport" -> Color.parseColor("#4A4063")
 +            else -> Color.parseColor("#3B82F6")
 +        }
@@ -419,6 +430,8 @@ index 8abb17d..7723abd 100644
      followingZoom?: number;
 +    /** SnapRoad driving mode — applies brand-specific route/banner colors. */
 +    drivingMode?: 'calm' | 'adaptive' | 'sport';
++    /** App light/dark theme so native chrome can match SnapRoad surfaces. */
++    appTheme?: 'light' | 'dark';
      onRouteProgressChanged?: (event: {
          nativeEvent: ProgressEvent;
      }) => void;
@@ -453,6 +466,10 @@ index 965414e..da6a504 100644
  
 +      Prop("drivingMode") { (view: ExpoMapboxNavigationView, mode: String?) in
 +        view.controller.setDrivingMode(mode: mode)
++      }
++
++      Prop("appTheme") { (view: ExpoMapboxNavigationView, theme: String?) in
++        view.controller.setAppTheme(theme: theme)
 +      }
 +
 +      Prop("navigationLogicOnly") { (view: ExpoMapboxNavigationView, value: Bool?) in
@@ -498,6 +515,7 @@ index 8f841df..10be8b1 100644
      var vehicleMaxHeight: Double? = nil
      var vehicleMaxWidth: Double? = nil
 +    var currentDrivingMode: String = "adaptive"
++    var currentAppTheme: String = "dark"
 +    /// Headless SnapRoad mode: run Navigation SDK trip session + voice without embedding Navigation UI / second map.
 +    var navigationLogicOnly: Bool = false
 +
@@ -708,6 +726,10 @@ index 8f841df..10be8b1 100644
 +        currentDrivingMode = mode ?? "adaptive"
 +    }
 +
++    func setAppTheme(theme: String?) {
++        currentAppTheme = theme == "light" ? "light" : "dark"
++    }
++
 +    func setNavigationLogicOnly(_ value: Bool?) {
 +        navigationLogicOnly = value ?? false
 +    }
@@ -767,14 +789,7 @@ index 8f841df..10be8b1 100644
 +    }
 +
 +    func applySnapRoadRouteTheme() {
-+        let theme = ExpoMapboxNavigationViewController.modeThemes[currentDrivingMode]
-+            ?? ExpoMapboxNavigationViewController.modeThemes["adaptive"]!
-+
-+        let mapboxMap = navigationViewController?.navigationMapView?.mapView.mapboxMap
-+        guard let map = mapboxMap else { return }
-+
-+        try? map.setLayerProperty(for: "com.mapbox.navigation.route.main", property: "line-color", value: theme.routeColor)
-+        try? map.setLayerProperty(for: "com.mapbox.navigation.route.main.casing", property: "line-color", value: theme.routeCasing)
++        // SnapRoad keeps the SDK-controlled route line colors in full-screen native navigation.
 +    }
 +
 +    func applySnapRoadBannerTheme() {
@@ -785,13 +800,43 @@ index 8f841df..10be8b1 100644
 +        guard let navView = navVC?.navigationView else { return }
 +
 +        navView.topBannerContainerView.backgroundColor = theme.maneuverBannerBg
-+        navView.bottomBannerContainerView.backgroundColor = theme.bottomBannerBg
++        let bottomBg: UIColor
++        let bottomText: UIColor
++        let chromeBorder: UIColor
++        if currentDrivingMode == "adaptive" && currentAppTheme != "light" {
++            bottomBg = UIColor(red: 0.08, green: 0.10, blue: 0.18, alpha: 0.94)
++            bottomText = UIColor(red: 0.95, green: 0.97, blue: 1.00, alpha: 1.0)
++            chromeBorder = UIColor(red: 0.18, green: 0.25, blue: 0.44, alpha: 0.6)
++        } else {
++            bottomBg = theme.bottomBannerBg
++            bottomText = theme.bottomBannerText
++            chromeBorder = currentAppTheme == "light"
++                ? UIColor(red: 0.09, green: 0.14, blue: 0.24, alpha: 0.08)
++                : UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.14)
++        }
++        navView.bottomBannerContainerView.backgroundColor = bottomBg
++        navView.bottomBannerContainerView.layer.borderWidth = 1
++        navView.bottomBannerContainerView.layer.borderColor = chromeBorder.cgColor
 +
 +        for label in navView.topBannerContainerView.findViews(subclassOf: UILabel.self) {
 +            label.textColor = theme.maneuverBannerText
 +        }
 +        for label in navView.bottomBannerContainerView.findViews(subclassOf: UILabel.self) {
-+            label.textColor = theme.bottomBannerText
++            label.textColor = bottomText
++        }
++        for button in navView.topBannerContainerView.findViews(subclassOf: UIButton.self) {
++            button.tintColor = theme.maneuverBannerText
++            button.setTitleColor(theme.maneuverBannerText, for: .normal)
++        }
++        for button in navView.bottomBannerContainerView.findViews(subclassOf: UIButton.self) {
++            button.tintColor = theme.accentColor
++            button.setTitleColor(bottomText, for: .normal)
++        }
++        for image in navView.topBannerContainerView.findViews(subclassOf: UIImageView.self) {
++            image.tintColor = theme.maneuverBannerText
++        }
++        for image in navView.bottomBannerContainerView.findViews(subclassOf: UIImageView.self) {
++            image.tintColor = theme.accentColor
 +        }
 +    }
 +
@@ -997,6 +1042,8 @@ index 3e8b18b..326d667 100644
 -  onRouteProgressChanged?: (event: { nativeEvent: ProgressEvent }) => void;
 +  /** SnapRoad driving mode — applies brand-specific route/banner colors. */
 +  drivingMode?: 'calm' | 'adaptive' | 'sport';
++  /** App light/dark theme so native chrome can match SnapRoad surfaces. */
++  appTheme?: 'light' | 'dark';
 +  /**
 +   * When true, native Navigation SDK runs trip session + voice without embedding the default
 +   * navigation map UI (SnapRoad uses `@rnmapbox/maps` as the visible map).

@@ -252,6 +252,7 @@ export default function NativeNavigationScreen() {
         mapStyle={mapStyleUrl}
         followingZoom={followingZoom}
         drivingMode={drivingMode}
+        appTheme={isLight ? 'light' : 'dark'}
         onRouteProgressChanged={handleProgressChanged}
         onNavigationLocationUpdate={handleLocationUpdate}
         onCancelNavigation={handleCancel}

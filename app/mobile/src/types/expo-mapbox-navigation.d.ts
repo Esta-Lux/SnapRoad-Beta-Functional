@@ -36,6 +36,7 @@ declare module '@badatgil/expo-mapbox-navigation' {
     disableAlternativeRoutes?: boolean;
     followingZoom?: number;
     drivingMode?: 'calm' | 'adaptive' | 'sport';
+    appTheme?: 'light' | 'dark';
     navigationLogicOnly?: boolean;
     onRouteProgressChanged?: (event: {
       nativeEvent: {
