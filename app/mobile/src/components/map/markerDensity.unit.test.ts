@@ -4,8 +4,9 @@ import { test } from 'node:test';
 import { approxVisibleRadiusMeters, markerCapForZoom, sortAndCapMarkers } from './markerDensity';
 
 test('markerCapForZoom tightens caps when zoomed out', () => {
-  assert.equal(markerCapForZoom('camera', 12), 68);
-  assert.equal(markerCapForZoom('camera', 16), 132);
+  assert.equal(markerCapForZoom('camera', 12), 72);
+  assert.equal(markerCapForZoom('camera', 16), 168);
+  assert.equal(markerCapForZoom('offer', 12.5), 44);
   assert.equal(markerCapForZoom('friend', 13), 16);
   assert.equal(markerCapForZoom('friend', 16), 40);
 });

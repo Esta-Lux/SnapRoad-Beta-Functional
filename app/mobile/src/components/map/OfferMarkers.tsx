@@ -6,9 +6,9 @@ import type { Offer } from '../../types';
 import { sortAndCapMarkers, type MarkerCoordinate } from './markerDensity';
 
 /**
- * Hide offer gems when zoomed out — keeps the map calm (traffic cameras stay visible at all zooms).
+ * Keep offer gems visible at city zoom, but hide them again when the map is far out at state scale.
  */
-const OFFER_MARKERS_MIN_ZOOM = 13.25;
+const OFFER_MARKERS_MIN_ZOOM = 12.25;
 
 interface Props {
   offers: Offer[];

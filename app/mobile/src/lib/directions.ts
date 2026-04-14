@@ -612,7 +612,8 @@ export function getModeDirectionsConfig(_mode: DrivingMode): { profile: Directio
 type MapboxDirectionsJson = { routes?: RawRoute[]; message?: string };
 
 const ECO_TIME_FACTOR = 1.2;
-const MAX_PREVIEW_ROUTES = 4;
+const MAX_PREVIEW_ROUTES = 6;
+const MAX_FASTEST_ROUTE_VARIANTS = 4;
 
 interface RouteStrategy {
   type: RouteKind;
@@ -815,7 +816,7 @@ async function executeRouteStrategy(
         ? { ...route, routeType: 'fastest', routeLabel: ROUTE_DEFAULTS.fastest.label, routeReason: ROUTE_DEFAULTS.fastest.reason }
         : route;
       if (!isDuplicateDirectionsResult(candidate, out)) out.push(candidate);
-      if (out.length >= 2) break;
+      if (out.length >= MAX_FASTEST_ROUTE_VARIANTS) break;
     }
     return out;
   }

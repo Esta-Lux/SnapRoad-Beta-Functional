@@ -62,6 +62,7 @@ export default function NativeNavigationScreen() {
   const navRef = useRef<MapboxNavigationViewRef | null>(null);
   const colorScheme = useColorScheme();
   const lastIncidentFetchAtRef = useRef(0);
+  const lastIncidentFetchCoordRef = useRef<{ lat: number; lng: number } | null>(null);
   const [activeIncident, setActiveIncident] = useState<Incident | null>(null);
   const [dismissedIncidentId, setDismissedIncidentId] = useState<string | number | null>(null);
   const [orionQuickReply, setOrionQuickReply] = useState<string | null>(null);
@@ -165,6 +166,7 @@ export default function NativeNavigationScreen() {
         if (!res.success || res.data == null) return;
         const data = (res.data as { data?: Incident[] }).data;
         if (!Array.isArray(data) || data.length === 0) {
+          lastIncidentFetchCoordRef.current = { lat, lng };
           setActiveIncident(null);
           return;
         }
@@ -180,6 +182,7 @@ export default function NativeNavigationScreen() {
           const bestDist = haversineMeters(lat, lng, best.lat, best.lng);
           return incDist < bestDist ? inc : best;
         }, null);
+        lastIncidentFetchCoordRef.current = { lat, lng };
         setActiveIncident(nearest);
       } catch {
         /* offline / tunnel / transient backend issue */
@@ -194,7 +197,10 @@ export default function NativeNavigationScreen() {
       const lng = Number(event.nativeEvent?.longitude);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
       const now = Date.now();
-      if (now - lastIncidentFetchAtRef.current < 12000) return;
+      const lastCoord = lastIncidentFetchCoordRef.current;
+      const movedMeters =
+        lastCoord != null ? haversineMeters(lastCoord.lat, lastCoord.lng, lat, lng) : Number.POSITIVE_INFINITY;
+      if (now - lastIncidentFetchAtRef.current < 3000 && movedMeters < 180) return;
       lastIncidentFetchAtRef.current = now;
       void fetchNearbyIncidents(lat, lng);
     },

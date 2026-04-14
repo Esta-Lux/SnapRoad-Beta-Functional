@@ -594,8 +594,13 @@ def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
                 update_payload["lng"] = float(body.lng)
             sb.table("live_locations").update(update_payload).eq("user_id", uid).execute()
         elif body.is_sharing:
-            lat = float(body.lat) if body.lat is not None else 0.0
-            lng = float(body.lng) if body.lng is not None else 0.0
+            if body.lat is None or body.lng is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Waiting for a GPS fix before enabling location sharing.",
+                )
+            lat = float(body.lat)
+            lng = float(body.lng)
             sb.table("live_locations").insert({
                 "user_id": uid,
                 "lat": lat,

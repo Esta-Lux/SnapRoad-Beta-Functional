@@ -44,8 +44,8 @@ export function navNativeSdkEnabled(): boolean {
 
 /**
  * Hybrid mode: Navigation SDK runs trip session + voice headless; UI stays on `@rnmapbox/maps`.
- * When both this and {@link navNativeSdkEnabled} are true, hybrid wins — MapMain is not replaced
- * by the full-screen native navigator.
+ * When full-screen native navigation is launched, `MapMain` is replaced and this headless mode no
+ * longer owns the visible turn-by-turn UI.
  *
  * **Default on:** matched location, reroute, progress, and native TTS come from the Navigation SDK
  * during trips (single authority). Set `EXPO_PUBLIC_NAV_LOGIC_SDK=0` for JS-only Directions +

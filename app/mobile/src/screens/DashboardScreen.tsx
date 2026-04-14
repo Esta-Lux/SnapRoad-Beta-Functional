@@ -231,6 +231,10 @@ export default function DashboardScreen() {
     coords?: { lat: number; lng: number } | null,
   ): Promise<string | null> => {
     const liveCoords = asShareCoords(coords);
+    if (isSharing && !liveCoords) {
+      setShareLocationError(null);
+      return null;
+    }
     const res = await api.put('/api/friends/location/sharing', {
       is_sharing: isSharing,
       ...(isSharing && liveCoords ? { lat: liveCoords.lat, lng: liveCoords.lng } : {}),
@@ -289,6 +293,13 @@ export default function DashboardScreen() {
 
         if (localOn) {
           const { lat, lng } = dashboardLiveCoordsRef.current;
+          if (!asShareCoords({ lat, lng })) {
+            shareLocationNeedsCoordsSyncRef.current = true;
+            setShareLocationError(null);
+            setIsSharingLocation(true);
+            storage.set(SHARE_LOC_STORAGE_KEY, '1');
+            return;
+          }
           const error = await setSharingOnServer(true, { lat, lng });
           if (!cancelled && !error) {
             setIsSharingLocation(true);
@@ -967,6 +978,10 @@ export default function DashboardScreen() {
                   storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
                   if (v && !myCoord) shareLocationNeedsCoordsSyncRef.current = true;
                   else shareLocationNeedsCoordsSyncRef.current = false;
+                  if (v && !myCoord) {
+                    setShareLocationError(null);
+                    return;
+                  }
                   const error = await setSharingOnServer(v, myCoord);
                   if (error) {
                     setIsSharingLocation(prev);

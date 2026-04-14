@@ -16,6 +16,7 @@ import * as Battery from 'expo-battery';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import * as Sentry from '@sentry/react-native';
 
 import { useLocation } from '../hooks/useLocation';
 import { useDriveNavigation } from '../hooks/useDriveNavigation';
@@ -209,9 +210,8 @@ function placeCardFuelHint(place: {
   return 'Live $/gal not shown — confirm at pump before fueling.';
 }
 
-/** Traffic cams hide when zoomed out (less map clutter). */
-/** Show traffic / camera POIs at roughly city-level zoom, then hide again farther out. */
-const TRAFFIC_CAM_MIN_ZOOM = 11.5;
+/** Show traffic / camera POIs at city zoom, then hide them again when zoomed out to state level. */
+const TRAFFIC_CAM_MIN_ZOOM = 10.75;
 
 const INCIDENT_COLORS: Record<string, string> = {
   police: '#4A90D9', accident: '#D04040', hazard: '#E07830',
@@ -305,6 +305,26 @@ function parseCameraViewsFromTraffic(raw: unknown): CameraViewFeed[] | undefined
     }))
     .filter((v) => v.large_url.length > 0);
   return list.length ? list : undefined;
+}
+
+function pressedFeatureName(properties: Record<string, unknown> | null | undefined): string | null {
+  if (!properties) return null;
+  const keys = [
+    'name',
+    'name_en',
+    'name:en',
+    'brand',
+    'brand_name',
+    'poi_name',
+    'place_name',
+    'house_name',
+    'address_name',
+  ];
+  for (const key of keys) {
+    const value = properties[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
 }
 
 type CategoryExploreState = {
@@ -469,12 +489,18 @@ export default function MapScreen() {
     }
     storage.set(SHARE_LOC_STORAGE_KEY, '1');
     setShareLocEpoch((n) => n + 1);
+    const coordsReady =
+      Number.isFinite(location.lat) &&
+      Number.isFinite(location.lng) &&
+      !(Math.abs(location.lat) < 1e-5 && Math.abs(location.lng) < 1e-5);
+    if (!coordsReady) return;
     try {
-      await api.put('/api/friends/location/sharing', {
+      const shareRes = await api.put('/api/friends/location/sharing', {
         is_sharing: true,
         lat: location.lat,
         lng: location.lng,
       });
+      if (!shareRes.success && shareRes.statusCode === 503) setLivePublishPaused503(true);
     } catch {
       /* offline — local preference still on */
     }
@@ -740,6 +766,7 @@ export default function MapScreen() {
   const [showReportPicker, setShowReportPicker] = useState(false);
   const [showCommunitySheet, setShowCommunitySheet] = useState(false);
   const reportPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastIncidentFetchCenterRef = useRef<{ lat: number; lng: number } | null>(null);
   const announcedRef = useRef<Set<string>>(new Set());
   const announcedOfferNavRef = useRef<Set<string>>(new Set());
   const trackedOfferViewsRef = useRef<Set<string>>(new Set());
@@ -1662,7 +1689,10 @@ export default function MapScreen() {
       );
       if (!res.success || res.data == null) return;
       const d = (res.data as { data?: Incident[] }).data;
-      if (Array.isArray(d)) setNearbyIncidents(d);
+      if (Array.isArray(d)) {
+        lastIncidentFetchCenterRef.current = { lat: loc.lat, lng: loc.lng };
+        setNearbyIncidents(d);
+      }
     } catch { /* offline / tunnel */ }
   }, []);
 
@@ -1681,12 +1711,27 @@ export default function MapScreen() {
   // Incident polling — faster while incidents layer is on so pins appear quickly
   useEffect(() => {
     void fetchNearbyIncidents();
-    const ms = showIncidents ? (nav.isNavigating ? 8000 : 10000) : nav.isNavigating ? 15000 : 45000;
+    const ms = nav.isNavigating ? 4000 : showIncidents ? 7000 : 30000;
     reportPollRef.current = setInterval(() => void fetchNearbyIncidents(), ms);
     return () => {
       if (reportPollRef.current) clearInterval(reportPollRef.current);
     };
   }, [nav.isNavigating, fetchNearbyIncidents, showIncidents]);
+
+  useEffect(() => {
+    if (!showIncidents && !nav.isNavigating) return;
+    if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return;
+    if (Math.abs(location.lat) < 1e-5 && Math.abs(location.lng) < 1e-5) return;
+    const last = lastIncidentFetchCenterRef.current;
+    if (!last) {
+      void fetchNearbyIncidents();
+      return;
+    }
+    const movedMeters = haversineMeters(last.lat, last.lng, location.lat, location.lng);
+    if (movedMeters >= (nav.isNavigating ? 220 : 550)) {
+      void fetchNearbyIncidents();
+    }
+  }, [showIncidents, nav.isNavigating, location.lat, location.lng, fetchNearbyIncidents]);
 
   useEffect(() => {
     if (!nav.isNavigating) announcedOfferNavRef.current.clear();
@@ -2791,7 +2836,11 @@ export default function MapScreen() {
 
       const asFeatures = Array.isArray(e?.features) ? e.features : e?.type === 'Feature' ? [e] : [];
       for (const f of asFeatures) {
-        const name = f?.properties?.name || f?.properties?.name_en;
+        const name = pressedFeatureName(
+          f?.properties && typeof f.properties === 'object'
+            ? (f.properties as Record<string, unknown>)
+            : null,
+        );
         const pos = lngLatFromPressGeometry(f?.geometry);
         if (name && pos) {
           const nextName = String(name);
@@ -3049,7 +3098,7 @@ export default function MapScreen() {
           {showPhotoReports && (
             <PhotoReportMarkers reports={photoReports} onReportTap={(r) => setSelectedPhotoReport(r)} />
           )}
-          {showTrafficSafety && isTrafficSafetyLayerEnabled(location.lat, location.lng) && !nav.isNavigating && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
+          {showTrafficSafety && isTrafficSafetyLayerEnabled(location.lat, location.lng) && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
             <TrafficSafetyLayer
               zones={trafficSafetyZones}
               onZoneTap={(z) =>
@@ -3130,14 +3179,12 @@ export default function MapScreen() {
             />
           )}
 
-          {!nav.isNavigating && (
-            <OfferMarkers
-              offers={recommendedNearbyOffers}
-              zoomLevel={mapZoomLevel}
-              referenceCoordinate={markerFocusCoordinate}
-              onOfferTap={setSelectedOffer}
-            />
-          )}
+          <OfferMarkers
+            offers={recommendedNearbyOffers}
+            zoomLevel={mapZoomLevel}
+            referenceCoordinate={markerFocusCoordinate}
+            onOfferTap={setSelectedOffer}
+          />
           {showIncidents && (
             <ReportMarkers
               incidents={nearbyIncidents.filter((inc) => {
@@ -3150,7 +3197,7 @@ export default function MapScreen() {
               onIncidentTap={setActiveReportCard}
             />
           )}
-          {user?.isPremium && showCameras && !nav.isNavigating && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
+          {user?.isPremium && showCameras && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
             <CameraMarkers
               cameras={cameraLocations}
               zoomLevel={mapZoomLevel}
@@ -3852,7 +3899,7 @@ export default function MapScreen() {
       />
 
       {!nav.isNavigating && !nav.showRoutePreview && user?.isPremium && friendTrackingEnabled && (!liveLocationPublishingEnabled || livePublishPaused503) ? (
-        <View style={[s.friendMapBanner, { top: insets.top + 54, left: 12, right: 12, zIndex: 14 }]}>
+        <View style={[s.friendMapBanner, { top: insets.top + (savedPlaces.length > 0 ? 146 : 104), left: 12, right: 12, zIndex: 14 }]}>
           <Ionicons name="pause-circle-outline" size={18} color="#FBBF24" style={{ marginRight: 8 }} />
           <Text style={s.friendMapBannerText} numberOfLines={3}>
             Live location sharing is paused. Friends may not see your position until this is restored.
@@ -3870,7 +3917,7 @@ export default function MapScreen() {
       ) : null}
 
       {!nav.isNavigating && !nav.showRoutePreview && user?.isPremium && friendTrackingEnabled && liveLocationPublishingEnabled && !livePublishPaused503 && mapCoordsOk && !shareLocationStorageOn && !shareInviteBannerDismissed ? (
-        <View style={[s.friendMapBanner, s.friendMapBannerInvite, { top: insets.top + 54, left: 12, right: 12, zIndex: 14 }]}>
+        <View style={[s.friendMapBanner, s.friendMapBannerInvite, { top: insets.top + (savedPlaces.length > 0 ? 146 : 104), left: 12, right: 12, zIndex: 14 }]}>
           <Ionicons name="people-outline" size={18} color="#A78BFA" style={{ marginRight: 8 }} />
           <Text style={s.friendMapBannerText} numberOfLines={3}>
             Share your location so friends can see you on the map.
@@ -4015,7 +4062,21 @@ export default function MapScreen() {
               });
               nav.setShowRoutePreview(false);
             } else {
-              nav.startNavigation();
+              Sentry.captureMessage('native_navigation_params_invalid', {
+                level: 'error',
+                extra: {
+                  locationLat: location.lat,
+                  locationLng: location.lng,
+                  destinationLat: nav.navigationData.destination.lat,
+                  destinationLng: nav.navigationData.destination.lng,
+                  drivingMode,
+                  mapStyleUrl: activeStyleURL,
+                },
+              });
+              Alert.alert(
+                'Navigation unavailable',
+                'SnapRoad could not start the native navigation screen on this route. Navigation was not started so the app does not fall back to the old JS guidance path.',
+              );
             }
           } else {
             nav.startNavigation();
