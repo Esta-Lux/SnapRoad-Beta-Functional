@@ -8,6 +8,7 @@ import {
   segmentAndTFromCumAlongPolyline,
 } from '../utils/distance';
 import type { SdkLocationPayload, SdkProgressPayload } from './navSdkStore';
+import { splitRouteAtSnap } from './navGeometry';
 import { navStepFromDirectionsAtIndex, resolveManeuverKind } from './navStepsFromDirections';
 
 function mapSdkToRichKind(maneuverType?: string, maneuverDirection?: string) {
@@ -17,45 +18,6 @@ function mapSdkToRichKind(maneuverType?: string, maneuverDirection?: string) {
   if (blob.includes('arrive')) return resolveManeuverKind('arrive', '');
   if (blob.includes('depart')) return resolveManeuverKind('depart', '');
   return resolveManeuverKind(t || 'continue', d);
-}
-
-function splitPolylineRough(polyline: Coordinate[], fraction01: number): { traveled: Coordinate[]; remaining: Coordinate[] } {
-  const f = Math.max(0, Math.min(1, fraction01));
-  if (polyline.length < 2) {
-    return { traveled: [...polyline], remaining: [...polyline] };
-  }
-  const total = polylineLengthMeters(polyline);
-  const target = f * total;
-  if (target <= 0) return { traveled: [polyline[0]!], remaining: [...polyline] };
-  let acc = 0;
-  for (let i = 0; i < polyline.length - 1; i++) {
-    const a = polyline[i]!;
-    const b = polyline[i + 1]!;
-    const seg =
-      haversineQuick(a.lat, a.lng, b.lat, b.lng);
-    if (acc + seg >= target) {
-      const t = seg > 0 ? (target - acc) / seg : 0;
-      const split = {
-        lat: a.lat + (b.lat - a.lat) * t,
-        lng: a.lng + (b.lng - a.lng) * t,
-      };
-      const traveled = [...polyline.slice(0, i + 1), split];
-      const remaining = [split, ...polyline.slice(i + 1)];
-      return { traveled, remaining };
-    }
-    acc += seg;
-  }
-  return { traveled: [...polyline], remaining: [polyline[polyline.length - 1]!] };
-}
-
-function haversineQuick(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const x =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
 function normText(v?: string | null): string {
@@ -90,12 +52,10 @@ export function buildNavigationProgressFromSdk(args: {
   const { progress, location, polyline, steps } = args;
   if (polyline.length < 2) return null;
 
-  const frac = Math.max(0, Math.min(1, Number.isFinite(progress.fractionTraveled) ? progress.fractionTraveled : 0));
-  const { traveled, remaining } = splitPolylineRough(polyline, frac);
-
   const locCoord: Coordinate | null = location
     ? { lat: location.latitude, lng: location.longitude }
     : null;
+  const frac = Math.max(0, Math.min(1, Number.isFinite(progress.fractionTraveled) ? progress.fractionTraveled : 0));
   const proj = locCoord ? projectOntoPolyline(locCoord, polyline) : null;
   const snap = proj
     ? {
@@ -126,6 +86,7 @@ export function buildNavigationProgressFromSdk(args: {
           distanceMeters: 0,
           cumulativeMeters,
         };
+  const { traveled, remaining } = splitRouteAtSnap(polyline, routeSplitSnap);
 
   const stepIdxRaw = typeof progress.stepIndex === 'number' ? progress.stepIndex : 0;
   const idx =
@@ -187,18 +148,14 @@ export function buildNavigationProgressFromSdk(args: {
   const distRem = Math.max(0, progress.distanceRemaining ?? 0);
 
   const displayCoord = {
-    lat: locCoord?.lat ?? polyline[0]!.lat,
-    lng: locCoord?.lng ?? polyline[0]!.lng,
+    lat: routeSplitSnap.point.lat,
+    lng: routeSplitSnap.point.lng,
     heading: location != null && location.course >= 0 ? location.course : undefined,
     speedMps: location != null && location.speed >= 0 ? location.speed : undefined,
     accuracy: location?.horizontalAccuracy ?? null,
     timestamp: location?.timestamp ?? Date.now(),
   };
-  const puckCoord = {
-    ...displayCoord,
-    lat: routeSplitSnap.point.lat,
-    lng: routeSplitSnap.point.lng,
-  };
+  const puckCoord = displayCoord;
 
   return {
     displayCoord,

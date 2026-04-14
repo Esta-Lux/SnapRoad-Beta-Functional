@@ -3415,21 +3415,13 @@ export default function MapScreen() {
           );
         }
 
-        const logicSdkAuthoritativeUi = navLogicSdkEnabled() && instructionSrc === 'sdk';
+        const logicSdkAuthoritativeUi = navLogicSdkSessionEnabled && instructionSrc === 'sdk';
         const useSdkTurnUi =
-          navLogicSdkEnabled() && instructionSrc === 'sdk' && prog.nextStep;
-        const nextIdx = prog?.nextStep?.index;
-        // When prog.nextStep points to the step the user is already inside
-        // (nextIdx <= currentStepIndex), the "next maneuver" for the card
-        // should be the UPCOMING step, not the one we're already traversing.
-        // Using the current step causes liveDistMeters ≈ 0 and the card gets
-        // stuck in 'active' showing a just-completed turn.
-        const nextStepIsCurrentStep =
-          nextIdx != null && nextIdx <= nav.currentStepIndex;
+          navLogicSdkSessionEnabled && instructionSrc === 'sdk' && prog.nextStep;
         const sdkNavStepForSynthetic =
-          useSdkTurnUi && nextStepIsCurrentStep && prog.followingStep
-            ? prog.followingStep
-            : prog.nextStep;
+          useSdkTurnUi
+            ? prog.nextStep
+            : null;
         const sdkRouteStepForSynthetic =
           sdkNavStepForSynthetic != null && nav.navigationData?.steps?.length
             ? (nav.navigationData.steps[sdkNavStepForSynthetic.index] ?? null)
@@ -3448,8 +3440,8 @@ export default function MapScreen() {
             ? sdkSyntheticStep
             : logicSdkAuthoritativeUi
               ? null
-              : nextIdx != null && !nextStepIsCurrentStep && nav.navigationData?.steps
-                ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
+              : prog?.nextStep?.index != null && nav.navigationData?.steps
+                ? nav.navigationData.steps[prog.nextStep.index] ?? upcomingGuidanceStep
                 : upcomingGuidanceStep;
         const turnCurrentStep = useSdkTurnUi
           ? sdkSyntheticStep ?? currentStep
@@ -3474,11 +3466,10 @@ export default function MapScreen() {
           useSdkTurnUi && sdkNavStepForSynthetic != null && Number.isFinite(sdkNavStepForSynthetic.distanceMetersToNext)
             ? Math.max(0, sdkNavStepForSynthetic.distanceMetersToNext)
             : null;
-        // When the progress step matches the current step, skip
-        // prog.nextStepDistanceMeters (≈ 0) and compute the polyline
-        // distance to the true upcoming maneuver instead.
         let liveDistMeters: number;
-        if (prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep) {
+        if (useSdkTurnUi && sdkDistToNextManeuver != null) {
+          liveDistMeters = sdkDistToNextManeuver;
+        } else if (prog != null && Number.isFinite(prog.nextStepDistanceMeters)) {
           liveDistMeters = prog.nextStepDistanceMeters;
         } else if (
           poly &&
@@ -3492,7 +3483,7 @@ export default function MapScreen() {
             lat: nextManeuverCoord.lat,
             lng: nextManeuverCoord.lng,
           });
-        } else if (sdkDistToNextManeuver != null && (maneuverAnchorDegenerate || nextStepIsCurrentStep)) {
+        } else if (sdkDistToNextManeuver != null && maneuverAnchorDegenerate) {
           liveDistMeters = sdkDistToNextManeuver;
         } else if (
           nextManeuverCoord != null &&
@@ -3537,15 +3528,14 @@ export default function MapScreen() {
         const distParts = formatTurnDistanceForCard(liveDistMeters);
         const destinationName = nav.navigationData?.destination?.name ?? null;
         const banner = prog?.banner ?? null;
-        /** When polyline "next" lags behind route step index, rich UI follows the true upcoming step. */
         const progressNavStepForRich =
-          nextStepIsCurrentStep && prog.followingStep ? prog.followingStep : prog.nextStep;
+          useSdkTurnUi ? prog.nextStep : prog.nextStep;
         const maneuverFields = resolveManeuverFieldsForTurnCard({
           nextManeuverCoord,
           progNext: progressNavStepForRich ?? prog.nextStep,
         });
         const chainStepForBuild =
-          nextStepIsCurrentStep && prog.followingStep ? prog.followingStep : prog.nextStep;
+          useSdkTurnUi ? prog.followingStep : prog.nextStep;
         const useBannerCopy =
           !!banner && (!!nextManeuverCoord || (instructionSrc === 'sdk' && !!prog.nextStep));
 
@@ -3568,7 +3558,10 @@ export default function MapScreen() {
             case 'preview':
             case 'active':
             default: {
-              if (nextStepIsCurrentStep && nextManeuverCoord) {
+              if (useSdkTurnUi) {
+                primary = banner!.primaryInstruction;
+                secondary = banner!.secondaryInstruction ?? undefined;
+              } else if (nextManeuverCoord) {
                 const fromStep = getPrimaryBannerText(nextManeuverCoord).trim();
                 primary = fromStep || banner!.primaryInstruction;
                 secondary =
@@ -3625,7 +3618,7 @@ export default function MapScreen() {
         const signalResolved = banner?.signal ?? progressNavStepForRich?.signal;
         const lanesResolved = !laneUi
           ? undefined
-          : nextStepIsCurrentStep && progressNavStepForRich?.lanes?.length
+          : useSdkTurnUi && progressNavStepForRich?.lanes?.length
             ? progressNavStepForRich.lanes
             : banner?.lanes?.length
               ? banner.lanes
@@ -3633,7 +3626,7 @@ export default function MapScreen() {
                 ? prog.nextStep.lanes
                 : undefined;
         const shieldsResolved =
-          nextStepIsCurrentStep && progressNavStepForRich?.shields?.length
+          useSdkTurnUi && progressNavStepForRich?.shields?.length
             ? progressNavStepForRich.shields
             : banner?.shields?.length
               ? banner.shields
@@ -3641,7 +3634,7 @@ export default function MapScreen() {
                 ? prog.nextStep.shields
                 : undefined;
         const roundaboutExitResolved =
-          nextStepIsCurrentStep && progressNavStepForRich?.roundaboutExitNumber != null
+          useSdkTurnUi && progressNavStepForRich?.roundaboutExitNumber != null
             ? progressNavStepForRich.roundaboutExitNumber
             : banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
         const disambigName =
@@ -3655,7 +3648,14 @@ export default function MapScreen() {
           isActionableGuidanceStep(guidanceStep, true) ? guidanceStep : (isActionableGuidanceStep(nextManeuverCoord, true) ? nextManeuverCoord : undefined);
 
         return (
-          <View style={[s.turnWrap, { top: insets.top }]} key={nav.currentStepIndex}>
+          <View
+            style={[s.turnWrap, { top: insets.top }]}
+            key={
+              useSdkTurnUi
+                ? `sdk-${prog.nextStep?.index ?? -1}-${banner?.primaryInstruction ?? ''}`
+                : `js-${nav.currentStepIndex}`
+            }
+          >
             <TurnInstructionCard
               mode={drivingMode}
               modeConfig={modeConfig}
