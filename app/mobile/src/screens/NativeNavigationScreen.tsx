@@ -10,6 +10,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useAuth } from '../contexts/AuthContext';
 import type { DrivingMode, Incident } from '../types';
+import { useTheme } from '../contexts/ThemeContext';
+import { DRIVING_MODES } from '../constants/modes';
 import {
   useNativeNavBridge,
   type NativeNavProgressEvent,
@@ -19,8 +21,7 @@ import * as Sentry from '@sentry/react-native';
 import { api } from '../api/client';
 import OrionQuickMic from '../components/orion/OrionQuickMic';
 
-/** Mapbox Standard style — the navigation SDK applies its own lighting/day-night. */
-const NAV_MAP_STYLE = 'mapbox://styles/mapbox/standard';
+const DEFAULT_NAV_MAP_STYLE = 'mapbox://styles/mapbox/standard';
 
 type NativeNavLocationEvent = {
   latitude: number;
@@ -54,6 +55,7 @@ export default function NativeNavigationScreen() {
   const route = useRoute<RouteProp<MapStackParamList, 'NativeNavigation'>>();
   const { setIsNavigating } = useNavigationMode();
   const { user } = useAuth();
+  const { colors, isLight } = useTheme();
   const insets = useSafeAreaInsets();
   const didExitRef = useRef(false);
   const didHandleInvalidParamsRef = useRef(false);
@@ -69,6 +71,8 @@ export default function NativeNavigationScreen() {
   const destination = normalizedParams?.destination;
   const voiceMuted = normalizedParams?.voiceMuted ?? false;
   const drivingMode: DrivingMode = normalizedParams?.drivingMode ?? 'adaptive';
+  const mapStyleUrl = normalizedParams?.mapStyleUrl ?? DEFAULT_NAV_MAP_STYLE;
+  const modeConfig = DRIVING_MODES[drivingMode];
   const reportHint = useMemo(() => {
     const raw = route.params?.reportHint;
     return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
@@ -238,6 +242,11 @@ export default function NativeNavigationScreen() {
   }
 
   const isDark = colorScheme === 'dark';
+  const reportSurface = isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.9)';
+  const reportBorder = isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.18)';
+  const chromeSurface = isLight ? modeConfig.etaBarBg : modeConfig.etaBarBgDark;
+  const chromeText = isLight ? colors.text : modeConfig.etaValueColor;
+  const chromeSubtle = isLight ? colors.textSecondary : modeConfig.etaLabelColor;
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#0a0a0f' : '#000' }]}>
@@ -248,7 +257,7 @@ export default function NativeNavigationScreen() {
         coordinates={coordinates}
         mute={voiceMuted}
         routeProfile={bridge.routeProfile}
-        mapStyle={NAV_MAP_STYLE}
+        mapStyle={mapStyleUrl}
         followingZoom={followingZoom}
         drivingMode={drivingMode}
         onRouteProgressChanged={handleProgressChanged}
@@ -268,19 +277,28 @@ export default function NativeNavigationScreen() {
         }}
       />
       {activeIncident ? (
-        <View style={[styles.reportCard, { top: insets.top + 12 }]}>
+        <View
+          style={[
+            styles.reportCard,
+            {
+              top: insets.top + 12,
+              backgroundColor: reportSurface,
+              borderColor: reportBorder,
+            },
+          ]}
+        >
           <View style={styles.reportCardTop}>
             <View style={styles.reportCardTitleRow}>
               <Ionicons name="warning-outline" size={16} color="#FCD34D" />
-              <Text style={styles.reportCardTitle} numberOfLines={1}>
+              <Text style={[styles.reportCardTitle, { color: chromeText }]} numberOfLines={1}>
                 {activeIncident.title || activeIncident.type}
               </Text>
             </View>
             <TouchableOpacity onPress={handleDismissIncident} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close" size={18} color="rgba(255,255,255,0.72)" />
+              <Ionicons name="close" size={18} color={chromeSubtle} />
             </TouchableOpacity>
           </View>
-          <Text style={styles.reportCardSub} numberOfLines={2}>
+          <Text style={[styles.reportCardSub, { color: chromeSubtle }]} numberOfLines={2}>
             {(activeIncident.distance_miles ?? 0).toFixed(1)} mi ahead · {activeIncident.upvotes ?? 0} confirmed
           </Text>
           <View style={styles.reportCardActions}>
@@ -295,9 +313,18 @@ export default function NativeNavigationScreen() {
           </View>
         </View>
       ) : !!reportHint ? (
-        <View style={[styles.reportHint, { top: insets.top + 12 }]}>
+        <View
+          style={[
+            styles.reportHint,
+            {
+              top: insets.top + 12,
+              backgroundColor: reportSurface,
+              borderColor: reportBorder,
+            },
+          ]}
+        >
           <Ionicons name="warning-outline" size={14} color="#FCD34D" />
-          <Text style={styles.reportHintText} numberOfLines={2}>{reportHint}</Text>
+          <Text style={[styles.reportHintText, { color: chromeText }]} numberOfLines={2}>{reportHint}</Text>
         </View>
       ) : null}
       <View style={[styles.orionFabWrap, { right: 14, bottom: insets.bottom + 78 }]}>
@@ -310,20 +337,39 @@ export default function NativeNavigationScreen() {
         />
       </View>
       {!!orionQuickReply && (
-        <View style={[styles.orionReplyStrip, { left: 14, right: 14, bottom: insets.bottom + 138 }]}>
-          <Ionicons name="sparkles-outline" size={14} color="#8B5CF6" />
-          <Text style={styles.orionReplyStripText} numberOfLines={2}>
+        <View
+          style={[
+            styles.orionReplyStrip,
+            {
+              left: 14,
+              right: 14,
+              bottom: insets.bottom + 138,
+              backgroundColor: chromeSurface,
+              borderColor: reportBorder,
+            },
+          ]}
+        >
+          <Ionicons name="sparkles-outline" size={14} color={modeConfig.etaAccentColor} />
+          <Text style={[styles.orionReplyStripText, { color: chromeText }]} numberOfLines={2}>
             {orionQuickReply}
           </Text>
         </View>
       )}
       <TouchableOpacity
-        style={[styles.recenterBtn, { right: 14, bottom: insets.bottom + 18 }]}
+        style={[
+          styles.recenterBtn,
+          {
+            right: 14,
+            bottom: insets.bottom + 18,
+            backgroundColor: chromeSurface,
+            borderColor: reportBorder,
+          },
+        ]}
         activeOpacity={0.85}
         onPress={() => navRef.current?.recenterMap?.()}
       >
-        <Ionicons name="locate" size={16} color="#fff" />
-        <Text style={styles.recenterText}>Recenter</Text>
+        <Ionicons name="locate" size={16} color={modeConfig.etaAccentColor} />
+        <Text style={[styles.recenterText, { color: chromeText }]}>Recenter</Text>
       </TouchableOpacity>
     </View>
   );
@@ -346,7 +392,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  reportHintText: { color: '#E5E7EB', fontSize: 12, fontWeight: '600', flexShrink: 1 },
+  reportHintText: { fontSize: 12, fontWeight: '600', flexShrink: 1 },
   reportCard: {
     position: 'absolute',
     left: 14,
@@ -370,16 +416,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   reportCardTitle: {
-    color: '#F8FAFC',
     fontSize: 14,
     fontWeight: '800',
     flexShrink: 1,
   },
-  reportCardSub: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    marginTop: 6,
-  },
+  reportCardSub: { fontSize: 12, marginTop: 6 },
   reportCardActions: {
     flexDirection: 'row',
     gap: 8,
@@ -423,7 +464,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   orionReplyStripText: {
-    color: '#E5E7EB',
     fontSize: 12,
     fontWeight: '600',
     flexShrink: 1,
@@ -440,5 +480,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  recenterText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  recenterText: { fontSize: 12, fontWeight: '700' },
 });
