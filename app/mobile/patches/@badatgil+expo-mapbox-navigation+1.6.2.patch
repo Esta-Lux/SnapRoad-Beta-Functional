@@ -630,7 +630,7 @@ index 965414e..06d1d14 100644
    }
  }
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
-index 8f841df..e406c6b 100644
+index 8f841df..dac6e1b 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 +++ b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 @@ -4,6 +4,7 @@ import MapboxMaps
@@ -651,7 +651,7 @@ index 8f841df..e406c6b 100644
  
      let controller = ExpoMapboxNavigationViewController()
  
-@@ -31,6 +35,9 @@ class ExpoMapboxNavigationView: ExpoView {
+@@ -31,14 +35,15 @@ class ExpoMapboxNavigationView: ExpoView {
          controller.onUserOffRoute = onUserOffRoute
          controller.onRoutesLoaded = onRoutesLoaded
          controller.onRouteFailedToLoad = onRouteFailedToLoad
@@ -661,58 +661,15 @@ index 8f841df..e406c6b 100644
      }
  
      override func layoutSubviews() {
-@@ -38,6 +45,50 @@ class ExpoMapboxNavigationView: ExpoView {
+         controller.view.frame = bounds
      }
  }
- 
-+private final class SnapRoadNavigationDayStyle: DayStyle {
-+    private let resolvedMapStyleURL: URL?
-+
-+    init(mapStyleURL: URL?) {
-+        self.resolvedMapStyleURL = mapStyleURL
-+        super.init()
-+    }
-+
-+    required init() {
-+        self.resolvedMapStyleURL = nil
-+        super.init()
-+    }
-+
-+    override var mapStyleURL: URL {
-+        resolvedMapStyleURL ?? super.mapStyleURL
-+    }
-+
-+    override var previewMapStyleURL: URL {
-+        resolvedMapStyleURL ?? super.previewMapStyleURL
-+    }
-+}
-+
-+private final class SnapRoadNavigationNightStyle: NightStyle {
-+    private let resolvedMapStyleURL: URL?
-+
-+    init(mapStyleURL: URL?) {
-+        self.resolvedMapStyleURL = mapStyleURL
-+        super.init()
-+    }
-+
-+    required init() {
-+        self.resolvedMapStyleURL = nil
-+        super.init()
-+    }
-+
-+    override var mapStyleURL: URL {
-+        resolvedMapStyleURL ?? super.mapStyleURL
-+    }
-+
-+    override var previewMapStyleURL: URL {
-+        resolvedMapStyleURL ?? super.previewMapStyleURL
-+    }
-+}
-+
- 
+-
+-
  class ExpoMapboxNavigationViewController: UIViewController {
      static let navigationProvider: MapboxNavigationProvider = MapboxNavigationProvider(coreConfig: CoreConfig(routingConfig: RoutingConfig(fasterRouteDetectionConfig: Optional<FasterRouteDetectionConfig>.none),locationSource: .live ))
-@@ -62,6 +113,50 @@ class ExpoMapboxNavigationViewController: UIViewController {
+     var mapboxNavigation: MapboxNavigation? = nil
+@@ -62,6 +67,50 @@ class ExpoMapboxNavigationViewController: UIViewController {
      var isUsingRouteMatchingApi: Bool = false
      var vehicleMaxHeight: Double? = nil
      var vehicleMaxWidth: Double? = nil
@@ -763,7 +720,7 @@ index 8f841df..e406c6b 100644
  
      var onRouteProgressChanged: EventDispatcher? = nil
      var onCancelNavigation: EventDispatcher? = nil
-@@ -71,26 +166,31 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -71,26 +120,31 @@ class ExpoMapboxNavigationViewController: UIViewController {
      var onUserOffRoute: EventDispatcher? = nil
      var onRoutesLoaded: EventDispatcher? = nil
      var onRouteFailedToLoad: EventDispatcher? = nil
@@ -803,7 +760,7 @@ index 8f841df..e406c6b 100644
                  try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
                      for: "com.mapbox.navigation.arrow.next",
                      property: "line-color",
-@@ -111,17 +211,14 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -111,17 +165,14 @@ class ExpoMapboxNavigationViewController: UIViewController {
                      property: "icon-color",
                      value: "#FFFFFF" 
                  )
@@ -826,7 +783,7 @@ index 8f841df..e406c6b 100644
              let event = arrivalStatus.event
              if event is WaypointArrivalStatus.Events.ToFinalDestination {
                  self.onFinalDestinationArrival?()
-@@ -130,23 +227,74 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -130,23 +181,74 @@ class ExpoMapboxNavigationViewController: UIViewController {
              }
          }
  
@@ -871,9 +828,9 @@ index 8f841df..e406c6b 100644
                  default: break
 +                }
 +            default: break
-             }
-         }
- 
++            }
++        }
++
 +        locationMatchingCancellable = navigation?.locationMatching
 +            .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
 +            .sink { state in
@@ -891,7 +848,7 @@ index 8f841df..e406c6b 100644
 +                    payload["speedLimitMps"] = sl.converted(to: .metersPerSecond).value
 +                }
 +                self.onNavigationLocationUpdate?(payload)
-+            }
+             }
 +
 +        voiceInstructionCancellable = navigation?.voiceInstructions.sink { st in
 +            guard self.navigationLogicOnly else { return }
@@ -899,8 +856,8 @@ index 8f841df..e406c6b 100644
 +                "text": st.spokenInstruction.text,
 +                "distanceAlongStep": st.spokenInstruction.distanceAlongStep,
 +            ])
-+        }
-+
+         }
+ 
 +        navigationErrorCancellable = navigation?.errors.sink { err in
 +            guard self.navigationLogicOnly else { return }
 +            self.onNavigatorError?([
@@ -910,7 +867,7 @@ index 8f841df..e406c6b 100644
      }
  
      deinit {
-@@ -154,6 +302,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -154,6 +256,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
          waypointArrivalCancellable?.cancel()
          reroutingCancellable?.cancel()
          sessionCancellable?.cancel()
@@ -920,7 +877,7 @@ index 8f841df..e406c6b 100644
      }
  
      override func viewDidDisappear(_ animated: Bool) {
-@@ -301,6 +452,142 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -301,6 +406,149 @@ class ExpoMapboxNavigationViewController: UIViewController {
          }
      }
  
@@ -1000,8 +957,19 @@ index 8f841df..e406c6b 100644
 +
 +    func applySnapRoadMapChrome() {
 +        guard let mapView = navigationViewController?.navigationMapView?.mapView else { return }
-+        mapView.ornaments.options.logo.visibility = .hidden
-+        mapView.ornaments.options.attributionButton.visibility = .hidden
++        hideMapChromeSubviews(in: mapView)
++    }
++
++    private func hideMapChromeSubviews(in rootView: UIView) {
++        for subview in rootView.recursiveSubviews {
++            let className = String(describing: type(of: subview))
++            if className.localizedCaseInsensitiveContains("Logo")
++                || className.localizedCaseInsensitiveContains("Attribution") {
++                subview.isHidden = true
++                subview.alpha = 0
++                subview.isUserInteractionEnabled = false
++            }
++        }
 +    }
 +
 +    func applySnapRoadBannerTheme() {
@@ -1053,17 +1021,13 @@ index 8f841df..e406c6b 100644
 +    }
 +
 +    private func navigationStyles() -> [Style] {
-+        let styleURL = currentMapStyle.flatMap { URL(string: $0) }
-+        return [
-+            SnapRoadNavigationDayStyle(mapStyleURL: styleURL),
-+            SnapRoadNavigationNightStyle(mapStyleURL: styleURL),
-+        ]
++        return [DayStyle(), NightStyle()]
 +    }
 +
      func update(){
          calculateRoutesTask?.cancel()
  
-@@ -322,6 +609,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -322,6 +570,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
      }
  
      func calculateRoutes(waypoints: Array<Waypoint>){
@@ -1077,7 +1041,7 @@ index 8f841df..e406c6b 100644
          let routeOptions = NavigationRouteOptions(
              waypoints: waypoints, 
              profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
-@@ -335,7 +629,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -335,7 +590,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
          )
  
          calculateRoutesTask = Task {
@@ -1086,7 +1050,7 @@ index 8f841df..e406c6b 100644
              case .failure(let error):
                  onRouteFailedToLoad?([
                      "errorMessage": error.localizedDescription
-@@ -348,6 +642,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -348,6 +603,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
      }
  
      func calculateMapMatchingRoutes(waypoints: Array<Waypoint>){
@@ -1100,7 +1064,7 @@ index 8f841df..e406c6b 100644
          let matchOptions = NavigationMatchOptions(
              waypoints: waypoints, 
              profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
-@@ -358,7 +659,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -358,7 +620,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
  
  
          calculateRoutesTask = Task {
@@ -1109,7 +1073,7 @@ index 8f841df..e406c6b 100644
              case .failure(let error):
                  onRouteFailedToLoad?([
                      "errorMessage": error.localizedDescription
-@@ -413,6 +714,23 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -413,6 +675,23 @@ class ExpoMapboxNavigationViewController: UIViewController {
              ]
          ])
  
@@ -1133,7 +1097,7 @@ index 8f841df..e406c6b 100644
          let topBanner = TopBannerViewController()
          topBanner.instructionsBannerView.distanceFormatter.locale = currentLocale
          let bottomBanner = BottomBannerViewController()
-@@ -420,10 +738,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -420,10 +699,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
          bottomBanner.dateFormatter.locale = currentLocale
  
          let navigationOptions = NavigationOptions(
@@ -1146,7 +1110,7 @@ index 8f841df..e406c6b 100644
              topBanner: topBanner,
              bottomBanner: bottomBanner
          )
-@@ -447,6 +765,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -447,6 +726,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
          navigationViewController.showsContinuousAlternatives = currentDisableAlternativeRoutes != true
          navigationViewController.usesNightStyleWhileInTunnel = false
          navigationViewController.automaticallyAdjustsStyleForTimeOfDay = false
@@ -1154,19 +1118,31 @@ index 8f841df..e406c6b 100644
  
          let navigationMapView = navigationViewController.navigationMapView
          navigationMapView!.puckType = .puck2D(.navigationDefault)
-@@ -455,18 +774,12 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -455,18 +735,29 @@ class ExpoMapboxNavigationViewController: UIViewController {
              navigationMapView!.mapView.mapboxMap.setCamera(to: CameraOptions(center: initialLocation!, zoom: initialLocationZoom ?? 15))
          }
  
 -        let style = currentMapStyle != nil ? StyleURI(rawValue: currentMapStyle!) : StyleURI.streets
 -        navigationMapView!.mapView.mapboxMap.loadStyle(style!, completion: { _ in
--            navigationMapView!.localizeLabels(locale: self.currentLocale)
++        if let rawStyle = currentMapStyle, let style = StyleURI(rawValue: rawStyle) {
++            navigationMapView!.mapView.mapboxMap.loadStyle(style) { _ in
++                navigationMapView!.localizeLabels(locale: self.currentLocale)
++                do {
++                    try navigationMapView!.mapView.mapboxMap.localizeLabels(into: self.currentLocale)
++                } catch {}
++                self.addCustomRasterLayer()
++                self.applySnapRoadMapChrome()
++            }
++        } else {
+             navigationMapView!.localizeLabels(locale: self.currentLocale)
 -            do{
--                try navigationMapView!.mapView.mapboxMap.localizeLabels(into: self.currentLocale)
--            } catch {}
--            self.addCustomRasterLayer()
++            do {
+                 try navigationMapView!.mapView.mapboxMap.localizeLabels(into: self.currentLocale)
+             } catch {}
+             self.addCustomRasterLayer()
 -        })
--        
++        }
+ 
 +        if let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self).first {
 +            cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
 +        }
@@ -1178,7 +1154,7 @@ index 8f841df..e406c6b 100644
  
          navigationViewController.delegate = self
          addChild(navigationViewController)
-@@ -479,7 +792,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -479,7 +770,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
              navigationViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
          ])
          didMove(toParent: self)
