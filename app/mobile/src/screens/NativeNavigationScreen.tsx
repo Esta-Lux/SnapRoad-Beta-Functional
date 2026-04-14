@@ -114,11 +114,11 @@ export default function NativeNavigationScreen() {
   const followingZoom = useMemo(() => {
     switch (drivingMode) {
       case 'calm':
-        return 16.5;
+        return 16.25;
       case 'sport':
-        return 17.5;
+        return 17.4;
       default:
-        return 17.0;
+        return 16.9;
     }
   }, [drivingMode]);
 
@@ -362,22 +362,6 @@ export default function NativeNavigationScreen() {
           </Text>
         </View>
       )}
-      <TouchableOpacity
-        style={[
-          styles.recenterBtn,
-          {
-            right: 14,
-            bottom: insets.bottom + 18,
-            backgroundColor: chromeSurface,
-            borderColor: reportBorder,
-          },
-        ]}
-        activeOpacity={0.85}
-        onPress={() => navRef.current?.recenterMap?.()}
-      >
-        <Ionicons name="locate" size={16} color={modeConfig.etaAccentColor} />
-        <Text style={[styles.recenterText, { color: chromeText }]}>Recenter</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -475,17 +459,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flexShrink: 1,
   },
-  recenterBtn: {
-    position: 'absolute',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(15,23,42,0.82)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.2)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  recenterText: { fontSize: 12, fontWeight: '700' },
 });
