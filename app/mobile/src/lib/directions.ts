@@ -811,7 +811,7 @@ async function executeRouteStrategy(
   if (strategy.type === 'fastest') {
     const out: DirectionsResult[] = [];
     for (const route of parsedRoutes) {
-      const candidate = out.length === 0
+      const candidate: DirectionsResult = out.length === 0
         ? { ...route, routeType: 'fastest', routeLabel: ROUTE_DEFAULTS.fastest.label, routeReason: ROUTE_DEFAULTS.fastest.reason }
         : route;
       if (!isDuplicateDirectionsResult(candidate, out)) out.push(candidate);
@@ -823,7 +823,7 @@ async function executeRouteStrategy(
   const primary = parsedRoutes[0]!;
   const d = ROUTE_DEFAULTS[strategy.type];
   return [
-    { ...primary, routeType: strategy.type, routeLabel: d.label, routeReason: d.reason },
+    { ...primary, routeType: strategy.type, routeLabel: d.label, routeReason: d.reason } as DirectionsResult,
   ];
 }
 

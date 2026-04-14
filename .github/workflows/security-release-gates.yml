@@ -11,6 +11,9 @@ on:
       - "app/**"
       - ".github/workflows/**"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   frontend-quality:
     runs-on: ubuntu-latest

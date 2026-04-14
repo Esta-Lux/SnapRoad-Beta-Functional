@@ -1,11 +1,12 @@
 // Offer Management tab — admin offers (replaces figma-ui AdminOfferManagement)
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Gift, Search, Trash2, Upload, FileSpreadsheet, CheckCircle, XCircle, MapPin, Gem, ImageOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/services/adminApi'
 import { useSupabaseRealtimeRefresh } from '@/hooks/useSupabaseRealtimeRefresh'
 import OfferLocationPicker from '@/components/admin/OfferLocationPicker'
+import type { Partner } from '@/types/admin'
 
 interface AdminOfferManagementProps {
   theme: 'dark' | 'light'
@@ -13,25 +14,80 @@ interface AdminOfferManagementProps {
   initialBulkOpen?: boolean
 }
 
+type OfferRow = {
+  id?: string | number | null
+  offer_id?: string | number | null
+  business_name?: string | null
+  name?: string | null
+  title?: string | null
+  description?: string | null
+  address?: string | null
+  category_label?: string | null
+  business_type?: string | null
+  status?: string | null
+  is_admin_offer?: boolean | null
+  image_url?: string | null
+  discount_percent?: number | null
+  base_gems?: number | null
+  gem_cost?: number | null
+  gems_reward?: number | null
+  offer_type?: 'partner' | 'admin' | null
+  partner_id?: string | null
+  allocated_locations?: string[] | string | null
+  lat?: number | string | null
+  lng?: number | string | null
+}
+
+type AllocationEditor = OfferRow & {
+  offer_type: 'partner' | 'admin'
+  partner_id: string
+  allocated_locations: string
+  address: string
+  lat: number | string | null
+  lng: number | string | null
+}
+
 export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = false }: AdminOfferManagementProps) {
-  const [offers, setOffers] = useState<any[]>([])
-  const [partners, setPartners] = useState<any[]>([])
+  const [offers, setOffers] = useState<OfferRow[]>([])
+  const [partners, setPartners] = useState<Partner[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [bulkOpen, setBulkOpen] = useState(initialBulkOpen)
   const [bulkUploading, setBulkUploading] = useState(false)
-  const [editingAllocation, setEditingAllocation] = useState<any | null>(null)
+  const [editingAllocation, setEditingAllocation] = useState<AllocationEditor | null>(null)
   const [savingAllocation, setSavingAllocation] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const loadOffers = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await adminApi.getOffers(statusFilter)
+      if (res.success && res.data) setOffers(Array.isArray(res.data) ? (res.data as OfferRow[]) : [])
+      else setOffers([])
+    } catch {
+      setOffers([])
+    } finally {
+      setLoading(false)
+    }
+  }, [statusFilter])
+
+  const loadPartners = useCallback(async () => {
+    try {
+      const res = await adminApi.getPartners()
+      if (res.success && res.data) setPartners(Array.isArray(res.data) ? res.data : [])
+    } catch {
+      setPartners([])
+    }
+  }, [])
+
   useEffect(() => {
     loadOffers()
-  }, [statusFilter])
+  }, [loadOffers])
 
   useEffect(() => {
     loadPartners()
-  }, [])
+  }, [loadPartners])
 
   useSupabaseRealtimeRefresh(
     'admin-offer-management-realtime',
@@ -45,28 +101,6 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
       loadPartners()
     },
   )
-
-  const loadOffers = async () => {
-    setLoading(true)
-    try {
-      const res = await adminApi.getOffers(statusFilter)
-      if (res.success && res.data) setOffers(Array.isArray(res.data) ? res.data : [])
-      else setOffers([])
-    } catch {
-      setOffers([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadPartners = async () => {
-    try {
-      const res = await adminApi.getPartners()
-      if (res.success && res.data) setPartners(res.data)
-    } catch {
-      setPartners([])
-    }
-  }
 
   const handleDownloadTemplate = async () => {
     try {
@@ -312,7 +346,7 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
                 <label className="block text-xs font-medium mb-2">Offer Type</label>
                 <select
                   value={editingAllocation.offer_type || (editingAllocation.is_admin_offer ? 'admin' : 'partner')}
-                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, offer_type: e.target.value }))}
+                  onChange={(e) => setEditingAllocation((prev) => (prev ? { ...prev, offer_type: e.target.value as 'partner' | 'admin' } : prev))}
                   className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
                 >
                   <option value="partner">Partner Offer</option>
@@ -323,7 +357,7 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
                 <label className="block text-xs font-medium mb-2">Assigned Partner</label>
                 <select
                   value={editingAllocation.partner_id || ''}
-                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, partner_id: e.target.value }))}
+                  onChange={(e) => setEditingAllocation((prev) => (prev ? { ...prev, partner_id: e.target.value } : prev))}
                   className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
                 >
                   <option value="">Unassigned / Admin Trial</option>
@@ -337,7 +371,7 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
                 <input
                   type="text"
                   value={editingAllocation.allocated_locations || ''}
-                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, allocated_locations: e.target.value }))}
+                  onChange={(e) => setEditingAllocation((prev) => (prev ? { ...prev, allocated_locations: e.target.value } : prev))}
                   placeholder="Comma-separated location IDs"
                   className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
                 />
@@ -347,7 +381,7 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
                 <input
                   type="text"
                   value={editingAllocation.address || ''}
-                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, address: e.target.value }))}
+                  onChange={(e) => setEditingAllocation((prev) => (prev ? { ...prev, address: e.target.value } : prev))}
                   placeholder="123 Main St, City, State ZIP"
                   className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
                 />
@@ -358,7 +392,7 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
                   type="number"
                   step="any"
                   value={editingAllocation.lat ?? ''}
-                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, lat: e.target.value }))}
+                  onChange={(e) => setEditingAllocation((prev) => (prev ? { ...prev, lat: e.target.value } : prev))}
                   className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
                 />
               </div>
@@ -368,7 +402,7 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
                   type="number"
                   step="any"
                   value={editingAllocation.lng ?? ''}
-                  onChange={(e) => setEditingAllocation((prev: any) => ({ ...prev, lng: e.target.value }))}
+                  onChange={(e) => setEditingAllocation((prev) => (prev ? { ...prev, lng: e.target.value } : prev))}
                   className={`w-full rounded-xl border px-4 py-3 text-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'}`}
                 />
               </div>
@@ -377,7 +411,7 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
                 <OfferLocationPicker
                   lat={editingAllocation.lat ? Number(editingAllocation.lat) : null}
                   lng={editingAllocation.lng ? Number(editingAllocation.lng) : null}
-                  onChange={(lat, lng) => setEditingAllocation((prev: any) => ({ ...prev, lat, lng }))}
+                  onChange={(lat, lng) => setEditingAllocation((prev) => (prev ? { ...prev, lat, lng } : prev))}
                 />
               </div>
             </div>

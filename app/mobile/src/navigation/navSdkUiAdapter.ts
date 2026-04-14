@@ -1,5 +1,5 @@
 import type { DirectionsStep } from '../lib/directions';
-import type { NavBannerModel, NavStep } from './navModel';
+import type { ManeuverKind, NavBannerModel, NavStep } from './navModel';
 import { navManeuverFieldsFromDirectionsStep, resolveManeuverKind } from './navStepsFromDirections';
 import { maneuverKeyFromKind } from './spokenManeuver';
 

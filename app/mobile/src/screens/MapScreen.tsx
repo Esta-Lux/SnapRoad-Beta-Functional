@@ -2911,7 +2911,6 @@ export default function MapScreen() {
           onNavigationLocationUpdate={(e: { nativeEvent: SdkLocationPayload }) =>
             ingestSdkLocation(e.nativeEvent)
           }
-          // @ts-expect-error Patched native module emits `{ reason, routes }`; published `.d.ts` still types `onRouteChanged` as no-arg.
           onRouteChanged={handleSdkRouteChanged}
           onFinalDestinationArrival={() => nav.stopNavigation()}
           onCancelNavigation={() => nav.stopNavigation()}
