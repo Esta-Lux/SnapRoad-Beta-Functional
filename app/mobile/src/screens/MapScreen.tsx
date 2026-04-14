@@ -557,7 +557,7 @@ export default function MapScreen() {
       const mr = routes.mainRoute;
       if (poly.length >= 2 && mr && typeof mr.distance === 'number' && typeof mr.expectedTravelTime === 'number') {
         ingestSdkRoutePolyline(poly);
-        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime);
+        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime, routes);
       }
     },
     [nav.applySdkRouteGeometry],
@@ -572,7 +572,7 @@ export default function MapScreen() {
       const mr = routes.mainRoute;
       if (poly.length >= 2 && typeof mr.distance === 'number' && typeof mr.expectedTravelTime === 'number') {
         ingestSdkRoutePolyline(poly);
-        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime);
+        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime, routes);
       }
     },
     [nav.applySdkRouteGeometry],
@@ -1578,7 +1578,9 @@ export default function MapScreen() {
         pitch,
         padding: pad,
         animationMode: 'flyTo',
-        animationDuration: 350,
+        // defaultSettings already centers on the puck at remount; 0ms avoids an extra ~350ms
+        // fly competing with followUserLocation when starting navigation from route preview.
+        animationDuration: 0,
       });
     });
 

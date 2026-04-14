@@ -108,11 +108,15 @@ export function buildNavigationProgressFromSdk(args: {
   const distNext =
     typeof progress.distanceToNextManeuverMeters === 'number' && Number.isFinite(progress.distanceToNextManeuverMeters)
       ? Math.max(0, progress.distanceToNextManeuverMeters)
-      : Math.max(0, progress.distanceRemaining * 0.02);
+      : matchingRouteNavStep != null
+        ? Math.max(0, matchingRouteNavStep.distanceMeters)
+        : 0;
   const followingDistanceMeters =
     followingStep != null && matchingRouteNavStep != null
       ? Math.max(0, followingStep.distanceMetersFromStart - matchingRouteNavStep.distanceMetersFromStart)
-      : null;
+      : steps.length > idx && steps[idx]
+        ? Math.max(0, steps[idx]!.distanceMeters)
+        : null;
 
   const nextStep: NavStep | null = {
     index: idx,

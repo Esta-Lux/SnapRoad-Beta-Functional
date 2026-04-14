@@ -72,7 +72,8 @@ test('buildNavigationProgressFromSdk sets followingStep from Directions when ste
   assert.equal(prog.followingStep.streetName, 'Valencia St');
   assert.equal(prog.nextStep?.nextManeuverKind, 'turn_left');
   assert.equal(prog.nextStep?.nextManeuverStreet, 'Valencia St');
-  assert.equal(prog.nextStep?.nextManeuverDistanceMeters, null);
+  // SDK vs REST kind mismatch: no matchingRouteNavStep — still expose geometric step length for "then".
+  assert.equal(prog.nextStep?.nextManeuverDistanceMeters, 200);
 });
 
 test('buildNavigationProgressFromSdk leaves followingStep null on last step', () => {

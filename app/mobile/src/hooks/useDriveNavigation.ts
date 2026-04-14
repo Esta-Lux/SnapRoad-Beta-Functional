@@ -61,6 +61,10 @@ import { setNavLogicSdkTripActive } from '../navigation/navVoiceGate';
 import { logNavLogicSnapshot } from '../navigation/navLogicDebug';
 import { routeSummaryFromMapboxMetersSeconds } from '../utils/routeDisplay';
 import {
+  directionsStepsFromSdkRoutes,
+  type SdkRoutesNative,
+} from '../navigation/navSdkGeometry';
+import {
   DEFAULT_REFRESH_POLICY,
   decideTrafficRefresh,
   naiveRemainingSeconds,
@@ -301,7 +305,17 @@ export function useDriveNavigation(params: {
       accuracy: gpsAccuracy,
       timestamp: Date.now(),
     };
-  }, [isNavigating, routePoints.length, sdkActive, userLocation.lat, userLocation.lng, heading, speed, gpsAccuracy]);
+  }, [
+    isNavigating,
+    routePoints.length,
+    sdkActive,
+    userLocation.lat,
+    userLocation.lng,
+    heading,
+    speed,
+    gpsAccuracy,
+    jsNavProgressTick,
+  ]);
 
   const navModeProfile = useMemo(() => buildNavModeProfile(drivingMode), [drivingMode]);
 
@@ -845,8 +859,15 @@ export function useDriveNavigation(params: {
 
   /** Apply geometry + length/time from native Navigation SDK after `onRoutesLoaded` / reroute. */
   const applySdkRouteGeometry = useCallback(
-    (polyline: Coordinate[], distanceMeters: number, durationSeconds: number) => {
+    (
+      polyline: Coordinate[],
+      distanceMeters: number,
+      durationSeconds: number,
+      routesNative?: SdkRoutesNative | null,
+    ) => {
       const sum = routeSummaryFromMapboxMetersSeconds(distanceMeters, durationSeconds);
+      const hydrated =
+        routesNative != null ? directionsStepsFromSdkRoutes(routesNative) : [];
       setNavigationData((prev) => {
         if (!prev) return prev;
         return {
@@ -856,10 +877,10 @@ export function useDriveNavigation(params: {
           duration: durationSeconds,
           durationText: sum.durationText,
           distanceText: sum.distanceText,
-          // Native reroutes/refreshes can invalidate REST-derived step and edge metadata.
-          // Keep the route line + ETA truthful, but avoid showing stale turn enrichment or
-          // congestion-by-edge until a fresh compatible route model exists.
-          steps: [],
+          // Prefer geometry-derived steps from the native route (same source as the polyline) so
+          // step indices / per-leg distances stay valid after reroute. REST-only fields
+          // (closures, edge speeds) stay cleared until the JS pipeline refreshes them.
+          steps: hydrated.length ? hydrated : [],
           congestion: undefined,
           maxspeeds: undefined,
           edgeSpeedsKmh: undefined,
