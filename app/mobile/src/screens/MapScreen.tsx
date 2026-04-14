@@ -675,6 +675,7 @@ export default function MapScreen() {
   const [isExploring, setIsExploring] = useState(false);
   const [compassMode, setCompassMode] = useState(false);
   const [followMode, setFollowMode] = useState<'free' | 'follow' | 'heading'>('follow');
+  const [turnCardBrowseOffset, setTurnCardBrowseOffset] = useState(0);
   /** Bumps when a nav session starts so Mapbox Camera remounts (clears preview fitBounds stuck state). */
   const [navCameraSessionKey, setNavCameraSessionKey] = useState(0);
   /** Single distance field for maneuver-aware presets (must match banner/speech). */
@@ -1014,6 +1015,14 @@ export default function MapScreen() {
     () => getUpcomingManeuverStep(nav.navigationData?.steps, nav.currentStepIndex),
     [nav.navigationData?.steps, nav.currentStepIndex],
   );
+  useEffect(() => {
+    if (!nav.isNavigating) {
+      setTurnCardBrowseOffset(0);
+    }
+  }, [nav.isNavigating]);
+  useEffect(() => {
+    setTurnCardBrowseOffset(0);
+  }, [nav.currentStepIndex]);
   const confirmUntil = useTurnConfirmationUntil(nav.isNavigating, nav.currentStepIndex, drivingMode);
   const inConfirmWindow = Date.now() < confirmUntil;
   /** Tracks when turn-card state last entered 'active' for minimum dwell enforcement. */
@@ -2652,6 +2661,7 @@ export default function MapScreen() {
 
   const handleRecenter = useCallback(() => {
     if (nav.isNavigating) {
+      setTurnCardBrowseOffset(0);
       setCameraLocked(true);
       userInteracting.current = false;
       setIsExploring(false);
@@ -3390,6 +3400,38 @@ export default function MapScreen() {
         const prog = nav.navigationProgress!;
         const instructionSrc = prog.instructionSource;
         const laneUi = navLaneGuidanceUiEnabled();
+        const upcomingSteps =
+          nav.navigationData?.steps?.filter((step) => isActionableGuidanceStep(step, true)) ?? [];
+        const clampedBrowseOffset =
+          upcomingSteps.length > 0
+            ? Math.max(0, Math.min(turnCardBrowseOffset, upcomingSteps.length - 1))
+            : 0;
+        const browsedGuidanceStep =
+          upcomingSteps.length > 0
+            ? upcomingSteps[clampedBrowseOffset] ?? null
+            : null;
+        const isBrowsingAhead = clampedBrowseOffset > 0;
+        const cycleAheadTurn = (dir: -1 | 1) => {
+          if (!upcomingSteps.length) return;
+          const next = Math.max(0, Math.min(clampedBrowseOffset + dir, upcomingSteps.length - 1));
+          if (next === clampedBrowseOffset) return;
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setTurnCardBrowseOffset(next);
+        };
+        const handleTurnCardPress = () => {
+          if (upcomingSteps.length <= 1) return;
+          cycleAheadTurn(1);
+        };
+        const turnCardGesture = Gesture.Pan()
+          .activeOffsetX([-18, 18])
+          .failOffsetY([-18, 18])
+          .onEnd((e) => {
+            if (e.translationX <= -30) {
+              runOnJS(cycleAheadTurn)(1);
+            } else if (e.translationX >= 30) {
+              runOnJS(cycleAheadTurn)(-1);
+            }
+          });
 
         if (instructionSrc === 'sdk_waiting') {
           return (
@@ -3454,16 +3496,25 @@ export default function MapScreen() {
           : logicSdkAuthoritativeUi
             ? null
             : currentStep;
+        const browsedStepActive =
+          isBrowsingAhead &&
+          browsedGuidanceStep != null &&
+          Number.isFinite(browsedGuidanceStep.lat) &&
+          Number.isFinite(browsedGuidanceStep.lng);
+        const displayedNextManeuverCoord =
+          browsedStepActive ? browsedGuidanceStep : nextManeuverCoord;
+        const displayedTurnCurrentStep =
+          browsedStepActive ? turnCurrentStep ?? browsedGuidanceStep : turnCurrentStep;
         const poly = nav.navigationData?.polyline;
         const anchorToUserM =
-          nextManeuverCoord != null &&
-          Number.isFinite(nextManeuverCoord.lat) &&
-          Number.isFinite(nextManeuverCoord.lng)
+          displayedNextManeuverCoord != null &&
+          Number.isFinite(displayedNextManeuverCoord.lat) &&
+          Number.isFinite(displayedNextManeuverCoord.lng)
             ? haversineMeters(
                 navDisplayCoord.lat,
                 navDisplayCoord.lng,
-                nextManeuverCoord.lat,
-                nextManeuverCoord.lng,
+                displayedNextManeuverCoord.lat,
+                displayedNextManeuverCoord.lng,
               )
             : Number.POSITIVE_INFINITY;
         /** Synthetic SDK rows used to use puck lat/lng — along-route to self is ~0; fall back to SDK distance. */
@@ -3480,31 +3531,31 @@ export default function MapScreen() {
         } else if (
           poly &&
           poly.length >= 2 &&
-          nextManeuverCoord != null &&
-          Number.isFinite(nextManeuverCoord.lat) &&
-          Number.isFinite(nextManeuverCoord.lng) &&
+          displayedNextManeuverCoord != null &&
+          Number.isFinite(displayedNextManeuverCoord.lat) &&
+          Number.isFinite(displayedNextManeuverCoord.lng) &&
           !maneuverAnchorDegenerate
         ) {
           liveDistMeters = alongRouteDistanceMeters(poly, navDisplayCoord, {
-            lat: nextManeuverCoord.lat,
-            lng: nextManeuverCoord.lng,
+            lat: displayedNextManeuverCoord.lat,
+            lng: displayedNextManeuverCoord.lng,
           });
         } else if (sdkDistToNextManeuver != null && maneuverAnchorDegenerate) {
           liveDistMeters = sdkDistToNextManeuver;
         } else if (
-          nextManeuverCoord != null &&
-          Number.isFinite(nextManeuverCoord.lat) &&
-          Number.isFinite(nextManeuverCoord.lng) &&
+          displayedNextManeuverCoord != null &&
+          Number.isFinite(displayedNextManeuverCoord.lat) &&
+          Number.isFinite(displayedNextManeuverCoord.lng) &&
           !maneuverAnchorDegenerate
         ) {
           liveDistMeters = haversineMeters(
             navDisplayCoord.lat,
             navDisplayCoord.lng,
-            nextManeuverCoord.lat,
-            nextManeuverCoord.lng,
+            displayedNextManeuverCoord.lat,
+            displayedNextManeuverCoord.lng,
           );
         } else {
-          liveDistMeters = Math.max(0, turnCurrentStep?.distanceMeters ?? 0);
+          liveDistMeters = Math.max(0, displayedTurnCurrentStep?.distanceMeters ?? 0);
         }
 
         const turnCardNow = Date.now();
@@ -3512,8 +3563,8 @@ export default function MapScreen() {
           distanceToNextManeuverM: liveDistMeters,
           speedMph: displaySpeedMph,
           mode: drivingMode,
-          inConfirmationWindow: inConfirmWindow,
-          nextStep: nextManeuverCoord,
+          inConfirmationWindow: browsedStepActive ? false : inConfirmWindow,
+          nextStep: displayedNextManeuverCoord,
           congestionNearManeuver: hasSevereCongestionAhead(
             nav.navigationData?.congestion,
             nav.navigationProgress?.snapped?.segmentIndex ?? 0,
@@ -3537,13 +3588,14 @@ export default function MapScreen() {
         const progressNavStepForRich =
           useSdkTurnUi ? prog.nextStep : prog.nextStep;
         const maneuverFields = resolveManeuverFieldsForTurnCard({
-          nextManeuverCoord,
+          nextManeuverCoord: displayedNextManeuverCoord,
           progNext: progressNavStepForRich ?? prog.nextStep,
         });
-        const chainStepForBuild =
-          useSdkTurnUi ? prog.followingStep : prog.nextStep;
+        const chainStepForBuild = browsedStepActive
+          ? null
+          : useSdkTurnUi ? prog.followingStep : prog.nextStep;
         const useBannerCopy =
-          !!banner && (!!nextManeuverCoord || (instructionSrc === 'sdk' && !!prog.nextStep));
+          !!banner && (!!displayedNextManeuverCoord || (instructionSrc === 'sdk' && !!prog.nextStep));
 
         let primary: string;
         let secondary: string | undefined;
@@ -3551,13 +3603,13 @@ export default function MapScreen() {
           switch (cardState) {
             case 'cruise':
               primary =
-                nextManeuverCoord
-                  ? buildCruisePrimary(nextManeuverCoord, destinationName)
+                displayedNextManeuverCoord
+                  ? buildCruisePrimary(displayedNextManeuverCoord, destinationName)
                   : banner!.primaryInstruction;
               secondary = undefined;
               break;
             case 'confirm':
-              primary = turnCurrentStep ? buildConfirmPrimary(turnCurrentStep) : banner!.primaryInstruction;
+              primary = displayedTurnCurrentStep ? buildConfirmPrimary(displayedTurnCurrentStep) : banner!.primaryInstruction;
               secondary = banner!.secondaryInstruction ?? undefined;
               if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
               break;
@@ -3567,11 +3619,11 @@ export default function MapScreen() {
               if (useSdkTurnUi) {
                 primary = banner!.primaryInstruction;
                 secondary = banner!.secondaryInstruction ?? undefined;
-              } else if (nextManeuverCoord) {
-                const fromStep = getPrimaryBannerText(nextManeuverCoord).trim();
+              } else if (displayedNextManeuverCoord) {
+                const fromStep = getPrimaryBannerText(displayedNextManeuverCoord).trim();
                 primary = fromStep || banner!.primaryInstruction;
                 secondary =
-                  getSecondaryBannerText(nextManeuverCoord) ?? banner!.secondaryInstruction ?? undefined;
+                  getSecondaryBannerText(displayedNextManeuverCoord) ?? banner!.secondaryInstruction ?? undefined;
               } else {
                 primary = banner!.primaryInstruction;
                 secondary = banner!.secondaryInstruction ?? undefined;
@@ -3583,42 +3635,47 @@ export default function MapScreen() {
         } else {
           switch (cardState) {
             case 'active':
-              primary = buildActivePrimary(nextManeuverCoord, destinationName) || turnCurrentStep?.instruction || '';
+              primary = buildActivePrimary(displayedNextManeuverCoord, destinationName) || displayedTurnCurrentStep?.instruction || '';
               secondary = undefined;
               break;
             case 'preview': {
-              const p = buildPreviewPrimarySecondary(turnCurrentStep, nextManeuverCoord, destinationName);
+              const p = buildPreviewPrimarySecondary(displayedTurnCurrentStep, displayedNextManeuverCoord, destinationName);
               primary = p.primary;
               secondary = p.secondary;
               if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
               break;
             }
             case 'confirm':
-              primary = buildConfirmPrimary(turnCurrentStep);
+              primary = buildConfirmPrimary(displayedTurnCurrentStep);
               secondary =
                 (drivingMode === 'calm' || drivingMode === 'adaptive') &&
-                nextManeuverCoord &&
-                nextManeuverCoord.maneuver !== 'arrive'
-                  ? `Then ${buildActivePrimary(nextManeuverCoord, destinationName, prog.nextStep)}`
+                displayedNextManeuverCoord &&
+                displayedNextManeuverCoord.maneuver !== 'arrive'
+                  ? `Then ${buildActivePrimary(displayedNextManeuverCoord, destinationName, prog.nextStep)}`
                   : undefined;
               break;
             case 'cruise':
-              primary = buildCruisePrimary(nextManeuverCoord, destinationName);
+              primary = buildCruisePrimary(displayedNextManeuverCoord, destinationName);
               secondary = undefined;
               break;
             default:
               primary =
-                buildActivePrimary(nextManeuverCoord, destinationName, prog.nextStep) ||
-                turnCurrentStep?.instruction ||
+                buildActivePrimary(displayedNextManeuverCoord, destinationName, prog.nextStep) ||
+                displayedTurnCurrentStep?.instruction ||
                 '';
               secondary = undefined;
           }
         }
 
-        const maneuverIconKey = iconManeuverForState(cardState, turnCurrentStep, nextManeuverCoord);
+        if (browsedStepActive) {
+          primary = getPrimaryBannerText(browsedGuidanceStep).trim() || buildActivePrimary(browsedGuidanceStep, destinationName);
+          secondary = getSecondaryBannerText(browsedGuidanceStep) ?? undefined;
+        }
+
+        const maneuverIconKey = iconManeuverForState(cardState, displayedTurnCurrentStep, displayedNextManeuverCoord);
         const chainInstruction = buildChainInstruction(chainStepForBuild);
         const maneuverKindResolved =
-          nextManeuverCoord != null
+          displayedNextManeuverCoord != null
             ? maneuverFields.kind
             : banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
         const signalResolved = banner?.signal ?? progressNavStepForRich?.signal;
@@ -3644,67 +3701,76 @@ export default function MapScreen() {
             ? progressNavStepForRich.roundaboutExitNumber
             : banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
         const disambigName =
-          shouldShowRoadDisambiguation(turnCurrentStep?.name) ? (turnCurrentStep?.name ?? null) :
-          shouldShowRoadDisambiguation(nextManeuverCoord?.name) ? (nextManeuverCoord?.name ?? null) :
+          shouldShowRoadDisambiguation(displayedTurnCurrentStep?.name) ? (displayedTurnCurrentStep?.name ?? null) :
+          shouldShowRoadDisambiguation(displayedNextManeuverCoord?.name) ? (displayedNextManeuverCoord?.name ?? null) :
           null;
 
         /** Align banner/lanes/icons with Mapbox step geometry (see `currentStepIndexAlongRoute`). */
-        const guidanceStep = pickGuidanceStep(cardState, turnCurrentStep, nextManeuverCoord);
+        const guidanceStep = pickGuidanceStep(cardState, displayedTurnCurrentStep, displayedNextManeuverCoord);
         const actionableGuidanceStep =
-          isActionableGuidanceStep(guidanceStep, true) ? guidanceStep : (isActionableGuidanceStep(nextManeuverCoord, true) ? nextManeuverCoord : undefined);
+          isActionableGuidanceStep(guidanceStep, true)
+            ? guidanceStep
+            : (isActionableGuidanceStep(displayedNextManeuverCoord, true) ? displayedNextManeuverCoord : undefined);
 
         return (
-          <View
-            style={[s.turnWrap, { top: insets.top }]}
-            key={
-              useSdkTurnUi
-                ? `sdk-${prog.nextStep?.index ?? -1}-${banner?.primaryInstruction ?? ''}`
-                : `js-${nav.currentStepIndex}`
-            }
-          >
-            <TurnInstructionCard
-              mode={drivingMode}
-              modeConfig={modeConfig}
-              state={cardState}
-              distanceValue={distParts.value}
-              distanceUnit={distParts.unit}
-              primaryInstruction={primary}
-              secondaryInstruction={secondary}
-              maneuverForIcon={maneuverIconKey}
-              maneuverKind={maneuverKindResolved}
-              maneuverType={maneuverFields.rawType}
-              maneuverModifier={maneuverFields.rawModifier}
-              signal={signalResolved}
-              lanes={lanesResolved}
-              shields={shieldsResolved}
-              roundaboutExitNumber={roundaboutExitResolved}
-              chainInstruction={chainInstruction}
-              isMuted={navVoiceMuted}
-              onMutePress={() => {
-                setNavVoiceMuted((m) => {
-                  if (!m) stopSpeaking();
-                  return !m;
-                });
-              }}
-              lanesJson={
-                logicSdkAuthoritativeUi || !laneUi
-                  ? undefined
-                  : mergeLaneSources(
-                      actionableGuidanceStep,
-                      nextManeuverCoord,
-                      cardState === 'confirm' ? turnCurrentStep : undefined,
-                    )
+          <GestureDetector gesture={turnCardGesture}>
+            <Pressable
+              style={[s.turnWrap, { top: insets.top }]}
+              key={
+                useSdkTurnUi
+                  ? `sdk-${prog.nextStep?.index ?? -1}-${banner?.primaryInstruction ?? ''}-${clampedBrowseOffset}`
+                  : `js-${nav.currentStepIndex}-${clampedBrowseOffset}`
               }
-              step={
-                logicSdkAuthoritativeUi
-                  ? sdkSyntheticStep ?? undefined
-                  : actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? turnCurrentStep : undefined)
-              }
-              roadDisambiguationLabel={disambigName}
-              isSportBorder={isSport}
-              speedMph={displaySpeedMph}
-            />
-          </View>
+              onPress={handleTurnCardPress}
+            >
+              <TurnInstructionCard
+                mode={drivingMode}
+                modeConfig={modeConfig}
+                state={cardState}
+                distanceValue={distParts.value}
+                distanceUnit={distParts.unit}
+                primaryInstruction={primary}
+                secondaryInstruction={
+                  isBrowsingAhead && upcomingSteps.length > 1
+                    ? `${clampedBrowseOffset + 1} of ${upcomingSteps.length} upcoming turns`
+                    : secondary
+                }
+                maneuverForIcon={maneuverIconKey}
+                maneuverKind={maneuverKindResolved}
+                maneuverType={maneuverFields.rawType}
+                maneuverModifier={maneuverFields.rawModifier}
+                signal={signalResolved}
+                lanes={lanesResolved}
+                shields={shieldsResolved}
+                roundaboutExitNumber={roundaboutExitResolved}
+                chainInstruction={chainInstruction}
+                isMuted={navVoiceMuted}
+                onMutePress={() => {
+                  setNavVoiceMuted((m) => {
+                    if (!m) stopSpeaking();
+                    return !m;
+                  });
+                }}
+                lanesJson={
+                  logicSdkAuthoritativeUi || !laneUi
+                    ? undefined
+                    : mergeLaneSources(
+                        actionableGuidanceStep,
+                        displayedNextManeuverCoord,
+                        cardState === 'confirm' ? displayedTurnCurrentStep : undefined,
+                      )
+                }
+                step={
+                  logicSdkAuthoritativeUi
+                    ? sdkSyntheticStep ?? undefined
+                    : actionableGuidanceStep ?? displayedNextManeuverCoord ?? (cardState === 'confirm' ? displayedTurnCurrentStep : undefined)
+                }
+                roadDisambiguationLabel={disambigName}
+                isSportBorder={isSport}
+                speedMph={displaySpeedMph}
+              />
+            </Pressable>
+          </GestureDetector>
         );
       })()}
 

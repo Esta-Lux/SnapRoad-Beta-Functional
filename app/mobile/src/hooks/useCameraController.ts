@@ -29,7 +29,8 @@ function maneuverDistanceBucket(meters: number): number {
   if (m < 48) return Math.round(m / 8) * 8;
   if (m < 120) return Math.round(m / 14) * 14;
   if (m < 220) return Math.round(m / 24) * 24;
-  return Math.round(m / 80) * 80;
+  if (m < 700) return Math.round(m / 60) * 60;
+  return Math.round(m / 120) * 120;
 }
 
 export interface CameraSettings {
@@ -48,8 +49,8 @@ export interface CameraSettings {
 
 const MPH_TO_MPS = 0.44704;
 
-const STEP_PITCH_EPS = 1.5;
-const STEP_PAD_EPS = 10;
+const STEP_PITCH_EPS = 1.2;
+const STEP_PAD_EPS = 8;
 
 function paddingNear(
   a: CameraSettings['followPadding'],
@@ -133,7 +134,8 @@ export function useCameraController({
     if (maneuverB <= 48) return 110;
     if (maneuverB <= 80) return 160;
     if (maneuverB <= 180) return 280;
-    return 600;
+    if (maneuverB <= 700) return 420;
+    return 760;
   }, [isNavigating, cameraLocked, maneuverB]);
 
   return useMemo(() => {

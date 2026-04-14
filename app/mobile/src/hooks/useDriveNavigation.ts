@@ -1220,8 +1220,9 @@ export function useDriveNavigation(params: {
     if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk_waiting') {
       return;
     }
-    if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk' && navigationProgress.nextStep) {
-      const si = navigationProgress.nextStep.index;
+    if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk') {
+      const si = navSdkSnapshot.progress?.stepIndex ?? navigationProgress.nextStep?.index;
+      if (si == null) return;
       const maxStep = navigationData.steps?.length
         ? navigationData.steps.length - 1
         : Math.max(0, si);
@@ -1252,6 +1253,7 @@ export function useDriveNavigation(params: {
     navigationProgress?.snapped?.cumulativeMeters,
     routeProgress?.cumFromStartMeters,
     navSdkHeadless,
+    navSdkSnapshot.progress?.stepIndex,
     navigationProgress?.nextStep?.index,
   ]);
 

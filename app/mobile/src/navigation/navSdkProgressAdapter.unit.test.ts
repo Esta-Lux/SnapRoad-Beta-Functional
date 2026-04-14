@@ -28,7 +28,7 @@ const poly: Array<{ lat: number; lng: number }> = [
   { lat: 37.772, lng: -122.418 },
 ];
 
-test('buildNavigationProgressFromSdk sets followingStep from Directions when stepIndex + 1 exists', () => {
+test('buildNavigationProgressFromSdk promotes the upcoming SDK maneuver to nextStep', () => {
   const steps: DirectionsStep[] = [
     baseStep({
       instruction: 'Head north on Mission St',
@@ -62,18 +62,70 @@ test('buildNavigationProgressFromSdk sets followingStep from Directions when ste
     steps,
   });
   assert.ok(prog);
-  assert.ok(prog.followingStep);
   assert.ok(prog.routeSplitSnap);
   assert.equal(prog.routeSplitSnap!.cumulativeMeters, prog.snapped!.cumulativeMeters);
   assert.equal(prog.routeSplitSnap!.segmentIndex, prog.snapped!.segmentIndex);
   assert.ok(Math.abs(prog.routeSplitSnap!.t - prog.snapped!.t) < 0.05);
-  assert.equal(prog.followingStep.index, 1);
-  assert.equal(prog.followingStep.kind, 'turn_left');
-  assert.equal(prog.followingStep.streetName, 'Valencia St');
-  assert.equal(prog.nextStep?.nextManeuverKind, 'turn_left');
-  assert.equal(prog.nextStep?.nextManeuverStreet, 'Valencia St');
-  // SDK vs REST kind mismatch: no matchingRouteNavStep — still expose geometric step length for "then".
-  assert.equal(prog.nextStep?.nextManeuverDistanceMeters, 200);
+  assert.equal(prog.nextStep?.index, 1);
+  assert.equal(prog.nextStep?.kind, 'turn_left');
+  assert.equal(prog.nextStep?.displayInstruction, 'Turn left onto Valencia St');
+  assert.equal(prog.followingStep, null);
+  assert.equal(prog.nextStep?.nextManeuverKind, null);
+  assert.equal(prog.nextStep?.nextManeuverStreet, null);
+  assert.equal(prog.nextStep?.nextManeuverDistanceMeters, 80);
+});
+
+test('buildNavigationProgressFromSdk sets followingStep from the maneuver after the displayed turn', () => {
+  const steps: DirectionsStep[] = [
+    baseStep({
+      instruction: 'Head north on Mission St',
+      name: 'Mission St',
+      mapboxManeuver: { type: 'depart', modifier: '' },
+      distanceMeters: 200,
+    }),
+    baseStep({
+      instruction: 'Turn left onto Valencia St',
+      name: 'Valencia St',
+      lat: 37.771,
+      lng: -122.419,
+      mapboxManeuver: { type: 'turn', modifier: 'left' },
+      distanceMeters: 80,
+    }),
+    baseStep({
+      instruction: 'Turn right onto Market St',
+      name: 'Market St',
+      lat: 37.772,
+      lng: -122.418,
+      mapboxManeuver: { type: 'turn', modifier: 'right' },
+      distanceMeters: 60,
+    }),
+  ];
+  const prog = buildNavigationProgressFromSdk({
+    progress: {
+      distanceRemaining: 5000,
+      distanceTraveled: 10,
+      durationRemaining: 600,
+      fractionTraveled: 0.01,
+      stepIndex: 0,
+      primaryInstruction: 'Continue on Mission St',
+      maneuverType: 'continue',
+      maneuverDirection: 'straight',
+      distanceToNextManeuverMeters: 150,
+    },
+    location: null,
+    polyline: [
+      ...poly,
+      { lat: 37.773, lng: -122.417 },
+    ],
+    steps,
+  });
+  assert.ok(prog?.followingStep);
+  assert.equal(prog.nextStep?.index, 1);
+  assert.equal(prog.followingStep?.index, 2);
+  assert.equal(prog.followingStep?.kind, 'turn_right');
+  assert.equal(prog.nextStep?.nextManeuverKind, 'turn_right');
+  assert.equal(prog.nextStep?.nextManeuverStreet, 'Market St');
+  assert.equal(prog.nextStep?.nextManeuverDistanceMeters, 80);
 });
 
 test('buildNavigationProgressFromSdk leaves followingStep null on last step', () => {
@@ -149,4 +201,45 @@ test('buildNavigationProgressFromSdk reuses rich turn metadata only for matching
   assert.equal(prog.nextStep.signal.kind, 'traffic_light');
   assert.equal(prog.nextStep.lanes.length, 1);
   assert.equal(prog.nextStep.roundaboutExitNumber, 2);
+});
+
+test('buildNavigationProgressFromSdk prefers upcoming actionable maneuver over current depart step', () => {
+  const steps: DirectionsStep[] = [
+    baseStep({
+      instruction: 'Head north on Mission St',
+      name: 'Mission St',
+      mapboxManeuver: { type: 'depart', modifier: '' },
+      distanceMeters: 120,
+    }),
+    baseStep({
+      instruction: 'Turn right onto Oak Ave',
+      name: 'Oak Ave',
+      lat: 37.771,
+      lng: -122.419,
+      mapboxManeuver: { type: 'turn', modifier: 'right' },
+      distanceMeters: 90,
+    }),
+  ];
+  const prog = buildNavigationProgressFromSdk({
+    progress: {
+      distanceRemaining: 400,
+      distanceTraveled: 5,
+      durationRemaining: 60,
+      fractionTraveled: 0.01,
+      stepIndex: 0,
+      primaryInstruction: 'Head north on Mission St',
+      currentStepInstruction: 'Head north on Mission St',
+      maneuverType: 'depart',
+      maneuverDirection: '',
+      distanceToNextManeuverMeters: 65,
+    },
+    location: null,
+    polyline: poly,
+    steps,
+  });
+  assert.ok(prog?.nextStep);
+  assert.equal(prog.nextStep.index, 1);
+  assert.equal(prog.nextStep.kind, 'turn_right');
+  assert.equal(prog.nextStep.displayInstruction, 'Turn right onto Oak Ave');
+  assert.equal(prog.nextStep.distanceMetersToNext, 65);
 });
