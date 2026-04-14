@@ -35,6 +35,7 @@ export const IncidentHeatmapIds = {
 /** Stable label layer to insert 3D buildings / route below (matches MapScreen `buildingsBelowLayerId`). */
 export function labelAnchorLayerIdForStyleUrl(activeStyleURL: string): string | undefined {
   const u = activeStyleURL;
+  if (u.includes('mapbox://styles/mapbox/standard')) return 'road-label';
   if (u.includes('dark-v')) return 'road-label-simple';
   if (u.includes('streets-v')) return 'road-label';
   if (u.includes('navigation-night')) return 'road-label-navigation';

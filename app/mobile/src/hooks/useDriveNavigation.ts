@@ -856,6 +856,14 @@ export function useDriveNavigation(params: {
           duration: durationSeconds,
           durationText: sum.durationText,
           distanceText: sum.distanceText,
+          // Native reroutes/refreshes can invalidate REST-derived step and edge metadata.
+          // Keep the route line + ETA truthful, but avoid showing stale turn enrichment or
+          // congestion-by-edge until a fresh compatible route model exists.
+          steps: [],
+          congestion: undefined,
+          maxspeeds: undefined,
+          edgeSpeedsKmh: undefined,
+          edgeDurationSec: undefined,
         };
       });
       routeModelRefreshedAtRef.current = Date.now();

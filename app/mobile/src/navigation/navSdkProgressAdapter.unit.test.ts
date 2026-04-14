@@ -72,7 +72,7 @@ test('buildNavigationProgressFromSdk sets followingStep from Directions when ste
   assert.equal(prog.followingStep.streetName, 'Valencia St');
   assert.equal(prog.nextStep?.nextManeuverKind, 'turn_left');
   assert.equal(prog.nextStep?.nextManeuverStreet, 'Valencia St');
-  assert.equal(prog.nextStep?.nextManeuverDistanceMeters, 150);
+  assert.equal(prog.nextStep?.nextManeuverDistanceMeters, null);
 });
 
 test('buildNavigationProgressFromSdk leaves followingStep null on last step', () => {

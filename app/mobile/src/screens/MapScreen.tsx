@@ -2920,10 +2920,14 @@ export default function MapScreen() {
           onTouchStart={handleMapTouch}
           onPress={handleMapPress}
         >
-          {nav.isNavigating && navLogicSdkSessionEnabled && nav.sdkNavLocation ? (
+          {nav.isNavigating && navLogicSdkSessionEnabled ? (
             <MapboxGL.CustomLocationProvider
               coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
-              heading={nav.sdkNavLocation.course >= 0 ? nav.sdkNavLocation.course : heading}
+              heading={
+                nav.sdkNavLocation && nav.sdkNavLocation.course >= 0
+                  ? nav.sdkNavLocation.course
+                  : navDisplayHeading
+              }
             />
           ) : nav.isNavigating && !navLogicSdkSessionEnabled ? (
             <MapboxGL.CustomLocationProvider
@@ -3029,7 +3033,7 @@ export default function MapScreen() {
             activeStyleURL={activeStyleURL}
             belowLayerID={buildingsBelowLayerId}
           />
-          {showTraffic && <TrafficLayer />}
+          {showTraffic && <TrafficLayer belowLayerID={buildingsBelowLayerId} />}
           <IncidentHeatmap incidents={nearbyIncidents} visible={showIncidents} />
           {showPhotoReports && (
             <PhotoReportMarkers reports={photoReports} onReportTap={(r) => setSelectedPhotoReport(r)} />

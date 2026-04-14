@@ -2,13 +2,14 @@ import React from 'react';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import { TRAFFIC_CLOSED_ROAD_HEX, TRAFFIC_CONGESTION_HEX } from '../../constants/trafficCongestion';
 
-export default function TrafficLayer() {
+export default function TrafficLayer({ belowLayerID }: { belowLayerID?: string }) {
   if (!isMapAvailable() || !MapboxGL) return null;
 
   return (
     <MapboxGL.VectorSource id="sr-traffic-source" url="mapbox://mapbox.mapbox-traffic-v1">
       <MapboxGL.LineLayer
         id="sr-traffic-low"
+        belowLayerID={belowLayerID}
         sourceLayerID="traffic"
         filter={['==', ['get', 'congestion'], 'low']}
         style={{
@@ -21,6 +22,7 @@ export default function TrafficLayer() {
       />
       <MapboxGL.LineLayer
         id="sr-traffic-moderate"
+        belowLayerID={belowLayerID}
         sourceLayerID="traffic"
         filter={['==', ['get', 'congestion'], 'moderate']}
         style={{
@@ -33,6 +35,7 @@ export default function TrafficLayer() {
       />
       <MapboxGL.LineLayer
         id="sr-traffic-heavy"
+        belowLayerID={belowLayerID}
         sourceLayerID="traffic"
         filter={['==', ['get', 'congestion'], 'heavy']}
         style={{
@@ -45,6 +48,7 @@ export default function TrafficLayer() {
       />
       <MapboxGL.LineLayer
         id="sr-traffic-severe"
+        belowLayerID={belowLayerID}
         sourceLayerID="traffic"
         filter={['==', ['get', 'congestion'], 'severe']}
         style={{
@@ -57,6 +61,7 @@ export default function TrafficLayer() {
       />
       <MapboxGL.LineLayer
         id="sr-traffic-closed"
+        belowLayerID={belowLayerID}
         sourceLayerID="traffic"
         filter={[
           'any',

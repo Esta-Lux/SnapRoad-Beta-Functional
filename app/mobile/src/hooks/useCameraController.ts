@@ -130,8 +130,9 @@ export function useCameraController({
   ]);
   const minCameraUpdateIntervalMs = useMemo(() => {
     if (!isNavigating || !cameraLocked) return 600;
-    if (maneuverB <= 80) return 180;
-    if (maneuverB <= 180) return 320;
+    if (maneuverB <= 48) return 110;
+    if (maneuverB <= 80) return 160;
+    if (maneuverB <= 180) return 280;
     return 600;
   }, [isNavigating, cameraLocked, maneuverB]);
 

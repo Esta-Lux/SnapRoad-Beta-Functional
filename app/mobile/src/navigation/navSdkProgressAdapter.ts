@@ -109,6 +109,10 @@ export function buildNavigationProgressFromSdk(args: {
     typeof progress.distanceToNextManeuverMeters === 'number' && Number.isFinite(progress.distanceToNextManeuverMeters)
       ? Math.max(0, progress.distanceToNextManeuverMeters)
       : Math.max(0, progress.distanceRemaining * 0.02);
+  const followingDistanceMeters =
+    followingStep != null && matchingRouteNavStep != null
+      ? Math.max(0, followingStep.distanceMetersFromStart - matchingRouteNavStep.distanceMetersFromStart)
+      : null;
 
   const nextStep: NavStep | null = {
     index: idx,
@@ -134,7 +138,7 @@ export function buildNavigationProgressFromSdk(args: {
     voiceAnnouncement: null,
     nextManeuverKind: followingStep?.kind ?? null,
     nextManeuverStreet: followingStep?.streetName ?? null,
-    nextManeuverDistanceMeters: followingStep != null ? distNext : null,
+    nextManeuverDistanceMeters: followingDistanceMeters,
   };
 
   const banner: NavBannerModel = {
