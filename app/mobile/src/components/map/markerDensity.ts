@@ -6,7 +6,7 @@ export type MarkerCoordinate = { lat: number; lng: number };
 export function markerCapForZoom(kind: MarkerDensityKind, zoomLevel: number): number {
   switch (kind) {
     case 'camera':
-      return zoomLevel >= 16 ? 110 : zoomLevel >= 14.5 ? 72 : 42;
+      return zoomLevel >= 16 ? 132 : zoomLevel >= 14.5 ? 96 : zoomLevel >= 12 ? 68 : 48;
     case 'friend':
       return zoomLevel >= 15.5 ? 40 : zoomLevel >= 14 ? 26 : 16;
     case 'offer':
@@ -24,8 +24,8 @@ export function approxVisibleRadiusMeters(zoomLevel: number): number {
   if (zoomLevel >= 15) return 3500;
   if (zoomLevel >= 14) return 6000;
   if (zoomLevel >= 13) return 10000;
-  if (zoomLevel >= 12) return 16000;
-  return 24000;
+  if (zoomLevel >= 12) return 22000;
+  return 30000;
 }
 
 export function sortAndCapMarkers<T extends MarkerCoordinate>(

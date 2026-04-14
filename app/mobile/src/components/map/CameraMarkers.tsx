@@ -55,7 +55,7 @@ export default React.memo(function CameraMarkers({ cameras, zoomLevel, reference
           >
             <View style={styles.puck}>
               <View style={styles.puckInner}>
-                <Ionicons name="videocam" size={11} color="#FFFFFF" />
+                <Ionicons name="videocam" size={12} color="#FFFFFF" />
               </View>
             </View>
           </Pressable>
@@ -69,9 +69,9 @@ const styles = StyleSheet.create({
   hit: { alignItems: 'center', justifyContent: 'center' },
   hitPressed: { opacity: 0.85, transform: [{ scale: 0.96 }] },
   puck: {
-    width: 28,
-    height: 28,
-    borderRadius: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 11,
     backgroundColor: 'rgba(37, 99, 235, 0.22)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -89,9 +89,9 @@ const styles = StyleSheet.create({
     }),
   },
   puckInner: {
-    width: 22,
-    height: 22,
-    borderRadius: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 9,
     backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',

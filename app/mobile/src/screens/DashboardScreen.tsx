@@ -54,6 +54,13 @@ type Section = 'friends' | 'family';
 
 const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
 
+function asShareCoords(coords?: { lat: number; lng: number } | null): { lat: number; lng: number } | null {
+  if (!coords) return null;
+  if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return null;
+  if (Math.round(coords.lat * 1000) === 0 && Math.round(coords.lng * 1000) === 0) return null;
+  return coords;
+}
+
 const MOCK_FAMILY = [
   { id: '1', name: 'Mom', status: 'Online', speed: 0, battery: 92, avatar: 'M', color: '#EC4899' },
   { id: '2', name: 'Dad', status: 'Driving · 42 mph', speed: 42, battery: 78, avatar: 'D', color: '#3B82F6' },
@@ -181,6 +188,7 @@ export default function DashboardScreen() {
   const [friendCode, setFriendCode] = useState('');
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [isSharingLocation, setIsSharingLocation] = useState(false);
+  const [shareLocationError, setShareLocationError] = useState<string | null>(null);
   const [incomingReq, setIncomingReq] = useState<{ id: string; from_user_id: string; from_name?: string; from_email?: string }[]>([]);
   const [outgoingReq, setOutgoingReq] = useState<{ id: string; to_user_id: string; to_name?: string }[]>([]);
   const [categories, setCategories] = useState<FriendCategory[]>([]);
@@ -218,6 +226,36 @@ export default function DashboardScreen() {
     setCategories(await fetchFriendCategories());
   }, []);
 
+  const setSharingOnServer = useCallback(async (
+    isSharing: boolean,
+    coords?: { lat: number; lng: number } | null,
+  ): Promise<string | null> => {
+    const liveCoords = asShareCoords(coords);
+    const res = await api.put('/api/friends/location/sharing', {
+      is_sharing: isSharing,
+      ...(isSharing && liveCoords ? { lat: liveCoords.lat, lng: liveCoords.lng } : {}),
+    });
+    const error = res.success ? null : (res.error ?? 'Could not update location sharing right now.');
+    setShareLocationError(error);
+    return error;
+  }, []);
+
+  const publishLiveLocation = useCallback(async (payload: {
+    lat: number;
+    lng: number;
+    heading?: number;
+    speed_mph?: number;
+    is_navigating: boolean;
+    is_sharing: boolean;
+    destination_name?: string;
+    battery_pct?: number;
+  }): Promise<string | null> => {
+    const res = await api.post('/api/friends/location/update', payload);
+    const error = res.success ? null : (res.error ?? 'Could not publish live location right now.');
+    setShareLocationError(error);
+    return error;
+  }, []);
+
   useEffect(() => {
     if (section !== 'friends') return;
     let cancelled = false;
@@ -234,11 +272,16 @@ export default function DashboardScreen() {
 
       try {
         const r = await api.get<any>('/api/friends/location/sharing');
+        if (!r.success) {
+          if (!cancelled) setShareLocationError(r.error ?? 'Could not load location sharing status.');
+          return;
+        }
         if (cancelled) return;
         const v = (r.data as any)?.data?.is_sharing;
         if (typeof v !== 'boolean') return;
 
         if (v) {
+          setShareLocationError(null);
           setIsSharingLocation(true);
           storage.set(SHARE_LOC_STORAGE_KEY, '1');
           return;
@@ -246,25 +289,18 @@ export default function DashboardScreen() {
 
         if (localOn) {
           const { lat, lng } = dashboardLiveCoordsRef.current;
-          try {
-            await api.put('/api/friends/location/sharing', {
-              is_sharing: true,
-              lat,
-              lng,
-            });
-            if (!cancelled) {
-              setIsSharingLocation(true);
-              storage.set(SHARE_LOC_STORAGE_KEY, '1');
-            }
-          } catch {
-            if (!cancelled) {
-              setIsSharingLocation(true);
-              storage.set(SHARE_LOC_STORAGE_KEY, '1');
-            }
+          const error = await setSharingOnServer(true, { lat, lng });
+          if (!cancelled && !error) {
+            setIsSharingLocation(true);
+            storage.set(SHARE_LOC_STORAGE_KEY, '1');
+          } else if (!cancelled) {
+            setIsSharingLocation(false);
+            storage.set(SHARE_LOC_STORAGE_KEY, '0');
           }
           return;
         }
 
+        setShareLocationError(null);
         setIsSharingLocation(false);
         storage.set(SHARE_LOC_STORAGE_KEY, '0');
       } catch {
@@ -276,7 +312,7 @@ export default function DashboardScreen() {
     return () => {
       cancelled = true;
     };
-  }, [section, loadFriends, loadPending, loadCategories]);
+  }, [section, loadFriends, loadPending, loadCategories, setSharingOnServer]);
 
   /** Re-render friend timestamps every 15 s so "just now" → "1m ago" updates live. */
   const [, setTickClock] = useState(0);
@@ -404,7 +440,7 @@ export default function DashboardScreen() {
       }
       if (cancelled) return;
       try {
-        await api.post('/api/friends/location/update', {
+        await publishLiveLocation({
           lat: location.lat,
           lng: location.lng,
           heading,
@@ -420,7 +456,7 @@ export default function DashboardScreen() {
     return () => {
       cancelled = true;
     };
-  }, [user?.isPremium, friendsTabActive, isSharingLocation, location.lat, location.lng, heading, speed]);
+  }, [user?.isPremium, friendsTabActive, isSharingLocation, location.lat, location.lng, heading, speed, publishLiveLocation]);
 
   /** Heartbeat while parked: GPS effect may not re-run when coordinates are static. */
   useEffect(() => {
@@ -445,7 +481,7 @@ export default function DashboardScreen() {
         }
         if (cancelled) return;
         try {
-          await api.post('/api/friends/location/update', {
+          await publishLiveLocation({
             lat,
             lng,
             heading: h,
@@ -464,7 +500,7 @@ export default function DashboardScreen() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [user?.isPremium, friendsTabActive, isSharingLocation]);
+  }, [user?.isPremium, friendsTabActive, isSharingLocation, publishLiveLocation]);
 
   const myCoord = useMemo(() => {
     if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return null;
@@ -475,15 +511,15 @@ export default function DashboardScreen() {
   useEffect(() => {
     if (!user?.isPremium || !isSharingLocation || !myCoord) return;
     if (!shareLocationNeedsCoordsSyncRef.current) return;
-    shareLocationNeedsCoordsSyncRef.current = false;
     let cancelled = false;
     void (async () => {
       try {
-        await api.put('/api/friends/location/sharing', {
-          is_sharing: true,
-          lat: myCoord.lat,
-          lng: myCoord.lng,
-        });
+        const sharingError = await setSharingOnServer(true, myCoord);
+        if (sharingError) {
+          shareLocationNeedsCoordsSyncRef.current = true;
+          return;
+        }
+        shareLocationNeedsCoordsSyncRef.current = false;
         if (cancelled) return;
         let battery_pct: number | undefined;
         try {
@@ -494,7 +530,7 @@ export default function DashboardScreen() {
           /* optional */
         }
         if (cancelled) return;
-        await api.post('/api/friends/location/update', {
+        const publishError = await publishLiveLocation({
           lat: myCoord.lat,
           lng: myCoord.lng,
           heading,
@@ -503,14 +539,16 @@ export default function DashboardScreen() {
           is_sharing: true,
           battery_pct,
         });
+        if (publishError) shareLocationNeedsCoordsSyncRef.current = true;
       } catch {
         /* offline */
+        shareLocationNeedsCoordsSyncRef.current = true;
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.isPremium, isSharingLocation, myCoord, heading, speed]);
+  }, [user?.isPremium, isSharingLocation, myCoord, heading, speed, setSharingOnServer, publishLiveLocation]);
 
   const friendListData = useMemo(
     () =>
@@ -924,23 +962,31 @@ export default function DashboardScreen() {
                 value={isSharingLocation}
                 onValueChange={async (v) => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  const prev = isSharingLocation;
                   setIsSharingLocation(v);
                   storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
                   if (v && !myCoord) shareLocationNeedsCoordsSyncRef.current = true;
                   else shareLocationNeedsCoordsSyncRef.current = false;
-                  try {
-                    await api.put('/api/friends/location/sharing', {
-                      is_sharing: v,
-                      ...(v && myCoord ? { lat: myCoord.lat, lng: myCoord.lng } : {}),
-                    });
-                  } catch {
-                    /* preference stays in local storage */
+                  const error = await setSharingOnServer(v, myCoord);
+                  if (error) {
+                    setIsSharingLocation(prev);
+                    storage.set(SHARE_LOC_STORAGE_KEY, prev ? '1' : '0');
+                    shareLocationNeedsCoordsSyncRef.current = prev && !myCoord;
+                    Alert.alert('Location sharing unavailable', error);
                   }
                 }}
                 trackColor={{ false: colors.border, true: '#34C759' }}
                 thumbColor="#fff"
               />
             </View>
+            {shareLocationError ? (
+              <View style={styles.shareLocErrorRow}>
+                <Ionicons name="alert-circle-outline" size={14} color="#FF9500" />
+                <Text style={[styles.shareLocErrorText, { color: colors.textSecondary }]}>
+                  {shareLocationError}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           <ScrollView
@@ -1530,6 +1576,20 @@ const styles = StyleSheet.create({
   },
   shareLocTitle: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
   shareLocCaption: { fontSize: 12, fontWeight: '500', marginTop: 2, opacity: 0.9 },
+  shareLocErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+  },
+  shareLocErrorText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 17,
+    opacity: 0.9,
+  },
   bucketColorDot: { width: 8, height: 8, borderRadius: 4 },
   assignRow: {
     flexDirection: 'row',

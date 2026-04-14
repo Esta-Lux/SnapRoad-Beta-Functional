@@ -210,8 +210,8 @@ function placeCardFuelHint(place: {
 }
 
 /** Traffic cams hide when zoomed out (less map clutter). */
-/** Show traffic / camera POIs once the user is zoomed in enough (lower = visible sooner). */
-const TRAFFIC_CAM_MIN_ZOOM = 12;
+/** Show traffic / camera POIs at roughly city-level zoom, then hide again farther out. */
+const TRAFFIC_CAM_MIN_ZOOM = 11.5;
 
 const INCIDENT_COLORS: Record<string, string> = {
   police: '#4A90D9', accident: '#D04040', hazard: '#E07830',

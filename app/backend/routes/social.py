@@ -46,6 +46,14 @@ FRIEND_CATEGORY_COLORS = {
 }
 
 
+def _get_live_location_supabase():
+    from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(status_code=503, detail="Live location service unavailable.")
+    return get_supabase()
+
+
 def _normalize_category_color(color: Optional[str]) -> str:
     val = (color or "#3B82F6").strip().lower()
     if not val.startswith("#"):
@@ -506,15 +514,15 @@ def get_my_location_sharing(current_user: CurrentUser):
     require_premium_user(current_user)
     uid = current_user["id"]
     try:
-        from database import get_supabase
-        from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
-            sb = get_supabase()
-            res = sb.table("live_locations").select("is_sharing").eq("user_id", uid).limit(1).execute()
-            if res.data and len(res.data) > 0:
-                return {"success": True, "data": {"is_sharing": bool(res.data[0].get("is_sharing"))}}
+        sb = _get_live_location_supabase()
+        res = sb.table("live_locations").select("is_sharing").eq("user_id", uid).limit(1).execute()
+        if res.data and len(res.data) > 0:
+            return {"success": True, "data": {"is_sharing": bool(res.data[0].get("is_sharing"))}}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning("failed to read location sharing: %s", e)
+        raise HTTPException(status_code=503, detail="Could not read location sharing right now.")
     return {"success": True, "data": {"is_sharing": False}}
 
 
@@ -532,36 +540,36 @@ def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
     require_premium_user(current_user)
     uid = current_user["id"]
     try:
-        from database import get_supabase
-        from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
-            sb = get_supabase()
-            prev = sb.table("live_locations").select("is_sharing").eq("user_id", uid).limit(1).execute()
-            prev_share = None
-            if prev.data and len(prev.data) > 0:
-                prev_share = prev.data[0].get("is_sharing")
-            if body.is_sharing is not None:
-                is_sharing = bool(body.is_sharing)
-            elif prev_share is not None:
-                is_sharing = bool(prev_share)
-            else:
-                is_sharing = False
-            payload = {
-                "user_id": uid,
-                "lat": body.lat,
-                "lng": body.lng,
-                "heading": body.heading,
-                "speed_mph": body.speed_mph,
-                "is_navigating": body.is_navigating,
-                "destination_name": body.destination_name or None,
-                "last_updated": datetime.now(timezone.utc).isoformat() + "Z",
-                "is_sharing": is_sharing,
-            }
-            if body.battery_pct is not None:
-                payload["battery_pct"] = int(body.battery_pct)
-            sb.table("live_locations").upsert(payload).execute()
+        sb = _get_live_location_supabase()
+        prev = sb.table("live_locations").select("is_sharing").eq("user_id", uid).limit(1).execute()
+        prev_share = None
+        if prev.data and len(prev.data) > 0:
+            prev_share = prev.data[0].get("is_sharing")
+        if body.is_sharing is not None:
+            is_sharing = bool(body.is_sharing)
+        elif prev_share is not None:
+            is_sharing = bool(prev_share)
+        else:
+            is_sharing = False
+        payload = {
+            "user_id": uid,
+            "lat": body.lat,
+            "lng": body.lng,
+            "heading": body.heading,
+            "speed_mph": body.speed_mph,
+            "is_navigating": body.is_navigating,
+            "destination_name": body.destination_name or None,
+            "last_updated": datetime.now(timezone.utc).isoformat() + "Z",
+            "is_sharing": is_sharing,
+        }
+        if body.battery_pct is not None:
+            payload["battery_pct"] = int(body.battery_pct)
+        sb.table("live_locations").upsert(payload).execute()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning("failed to upsert live location: %s", e)
+        raise HTTPException(status_code=503, detail="Could not publish live location right now.")
     return {"success": True}
 
 
@@ -573,34 +581,34 @@ def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
     require_premium_user(current_user)
     uid = current_user["id"]
     try:
-        from database import get_supabase
-        from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-        if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
-            sb = get_supabase()
-            now = datetime.now(timezone.utc).isoformat() + "Z"
-            existing = sb.table("live_locations").select("user_id, lat, lng").eq("user_id", uid).limit(1).execute()
-            if existing.data and len(existing.data) > 0:
-                update_payload: dict[str, object] = {
-                    "is_sharing": body.is_sharing,
-                    "last_updated": now,
-                }
-                if body.lat is not None and body.lng is not None:
-                    update_payload["lat"] = float(body.lat)
-                    update_payload["lng"] = float(body.lng)
-                sb.table("live_locations").update(update_payload).eq("user_id", uid).execute()
-            elif body.is_sharing:
-                lat = float(body.lat) if body.lat is not None else 0.0
-                lng = float(body.lng) if body.lng is not None else 0.0
-                sb.table("live_locations").insert({
-                    "user_id": uid,
-                    "lat": lat,
-                    "lng": lng,
-                    "is_sharing": True,
-                    "is_navigating": False,
-                    "last_updated": now,
-                }).execute()
+        sb = _get_live_location_supabase()
+        now = datetime.now(timezone.utc).isoformat() + "Z"
+        existing = sb.table("live_locations").select("user_id, lat, lng").eq("user_id", uid).limit(1).execute()
+        if existing.data and len(existing.data) > 0:
+            update_payload: dict[str, object] = {
+                "is_sharing": body.is_sharing,
+                "last_updated": now,
+            }
+            if body.lat is not None and body.lng is not None:
+                update_payload["lat"] = float(body.lat)
+                update_payload["lng"] = float(body.lng)
+            sb.table("live_locations").update(update_payload).eq("user_id", uid).execute()
+        elif body.is_sharing:
+            lat = float(body.lat) if body.lat is not None else 0.0
+            lng = float(body.lng) if body.lng is not None else 0.0
+            sb.table("live_locations").insert({
+                "user_id": uid,
+                "lat": lat,
+                "lng": lng,
+                "is_sharing": True,
+                "is_navigating": False,
+                "last_updated": now,
+            }).execute()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning("failed to update location sharing setting: %s", e)
+        raise HTTPException(status_code=503, detail="Could not update location sharing right now.")
     return {"success": True}
 
 
