@@ -98,6 +98,18 @@ export default function NativeNavigationScreen() {
       { latitude: destination.lat, longitude: destination.lng },
     ];
   }, [origin?.lat, origin?.lng, destination?.lat, destination?.lng]);
+  const nativeViewKey = useMemo(
+    () =>
+      [
+        origin?.lat ?? 'na',
+        origin?.lng ?? 'na',
+        destination?.lat ?? 'na',
+        destination?.lng ?? 'na',
+        drivingMode,
+        mapStyleUrl,
+      ].join(':'),
+    [origin?.lat, origin?.lng, destination?.lat, destination?.lng, drivingMode, mapStyleUrl],
+  );
 
   const followingZoom = useMemo(() => {
     switch (drivingMode) {
@@ -244,6 +256,7 @@ export default function NativeNavigationScreen() {
     <View style={[styles.container, { backgroundColor: isDark ? '#0a0a0f' : '#000' }]}>
       <StatusBar barStyle="light-content" />
       <MapboxNavigationView
+        key={nativeViewKey}
         ref={navRef}
         style={styles.nav}
         coordinates={coordinates}
@@ -253,6 +266,7 @@ export default function NativeNavigationScreen() {
         followingZoom={followingZoom}
         drivingMode={drivingMode}
         appTheme={isLight ? 'light' : 'dark'}
+        navigationLogicOnly={false}
         onRouteProgressChanged={handleProgressChanged}
         onNavigationLocationUpdate={handleLocationUpdate}
         onCancelNavigation={handleCancel}

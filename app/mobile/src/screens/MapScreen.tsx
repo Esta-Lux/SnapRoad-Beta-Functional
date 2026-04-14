@@ -4007,7 +4007,9 @@ export default function MapScreen() {
               mapStyleUrl: activeStyleURL,
             });
             if (nativeParams) {
-              rnNav.navigate('NativeNavigation', {
+              // Replace the JS map screen for active native navigation so the underlying RN route
+              // line / custom puck cannot remain visible beneath the SDK navigator.
+              rnNav.replace('NativeNavigation', {
                 ...nativeParams,
                 ...(reportHint ? { reportHint } : {}),
               });
