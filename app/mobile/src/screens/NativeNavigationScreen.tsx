@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, StatusBar, useColorScheme, TouchableOpacity, Text } from 'react-native';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
-import { CommonActions, type RouteProp } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { useNavigation as useRNNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -120,18 +120,10 @@ export default function NativeNavigationScreen() {
       } catch {
         /* native session is already ending */
       }
-      rnNav.dispatch(
-        CommonActions.navigate({
-          name: 'MapMain',
-          params: { nativeNavResult: { tripSummary, arrived } },
-          merge: true,
-        }),
-      );
-      if (rnNav.canGoBack()) {
-        requestAnimationFrame(() => {
-          rnNav.goBack();
-        });
-      }
+      rnNav.reset({
+        index: 0,
+        routes: [{ name: 'MapMain', params: { nativeNavResult: { tripSummary, arrived } } }],
+      });
     },
     [bridge, rnNav],
   );
