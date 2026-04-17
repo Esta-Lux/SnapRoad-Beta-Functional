@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { DrivingMode } from '../types';
+import type { DirectionsStep } from '../lib/directions';
 import { speakGuidance } from '../utils/voice';
-import type { NavigationProgress, NavStep, ManeuverKind, RoadSignal, LaneInfo } from '../navigation/navModel';
+import type { NavigationProgress, NavStep, ManeuverKind, RoadSignal } from '../navigation/navModel';
 import { phraseForManeuverKind } from '../navigation/spokenManeuver';
 import {
   setLastTurnByTurnPhrase,
@@ -14,11 +15,20 @@ import {
 } from '../utils/distanceSpeech';
 import { navLogicSdkEnabled } from '../navigation/navFeatureFlags';
 import { getVoiceNavTuning } from '../navigation/navModeProfile';
+import { getUpcomingManeuverStep } from '../navigation/routeGeometry';
+import { alongRouteDistanceMeters, haversineMeters } from '../utils/distance';
+import type { Coordinate } from '../types';
 
 type Args = {
   progress: NavigationProgress | null;
   enabled: boolean;
   drivingMode: DrivingMode;
+  /** When set, distance + maneuver for speech match turn card / route line (JS nav). */
+  routeSteps?: DirectionsStep[] | undefined;
+  routePolyline?: Coordinate[] | undefined;
+  currentStepIndex?: number;
+  userCoord?: { lat: number; lng: number };
+  navigationSteps?: NavStep[];
 };
 
 function signalClause(signal: RoadSignal): string {
@@ -36,30 +46,6 @@ function signalClause(signal: RoadSignal): string {
     default:
       return '';
   }
-}
-
-function laneHint(lanes: LaneInfo[]): string {
-  if (!lanes.length) return '';
-  const active = lanes.filter((l) => l.active);
-  if (!active.length) return '';
-
-  const positions = active.map((lane) => lanes.indexOf(lane));
-  const total = lanes.length;
-  if (total <= 1) return '';
-
-  const leftmost = Math.min(...positions);
-  const rightmost = Math.max(...positions);
-
-  if (active.length === 1) {
-    if (leftmost === 0) return ' Use the left lane.';
-    if (leftmost === total - 1) return ' Use the right lane.';
-    if (total <= 3 && leftmost === 1) return ' Use the middle lane.';
-    return ` Use lane ${leftmost + 1} from the left.`;
-  }
-
-  if (leftmost === 0 && rightmost < total - 1) return ' Use the left lanes.';
-  if (rightmost === total - 1 && leftmost > 0) return ' Use the right lanes.';
-  return '';
 }
 
 function roundaboutPhrase(step: NavStep): string {
@@ -81,7 +67,7 @@ function roundaboutPhrase(step: NavStep): string {
     : `At the roundabout, take the ${ord} exit`;
 }
 
-/** Only chain the *next* maneuver when it is close — avoids “then …” while the driver is still in the current leg. */
+/** Only chain the *next* maneuver when it is close — avoids “then …” while still on the current leg. */
 const CHAIN_NEXT_MAX_M = 240;
 
 function chainPhrase(step: NavStep): string {
@@ -110,14 +96,14 @@ function chainPhrase(step: NavStep): string {
 }
 
 function buildUtterance(
-  progress: NavigationProgress,
+  step: NavStep,
+  distanceMeters: number,
   bucket: 'preparatory' | 'advance' | 'imminent',
   metric: boolean,
 ): string | null {
-  const step = progress.nextStep;
   if (!step || step.kind === 'arrive') return null;
 
-  const d = progress.nextStepDistanceMeters;
+  const d = distanceMeters;
   const distPart = distanceClauseForTurnSpeech(d, metric);
 
   if (
@@ -139,7 +125,6 @@ function buildUtterance(
     phraseForManeuverKind(step.kind);
 
   const sigClause = bucket === 'advance' ? signalClause(step.signal) : '';
-  const laneSuffix = bucket === 'imminent' ? laneHint(step.lanes) : '';
   const chain = bucket === 'imminent' ? chainPhrase(step) : '';
   const chainSuffix = chain ? `, ${chain}` : '';
 
@@ -150,16 +135,25 @@ function buildUtterance(
   }
 
   if (bucket === 'imminent') {
-    return `${sigClause}${line}${chainSuffix}.${laneSuffix}`;
+    return `${sigClause}${line}${chainSuffix}.`;
   }
 
-  return `${distPart}, ${sigClause}${shieldPrefix}${line.charAt(0).toLowerCase() + line.slice(1)}${chainSuffix}.${laneSuffix}`;
+  return `${distPart}, ${sigClause}${shieldPrefix}${line.charAt(0).toLowerCase() + line.slice(1)}${chainSuffix}.`;
 }
 
 /** After a step advances, suppress far/mid-distance cues so the next maneuver is not spoken until the driver settles. */
 const VOICE_POST_STEP_SUPPRESS_MS = 3200;
 
-export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
+export function useNavigationSpeech({
+  progress,
+  enabled,
+  drivingMode,
+  routeSteps,
+  routePolyline,
+  currentStepIndex,
+  userCoord,
+  navigationSteps,
+}: Args) {
   const lastKey = useRef<string | null>(null);
   const lastStepIndexRef = useRef<number | null>(null);
   const suppressFarVoiceUntilRef = useRef(0);
@@ -167,13 +161,65 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
   const localeTag = useMemo(() => speechLocaleTag(), []);
   const voiceT = useMemo(() => getVoiceNavTuning(drivingMode), [drivingMode]);
 
+  const aligned = useMemo(() => {
+    if (!progress?.nextStep) return null;
+    const nextIdx = progress.nextStep.index;
+    const idx = currentStepIndex ?? 0;
+    const nextStepIsCurrentStep = nextIdx <= idx;
+    const upcomingDs = routeSteps?.length ? getUpcomingManeuverStep(routeSteps, idx) : null;
+
+    let distanceM = progress.nextStepDistanceMeters;
+    let effectiveNavStep = progress.nextStep;
+
+    if (nextStepIsCurrentStep && progress.followingStep) {
+      effectiveNavStep = progress.followingStep;
+    } else if (nextStepIsCurrentStep && upcomingDs && navigationSteps?.length && routeSteps?.length) {
+      const uiIdx = routeSteps.indexOf(upcomingDs);
+      if (uiIdx >= 0 && uiIdx < navigationSteps.length) {
+        effectiveNavStep = navigationSteps[uiIdx]!;
+      }
+    }
+
+    if (nextStepIsCurrentStep && upcomingDs && routePolyline && routePolyline.length >= 2 && userCoord) {
+      const along = alongRouteDistanceMeters(routePolyline, userCoord, {
+        lat: upcomingDs.lat,
+        lng: upcomingDs.lng,
+      });
+      if (Number.isFinite(along) && along >= 0) {
+        distanceM = along;
+      }
+    } else if (nextStepIsCurrentStep && upcomingDs && userCoord) {
+      const h = haversineMeters(userCoord.lat, userCoord.lng, upcomingDs.lat, upcomingDs.lng);
+      if (Number.isFinite(h)) {
+        distanceM = h;
+      }
+    }
+
+    const step = {
+      ...effectiveNavStep,
+      distanceMetersToNext: Math.max(0, distanceM),
+    };
+    return { step, distanceMeters: Math.max(0, distanceM) };
+  }, [
+    progress,
+    routeSteps,
+    routePolyline,
+    currentStepIndex,
+    userCoord?.lat,
+    userCoord?.lng,
+    navigationSteps,
+  ]);
+
   useEffect(() => {
     if (navLogicSdkEnabled()) return;
     if (!enabled || !progress?.nextStep) return;
     if (progress.nextStep.kind === 'arrive') return;
     if (isNavigationGuidanceSuppressed()) return;
 
-    const stepIdx = progress.nextStep.index;
+    const speechStep = aligned?.step ?? progress.nextStep;
+    const d = aligned?.distanceMeters ?? progress.nextStepDistanceMeters;
+
+    const stepIdx = speechStep.index;
     const prevIdx = lastStepIndexRef.current;
     if (prevIdx !== stepIdx) {
       if (prevIdx !== null && stepIdx > prevIdx) {
@@ -183,7 +229,6 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
       lastStepIndexRef.current = stepIdx;
     }
 
-    const d = progress.nextStepDistanceMeters;
     const { imminentM, advanceMaxM, advanceMinM, preparatoryMaxM } = voiceT;
 
     let bucket: 'preparatory' | 'advance' | 'imminent' | null = null;
@@ -201,22 +246,16 @@ export function useNavigationSpeech({ progress, enabled, drivingMode }: Args) {
       return;
     }
 
-    const key = `${progress.nextStep.index}:${bucket}`;
+    const key = `${speechStep.index}:${bucket}`;
     if (lastKey.current === key) return;
 
-    let phrase: string | null = null;
-    if (bucket === 'preparatory' && progress.nextStep.voiceAnnouncement) {
-      phrase = progress.nextStep.voiceAnnouncement;
-    }
-    if (!phrase) {
-      phrase = buildUtterance(progress, bucket, metric);
-    }
+    const phrase = buildUtterance(speechStep, d, bucket, metric);
     if (!phrase) return;
 
     setLastTurnByTurnPhrase(phrase);
     speakGuidance(phrase, drivingMode, localeTag);
     lastKey.current = key;
-  }, [progress, enabled, drivingMode, metric, localeTag, voiceT]);
+  }, [progress, enabled, drivingMode, metric, localeTag, voiceT, aligned]);
 
   useEffect(() => {
     if (!enabled) {

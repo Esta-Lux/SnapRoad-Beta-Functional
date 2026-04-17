@@ -127,6 +127,19 @@ function rawTypeModifierFromStep(step: DirectionsStep): { rawType: string; rawMo
   return { rawType: 'continue', rawModifier: 'straight' };
 }
 
+/**
+ * Raw Mapbox maneuver + {@link ManeuverKind} for a Directions API step.
+ * Use this for turn-card glyphs so icons match the same step as distance / primary copy.
+ */
+export function navManeuverFieldsFromDirectionsStep(step: DirectionsStep): {
+  rawType: string;
+  rawModifier: string;
+  kind: ManeuverKind;
+} {
+  const { rawType, rawModifier } = rawTypeModifierFromStep(step);
+  return { rawType, rawModifier, kind: resolveManeuverKind(rawType, rawModifier) };
+}
+
 function extractRoadSignal(step: DirectionsStep): RoadSignal {
   const ixns = step.intersections as
     | Array<{
@@ -305,6 +318,95 @@ function cumulativeDistancesFromSteps(steps: DirectionsStep[]): number[] {
   return cums;
 }
 
+function buildNavStepAtDirectionsIndex(
+  steps: DirectionsStep[],
+  route: Array<{ lat: number; lng: number }>,
+  cumDists: number[],
+  i: number,
+): NavStep {
+  const step = steps[i]!;
+  const { rawType, rawModifier } = rawTypeModifierFromStep(step);
+  const kind = resolveManeuverKind(rawType, rawModifier);
+  const bearingAfter = step.mapboxManeuver?.bearing_after ?? 0;
+
+  const banners = (step.bannerInstructions ?? []) as BannerInstructionSet[];
+  const primaryBanner = banners[0]?.primary ?? null;
+  const secondaryBanner = banners[0]?.secondary ?? null;
+  const subBanner = banners[0]?.sub ?? null;
+
+  const primaryText = getBannerText(primaryBanner);
+  const rawInstruction = step.instruction || '';
+  const displayInstruction = primaryText || rawInstruction || '';
+
+  const streetName = step.name?.trim() || null;
+  const destinationRoad = extractDestinationRoad(primaryBanner);
+  const shields = extractShields(primaryBanner);
+  const signal = extractRoadSignal(step);
+  const lanes = extractLanes(step);
+  const roundaboutExitNumber = extractRoundaboutExit(step);
+  const voiceAnnouncement = extractVoiceAnnouncement(step);
+
+  const stepLen = step.distanceMeters ?? 0;
+  const nextSt = i + 1 < steps.length ? steps[i + 1]! : null;
+  let nextManeuverKind: ManeuverKind | null = null;
+  let nextManeuverStreet: string | null = null;
+  let nextManeuverDistanceMeters: number | null = null;
+  if (nextSt) {
+    const nm = rawTypeModifierFromStep(nextSt);
+    nextManeuverKind = resolveManeuverKind(nm.rawType, nm.rawModifier);
+    nextManeuverStreet = nextSt.name?.trim() || null;
+    nextManeuverDistanceMeters = stepLen;
+  }
+
+  const ptOk =
+    Number.isFinite(step.lat) &&
+    Number.isFinite(step.lng) &&
+    (Math.abs(step.lat) > 1e-5 || Math.abs(step.lng) > 1e-5);
+  const pt = ptOk && route.length >= 2 ? { lat: step.lat, lng: step.lng } : route[0]!;
+  const segmentIndex = route.length >= 2 ? nearestSegmentIndex(route, pt) : 0;
+
+  const fallbackToNext = nextSt?.distanceMeters ?? stepLen;
+
+  return {
+    index: i,
+    segmentIndex,
+    kind,
+    rawType,
+    rawModifier,
+    bearingAfter,
+    displayInstruction,
+    secondaryInstruction: getBannerText(secondaryBanner) || null,
+    subInstruction: getBannerText(subBanner) || null,
+    instruction: step.instruction || '',
+    streetName,
+    destinationRoad,
+    shields,
+    signal,
+    lanes,
+    roundaboutExitNumber,
+    distanceMetersFromStart: cumDists[i] ?? 0,
+    distanceMeters: stepLen,
+    distanceMetersToNext: fallbackToNext,
+    durationSeconds: Math.max(0, step.durationSeconds ?? 0),
+    voiceAnnouncement,
+    nextManeuverKind,
+    nextManeuverStreet,
+    nextManeuverDistanceMeters,
+  };
+}
+
+/** One rich {@link NavStep} at `index` — same rules as {@link buildNavStepsFromDirections}. */
+export function navStepFromDirectionsAtIndex(
+  steps: DirectionsStep[],
+  polyline: Coordinate[],
+  index: number,
+): NavStep | null {
+  if (!steps.length || index < 0 || index >= steps.length) return null;
+  const route = polyline.map((p) => ({ lat: p.lat, lng: p.lng }));
+  const cumDists = cumulativeDistancesFromSteps(steps);
+  return buildNavStepAtDirectionsIndex(steps, route, cumDists, index);
+}
+
 /**
  * Build {@link NavStep} list for {@link useNavigationProgress} from Mapbox-parsed steps + full polyline.
  */
@@ -316,75 +418,7 @@ export function buildNavStepsFromDirections(steps: DirectionsStep[], polyline: C
   const result: NavStep[] = [];
 
   for (let i = 0; i < steps.length; i++) {
-    const step = steps[i]!;
-    const { rawType, rawModifier } = rawTypeModifierFromStep(step);
-    const kind = resolveManeuverKind(rawType, rawModifier);
-    const bearingAfter = step.mapboxManeuver?.bearing_after ?? 0;
-
-    const banners = (step.bannerInstructions ?? []) as BannerInstructionSet[];
-    const primaryBanner = banners[0]?.primary ?? null;
-    const secondaryBanner = banners[0]?.secondary ?? null;
-    const subBanner = banners[0]?.sub ?? null;
-
-    const primaryText = getBannerText(primaryBanner);
-    const rawInstruction = step.instruction || '';
-    const displayInstruction = primaryText || rawInstruction || '';
-
-    const streetName = step.name?.trim() || null;
-    const destinationRoad = extractDestinationRoad(primaryBanner);
-    const shields = extractShields(primaryBanner);
-    const signal = extractRoadSignal(step);
-    const lanes = extractLanes(step);
-    const roundaboutExitNumber = extractRoundaboutExit(step);
-    const voiceAnnouncement = extractVoiceAnnouncement(step);
-
-    const stepLen = step.distanceMeters ?? 0;
-    const nextSt = i + 1 < steps.length ? steps[i + 1]! : null;
-    let nextManeuverKind: ManeuverKind | null = null;
-    let nextManeuverStreet: string | null = null;
-    let nextManeuverDistanceMeters: number | null = null;
-    if (nextSt) {
-      const nm = rawTypeModifierFromStep(nextSt);
-      nextManeuverKind = resolveManeuverKind(nm.rawType, nm.rawModifier);
-      nextManeuverStreet = nextSt.name?.trim() || null;
-      nextManeuverDistanceMeters = stepLen;
-    }
-
-    const ptOk =
-      Number.isFinite(step.lat) &&
-      Number.isFinite(step.lng) &&
-      (Math.abs(step.lat) > 1e-5 || Math.abs(step.lng) > 1e-5);
-    const pt = ptOk && route.length >= 2 ? { lat: step.lat, lng: step.lng } : route[0]!;
-    const segmentIndex = route.length >= 2 ? nearestSegmentIndex(route, pt) : 0;
-
-    const fallbackToNext = nextSt?.distanceMeters ?? stepLen;
-
-    result.push({
-      index: i,
-      segmentIndex,
-      kind,
-      rawType,
-      rawModifier,
-      bearingAfter,
-      displayInstruction,
-      secondaryInstruction: getBannerText(secondaryBanner) || null,
-      subInstruction: getBannerText(subBanner) || null,
-      instruction: step.instruction || '',
-      streetName,
-      destinationRoad,
-      shields,
-      signal,
-      lanes,
-      roundaboutExitNumber,
-      distanceMetersFromStart: cumDists[i] ?? 0,
-      distanceMeters: stepLen,
-      distanceMetersToNext: fallbackToNext,
-      durationSeconds: Math.max(0, step.durationSeconds ?? 0),
-      voiceAnnouncement,
-      nextManeuverKind,
-      nextManeuverStreet,
-      nextManeuverDistanceMeters,
-    });
+    result.push(buildNavStepAtDirectionsIndex(steps, route, cumDists, i));
   }
 
   return result;

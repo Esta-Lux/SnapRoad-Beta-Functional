@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
+import { sortAndCapMarkers, type MarkerCoordinate } from './markerDensity';
 
 /** OHGO still frame (same fields as backend `camera_views`). */
 export interface CameraViewFeed {
@@ -23,6 +24,8 @@ export interface CameraLocation {
 
 interface Props {
   cameras: CameraLocation[];
+  zoomLevel: number;
+  referenceCoordinate?: MarkerCoordinate | null;
   onCameraTap?: (c: CameraLocation) => void;
 }
 
@@ -30,8 +33,8 @@ interface Props {
  * Traffic cameras as MarkerView + Ionicons (no CircleLayer dots).
  * Intentionally compact so they don’t dominate the map.
  */
-export default React.memo(function CameraMarkers({ cameras, onCameraTap }: Props) {
-  const list = cameras.filter((c) => isFinite(c.lat) && isFinite(c.lng));
+export default React.memo(function CameraMarkers({ cameras, zoomLevel, referenceCoordinate = null, onCameraTap }: Props) {
+  const list = sortAndCapMarkers(cameras, referenceCoordinate, zoomLevel, 'camera');
   if (!isMapAvailable() || !MapboxGL || list.length === 0) return null;
   const MB = MapboxGL;
 
@@ -52,7 +55,7 @@ export default React.memo(function CameraMarkers({ cameras, onCameraTap }: Props
           >
             <View style={styles.puck}>
               <View style={styles.puckInner}>
-                <Ionicons name="videocam" size={11} color="#FFFFFF" />
+                <Ionicons name="videocam" size={12} color="#FFFFFF" />
               </View>
             </View>
           </Pressable>
@@ -66,9 +69,9 @@ const styles = StyleSheet.create({
   hit: { alignItems: 'center', justifyContent: 'center' },
   hitPressed: { opacity: 0.85, transform: [{ scale: 0.96 }] },
   puck: {
-    width: 28,
-    height: 28,
-    borderRadius: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 11,
     backgroundColor: 'rgba(37, 99, 235, 0.22)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -86,9 +89,9 @@ const styles = StyleSheet.create({
     }),
   },
   puckInner: {
-    width: 22,
-    height: 22,
-    borderRadius: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 9,
     backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',

@@ -101,10 +101,11 @@ Do **not** run a bare `eas build` from the **repo root**, or from `app/mobile` w
 
 ### Navigation feature flags (mobile)
 
-Defined in `app/mobile/src/navigation/navFeatureFlags.ts`. All default **off** unless the env var is `1` / `true`:
+Defined in `app/mobile/src/navigation/navFeatureFlags.ts`. Most flags default **off** unless the env var is `1` / `true`. **Exception:** `EXPO_PUBLIC_NAV_LOGIC_SDK` defaults **on** (headless Mapbox Navigation SDK for matched location, reroute, progress, native voice during trips). Set `EXPO_PUBLIC_NAV_LOGIC_SDK=0` for JS-only Directions + `useNavigationProgress` (e.g. Expo Go). **Requires a dev client** with native Mapbox Navigation — not Expo Go when logic SDK is on.
 
 | Variable | Effect |
 |----------|--------|
+| `EXPO_PUBLIC_NAV_LOGIC_SDK` | When **on** (default): headless Navigation SDK drives nav truth; RN map is presentation. Set `0` / `false` to force JS pipeline. |
 | `EXPO_PUBLIC_NAV_REFRESH_V2` | Policy-based traffic refresh (drift, congestion stress, long segment, caps) instead of a fixed ~3 min interval. |
 | `EXPO_PUBLIC_NAV_EDGE_ETA` | Per-edge duration from Mapbox annotations for remaining time. |
 | `EXPO_PUBLIC_NAV_ETA_BLEND` | Blend model ETA with observed speed; drift policy uses displayed ETA when this is on. |
@@ -112,7 +113,7 @@ Defined in `app/mobile/src/navigation/navFeatureFlags.ts`. All default **off** u
 
 **Smoke QA matrix** (run with navigation + voice unmuted where noted):
 
-1. **Baseline** (all flags off): start nav, arrive at destination (auto-end), cancel nav early (no false trip complete).
+1. **Baseline** (logic SDK on, optional flags off): start nav, arrive at destination (auto-end), cancel nav early (no false trip complete). With **JS-only** (`NAV_LOGIC_SDK=0`), same checks on the JS path.
 2. **Refresh v2 only** (`NAV_REFRESH_V2=1`): drive until traffic refresh fires or skip logs in dev; off-route reroute still works.
 3. **Edge ETA + blend** (`NAV_EDGE_ETA=1`, `NAV_ETA_BLEND=1`): ETA strip updates smoothly; no crashes on long routes.
 4. Cross-check **voice** on/off with start prompt + turn cues (no double-speak immediately after “Starting navigation…”).

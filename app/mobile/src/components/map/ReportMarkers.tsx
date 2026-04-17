@@ -3,6 +3,7 @@ import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import type { Incident } from '../../types';
+import { sortAndCapMarkers, type MarkerCoordinate } from './markerDensity';
 
 /** Tile colour per incident type — matches SnapRoad report palette. */
 const INCIDENT_COLORS: Record<string, string> = {
@@ -19,7 +20,6 @@ const INCIDENT_COLORS: Record<string, string> = {
 
 const DEFAULT_COLOR = '#D97706';
 
-const MAX_MARKERS = 100;
 /** Match `CameraMarkers` puck dimensions (28 / 22 / 11). */
 const ICON_SZ = 11;
 
@@ -38,16 +38,22 @@ function incidentIconName(type?: string): keyof typeof Ionicons.glyphMap {
 interface Props {
   incidents: Incident[];
   onIncidentTap?: (inc: Incident) => void;
+  zoomLevel: number;
+  referenceCoordinate?: MarkerCoordinate | null;
 }
 
 /**
  * Road-report incidents as MarkerView + Ionicons (no CircleLayer dots).
  */
-export default React.memo(function ReportMarkers({ incidents, onIncidentTap }: Props) {
+export default React.memo(function ReportMarkers({
+  incidents,
+  onIncidentTap,
+  zoomLevel,
+  referenceCoordinate = null,
+}: Props) {
   const list = useMemo(() => {
-    const v = incidents.filter((inc) => isFinite(inc.lat) && isFinite(inc.lng));
-    return v.length > MAX_MARKERS ? v.slice(0, MAX_MARKERS) : v;
-  }, [incidents]);
+    return sortAndCapMarkers(incidents, referenceCoordinate, zoomLevel, 'report');
+  }, [incidents, referenceCoordinate, zoomLevel]);
 
   if (!isMapAvailable() || !MapboxGL || list.length === 0) return null;
   const MB = MapboxGL;

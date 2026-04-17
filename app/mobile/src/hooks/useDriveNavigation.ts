@@ -61,6 +61,10 @@ import { setNavLogicSdkTripActive } from '../navigation/navVoiceGate';
 import { logNavLogicSnapshot } from '../navigation/navLogicDebug';
 import { routeSummaryFromMapboxMetersSeconds } from '../utils/routeDisplay';
 import {
+  directionsStepsFromSdkRoutes,
+  type SdkRoutesNative,
+} from '../navigation/navSdkGeometry';
+import {
   DEFAULT_REFRESH_POLICY,
   decideTrafficRefresh,
   naiveRemainingSeconds,
@@ -78,15 +82,15 @@ import * as Haptics from 'expo-haptics';
 /**
  * Turn-by-turn orchestration for SnapRoad.
  *
- * **Single engine rule (critical):** When `navSdkHeadless` is true (`EXPO_PUBLIC_NAV_LOGIC_SDK`) and a trip is
- * active, **Mapbox Navigation SDK** (hidden `MapboxNavigationView` + `navSdkStore`) is the sole authority for
- * matched location, route progress, reroute, and (unless suppressed) voice. The JS pipeline
- * (`useNavigationProgress`, off-route streak reroute, traffic refresh intervals) is **bypassed** — do not
- * blend or “fall back” to raw GPS progress during that window except the explicit waiting UI from
+ * **Single engine rule (critical):** When `navSdkHeadless` is true (default: `EXPO_PUBLIC_NAV_LOGIC_SDK` unset
+ * or `1`) and a trip is active, **Mapbox Navigation SDK** (hidden `MapboxNavigationView` + `navSdkStore`) is
+ * the sole authority for matched location, route progress, reroute, and (unless suppressed) voice. The JS
+ * pipeline (`useNavigationProgress`, off-route streak reroute, traffic refresh intervals) is **bypassed** —
+ * do not blend or “fall back” to raw GPS progress during that window except the explicit waiting UI from
  * `getSdkWaitingNavigationProgress`.
  *
- * When `navSdkHeadless` is false, JS snap/progress (`useNavigationProgress` + `navigationProgressCore`) owns
- * puck/ETA/off-route for the custom RN map experience.
+ * When `navSdkHeadless` is false (`EXPO_PUBLIC_NAV_LOGIC_SDK=0`), JS snap/progress (`useNavigationProgress` +
+ * `navigationProgressCore`) owns puck/ETA/off-route for the custom RN map experience.
  */
 
 /** Aligned voice + auto-end: "near destination" along remaining route (`navStepsFromDirections` maps `arrive`). */
@@ -301,7 +305,17 @@ export function useDriveNavigation(params: {
       accuracy: gpsAccuracy,
       timestamp: Date.now(),
     };
-  }, [isNavigating, routePoints.length, sdkActive, userLocation.lat, userLocation.lng, heading, speed, gpsAccuracy]);
+  }, [
+    isNavigating,
+    routePoints.length,
+    sdkActive,
+    userLocation.lat,
+    userLocation.lng,
+    heading,
+    speed,
+    gpsAccuracy,
+    jsNavProgressTick,
+  ]);
 
   const navModeProfile = useMemo(() => buildNavModeProfile(drivingMode), [drivingMode]);
 
@@ -335,17 +349,17 @@ export function useDriveNavigation(params: {
 
   const navigationProgressCoord: Coordinate = useMemo(() => {
     if (sdkActive) {
+      const split = navigationProgress?.routeSplitSnap?.point;
+      if (split && Number.isFinite(split.lat) && Number.isFinite(split.lng)) {
+        return { lat: split.lat, lng: split.lng };
+      }
       const c = getSdkMatchedCoordinate();
       if (c) return c;
     }
 
-    if (
-      isNavigating &&
-      !sdkActive &&
-      navigationProgress?.snapped &&
-      !navigationProgress.isOffRoute &&
-      navigationProgress.snapped.distanceMeters < 45
-    ) {
+    /* On-route: always use snapped puck (polyline + lead-ahead). The old <45 m gate let the
+     * LocationPuck drift off the line in the 45–corridor band while still “on route”. */
+    if (isNavigating && !sdkActive && navigationProgress?.snapped && !navigationProgress.isOffRoute) {
       const pc = navigationProgress.puckCoord;
       if (pc && Number.isFinite(pc.lat) && Number.isFinite(pc.lng)) {
         return { lat: pc.lat, lng: pc.lng };
@@ -363,6 +377,8 @@ export function useDriveNavigation(params: {
     userLocation.lat,
     userLocation.lng,
     navSdkSnapshot.location,
+    navigationProgress?.routeSplitSnap?.point?.lat,
+    navigationProgress?.routeSplitSnap?.point?.lng,
     navigationProgress?.snapped?.point?.lat,
     navigationProgress?.snapped?.point?.lng,
     navigationProgress?.snapped?.distanceMeters,
@@ -843,8 +859,15 @@ export function useDriveNavigation(params: {
 
   /** Apply geometry + length/time from native Navigation SDK after `onRoutesLoaded` / reroute. */
   const applySdkRouteGeometry = useCallback(
-    (polyline: Coordinate[], distanceMeters: number, durationSeconds: number) => {
+    (
+      polyline: Coordinate[],
+      distanceMeters: number,
+      durationSeconds: number,
+      routesNative?: SdkRoutesNative | null,
+    ) => {
       const sum = routeSummaryFromMapboxMetersSeconds(distanceMeters, durationSeconds);
+      const hydrated =
+        routesNative != null ? directionsStepsFromSdkRoutes(routesNative) : [];
       setNavigationData((prev) => {
         if (!prev) return prev;
         return {
@@ -854,6 +877,14 @@ export function useDriveNavigation(params: {
           duration: durationSeconds,
           durationText: sum.durationText,
           distanceText: sum.distanceText,
+          // Prefer geometry-derived steps from the native route (same source as the polyline) so
+          // step indices / per-leg distances stay valid after reroute. REST-only fields
+          // (closures, edge speeds) stay cleared until the JS pipeline refreshes them.
+          steps: hydrated.length ? hydrated : [],
+          congestion: undefined,
+          maxspeeds: undefined,
+          edgeSpeedsKmh: undefined,
+          edgeDurationSec: undefined,
         };
       });
       routeModelRefreshedAtRef.current = Date.now();
@@ -1189,8 +1220,9 @@ export function useDriveNavigation(params: {
     if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk_waiting') {
       return;
     }
-    if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk' && navigationProgress.nextStep) {
-      const si = navigationProgress.nextStep.index;
+    if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk') {
+      const si = navSdkSnapshot.progress?.stepIndex ?? navigationProgress.nextStep?.index;
+      if (si == null) return;
       const maxStep = navigationData.steps?.length
         ? navigationData.steps.length - 1
         : Math.max(0, si);
@@ -1221,6 +1253,7 @@ export function useDriveNavigation(params: {
     navigationProgress?.snapped?.cumulativeMeters,
     routeProgress?.cumFromStartMeters,
     navSdkHeadless,
+    navSdkSnapshot.progress?.stepIndex,
     navigationProgress?.nextStep?.index,
   ]);
 
@@ -1311,8 +1344,8 @@ export function useDriveNavigation(params: {
   ]);
 
   // --- Off-route detection + auto-reroute (`streakRequired` from mode tuning; see offRouteTuning) ---
-  // Includes speculative pre-fetch: when snap distance exceeds 60% of the off-route
-  // threshold AND trend is worsening over 3 ticks, fire a background Directions API
+  // Includes speculative pre-fetch: when snap distance exceeds ~52% of the off-route
+  // threshold AND trend is worsening over 2 ticks, fire a background Directions API
   // call. If the user is confirmed off-route, the pre-fetched result is used immediately
   // (saves ~1–2 s of perceived reroute latency).
   useEffect(() => {
@@ -1338,20 +1371,22 @@ export function useDriveNavigation(params: {
     const snapDist = navigationProgress.snapped?.distanceMeters ?? Infinity;
     const hist = driftSnapHistoryRef.current;
     hist.push(snapDist);
-    if (hist.length > 3) hist.shift();
+    if (hist.length > 2) hist.shift();
 
     const offRouteThreshold = effectiveMaxSnapMeters(
       navModeProfile.offRoute,
       speedMps,
       typeof gpsAccuracy === 'number' ? gpsAccuracy : null,
     );
-    const prefetchThreshold = offRouteThreshold * 0.6;
+    /** Start prefetch earlier so a confirmed off-route reroute often hits cache (~1 s saved). */
+    const prefetchThreshold = offRouteThreshold * 0.52;
 
-    // Worsening trend: 3 consecutive increasing finite snap distances
+    // Worsening trend: last two ticks show snap distance increasing (drift away from corridor)
     const trendWorsening =
-      hist.length === 3 &&
-      Number.isFinite(hist[0]) && Number.isFinite(hist[1]) && Number.isFinite(hist[2]) &&
-      hist[0]! < hist[1]! && hist[1]! < hist[2]!;
+      hist.length === 2 &&
+      Number.isFinite(hist[0]) &&
+      Number.isFinite(hist[1]) &&
+      hist[0]! < hist[1]!;
 
     if (
       Number.isFinite(snapDist) &&
@@ -1391,7 +1426,8 @@ export function useDriveNavigation(params: {
     if (rerouteInFlightRef.current) return;
 
     const now = Date.now();
-    const cooldownMs = lastRerouteAtRef.current ? 1800 : 0;
+    /** Short gap between reroutes so legitimate multi-correction trips still recover quickly. */
+    const cooldownMs = lastRerouteAtRef.current ? 1100 : 0;
     if (cooldownMs > 0 && now - lastRerouteAtRef.current < cooldownMs) return;
 
     offRouteStreakRef.current = 0;
@@ -1626,6 +1662,8 @@ export function useDriveNavigation(params: {
     dismissTripSummary,
     updatePosition,
     addWaypoint,
+    /** Rich steps aligned with the route polyline (JS nav) — speech + UI can map Directions indices to NavStep. */
+    navigationSteps: navStepsBuilt,
     /** Single navigation core: puck, split, ETA, turn — null when not navigating. */
     navigationProgress,
     /** Same as {@link navigationProgress} — kept for callers expecting `fusedNavState`. */

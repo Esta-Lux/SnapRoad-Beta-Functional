@@ -27,8 +27,20 @@ type Args = {
 
 type SpeedZoomPoint = { speed: number; zoom: number };
 
-/** Reserved top UI space (turn banner / cards) to keep route context visible ahead. */
-export const NAV_UI_HEIGHT = 120;
+/**
+ * Reserved top space for the floating turn instruction card (primary row + optional
+ * lane strip / “then” line). Keeps forward road framed below the card instead of under it.
+ */
+export const NAV_TURN_CARD_RESERVE_PX = 168;
+
+/**
+ * Bottom map chrome while navigating: {@link NavigationStatusStrip} + End button + margins.
+ * FAB column offsets should stay at or above this so controls do not overlap the strip.
+ */
+export const NAV_MAP_BOTTOM_CHROME_PX = 224;
+
+/** @deprecated Use {@link NAV_TURN_CARD_RESERVE_PX} */
+export const NAV_UI_HEIGHT = NAV_TURN_CARD_RESERVE_PX;
 
 // SPORT high-speed camera constants
 /** MPH threshold above which SPORT mode extends the camera look-ahead. */
@@ -41,6 +53,9 @@ const SPORT_ZOOM_RATE_PER_MPH = 0.008;
 const SPORT_MAX_PAD_TOP_BOOST = 50;
 /** Top-padding increase per MPH above {@link SPORT_HIGH_SPEED_MPH}. */
 const SPORT_PAD_RATE_PER_MPH = 1.5;
+
+const LONG_ROAD_METERS = 260;
+const OPEN_ROAD_METERS = 700;
 
 const SPEED_ZOOM_CURVES: Record<DrivingMode, SpeedZoomPoint[]> = {
   calm: [
@@ -93,7 +108,7 @@ const MODE_CONFIG: Record<
     basePitch: 52,
     minPitch: 42,
     maxPitch: 58,
-    basePadBottom: 100,
+    basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
     padTop: 350,
     padLeft: 30,
     padRight: 30,
@@ -106,7 +121,7 @@ const MODE_CONFIG: Record<
     basePitch: 50,
     minPitch: 40,
     maxPitch: 56,
-    basePadBottom: 90,
+    basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
     padTop: 330,
     padLeft: 28,
     padRight: 28,
@@ -119,7 +134,7 @@ const MODE_CONFIG: Record<
     basePitch: 54,
     minPitch: 42,
     maxPitch: 60,
-    basePadBottom: 80,
+    basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
     padTop: 310,
     padLeft: 24,
     padRight: 24,
@@ -153,6 +168,11 @@ function interpolateZoom(mph: number, curve: SpeedZoomPoint[]): number {
   return pts[pts.length - 1].zoom;
 }
 
+function inverseLerp(value: number, low: number, high: number): number {
+  if (high <= low) return 0;
+  return clamp((value - low) / (high - low), 0, 1);
+}
+
 /**
  * Follow-camera preset: speed-interpolated zoom, mode pitch/padding, maneuver nudges.
  */
@@ -166,11 +186,20 @@ export function getCameraPreset({
   const cfg = MODE_CONFIG[mode];
   const curve = SPEED_ZOOM_CURVES[mode];
   const mph = mphFromMps(speedMps);
+  const longRoad01 = inverseLerp(nextManeuverDistanceMeters, LONG_ROAD_METERS, OPEN_ROAD_METERS);
+  const turnNear01 = 1 - inverseLerp(nextManeuverDistanceMeters, 45, 180);
 
   let zoom = interpolateZoom(mph, curve);
   const maneuverZoomAdjustment =
     nextManeuverDistanceMeters < 55 ? 0.42 : nextManeuverDistanceMeters < 115 ? 0.26 : 0;
   zoom += maneuverZoomAdjustment;
+  const openRoadZoomPullback =
+    mode === 'calm'
+      ? 0.18 * longRoad01
+      : mode === 'adaptive'
+        ? 0.28 * longRoad01
+        : 0.38 * longRoad01;
+  zoom -= openRoadZoomPullback;
 
   // SPORT: at highway speeds pull back zoom slightly so more road is visible.
   if (mode === 'sport' && mph > SPORT_HIGH_SPEED_MPH) {
@@ -187,21 +216,33 @@ export function getCameraPreset({
     const basePitch = cfg.minPitch + speedFraction * (cfg.maxPitch - cfg.minPitch);
     const maneuverPitchAdj =
       nextManeuverDistanceMeters < 60 ? -6 : nextManeuverDistanceMeters < 120 ? -4 : 0;
-    pitch = clamp(basePitch + maneuverPitchAdj, cfg.minPitch, cfg.maxPitch);
+    pitch = clamp(basePitch + maneuverPitchAdj + longRoad01 * 2, cfg.minPitch, cfg.maxPitch);
   } else {
     const maneuverPitchAdjustment =
       nextManeuverDistanceMeters < 60 ? -6 : nextManeuverDistanceMeters < 120 ? -4 : 0;
-    pitch = clamp(cfg.basePitch + maneuverPitchAdjustment, cfg.minPitch, cfg.maxPitch);
+    const openRoadPitchBoost =
+      mode === 'calm'
+        ? 1.5 * longRoad01
+        : 3.2 * longRoad01;
+    pitch = clamp(cfg.basePitch + maneuverPitchAdjustment + openRoadPitchBoost, cfg.minPitch, cfg.maxPitch);
   }
 
   // Mapbox follow-padding behavior: larger bottom padding moves the puck UP.
   // For a lower puck position, bias to larger top padding and moderate bottom padding.
   const overHighway = Math.max(0, mph - cfg.padTopSpeed);
   const speedTopBoost = Math.min(34, overHighway * 0.45);
-  let paddingTop = cfg.padTop + safeAreaTop + NAV_UI_HEIGHT + speedTopBoost;
+  let paddingTop =
+    cfg.padTop +
+    safeAreaTop +
+    NAV_UI_HEIGHT +
+    speedTopBoost +
+    longRoad01 * (mode === 'calm' ? 34 : mode === 'adaptive' ? 52 : 68);
   let paddingBottom = cfg.basePadBottom + safeAreaBottom;
   if (nextManeuverDistanceMeters < cfg.turnApproachMeters) {
-    paddingTop += cfg.turnApproachPadBoost;
+    paddingTop += cfg.turnApproachPadBoost * (0.55 + 0.45 * turnNear01);
+    paddingBottom +=
+      (mode === 'calm' ? 22 : mode === 'adaptive' ? 28 : 34) *
+      clamp(turnNear01, 0, 1);
   }
 
   // SPORT: at high speed add extra top padding (look-ahead) so more road extends ahead.
@@ -209,15 +250,16 @@ export function getCameraPreset({
     paddingTop += Math.min(SPORT_MAX_PAD_TOP_BOOST, (mph - SPORT_HIGH_SPEED_MPH) * SPORT_PAD_RATE_PER_MPH);
   }
 
-  // RHD: a touch more right inset at speed keeps the puck slightly left of center — cleaner forward field
-  // of view without the “side-chase” feel from symmetric padding alone.
-  const highwaySideNudge = Math.min(26, Math.max(0, mph - 24) * 0.4);
+  paddingBottom -=
+    (mode === 'calm' ? 10 : mode === 'adaptive' ? 16 : 22) * longRoad01;
+  paddingBottom = Math.max(cfg.basePadBottom + safeAreaBottom - 20, paddingBottom);
 
+  /** Symmetric left/right padding keeps the route corridor centered ahead (no side-chase framing). */
   const padding: CameraPadding = {
     paddingTop,
     paddingBottom,
     paddingLeft: cfg.padLeft,
-    paddingRight: cfg.padRight + highwaySideNudge,
+    paddingRight: cfg.padRight,
   };
 
   return {
@@ -245,4 +287,22 @@ export function getLiveNavigationCameraPreset(args: Args): CameraPreset {
     padding: base.padding,
     animationDuration,
   };
+}
+
+/**
+ * Follow padding for the first navigation frames (before speed/maneuver-driven camera updates)
+ * or when `camCtrl` is null — same formula as {@link getCameraPreset} to avoid padding jumps.
+ */
+export function getNavigationFollowPaddingFallback(
+  mode: DrivingMode,
+  safeAreaTop: number,
+  safeAreaBottom: number,
+): CameraPadding {
+  return getCameraPreset({
+    mode,
+    speedMps: 0,
+    nextManeuverDistanceMeters: 400,
+    safeAreaTop,
+    safeAreaBottom,
+  }).padding;
 }

@@ -11,6 +11,8 @@ import {
   Modal as RNModal,
   Dimensions,
   Pressable,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -34,6 +36,8 @@ interface Props {
 const MARKER_BLUE = '#4A90D9';
 const FEED_H = 220;
 const SCREEN_H = Dimensions.get('window').height;
+const SCREEN_W = Dimensions.get('window').width;
+const EXPANDED_FEED_H = Math.min(SCREEN_H * 0.56, 420);
 const SPRING = { damping: 28, stiffness: 260, mass: 0.9 };
 
 function cacheBust(url: string, t: number): string {
@@ -54,6 +58,9 @@ export default function TrafficCameraSheet({ visible, camera, onClose }: Props) 
   const backdropOpacity = useSharedValue(0);
 
   const open = visible && camera != null;
+  const expandedScrollRef = useRef<ScrollView | null>(null);
+  const [expandedOpen, setExpandedOpen] = useState(false);
+  const [expandedViewIndex, setExpandedViewIndex] = useState(0);
 
   useEffect(() => {
     if (open) {
@@ -62,6 +69,7 @@ export default function TrafficCameraSheet({ visible, camera, onClose }: Props) 
     } else {
       translateY.value = withTiming(SCREEN_H, { duration: 210 });
       backdropOpacity.value = withTiming(0, { duration: 200 });
+      setExpandedOpen(false);
     }
   }, [open]);
 
@@ -85,6 +93,8 @@ export default function TrafficCameraSheet({ visible, camera, onClose }: Props) 
     setFetchedViews(null);
     fetchAttempted.current = false;
     setViewIndex(0);
+    setExpandedViewIndex(0);
+    setExpandedOpen(false);
     setImgError(false);
     setImgTs(Date.now());
   }, [camera?.id]);
@@ -154,6 +164,36 @@ export default function TrafficCameraSheet({ visible, camera, onClose }: Props) 
     setImgTs(Date.now());
   }, []);
 
+  const openExpanded = useCallback(() => {
+    if (!views?.length) return;
+    setExpandedViewIndex(viewIndex);
+    setExpandedOpen(true);
+  }, [viewIndex, views?.length]);
+
+  useEffect(() => {
+    if (!expandedOpen) return;
+    const t = setTimeout(() => {
+      expandedScrollRef.current?.scrollTo({ x: expandedViewIndex * SCREEN_W, animated: false });
+    }, 0);
+    return () => clearTimeout(t);
+  }, [expandedOpen, expandedViewIndex]);
+
+  const selectView = useCallback((nextIndex: number) => {
+    setViewIndex(nextIndex);
+    setExpandedViewIndex(nextIndex);
+    setImgError(false);
+    setImgLoading(true);
+    setImgTs(Date.now());
+  }, []);
+
+  const handleExpandedMomentumEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const nextIndex = Math.max(
+      0,
+      Math.min((views?.length ?? 1) - 1, Math.round(event.nativeEvent.contentOffset.x / SCREEN_W)),
+    );
+    selectView(nextIndex);
+  }, [selectView, views?.length]);
+
   // ── Derived display ───────────────────────────────────────────────────────
   const title = camera?.name?.trim() || 'Traffic camera';
   const subtitle = camera?.description?.trim();
@@ -221,51 +261,57 @@ export default function TrafficCameraSheet({ visible, camera, onClose }: Props) 
             {/* Feed card */}
             <View style={styles.feedOuter}>
               {/* Dark background */}
-              <View style={[styles.feedCard, { backgroundColor: '#000' }]}>
+              <TouchableOpacity
+                activeOpacity={views?.length ? 0.92 : 1}
+                disabled={!views?.length}
+                onPress={openExpanded}
+              >
+                <View style={[styles.feedCard, { backgroundColor: '#000' }]}>
                 {/* Case 1: image is available and loaded */}
-                {imageUri && !imgError ? (
-                  <Image
-                    key={imageUri}
-                    source={{ uri: imageUri }}
-                    style={styles.feedImage}
-                    resizeMode="cover"
-                    onLoadStart={() => setImgLoading(true)}
-                    onLoadEnd={() => setImgLoading(false)}
-                    onError={() => { setImgLoading(false); setImgError(true); }}
-                  />
-                ) : null}
+                  {imageUri && !imgError ? (
+                    <Image
+                      key={imageUri}
+                      source={{ uri: imageUri }}
+                      style={styles.feedImage}
+                      resizeMode="cover"
+                      onLoadStart={() => setImgLoading(true)}
+                      onLoadEnd={() => setImgLoading(false)}
+                      onError={() => { setImgLoading(false); setImgError(true); }}
+                    />
+                  ) : null}
 
                 {/* Loading spinner over image */}
-                {(imgLoading && imageUri && !imgError) ? (
-                  <View style={styles.feedOverlay}>
-                    <ActivityIndicator color="#fff" size="large" />
-                  </View>
-                ) : null}
+                  {(imgLoading && imageUri && !imgError) ? (
+                    <View style={styles.feedOverlay}>
+                      <ActivityIndicator color="#fff" size="large" />
+                    </View>
+                  ) : null}
 
                 {/* Fetching from OHGO */}
-                {fetchState === 'loading' && !imageUri ? (
-                  <View style={styles.feedPlaceholder}>
-                    <ActivityIndicator color="#fff" size="large" />
-                    <Text style={styles.feedPlaceholderText}>Loading camera feed…</Text>
-                  </View>
-                ) : null}
+                  {fetchState === 'loading' && !imageUri ? (
+                    <View style={styles.feedPlaceholder}>
+                      <ActivityIndicator color="#fff" size="large" />
+                      <Text style={styles.feedPlaceholderText}>Loading camera feed…</Text>
+                    </View>
+                  ) : null}
 
                 {/* Error / no-feed state */}
-                {((!imageUri && fetchState !== 'loading') || (imgError)) ? (
-                  <View style={styles.feedPlaceholder}>
-                    <Ionicons name="videocam-off-outline" size={44} color="rgba(255,255,255,0.3)" />
-                    <Text style={styles.feedPlaceholderText}>
-                      {imgError
-                        ? 'Image failed to load'
-                        : fetchState === 'error'
-                          ? 'Feed unavailable (not an OHGO camera or outside Ohio)'
-                          : 'No feed for this camera'}
-                    </Text>
-                  </View>
-                ) : null}
+                  {((!imageUri && fetchState !== 'loading') || (imgError)) ? (
+                    <View style={styles.feedPlaceholder}>
+                      <Ionicons name="videocam-off-outline" size={44} color="rgba(255,255,255,0.3)" />
+                      <Text style={styles.feedPlaceholderText}>
+                        {imgError
+                          ? 'Image failed to load'
+                          : fetchState === 'error'
+                            ? 'Feed unavailable (not an OHGO camera or outside Ohio)'
+                            : 'No feed for this camera'}
+                      </Text>
+                    </View>
+                  ) : null}
 
                 {/* Direction badge – bottom left, rendered OUTSIDE overflow:hidden */}
-              </View>
+                </View>
+              </TouchableOpacity>
 
               {/* Overlay badges live outside feedCard so they aren't clipped on Android */}
               {imageUri && !imgError && current?.direction ? (
@@ -278,10 +324,21 @@ export default function TrafficCameraSheet({ visible, camera, onClose }: Props) 
                   <Text style={styles.badgeMuted}>{tick}</Text>
                 </View>
               ) : null}
+              {views?.length ? (
+                <TouchableOpacity
+                  style={styles.expandFab}
+                  onPress={openExpanded}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.82}
+                  accessibilityLabel="Expand camera view"
+                >
+                  <Ionicons name="expand-outline" size={18} color="#fff" />
+                </TouchableOpacity>
+              ) : null}
 
               {/* Refresh button lives at the top-right of feedOuter, outside overflow:hidden */}
               <TouchableOpacity
-                style={styles.refreshFab}
+                style={[styles.refreshFab, views?.length ? styles.refreshFabShifted : null]}
                 onPress={imgError || !imageUri ? () => { fetchAttempted.current = false; setFetchState('idle'); setFetchedViews(null); manualRefresh(); } : manualRefresh}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 activeOpacity={0.8}
@@ -305,7 +362,7 @@ export default function TrafficCameraSheet({ visible, camera, onClose }: Props) 
                     <TouchableOpacity
                       key={`v-${i}`}
                       style={[styles.thumbWrap, selected && { borderColor: MARKER_BLUE }]}
-                      onPress={() => { setViewIndex(i); setImgError(false); setImgLoading(true); setImgTs(Date.now()); }}
+                      onPress={() => selectView(i)}
                       activeOpacity={0.8}
                     >
                       {thumb ? (
@@ -337,6 +394,100 @@ export default function TrafficCameraSheet({ visible, camera, onClose }: Props) 
             ) : null}
           </ScrollView>
         </Animated.View>
+
+        <RNModal
+          visible={expandedOpen}
+          transparent
+          statusBarTranslucent
+          animationType="fade"
+          onRequestClose={() => setExpandedOpen(false)}
+        >
+          <View style={styles.expandedRoot}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setExpandedOpen(false)} />
+            <View style={styles.expandedChrome}>
+              <Text style={styles.expandedTitle} numberOfLines={1}>{title}</Text>
+              <Text style={styles.expandedMeta}>
+                {views?.length ? `${expandedViewIndex + 1} of ${views.length}` : 'Live view'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setExpandedOpen(false)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={styles.expandedCloseBtn}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              ref={expandedScrollRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={handleExpandedMomentumEnd}
+              contentOffset={{ x: expandedViewIndex * SCREEN_W, y: 0 }}
+            >
+              {(views?.length ? views : [null]).map((view, index) => {
+                const candidateUrl = view ? cacheBust((view.large_url || view.small_url || '').trim(), imgTs) : imageUri;
+                const isActive = index === expandedViewIndex;
+                return (
+                  <View key={`expanded-${index}`} style={styles.expandedPage}>
+                    <View style={styles.expandedFeedCard}>
+                      {candidateUrl && !(imgError && isActive) ? (
+                        <Image
+                          source={{ uri: candidateUrl }}
+                          style={styles.expandedFeedImage}
+                          resizeMode="contain"
+                        />
+                      ) : (
+                        <View style={styles.expandedPlaceholder}>
+                          <Ionicons name="videocam-off-outline" size={52} color="rgba(255,255,255,0.35)" />
+                          <Text style={styles.expandedPlaceholderText}>
+                            {imgError && isActive ? 'Image failed to load' : 'No feed for this camera'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    {view?.direction ? (
+                      <Text style={styles.expandedDirection}>{view.direction}</Text>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            {views && views.length > 1 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.expandedThumbRow}
+              >
+                {views.map((view, index) => {
+                  const thumb = (view.small_url || view.large_url || '').trim();
+                  const selected = index === expandedViewIndex;
+                  return (
+                    <TouchableOpacity
+                      key={`expanded-thumb-${index}`}
+                      style={[styles.expandedThumbWrap, selected && styles.expandedThumbWrapSelected]}
+                      onPress={() => {
+                        selectView(index);
+                        expandedScrollRef.current?.scrollTo({ x: index * SCREEN_W, animated: true });
+                      }}
+                      activeOpacity={0.84}
+                    >
+                      {thumb ? (
+                        <Image source={{ uri: thumb }} style={styles.expandedThumbImg} resizeMode="cover" />
+                      ) : (
+                        <View style={[styles.expandedThumbImg, styles.expandedThumbFallback]}>
+                          <Ionicons name="videocam-outline" size={20} color="#94A3B8" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            ) : null}
+          </View>
+        </RNModal>
       </View>
     </RNModal>
   );
@@ -482,6 +633,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  refreshFabShifted: {
+    right: 56,
+  },
+  expandFab: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   /* Thumbnails */
   thumbRow: {
     columnGap: 10,
@@ -516,5 +681,100 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
     lineHeight: 16,
+  },
+  expandedRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(3,7,18,0.96)',
+    justifyContent: 'center',
+  },
+  expandedChrome: {
+    position: 'absolute',
+    top: 54,
+    left: 18,
+    right: 18,
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  expandedTitle: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  expandedMeta: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    marginHorizontal: 12,
+  },
+  expandedCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expandedPage: {
+    width: SCREEN_W,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  expandedFeedCard: {
+    width: '100%',
+    height: EXPANDED_FEED_H,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expandedFeedImage: {
+    width: '100%',
+    height: '100%',
+  },
+  expandedPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    rowGap: 14,
+  },
+  expandedPlaceholderText: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 15,
+    textAlign: 'center',
+  },
+  expandedDirection: {
+    marginTop: 14,
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  expandedThumbRow: {
+    columnGap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 28,
+  },
+  expandedThumbWrap: {
+    width: 92,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: '#0F172A',
+  },
+  expandedThumbWrapSelected: {
+    borderColor: MARKER_BLUE,
+  },
+  expandedThumbImg: {
+    width: '100%',
+    height: 62,
+    backgroundColor: '#0F172A',
+  },
+  expandedThumbFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

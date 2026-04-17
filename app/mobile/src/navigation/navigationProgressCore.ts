@@ -6,13 +6,14 @@ import {
   sliceRouteWindow,
   bearingDegrees,
 } from './navGeometry';
-import type { NavigationProgress, RawLocation, RoutePoint, NavStep } from './navModel';
+import type { NavigationProgress, RawLocation, RoutePoint, NavStep, SnapPoint } from './navModel';
 import { buildNavBanner } from './navBanner';
 import { effectiveMaxSnapMeters, type OffRouteTuning } from './offRouteTuning';
 import { remainingDurationSecondsFromNavSteps } from './navigationEta';
 import { remainingDurationSecondsFromEdges } from './navigationEtaEdges';
 import { blendModelWithObservedEta } from './etaObservedBlend';
 import { DEFAULT_PROGRESS_TUNING, type ProgressTuning } from './navModeProfile';
+import { segmentAndTFromCumAlongPolyline } from '../utils/distance';
 
 /**
  * Skip depart / plain continue-without-lanes so the banner matches the next real turn
@@ -179,8 +180,11 @@ export function computeNavigationProgressFrame({
     speed,
     rawLocation.accuracy ?? null,
   );
-  const isOffRoute =
+  const corridorOff =
     snap.distanceMeters > maxSnapEffective && confidence < offRouteTuning.minConfidence;
+  /** Beyond ~32% past the snap corridor, always off-route (avoids rare stuck “on route” when confidence stays high). */
+  const catastrophicOff = snap.distanceMeters > maxSnapEffective * 1.32;
+  const isOffRoute = corridorOff || catastrophicOff;
 
   const snapTarget = isOffRoute
     ? rawLocation
@@ -300,12 +304,24 @@ export function computeNavigationProgressFrame({
     ? Math.min(progressTuning.leadCapMeters, speed * 0.3 * progressTuning.leadScale)
     : 0;
   const biasedCum = Math.min(snap.cumulativeMeters + leadAheadMeters, routeEndCum);
-  const displaySnapForSplit: typeof snap = { ...snap, cumulativeMeters: biasedCum };
+  const splitPos = segmentAndTFromCumAlongPolyline(biasedCum, route);
+  const splitPoint = coordinateAtCumulative(route, cumulative, biasedCum);
+  const displaySnapForSplit: SnapPoint =
+    splitPos && splitPoint
+      ? {
+          point: splitPoint,
+          segmentIndex: splitPos.segmentIndex,
+          t: splitPos.tOnSegment,
+          distanceMeters: snap.distanceMeters,
+          cumulativeMeters: biasedCum,
+        }
+      : { ...snap, cumulativeMeters: biasedCum };
   const { traveled, remaining } = splitRouteAtSnap(route, displaySnapForSplit);
   const routeTotalMeters = cumulative[cumulative.length - 1] ?? 0;
-  const distanceRemainingMeters = Math.max(0, routeTotalMeters - snap.cumulativeMeters);
+  const progressCumForUi = isOffRoute ? snap.cumulativeMeters : displaySnapForSplit.cumulativeMeters;
+  const distanceRemainingMeters = Math.max(0, routeTotalMeters - progressCumForUi);
   let modelDurationRemainingSeconds = remainingDurationSecondsFromNavSteps({
-    snapCumulativeMetersAlongPolyline: snap.cumulativeMeters,
+    snapCumulativeMetersAlongPolyline: progressCumForUi,
     polylineTotalMeters: routeTotalMeters,
     routeDistanceMetersApi: routeDistanceMeters > 1 ? routeDistanceMeters : routeTotalMeters,
     steps,
@@ -320,7 +336,7 @@ export function computeNavigationProgressFrame({
     edgeDur.some((x) => x > 0);
   if (edgeOk) {
     modelDurationRemainingSeconds = remainingDurationSecondsFromEdges({
-      snapCumulativeMetersAlongPolyline: snap.cumulativeMeters,
+      snapCumulativeMetersAlongPolyline: progressCumForUi,
       cumulativeVertexMeters: cumulative,
       edgeDurationSec: edgeDur!,
     });
@@ -392,9 +408,9 @@ export function computeNavigationProgressFrame({
 
   const etaEpochMs = Date.now() + durationRemainingSeconds * 1000;
 
-  const nextStepRaw = pickNextNavStepAlongRoute(steps, snap.cumulativeMeters);
+  const nextStepRaw = pickNextNavStepAlongRoute(steps, progressCumForUi);
   const nextStepDistanceMeters = nextStepRaw
-    ? Math.max(0, nextStepRaw.distanceMetersFromStart - snap.cumulativeMeters)
+    ? Math.max(0, nextStepRaw.distanceMetersFromStart - progressCumForUi)
     : 0;
   const nextStep = nextStepRaw
     ? { ...nextStepRaw, distanceMetersToNext: nextStepDistanceMeters }
@@ -414,6 +430,7 @@ export function computeNavigationProgressFrame({
     displayCoord,
     puckCoord,
     snapped: snap,
+    routeSplitSnap: displaySnapForSplit,
     traveledRoute: traveled,
     remainingRoute: remaining,
     maneuverRoute,

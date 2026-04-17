@@ -17,6 +17,9 @@ on:
         required: false
         default: "1m"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   k6:
     runs-on: ubuntu-latest

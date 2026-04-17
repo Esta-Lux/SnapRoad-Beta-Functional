@@ -191,7 +191,7 @@ export function getSdkNavigationProgress(
     progress: st.progress,
     location: st.location,
     polyline: poly,
-    steps: [],
+    steps: navigationData?.steps?.length ? navigationData.steps : [],
   });
 }
 

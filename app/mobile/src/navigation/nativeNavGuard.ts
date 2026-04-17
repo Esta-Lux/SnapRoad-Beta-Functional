@@ -7,6 +7,7 @@ export interface NativeNavRouteParams {
   destination: LatLng & { name?: string };
   voiceMuted?: boolean;
   drivingMode?: string;
+  mapStyleUrl?: string;
 }
 
 export interface NormalizedNativeNavParams {
@@ -14,6 +15,7 @@ export interface NormalizedNativeNavParams {
   destination: LatLng & { name?: string };
   voiceMuted: boolean;
   drivingMode: DrivingMode;
+  mapStyleUrl?: string;
 }
 
 const VALID_MODES: ReadonlySet<DrivingMode> = new Set(['calm', 'adaptive', 'sport']);
@@ -42,6 +44,13 @@ function normalizeDrivingMode(mode: unknown): DrivingMode {
   return VALID_MODES.has(mode as DrivingMode) ? (mode as DrivingMode) : 'adaptive';
 }
 
+function normalizeMapStyleUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed;
+}
+
 export function normalizeNativeNavParams(value: unknown): NormalizedNativeNavParams | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as NativeNavRouteParams;
@@ -60,6 +69,7 @@ export function normalizeNativeNavParams(value: unknown): NormalizedNativeNavPar
     destination: { ...destinationCoord, ...(name ? { name } : {}) },
     voiceMuted: Boolean(raw.voiceMuted),
     drivingMode: normalizeDrivingMode(raw.drivingMode),
+    mapStyleUrl: normalizeMapStyleUrl(raw.mapStyleUrl),
   };
 }
 

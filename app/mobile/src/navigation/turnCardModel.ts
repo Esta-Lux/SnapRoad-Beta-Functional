@@ -2,6 +2,7 @@ import type { DrivingMode } from '../types';
 import type { DirectionsStep } from '../lib/directions';
 import type { ManeuverKind, NavStep } from './navModel';
 import { getTurnCardNavTuning, previewDistanceMaxMeters } from './navModeProfile';
+import { navManeuverFieldsFromDirectionsStep } from './navStepsFromDirections';
 
 export type TurnCardState = 'preview' | 'active' | 'confirm' | 'cruise';
 
@@ -288,4 +289,28 @@ export function iconManeuverKindForState(
   if (state === 'confirm' || state === 'cruise') return 'straight';
   if ((state === 'active' || state === 'preview') && navStep) return navStep.kind;
   return 'straight';
+}
+
+/**
+ * Turn-card glyph fields from the same {@link nextManeuverCoord} the card uses for distance
+ * (Mapbox `mapboxManeuver`, else `maneuver` string). {@link progNext} is only used when there
+ * is no step row (e.g. waiting / no geometry).
+ */
+export function resolveManeuverFieldsForTurnCard(args: {
+  nextManeuverCoord: DirectionsStep | null | undefined;
+  progNext: NavStep | null | undefined;
+}): { rawType: string; rawModifier: string; kind: ManeuverKind } {
+  const { nextManeuverCoord, progNext } = args;
+  if (nextManeuverCoord) {
+    const fields = navManeuverFieldsFromDirectionsStep(nextManeuverCoord);
+    if (fields.kind !== 'unknown') return fields;
+  }
+  if (progNext) {
+    return {
+      rawType: progNext.rawType,
+      rawModifier: progNext.rawModifier,
+      kind: progNext.kind,
+    };
+  }
+  return { rawType: '', rawModifier: '', kind: 'straight' };
 }

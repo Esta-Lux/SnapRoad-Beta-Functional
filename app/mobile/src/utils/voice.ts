@@ -7,6 +7,7 @@ import { isSdkTripAuthoritative } from '../navigation/navSdkAuthority';
 import { markNavVoiceFromJs } from '../navigation/navSdkStore';
 import type { LaneInfo, ManeuverKind, RoadSignal } from '../navigation/navModel';
 import { getVoiceNavTuning } from '../navigation/navModeProfile';
+import { navLaneGuidanceUiEnabled } from '../navigation/navFeatureFlags';
 import { getPreferredTtsVoiceIdentifier } from './ttsVoicePreference';
 
 let lastSpokenPhrase = '';
@@ -14,7 +15,7 @@ let lastSpokenAt = 0;
 /** Shorten gap slightly so stacked prompts (reroute + turn) are less likely to drop the second cue. */
 const MIN_GAP_MS = 2200;
 /** Min interval between **different** turn-by-turn cues (normal `speak()` would block these at MIN_GAP_MS). */
-const GUIDANCE_MIN_MS = 900;
+const GUIDANCE_MIN_MS = 1400;
 
 /**
  * Session before TTS: iOS uses non-mixing so navigation cues behave like other nav apps (music yields).
@@ -201,6 +202,7 @@ export function speakGuidance(
   const voiceTune = getVoiceNavTuning(_mode);
 
   void (async () => {
+    Speech.stop();
     await configureAudioSessionForSpeechOutput();
     const voiceId = await getPreferredTtsVoiceIdentifier();
     Speech.speak(phrase, {
@@ -307,6 +309,7 @@ function signalPrefix(signal?: RoadSignal): string {
 }
 
 function laneAdvice(lanes?: LaneInfo[]): string {
+  if (!navLaneGuidanceUiEnabled()) return '';
   if (!lanes?.length) return '';
   const active = lanes.filter((l) => l.active);
   if (!active.length || active.length === lanes.length) return '';

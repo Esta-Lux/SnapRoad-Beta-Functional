@@ -3,6 +3,7 @@ Open-Meteo proxy for current conditions (no API key). Used by the driver map for
 precipitation overlays and Orion context. Rate-limited and short-TTL cached.
 """
 
+import asyncio
 import math
 import time
 from collections import OrderedDict
@@ -17,10 +18,17 @@ router = APIRouter(prefix="/api/weather", tags=["Weather"])
 
 _OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
 
+# One decimal (~11 km) dedupes requests across moving map clients and multiple
+# backend instances (each has its own process-local cache).
+_GRID_DECIMALS = 1
+
 _http: Optional[httpx.AsyncClient] = None
 _CACHE_TTL = 600.0
 _CACHE_MAX = 384
 _cache: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
+# Last successful payload per grid key; used when Open-Meteo returns 429/5xx
+# after the short-TTL cache has expired.
+_stale: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
 
 def _get_http() -> httpx.AsyncClient:
@@ -51,6 +59,37 @@ def _cache_set(key: str, val: dict[str, Any]) -> None:
     _cache.move_to_end(key)
     while len(_cache) > _CACHE_MAX:
         _cache.popitem(last=False)
+    _stale[key] = val
+    _stale.move_to_end(key)
+    while len(_stale) > _CACHE_MAX:
+        _stale.popitem(last=False)
+
+
+def _stale_get(key: str) -> Optional[dict[str, Any]]:
+    entry = _stale.get(key)
+    if entry is None:
+        return None
+    _stale.move_to_end(key)
+    return entry
+
+
+def _grid_key(lat: float, lng: float) -> str:
+    r = _GRID_DECIMALS
+    return f"{round(lat, r):.{r}f}_{round(lng, r):.{r}f}"
+
+
+async def _maybe_sleep_retry_after(response: httpx.Response) -> None:
+    ra = response.headers.get("Retry-After")
+    if not ra:
+        await asyncio.sleep(1.5)
+        return
+    try:
+        sec = float(ra)
+    except ValueError:
+        await asyncio.sleep(1.5)
+        return
+    sec = min(max(sec, 0.5), 5.0)
+    await asyncio.sleep(sec)
 
 
 def _classify_precipitation(
@@ -124,7 +163,7 @@ async def weather_current(
     if math.isfinite(lat) and math.isfinite(lng) and abs(lat) < 1e-5 and abs(lng) < 1e-5:
         raise HTTPException(status_code=422, detail="Invalid coordinates")
 
-    key = f"{round(lat, 2):.2f}_{round(lng, 2):.2f}"
+    key = _grid_key(lat, lng)
     cached = _cache_get(key)
     if cached is not None:
         return {"success": True, "data": cached}
@@ -145,14 +184,41 @@ async def weather_current(
         "wind_speed_unit": "mph",
     }
 
-    try:
+    async def _fetch() -> dict[str, Any]:
         client = _get_http()
         r = await client.get(_OPEN_METEO, params=params)
         r.raise_for_status()
-        body = r.json()
+        return r.json()
+
+    try:
+        body = await _fetch()
+    except httpx.HTTPStatusError as e:
+        if e.response is not None and e.response.status_code == 429:
+            await _maybe_sleep_retry_after(e.response)
+            try:
+                body = await _fetch()
+            except httpx.HTTPError as e2:
+                stale = _stale_get(key)
+                if stale is not None:
+                    return {"success": True, "data": stale, "stale": True}
+                raise HTTPException(
+                    status_code=503,
+                    detail="Weather service is busy; try again shortly.",
+                ) from e2
+        else:
+            stale = _stale_get(key)
+            if stale is not None:
+                return {"success": True, "data": stale, "stale": True}
+            raise HTTPException(status_code=502, detail=f"Weather service unavailable: {e!r}") from e
     except httpx.HTTPError as e:
+        stale = _stale_get(key)
+        if stale is not None:
+            return {"success": True, "data": stale, "stale": True}
         raise HTTPException(status_code=502, detail=f"Weather service unavailable: {e!r}") from e
     except ValueError as e:
+        stale = _stale_get(key)
+        if stale is not None:
+            return {"success": True, "data": stale, "stale": True}
         raise HTTPException(status_code=502, detail="Invalid weather response") from e
 
     cur = body.get("current") or {}

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getCameraPreset } from '../cameraPresets';
+import { getCameraPreset, getNavigationFollowPaddingFallback } from '../cameraPresets';
 
-test('getCameraPreset: faster travel adds right padding nudge (RHD forward view)', () => {
+test('getCameraPreset: symmetric horizontal padding; faster travel adds top look-ahead', () => {
   const low = getCameraPreset({
     mode: 'adaptive',
     speedMps: 8,
@@ -17,8 +17,9 @@ test('getCameraPreset: faster travel adds right padding nudge (RHD forward view)
     safeAreaTop: 0,
     safeAreaBottom: 0,
   });
-  assert.ok(high.padding.paddingRight > low.padding.paddingRight);
-  assert.equal(low.padding.paddingLeft, high.padding.paddingLeft);
+  assert.equal(high.padding.paddingRight, high.padding.paddingLeft);
+  assert.equal(low.padding.paddingRight, low.padding.paddingLeft);
+  assert.ok(high.padding.paddingTop > low.padding.paddingTop);
 });
 
 test('getCameraPreset: maneuver approach increases top padding', () => {
@@ -36,6 +37,57 @@ test('getCameraPreset: maneuver approach increases top padding', () => {
     safeAreaTop: 0,
     safeAreaBottom: 0,
   });
-  assert.ok(near.padding.paddingTop > cruise.padding.paddingTop);
   assert.ok(near.zoom >= cruise.zoom);
+  assert.ok(near.padding.paddingBottom > cruise.padding.paddingBottom);
+});
+
+test('getCameraPreset: long roads pull back and show more road ahead', () => {
+  const shortAdaptive = getCameraPreset({
+    mode: 'adaptive',
+    speedMps: 22,
+    nextManeuverDistanceMeters: 140,
+    safeAreaTop: 0,
+    safeAreaBottom: 0,
+  });
+  const longAdaptive = getCameraPreset({
+    mode: 'adaptive',
+    speedMps: 22,
+    nextManeuverDistanceMeters: 1200,
+    safeAreaTop: 0,
+    safeAreaBottom: 0,
+  });
+  assert.ok(longAdaptive.zoom < shortAdaptive.zoom);
+  assert.ok(longAdaptive.padding.paddingTop > shortAdaptive.padding.paddingTop);
+  assert.ok(longAdaptive.padding.paddingBottom < shortAdaptive.padding.paddingBottom);
+});
+
+test('getCameraPreset: near turns lower the forward look-ahead and tighten framing', () => {
+  const cruiseAdaptive = getCameraPreset({
+    mode: 'adaptive',
+    speedMps: 20,
+    nextManeuverDistanceMeters: 900,
+    safeAreaTop: 0,
+    safeAreaBottom: 0,
+  });
+  const nearAdaptive = getCameraPreset({
+    mode: 'adaptive',
+    speedMps: 20,
+    nextManeuverDistanceMeters: 35,
+    safeAreaTop: 0,
+    safeAreaBottom: 0,
+  });
+  assert.ok(nearAdaptive.zoom > cruiseAdaptive.zoom);
+  assert.ok(nearAdaptive.padding.paddingBottom > cruiseAdaptive.padding.paddingBottom);
+});
+
+test('getNavigationFollowPaddingFallback matches getCameraPreset for initial nav frame', () => {
+  const preset = getCameraPreset({
+    mode: 'adaptive',
+    speedMps: 0,
+    nextManeuverDistanceMeters: 400,
+    safeAreaTop: 47,
+    safeAreaBottom: 34,
+  });
+  const fb = getNavigationFollowPaddingFallback('adaptive', 47, 34);
+  assert.deepEqual(fb, preset.padding);
 });
