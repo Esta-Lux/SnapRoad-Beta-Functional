@@ -21,4 +21,3 @@ test('full-screen native nav is allowed only when native=on and logic=off', () =
   assert.equal(isNativeFullScreenAllowed(false, true), false);
   assert.equal(isNativeFullScreenAllowed(false, false), false);
 });
-

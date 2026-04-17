@@ -7,4 +7,3 @@ export function parseEnvBool(raw: string | undefined, defaultVal: boolean): bool
 export function isNativeFullScreenAllowed(nativeSdkEnabled: boolean, logicSdkEnabled: boolean): boolean {
   return nativeSdkEnabled && !logicSdkEnabled;
 }
-
