@@ -6,8 +6,10 @@ export type ApiResultLike = {
 export function extractLocationSharingValue(payload: unknown): boolean | null {
   if (!payload || typeof payload !== 'object') return null;
   const top = payload as { data?: unknown; is_sharing?: unknown };
-  const inner = (top.data && typeof top.data === 'object' ? top.data : top) as { is_sharing?: unknown };
-  return typeof inner.is_sharing === 'boolean' ? inner.is_sharing : null;
+  if (typeof top.is_sharing === 'boolean') return top.is_sharing;
+  if (!top.data || typeof top.data !== 'object') return null;
+  const nested = top.data as { is_sharing?: unknown };
+  return typeof nested.is_sharing === 'boolean' ? nested.is_sharing : null;
 }
 
 export function getApiErrorMessage(res: ApiResultLike, fallback: string): string | null {

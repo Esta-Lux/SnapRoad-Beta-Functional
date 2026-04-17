@@ -247,10 +247,14 @@ export default function DashboardScreen() {
 
         if (localOn) {
           const { lat, lng } = dashboardLiveCoordsRef.current;
+          const coordsValid =
+            Number.isFinite(lat) &&
+            Number.isFinite(lng) &&
+            !((Math.abs(lat) < 1e-6) && (Math.abs(lng) < 1e-6));
+          if (!coordsValid) shareLocationNeedsCoordsSyncRef.current = true;
           const syncRes = await api.put('/api/friends/location/sharing', {
             is_sharing: true,
-            lat,
-            lng,
+            ...(coordsValid ? { lat, lng } : {}),
           });
           if (!syncRes.success) {
             if (!cancelled) {

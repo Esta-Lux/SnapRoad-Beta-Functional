@@ -456,6 +456,14 @@ export default function MapScreen() {
   });
 
   const enableShareLocationFromMap = useCallback(async () => {
+    const coordsValid =
+      Number.isFinite(location.lat) &&
+      Number.isFinite(location.lng) &&
+      !((Math.abs(location.lat) < 1e-6) && (Math.abs(location.lng) < 1e-6));
+    if (!coordsValid) {
+      Alert.alert('Location sharing', 'Waiting for a valid GPS fix. Try again in a moment.');
+      return;
+    }
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
