@@ -142,7 +142,7 @@ export default function NativeNavigationScreen() {
       }
       rnNav.navigate('MapMain', { nativeNavResult: { tripSummary, arrived } });
     },
-    [bridge, rnNav, refreshUserFromServer, updateUser, user],
+    [bridge, rnNav, refreshUserFromServer, updateUser],
   );
 
   const handleCancel = useCallback(() => {
