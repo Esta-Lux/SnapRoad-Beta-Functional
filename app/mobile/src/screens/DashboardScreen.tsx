@@ -44,7 +44,7 @@ import {
   fetchPendingRequests,
   fetchFriendCategories,
 } from '../features/social/friendsApi';
-import { extractLocationSharingValue, getApiError } from '../features/social/locationSharing';
+import { extractLocationSharingValue, getApiErrorMessage } from '../features/social/locationSharing';
 import type { MapFocusFriendParams } from '../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -331,7 +331,10 @@ export default function DashboardScreen() {
             heading: row.heading != null ? Number(row.heading) : f.heading,
             speed_mph: row.speed_mph != null ? Number(row.speed_mph) : f.speed_mph,
             is_sharing: typeof row.is_sharing === 'boolean' ? row.is_sharing : f.is_sharing,
-            last_updated: typeof row.last_updated === 'string' ? row.last_updated : f.last_updated,
+            last_updated:
+              typeof row.last_updated === 'string'
+                ? row.last_updated
+                : f.last_updated ?? new Date().toISOString(),
             is_navigating: typeof row.is_navigating === 'boolean' ? row.is_navigating : f.is_navigating,
             destination_name: typeof row.destination_name === 'string' ? row.destination_name : f.destination_name,
             battery_pct: row.battery_pct != null && row.battery_pct !== '' ? Number(row.battery_pct) : f.battery_pct,
@@ -1021,7 +1024,7 @@ export default function DashboardScreen() {
                     is_sharing: v,
                     ...(v && myCoord ? { lat: myCoord.lat, lng: myCoord.lng } : {}),
                   });
-                  const err = getApiError(res, 'Could not update location sharing right now.');
+                  const err = getApiErrorMessage(res, 'Could not update location sharing right now.');
                   if (err) {
                     setIsSharingLocation(prev);
                     storage.set(SHARE_LOC_STORAGE_KEY, prev ? '1' : '0');

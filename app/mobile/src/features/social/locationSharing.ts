@@ -10,7 +10,7 @@ export function extractLocationSharingValue(payload: unknown): boolean | null {
   return typeof inner.is_sharing === 'boolean' ? inner.is_sharing : null;
 }
 
-export function getApiError(res: ApiResultLike, fallback: string): string | null {
+export function getApiErrorMessage(res: ApiResultLike, fallback: string): string | null {
   if (res.success) return null;
   return (typeof res.error === 'string' && res.error.trim()) ? res.error : fallback;
 }

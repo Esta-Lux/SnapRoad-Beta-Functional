@@ -144,7 +144,7 @@ import type { TripSummary } from '../hooks/useDriveNavigation';
 import type { RouteProp } from '@react-navigation/native';
 import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import type { MapStackParamList, MapStackScreenNavigationProp } from '../navigation/types';
-import { extractLocationSharingValue, getApiError } from '../features/social/locationSharing';
+import { extractLocationSharingValue, getApiErrorMessage } from '../features/social/locationSharing';
 import { storage } from '../utils/storage';
 import { logMapDataIssue } from '../utils/mapApiDiagnostics';
 import { supabase, supabaseConfigured } from '../lib/supabase';
@@ -468,7 +468,7 @@ export default function MapScreen() {
       lat: location.lat,
       lng: location.lng,
     });
-    const setShareErr = getApiError(setShareRes, 'Could not enable location sharing right now.');
+    const setShareErr = getApiErrorMessage(setShareRes, 'Could not enable location sharing right now.');
     if (setShareErr) {
       storage.set(SHARE_LOC_STORAGE_KEY, '0');
       setShareLocEpoch((n) => n + 1);
@@ -492,7 +492,7 @@ export default function MapScreen() {
       is_sharing: true,
       battery_pct,
     });
-    const updateErr = getApiError(res, 'Could not publish your current location yet.');
+    const updateErr = getApiErrorMessage(res, 'Could not publish your current location yet.');
     if (updateErr) {
       if (res.statusCode === 503) setLivePublishPaused503(true);
       Alert.alert('Location sharing', updateErr);
