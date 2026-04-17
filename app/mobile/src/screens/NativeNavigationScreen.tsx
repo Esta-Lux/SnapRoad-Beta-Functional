@@ -1,17 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet, StatusBar, useColorScheme, TouchableOpacity, Text } from 'react-native';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { useNavigation as useRNNavigation, useRoute } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MapStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useAuth } from '../contexts/AuthContext';
-import type { DrivingMode, Incident } from '../types';
-import { useTheme } from '../contexts/ThemeContext';
-import { DRIVING_MODES } from '../constants/modes';
+import type { DrivingMode, User } from '../types';
 import {
   useNativeNavBridge,
   type NativeNavProgressEvent,
@@ -19,28 +16,14 @@ import {
 import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
 import * as Sentry from '@sentry/react-native';
 import { api } from '../api/client';
-import OrionQuickMic from '../components/orion/OrionQuickMic';
+import { DRIVING_MODES } from '../constants/modes';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const DEFAULT_NAV_MAP_STYLE = 'mapbox://styles/mapbox/standard';
-
-type NativeNavLocationEvent = {
-  latitude: number;
-  longitude: number;
-  course?: number;
-  speed?: number;
-  horizontalAccuracy?: number;
-  timestamp?: number;
-};
-
-function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const r = 6371000;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+function nativeNavStyleUrl(drivingMode: DrivingMode, isDark: boolean): string {
+  if (isDark) return 'mapbox://styles/mapbox/navigation-night-v1';
+  if (drivingMode === 'sport') return 'mapbox://styles/mapbox/navigation-night-v1';
+  if (drivingMode === 'calm') return 'mapbox://styles/mapbox/standard';
+  return 'mapbox://styles/mapbox/navigation-day-v1';
 }
 
 /**
@@ -54,26 +37,18 @@ export default function NativeNavigationScreen() {
   const rnNav = useRNNavigation<StackNavigationProp<MapStackParamList>>();
   const route = useRoute<RouteProp<MapStackParamList, 'NativeNavigation'>>();
   const { setIsNavigating } = useNavigationMode();
-  const { user } = useAuth();
-  const { colors, isLight } = useTheme();
+  const { user, updateUser, refreshUserFromServer } = useAuth();
   const insets = useSafeAreaInsets();
   const didExitRef = useRef(false);
   const didHandleInvalidParamsRef = useRef(false);
   const navRef = useRef<MapboxNavigationViewRef | null>(null);
   const colorScheme = useColorScheme();
-  const lastIncidentFetchAtRef = useRef(0);
-  const lastIncidentFetchCoordRef = useRef<{ lat: number; lng: number } | null>(null);
-  const [activeIncident, setActiveIncident] = useState<Incident | null>(null);
-  const [dismissedIncidentId, setDismissedIncidentId] = useState<string | number | null>(null);
-  const [orionQuickReply, setOrionQuickReply] = useState<string | null>(null);
 
   const normalizedParams = useMemo(() => normalizeNativeNavParams(route.params), [route.params]);
   const origin = normalizedParams?.origin;
   const destination = normalizedParams?.destination;
   const voiceMuted = normalizedParams?.voiceMuted ?? false;
   const drivingMode: DrivingMode = normalizedParams?.drivingMode ?? 'adaptive';
-  const mapStyleUrl = normalizedParams?.mapStyleUrl ?? DEFAULT_NAV_MAP_STYLE;
-  const modeConfig = DRIVING_MODES[drivingMode];
   const reportHint = useMemo(() => {
     const raw = route.params?.reportHint;
     return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
@@ -99,55 +74,84 @@ export default function NativeNavigationScreen() {
       { latitude: destination.lat, longitude: destination.lng },
     ];
   }, [origin?.lat, origin?.lng, destination?.lat, destination?.lng]);
-  const nativeViewKey = useMemo(
-    () =>
-      [
-        origin?.lat ?? 'na',
-        origin?.lng ?? 'na',
-        destination?.lat ?? 'na',
-        destination?.lng ?? 'na',
-        drivingMode,
-        mapStyleUrl,
-      ].join(':'),
-    [origin?.lat, origin?.lng, destination?.lat, destination?.lng, drivingMode, mapStyleUrl],
-  );
 
-  const followingZoom = useMemo(() => {
-    switch (drivingMode) {
-      case 'calm':
-        return 16.25;
-      case 'sport':
-        return 17.4;
-      default:
-        return 16.9;
-    }
-  }, [drivingMode]);
+  const modeConfig = DRIVING_MODES[drivingMode];
+  const followingZoom = modeConfig.navZoom;
+  const followingPitch = modeConfig.navPitch;
+  const mapStyleUrl = useMemo(
+    () => nativeNavStyleUrl(drivingMode, colorScheme === 'dark'),
+    [drivingMode, colorScheme],
+  );
 
   const exitWithResult = useCallback(
     async (arrived: boolean) => {
       if (didExitRef.current) return;
       didExitRef.current = true;
-      const tripSummary = bridge.buildTripSummary(arrived);
+      let tripSummary = bridge.buildTripSummary(arrived);
       try {
-        await navRef.current?.stopNavigation?.();
+        const metrics = bridge.getTripMetrics();
+        if (tripSummary.counted !== false && metrics.qualifiesTrip) {
+          const res = await api.post('/api/trips/complete', {
+            distance_miles: metrics.roundedDistanceMiles,
+            duration_seconds: metrics.durationSec,
+            safety_score: tripSummary.safety_score ?? 85,
+            started_at: metrics.startedAtIso,
+            ended_at: metrics.endedAtIso,
+            hard_braking_events: 0,
+            speeding_events: 0,
+            incidents_reported: 0,
+          });
+          if (res.success && res.data) {
+            const body = res.data as Record<string, unknown>;
+            const d = (body?.data as Record<string, unknown> | undefined) ?? body;
+            const apiCounted = d?.counted !== false && d?.trip_id != null;
+            const profRaw = d?.profile as Record<string, unknown> | undefined;
+            const profileTotals =
+              profRaw && typeof profRaw === 'object'
+                ? {
+                    total_miles:
+                      profRaw.total_miles != null ? Number(profRaw.total_miles) : undefined,
+                    total_trips:
+                      profRaw.total_trips != null ? Number(profRaw.total_trips) : undefined,
+                    gems: profRaw.gems != null ? Number(profRaw.gems) : undefined,
+                    xp: profRaw.xp != null ? Number(profRaw.xp) : undefined,
+                  }
+                : undefined;
+            tripSummary = {
+              ...tripSummary,
+              gems_earned: Number(d?.gems_earned ?? tripSummary.gems_earned),
+              xp_earned: Number(d?.xp_earned ?? tripSummary.xp_earned),
+              safety_score: Number(d?.safety_score ?? tripSummary.safety_score),
+              counted: apiCounted,
+              profile_totals: profileTotals ?? tripSummary.profile_totals,
+            };
+            if (apiCounted && profRaw) {
+              const patch: Partial<User> = {};
+              if (profRaw.gems != null) patch.gems = Number(profRaw.gems);
+              if (profRaw.total_trips != null) patch.totalTrips = Number(profRaw.total_trips);
+              if (profRaw.total_miles != null) patch.totalMiles = Number(profRaw.total_miles);
+              if (profRaw.xp != null) patch.xp = Number(profRaw.xp);
+              if (profRaw.safety_score != null) patch.safetyScore = Number(profRaw.safety_score);
+              if (Object.keys(patch).length) updateUser(patch);
+              await refreshUserFromServer();
+            }
+          }
+        }
       } catch {
-        /* native session is already ending */
+        // fall back to local summary
       }
-      rnNav.reset({
-        index: 0,
-        routes: [{ name: 'MapMain', params: { nativeNavResult: { tripSummary, arrived } } }],
-      });
+      rnNav.navigate('MapMain', { nativeNavResult: { tripSummary, arrived } });
     },
-    [bridge, rnNav],
+    [bridge, rnNav, refreshUserFromServer, updateUser],
   );
 
   const handleCancel = useCallback(() => {
-    exitWithResult(false);
+    void exitWithResult(false);
   }, [exitWithResult]);
 
   const handleArrival = useCallback(() => {
     bridge.handleArrival();
-    exitWithResult(true);
+    void exitWithResult(true);
   }, [bridge, exitWithResult]);
 
   const handleProgressChanged = useCallback(
@@ -156,90 +160,6 @@ export default function NativeNavigationScreen() {
     },
     [bridge],
   );
-
-  const fetchNearbyIncidents = useCallback(
-    async (lat: number, lng: number) => {
-      try {
-        const res = await api.get<{ success?: boolean; data?: Incident[] }>(
-          `/api/incidents/nearby?lat=${lat}&lng=${lng}&radius_miles=2`,
-        );
-        if (!res.success || res.data == null) return;
-        const data = (res.data as { data?: Incident[] }).data;
-        if (!Array.isArray(data) || data.length === 0) {
-          lastIncidentFetchCoordRef.current = { lat, lng };
-          setActiveIncident(null);
-          return;
-        }
-        const nearest = data.reduce<Incident | null>((best, inc) => {
-          if (
-            dismissedIncidentId != null &&
-            String(inc.id) === String(dismissedIncidentId)
-          ) {
-            return best;
-          }
-          if (!best) return inc;
-          const incDist = haversineMeters(lat, lng, inc.lat, inc.lng);
-          const bestDist = haversineMeters(lat, lng, best.lat, best.lng);
-          return incDist < bestDist ? inc : best;
-        }, null);
-        lastIncidentFetchCoordRef.current = { lat, lng };
-        setActiveIncident(nearest);
-      } catch {
-        /* offline / tunnel / transient backend issue */
-      }
-    },
-    [dismissedIncidentId],
-  );
-
-  const handleLocationUpdate = useCallback(
-    (event: { nativeEvent: NativeNavLocationEvent }) => {
-      const lat = Number(event.nativeEvent?.latitude);
-      const lng = Number(event.nativeEvent?.longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-      const now = Date.now();
-      const lastCoord = lastIncidentFetchCoordRef.current;
-      const movedMeters =
-        lastCoord != null ? haversineMeters(lastCoord.lat, lastCoord.lng, lat, lng) : Number.POSITIVE_INFINITY;
-      if (now - lastIncidentFetchAtRef.current < 3000 && movedMeters < 180) return;
-      lastIncidentFetchAtRef.current = now;
-      void fetchNearbyIncidents(lat, lng);
-    },
-    [fetchNearbyIncidents],
-  );
-
-  const handleDismissIncident = useCallback(() => {
-    setDismissedIncidentId(activeIncident?.id ?? null);
-    setActiveIncident(null);
-  }, [activeIncident?.id]);
-
-  const handleConfirmIncident = useCallback(
-    async (confirmed: boolean) => {
-      if (!activeIncident) return;
-      const current = activeIncident;
-      setDismissedIncidentId(current.id);
-      setActiveIncident(null);
-      try {
-        await api.post('/api/incidents/confirm', {
-          incident_id: current.id,
-          confirmed,
-        });
-      } catch {
-        /* best-effort community feedback */
-      }
-    },
-    [activeIncident],
-  );
-
-  useEffect(() => {
-    if (!origin) return;
-    void fetchNearbyIncidents(origin.lat, origin.lng);
-  }, [fetchNearbyIncidents, origin]);
-
-  useEffect(() => {
-    if (!orionQuickReply) return;
-    const t = setTimeout(() => setOrionQuickReply(null), 5500);
-    return () => clearTimeout(t);
-  }, [orionQuickReply]);
 
   useEffect(() => {
     if (normalizedParams || didHandleInvalidParamsRef.current) return;
@@ -252,17 +172,11 @@ export default function NativeNavigationScreen() {
   }
 
   const isDark = colorScheme === 'dark';
-  const reportSurface = isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.9)';
-  const reportBorder = isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.18)';
-  const chromeSurface = isLight ? modeConfig.etaBarBg : modeConfig.etaBarBgDark;
-  const chromeText = isLight ? colors.text : modeConfig.etaValueColor;
-  const chromeSubtle = isLight ? colors.textSecondary : modeConfig.etaLabelColor;
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#0a0a0f' : '#000' }]}>
       <StatusBar barStyle="light-content" />
       <MapboxNavigationView
-        key={nativeViewKey}
         ref={navRef}
         style={styles.nav}
         coordinates={coordinates}
@@ -270,11 +184,9 @@ export default function NativeNavigationScreen() {
         routeProfile={bridge.routeProfile}
         mapStyle={mapStyleUrl}
         followingZoom={followingZoom}
+        followingPitch={followingPitch}
         drivingMode={drivingMode}
-        appTheme={isLight ? 'light' : 'dark'}
-        navigationLogicOnly={false}
         onRouteProgressChanged={handleProgressChanged}
-        onNavigationLocationUpdate={handleLocationUpdate}
         onCancelNavigation={handleCancel}
         onFinalDestinationArrival={handleArrival}
         onRouteChanged={() => {}}
@@ -289,85 +201,20 @@ export default function NativeNavigationScreen() {
           console.warn('[NativeNavigation] route load failed', errorMessage);
         }}
       />
-      {activeIncident ? (
-        <View
-          style={[
-            styles.reportCard,
-            {
-              top: insets.top + 12,
-              backgroundColor: reportSurface,
-              borderColor: reportBorder,
-            },
-          ]}
-        >
-          <View style={styles.reportCardTop}>
-            <View style={styles.reportCardTitleRow}>
-              <Ionicons name="warning-outline" size={16} color="#FCD34D" />
-              <Text style={[styles.reportCardTitle, { color: chromeText }]} numberOfLines={1}>
-                {activeIncident.title || activeIncident.type}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={handleDismissIncident} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close" size={18} color={chromeSubtle} />
-            </TouchableOpacity>
-          </View>
-          <Text style={[styles.reportCardSub, { color: chromeSubtle }]} numberOfLines={2}>
-            {(activeIncident.distance_miles ?? 0).toFixed(1)} mi ahead · {activeIncident.upvotes ?? 0} confirmed
-          </Text>
-          <View style={styles.reportCardActions}>
-            <TouchableOpacity style={[styles.reportActionBtn, styles.reportActionPositive]} onPress={() => void handleConfirmIncident(true)}>
-              <Ionicons name="thumbs-up" size={14} color="#fff" />
-              <Text style={styles.reportActionText}>Still there</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.reportActionBtn, styles.reportActionNegative]} onPress={() => void handleConfirmIncident(false)}>
-              <Ionicons name="thumbs-down" size={14} color="#fff" />
-              <Text style={styles.reportActionText}>Gone</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : !!reportHint ? (
-        <View
-          style={[
-            styles.reportHint,
-            {
-              top: insets.top + 12,
-              backgroundColor: reportSurface,
-              borderColor: reportBorder,
-            },
-          ]}
-        >
+      {!!reportHint && (
+        <View style={[styles.reportHint, { top: insets.top + 8 }]}>
           <Ionicons name="warning-outline" size={14} color="#FCD34D" />
-          <Text style={[styles.reportHintText, { color: chromeText }]} numberOfLines={2}>{reportHint}</Text>
-        </View>
-      ) : null}
-      <View style={[styles.orionFabWrap, { right: 14, bottom: insets.bottom + 78 }]}>
-        <OrionQuickMic
-          visible
-          isPremium={Boolean(user?.isPremium)}
-          interactionMode="navigation"
-          onOpenChat={() => {}}
-          onReply={(text) => setOrionQuickReply(text)}
-        />
-      </View>
-      {!!orionQuickReply && (
-        <View
-          style={[
-            styles.orionReplyStrip,
-            {
-              left: 14,
-              right: 14,
-              bottom: insets.bottom + 138,
-              backgroundColor: chromeSurface,
-              borderColor: reportBorder,
-            },
-          ]}
-        >
-          <Ionicons name="sparkles-outline" size={14} color={modeConfig.etaAccentColor} />
-          <Text style={[styles.orionReplyStripText, { color: chromeText }]} numberOfLines={2}>
-            {orionQuickReply}
-          </Text>
+          <Text style={styles.reportHintText} numberOfLines={2}>{reportHint}</Text>
         </View>
       )}
+      <TouchableOpacity
+        style={[styles.recenterBtn, { bottom: insets.bottom + 12 }]}
+        activeOpacity={0.85}
+        onPress={() => navRef.current?.recenterMap?.()}
+      >
+        <Ionicons name="locate" size={16} color="#fff" />
+        <Text style={styles.recenterText}>Recenter</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -389,80 +236,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  reportHintText: { fontSize: 12, fontWeight: '600', flexShrink: 1 },
-  reportCard: {
+  reportHintText: { color: '#E5E7EB', fontSize: 12, fontWeight: '600', flexShrink: 1 },
+  recenterBtn: {
     position: 'absolute',
-    left: 14,
     right: 14,
-    borderRadius: 16,
-    padding: 12,
-    backgroundColor: 'rgba(15,23,42,0.9)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
-  },
-  reportCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  reportCardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-  },
-  reportCardTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    flexShrink: 1,
-  },
-  reportCardSub: { fontSize: 12, marginTop: 6 },
-  reportCardActions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
-  },
-  reportActionBtn: {
-    flex: 1,
-    minHeight: 36,
-    borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  reportActionPositive: {
-    backgroundColor: '#059669',
-  },
-  reportActionNegative: {
-    backgroundColor: '#DC2626',
-  },
-  reportActionText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  orionFabWrap: {
-    position: 'absolute',
-    zIndex: 12,
-  },
-  orionReplyStrip: {
-    position: 'absolute',
-    minHeight: 38,
-    borderRadius: 12,
+    borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: 'rgba(15,23,42,0.88)',
+    backgroundColor: 'rgba(15,23,42,0.82)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: 'rgba(255,255,255,0.2)',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  orionReplyStripText: {
-    fontSize: 12,
-    fontWeight: '600',
-    flexShrink: 1,
-  },
+  recenterText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 });

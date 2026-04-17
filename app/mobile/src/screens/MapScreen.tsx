@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMe
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
   Platform, Keyboard, Alert, Switch, Pressable, Image, Dimensions,
-  AppState,
+  AppState, InteractionManager,
 } from 'react-native';
 import Animated, {
   FadeIn, FadeOut, SlideInDown, SlideOutDown,
@@ -16,7 +16,6 @@ import * as Battery from 'expo-battery';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import * as Sentry from '@sentry/react-native';
 
 import { useLocation } from '../hooks/useLocation';
 import { useDriveNavigation } from '../hooks/useDriveNavigation';
@@ -82,16 +81,9 @@ import { repeatLastTurnByTurn } from '../navigation/navigationGuidanceMemory';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import { getRoutePolylineStyle } from '../lib/routePolylineStyle';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
-import { getNavigationFollowPaddingFallback } from '../navigation/cameraPresets';
 import NavigationDebugHud from '../components/navigation/NavigationDebugHud';
 import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
-import {
-  getPrimaryBannerText,
-  getSecondaryBannerText,
-  isActionableGuidanceStep,
-  mergeLaneSources,
-  pickGuidanceStep,
-} from '../navigation/bannerInstructions';
+import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
 import { isLiveShareFresh } from '../lib/friendPresence';
 import type { MapFocusFriendParams, NavigateToFriendParams } from '../types';
 import {
@@ -104,7 +96,6 @@ import {
   buildChainInstruction,
   iconManeuverForState,
   iconManeuverKindForState,
-  resolveManeuverFieldsForTurnCard,
   shouldShowRoadDisambiguation,
 } from '../navigation/turnCardModel';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
@@ -135,12 +126,7 @@ import OrionQuickMic from '../components/orion/OrionQuickMic';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
-import {
-  navLaneGuidanceUiEnabled,
-  navLogicDebugEnabled,
-  navLogicSdkEnabled,
-  navNativeFullScreenEnabled,
-} from '../navigation/navFeatureFlags';
+import { navLogicDebugEnabled, navLogicSdkEnabled, navNativeFullScreenEnabled } from '../navigation/navFeatureFlags';
 import {
   ingestSdkLocation,
   ingestSdkProgress,
@@ -158,6 +144,7 @@ import type { TripSummary } from '../hooks/useDriveNavigation';
 import type { RouteProp } from '@react-navigation/native';
 import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import type { MapStackParamList, MapStackScreenNavigationProp } from '../navigation/types';
+import { extractLocationSharingValue, getApiErrorMessage } from '../features/social/locationSharing';
 import { storage } from '../utils/storage';
 import { logMapDataIssue } from '../utils/mapApiDiagnostics';
 import { supabase, supabaseConfigured } from '../lib/supabase';
@@ -210,8 +197,9 @@ function placeCardFuelHint(place: {
   return 'Live $/gal not shown — confirm at pump before fueling.';
 }
 
-/** Show traffic / camera POIs at city zoom, then hide them again when zoomed out to state level. */
-const TRAFFIC_CAM_MIN_ZOOM = 10.75;
+/** Traffic cams hide when zoomed out (less map clutter). */
+/** Show traffic / camera POIs once the user is zoomed in enough (lower = visible sooner). */
+const TRAFFIC_CAM_MIN_ZOOM = 12;
 
 const INCIDENT_COLORS: Record<string, string> = {
   police: '#4A90D9', accident: '#D04040', hazard: '#E07830',
@@ -226,8 +214,8 @@ const MAP_STYLES = [
 
 /**
  * Android RNMBXCameraManager.setFollowPadding calls asMap() — undefined breaks Fabric (ClassCastException).
- * Non-navigation fallback is zero; during navigation, use {@link getNavigationFollowPaddingFallback}
- * so the puck clears the same top/bottom chrome as `useCameraController` on the first frame.
+ * Non-navigation fallback is zero; during navigation, use {@link navFallbackFollowPadding} so the puck
+ * sits at the bottom third even before the first `useCameraController` tick.
  */
 const MAPBOX_DEFAULT_FOLLOW_PADDING = {
   paddingTop: 0,
@@ -235,6 +223,29 @@ const MAPBOX_DEFAULT_FOLLOW_PADDING = {
   paddingBottom: 0,
   paddingLeft: 0,
 } as const;
+
+/**
+ * Mode-aware follow-padding used when the puck-follow camera is active but
+ * `useCameraController` has not yet produced a preset (e.g. first render frame
+ * after navigation starts). Uses the mode's `cameraPaddingBottom` so the puck
+ * sits at the bottom third from the very first frame.
+ */
+function navFallbackFollowPadding(
+  mc: { cameraPaddingBottom: number },
+  safeBottom: number,
+): {
+  paddingTop: number;
+  paddingBottom: number;
+  paddingLeft: number;
+  paddingRight: number;
+} {
+  return {
+    paddingTop: 330,
+    paddingBottom: mc.cameraPaddingBottom > 0 ? mc.cameraPaddingBottom + safeBottom : 90 + safeBottom,
+    paddingLeft: 28,
+    paddingRight: 28,
+  };
+}
 
 const REPORT_TYPES = [
   { type: 'police', label: 'Police', icon: 'shield-outline' as const },
@@ -307,26 +318,6 @@ function parseCameraViewsFromTraffic(raw: unknown): CameraViewFeed[] | undefined
   return list.length ? list : undefined;
 }
 
-function pressedFeatureName(properties: Record<string, unknown> | null | undefined): string | null {
-  if (!properties) return null;
-  const keys = [
-    'name',
-    'name_en',
-    'name:en',
-    'brand',
-    'brand_name',
-    'poi_name',
-    'place_name',
-    'house_name',
-    'address_name',
-  ];
-  for (const key of keys) {
-    const value = properties[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return null;
-}
-
 type CategoryExploreState = {
   title: string;
   subtitle?: string;
@@ -389,7 +380,6 @@ export default function MapScreen() {
     name: string;
     mode: 'live' | 'last_known';
     startedLive: boolean;
-    engine: 'sdk_snapshot' | 'js_live' | 'js_snapshot';
   } | null>(null);
   const friendFollowLastDestRef = useRef<{ lat: number; lng: number } | null>(null);
   const friendFollowLastRerouteRef = useRef(0);
@@ -398,14 +388,6 @@ export default function MapScreen() {
   useEffect(() => {
     friendFollowSessionRef.current = friendFollowSession;
   }, [friendFollowSession]);
-  // Explicit per-session engine choice. Launch-safe default:
-  // - normal trips: SDK authoritative when enabled
-  // - friend-follow: SDK routes to a snapshot destination at start; JS-only sessions can do
-  //   live moving-destination reroutes when the whole app is already running JS navigation.
-  const navLogicSdkSessionEnabled =
-    navLogicSdkEnabled() &&
-    friendFollowSession?.engine !== 'js_live' &&
-    friendFollowSession?.engine !== 'js_snapshot';
 
   const { friendTrackingEnabled, liveLocationPublishingEnabled, refresh: refreshPublicAppConfig } =
     usePublicAppConfig(mapTabFocused);
@@ -464,24 +446,24 @@ export default function MapScreen() {
     gpsAccuracy: accuracy,
     drivingMode,
     voiceMuted: navVoiceMuted,
-    dynamicDestinationFollow:
-      friendFollowSession?.engine === 'js_live' &&
-      Boolean(friendFollowSession?.startedLive) &&
-      friendFollowSession?.mode === 'live',
-    navSdkHeadless: navLogicSdkSessionEnabled,
+    dynamicDestinationFollow: friendFollowSession?.mode === 'live',
+    navSdkHeadless: navLogicSdkEnabled(),
   });
   useNavigationSpeech({
     progress: nav.navigationProgress,
-    enabled: !navVoiceMuted && nav.isNavigating && !navLogicSdkSessionEnabled,
+    enabled: !navVoiceMuted && nav.isNavigating && !navLogicSdkEnabled(),
     drivingMode,
-    routeSteps: nav.navigationData?.steps,
-    routePolyline: nav.navigationData?.polyline,
-    currentStepIndex: nav.currentStepIndex,
-    userCoord: nav.navigationProgressCoord,
-    navigationSteps: nav.navigationSteps,
   });
 
   const enableShareLocationFromMap = useCallback(async () => {
+    const coordsValid =
+      Number.isFinite(location.lat) &&
+      Number.isFinite(location.lng) &&
+      !((Math.abs(location.lat) < 1e-6) && (Math.abs(location.lng) < 1e-6));
+    if (!coordsValid) {
+      Alert.alert('Location sharing', 'Waiting for a valid GPS fix. Try again in a moment.');
+      return;
+    }
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
@@ -489,20 +471,17 @@ export default function MapScreen() {
     }
     storage.set(SHARE_LOC_STORAGE_KEY, '1');
     setShareLocEpoch((n) => n + 1);
-    const coordsReady =
-      Number.isFinite(location.lat) &&
-      Number.isFinite(location.lng) &&
-      !(Math.abs(location.lat) < 1e-5 && Math.abs(location.lng) < 1e-5);
-    if (!coordsReady) return;
-    try {
-      const shareRes = await api.put('/api/friends/location/sharing', {
-        is_sharing: true,
-        lat: location.lat,
-        lng: location.lng,
-      });
-      if (!shareRes.success && shareRes.statusCode === 503) setLivePublishPaused503(true);
-    } catch {
-      /* offline — local preference still on */
+    const setShareRes = await api.put('/api/friends/location/sharing', {
+      is_sharing: true,
+      lat: location.lat,
+      lng: location.lng,
+    });
+    const setShareErr = getApiErrorMessage(setShareRes, 'Could not enable location sharing right now.');
+    if (setShareErr) {
+      storage.set(SHARE_LOC_STORAGE_KEY, '0');
+      setShareLocEpoch((n) => n + 1);
+      Alert.alert('Location sharing', setShareErr);
+      return;
     }
     let battery_pct: number | undefined;
     try {
@@ -521,15 +500,16 @@ export default function MapScreen() {
       is_sharing: true,
       battery_pct,
     });
-    if (!res.success && res.statusCode === 503) setLivePublishPaused503(true);
+    const updateErr = getApiErrorMessage(res, 'Could not publish your current location yet.');
+    if (updateErr) {
+      if (res.statusCode === 503) setLivePublishPaused503(true);
+      Alert.alert('Location sharing', updateErr);
+      return;
+    }
   }, [location.lat, location.lng, heading, speed, nav.isNavigating, nav.selectedDestination?.name]);
 
   const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
   const [navLogicCoords, setNavLogicCoords] = useState<Array<{ latitude: number; longitude: number }>>([]);
-  // Prevents navLogicCoords from being updated on every GPS tick once set for a session.
-  // Updating coordinates on each GPS update restarts the native SDK session → replays the
-  // start announcement alongside the ongoing voice → the "two voices" bug.
-  const navLogicCoordsSetRef = useRef(false);
   const navLogicFollowingZoom = useMemo(() => {
     switch (drivingMode) {
       case 'calm':
@@ -542,17 +522,10 @@ export default function MapScreen() {
   }, [drivingMode]);
 
   useEffect(() => {
-    if (!navLogicSdkSessionEnabled || !nav.isNavigating || !nav.navigationData || !location) {
+    if (!navLogicSdkEnabled() || !nav.isNavigating || !nav.navigationData || !location) {
       setNavLogicCoords([]);
-      navLogicCoordsSetRef.current = false;
       return;
     }
-    // Only set coords ONCE per nav session — the native SDK tracks the user's GPS
-    // position internally. Passing new coordinates on every GPS tick (location.lat/lng
-    // changing) causes the SDK to restart the session and replay the start announcement,
-    // which is heard on top of ongoing voice guidance → two voices.
-    if (navLogicCoordsSetRef.current) return;
-    navLogicCoordsSetRef.current = true;
     setNavLogicCoords([
       { latitude: location.lat, longitude: location.lng },
       {
@@ -561,7 +534,6 @@ export default function MapScreen() {
       },
     ]);
   }, [
-    navLogicSdkSessionEnabled,
     nav.isNavigating,
     nav.navigationData?.destination?.lat,
     nav.navigationData?.destination?.lng,
@@ -572,7 +544,6 @@ export default function MapScreen() {
   useEffect(() => {
     if (!nav.isNavigating) {
       setNavLogicCoords([]);
-      navLogicCoordsSetRef.current = false;
     }
   }, [nav.isNavigating]);
 
@@ -583,7 +554,7 @@ export default function MapScreen() {
       const mr = routes.mainRoute;
       if (poly.length >= 2 && mr && typeof mr.distance === 'number' && typeof mr.expectedTravelTime === 'number') {
         ingestSdkRoutePolyline(poly);
-        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime, routes);
+        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime);
       }
     },
     [nav.applySdkRouteGeometry],
@@ -598,7 +569,7 @@ export default function MapScreen() {
       const mr = routes.mainRoute;
       if (poly.length >= 2 && typeof mr.distance === 'number' && typeof mr.expectedTravelTime === 'number') {
         ingestSdkRoutePolyline(poly);
-        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime, routes);
+        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime);
       }
     },
     [nav.applySdkRouteGeometry],
@@ -607,44 +578,45 @@ export default function MapScreen() {
   /** During nav: fused coord for puck/camera (`navigationProgressCoord` → snapped display when JS on-route). */
   const navDisplayCoord = nav.isNavigating ? nav.navigationProgressCoord : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
+
   /** Passed / ahead route styling while navigating — same snap as turn/ETA (`navigationProgress`). */
   const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
     if (!nav.isNavigating) return null;
-    const s = nav.navigationProgress?.routeSplitSnap;
+    const s = nav.navigationProgress?.snapped;
     if (!s) return null;
     return { segmentIndex: s.segmentIndex, tOnSegment: s.t };
   }, [
     nav.isNavigating,
-    nav.navigationProgress?.routeSplitSnap?.segmentIndex,
-    nav.navigationProgress?.routeSplitSnap?.t,
+    nav.navigationProgress?.snapped?.segmentIndex,
+    nav.navigationProgress?.snapped?.t,
   ]);
   const displaySpeedMph = nav.isNavigating
     ? Math.max(0, (nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704) * 2.236936)
     : speed;
-  const markerFocusCoordinate = useMemo(
-    () =>
-      nav.isNavigating
-        ? navDisplayCoord
-        : location,
-    [nav.isNavigating, navDisplayCoord.lat, navDisplayCoord.lng, location.lat, location.lng],
-  );
 
   /**
    * LocationPuck beam: with CustomLocationProvider we pass a single `heading` — native `course` mode
    * reads GPS COG and fights that value. Use `heading` whenever custom coords are injected.
    */
   const locationPuckBearing = useMemo((): 'heading' | 'course' => {
-    const sdkNav = navLogicSdkSessionEnabled;
+    const sdkNav = navLogicSdkEnabled();
     const customLocationActive =
       nav.isNavigating && ((sdkNav && nav.sdkNavLocation) || !sdkNav);
     if (customLocationActive) return 'heading';
     return displaySpeedMph > 10 ? 'course' : 'heading';
-  }, [nav.isNavigating, nav.sdkNavLocation, displaySpeedMph, navLogicSdkSessionEnabled]);
+  }, [nav.isNavigating, nav.sdkNavLocation, displaySpeedMph]);
 
   const fusedSpeedMpsNav =
     nav.isNavigating
       ? Math.max(0, nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704)
       : null;
+  const navFetchRef = useRef(nav.fetchDirections);
+  const navSetDestRef = useRef(nav.setSelectedDestination);
+  useEffect(() => {
+    navFetchRef.current = nav.fetchDirections;
+    navSetDestRef.current = nav.setSelectedDestination;
+  }, [nav.fetchDirections, nav.setSelectedDestination]);
+
   usePassiveDriveGems({
     enabled: Boolean(user?.id),
     mapFocused: true,
@@ -701,7 +673,6 @@ export default function MapScreen() {
   const [isExploring, setIsExploring] = useState(false);
   const [compassMode, setCompassMode] = useState(false);
   const [followMode, setFollowMode] = useState<'free' | 'follow' | 'heading'>('follow');
-  const [turnCardBrowseOffset, setTurnCardBrowseOffset] = useState(0);
   /** Bumps when a nav session starts so Mapbox Camera remounts (clears preview fitBounds stuck state). */
   const [navCameraSessionKey, setNavCameraSessionKey] = useState(0);
   /** Single distance field for maneuver-aware presets (must match banner/speech). */
@@ -766,7 +737,6 @@ export default function MapScreen() {
   const [showReportPicker, setShowReportPicker] = useState(false);
   const [showCommunitySheet, setShowCommunitySheet] = useState(false);
   const reportPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastIncidentFetchCenterRef = useRef<{ lat: number; lng: number } | null>(null);
   const announcedRef = useRef<Set<string>>(new Set());
   const announcedOfferNavRef = useRef<Set<string>>(new Set());
   const trackedOfferViewsRef = useRef<Set<string>>(new Set());
@@ -1042,14 +1012,6 @@ export default function MapScreen() {
     () => getUpcomingManeuverStep(nav.navigationData?.steps, nav.currentStepIndex),
     [nav.navigationData?.steps, nav.currentStepIndex],
   );
-  useEffect(() => {
-    if (!nav.isNavigating) {
-      setTurnCardBrowseOffset(0);
-    }
-  }, [nav.isNavigating]);
-  useEffect(() => {
-    setTurnCardBrowseOffset(0);
-  }, [nav.currentStepIndex]);
   const confirmUntil = useTurnConfirmationUntil(nav.isNavigating, nav.currentStepIndex, drivingMode);
   const inConfirmWindow = Date.now() < confirmUntil;
   /** Tracks when turn-card state last entered 'active' for minimum dwell enforcement. */
@@ -1140,8 +1102,7 @@ export default function MapScreen() {
       try {
         const r = await api.get('/api/friends/location/sharing');
         if (cancelled || !r.success) return;
-        const inner = unwrapOffersApiData(r.data) as { is_sharing?: boolean } | null;
-        const v = inner && typeof inner.is_sharing === 'boolean' ? inner.is_sharing : null;
+        const v = extractLocationSharingValue(unwrapOffersApiData(r.data));
         if (v == null) return;
         storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
         setShareLocEpoch((n) => n + 1);
@@ -1592,17 +1553,9 @@ export default function MapScreen() {
 
     let cancelled = false;
 
-    // Single rAF is enough to flush the current render cycle. The previous
-    // InteractionManager + double-rAF + 700ms flyTo chain was causing ~1s lag
-    // because it waited for the preview sheet dismiss animation to drain the
-    // interaction queue before flying to the user's position.
-    // defaultSettings now starts the remounted Camera at navDisplayCoordRef so
-    // even if this flyTo is slightly late the camera is already at the right spot.
-    requestAnimationFrame(() => {
+    const runSnap = () => {
       if (cancelled) return;
-      const pad =
-        camCtrlRef.current?.followPadding ??
-        getNavigationFollowPaddingFallback(drivingMode, insets.top, insets.bottom);
+      const pad = camCtrlRef.current?.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
       const zoom = camCtrlRef.current?.followZoomLevel ?? modeConfig.navZoom;
       const pitch = camCtrlRef.current?.followPitch ?? modeConfig.navPitch;
       const c = navDisplayCoordRef.current;
@@ -1614,9 +1567,14 @@ export default function MapScreen() {
         pitch,
         padding: pad,
         animationMode: 'flyTo',
-        // defaultSettings already centers on the puck at remount; 0ms avoids an extra ~350ms
-        // fly competing with followUserLocation when starting navigation from route preview.
-        animationDuration: 0,
+        animationDuration: 700,
+      });
+    };
+
+    InteractionManager.runAfterInteractions(() => {
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(runSnap);
       });
     });
 
@@ -1664,13 +1622,13 @@ export default function MapScreen() {
   // Fix 5: Reroute when driving mode changes during active nav
   useEffect(() => {
     if (!nav.isNavigating || !nav.selectedDestination) return;
-    if (navLogicSdkSessionEnabled) return;
+    if (navLogicSdkEnabled()) return;
     void nav.fetchDirections(nav.selectedDestination).then((r) => {
       if (!r.ok && r.reason === 'route_failed') {
         Alert.alert('Could not refresh route', r.message ?? 'Driving mode changed but directions failed. Try stopping navigation and starting again.');
       }
     });
-  }, [drivingMode, nav, navLogicSdkSessionEnabled]);
+  }, [drivingMode]);
 
   // Animate report card timer whenever a new report card shows
   useEffect(() => {
@@ -1689,10 +1647,7 @@ export default function MapScreen() {
       );
       if (!res.success || res.data == null) return;
       const d = (res.data as { data?: Incident[] }).data;
-      if (Array.isArray(d)) {
-        lastIncidentFetchCenterRef.current = { lat: loc.lat, lng: loc.lng };
-        setNearbyIncidents(d);
-      }
+      if (Array.isArray(d)) setNearbyIncidents(d);
     } catch { /* offline / tunnel */ }
   }, []);
 
@@ -1711,27 +1666,12 @@ export default function MapScreen() {
   // Incident polling — faster while incidents layer is on so pins appear quickly
   useEffect(() => {
     void fetchNearbyIncidents();
-    const ms = nav.isNavigating ? 4000 : showIncidents ? 7000 : 30000;
+    const ms = showIncidents ? (nav.isNavigating ? 8000 : 10000) : nav.isNavigating ? 15000 : 45000;
     reportPollRef.current = setInterval(() => void fetchNearbyIncidents(), ms);
     return () => {
       if (reportPollRef.current) clearInterval(reportPollRef.current);
     };
   }, [nav.isNavigating, fetchNearbyIncidents, showIncidents]);
-
-  useEffect(() => {
-    if (!showIncidents && !nav.isNavigating) return;
-    if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return;
-    if (Math.abs(location.lat) < 1e-5 && Math.abs(location.lng) < 1e-5) return;
-    const last = lastIncidentFetchCenterRef.current;
-    if (!last) {
-      void fetchNearbyIncidents();
-      return;
-    }
-    const movedMeters = haversineMeters(last.lat, last.lng, location.lat, location.lng);
-    if (movedMeters >= (nav.isNavigating ? 220 : 550)) {
-      void fetchNearbyIncidents();
-    }
-  }, [showIncidents, nav.isNavigating, location.lat, location.lng, fetchNearbyIncidents]);
 
   useEffect(() => {
     if (!nav.isNavigating) announcedOfferNavRef.current.clear();
@@ -2493,22 +2433,14 @@ export default function MapScreen() {
         void handleStartDirections({ name: p.name, address: `Meet ${p.name}`, lat: p.lat, lng: p.lng });
         return;
       }
-      const engine: 'sdk_snapshot' | 'js_live' | 'js_snapshot' =
-        navLogicSdkEnabled()
-          ? 'sdk_snapshot'
-          : p.isLiveFresh
-            ? 'js_live'
-            : 'js_snapshot';
       setFriendFollowSession({
         friendId: p.friendId,
         name: p.name,
-        mode: engine === 'js_live' ? 'live' : 'last_known',
+        mode: p.isLiveFresh ? 'live' : 'last_known',
         startedLive: p.isLiveFresh,
-        engine,
       });
       friendFollowLastDestRef.current = { lat: p.lat, lng: p.lng };
       friendFollowLastRerouteRef.current = Date.now();
-      friendFollowRerouteBusyRef.current = false;
       void handleStartDirections(
         { name: p.name, address: `Meet ${p.name}`, lat: p.lat, lng: p.lng },
         { preserveFriendFollow: true },
@@ -2593,18 +2525,14 @@ export default function MapScreen() {
     const fresh = isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng);
     setFriendFollowSession((prev) => {
       if (!prev) return prev;
-      const mode: 'live' | 'last_known' =
-        prev.engine === 'js_live' && prev.startedLive && fresh && fl.isSharing
-          ? 'live'
-          : 'last_known';
+      const mode: 'live' | 'last_known' = fresh && fl.isSharing ? 'live' : 'last_known';
       return prev.mode === mode ? prev : { ...prev, mode };
     });
   }, [friendLocations, nav.isNavigating]);
 
   useEffect(() => {
     const sess = friendFollowSessionRef.current;
-    if (!sess || !nav.isNavigating) return;
-    if (sess.engine !== 'js_live' || sess.mode !== 'live') return;
+    if (!nav.isNavigating || !sess) return;
     const fl = friendLocations.find((x) => String(x.id) === String(sess.friendId));
     if (!fl) return;
     const fresh = isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng);
@@ -2621,16 +2549,17 @@ export default function MapScreen() {
     friendFollowRerouteBusyRef.current = true;
     friendFollowLastRerouteRef.current = now;
     friendFollowLastDestRef.current = { lat: fl.lat, lng: fl.lng };
+
     const place = { name: sess.name, address: `Meet ${sess.name}`, lat: fl.lat, lng: fl.lng };
-    nav.setSelectedDestination({ name: place.name, address: place.address, lat: place.lat, lng: place.lng });
-    void nav.fetchDirections(
-      place,
-      locationRef.current,
-      { maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined },
-    ).finally(() => {
-      friendFollowRerouteBusyRef.current = false;
-    });
-  }, [friendLocations, nav, nav.isNavigating, avoidLowClearances, vehicleHeight]);
+    navSetDestRef.current({ name: place.name, address: place.address, lat: place.lat, lng: place.lng });
+    void navFetchRef
+      .current(place, locationRef.current, {
+        maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined,
+      })
+      .finally(() => {
+        friendFollowRerouteBusyRef.current = false;
+      });
+  }, [friendLocations, nav.isNavigating, avoidLowClearances, vehicleHeight]);
 
   /** Copy for live friend follow; trips do not earn gems (`dynamicDestination` on route). */
   const friendFollowContextLine = useMemo(() => {
@@ -2640,12 +2569,6 @@ export default function MapScreen() {
       ? isLiveShareFresh(fl.isSharing, fl.lastUpdated || undefined, fl.lat, fl.lng)
       : false;
     const name = friendFollowSession.name;
-    if (friendFollowSession.engine === 'sdk_snapshot') {
-      if (fl && fresh && fl.isSharing && friendFollowSession.startedLive) {
-        return `Routing to ${name}'s latest live location snapshot`;
-      }
-      return `Routing to ${name}'s latest known location`;
-    }
     if (fl && fresh && fl.isSharing && friendFollowSession.mode === 'live') {
       return `Following ${name} live`;
     }
@@ -2706,7 +2629,6 @@ export default function MapScreen() {
 
   const handleRecenter = useCallback(() => {
     if (nav.isNavigating) {
-      setTurnCardBrowseOffset(0);
       setCameraLocked(true);
       userInteracting.current = false;
       setIsExploring(false);
@@ -2836,11 +2758,7 @@ export default function MapScreen() {
 
       const asFeatures = Array.isArray(e?.features) ? e.features : e?.type === 'Feature' ? [e] : [];
       for (const f of asFeatures) {
-        const name = pressedFeatureName(
-          f?.properties && typeof f.properties === 'object'
-            ? (f.properties as Record<string, unknown>)
-            : null,
-        );
+        const name = f?.properties?.name || f?.properties?.name_en;
         const pos = lngLatFromPressGeometry(f?.geometry);
         if (name && pos) {
           const nextName = String(name);
@@ -2938,7 +2856,7 @@ export default function MapScreen() {
         />
       )}
 
-      {navLogicSdkSessionEnabled && nav.isNavigating && navLogicCoords.length >= 2 ? (
+      {navLogicSdkEnabled() && nav.isNavigating && navLogicCoords.length >= 2 ? (
         // Headless native session: this module has no separate “createSession” API — the hidden view drives logic + voice.
         <MapboxNavigationView
           ref={navLogicRef}
@@ -2960,6 +2878,7 @@ export default function MapScreen() {
           onNavigationLocationUpdate={(e: { nativeEvent: SdkLocationPayload }) =>
             ingestSdkLocation(e.nativeEvent)
           }
+          // @ts-expect-error Patched native module emits `{ reason, routes }`; published `.d.ts` still types `onRouteChanged` as no-arg.
           onRouteChanged={handleSdkRouteChanged}
           onFinalDestinationArrival={() => nav.stopNavigation()}
           onCancelNavigation={() => nav.stopNavigation()}
@@ -2980,16 +2899,12 @@ export default function MapScreen() {
           onTouchStart={handleMapTouch}
           onPress={handleMapPress}
         >
-          {nav.isNavigating && navLogicSdkSessionEnabled ? (
+          {nav.isNavigating && navLogicSdkEnabled() && nav.sdkNavLocation ? (
             <MapboxGL.CustomLocationProvider
-              coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
-              heading={
-                nav.sdkNavLocation && nav.sdkNavLocation.course >= 0
-                  ? nav.sdkNavLocation.course
-                  : navDisplayHeading
-              }
+              coordinate={[nav.sdkNavLocation.longitude, nav.sdkNavLocation.latitude]}
+              heading={nav.sdkNavLocation.course >= 0 ? nav.sdkNavLocation.course : heading}
             />
-          ) : nav.isNavigating && !navLogicSdkSessionEnabled ? (
+          ) : nav.isNavigating && !navLogicSdkEnabled() ? (
             <MapboxGL.CustomLocationProvider
               coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
               heading={navDisplayHeading}
@@ -2997,7 +2912,7 @@ export default function MapScreen() {
           ) : null}
           {standardStyleImportsEnabled && MapboxGL.StyleImport ? (
             <MapboxGL.StyleImport
-              key={`basemap-${mapLightPreset}-${isSatelliteStyle ? 'sat' : 'std'}`}
+              key={`basemap-${mapLightPreset}-${drivingMode}-${isSatelliteStyle ? 'sat' : 'std'}-${nav.isNavigating ? 'nav' : 'exp'}`}
               id="basemap"
               existing
               config={standardBasemapImportConfig}
@@ -3007,21 +2922,11 @@ export default function MapScreen() {
           <MapboxGL.Camera
             key={nav.isNavigating ? `nav-follow-${navCameraSessionKey}` : 'map-camera-explore'}
             ref={cameraRef}
-            defaultSettings={
-              nav.isNavigating
-                ? {
-                    // Start the remounted nav camera AT the user's current position so there
-                    // is no lag before followUserLocation kicks in or the flyTo resolves.
-                    centerCoordinate: [navDisplayCoordRef.current.lng, navDisplayCoordRef.current.lat],
-                    zoomLevel: camCtrlRef.current?.followZoomLevel ?? modeConfig.navZoom,
-                    pitch: camCtrlRef.current?.followPitch ?? modeConfig.navPitch,
-                  }
-                : {
-                    centerCoordinate: stableCenter,
-                    zoomLevel: modeConfig.exploreZoom,
-                    pitch: modeConfig.explorePitch,
-                  }
-            }
+            defaultSettings={{
+              centerCoordinate: stableCenter,
+              zoomLevel: modeConfig.exploreZoom,
+              pitch: modeConfig.explorePitch,
+            }}
             centerCoordinate={
               nav.isNavigating || isExploring || compassMode || exploreTracksUser ? undefined : stableCenter
             }
@@ -3033,10 +2938,8 @@ export default function MapScreen() {
             }
             animationMode="easeTo"
             animationDuration={
-              nav.isNavigating && cameraLocked
-                ? 0  // Native followUserLocation handles smooth tracking; zero-duration prevents
-                     // followZoom/Pitch/Padding prop updates from firing competing animations.
-                : (camCtrl ? camCtrl.animationDuration : animDuration)
+              (camCtrl ? camCtrl.animationDuration : animDuration) +
+              (nav.isNavigating && cameraLocked ? 90 : 0)
             }
             followUserLocation={(nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser}
             followUserMode={
@@ -3074,7 +2977,7 @@ export default function MapScreen() {
               camCtrl
                 ? camCtrl.followPadding
                 : nav.isNavigating && cameraLocked
-                  ? getNavigationFollowPaddingFallback(drivingMode, insets.top, insets.bottom)
+                  ? navFallbackFollowPadding(modeConfig, insets.bottom)
                   : MAPBOX_DEFAULT_FOLLOW_PADDING
             }
           />
@@ -3093,12 +2996,12 @@ export default function MapScreen() {
             activeStyleURL={activeStyleURL}
             belowLayerID={buildingsBelowLayerId}
           />
-          {showTraffic && <TrafficLayer belowLayerID={buildingsBelowLayerId} />}
+          {showTraffic && <TrafficLayer />}
           <IncidentHeatmap incidents={nearbyIncidents} visible={showIncidents} />
           {showPhotoReports && (
             <PhotoReportMarkers reports={photoReports} onReportTap={(r) => setSelectedPhotoReport(r)} />
           )}
-          {showTrafficSafety && isTrafficSafetyLayerEnabled(location.lat, location.lng) && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
+          {showTrafficSafety && isTrafficSafetyLayerEnabled(location.lat, location.lng) && !nav.isNavigating && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
             <TrafficSafetyLayer
               zones={trafficSafetyZones}
               onZoneTap={(z) =>
@@ -3179,36 +3082,19 @@ export default function MapScreen() {
             />
           )}
 
-          <OfferMarkers
-            offers={recommendedNearbyOffers}
-            zoomLevel={mapZoomLevel}
-            referenceCoordinate={markerFocusCoordinate}
-            onOfferTap={setSelectedOffer}
-          />
-          {showIncidents && (
-            <ReportMarkers
-              incidents={nearbyIncidents.filter((inc) => {
-                if ((inc.upvotes ?? 0) < 0) return false;
-                if (inc.type === 'construction') return showConstruction;
-                return true;
-              })}
-              zoomLevel={mapZoomLevel}
-              referenceCoordinate={markerFocusCoordinate}
-              onIncidentTap={setActiveReportCard}
-            />
+          {!nav.isNavigating && (
+            <OfferMarkers offers={recommendedNearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
           )}
-          {user?.isPremium && showCameras && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
-            <CameraMarkers
-              cameras={cameraLocations}
-              zoomLevel={mapZoomLevel}
-              referenceCoordinate={markerFocusCoordinate}
-              onCameraTap={(cam) => setSelectedTrafficCamera(cam)}
-            />
+          {showIncidents && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
+            if ((inc.upvotes ?? 0) < 0) return false;
+            if (inc.type === 'construction') return showConstruction;
+            return true;
+          })} onIncidentTap={setActiveReportCard} />}
+          {user?.isPremium && showCameras && (
+            <CameraMarkers cameras={cameraLocations} onCameraTap={(cam) => setSelectedTrafficCamera(cam)} />
           )}
           <FriendMarkers
             friends={friendLocationsVisible}
-            zoomLevel={mapZoomLevel}
-            referenceCoordinate={markerFocusCoordinate}
             onFriendTap={(f) => {
               const fresh = isLiveShareFresh(f.isSharing, f.lastUpdated || undefined, f.lat, f.lng);
               Alert.alert(f.name, 'What would you like to do?', [
@@ -3246,15 +3132,11 @@ export default function MapScreen() {
 
           <MapboxGL.LocationPuck
             visible
-            androidRenderMode={Platform.OS === 'android' && nav.isNavigating ? 'gps' : 'normal'}
+            androidRenderMode="normal"
             puckBearingEnabled
             puckBearing={locationPuckBearing}
-            pulsing={
-              nav.isNavigating
-                ? { isEnabled: true, color: navRouteColors.routeColor, radius: 'accuracy' }
-                : { isEnabled: true }
-            }
-            scale={nav.isNavigating ? 1.68 : 1.55}
+            pulsing={{ isEnabled: !nav.isNavigating }}
+            scale={1.55}
           />
         </MapboxGL.MapView>
       ) : (
@@ -3441,43 +3323,10 @@ export default function MapScreen() {
         searchResultPriceHint={searchResultPriceHint}
       />
 
-      {/* ═══ TURN CARD — distance, glyph, banner, and rich fields share one reconciled maneuver (JS + SDK). ═ */}
+      {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
       {nav.isNavigating && nav.navigationProgress && (() => {
         const prog = nav.navigationProgress!;
         const instructionSrc = prog.instructionSource;
-        const laneUi = navLaneGuidanceUiEnabled();
-        const upcomingSteps =
-          nav.navigationData?.steps?.filter((step) => isActionableGuidanceStep(step, true)) ?? [];
-        const clampedBrowseOffset =
-          upcomingSteps.length > 0
-            ? Math.max(0, Math.min(turnCardBrowseOffset, upcomingSteps.length - 1))
-            : 0;
-        const browsedGuidanceStep =
-          upcomingSteps.length > 0
-            ? upcomingSteps[clampedBrowseOffset] ?? null
-            : null;
-        const isBrowsingAhead = clampedBrowseOffset > 0;
-        const cycleAheadTurn = (dir: -1 | 1) => {
-          if (!upcomingSteps.length) return;
-          const next = Math.max(0, Math.min(clampedBrowseOffset + dir, upcomingSteps.length - 1));
-          if (next === clampedBrowseOffset) return;
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setTurnCardBrowseOffset(next);
-        };
-        const handleTurnCardPress = () => {
-          if (upcomingSteps.length <= 1) return;
-          cycleAheadTurn(1);
-        };
-        const turnCardGesture = Gesture.Pan()
-          .activeOffsetX([-18, 18])
-          .failOffsetY([-18, 18])
-          .onEnd((e) => {
-            if (e.translationX <= -30) {
-              runOnJS(cycleAheadTurn)(1);
-            } else if (e.translationX >= 30) {
-              runOnJS(cycleAheadTurn)(-1);
-            }
-          });
 
         if (instructionSrc === 'sdk_waiting') {
           return (
@@ -3509,108 +3358,58 @@ export default function MapScreen() {
           );
         }
 
-        const logicSdkAuthoritativeUi = navLogicSdkSessionEnabled && instructionSrc === 'sdk';
+        const logicSdkAuthoritativeUi = navLogicSdkEnabled() && instructionSrc === 'sdk';
         const useSdkTurnUi =
-          navLogicSdkSessionEnabled && instructionSrc === 'sdk' && prog.nextStep;
-        const sdkNavStepForSynthetic =
-          useSdkTurnUi
-            ? prog.nextStep
-            : null;
-        const sdkRouteStepForSynthetic =
-          sdkNavStepForSynthetic != null && nav.navigationData?.steps?.length
-            ? (nav.navigationData.steps[sdkNavStepForSynthetic.index] ?? null)
-            : null;
+          navLogicSdkEnabled() && instructionSrc === 'sdk' && prog.nextStep;
         const sdkSyntheticStep =
-          useSdkTurnUi && prog && sdkNavStepForSynthetic
+          useSdkTurnUi && prog
             ? directionsStepFromSdkProgress({
-                nextStep: sdkNavStepForSynthetic,
+                nextStep: prog.nextStep,
                 banner: prog.banner,
                 at: navDisplayCoord,
-                routeStep: sdkRouteStepForSynthetic,
               })
             : null;
+        const nextIdx = prog?.nextStep?.index;
+        // When prog.nextStep points to the step the user is already inside
+        // (nextIdx <= currentStepIndex), the "next maneuver" for the card
+        // should be the UPCOMING step, not the one we're already traversing.
+        // Using the current step causes liveDistMeters ≈ 0 and the card gets
+        // stuck in 'active' showing a just-completed turn.
+        const nextStepIsCurrentStep =
+          nextIdx != null && nextIdx <= nav.currentStepIndex;
         const nextManeuverCoord =
           useSdkTurnUi && sdkSyntheticStep
             ? sdkSyntheticStep
             : logicSdkAuthoritativeUi
               ? null
-              : prog?.nextStep?.index != null && nav.navigationData?.steps
-                ? nav.navigationData.steps[prog.nextStep.index] ?? upcomingGuidanceStep
+              : nextIdx != null && !nextStepIsCurrentStep && nav.navigationData?.steps
+                ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
                 : upcomingGuidanceStep;
         const turnCurrentStep = useSdkTurnUi
           ? sdkSyntheticStep ?? currentStep
           : logicSdkAuthoritativeUi
             ? null
             : currentStep;
-        const browsedStepActive =
-          isBrowsingAhead &&
-          browsedGuidanceStep != null &&
-          Number.isFinite(browsedGuidanceStep.lat) &&
-          Number.isFinite(browsedGuidanceStep.lng);
-        const displayedNextManeuverCoord =
-          browsedStepActive ? browsedGuidanceStep : nextManeuverCoord;
-        const displayedTurnCurrentStep =
-          browsedStepActive ? turnCurrentStep ?? browsedGuidanceStep : turnCurrentStep;
         const poly = nav.navigationData?.polyline;
-        const anchorToUserM =
-          displayedNextManeuverCoord != null &&
-          Number.isFinite(displayedNextManeuverCoord.lat) &&
-          Number.isFinite(displayedNextManeuverCoord.lng)
-            ? haversineMeters(
-                navDisplayCoord.lat,
-                navDisplayCoord.lng,
-                displayedNextManeuverCoord.lat,
-                displayedNextManeuverCoord.lng,
-              )
-            : Number.POSITIVE_INFINITY;
-        /** Synthetic SDK rows used to use puck lat/lng — along-route to self is ~0; fall back to SDK distance. */
-        const maneuverAnchorDegenerate = anchorToUserM < 12;
-        const sdkDistToNextManeuver =
-          useSdkTurnUi && sdkNavStepForSynthetic != null && Number.isFinite(sdkNavStepForSynthetic.distanceMetersToNext)
-            ? Math.max(0, sdkNavStepForSynthetic.distanceMetersToNext)
-            : null;
-        let liveDistMeters: number;
-        if (useSdkTurnUi && sdkDistToNextManeuver != null) {
-          liveDistMeters = sdkDistToNextManeuver;
-        } else if (prog != null && Number.isFinite(prog.nextStepDistanceMeters)) {
-          liveDistMeters = prog.nextStepDistanceMeters;
-        } else if (
-          poly &&
-          poly.length >= 2 &&
-          displayedNextManeuverCoord != null &&
-          Number.isFinite(displayedNextManeuverCoord.lat) &&
-          Number.isFinite(displayedNextManeuverCoord.lng) &&
-          !maneuverAnchorDegenerate
-        ) {
-          liveDistMeters = alongRouteDistanceMeters(poly, navDisplayCoord, {
-            lat: displayedNextManeuverCoord.lat,
-            lng: displayedNextManeuverCoord.lng,
-          });
-        } else if (sdkDistToNextManeuver != null && maneuverAnchorDegenerate) {
-          liveDistMeters = sdkDistToNextManeuver;
-        } else if (
-          displayedNextManeuverCoord != null &&
-          Number.isFinite(displayedNextManeuverCoord.lat) &&
-          Number.isFinite(displayedNextManeuverCoord.lng) &&
-          !maneuverAnchorDegenerate
-        ) {
-          liveDistMeters = haversineMeters(
-            navDisplayCoord.lat,
-            navDisplayCoord.lng,
-            displayedNextManeuverCoord.lat,
-            displayedNextManeuverCoord.lng,
-          );
-        } else {
-          liveDistMeters = Math.max(0, displayedTurnCurrentStep?.distanceMeters ?? 0);
-        }
+        // When the progress step matches the current step, skip
+        // prog.nextStepDistanceMeters (≈ 0) and compute the polyline
+        // distance to the true upcoming maneuver instead.
+        const liveDistMeters =
+          prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep
+            ? prog.nextStepDistanceMeters
+            : poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
+              ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
+              : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
+                ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
+                : (turnCurrentStep?.distanceMeters ?? 0);
 
         const turnCardNow = Date.now();
         const cardState = resolveTurnCardState({
           distanceToNextManeuverM: liveDistMeters,
           speedMph: displaySpeedMph,
           mode: drivingMode,
-          inConfirmationWindow: browsedStepActive ? false : inConfirmWindow,
-          nextStep: displayedNextManeuverCoord,
+          inConfirmationWindow: inConfirmWindow,
+          nextStep: nextManeuverCoord,
           congestionNearManeuver: hasSevereCongestionAhead(
             nav.navigationData?.congestion,
             nav.navigationProgress?.snapped?.segmentIndex ?? 0,
@@ -3631,17 +3430,8 @@ export default function MapScreen() {
         const distParts = formatTurnDistanceForCard(liveDistMeters);
         const destinationName = nav.navigationData?.destination?.name ?? null;
         const banner = prog?.banner ?? null;
-        const progressNavStepForRich =
-          useSdkTurnUi ? prog.nextStep : prog.nextStep;
-        const maneuverFields = resolveManeuverFieldsForTurnCard({
-          nextManeuverCoord: displayedNextManeuverCoord,
-          progNext: progressNavStepForRich ?? prog.nextStep,
-        });
-        const chainStepForBuild = browsedStepActive
-          ? null
-          : useSdkTurnUi ? prog.followingStep : prog.nextStep;
         const useBannerCopy =
-          !!banner && (!!displayedNextManeuverCoord || (instructionSrc === 'sdk' && !!prog.nextStep));
+          !!banner && (!!nextManeuverCoord || (instructionSrc === 'sdk' && !!prog.nextStep));
 
         let primary: string;
         let secondary: string | undefined;
@@ -3649,174 +3439,125 @@ export default function MapScreen() {
           switch (cardState) {
             case 'cruise':
               primary =
-                displayedNextManeuverCoord
-                  ? buildCruisePrimary(displayedNextManeuverCoord, destinationName)
+                nextManeuverCoord
+                  ? buildCruisePrimary(nextManeuverCoord, destinationName)
                   : banner!.primaryInstruction;
               secondary = undefined;
               break;
             case 'confirm':
-              primary = displayedTurnCurrentStep ? buildConfirmPrimary(displayedTurnCurrentStep) : banner!.primaryInstruction;
+              primary = turnCurrentStep ? buildConfirmPrimary(turnCurrentStep) : banner!.primaryInstruction;
               secondary = banner!.secondaryInstruction ?? undefined;
               if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
               break;
             case 'preview':
             case 'active':
-            default: {
-              if (useSdkTurnUi) {
-                primary = banner!.primaryInstruction;
-                secondary = banner!.secondaryInstruction ?? undefined;
-              } else if (displayedNextManeuverCoord) {
-                const fromStep = getPrimaryBannerText(displayedNextManeuverCoord).trim();
-                primary = fromStep || banner!.primaryInstruction;
-                secondary =
-                  getSecondaryBannerText(displayedNextManeuverCoord) ?? banner!.secondaryInstruction ?? undefined;
-              } else {
-                primary = banner!.primaryInstruction;
-                secondary = banner!.secondaryInstruction ?? undefined;
-              }
+            default:
+              primary = banner!.primaryInstruction;
+              secondary = banner!.secondaryInstruction ?? undefined;
               if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
               break;
-            }
           }
         } else {
           switch (cardState) {
             case 'active':
-              primary = buildActivePrimary(displayedNextManeuverCoord, destinationName) || displayedTurnCurrentStep?.instruction || '';
+              primary = buildActivePrimary(nextManeuverCoord, destinationName) || turnCurrentStep?.instruction || '';
               secondary = undefined;
               break;
             case 'preview': {
-              const p = buildPreviewPrimarySecondary(displayedTurnCurrentStep, displayedNextManeuverCoord, destinationName);
+              const p = buildPreviewPrimarySecondary(turnCurrentStep, nextManeuverCoord, destinationName);
               primary = p.primary;
               secondary = p.secondary;
               if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
               break;
             }
             case 'confirm':
-              primary = buildConfirmPrimary(displayedTurnCurrentStep);
+              primary = buildConfirmPrimary(turnCurrentStep);
               secondary =
                 (drivingMode === 'calm' || drivingMode === 'adaptive') &&
-                displayedNextManeuverCoord &&
-                displayedNextManeuverCoord.maneuver !== 'arrive'
-                  ? `Then ${buildActivePrimary(displayedNextManeuverCoord, destinationName, prog.nextStep)}`
+                nextManeuverCoord &&
+                nextManeuverCoord.maneuver !== 'arrive'
+                  ? `Then ${buildActivePrimary(nextManeuverCoord, destinationName, prog.nextStep)}`
                   : undefined;
               break;
             case 'cruise':
-              primary = buildCruisePrimary(displayedNextManeuverCoord, destinationName);
+              primary = buildCruisePrimary(nextManeuverCoord, destinationName);
               secondary = undefined;
               break;
             default:
               primary =
-                buildActivePrimary(displayedNextManeuverCoord, destinationName, prog.nextStep) ||
-                displayedTurnCurrentStep?.instruction ||
+                buildActivePrimary(nextManeuverCoord, destinationName, prog.nextStep) ||
+                turnCurrentStep?.instruction ||
                 '';
               secondary = undefined;
           }
         }
 
-        if (browsedStepActive) {
-          primary = getPrimaryBannerText(browsedGuidanceStep).trim() || buildActivePrimary(browsedGuidanceStep, destinationName);
-          secondary = getSecondaryBannerText(browsedGuidanceStep) ?? undefined;
-        }
-
-        const maneuverIconKey = iconManeuverForState(cardState, displayedTurnCurrentStep, displayedNextManeuverCoord);
-        const chainInstruction = buildChainInstruction(chainStepForBuild);
+        const maneuverIconKey = iconManeuverForState(cardState, turnCurrentStep, nextManeuverCoord);
+        const chainInstruction = buildChainInstruction(prog.nextStep);
         const maneuverKindResolved =
-          displayedNextManeuverCoord != null
-            ? maneuverFields.kind
-            : banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
-        const signalResolved = banner?.signal ?? progressNavStepForRich?.signal;
-        const lanesResolved = !laneUi
-          ? undefined
-          : useSdkTurnUi && progressNavStepForRich?.lanes?.length
-            ? progressNavStepForRich.lanes
-            : banner?.lanes?.length
-              ? banner.lanes
-              : prog.nextStep?.lanes?.length
-                ? prog.nextStep.lanes
-                : undefined;
+          banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
+        const signalResolved = banner?.signal ?? prog.nextStep?.signal;
+        const lanesResolved =
+          banner?.lanes?.length ? banner.lanes : prog.nextStep?.lanes?.length ? prog.nextStep.lanes : undefined;
         const shieldsResolved =
-          useSdkTurnUi && progressNavStepForRich?.shields?.length
-            ? progressNavStepForRich.shields
-            : banner?.shields?.length
-              ? banner.shields
-              : prog.nextStep?.shields?.length
-                ? prog.nextStep.shields
-                : undefined;
+          banner?.shields?.length ? banner.shields : prog.nextStep?.shields?.length ? prog.nextStep.shields : undefined;
         const roundaboutExitResolved =
-          useSdkTurnUi && progressNavStepForRich?.roundaboutExitNumber != null
-            ? progressNavStepForRich.roundaboutExitNumber
-            : banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
+          banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
         const disambigName =
-          shouldShowRoadDisambiguation(displayedTurnCurrentStep?.name) ? (displayedTurnCurrentStep?.name ?? null) :
-          shouldShowRoadDisambiguation(displayedNextManeuverCoord?.name) ? (displayedNextManeuverCoord?.name ?? null) :
+          shouldShowRoadDisambiguation(turnCurrentStep?.name) ? (turnCurrentStep?.name ?? null) :
+          shouldShowRoadDisambiguation(nextManeuverCoord?.name) ? (nextManeuverCoord?.name ?? null) :
           null;
 
         /** Align banner/lanes/icons with Mapbox step geometry (see `currentStepIndexAlongRoute`). */
-        const guidanceStep = pickGuidanceStep(cardState, displayedTurnCurrentStep, displayedNextManeuverCoord);
+        const guidanceStep = pickGuidanceStep(cardState, turnCurrentStep, nextManeuverCoord);
         const actionableGuidanceStep =
-          isActionableGuidanceStep(guidanceStep, true)
-            ? guidanceStep
-            : (isActionableGuidanceStep(displayedNextManeuverCoord, true) ? displayedNextManeuverCoord : undefined);
+          isActionableGuidanceStep(guidanceStep, true) ? guidanceStep : (isActionableGuidanceStep(nextManeuverCoord, true) ? nextManeuverCoord : undefined);
 
         return (
-          <GestureDetector gesture={turnCardGesture}>
-            <Pressable
-              style={[s.turnWrap, { top: insets.top }]}
-              key={
-                useSdkTurnUi
-                  ? `sdk-${prog.nextStep?.index ?? -1}-${banner?.primaryInstruction ?? ''}-${clampedBrowseOffset}`
-                  : `js-${nav.currentStepIndex}-${clampedBrowseOffset}`
+          <View style={[s.turnWrap, { top: insets.top }]} key={nav.currentStepIndex}>
+            <TurnInstructionCard
+              mode={drivingMode}
+              modeConfig={modeConfig}
+              state={cardState}
+              distanceValue={distParts.value}
+              distanceUnit={distParts.unit}
+              primaryInstruction={primary}
+              secondaryInstruction={secondary}
+              maneuverForIcon={maneuverIconKey}
+              maneuverKind={maneuverKindResolved}
+              maneuverType={prog.nextStep?.rawType ?? ''}
+              maneuverModifier={prog.nextStep?.rawModifier ?? ''}
+              signal={signalResolved}
+              lanes={lanesResolved}
+              shields={shieldsResolved}
+              roundaboutExitNumber={roundaboutExitResolved}
+              chainInstruction={chainInstruction}
+              isMuted={navVoiceMuted}
+              onMutePress={() => {
+                setNavVoiceMuted((m) => {
+                  if (!m) stopSpeaking();
+                  return !m;
+                });
+              }}
+              lanesJson={
+                logicSdkAuthoritativeUi
+                  ? undefined
+                  : mergeLaneSources(
+                      actionableGuidanceStep,
+                      nextManeuverCoord,
+                      cardState === 'confirm' ? turnCurrentStep : undefined,
+                    )
               }
-              onPress={handleTurnCardPress}
-            >
-              <TurnInstructionCard
-                mode={drivingMode}
-                modeConfig={modeConfig}
-                state={cardState}
-                distanceValue={distParts.value}
-                distanceUnit={distParts.unit}
-                primaryInstruction={primary}
-                secondaryInstruction={
-                  isBrowsingAhead && upcomingSteps.length > 1
-                    ? `${clampedBrowseOffset + 1} of ${upcomingSteps.length} upcoming turns`
-                    : secondary
-                }
-                maneuverForIcon={maneuverIconKey}
-                maneuverKind={maneuverKindResolved}
-                maneuverType={maneuverFields.rawType}
-                maneuverModifier={maneuverFields.rawModifier}
-                signal={signalResolved}
-                lanes={lanesResolved}
-                shields={shieldsResolved}
-                roundaboutExitNumber={roundaboutExitResolved}
-                chainInstruction={chainInstruction}
-                isMuted={navVoiceMuted}
-                onMutePress={() => {
-                  setNavVoiceMuted((m) => {
-                    if (!m) stopSpeaking();
-                    return !m;
-                  });
-                }}
-                lanesJson={
-                  logicSdkAuthoritativeUi || !laneUi
-                    ? undefined
-                    : mergeLaneSources(
-                        actionableGuidanceStep,
-                        displayedNextManeuverCoord,
-                        cardState === 'confirm' ? displayedTurnCurrentStep : undefined,
-                      )
-                }
-                step={
-                  logicSdkAuthoritativeUi
-                    ? sdkSyntheticStep ?? undefined
-                    : actionableGuidanceStep ?? displayedNextManeuverCoord ?? (cardState === 'confirm' ? displayedTurnCurrentStep : undefined)
-                }
-                roadDisambiguationLabel={disambigName}
-                isSportBorder={isSport}
-                speedMph={displaySpeedMph}
-              />
-            </Pressable>
-          </GestureDetector>
+              step={
+                logicSdkAuthoritativeUi
+                  ? sdkSyntheticStep ?? undefined
+                  : actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? turnCurrentStep : undefined)
+              }
+              roadDisambiguationLabel={disambigName}
+              isSportBorder={isSport}
+              speedMph={displaySpeedMph}
+            />
+          </View>
         );
       })()}
 
@@ -3899,7 +3640,7 @@ export default function MapScreen() {
       />
 
       {!nav.isNavigating && !nav.showRoutePreview && user?.isPremium && friendTrackingEnabled && (!liveLocationPublishingEnabled || livePublishPaused503) ? (
-        <View style={[s.friendMapBanner, { top: insets.top + (savedPlaces.length > 0 ? 146 : 104), left: 12, right: 12, zIndex: 14 }]}>
+        <View style={[s.friendMapBanner, { top: insets.top + 54, left: 12, right: 12, zIndex: 14 }]}>
           <Ionicons name="pause-circle-outline" size={18} color="#FBBF24" style={{ marginRight: 8 }} />
           <Text style={s.friendMapBannerText} numberOfLines={3}>
             Live location sharing is paused. Friends may not see your position until this is restored.
@@ -3917,7 +3658,7 @@ export default function MapScreen() {
       ) : null}
 
       {!nav.isNavigating && !nav.showRoutePreview && user?.isPremium && friendTrackingEnabled && liveLocationPublishingEnabled && !livePublishPaused503 && mapCoordsOk && !shareLocationStorageOn && !shareInviteBannerDismissed ? (
-        <View style={[s.friendMapBanner, s.friendMapBannerInvite, { top: insets.top + (savedPlaces.length > 0 ? 146 : 104), left: 12, right: 12, zIndex: 14 }]}>
+        <View style={[s.friendMapBanner, s.friendMapBannerInvite, { top: insets.top + 54, left: 12, right: 12, zIndex: 14 }]}>
           <Ionicons name="people-outline" size={18} color="#A78BFA" style={{ marginRight: 8 }} />
           <Text style={s.friendMapBannerText} numberOfLines={3}>
             Share your location so friends can see you on the map.
@@ -4051,32 +3792,15 @@ export default function MapScreen() {
               },
               voiceMuted: navVoiceMuted,
               drivingMode,
-              mapStyleUrl: activeStyleURL,
             });
             if (nativeParams) {
-              // Replace the JS map screen for active native navigation so the underlying RN route
-              // line / custom puck cannot remain visible beneath the SDK navigator.
-              rnNav.replace('NativeNavigation', {
+              rnNav.navigate('NativeNavigation', {
                 ...nativeParams,
                 ...(reportHint ? { reportHint } : {}),
               });
               nav.setShowRoutePreview(false);
             } else {
-              Sentry.captureMessage('native_navigation_params_invalid', {
-                level: 'error',
-                extra: {
-                  locationLat: location.lat,
-                  locationLng: location.lng,
-                  destinationLat: nav.navigationData.destination.lat,
-                  destinationLng: nav.navigationData.destination.lng,
-                  drivingMode,
-                  mapStyleUrl: activeStyleURL,
-                },
-              });
-              Alert.alert(
-                'Navigation unavailable',
-                'SnapRoad could not start the native navigation screen on this route. Navigation was not started so the app does not fall back to the old JS guidance path.',
-              );
+              nav.startNavigation();
             }
           } else {
             nav.startNavigation();

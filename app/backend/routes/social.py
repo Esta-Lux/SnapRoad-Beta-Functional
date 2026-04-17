@@ -46,14 +46,6 @@ FRIEND_CATEGORY_COLORS = {
 }
 
 
-def _get_live_location_supabase():
-    from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-
-    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-        raise HTTPException(status_code=503, detail="Live location service unavailable.")
-    return get_supabase()
-
-
 def _normalize_category_color(color: Optional[str]) -> str:
     val = (color or "#3B82F6").strip().lower()
     if not val.startswith("#"):
@@ -68,6 +60,31 @@ def _friendship_accepted(sb, uid: str, other_id: str) -> bool:
         f"and(user_id_1.eq.{uid},user_id_2.eq.{other_id}),and(user_id_1.eq.{other_id},user_id_2.eq.{uid})"
     ).eq("status", "accepted").limit(1).execute()
     return bool(rel.data)
+
+
+def _is_missing_column_error(err: Exception, table: str, column: str) -> bool:
+    s = str(err).lower()
+    return table.lower() in s and column.lower() in s and ("column" in s and "does not exist" in s)
+
+
+def _select_live_locations_with_optional_battery(sb, user_ids: list[str]):
+    cols_with_battery = (
+        "user_id, lat, lng, heading, speed_mph, is_sharing, "
+        "last_updated, is_navigating, destination_name, battery_pct"
+    )
+    try:
+        res = sb.table("live_locations").select(cols_with_battery).in_("user_id", user_ids).execute()
+        return res, True
+    except Exception as e:
+        if not _is_missing_column_error(e, "live_locations", "battery_pct"):
+            raise
+        logger.warning("live_locations.battery_pct missing; retrying friends list without battery_pct")
+        cols_without_battery = (
+            "user_id, lat, lng, heading, speed_mph, is_sharing, "
+            "last_updated, is_navigating, destination_name"
+        )
+        res = sb.table("live_locations").select(cols_without_battery).in_("user_id", user_ids).execute()
+        return res, False
 
 
 # ==================== FRIENDS ====================
@@ -248,9 +265,7 @@ def get_friends_list(
             "friend_code": p.get("friend_code"),
             "categories": cat_map.get(fid, []),
         })
-    loc_res = supabase.table("live_locations").select(
-        "user_id, lat, lng, heading, speed_mph, is_sharing, last_updated, is_navigating, destination_name, battery_pct"
-    ).in_("user_id", friend_ids).execute()
+    loc_res, has_battery_col = _select_live_locations_with_optional_battery(supabase, friend_ids)
     loc_map = {str(r["user_id"]): r for r in (loc_res.data or [])}
     for row in out:
         fid = row["friend_id"]
@@ -266,9 +281,10 @@ def get_friends_list(
         row["last_updated"] = ll.get("last_updated")
         row["is_navigating"] = bool(ll.get("is_navigating"))
         row["destination_name"] = ll.get("destination_name")
-        bat = ll.get("battery_pct")
-        if bat is not None:
-            row["battery_pct"] = int(bat)
+        if has_battery_col:
+            bat = ll.get("battery_pct")
+            if bat is not None:
+                row["battery_pct"] = int(bat)
     return {"success": True, "data": out}
 
 
@@ -513,17 +529,20 @@ def get_my_location_sharing(current_user: CurrentUser):
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
     uid = current_user["id"]
+    from database import get_supabase
+    from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(status_code=503, detail="Location sharing backend is not configured.")
     try:
-        sb = _get_live_location_supabase()
+        sb = get_supabase()
         res = sb.table("live_locations").select("is_sharing").eq("user_id", uid).limit(1).execute()
         if res.data and len(res.data) > 0:
             return {"success": True, "data": {"is_sharing": bool(res.data[0].get("is_sharing"))}}
-    except HTTPException:
-        raise
+        return {"success": True, "data": {"is_sharing": False}}
     except Exception as e:
         logger.warning("failed to read location sharing: %s", e)
-        raise HTTPException(status_code=503, detail="Could not read location sharing right now.")
-    return {"success": True, "data": {"is_sharing": False}}
+        raise HTTPException(status_code=500, detail="Failed to read location sharing state.")
 
 
 @router.post("/friends/location/update", responses={401: {"description": MSG_AUTH_REQUIRED}})
@@ -539,8 +558,13 @@ def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
     uid = current_user["id"]
+    from database import get_supabase
+    from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(status_code=503, detail="Location sharing backend is not configured.")
     try:
-        sb = _get_live_location_supabase()
+        sb = get_supabase()
         prev = sb.table("live_locations").select("is_sharing").eq("user_id", uid).limit(1).execute()
         prev_share = None
         if prev.data and len(prev.data) > 0:
@@ -564,12 +588,18 @@ def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
         }
         if body.battery_pct is not None:
             payload["battery_pct"] = int(body.battery_pct)
-        sb.table("live_locations").upsert(payload).execute()
-    except HTTPException:
-        raise
+        try:
+            sb.table("live_locations").upsert(payload).execute()
+        except Exception as e:
+            if "battery_pct" in payload and _is_missing_column_error(e, "live_locations", "battery_pct"):
+                logger.warning("live_locations.battery_pct missing; retrying location upsert without battery_pct")
+                payload.pop("battery_pct", None)
+                sb.table("live_locations").upsert(payload).execute()
+            else:
+                raise
     except Exception as e:
         logger.warning("failed to upsert live location: %s", e)
-        raise HTTPException(status_code=503, detail="Could not publish live location right now.")
+        raise HTTPException(status_code=500, detail="Failed to update live location.")
     return {"success": True}
 
 
@@ -580,8 +610,13 @@ def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
     uid = current_user["id"]
+    from database import get_supabase
+    from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(status_code=503, detail="Location sharing backend is not configured.")
     try:
-        sb = _get_live_location_supabase()
+        sb = get_supabase()
         now = datetime.now(timezone.utc).isoformat() + "Z"
         existing = sb.table("live_locations").select("user_id, lat, lng").eq("user_id", uid).limit(1).execute()
         if existing.data and len(existing.data) > 0:
@@ -594,13 +629,8 @@ def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
                 update_payload["lng"] = float(body.lng)
             sb.table("live_locations").update(update_payload).eq("user_id", uid).execute()
         elif body.is_sharing:
-            if body.lat is None or body.lng is None:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Waiting for a GPS fix before enabling location sharing.",
-                )
-            lat = float(body.lat)
-            lng = float(body.lng)
+            lat = float(body.lat) if body.lat is not None else 0.0
+            lng = float(body.lng) if body.lng is not None else 0.0
             sb.table("live_locations").insert({
                 "user_id": uid,
                 "lat": lat,
@@ -609,11 +639,9 @@ def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
                 "is_navigating": False,
                 "last_updated": now,
             }).execute()
-    except HTTPException:
-        raise
     except Exception as e:
         logger.warning("failed to update location sharing setting: %s", e)
-        raise HTTPException(status_code=503, detail="Could not update location sharing right now.")
+        raise HTTPException(status_code=500, detail="Failed to update location sharing.")
     return {"success": True}
 
 

@@ -23,6 +23,16 @@ export interface NativeNavProgressEvent {
   fractionTraveled: number;
 }
 
+export interface NativeNavTripMetrics {
+  durationSec: number;
+  distanceMeters: number;
+  distanceMiles: number;
+  roundedDistanceMiles: number;
+  qualifiesTrip: boolean;
+  startedAtIso: string;
+  endedAtIso: string;
+}
+
 /**
  * Adapts `routeProfile` for the native Navigation SDK.
  * Android omits the `mapbox/` prefix; iOS uses the full form.
@@ -49,30 +59,44 @@ export function useNativeNavBridge(params: {
     lastProgressRef.current = event.nativeEvent;
   }, []);
 
+  const getTripMetrics = useCallback((): NativeNavTripMetrics => {
+    const progress = lastProgressRef.current;
+    const nowMs = Date.now();
+    const durationSec = Math.max(1, Math.round((nowMs - startTimeRef.current) / 1000));
+    const distanceMeters = Math.max(0, progress?.distanceTraveled ?? 0);
+    const distanceMiles = distanceMeters / 1609.34;
+    const roundedDistanceMiles = Math.round(distanceMiles * 10) / 10;
+    const qualifiesTrip = distanceMiles >= 0.15 && durationSec >= 45 && distanceMeters >= 200;
+    return {
+      durationSec,
+      distanceMeters,
+      distanceMiles,
+      roundedDistanceMiles,
+      qualifiesTrip,
+      startedAtIso: new Date(startTimeRef.current).toISOString(),
+      endedAtIso: new Date(nowMs).toISOString(),
+    };
+  }, []);
+
   const buildTripSummary = useCallback(
     (arrived: boolean): TripSummary => {
-      const progress = lastProgressRef.current;
-      const durationMin = Math.max(1, Math.round((Date.now() - startTimeRef.current) / 60_000));
-      const distanceMeters = progress?.distanceTraveled ?? 0;
-      const distanceMiles = distanceMeters / 1609.34;
-      const roundedDist = Math.round(distanceMiles * 10) / 10;
-
-      const qualifiesTrip = distanceMiles >= 0.15 && durationMin >= 1;
+      const metrics = getTripMetrics();
+      const durationMin = Math.max(1, Math.round(metrics.durationSec / 60));
 
       return {
-        distance: roundedDist,
+        distance: metrics.roundedDistanceMiles,
         duration: durationMin,
         safety_score: 85,
-        gems_earned: qualifiesTrip ? tripGemsFromDurationMinutes(durationMin, Boolean(isPremium)) : 0,
-        xp_earned: qualifiesTrip ? 100 : 0,
+        gems_earned: metrics.qualifiesTrip ? tripGemsFromDurationMinutes(durationMin, Boolean(isPremium)) : 0,
+        xp_earned: metrics.qualifiesTrip ? 100 : 0,
         origin: originName ?? 'Current Location',
         destination: destination.name ?? 'Destination',
         date: new Date().toLocaleDateString(),
-        counted: qualifiesTrip,
+        counted: metrics.qualifiesTrip,
         arrivedAtDestination: arrived,
       };
     },
-    [destination.name, originName, isPremium],
+    [destination.name, getTripMetrics, originName, isPremium],
   );
 
   const handleArrival = useCallback(() => {
@@ -83,6 +107,7 @@ export function useNativeNavBridge(params: {
     handleProgressChanged,
     handleArrival,
     buildTripSummary,
+    getTripMetrics,
     arrivedAtDestination,
     routeProfile: routeProfileForPlatform(),
   };
