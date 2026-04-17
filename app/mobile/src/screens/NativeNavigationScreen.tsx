@@ -8,16 +8,23 @@ import type { MapStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useAuth } from '../contexts/AuthContext';
-import type { DrivingMode } from '../types';
+import type { DrivingMode, User } from '../types';
 import {
   useNativeNavBridge,
   type NativeNavProgressEvent,
 } from '../hooks/useNativeNavBridge';
 import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
 import * as Sentry from '@sentry/react-native';
+import { api } from '../api/client';
+import { DRIVING_MODES } from '../constants/modes';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-/** Mapbox Standard style — the navigation SDK applies its own lighting/day-night. */
-const NAV_MAP_STYLE = 'mapbox://styles/mapbox/standard';
+function nativeNavStyleUrl(drivingMode: DrivingMode, isDark: boolean): string {
+  if (isDark) return 'mapbox://styles/mapbox/navigation-night-v1';
+  if (drivingMode === 'sport') return 'mapbox://styles/mapbox/navigation-night-v1';
+  if (drivingMode === 'calm') return 'mapbox://styles/mapbox/standard';
+  return 'mapbox://styles/mapbox/navigation-day-v1';
+}
 
 /**
  * Full-screen native Mapbox Navigation experience.
@@ -30,7 +37,8 @@ export default function NativeNavigationScreen() {
   const rnNav = useRNNavigation<StackNavigationProp<MapStackParamList>>();
   const route = useRoute<RouteProp<MapStackParamList, 'NativeNavigation'>>();
   const { setIsNavigating } = useNavigationMode();
-  const { user } = useAuth();
+  const { user, updateUser, refreshUserFromServer } = useAuth();
+  const insets = useSafeAreaInsets();
   const didExitRef = useRef(false);
   const didHandleInvalidParamsRef = useRef(false);
   const navRef = useRef<MapboxNavigationViewRef | null>(null);
@@ -67,34 +75,83 @@ export default function NativeNavigationScreen() {
     ];
   }, [origin?.lat, origin?.lng, destination?.lat, destination?.lng]);
 
-  const followingZoom = useMemo(() => {
-    switch (drivingMode) {
-      case 'calm':
-        return 16.5;
-      case 'sport':
-        return 17.5;
-      default:
-        return 17.0;
-    }
-  }, [drivingMode]);
+  const modeConfig = DRIVING_MODES[drivingMode];
+  const followingZoom = modeConfig.navZoom;
+  const followingPitch = modeConfig.navPitch;
+  const mapStyleUrl = useMemo(
+    () => nativeNavStyleUrl(drivingMode, colorScheme === 'dark'),
+    [drivingMode, colorScheme],
+  );
 
   const exitWithResult = useCallback(
-    (arrived: boolean) => {
+    async (arrived: boolean) => {
       if (didExitRef.current) return;
       didExitRef.current = true;
-      const tripSummary = bridge.buildTripSummary(arrived);
+      let tripSummary = bridge.buildTripSummary(arrived);
+      try {
+        const metrics = bridge.getTripMetrics();
+        if (tripSummary.counted !== false && metrics.qualifiesTrip) {
+          const res = await api.post('/api/trips/complete', {
+            distance_miles: metrics.roundedDistanceMiles,
+            duration_seconds: metrics.durationSec,
+            safety_score: tripSummary.safety_score ?? 85,
+            started_at: metrics.startedAtIso,
+            ended_at: metrics.endedAtIso,
+            hard_braking_events: 0,
+            speeding_events: 0,
+            incidents_reported: 0,
+          });
+          if (res.success && res.data) {
+            const body = res.data as Record<string, unknown>;
+            const d = (body?.data as Record<string, unknown> | undefined) ?? body;
+            const apiCounted = d?.counted !== false && d?.trip_id != null;
+            const profRaw = d?.profile as Record<string, unknown> | undefined;
+            const profileTotals =
+              profRaw && typeof profRaw === 'object'
+                ? {
+                    total_miles:
+                      profRaw.total_miles != null ? Number(profRaw.total_miles) : undefined,
+                    total_trips:
+                      profRaw.total_trips != null ? Number(profRaw.total_trips) : undefined,
+                    gems: profRaw.gems != null ? Number(profRaw.gems) : undefined,
+                    xp: profRaw.xp != null ? Number(profRaw.xp) : undefined,
+                  }
+                : undefined;
+            tripSummary = {
+              ...tripSummary,
+              gems_earned: Number(d?.gems_earned ?? tripSummary.gems_earned),
+              xp_earned: Number(d?.xp_earned ?? tripSummary.xp_earned),
+              safety_score: Number(d?.safety_score ?? tripSummary.safety_score),
+              counted: apiCounted,
+              profile_totals: profileTotals ?? tripSummary.profile_totals,
+            };
+            if (apiCounted && profRaw) {
+              const patch: Partial<User> = {};
+              if (profRaw.gems != null) patch.gems = Number(profRaw.gems);
+              if (profRaw.total_trips != null) patch.totalTrips = Number(profRaw.total_trips);
+              if (profRaw.total_miles != null) patch.totalMiles = Number(profRaw.total_miles);
+              if (profRaw.xp != null) patch.xp = Number(profRaw.xp);
+              if (profRaw.safety_score != null) patch.safetyScore = Number(profRaw.safety_score);
+              if (Object.keys(patch).length) updateUser(patch);
+              await refreshUserFromServer();
+            }
+          }
+        }
+      } catch {
+        // fall back to local summary
+      }
       rnNav.navigate('MapMain', { nativeNavResult: { tripSummary, arrived } });
     },
-    [bridge, rnNav],
+    [bridge, rnNav, refreshUserFromServer, updateUser, user],
   );
 
   const handleCancel = useCallback(() => {
-    exitWithResult(false);
+    void exitWithResult(false);
   }, [exitWithResult]);
 
   const handleArrival = useCallback(() => {
     bridge.handleArrival();
-    exitWithResult(true);
+    void exitWithResult(true);
   }, [bridge, exitWithResult]);
 
   const handleProgressChanged = useCallback(
@@ -125,8 +182,9 @@ export default function NativeNavigationScreen() {
         coordinates={coordinates}
         mute={voiceMuted}
         routeProfile={bridge.routeProfile}
-        mapStyle={NAV_MAP_STYLE}
+        mapStyle={mapStyleUrl}
         followingZoom={followingZoom}
+        followingPitch={followingPitch}
         drivingMode={drivingMode}
         onRouteProgressChanged={handleProgressChanged}
         onCancelNavigation={handleCancel}
@@ -144,13 +202,13 @@ export default function NativeNavigationScreen() {
         }}
       />
       {!!reportHint && (
-        <View style={styles.reportHint}>
+        <View style={[styles.reportHint, { top: insets.top + 8 }]}>
           <Ionicons name="warning-outline" size={14} color="#FCD34D" />
           <Text style={styles.reportHintText} numberOfLines={2}>{reportHint}</Text>
         </View>
       )}
       <TouchableOpacity
-        style={styles.recenterBtn}
+        style={[styles.recenterBtn, { bottom: insets.bottom + 12 }]}
         activeOpacity={0.85}
         onPress={() => navRef.current?.recenterMap?.()}
       >
@@ -166,7 +224,6 @@ const styles = StyleSheet.create({
   nav: { flex: 1 },
   reportHint: {
     position: 'absolute',
-    top: 56,
     left: 14,
     right: 14,
     borderRadius: 12,
@@ -183,7 +240,6 @@ const styles = StyleSheet.create({
   recenterBtn: {
     position: 'absolute',
     right: 14,
-    bottom: 26,
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 10,

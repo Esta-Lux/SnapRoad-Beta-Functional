@@ -3074,7 +3074,7 @@ export default function MapScreen() {
             if (inc.type === 'construction') return showConstruction;
             return true;
           })} onIncidentTap={setActiveReportCard} />}
-          {user?.isPremium && showCameras && !nav.isNavigating && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
+          {user?.isPremium && showCameras && (
             <CameraMarkers cameras={cameraLocations} onCameraTap={(cam) => setSelectedTrafficCamera(cam)} />
           )}
           <FriendMarkers
