@@ -144,6 +144,7 @@ import type { TripSummary } from '../hooks/useDriveNavigation';
 import type { RouteProp } from '@react-navigation/native';
 import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import type { MapStackParamList, MapStackScreenNavigationProp } from '../navigation/types';
+import { extractLocationSharingValue, getApiError } from '../features/social/locationSharing';
 import { storage } from '../utils/storage';
 import { logMapDataIssue } from '../utils/mapApiDiagnostics';
 import { supabase, supabaseConfigured } from '../lib/supabase';
@@ -462,14 +463,17 @@ export default function MapScreen() {
     }
     storage.set(SHARE_LOC_STORAGE_KEY, '1');
     setShareLocEpoch((n) => n + 1);
-    try {
-      await api.put('/api/friends/location/sharing', {
-        is_sharing: true,
-        lat: location.lat,
-        lng: location.lng,
-      });
-    } catch {
-      /* offline — local preference still on */
+    const setShareRes = await api.put('/api/friends/location/sharing', {
+      is_sharing: true,
+      lat: location.lat,
+      lng: location.lng,
+    });
+    const setShareErr = getApiError(setShareRes, 'Could not enable location sharing right now.');
+    if (setShareErr) {
+      storage.set(SHARE_LOC_STORAGE_KEY, '0');
+      setShareLocEpoch((n) => n + 1);
+      Alert.alert('Location sharing', setShareErr);
+      return;
     }
     let battery_pct: number | undefined;
     try {
@@ -488,7 +492,12 @@ export default function MapScreen() {
       is_sharing: true,
       battery_pct,
     });
-    if (!res.success && res.statusCode === 503) setLivePublishPaused503(true);
+    const updateErr = getApiError(res, 'Could not publish your current location yet.');
+    if (updateErr) {
+      if (res.statusCode === 503) setLivePublishPaused503(true);
+      Alert.alert('Location sharing', updateErr);
+      return;
+    }
   }, [location.lat, location.lng, heading, speed, nav.isNavigating, nav.selectedDestination?.name]);
 
   const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
@@ -1085,8 +1094,7 @@ export default function MapScreen() {
       try {
         const r = await api.get('/api/friends/location/sharing');
         if (cancelled || !r.success) return;
-        const inner = unwrapOffersApiData(r.data) as { is_sharing?: boolean } | null;
-        const v = inner && typeof inner.is_sharing === 'boolean' ? inner.is_sharing : null;
+        const v = extractLocationSharingValue(unwrapOffersApiData(r.data));
         if (v == null) return;
         storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
         setShareLocEpoch((n) => n + 1);

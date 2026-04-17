@@ -44,6 +44,7 @@ import {
   fetchPendingRequests,
   fetchFriendCategories,
 } from '../features/social/friendsApi';
+import { extractLocationSharingValue, getApiError } from '../features/social/locationSharing';
 import type { MapFocusFriendParams } from '../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -233,9 +234,9 @@ export default function DashboardScreen() {
       await Promise.all([loadFriends(), loadPending(), loadCategories()]);
 
       try {
-        const r = await api.get<any>('/api/friends/location/sharing');
+        const r = await api.get('/api/friends/location/sharing');
         if (cancelled) return;
-        const v = (r.data as any)?.data?.is_sharing;
+        const v = r.success ? extractLocationSharingValue(r.data) : null;
         if (typeof v !== 'boolean') return;
 
         if (v) {
@@ -246,21 +247,21 @@ export default function DashboardScreen() {
 
         if (localOn) {
           const { lat, lng } = dashboardLiveCoordsRef.current;
-          try {
-            await api.put('/api/friends/location/sharing', {
-              is_sharing: true,
-              lat,
-              lng,
-            });
+          const syncRes = await api.put('/api/friends/location/sharing', {
+            is_sharing: true,
+            lat,
+            lng,
+          });
+          if (!syncRes.success) {
             if (!cancelled) {
-              setIsSharingLocation(true);
-              storage.set(SHARE_LOC_STORAGE_KEY, '1');
+              setIsSharingLocation(false);
+              storage.set(SHARE_LOC_STORAGE_KEY, '0');
             }
-          } catch {
-            if (!cancelled) {
-              setIsSharingLocation(true);
-              storage.set(SHARE_LOC_STORAGE_KEY, '1');
-            }
+            return;
+          }
+          if (!cancelled) {
+            setIsSharingLocation(true);
+            storage.set(SHARE_LOC_STORAGE_KEY, '1');
           }
           return;
         }
@@ -454,11 +455,15 @@ export default function DashboardScreen() {
     let cancelled = false;
     void (async () => {
       try {
-        await api.put('/api/friends/location/sharing', {
+        const shareRes = await api.put('/api/friends/location/sharing', {
           is_sharing: true,
           lat: myCoord.lat,
           lng: myCoord.lng,
         });
+        if (!shareRes.success) {
+          shareLocationNeedsCoordsSyncRef.current = true;
+          return;
+        }
         if (cancelled) return;
         let battery_pct: number | undefined;
         try {
@@ -469,7 +474,7 @@ export default function DashboardScreen() {
           /* optional */
         }
         if (cancelled) return;
-        await api.post('/api/friends/location/update', {
+        const updateRes = await api.post('/api/friends/location/update', {
           lat: myCoord.lat,
           lng: myCoord.lng,
           heading,
@@ -478,8 +483,9 @@ export default function DashboardScreen() {
           is_sharing: true,
           battery_pct,
         });
+        if (!updateRes.success) shareLocationNeedsCoordsSyncRef.current = true;
       } catch {
-        /* offline */
+        shareLocationNeedsCoordsSyncRef.current = true;
       }
     })();
     return () => {
@@ -1005,18 +1011,22 @@ export default function DashboardScreen() {
               <Switch
                 value={isSharingLocation}
                 onValueChange={async (v) => {
+                  const prev = isSharingLocation;
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   setIsSharingLocation(v);
                   storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
                   if (v && !myCoord) shareLocationNeedsCoordsSyncRef.current = true;
                   else shareLocationNeedsCoordsSyncRef.current = false;
-                  try {
-                    await api.put('/api/friends/location/sharing', {
-                      is_sharing: v,
-                      ...(v && myCoord ? { lat: myCoord.lat, lng: myCoord.lng } : {}),
-                    });
-                  } catch {
-                    /* preference stays in local storage */
+                  const res = await api.put('/api/friends/location/sharing', {
+                    is_sharing: v,
+                    ...(v && myCoord ? { lat: myCoord.lat, lng: myCoord.lng } : {}),
+                  });
+                  const err = getApiError(res, 'Could not update location sharing right now.');
+                  if (err) {
+                    setIsSharingLocation(prev);
+                    storage.set(SHARE_LOC_STORAGE_KEY, prev ? '1' : '0');
+                    shareLocationNeedsCoordsSyncRef.current = prev && !myCoord;
+                    Alert.alert('Location sharing', err);
                   }
                 }}
                 trackColor={{ false: colors.border, true: '#34C759' }}
