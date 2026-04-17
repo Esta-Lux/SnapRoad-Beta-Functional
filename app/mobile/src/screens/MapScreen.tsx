@@ -3792,6 +3792,7 @@ export default function MapScreen() {
               },
               voiceMuted: navVoiceMuted,
               drivingMode,
+              mapStyleUrl: activeStyleURL,
             });
             if (nativeParams) {
               rnNav.navigate('NativeNavigation', {

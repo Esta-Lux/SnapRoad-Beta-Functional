@@ -1,14 +1,12 @@
 import Constants from 'expo-constants';
+import { isNativeFullScreenAllowed, parseEnvBool } from './navFeatureFlagLogic';
 
 /**
  * EXPO_PUBLIC_* vars are inlined at bundle time. Most flags default off; logic SDK defaults on
  * (see {@link navLogicSdkEnabled}).
  */
 function envBool(key: string, defaultVal: boolean): boolean {
-  const v = process.env[key];
-  if (v === '1' || v === 'true') return true;
-  if (v === '0' || v === 'false') return false;
-  return defaultVal;
+  return parseEnvBool(process.env[key], defaultVal);
 }
 
 function nativeNavigationSupportedBuild(): boolean {
@@ -39,7 +37,7 @@ export function navServerEtaEnabled(): boolean {
 /** When on, "Start Navigation" launches the native Mapbox Navigation SDK UI
  *  instead of the custom RN turn-by-turn flow. Requires an EAS dev client build. */
 export function navNativeSdkEnabled(): boolean {
-  return envBool('EXPO_PUBLIC_NAV_NATIVE_SDK', nativeNavigationSupportedBuild());
+  return envBool('EXPO_PUBLIC_NAV_NATIVE_SDK', false) && nativeNavigationSupportedBuild();
 }
 
 /**
@@ -56,9 +54,9 @@ export function navLogicSdkEnabled(): boolean {
   return envBool('EXPO_PUBLIC_NAV_LOGIC_SDK', true);
 }
 
-/** Full-screen `NativeNavigationScreen` — default path on supported native builds. */
+/** Full-screen `NativeNavigationScreen` is only allowed when native UI is on and logic SDK is off. */
 export function navNativeFullScreenEnabled(): boolean {
-  return navNativeSdkEnabled();
+  return isNativeFullScreenAllowed(navNativeSdkEnabled(), navLogicSdkEnabled());
 }
 
 /** Release-safe nav diagnostics overlay (HUD) — set `EXPO_PUBLIC_NAV_LOGIC_DEBUG=1` in EAS env and rebuild. */

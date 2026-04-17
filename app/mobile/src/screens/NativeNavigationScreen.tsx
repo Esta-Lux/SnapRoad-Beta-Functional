@@ -49,6 +49,7 @@ export default function NativeNavigationScreen() {
   const destination = normalizedParams?.destination;
   const voiceMuted = normalizedParams?.voiceMuted ?? false;
   const drivingMode: DrivingMode = normalizedParams?.drivingMode ?? 'adaptive';
+  const requestedMapStyleUrl = normalizedParams?.mapStyleUrl;
   const reportHint = useMemo(() => {
     const raw = route.params?.reportHint;
     return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
@@ -79,8 +80,8 @@ export default function NativeNavigationScreen() {
   const followingZoom = modeConfig.navZoom;
   const followingPitch = modeConfig.navPitch;
   const mapStyleUrl = useMemo(
-    () => nativeNavStyleUrl(drivingMode, colorScheme === 'dark'),
-    [drivingMode, colorScheme],
+    () => requestedMapStyleUrl ?? nativeNavStyleUrl(drivingMode, colorScheme === 'dark'),
+    [requestedMapStyleUrl, drivingMode, colorScheme],
   );
 
   const exitWithResult = useCallback(
@@ -140,7 +141,7 @@ export default function NativeNavigationScreen() {
       } catch {
         // fall back to local summary
       }
-      rnNav.navigate('MapMain', { nativeNavResult: { tripSummary, arrived } });
+      rnNav.replace('MapMain', { nativeNavResult: { tripSummary, arrived } });
     },
     [bridge, rnNav, refreshUserFromServer, updateUser],
   );
@@ -183,6 +184,7 @@ export default function NativeNavigationScreen() {
         mute={voiceMuted}
         routeProfile={bridge.routeProfile}
         mapStyle={mapStyleUrl}
+        appTheme={isDark ? 'dark' : 'light'}
         followingZoom={followingZoom}
         followingPitch={followingPitch}
         drivingMode={drivingMode}
