@@ -111,6 +111,27 @@ export function pickCameraAhead(
   return null;
 }
 
+/**
+ * Build a compact list for the native nav map overlay (GeoJSON features are driven from this JSON).
+ */
+export function camerasForNativeMapOverlay(
+  items: CameraCandidate[],
+): { lat: number; lng: number; id: string; name: string }[] {
+  const out: { lat: number; lng: number; id: string; name: string }[] = [];
+  for (const rpt of items) {
+    const cLat = Number(rpt.lat);
+    const cLng = Number(rpt.lng);
+    if (!Number.isFinite(cLat) || !Number.isFinite(cLng)) continue;
+    const id = String(rpt.id ?? `${cLat},${cLng}`);
+    const name =
+      (typeof rpt.title === 'string' && rpt.title.trim()) ||
+      (typeof rpt.name === 'string' && rpt.name.trim()) ||
+      'Traffic camera';
+    out.push({ lat: cLat, lng: cLng, id, name });
+  }
+  return out;
+}
+
 /** Normalize the shape returned by `/api/map/cameras` (supports wrapped + bare arrays). */
 export function extractCameraList(body: unknown): CameraCandidate[] {
   if (Array.isArray(body)) return body as CameraCandidate[];

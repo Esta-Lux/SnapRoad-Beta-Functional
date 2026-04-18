@@ -6,6 +6,7 @@ import {
   extractCameraList,
   haversineMeters,
   pickCameraAhead,
+  camerasForNativeMapOverlay,
 } from '../nativeNavHelpers';
 
 test('haversineMeters returns 0 for identical coords', () => {
@@ -32,6 +33,18 @@ test('bearingDelta handles wrap-around correctly', () => {
   assert.equal(bearingDelta(350, 10), 20);
   assert.equal(bearingDelta(180, 0), 180);
   assert.equal(bearingDelta(90, 90), 0);
+});
+
+test('camerasForNativeMapOverlay builds id/name/lat/lng', () => {
+  const out = camerasForNativeMapOverlay([
+    { lat: 40.1, lng: -82.2, id: 'c1', name: 'Cam A' },
+    { lat: NaN, lng: 1 },
+  ]);
+  assert.equal(out.length, 1);
+  assert.equal(out[0]!.id, 'c1');
+  assert.equal(out[0]!.name, 'Cam A');
+  assert.equal(out[0]!.lat, 40.1);
+  assert.equal(out[0]!.lng, -82.2);
 });
 
 test('extractCameraList handles wrapped {data:[...]}', () => {
