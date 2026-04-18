@@ -1015,7 +1015,7 @@ index 965414e..4110a06 100644
    }
  }
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
-index 8f841df..82a2ce3 100644
+index 8f841df..67add63 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 +++ b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 @@ -4,6 +4,9 @@ import MapboxMaps
@@ -1277,7 +1277,7 @@ index 8f841df..82a2ce3 100644
      }
  
      override func viewDidDisappear(_ animated: Bool) {
-@@ -301,6 +418,426 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -301,6 +418,428 @@ class ExpoMapboxNavigationViewController: UIViewController {
          }
      }
  
@@ -1305,7 +1305,9 @@ index 8f841df..82a2ce3 100644
 +        nvc.overrideUserInterfaceStyle = currentAppTheme == "light" ? .light : .dark
 +        nvc.usesNightStyleInDarkMode = true
 +        let styleType: StyleType = currentAppTheme == "light" ? .day : .night
-+        nvc.styleManager.applyStyle(type: styleType)
++        // `styleManager` can be nil very early in the NVC lifecycle — avoid a hard crash when
++        // JS sends `appTheme` / `drivingMode` before the navigation UI is fully wired.
++        nvc.styleManager?.applyStyle(type: styleType)
 +    }
 +
 +    func setAppTheme(theme: String?) {
@@ -1704,7 +1706,7 @@ index 8f841df..82a2ce3 100644
      func update(){
          calculateRoutesTask?.cancel()
  
-@@ -322,6 +859,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -322,6 +861,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
      }
  
      func calculateRoutes(waypoints: Array<Waypoint>){
@@ -1718,7 +1720,7 @@ index 8f841df..82a2ce3 100644
          let routeOptions = NavigationRouteOptions(
              waypoints: waypoints, 
              profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
-@@ -335,7 +879,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -335,7 +881,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
          )
  
          calculateRoutesTask = Task {
@@ -1727,7 +1729,7 @@ index 8f841df..82a2ce3 100644
              case .failure(let error):
                  onRouteFailedToLoad?([
                      "errorMessage": error.localizedDescription
-@@ -348,6 +892,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -348,6 +894,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
      }
  
      func calculateMapMatchingRoutes(waypoints: Array<Waypoint>){
@@ -1741,7 +1743,7 @@ index 8f841df..82a2ce3 100644
          let matchOptions = NavigationMatchOptions(
              waypoints: waypoints, 
              profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
-@@ -358,7 +909,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -358,7 +911,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
  
  
          calculateRoutesTask = Task {
@@ -1750,7 +1752,7 @@ index 8f841df..82a2ce3 100644
              case .failure(let error):
                  onRouteFailedToLoad?([
                      "errorMessage": error.localizedDescription
-@@ -413,6 +964,23 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -413,6 +966,23 @@ class ExpoMapboxNavigationViewController: UIViewController {
              ]
          ])
  
@@ -1774,7 +1776,7 @@ index 8f841df..82a2ce3 100644
          let topBanner = TopBannerViewController()
          topBanner.instructionsBannerView.distanceFormatter.locale = currentLocale
          let bottomBanner = BottomBannerViewController()
-@@ -420,10 +988,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -420,10 +990,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
          bottomBanner.dateFormatter.locale = currentLocale
  
          let navigationOptions = NavigationOptions(
@@ -1787,7 +1789,7 @@ index 8f841df..82a2ce3 100644
              topBanner: topBanner,
              bottomBanner: bottomBanner
          )
-@@ -447,6 +1015,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -447,6 +1017,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
          navigationViewController.showsContinuousAlternatives = currentDisableAlternativeRoutes != true
          navigationViewController.usesNightStyleWhileInTunnel = false
          navigationViewController.automaticallyAdjustsStyleForTimeOfDay = false
@@ -1795,7 +1797,7 @@ index 8f841df..82a2ce3 100644
  
          let navigationMapView = navigationViewController.navigationMapView
          navigationMapView!.puckType = .puck2D(.navigationDefault)
-@@ -455,18 +1024,48 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -455,18 +1026,48 @@ class ExpoMapboxNavigationViewController: UIViewController {
              navigationMapView!.mapView.mapboxMap.setCamera(to: CameraOptions(center: initialLocation!, zoom: initialLocationZoom ?? 15))
          }
  
@@ -1850,7 +1852,7 @@ index 8f841df..82a2ce3 100644
  
          navigationViewController.delegate = self
          addChild(navigationViewController)
-@@ -479,9 +1078,19 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -479,9 +1080,19 @@ class ExpoMapboxNavigationViewController: UIViewController {
              navigationViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
          ])
          didMove(toParent: self)
@@ -1871,7 +1873,7 @@ index 8f841df..82a2ce3 100644
  extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
      func navigationViewController(_ navigationViewController: NavigationViewController, didRerouteAlong route: Route) {
          onRoutesLoaded?([
-@@ -496,6 +1105,23 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
+@@ -496,6 +1107,23 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
          _ navigationViewController: NavigationViewController,
          byCanceling canceled: Bool
      ) { }
@@ -1895,7 +1897,7 @@ index 8f841df..82a2ce3 100644
  }
  
  extension UIView {
-@@ -507,3 +1133,35 @@ extension UIView {
+@@ -507,3 +1135,35 @@ extension UIView {
          return subviews + subviews.flatMap { $0.recursiveSubviews }
      }
  }
