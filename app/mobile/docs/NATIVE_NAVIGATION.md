@@ -19,6 +19,10 @@ SnapRoad uses `@badatgil/expo-mapbox-navigation` with a **patch-package** overla
 
 `shouldSuppressSdkCameraInstructionLine` in `src/lib/nativeNavHelpers.ts` documents the same policy for tests and any future JS-side filtering.
 
+## iOS build notes (MapboxMaps + Navigation UIKit)
+
+Newer Xcode / Mapbox **Maps** SDKs treat `mapView.mapboxMap` as optional and use **`ResolvedImage`** for symbol `iconImage` (e.g. `.constant(.name("image-id"))`), not a raw `String`. Turf **`JSONValue`** uses the `.boolean(Bool)` case for bools. **`MapboxMaps.Style`** (map style) and **`MapboxNavigationUIKit.Style`** (day/night navigation chrome, route casing, maneuver arrow) are different types — route theming in `SnapRoadDayStyle` / `SnapRoadNightStyle` must use the Navigation UIKit `Style`. The patch in `patches/@badatgil+expo-mapbox-navigation+*.patch` carries these fixes; regenerate with `npx patch-package @badatgil/expo-mapbox-navigation` after editing `node_modules`.
+
 ## Pre-release checks
 
 From `app/mobile`: `npm run postinstall` (patches), `npx tsc --noEmit`, `npm test`, `npx expo-doctor`. The Expo app `package.json` configures `expo.doctor.reactNativeDirectoryCheck` so forked / vendored native deps (`@badatgil/expo-mapbox-navigation`, voice, vector icons) do not fail `expo-doctor` while remaining intentional dependencies.
