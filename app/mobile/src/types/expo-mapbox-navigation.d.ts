@@ -35,6 +35,7 @@ declare module '@badatgil/expo-mapbox-navigation' {
     placeCustomRasterLayerAbove?: string;
     disableAlternativeRoutes?: boolean;
     followingZoom?: number;
+    followingPitch?: number;
     drivingMode?: 'calm' | 'adaptive' | 'sport';
     appTheme?: 'light' | 'dark';
     navigationLogicOnly?: boolean;

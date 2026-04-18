@@ -860,7 +860,13 @@ export default function MapScreen() {
     lastNativeNavNonceRef.current = nonce;
     rnNav.setParams({ nativeNavResult: undefined } as never);
     setNativeNavTripSummary(result.tripSummary);
-  }, [route.params?.nativeNavResult, rnNav]);
+    // Native SDK drives bypass `useDriveNavigation.endNavigation`, so nudge the rest of
+    // the app (dashboards, wallet badges, profile totals) the same way a JS drive would.
+    if (result.tripSummary.counted !== false) {
+      bumpStatsVersion();
+      void refreshUserFromServer();
+    }
+  }, [route.params?.nativeNavResult, rnNav, bumpStatsVersion, refreshUserFromServer]);
 
   const activeTripSummary = nav.tripSummary ?? nativeNavTripSummary;
   const dismissActiveTripSummary = useCallback(() => {
@@ -2878,7 +2884,6 @@ export default function MapScreen() {
           onNavigationLocationUpdate={(e: { nativeEvent: SdkLocationPayload }) =>
             ingestSdkLocation(e.nativeEvent)
           }
-          // @ts-expect-error Patched native module emits `{ reason, routes }`; published `.d.ts` still types `onRouteChanged` as no-arg.
           onRouteChanged={handleSdkRouteChanged}
           onFinalDestinationArrival={() => nav.stopNavigation()}
           onCancelNavigation={() => nav.stopNavigation()}
@@ -3089,11 +3094,12 @@ export default function MapScreen() {
             if ((inc.upvotes ?? 0) < 0) return false;
             if (inc.type === 'construction') return showConstruction;
             return true;
-          })} onIncidentTap={setActiveReportCard} />}
+          })} onIncidentTap={setActiveReportCard} zoomLevel={mapZoomLevel} />}
           {user?.isPremium && showCameras && (
-            <CameraMarkers cameras={cameraLocations} onCameraTap={(cam) => setSelectedTrafficCamera(cam)} />
+            <CameraMarkers cameras={cameraLocations} onCameraTap={(cam) => setSelectedTrafficCamera(cam)} zoomLevel={mapZoomLevel} />
           )}
           <FriendMarkers
+            zoomLevel={mapZoomLevel}
             friends={friendLocationsVisible}
             onFriendTap={(f) => {
               const fresh = isLiveShareFresh(f.isSharing, f.lastUpdated || undefined, f.lat, f.lng);
