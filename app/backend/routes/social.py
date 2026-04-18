@@ -26,6 +26,12 @@ from services.premium_access import require_premium_user
 
 logger = logging.getLogger(__name__)
 
+
+def _utc_timestamptz_iso() -> str:
+    """RFC 3339 string for Postgres timestamptz. UTC isoformat already ends with +00:00 — do not append Z."""
+    return datetime.now(timezone.utc).isoformat()
+
+
 MSG_AUTH_REQUIRED = "Authentication required"
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
@@ -360,7 +366,7 @@ def update_friend_category(category_id: str, body: FriendCategoryUpdateBody, cur
         payload["color"] = _normalize_category_color(body.color)
     if not payload:
         return {"success": True, "data": {"id": category_id}}
-    payload["updated_at"] = datetime.now(timezone.utc).isoformat() + "Z"
+    payload["updated_at"] = _utc_timestamptz_iso()
     res = supabase.table("friend_categories").update(payload).eq("id", category_id).eq("user_id", uid).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -583,7 +589,7 @@ def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
             "speed_mph": body.speed_mph,
             "is_navigating": body.is_navigating,
             "destination_name": body.destination_name or None,
-            "last_updated": datetime.now(timezone.utc).isoformat() + "Z",
+            "last_updated": _utc_timestamptz_iso(),
             "is_sharing": is_sharing,
         }
         if body.battery_pct is not None:
@@ -617,7 +623,7 @@ def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
         raise HTTPException(status_code=503, detail="Location sharing backend is not configured.")
     try:
         sb = get_supabase()
-        now = datetime.now(timezone.utc).isoformat() + "Z"
+        now = _utc_timestamptz_iso()
         existing = sb.table("live_locations").select("user_id, lat, lng").eq("user_id", uid).limit(1).execute()
         if existing.data and len(existing.data) > 0:
             update_payload: dict[str, object] = {
