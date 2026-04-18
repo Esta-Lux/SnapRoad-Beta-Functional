@@ -7,6 +7,7 @@ import {
   haversineMeters,
   pickCameraAhead,
   camerasForNativeMapOverlay,
+  shouldSuppressSdkCameraInstructionLine,
 } from '../nativeNavHelpers';
 
 test('haversineMeters returns 0 for identical coords', () => {
@@ -33,6 +34,12 @@ test('bearingDelta handles wrap-around correctly', () => {
   assert.equal(bearingDelta(350, 10), 20);
   assert.equal(bearingDelta(180, 0), 180);
   assert.equal(bearingDelta(90, 90), 0);
+});
+
+test('shouldSuppressSdkCameraInstructionLine: flags common camera banner noise', () => {
+  assert.equal(shouldSuppressSdkCameraInstructionLine('Speed camera ahead'), true);
+  assert.equal(shouldSuppressSdkCameraInstructionLine('Traffic camera in 500 feet'), true);
+  assert.equal(shouldSuppressSdkCameraInstructionLine('Turn left onto Main St'), false);
 });
 
 test('camerasForNativeMapOverlay builds id/name/lat/lng', () => {

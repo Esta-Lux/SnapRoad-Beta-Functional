@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   StatusBar,
-  useColorScheme,
   TouchableOpacity,
   Text,
   Alert,
@@ -62,7 +61,6 @@ export default function NativeNavigationScreen() {
   const didExitRef = useRef(false);
   const didHandleInvalidParamsRef = useRef(false);
   const navRef = useRef<MapboxNavigationViewRef | null>(null);
-  const colorScheme = useColorScheme();
   /** Gated so async fetches that resolve after unmount don't call setState. */
   const isMountedRef = useRef(true);
   const lastIncidentFetchAtRef = useRef(0);
@@ -312,7 +310,6 @@ export default function NativeNavigationScreen() {
     return null;
   }
 
-  const isDark = colorScheme === 'dark';
   const reportSurface = isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.9)';
   const reportBorder = isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.18)';
   const chromeSurface = isLight ? modeConfig.etaBarBg : modeConfig.etaBarBgDark;
@@ -320,8 +317,8 @@ export default function NativeNavigationScreen() {
   const chromeSubtle = isLight ? colors.textSecondary : modeConfig.etaLabelColor;
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0a0a0f' : '#000' }]}>
-      <StatusBar barStyle="light-content" />
+    <View style={[styles.container, { backgroundColor: !isLight ? '#0a0a0f' : '#000' }]}>
+      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       <MapboxNavigationView
         key={nativeViewKey}
         ref={navRef}
