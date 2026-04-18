@@ -56,9 +56,22 @@ export function navLogicSdkEnabled(): boolean {
   return envBool('EXPO_PUBLIC_NAV_LOGIC_SDK', true);
 }
 
-/** Full-screen `NativeNavigationScreen` — default path on supported native builds. */
+/**
+ * Full-screen `NativeNavigationScreen` — **opt-in** path.
+ *
+ * Default is **off**: SnapRoad keeps its branded `@rnmapbox/maps` presentation during
+ * navigation (route polyline, puck, stat strip, turn card, camera markers) while the
+ * headless Navigation SDK ({@link navLogicSdkEnabled}) drives all of the logic —
+ * matched location, route geometry, reroute, progress, maneuver banners, voice. This
+ * single-authority hybrid avoids two parallel nav sessions competing on GPS/routing
+ * (see `docs/NATIVE_NAVIGATION.md`).
+ *
+ * Set `EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE=1` to switch to the full-screen Mapbox UI.
+ * Requires a dev-client build (same platform gate as {@link navNativeSdkEnabled}).
+ */
 export function navNativeFullScreenEnabled(): boolean {
-  return navNativeSdkEnabled();
+  if (!navNativeSdkEnabled()) return false;
+  return envBool('EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE', false);
 }
 
 /** Release-safe nav diagnostics overlay (HUD) — set `EXPO_PUBLIC_NAV_LOGIC_DEBUG=1` in EAS env and rebuild. */

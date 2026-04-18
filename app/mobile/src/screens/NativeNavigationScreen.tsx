@@ -10,7 +10,7 @@ import {
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { useNavigation as useRNNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MapStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
@@ -58,6 +58,7 @@ export default function NativeNavigationScreen() {
   const { user } = useAuth();
   const { colors, isLight } = useTheme();
   const insets = useSafeAreaInsets();
+  const screenFocused = useIsFocused();
   const didExitRef = useRef(false);
   const didHandleInvalidParamsRef = useRef(false);
   const navRef = useRef<MapboxNavigationViewRef | null>(null);
@@ -231,6 +232,10 @@ export default function NativeNavigationScreen() {
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
       const course = Number(event.nativeEvent?.course);
       if (Number.isFinite(course)) lastCourseRef.current = course;
+      // Focus gate: if the user exited to `MapMain` (swipe-back), MapScreen's own
+      // fetchers own OHGO + incident polling. Avoid double-fetching during the brief
+      // overlap between screens.
+      if (!screenFocused) return;
       const now = Date.now();
 
       const lastIncidentCoord = lastIncidentFetchCoordRef.current;
@@ -254,7 +259,7 @@ export default function NativeNavigationScreen() {
         void fetchNearbyCameras(lat, lng);
       }
     },
-    [fetchNearbyIncidents, fetchNearbyCameras],
+    [fetchNearbyIncidents, fetchNearbyCameras, screenFocused],
   );
 
   const handleDismissIncident = useCallback(() => {

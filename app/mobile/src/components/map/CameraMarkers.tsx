@@ -26,6 +26,11 @@ interface Props {
   cameras: CameraLocation[];
   zoomLevel: number;
   referenceCoordinate?: MarkerCoordinate | null;
+  /**
+   * When true, use the higher-density `cameraNavigating` cap so cameras stay
+   * visible while the JS map is the presentation layer during a trip.
+   */
+  isNavigating?: boolean;
   onCameraTap?: (c: CameraLocation) => void;
 }
 
@@ -33,8 +38,19 @@ interface Props {
  * Traffic cameras as MarkerView + Ionicons (no CircleLayer dots).
  * Intentionally compact so they don’t dominate the map.
  */
-export default React.memo(function CameraMarkers({ cameras, zoomLevel, referenceCoordinate = null, onCameraTap }: Props) {
-  const list = sortAndCapMarkers(cameras, referenceCoordinate, zoomLevel, 'camera');
+export default React.memo(function CameraMarkers({
+  cameras,
+  zoomLevel,
+  referenceCoordinate = null,
+  isNavigating = false,
+  onCameraTap,
+}: Props) {
+  const list = sortAndCapMarkers(
+    cameras,
+    referenceCoordinate,
+    zoomLevel,
+    isNavigating ? 'cameraNavigating' : 'camera',
+  );
   if (!isMapAvailable() || !MapboxGL || list.length === 0) return null;
   const MB = MapboxGL;
 

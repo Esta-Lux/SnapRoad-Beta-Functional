@@ -1691,5 +1691,17 @@ export function useDriveNavigation(params: {
       : null,
     /** Native matched location for map puck (`CustomLocationProvider`) — null when not in logic SDK mode. */
     sdkNavLocation: navSdkHeadless ? navSdkSnapshot.location : null,
+    /**
+     * Native SDK speed limit in m/s (nullable). Prefer this over Directions
+     * `maxspeeds[stepIndex]` when available — the SDK updates continuously and
+     * accounts for matched location on the graph, so the badge stays in sync with
+     * the native engine even when the JS map owns presentation.
+     */
+    sdkSpeedLimitMps:
+      navSdkHeadless && sdkActive
+        ? navSdkSnapshot.location?.speedLimitMps ??
+          navSdkSnapshot.progress?.speedLimitMps ??
+          null
+        : null,
   };
 }
