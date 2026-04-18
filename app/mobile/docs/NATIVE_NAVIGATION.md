@@ -21,7 +21,14 @@ SnapRoad uses `@badatgil/expo-mapbox-navigation` with a **patch-package** overla
 
 ## iOS build notes (MapboxMaps + Navigation UIKit)
 
-Newer Xcode / Mapbox **Maps** SDKs treat `mapView.mapboxMap` as optional and use **`ResolvedImage`** for symbol `iconImage` (e.g. `.constant(.name("image-id"))`), not a raw `String`. Turf **`JSONValue`** uses the `.boolean(Bool)` case for bools. **`MapboxMaps.Style`** (map style) and **`MapboxNavigationUIKit.Style`** (day/night navigation chrome, route casing, maneuver arrow) are different types — route theming in `SnapRoadDayStyle` / `SnapRoadNightStyle` must use the Navigation UIKit `Style`. The patch in `patches/@badatgil+expo-mapbox-navigation+*.patch` carries these fixes; regenerate with `npx patch-package @badatgil/expo-mapbox-navigation` after editing `node_modules`.
+Newer Xcode / Mapbox SDKs on this project:
+
+- `mapView.mapboxMap` is **optional** — always unwrap before calling `addLayer` / `addSource` / `setStyleImportConfigProperty` / `setLayerProperty`.
+- `SymbolLayer.iconImage` expects **`ResolvedImage`**, not a raw `String` — use `.constant(.name("image-id"))`.
+- Turf **`JSONValue`** uses the **`.boolean(Bool)`** case (not `.bool`). Reading `feature.properties["key"]` is double-optional (`JSONValue??`) because `JSONObject = [String: JSONValue?]`; unwrap both layers before use.
+- **`MapboxMaps.Style`** and **`MapboxNavigationUIKit.Style`** are different types. **`MapboxNavigationUIKit.Style` in 3.x no longer exposes** `routeCasingColor`, `routeAlternateCasingColor`, or `maneuverArrowColor`. Route theming now flows through `NavigationViewControllerDelegate.navigationViewController(_:routeLineLayerWithIdentifier:sourceIdentifier:)` and the corresponding `…routeCasingLineLayerWithIdentifier…` callback, plus belt-and-suspenders direct `setLayerProperty` calls on the casing layer id.
+
+The patch in `patches/@badatgil+expo-mapbox-navigation+*.patch` carries these fixes. To regenerate: edit the file inside `node_modules/@badatgil/expo-mapbox-navigation`, then run `npx patch-package @badatgil/expo-mapbox-navigation` from `app/mobile`.
 
 ## Pre-release checks
 

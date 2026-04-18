@@ -1015,7 +1015,7 @@ index 965414e..4110a06 100644
    }
  }
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
-index 8f841df..2429d8f 100644
+index 8f841df..abff8cd 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 +++ b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 @@ -4,6 +4,9 @@ import MapboxMaps
@@ -1146,30 +1146,42 @@ index 8f841df..2429d8f 100644
 -
 -        routeProgressCancellable = navigation!.routeProgress.sink { progressState in
 -            if(progressState != nil){
--
--
++        routingProvider = mapboxNavigation?.routingProvider()
++        navigation = mapboxNavigation?.navigation()
++        tripSession = mapboxNavigation?.tripSession()
+ 
++        routeProgressCancellable = navigation?.routeProgress.sink { progressState in
++            guard let progressState else { return }
+ 
 -                // For some reason the maneuver arrows sometimes (not consistently) show up the same color as the route line making them invisible.
 -                // This is a hack to always ensure the arrows are visible.
 -                try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
--                    for: "com.mapbox.navigation.arrow.next",
--                    property: "line-color",
--                    value: "#FFFFFF" 
--                )
++            if !self.navigationLogicOnly {
++                // Maneuver arrow contrast on embedded SDK map
++                if let mapboxMap = self.navigationViewController?.navigationMapView?.mapView.mapboxMap {
++                    try? mapboxMap.setLayerProperty(
+                     for: "com.mapbox.navigation.arrow.next",
+                     property: "line-color",
+                     value: "#FFFFFF"
+                 )
 -                try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
--                    for: "com.mapbox.navigation.arrow.next.stroke",
--                    property: "line-color",
--                    value: "#FFFFFF" 
--                )
++                    try? mapboxMap.setLayerProperty(
+                     for: "com.mapbox.navigation.arrow.next.stroke",
+                     property: "line-color",
+                     value: "#FFFFFF"
+                 )
 -                try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
--                    for: "com.mapbox.navigation.arrow.next.symbol",
--                    property: "icon-color",
--                    value: "#FFFFFF" 
--                )
++                    try? mapboxMap.setLayerProperty(
+                     for: "com.mapbox.navigation.arrow.next.symbol",
+                     property: "icon-color",
+                     value: "#FFFFFF"
+                 )
 -                try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
--                    for: "com.mapbox.navigation.arrow.next.symbol.casing",
--                    property: "icon-color",
--                    value: "#FFFFFF" 
--                )
++                    try? mapboxMap.setLayerProperty(
+                     for: "com.mapbox.navigation.arrow.next.symbol.casing",
+                     property: "icon-color",
+                     value: "#FFFFFF"
+                 )
 -                
 -               self.onRouteProgressChanged?([
 -                    "distanceRemaining": progressState!.routeProgress.distanceRemaining,
@@ -1177,36 +1189,6 @@ index 8f841df..2429d8f 100644
 -                    "durationRemaining": progressState!.routeProgress.durationRemaining,
 -                    "fractionTraveled": progressState!.routeProgress.fractionTraveled,
 -                ])
-+        routingProvider = mapboxNavigation?.routingProvider()
-+        navigation = mapboxNavigation?.navigation()
-+        tripSession = mapboxNavigation?.tripSession()
-+
-+        routeProgressCancellable = navigation?.routeProgress.sink { progressState in
-+            guard let progressState else { return }
-+
-+            if !self.navigationLogicOnly {
-+                // Maneuver arrow contrast on embedded SDK map
-+                if let mapboxMap = self.navigationViewController?.navigationMapView?.mapView.mapboxMap {
-+                    try? mapboxMap.setLayerProperty(
-+                        for: "com.mapbox.navigation.arrow.next",
-+                        property: "line-color",
-+                        value: "#FFFFFF"
-+                    )
-+                    try? mapboxMap.setLayerProperty(
-+                        for: "com.mapbox.navigation.arrow.next.stroke",
-+                        property: "line-color",
-+                        value: "#FFFFFF"
-+                    )
-+                    try? mapboxMap.setLayerProperty(
-+                        for: "com.mapbox.navigation.arrow.next.symbol",
-+                        property: "icon-color",
-+                        value: "#FFFFFF"
-+                    )
-+                    try? mapboxMap.setLayerProperty(
-+                        for: "com.mapbox.navigation.arrow.next.symbol.casing",
-+                        property: "icon-color",
-+                        value: "#FFFFFF"
-+                    )
 +                }
 +                self.applySnapRoadRouteTheme()
              }
@@ -1265,9 +1247,9 @@ index 8f841df..2429d8f 100644
                  default: break
 +                }
 +            default: break
-             }
-         }
- 
++            }
++        }
++
 +        locationMatchingCancellable = navigation?.locationMatching
 +            .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
 +            .sink { state in
@@ -1285,7 +1267,7 @@ index 8f841df..2429d8f 100644
 +                    payload["speedLimitMps"] = sl.converted(to: .metersPerSecond).value
 +                }
 +                self.onNavigationLocationUpdate?(payload)
-+            }
+             }
 +
 +        voiceInstructionCancellable = navigation?.voiceInstructions.sink { st in
 +            guard self.navigationLogicOnly else { return }
@@ -1293,8 +1275,8 @@ index 8f841df..2429d8f 100644
 +                "text": st.spokenInstruction.text,
 +                "distanceAlongStep": st.spokenInstruction.distanceAlongStep,
 +            ])
-+        }
-+
+         }
+ 
 +        navigationErrorCancellable = navigation?.errors.sink { err in
 +            guard self.navigationLogicOnly else { return }
 +            self.onNavigatorError?([
@@ -1325,7 +1307,7 @@ index 8f841df..2429d8f 100644
          }
      }
  
-@@ -301,6 +420,432 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -301,6 +420,425 @@ class ExpoMapboxNavigationViewController: UIViewController {
          }
      }
  
@@ -1428,10 +1410,10 @@ index 8f841df..2429d8f 100644
 +    }
 +
 +    func applySnapRoadRouteTheme() {
-+        // Best-effort direct layer tint using the Maps style API. `try?` silently no-ops if
-+        // the layer ID doesn't exist on the user's SDK version — never crashes the trip. The
-+        // primary theming path is `SnapRoadDayStyle` / `SnapRoadNightStyle` (overrides
-+        // `apply()` to set `routeCasingColor`, `maneuverArrowColor` on the Style instance).
++        // Belt-and-suspenders direct layer tint using the Maps style API. `try?` silently
++        // no-ops if the layer ID doesn't exist on the user's SDK version. The primary
++        // theming path is the `routeLineLayerWithIdentifier` / `routeCasingLineLayerWithIdentifier`
++        // delegate callbacks on `ExpoMapboxNavigationViewController` (new SDK 3.x API).
 +        let theme = ExpoMapboxNavigationViewController.modeThemes[currentDrivingMode]
 +            ?? ExpoMapboxNavigationViewController.modeThemes["adaptive"]!
 +        guard let mapView = navigationViewController?.navigationMapView?.mapView,
@@ -1727,24 +1709,17 @@ index 8f841df..2429d8f 100644
 +            switch result {
 +            case .success(let features):
 +                guard let first = features.first else { return }
-+                let props = first.queriedFeature.feature.properties
-+                let id = snaproadStringFromJSONValue(props.flatMap { $0["id"] })
-+                var name = snaproadStringFromJSONValue(props.flatMap { $0["name"] })
++                var id = ""
++                var name = ""
++                if let props = first.queriedFeature.feature.properties {
++                    if let raw = props["id"], let v = raw { id = snaproadStringFromJSONValue(v) }
++                    if let raw = props["name"], let v = raw { name = snaproadStringFromJSONValue(v) }
++                }
 +                if name.isEmpty { name = "Traffic camera" }
 +                self?.onTrafficCameraTap?(["id": id, "name": name])
 +            case .failure:
 +                break
 +            }
-+        }
-+    }
-+
-+    private func snaproadStringFromJSONValue(_ v: JSONValue?) -> String {
-+        guard let v else { return "" }
-+        switch v {
-+        case .string(let s): return s
-+        case .number(let n): return String(describing: n)
-+        case .boolean(let b): return b ? "true" : "false"
-+        default: return ""
 +        }
 +    }
 +
@@ -1758,7 +1733,7 @@ index 8f841df..2429d8f 100644
      func update(){
          calculateRoutesTask?.cancel()
  
-@@ -322,6 +867,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -322,6 +860,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
      }
  
      func calculateRoutes(waypoints: Array<Waypoint>){
@@ -1772,7 +1747,7 @@ index 8f841df..2429d8f 100644
          let routeOptions = NavigationRouteOptions(
              waypoints: waypoints, 
              profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
-@@ -335,7 +887,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -335,7 +880,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
          )
  
          calculateRoutesTask = Task {
@@ -1781,7 +1756,7 @@ index 8f841df..2429d8f 100644
              case .failure(let error):
                  onRouteFailedToLoad?([
                      "errorMessage": error.localizedDescription
-@@ -348,6 +900,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -348,6 +893,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
      }
  
      func calculateMapMatchingRoutes(waypoints: Array<Waypoint>){
@@ -1795,7 +1770,7 @@ index 8f841df..2429d8f 100644
          let matchOptions = NavigationMatchOptions(
              waypoints: waypoints, 
              profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
-@@ -358,7 +917,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -358,7 +910,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
  
  
          calculateRoutesTask = Task {
@@ -1804,7 +1779,7 @@ index 8f841df..2429d8f 100644
              case .failure(let error):
                  onRouteFailedToLoad?([
                      "errorMessage": error.localizedDescription
-@@ -413,6 +972,23 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -413,6 +965,23 @@ class ExpoMapboxNavigationViewController: UIViewController {
              ]
          ])
  
@@ -1828,7 +1803,7 @@ index 8f841df..2429d8f 100644
          let topBanner = TopBannerViewController()
          topBanner.instructionsBannerView.distanceFormatter.locale = currentLocale
          let bottomBanner = BottomBannerViewController()
-@@ -420,10 +996,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -420,10 +989,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
          bottomBanner.dateFormatter.locale = currentLocale
  
          let navigationOptions = NavigationOptions(
@@ -1841,7 +1816,7 @@ index 8f841df..2429d8f 100644
              topBanner: topBanner,
              bottomBanner: bottomBanner
          )
-@@ -447,26 +1023,66 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -447,26 +1016,66 @@ class ExpoMapboxNavigationViewController: UIViewController {
          navigationViewController.showsContinuousAlternatives = currentDisableAlternativeRoutes != true
          navigationViewController.usesNightStyleWhileInTunnel = false
          navigationViewController.automaticallyAdjustsStyleForTimeOfDay = false
@@ -1864,7 +1839,6 @@ index 8f841df..2429d8f 100644
 -            navigationMapView!.localizeLabels(locale: self.currentLocale)
 -            do{
 -                try navigationMapView!.mapView.mapboxMap.localizeLabels(into: self.currentLocale)
--            } catch {}
 +        if let rawStyle = currentMapStyle, let style = StyleURI(rawValue: rawStyle),
 +           let navMap = navigationMapView,
 +           let mapboxMap = navMap.mapView.mapboxMap {
@@ -1875,8 +1849,9 @@ index 8f841df..2429d8f 100644
 +                    if let mm = navMap.mapView.mapboxMap {
 +                        try mm.localizeLabels(into: self.currentLocale)
 +                    }
-+                } catch {}
-+                self.addCustomRasterLayer()
+             } catch {}
+             self.addCustomRasterLayer()
+-        })
 +                self.applySnapRoadMapChrome()
 +                self.applySnapRoadBasemapConfig()
 +                self.applySnapRoadRouteTheme()
@@ -1889,12 +1864,11 @@ index 8f841df..2429d8f 100644
 +                    try mapboxMap.localizeLabels(into: self.currentLocale)
 +                } catch {}
 +            }
-             self.addCustomRasterLayer()
--        })
++            self.addCustomRasterLayer()
 +            self.applySnapRoadBasemapConfig()
 +            self.applySnapRoadRouteTheme()
 +        }
-         
+ 
 +        if let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self).first {
 +            cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
 +        }
@@ -1920,14 +1894,14 @@ index 8f841df..2429d8f 100644
  
          navigationViewController.delegate = self
          addChild(navigationViewController)
-@@ -479,9 +1095,19 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -479,9 +1088,19 @@ class ExpoMapboxNavigationViewController: UIViewController {
              navigationViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
          ])
          didMove(toParent: self)
 -        mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
 +        mapboxNavigation.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
-+    }
-+}
+     }
+ }
 +
 +extension ExpoMapboxNavigationViewController: UIGestureRecognizerDelegate {
 +    func gestureRecognizer(
@@ -1935,13 +1909,13 @@ index 8f841df..2429d8f 100644
 +        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
 +    ) -> Bool {
 +        true
-     }
- }
++    }
++}
 +
  extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
      func navigationViewController(_ navigationViewController: NavigationViewController, didRerouteAlong route: Route) {
          onRoutesLoaded?([
-@@ -496,6 +1122,23 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
+@@ -496,6 +1115,73 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
          _ navigationViewController: NavigationViewController,
          byCanceling canceled: Bool
      ) { }
@@ -1962,43 +1936,92 @@ index 8f841df..2429d8f 100644
 +        }
 +        return nil
 +    }
++
++    // MARK: - Route line / casing color (new SDK path)
++    //
++    // MapboxNavigationUIKit 3.x removed `Style.routeCasingColor` / `.maneuverArrowColor`.
++    // The supported replacement is returning a customized `LineLayer` from these delegate
++    // methods so the Navigation SDK applies our palette to the primary route + casing.
++
++    func navigationViewController(
++        _ navigationViewController: NavigationViewController,
++        routeLineLayerWithIdentifier identifier: String,
++        sourceIdentifier: String
++    ) -> LineLayer? {
++        let theme = ExpoMapboxNavigationViewController.currentModeTheme(mode: currentDrivingMode)
++        guard let color = ExpoMapboxNavigationViewController.uiColor(fromHex: theme.routeColor) else { return nil }
++        var layer = LineLayer(id: identifier, source: sourceIdentifier)
++        layer.lineColor = .constant(StyleColor(color))
++        layer.lineWidth = .expression(Exp(.interpolate) {
++            Exp(.linear)
++            Exp(.zoom)
++            10
++            4
++            16
++            9
++        })
++        layer.lineJoin = .constant(.round)
++        layer.lineCap = .constant(.round)
++        return layer
++    }
++
++    func navigationViewController(
++        _ navigationViewController: NavigationViewController,
++        routeCasingLineLayerWithIdentifier identifier: String,
++        sourceIdentifier: String
++    ) -> LineLayer? {
++        let theme = ExpoMapboxNavigationViewController.currentModeTheme(mode: currentDrivingMode)
++        guard let color = ExpoMapboxNavigationViewController.uiColor(fromHex: theme.routeCasing) else { return nil }
++        var layer = LineLayer(id: identifier, source: sourceIdentifier)
++        layer.lineColor = .constant(StyleColor(color))
++        layer.lineWidth = .expression(Exp(.interpolate) {
++            Exp(.linear)
++            Exp(.zoom)
++            10
++            6
++            16
++            12
++        })
++        layer.lineJoin = .constant(.round)
++        layer.lineCap = .constant(.round)
++        return layer
++    }
  }
  
  extension UIView {
-@@ -507,3 +1150,35 @@ extension UIView {
+@@ -507,3 +1193,34 @@ extension UIView {
          return subviews + subviews.flatMap { $0.recursiveSubviews }
      }
  }
 +
-+/// SnapRoad-branded navigation Day style.
-+/// Overrides `apply()` so the route casing, alternate casing, and maneuver arrow pick up the
-+/// current driving-mode palette. We intentionally leave `trafficLow/Moderate/Heavy/Severe`
-+/// alone so the SDK's stock congestion coloring still communicates traffic clearly.
++fileprivate func snaproadStringFromJSONValue(_ v: JSONValue?) -> String {
++    guard let v else { return "" }
++    switch v {
++    case .string(let s): return s
++    case .number(let n): return String(describing: n)
++    case .boolean(let b): return b ? "true" : "false"
++    default: return ""
++    }
++}
++
++/// SnapRoad-branded navigation Day / Night styles.
++///
++/// Newer Mapbox Navigation UIKit (3.x) removed `routeCasingColor`, `routeAlternateCasingColor`,
++/// and `maneuverArrowColor` from `Style`. Route theming now flows through the
++/// `NavigationMapViewDelegate` / `NavigationViewControllerDelegate` callbacks
++/// (`routeLineLayerWithIdentifier`, `routeCasingLineLayerWithIdentifier`) and direct
++/// `setLayerProperty` calls in `applySnapRoadRouteTheme()`. These subclasses remain so we
++/// keep Mapbox's default tint + map style handling; route/casing colors are applied from
++/// the delegate methods below.
 +class SnapRoadDayStyle: DayStyle {
 +    override func apply() {
 +        super.apply()
-+        applySnapRoadRouteColors(self)
 +    }
 +}
 +
 +class SnapRoadNightStyle: NightStyle {
 +    override func apply() {
 +        super.apply()
-+        applySnapRoadRouteColors(self)
-+    }
-+}
-+
-+private func applySnapRoadRouteColors(_ style: MapboxNavigationUIKit.Style) {
-+    guard let controller = ExpoMapboxNavigationViewController.activeController else { return }
-+    let theme = ExpoMapboxNavigationViewController.currentModeTheme(mode: controller.currentDrivingMode)
-+    if let casing = ExpoMapboxNavigationViewController.uiColor(fromHex: theme.routeCasing) {
-+        style.routeCasingColor = casing
-+        style.routeAlternateCasingColor = casing.withAlphaComponent(0.55)
-+    }
-+    if let route = ExpoMapboxNavigationViewController.uiColor(fromHex: theme.routeColor) {
-+        // Arrow color lifted from the mode palette; traffic colors stay SDK-default so
-+        // congestion overlays keep their red/orange/yellow semantics.
-+        style.maneuverArrowColor = route
 +    }
 +}
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/plugin/config.js b/node_modules/@badatgil/expo-mapbox-navigation/plugin/config.js
