@@ -1,7 +1,11 @@
 import type { Coordinate } from '../types';
 import type { DirectionsStep } from '../lib/directions';
 import type { NavigationProgress } from './navModel';
-import { buildNavigationProgressFromSdk, buildSdkWaitingNavigationProgress } from './navSdkProgressAdapter';
+import {
+  buildNavigationProgressFromSdk,
+  buildSdkWaitingNavigationProgress,
+  resetHeadingSmoothing,
+} from './navSdkProgressAdapter';
 
 export type SdkGuidancePhase = 'idle' | 'waiting' | 'active';
 
@@ -111,6 +115,9 @@ export function resetNavSdkState() {
       routeChangedEvents: 0,
     },
   };
+  // Module-level EWMA in the adapter must reset across trips so the first
+  // heading tick of a new trip isn't pulled toward the last trip's bearing.
+  resetHeadingSmoothing();
   emit();
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,11 @@ import type { ModeConfig } from '../../constants/modes';
 import { formatDistance } from '../../utils/distance';
 import { formatDuration } from '../../utils/format';
 import { NAV_MAP_BOTTOM_CHROME_PX } from '../../navigation/cameraPresets';
+import {
+  resolveStableArrival,
+  resolveStableSpeedMph,
+  type ArrivalDisplay,
+} from '../../navigation/navDisplayHysteresis';
 
 /**
  * Vertical offset above the safe area for nav FABs / street pill so they clear the status strip
@@ -79,11 +84,25 @@ export default React.memo(function NavigationStatusStrip({
   const textSec = modeConfig.etaLabelColor;
   const arriveColor = modeConfig.etaArriveColor;
 
-  const arrivalTime = new Date(
-    arrivalEpochMs != null && Number.isFinite(arrivalEpochMs)
-      ? arrivalEpochMs
-      : Date.now() + liveEta.etaMinutes * 60000,
-  ).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  /**
+   * Arrival clock hysteresis — kills the "minute flipping back and forth" flicker.
+   * See {@link resolveStableArrival} for rules.
+   */
+  const arrivalDisplayRef = useRef<ArrivalDisplay | null>(null);
+  const arrivalTime = useMemo(() => {
+    const fallback = Date.now() + liveEta.etaMinutes * 60000;
+    const rawEpoch =
+      arrivalEpochMs != null && Number.isFinite(arrivalEpochMs)
+        ? arrivalEpochMs
+        : fallback;
+    const next = resolveStableArrival(arrivalDisplayRef.current, rawEpoch, Date.now());
+    arrivalDisplayRef.current = next;
+    return new Date(next.epoch).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }, [arrivalEpochMs, liveEta.etaMinutes]);
+
   const distMiles =
     progressDistanceMiles != null && Number.isFinite(progressDistanceMiles)
       ? progressDistanceMiles
@@ -94,6 +113,16 @@ export default React.memo(function NavigationStatusStrip({
       : liveEta.etaMinutes;
   const distLabel = formatDistance(distMiles);
   const timeLabel = formatDuration(durMin);
+
+  /**
+   * Speed-mph display hysteresis. See {@link resolveStableSpeedMph}.
+   */
+  const displayedSpeedMphRef = useRef<number>(Math.round(Math.max(0, speedMph)));
+  const displayedSpeedMph = useMemo(() => {
+    const next = resolveStableSpeedMph(displayedSpeedMphRef.current, speedMph);
+    displayedSpeedMphRef.current = next;
+    return next;
+  }, [speedMph]);
 
   const secondaryLine = useCallback(() => {
     if (isRerouting) {
@@ -108,7 +137,7 @@ export default React.memo(function NavigationStatusStrip({
       if (calmExpanded) {
         return (
           <Text style={[styles.secondary, { color: textSec }]} numberOfLines={1}>
-            <Text style={{ fontWeight: '600', color: textPrimary }}>{Math.round(speedMph)} mph</Text>
+            <Text style={{ fontWeight: '600', color: textPrimary }}>{displayedSpeedMph} mph</Text>
             <Text style={{ color: textSec }}> · Smooth drive</Text>
           </Text>
         );
@@ -124,7 +153,7 @@ export default React.memo(function NavigationStatusStrip({
     if (drivingMode === 'sport') {
       return (
         <Text style={[styles.secondary, { color: textSec }]} numberOfLines={1}>
-          <Text style={{ fontWeight: '800', color: etaAccent, fontSize: 14 }}>{Math.round(speedMph)} mph</Text>
+          <Text style={{ fontWeight: '800', color: etaAccent, fontSize: 14 }}>{displayedSpeedMph} mph</Text>
           <Text style={{ color: textSec }}> · Smooth drive</Text>
         </Text>
       );
@@ -134,7 +163,7 @@ export default React.memo(function NavigationStatusStrip({
     if (speedMph > 3) {
       return (
         <Text style={[styles.secondary, { color: textSec }]} numberOfLines={1}>
-          <Text style={{ fontWeight: '700', color: textPrimary }}>{Math.round(speedMph)} mph</Text>
+          <Text style={{ fontWeight: '700', color: textPrimary }}>{displayedSpeedMph} mph</Text>
           <Text style={{ color: textSec }}> · Smooth drive</Text>
         </Text>
       );
@@ -149,6 +178,7 @@ export default React.memo(function NavigationStatusStrip({
     drivingMode,
     calmExpanded,
     speedMph,
+    displayedSpeedMph,
     etaAccent,
     textPrimary,
     textSec,

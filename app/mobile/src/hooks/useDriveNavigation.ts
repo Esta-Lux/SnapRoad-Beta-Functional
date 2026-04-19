@@ -387,18 +387,36 @@ export function useDriveNavigation(params: {
     navigationProgress?.isOffRoute,
   ]);
 
-  /** Puck / camera bearing: SDK course, else route-blended heading from progress (not raw compass alone). */
+  /**
+   * Puck / camera bearing — single source for the whole presentation layer.
+   *
+   * On the SDK path we prefer `navigationProgress.displayCoord.heading` (smoothed
+   * course from `navSdkProgressAdapter.smoothCourseDeg` — EWMA blended toward the
+   * previous emitted heading along the shortest angle, with fast-pass on sharp
+   * turns and stale samples). Raw `navSdkSnapshot.location.course` is the fallback
+   * for the single tick between `ingestSdkLocation` landing and the first
+   * `ingestSdkProgress` that would have built a new progress object. Finally, JS
+   * trips fall back to the in-progress blended heading; explore falls through to
+   * the device compass.
+   */
   const navigationDisplayHeading = useMemo(() => {
+    const smoothed = navigationProgress?.displayCoord?.heading;
+    if (
+      sdkActive &&
+      typeof smoothed === 'number' &&
+      Number.isFinite(smoothed)
+    ) {
+      return smoothed;
+    }
     if (sdkActive && navSdkSnapshot.location && navSdkSnapshot.location.course >= 0) {
       return navSdkSnapshot.location.course;
     }
-    const blended = navigationProgress?.displayCoord?.heading;
     if (
       isNavigating &&
-      typeof blended === 'number' &&
-      Number.isFinite(blended)
+      typeof smoothed === 'number' &&
+      Number.isFinite(smoothed)
     ) {
-      return blended;
+      return smoothed;
     }
     return heading;
   }, [

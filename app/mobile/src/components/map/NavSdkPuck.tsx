@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import MapboxGL from '../../utils/mapbox';
 
 /**
- * Native-authoritative navigation puck.
+ * Native-authoritative navigation puck — "Apple Maps single frame".
  *
  * Rendered **only** while the hybrid Mapbox Navigation SDK trip is authoritative
  * (`isSdkPuckAuthoritative()` → `navLogicSdkEnabled()` && `sdkGuidancePhase === 'active'`
@@ -15,17 +15,26 @@ import MapboxGL from '../../utils/mapbox';
  * Visual contract: a 3D-style blue chevron (the "nav arrow" the user expects
  * during turn-by-turn) instead of the pulsing dot used in explore.
  *
- * Heading source: native SDK `location.course` (snapped to route graph). When the
- * native engine has no course yet (`course < 0`) the arrow points to north; the
- * first matched-location event typically arrives within ~150 ms of the first
- * progress tick on iOS (see `patches/@badatgil+expo-mapbox-navigation+*.patch`).
+ * Coordinate + heading source: **`nav.navigationProgressCoord`** /
+ * **`nav.navigationDisplayHeading`** from `useDriveNavigation` — which resolve to
+ * the on-polyline `routeSplitSnap.point` and the smoothed SDK `course`. Feeding
+ * the puck from the raw `navSdkStore.location` would place it ~1–3 m off the
+ * rendered route polyline (map-matcher vs client projection mismatch), making
+ * the puck appear to slide along the side of the route while
+ * `RouteOverlay`'s traveled/remaining split sat on the line. Both puck and
+ * `CustomLocationProvider` (camera anchor) read the same coord now, so puck +
+ * camera + route split all render on a single point.
+ *
+ * When the native engine has no course yet (`course < 0`) the arrow points to
+ * north; the first matched-location event typically arrives within ~150 ms of
+ * the first progress tick on iOS (see `patches/@badatgil+expo-mapbox-navigation+*.patch`).
  */
 type Props = {
-  /** SDK matched longitude. */
+  /** On-polyline longitude (`navigationProgressCoord.lng`). */
   lng: number;
-  /** SDK matched latitude. */
+  /** On-polyline latitude (`navigationProgressCoord.lat`). */
   lat: number;
-  /** Course in degrees from the native SDK matched location; negative means unknown. */
+  /** Smoothed course in degrees from the native SDK (`navigationDisplayHeading`); negative means unknown. */
   course: number;
   /**
    * Optional accent (route color) — defaults to SnapRoad brand blue.

@@ -19,7 +19,7 @@ Headless SDK path (default when logic SDK on):
 - Hidden `MapboxNavigationView` (`navigationLogicOnly`) feeds `navSdkStore` (`ingestSdkProgress`, `ingestSdkLocation`, …).
 - `useDriveNavigation` selects **`sdkBuiltNavigationProgress`** over JS `useNavigationProgress` while `sdkActive`.
 - JS **off-route reroute**, **traffic refresh** intervals, and **JS arrival auto-end** are skipped when `navSdkHeadless` — SDK handles reroute/arrival (`onRouteChanged`, `onFinalDestinationArrival`).
-- `MapScreen` uses **`CustomLocationProvider`** with `nav.sdkNavLocation` when the SDK has matched fixes.
+- `MapScreen` uses **`CustomLocationProvider`** + **`NavSdkPuck`** with **`nav.navigationProgressCoord`** / **`nav.navigationDisplayHeading`** during any active trip. Both resolve to the on-polyline `routeSplitSnap.point` and the smoothed SDK course (`navSdkProgressAdapter.smoothCourseDeg`) so puck, camera centre, and the route traveled/remaining split all render on a single coord — no "side tracking" against the rendered polyline. Raw `sdkNavLocation` stays exported for diagnostic / bearing-mode callers.
 - Expensive **`buildNavStepsFromDirections`** / edge ETA resolution are skipped during active SDK trips where they are unused.
 
 See module comment at top of `src/hooks/useDriveNavigation.ts` and `src/navigation/navSdkAuthority.ts`.

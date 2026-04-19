@@ -2954,25 +2954,33 @@ export default function MapScreen() {
           onPress={handleMapPress}
         >
           {/*
-            Location provider strategy (AGENTS.md single-authority rule):
-              - SDK puck authority → we render `NavSdkPuck` (below, after other markers)
-                from `navSdkStore.location` directly; the default `LocationPuck` is
-                hidden (visible={false}) and we skip `CustomLocationProvider` so the
-                camera continues to follow our custom location feed via the same
-                coordinate source.
-              - JS-only navigation → feed the default puck via `CustomLocationProvider`
-                with the snap-blended coord/heading.
+            Location provider strategy — "Apple Maps single frame" (AGENTS.md
+            single-authority rule):
+
+            Raw native matched GPS (`sdkNavLocation.latitude/longitude`) can sit
+            1–3 m off the rendered route polyline because the native map-matcher
+            and our client-side projection onto the same polyline disagree at
+            the sub-lane level. If we feed that raw coord to
+            `CustomLocationProvider`, the map camera centres on a point that is
+            *not* the point where `RouteOverlay` draws the traveled-to-remaining
+            split — the puck visibly slides along the side of the route and the
+            camera appears to "track from a side".
+
+            Fix: during any active trip (SDK or JS-only), feed the provider with
+            the on-polyline `navigationProgressCoord` (= `routeSplitSnap.point`
+            on the SDK path, snap-blended puck on the JS path). `NavSdkPuck`
+            below reads the same coord, so puck + camera + route split all land
+            on a single point. Heading comes from `navigationDisplayHeading`
+            which is the smoothed SDK course (see `navSdkProgressAdapter.ts`).
               - Explore (not navigating) → default Mapbox GPS.
           */}
-          {sdkPuckOwns && nav.sdkNavLocation ? (
-            <MapboxGL.CustomLocationProvider
-              coordinate={[nav.sdkNavLocation.longitude, nav.sdkNavLocation.latitude]}
-              heading={nav.sdkNavLocation.course >= 0 ? nav.sdkNavLocation.course : heading}
-            />
-          ) : nav.isNavigating && !navLogicSdkEnabled() ? (
+          {nav.isNavigating &&
+          (sdkPuckOwns || !navLogicSdkEnabled()) &&
+          Number.isFinite(navDisplayCoord.lat) &&
+          Number.isFinite(navDisplayCoord.lng) ? (
             <MapboxGL.CustomLocationProvider
               coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
-              heading={navDisplayHeading}
+              heading={Number.isFinite(navDisplayHeading) ? navDisplayHeading : heading}
             />
           ) : null}
           {standardStyleImportsEnabled && MapboxGL.StyleImport ? (
@@ -3233,11 +3241,13 @@ export default function MapScreen() {
             pulsing={{ isEnabled: !nav.isNavigating }}
             scale={1.55}
           />
-          {sdkPuckOwns && nav.sdkNavLocation ? (
+          {sdkPuckOwns &&
+          Number.isFinite(navDisplayCoord.lat) &&
+          Number.isFinite(navDisplayCoord.lng) ? (
             <NavSdkPuck
-              lng={nav.sdkNavLocation.longitude}
-              lat={nav.sdkNavLocation.latitude}
-              course={nav.sdkNavLocation.course}
+              lng={navDisplayCoord.lng}
+              lat={navDisplayCoord.lat}
+              course={Number.isFinite(navDisplayHeading) ? navDisplayHeading : -1}
               color={navRouteColors.routeColor}
             />
           ) : null}

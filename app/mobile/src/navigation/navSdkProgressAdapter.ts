@@ -48,6 +48,76 @@ function routeNavStepMatchesSdk(
   return sdkInstr.includes(routeStreet) || normText(routeStep.displayInstruction) === sdkInstr;
 }
 
+/**
+ * Heading smoothing state (shortest-angle EWMA).
+ *
+ * Raw native `course` can swing ±5° on consecutive ticks at low speed or in
+ * dense urban canyons — even when the matched point hasn't moved — which shows
+ * up as a visibly twitchy puck and camera bearing. An Apple-Maps-like feel
+ * requires a small amount of damping *without* adding visible lag on sharp
+ * turns, so we blend in the shortest-angle direction with an alpha that scales
+ * with speed (more damping when slow, almost none at freeway speed).
+ *
+ * Keep this pair module-private; callers should treat the function as pure
+ * from their perspective (adapter output is a plain object). `resetHeadingSmoothing`
+ * is exported for tests and trip-teardown paths in `navSdkStore.resetNavSdkState`.
+ */
+let smoothedHeadingDeg: number | null = null;
+let smoothedHeadingAtMs = 0;
+
+export function resetHeadingSmoothing(): void {
+  smoothedHeadingDeg = null;
+  smoothedHeadingAtMs = 0;
+}
+
+function shortestAngleDeltaDeg(target: number, current: number): number {
+  let d = ((target - current + 540) % 360) - 180;
+  if (d === -180) d = 180;
+  return d;
+}
+
+function wrap360(deg: number): number {
+  const m = deg % 360;
+  return m < 0 ? m + 360 : m;
+}
+
+/**
+ * Smooth `course` toward the previous emitted heading.
+ *
+ * - `alpha` = EWMA factor toward the new raw course.
+ *   - Slow (≤ 4 m/s ≈ 9 mph): 0.35 — heavy damping, kills pedestrian-mode hunt.
+ *   - Cruise (≥ 15 m/s ≈ 34 mph): 0.85 — near pass-through, no lag on turns.
+ *   - Linear blend in between.
+ * - Sharp turns (|Δ| ≥ 25°) bypass damping so real lane changes land instantly.
+ * - Stale previous sample (> 2 s since last update, e.g. first tick after a
+ *   reroute) bypasses damping.
+ */
+function smoothCourseDeg(
+  rawCourseDeg: number,
+  speedMps: number | null | undefined,
+  nowMs: number,
+): number {
+  const prev = smoothedHeadingDeg;
+  const stale = smoothedHeadingAtMs > 0 && nowMs - smoothedHeadingAtMs > 2000;
+  if (prev == null || stale) {
+    smoothedHeadingDeg = wrap360(rawCourseDeg);
+    smoothedHeadingAtMs = nowMs;
+    return smoothedHeadingDeg;
+  }
+  const delta = shortestAngleDeltaDeg(rawCourseDeg, prev);
+  if (Math.abs(delta) >= 25) {
+    smoothedHeadingDeg = wrap360(rawCourseDeg);
+    smoothedHeadingAtMs = nowMs;
+    return smoothedHeadingDeg;
+  }
+  const sp = Number.isFinite(speedMps as number) ? Math.max(0, speedMps as number) : 0;
+  const tSpeed = Math.max(0, Math.min(1, (sp - 4) / (15 - 4)));
+  const alpha = 0.35 + (0.85 - 0.35) * tSpeed;
+  smoothedHeadingDeg = wrap360(prev + delta * alpha);
+  smoothedHeadingAtMs = nowMs;
+  return smoothedHeadingDeg;
+}
+
 function distanceToSdkDisplayedStep(
   step: NavStep | null,
   currentStepIndex: number,
@@ -208,10 +278,17 @@ export function buildNavigationProgressFromSdk(args: {
   const durRem = Math.max(0, Math.round(progress.durationRemaining ?? 0));
   const distRem = Math.max(0, progress.distanceRemaining ?? 0);
 
+  const rawCourseDeg = location != null && location.course >= 0 ? location.course : null;
+  const speedMpsForSmoothing =
+    location != null && location.speed >= 0 ? location.speed : null;
+  const headingDeg =
+    rawCourseDeg != null
+      ? smoothCourseDeg(rawCourseDeg, speedMpsForSmoothing, Date.now())
+      : undefined;
   const displayCoord = {
     lat: routeSplitSnap.point.lat,
     lng: routeSplitSnap.point.lng,
-    heading: location != null && location.course >= 0 ? location.course : undefined,
+    heading: headingDeg,
     speedMps: location != null && location.speed >= 0 ? location.speed : undefined,
     accuracy: location?.horizontalAccuracy ?? null,
     timestamp: location?.timestamp ?? Date.now(),

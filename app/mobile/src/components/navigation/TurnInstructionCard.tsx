@@ -17,6 +17,10 @@ import type { TurnCardState } from '../../navigation/turnCardModel';
 import type { DirectionsStep } from '../../lib/directions';
 import type { ManeuverKind, RoadSignal, LaneInfo, RoadShield } from '../../navigation/navModel';
 import { getBannerThenLine, getLaneData, lanesFromLegacyJson } from '../../navigation/bannerInstructions';
+import {
+  resolveStableText,
+  type StableTextState,
+} from '../../navigation/navDisplayHysteresis';
 import ManeuverIcon from './ManeuverIcon';
 import RoadSignalBadge from './RoadSignalBadge';
 import LaneGuidance from './LaneGuidance';
@@ -24,6 +28,29 @@ import HighwayShieldBadge from './HighwayShieldBadge';
 
 /** Hold previous lane data for this duration (ms) to prevent flicker during source transitions. */
 const LANE_DEBOUNCE_MS = 300;
+
+/**
+ * React wrapper over `resolveStableText` — prevents single-frame flips when
+ * upstream sources disagree. Legitimate step advances (detected by `resetKey`
+ * change) flush instantly. See `navDisplayHysteresis.ts` for the rules.
+ */
+function useStableText(
+  next: string | undefined,
+  resetKey: string | number,
+): string {
+  const holdRef = useRef<StableTextState>({
+    displayed: '',
+    pending: null,
+    pendingSince: 0,
+    resetKey,
+  });
+
+  return useMemo(() => {
+    const nextState = resolveStableText(holdRef.current, next, resetKey, Date.now());
+    holdRef.current = nextState;
+    return nextState.displayed;
+  }, [next, resetKey]);
+}
 
 const DENSITY: Record<
   DrivingMode,
@@ -127,11 +154,26 @@ export default React.memo(function TurnInstructionCard({
   const tcTextColor = modeConfig.turnCardTextColor;
   const d = DENSITY[mode];
 
-  const primaryDisplay = useMemo(() => {
+  /**
+   * Primary text source precedence (flicker-proof):
+   *   1. Parent-supplied `primaryInstruction` (SDK banner under authority, or
+   *      the JS REST-builder output). This is the authoritative string —
+   *      MapScreen has already applied the single-authority rule.
+   *   2. Fallback to `step.bannerInstructions[0].primary.text` ONLY when the
+   *      parent hasn't supplied anything yet (first `sdk_waiting` render).
+   *
+   * Stability hold: `useStableText` prevents any single-frame flip between
+   * sources from blinking the card. The hold resets whenever the maneuver step
+   * actually changes (tracked via `step.instruction` / `maneuverForIcon`) so
+   * legitimate turn transitions feel instant.
+   */
+  const primaryRaw = useMemo(() => {
     const fromParent = primaryInstruction?.trim();
     if (fromParent) return fromParent;
     return step?.bannerInstructions?.[0]?.primary?.text?.trim() || '';
   }, [step, primaryInstruction]);
+  const stableTextKey = `${step?.instruction ?? ''}|${_maneuverForIcon}|${state}`;
+  const primaryDisplay = useStableText(primaryRaw, stableTextKey);
 
   const hasRawManeuver = !!(maneuverType?.trim() || maneuverModifier?.trim());
   const hasKindManeuver = maneuverKind != null && maneuverKind !== 'unknown';
@@ -176,13 +218,27 @@ export default React.memo(function TurnInstructionCard({
     return rawLanes;
   }, [rawLanes, step]);
 
+  /**
+   * "Then …" secondary line precedence:
+   *   1. Parent-supplied `secondaryInstruction` — under SDK authority this is
+   *      `banner.secondaryInstruction`, i.e. the native banner's secondary row
+   *      (authoritative copy that matches the native voice).
+   *   2. `bannerThen` — pulled from the synthetic step's `bannerInstructions`,
+   *      same source as native under SDK authority, otherwise REST row.
+   *   3. `chainInstruction` — JS-synthesised "Then {kind}" from `prog.nextStep
+   *      .nextManeuverKind`; lowest priority because it can disagree with the
+   *      native banner on highway merges (where native has no secondary but the
+   *      synthesised "Then" misreads the upcoming maneuver kind).
+   */
   const bannerThen = getBannerThenLine(step);
-  const thenText = useMemo(() => {
-    if (chainInstruction?.trim()) return chainInstruction.trim();
-    if (bannerThen?.trim()) return bannerThen.trim();
+  const thenRaw = useMemo(() => {
     if (secondaryInstruction?.trim()) return secondaryInstruction.trim();
-    return null;
-  }, [chainInstruction, bannerThen, secondaryInstruction]);
+    if (bannerThen?.trim()) return bannerThen.trim();
+    if (chainInstruction?.trim()) return chainInstruction.trim();
+    return '';
+  }, [secondaryInstruction, bannerThen, chainInstruction]);
+  const thenStable = useStableText(thenRaw, stableTextKey);
+  const thenText = thenStable || null;
 
   const showThenRow =
     !!thenText && (state === 'preview' || state === 'confirm' || state === 'active');
