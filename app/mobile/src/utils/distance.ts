@@ -424,6 +424,46 @@ export function polylineLengthMeters(polyline: Coordinate[]): number {
 }
 
 /**
+ * Forward-looking tangent bearing at a point along a polyline, expressed in
+ * degrees (0 = north, 90 = east). This is what Mapbox Navigation's own
+ * NavigationCamera uses for the camera bearing when the driver is stationary
+ * or `location.course` is unreliable (e.g. start of trip, red light,
+ * pedestrian-mode pause): the direction the upcoming road segment points,
+ * *not* the noisy device compass.
+ *
+ * We average over a small look-ahead window (default 12 m ≈ one car length)
+ * so that vertex-adjacent segments don't flip the bearing by ±30°. When the
+ * look-ahead falls off the end of the route we reuse the last segment so the
+ * arrival arrow still points along the final leg.
+ *
+ * Returns `null` only when the polyline has <2 points.
+ */
+export function tangentBearingAlongPolyline(
+  polyline: Coordinate[],
+  cumMeters: number,
+  lookAheadMeters = 12,
+): number | null {
+  if (polyline.length < 2) return null;
+  const total = polylineLengthMeters(polyline);
+  if (!Number.isFinite(total) || total <= 0) return bearingDeg(polyline[0]!, polyline[1]!);
+  const startCum = Math.max(0, Math.min(total, cumMeters));
+  const endCum = Math.max(0, Math.min(total, startCum + Math.max(1, lookAheadMeters)));
+  const startPt = coordinateAtCumulativeMeters(polyline, startCum);
+  const endPt = coordinateAtCumulativeMeters(polyline, endCum);
+  if (!startPt || !endPt) return bearingDeg(polyline[0]!, polyline[1]!);
+  if (haversineMeters(startPt.lat, startPt.lng, endPt.lat, endPt.lng) < 1e-3) {
+    const seg = segmentAndTFromCumAlongPolyline(startCum, polyline);
+    if (seg) {
+      const a = polyline[seg.segmentIndex]!;
+      const b = polyline[Math.min(polyline.length - 1, seg.segmentIndex + 1)]!;
+      if (haversineMeters(a.lat, a.lng, b.lat, b.lng) > 1e-3) return bearingDeg(a, b);
+    }
+    return bearingDeg(polyline[polyline.length - 2]!, polyline[polyline.length - 1]!);
+  }
+  return bearingDeg(startPt, endPt);
+}
+
+/**
  * Cumulative distance at the end of each Mapbox step, using per-step geometry when present
  * (aligned with the same route polyline as projection), else `distanceMeters`.
  */

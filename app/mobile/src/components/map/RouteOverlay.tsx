@@ -24,6 +24,20 @@ interface Props {
   isNavigating: boolean;
   /** Authoritative split from navigation (segmentIndex + tOnSegment); no GPS / projection in this component. */
   routeSplit?: RouteSplitForOverlay | null;
+  /**
+   * Fraction of the route that has been traveled, in [0, 1]. When provided
+   * (typical nav path **without** congestion shading) the component renders
+   * a **single stable GeoJSON feature** for the whole polyline and uses the
+   * GPU-side `lineTrimOffset` paint property on the ahead / passed layers to
+   * hide the appropriate portion. This eliminates the per-tick GeoJSON
+   * re-upload that was causing the route line to visibly "snap" with every
+   * progress event — the puck now appears to *slide* along a continuous
+   * polyline, matching Apple Maps / native Mapbox Navigation UI.
+   *
+   * When `undefined` (congestion shading active, or not navigating) we fall
+   * back to the legacy feature-split path.
+   */
+  fractionTraveled?: number | null;
   /** From `DRIVING_MODES[drivingMode]` */
   routeColor: string;
   casingColor: string;
@@ -48,6 +62,7 @@ export default React.memo(function RouteOverlay({
   polyline,
   isNavigating,
   routeSplit = null,
+  fractionTraveled = null,
   routeColor,
   casingColor,
   passedColor,
@@ -61,6 +76,19 @@ export default React.memo(function RouteOverlay({
   routeRenderVariant = 'full',
 }: Props) {
   const hasCongestion = showCongestion && congestion && congestion.length > 0;
+  /**
+   * Use GPU-side `lineTrimOffset` when we have a smooth fractionTraveled AND
+   * no congestion shading. Congestion needs the per-segment feature split
+   * (distinct colored features), so falls back to the legacy GeoJSON path.
+   */
+  const useTrimOffset =
+    isNavigating &&
+    !hasCongestion &&
+    typeof fractionTraveled === 'number' &&
+    Number.isFinite(fractionTraveled);
+  const trimFraction = useTrimOffset
+    ? Math.max(0, Math.min(1, fractionTraveled as number))
+    : 0;
 
   const fullCoords = useMemo(
     () => polyline.map((p): [number, number] => [p.lng, p.lat]),
@@ -77,6 +105,32 @@ export default React.memo(function RouteOverlay({
       properties: { segment: 'base', congestion: 'unknown' },
       geometry: { type: 'LineString', coordinates: fullCoords },
     };
+
+    /**
+     * Stable-source fast path: one full-route feature per segment role; the
+     * visible portion is trimmed on the GPU via `lineTrimOffset` paint
+     * properties below. No polyline re-slicing in JS, so the native
+     * ShapeSource never re-uploads geometry — the route appears to "slide"
+     * smoothly under the puck.
+     */
+    if (useTrimOffset) {
+      return {
+        type: 'FeatureCollection' as const,
+        features: [
+          baseLine,
+          {
+            type: 'Feature' as const,
+            properties: { segment: 'passed', congestion: 'passed' },
+            geometry: { type: 'LineString' as const, coordinates: fullCoords },
+          },
+          {
+            type: 'Feature' as const,
+            properties: { segment: 'ahead', congestion: 'unknown' },
+            geometry: { type: 'LineString' as const, coordinates: fullCoords },
+          },
+        ],
+      };
+    }
 
     if (!isNavigating || !routeSplit) {
       if (hasCongestion) {
@@ -140,7 +194,7 @@ export default React.memo(function RouteOverlay({
     }
 
     return { type: 'FeatureCollection' as const, features };
-  }, [polyline, fullCoords, isNavigating, routeSplit, hasCongestion, congestion, showCongestion]);
+  }, [polyline, fullCoords, isNavigating, routeSplit, hasCongestion, congestion, showCongestion, useTrimOffset]);
 
   if (polyline.length < 2 || !MapboxGL) return null;
 
@@ -232,7 +286,14 @@ export default React.memo(function RouteOverlay({
         }}
       />
 
-      {/* Passed (gray) route on top of casing */}
+      {/*
+        Passed (gray) route.
+        - In trim-offset mode the feature is the full polyline; we hide the
+          *remaining* portion via `lineTrimOffset: [trimFraction, 1]` so
+          only `[0, trimFraction]` stays visible (the part behind the puck).
+        - In legacy mode the feature is already the passed-only slice, so
+          no trim is applied.
+      */}
       <MapboxGL.LineLayer
         id="sr-route-passed"
         filter={['==', ['get', 'segment'], 'passed']}
@@ -242,10 +303,16 @@ export default React.memo(function RouteOverlay({
           lineOpacity: passedLineOpacity,
           lineCap: 'round',
           lineJoin: 'round',
+          ...(useTrimOffset ? { lineTrimOffset: [trimFraction, 1] } : null),
         }}
       />
 
-      {/* Ahead (colored) route on top of passed */}
+      {/*
+        Ahead (colored) route.
+        - In trim-offset mode the feature is the full polyline; we hide the
+          *traveled* portion via `lineTrimOffset: [0, trimFraction]` so
+          only `[trimFraction, 1]` (the road ahead) stays visible.
+      */}
       <MapboxGL.LineLayer
         id={RouteLineLayerIds.ahead}
         aboveLayerID={RouteLineLayerIds.passed}
@@ -256,6 +323,7 @@ export default React.memo(function RouteOverlay({
           lineOpacity,
           lineCap: 'round',
           lineJoin: 'round',
+          ...(useTrimOffset ? { lineTrimOffset: [0, trimFraction] } : null),
         }}
       />
     </MapboxGL.ShapeSource>

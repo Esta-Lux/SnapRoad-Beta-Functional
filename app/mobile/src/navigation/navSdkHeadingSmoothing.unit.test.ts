@@ -139,13 +139,38 @@ test('stale previous sample (> 2 s) bypasses damping', async () => {
   assert.ok(Math.abs(h - 10) < 0.001, `stale sample not flushed: ${h}`);
 });
 
-test('negative course (unknown) leaves heading undefined and does not update smoother', () => {
+test('negative course (unknown) falls through to route-tangent bearing', () => {
+  // Apple-Maps-style guarantee: when the SDK can't report a valid `course`
+  // (start of trip, stationary, GPS outage) we must NOT fall through to the
+  // device compass — that's what made the camera flip backwards in the
+  // reported bug. Instead we seed from the route tangent at the current
+  // snap point, which is always a valid forward direction along the polyline.
   resetHeadingSmoothing();
-  runTick(90, 20); // seed
-  const out = runTick(-1, 20); // negative course = unknown
-  assert.equal(out.heading, undefined);
-  // Next valid tick should still be damped against 90, proving smoother state held
-  const after = runTick(95, 20);
-  const h = after.heading as number;
-  assert.ok(h > 90 && h < 95, `smoother state was lost across unknown tick: ${h}`);
+  const out = runTick(-1, 0); // stationary, course unknown
+  const h = out.heading as number;
+  assert.ok(
+    Number.isFinite(h),
+    'tangent fallback did not produce a finite heading',
+  );
+  // The test polyline goes roughly NE; bearing should be < 90° (north of east),
+  // definitively *not* pointing south/west (which is where compass fallback
+  // would likely have landed).
+  assert.ok(h > 0 && h < 90, `expected NE tangent bearing, got ${h}`);
+});
+
+test('below-threshold speed prefers route tangent over noisy course', () => {
+  // When the user is below ~1.5 m/s the SDK `course` sample is dominated by
+  // GPS jitter — standing still at a traffic light should not swing the
+  // camera toward the (possibly misaligned) device-compass reading. The
+  // adapter must prefer the route tangent in this regime.
+  resetHeadingSmoothing();
+  const tangent = runTick(-1, 0).heading as number;
+  resetHeadingSmoothing();
+  // Low speed + a wildly misleading raw course (pointing 180° from travel)
+  // — tangent should still win.
+  const low = runTick(220, 0.3).heading as number;
+  assert.ok(
+    Math.abs(((low - tangent + 540) % 360) - 180) < 20,
+    `low-speed heading ignored tangent (tangent=${tangent}, low=${low})`,
+  );
 });

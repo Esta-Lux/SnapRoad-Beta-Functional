@@ -108,10 +108,13 @@ import ConvoyMode from '../components/social/ConvoyMode';
 // Crash detection hook removed (no SOS backend); friend locations handled inline via Supabase realtime
 import {
   alongRouteDistanceMeters,
+  coordinateAtCumulativeMeters,
   formatDistance,
   haversineMeters,
+  polylineLengthMeters,
   type RouteSplitForOverlay,
 } from '../utils/distance';
+import { useSmoothedNavFraction } from '../hooks/useSmoothedNavFraction';
 import { formatDuration } from '../utils/format';
 import { speak, stopSpeaking } from '../utils/voice';
 import { api, API_BASE_URL } from '../api/client';
@@ -582,8 +585,65 @@ export default function MapScreen() {
   );
 
   /** During nav: fused coord for puck/camera (`navigationProgressCoord` → snapped display when JS on-route). */
-  const navDisplayCoord = nav.isNavigating ? nav.navigationProgressCoord : location;
+  const navDisplayCoordRaw = nav.isNavigating ? nav.navigationProgressCoord : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
+
+  /**
+   * Apple-Maps-style puck / route-split smoothing.
+   *
+   * The native SDK emits progress + matched-location samples at discrete
+   * intervals (iOS ≈ 6–7 Hz throttled, Android roughly 1 Hz for
+   * `routeProgress`). Feeding those samples straight into `MarkerView`
+   * coordinates + `lineTrimOffset` produces a **stepped** puck and a
+   * **visible snap** on the route polyline every tick. Apple Maps avoids
+   * both by interpolating the along-route fraction at 60 fps between SDK
+   * ticks — which is exactly what `useSmoothedNavFraction` does (RAF ease
+   * with a ~180 ms time constant, snaps on reroute / off-route deltas).
+   *
+   * With the smoothed fraction in hand:
+   *   - `RouteOverlay.fractionTraveled` drives the GPU-side
+   *     `lineTrimOffset` → the polyline **slides** under the puck instead
+   *     of rebuilding its GeoJSON.
+   *   - `navDisplayCoord` is projected onto the polyline at the smoothed
+   *     fraction → the puck / camera anchor / `CustomLocationProvider`
+   *     point all ride on a single continuously-interpolated coordinate,
+   *     matching the same physical point the route split uses.
+   */
+  const navPolylineForSmoothing = nav.navigationData?.polyline ?? null;
+  const navPolylineLenMetersRaw = useMemo(
+    () => (navPolylineForSmoothing && navPolylineForSmoothing.length >= 2 ? polylineLengthMeters(navPolylineForSmoothing) : 0),
+    [navPolylineForSmoothing],
+  );
+  const navSnapshotCumMeters = nav.isNavigating
+    ? nav.navigationProgress?.routeSplitSnap?.cumulativeMeters ??
+      nav.navigationProgress?.displayCumulativeMeters ??
+      0
+    : 0;
+  const targetFraction =
+    navPolylineLenMetersRaw > 1
+      ? Math.max(0, Math.min(1, navSnapshotCumMeters / navPolylineLenMetersRaw))
+      : 0;
+  const smoothedFraction = useSmoothedNavFraction(targetFraction, nav.isNavigating, {
+    timeConstantMs: 180,
+    snapDeltaFraction: 0.02,
+  });
+  const smoothedNavPuckCoord = useMemo(() => {
+    if (!nav.isNavigating) return null;
+    if (!navPolylineForSmoothing || navPolylineForSmoothing.length < 2) return null;
+    if (navPolylineLenMetersRaw <= 0) return null;
+    return coordinateAtCumulativeMeters(
+      navPolylineForSmoothing,
+      smoothedFraction * navPolylineLenMetersRaw,
+    );
+  }, [nav.isNavigating, navPolylineForSmoothing, navPolylineLenMetersRaw, smoothedFraction]);
+
+  /**
+   * Puck/camera/route-split all read this value; see
+   * `useSmoothedNavFraction` docstring. Falls back to the discrete
+   * `navDisplayCoordRaw` if we can't compute a smoothed point (no polyline,
+   * pre-waiting, etc.) so the existing single-frame guarantees still hold.
+   */
+  const navDisplayCoord = smoothedNavPuckCoord ?? navDisplayCoordRaw;
 
   /**
    * Single-authority predicates for the three UI surfaces the native Mapbox Navigation
@@ -598,14 +658,24 @@ export default function MapScreen() {
   const sdkRouteOwns = nav.isNavigating && isSdkRouteAuthoritative();
   const sdkBannerOwns = nav.isNavigating && isSdkBannerAuthoritative();
 
-  /** Passed / ahead route styling while navigating — same snap as turn/ETA (`navigationProgress`). */
+  /**
+   * Route split geometry must consume the **same** point as the puck so the
+   * traveled/remaining seam sits directly under the puck (not on the raw
+   * projection which can sit 1–3 m off the polyline from matcher drift).
+   * `routeSplitSnap` is derived from `cumulativeMeters` — the same basis that
+   * `navigationProgressCoord` uses — so feeding it here keeps puck + camera
+   * + polyline split locked to one frame. Falling back to `snapped` (raw
+   * projection) produced the "gray line in front of the puck" symptom.
+   */
   const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
     if (!nav.isNavigating) return null;
-    const s = nav.navigationProgress?.snapped;
+    const s = nav.navigationProgress?.routeSplitSnap ?? nav.navigationProgress?.snapped;
     if (!s) return null;
     return { segmentIndex: s.segmentIndex, tOnSegment: s.t };
   }, [
     nav.isNavigating,
+    nav.navigationProgress?.routeSplitSnap?.segmentIndex,
+    nav.navigationProgress?.routeSplitSnap?.t,
     nav.navigationProgress?.snapped?.segmentIndex,
     nav.navigationProgress?.snapped?.t,
   ]);
@@ -3156,6 +3226,7 @@ export default function MapScreen() {
               polyline={polylineToRender}
               isNavigating={nav.isNavigating}
               routeSplit={navigationRouteSplit}
+              fractionTraveled={nav.isNavigating ? smoothedFraction : null}
               routeColor={navRouteColors.routeColor}
               casingColor={navRouteColors.routeCasing}
               passedColor={navRouteColors.passedColor}
@@ -3556,7 +3627,30 @@ export default function MapScreen() {
           turnCardActiveEnteredAtRef.current = undefined;
         }
 
-        const distParts = formatTurnDistanceForCard(liveDistMeters);
+        /**
+         * Turn-card distance presentation.
+         *
+         * `formatTurnDistanceForCard` buckets sub-300 ft values in 10 ft
+         * increments with a floor of 10 — so when `liveDistMeters` is 0 (no
+         * actual maneuver pending, e.g. mid-cruise on a long road segment)
+         * the card used to render "10 FT" paired with a straight-arrow icon,
+         * giving drivers the impression of a false imminent turn.
+         *
+         * At cruise state with no actionable upcoming maneuver (or when the
+         * distance is non-finite / nonsensical), fall through to the same
+         * "—" placeholder the waiting card uses. `preview` / `active` /
+         * `confirm` keep the real bucketed distance because that's when
+         * drivers genuinely need the countdown.
+         */
+        const hasActionableMeters =
+          Number.isFinite(liveDistMeters) &&
+          liveDistMeters > 5 &&
+          nextManeuverCoord != null &&
+          nextManeuverCoord.maneuver !== 'depart';
+        const distParts =
+          cardState === 'cruise' && !hasActionableMeters
+            ? { value: '—', unit: '' }
+            : formatTurnDistanceForCard(liveDistMeters);
         const destinationName = nav.navigationData?.destination?.name ?? null;
         const banner = prog?.banner ?? null;
         // When the native SDK banner owns the copy, never fall through to the JS

@@ -6,6 +6,7 @@ import {
   polylineLengthMeters,
   projectOntoPolyline,
   segmentAndTFromCumAlongPolyline,
+  tangentBearingAlongPolyline,
 } from '../utils/distance';
 import type { SdkLocationPayload, SdkProgressPayload } from './navSdkStore';
 import { splitRouteAtSnap } from './navGeometry';
@@ -16,9 +17,63 @@ import {
   resolveManeuverKind,
 } from './navStepsFromDirections';
 
+/**
+ * iOS emits `String(describing: step.maneuverType)` and
+ * `String(describing: step.maneuverDirection)` from the `MapboxDirections` Swift
+ * enums (`ManeuverType` / `ManeuverDirection`). Those produce **Swift enum case
+ * names** (`takeOnRamp`, `takeOffRamp`, `reachFork`, `takeRoundabout`,
+ * `straightAhead`, `sharpLeft`, `slightRight`, `uTurn`, …) which are **not** the
+ * canonical Mapbox Directions API strings we consume elsewhere (`"on ramp"`,
+ * `"off ramp"`, `"fork"`, `"roundabout"`, `"straight"`, `"sharp left"`,
+ * `"slight right"`, `"uturn"`, …).
+ *
+ * Without normalisation, `resolveManeuverKind` and `ManeuverIcon.resolveIconKey`
+ * miss on every iOS turn and fall through to the default "continue" glyph,
+ * which renders as the straight-up arrow — the exact symptom users see when
+ * the SDK is speaking "turn right" but the card shows a straight arrow.
+ *
+ * These helpers convert iOS camelCase enum cases to canonical Mapbox Directions
+ * form. Android already emits canonical strings via
+ * `Maneuver.maneuverType` / `Maneuver.modifier`, so these mappings are
+ * idempotent for Android payloads and for already-canonical JS fallbacks.
+ */
+export function normalizeSdkManeuverType(raw?: string | null): string {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  const lower = s.toLowerCase();
+  if (lower === 'takeonramp' || lower === 'onramp' || lower === 'on ramp') return 'on ramp';
+  if (lower === 'takeofframp' || lower === 'offramp' || lower === 'off ramp') return 'off ramp';
+  if (lower === 'reachfork' || lower === 'fork') return 'fork';
+  if (lower === 'takeroundabout' || lower === 'exitroundabout' || lower === 'roundaboutturn' || lower === 'roundabout turn' || lower === 'roundabout')
+    return 'roundabout';
+  if (lower === 'takerotary' || lower === 'exitrotary' || lower === 'rotary') return 'rotary';
+  if (lower === 'usefreewayramp' || lower === 'usefreewayexit') return 'off ramp';
+  if (lower === 'passnamechange' || lower === 'namechange') return 'continue';
+  if (lower === 'heedwarning') return 'notification';
+  if (lower === 'uselane' || lower === 'use lane') return 'continue';
+  if (lower === 'endofroad' || lower === 'end of road') return 'end of road';
+  return lower.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+}
+
+export function normalizeSdkManeuverDirection(raw?: string | null): string {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  const lower = s.toLowerCase();
+  if (lower === 'straightahead' || lower === 'straight_ahead' || lower === 'straight ahead') return 'straight';
+  if (lower === 'sharpleft' || lower === 'sharp_left' || lower === 'sharp left') return 'sharp left';
+  if (lower === 'sharpright' || lower === 'sharp_right' || lower === 'sharp right') return 'sharp right';
+  if (lower === 'slightleft' || lower === 'slight_left' || lower === 'slight left') return 'slight left';
+  if (lower === 'slightright' || lower === 'slight_right' || lower === 'slight right') return 'slight right';
+  if (lower === 'uturn' || lower === 'u-turn' || lower === 'u_turn') return 'uturn';
+  if (lower === 'left') return 'left';
+  if (lower === 'right') return 'right';
+  if (lower === 'straight') return 'straight';
+  return lower.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+}
+
 function mapSdkToRichKind(maneuverType?: string, maneuverDirection?: string) {
-  const t = String(maneuverType ?? '').toLowerCase();
-  const d = String(maneuverDirection ?? '').toLowerCase();
+  const t = normalizeSdkManeuverType(maneuverType);
+  const d = normalizeSdkManeuverDirection(maneuverDirection);
   const blob = `${t} ${d}`;
   if (blob.includes('arrive')) return resolveManeuverKind('arrive', '');
   if (blob.includes('depart')) return resolveManeuverKind('depart', '');
@@ -236,13 +291,15 @@ export function buildNavigationProgressFromSdk(args: {
         ? Math.max(0, nextBaseStep.distanceMeters)
         : null;
 
+  const normalizedRawType = normalizeSdkManeuverType(progress.maneuverType);
+  const normalizedRawModifier = normalizeSdkManeuverDirection(progress.maneuverDirection);
   const nextStep: NavStep | null = {
     index: nextBaseStep?.index ?? idx,
     segmentIndex: nextBaseStep?.segmentIndex ?? Math.min(idx, Math.max(0, polyline.length - 2)),
     kind: preferRouteStepFields ? (nextBaseStep?.kind ?? kind) : kind,
-    rawType: preferRouteStepFields ? (nextBaseStep?.rawType ?? String(progress.maneuverType ?? '')) : String(progress.maneuverType ?? ''),
+    rawType: preferRouteStepFields ? (nextBaseStep?.rawType ?? normalizedRawType) : normalizedRawType,
     rawModifier:
-      preferRouteStepFields ? (nextBaseStep?.rawModifier ?? String(progress.maneuverDirection ?? '')) : String(progress.maneuverDirection ?? ''),
+      preferRouteStepFields ? (nextBaseStep?.rawModifier ?? normalizedRawModifier) : normalizedRawModifier,
     bearingAfter: nextBaseStep?.bearingAfter ?? matchingRouteNavStep?.bearingAfter ?? 0,
     displayInstruction: primaryText,
     secondaryInstruction: secondaryText ?? null,
@@ -278,12 +335,41 @@ export function buildNavigationProgressFromSdk(args: {
   const durRem = Math.max(0, Math.round(progress.durationRemaining ?? 0));
   const distRem = Math.max(0, progress.distanceRemaining ?? 0);
 
+  /**
+   * Heading source priority — Apple-Maps style, matches what Mapbox Navigation's
+   * own NavigationCamera does when driving the embedded UI:
+   *
+   * 1. Route tangent (forward direction of upcoming road) at the snapped
+   *    point — whenever the user is stationary / slow (<1.5 m/s ≈ 3.4 mph)
+   *    or the native SDK hasn't produced a valid `course` sample yet.
+   *    `location.course` is a direction-of-motion estimate; it's -1 or
+   *    noise before the user actually starts rolling, so feeding it to
+   *    `FollowWithCourse` causes the camera to spin toward the device
+   *    compass (often ~180° off). Route tangent is always a valid
+   *    forward direction along the path and matches what the native
+   *    Mapbox Navigation camera does in the same condition.
+   * 2. Smoothed SDK course (EWMA over shortest angle) — once the driver is
+   *    rolling fast enough for `course` to be meaningful, we honour it so
+   *    curve-following bearing looks natural.
+   *
+   * Both cases go through `smoothCourseDeg` so sharp transitions from
+   * tangent → course (and back) don't whip the camera.
+   */
   const rawCourseDeg = location != null && location.course >= 0 ? location.course : null;
   const speedMpsForSmoothing =
     location != null && location.speed >= 0 ? location.speed : null;
+  const tangentDeg = tangentBearingAlongPolyline(polyline, cumulativeMeters);
+  const movingFastEnoughForCourse =
+    speedMpsForSmoothing != null && speedMpsForSmoothing >= 1.5;
+  const bearingSeed =
+    rawCourseDeg != null && movingFastEnoughForCourse
+      ? rawCourseDeg
+      : tangentDeg != null
+        ? tangentDeg
+        : rawCourseDeg;
   const headingDeg =
-    rawCourseDeg != null
-      ? smoothCourseDeg(rawCourseDeg, speedMpsForSmoothing, Date.now())
+    bearingSeed != null
+      ? smoothCourseDeg(bearingSeed, speedMpsForSmoothing, Date.now())
       : undefined;
   const displayCoord = {
     lat: routeSplitSnap.point.lat,
