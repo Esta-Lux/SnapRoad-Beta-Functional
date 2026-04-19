@@ -9,3 +9,10 @@ node_modules/
 # Ignore build artifacts
 *.bundle.js
 *.bundle.js.map
+
+# Separate sub-projects with their own dependencies and tooling
+app/frontend/
+app/mobile/
+
+# k6 load test files (k6 runtime, not Node/browser)
+loadtests/
