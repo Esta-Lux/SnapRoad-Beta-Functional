@@ -1245,6 +1245,10 @@ export default function MapScreen() {
       setCameraLocations([]);
       return;
     }
+    // Focus gate: when `NativeNavigationScreen` (opt-in) is on top of the MapStack
+    // it runs its own OHGO fetcher at a different cadence. Pausing this effect on
+    // blur prevents double /api/map/cameras requests fighting for the same data.
+    if (!mapTabFocused) return;
     const rLat = Math.round(location.lat * 100);
     const rLng = Math.round(location.lng * 100);
     if (rLat === 0 && rLng === 0) return;
@@ -1272,7 +1276,7 @@ export default function MapScreen() {
         }
       })
       .catch((e) => logMapDataIssue('GET /api/map/cameras', e));
-  }, [showCameras, user?.isPremium, setShowCameras, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
+  }, [showCameras, user?.isPremium, setShowCameras, mapTabFocused, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
   const refreshPhotoReportsNearby = useCallback(() => {
     if (!showPhotoReports) return;
@@ -1699,7 +1703,9 @@ export default function MapScreen() {
       if (announcedOfferNavRef.current.has(id)) continue;
       announcedOfferNavRef.current.add(id);
       const name = o.business_name || 'Partner offer';
-      speak(`Orion: SnapRoad offer nearby — ${name}.`, 'normal', drivingMode);
+      // Advisory rate source: during an SDK-authoritative trip, voice.ts defers this line
+      // for a few seconds after a native turn cue so the two TTS streams don't overlap.
+      speak(`Orion: SnapRoad offer nearby — ${name}.`, 'normal', drivingMode, { rateSource: 'advisory' });
       break;
     }
   }, [nav.isNavigating, recommendedNearbyOffers, location.lat, location.lng, drivingMode]);
@@ -1719,7 +1725,13 @@ export default function MapScreen() {
       const voiceTypes = ['accident', 'police', 'crash', 'hazard', 'construction', 'closure', 'weather'];
       if (voiceTypes.includes(nearest.type)) {
         const dist = (haversineMeters(location.lat, location.lng, nearest.lat, nearest.lng) / 1609.34).toFixed(1);
-        speak(`Caution, ${nearest.title || nearest.type} reported ${dist} miles ahead.`, 'high', drivingMode);
+        // Advisory rate source: suppressed briefly around native turn cues to keep trip audio clean.
+        speak(
+          `Caution, ${nearest.title || nearest.type} reported ${dist} miles ahead.`,
+          'high',
+          drivingMode,
+          { rateSource: 'advisory' },
+        );
       }
       if (reportCardTimeoutRef.current) clearTimeout(reportCardTimeoutRef.current);
       reportCardTimeoutRef.current = setTimeout(() => setActiveReportCard(null), 10000);
@@ -1769,7 +1781,13 @@ export default function MapScreen() {
         offerAnnouncementCount.current += 1;
         const name = offer.business_name || 'a nearby store';
         const distance = typeof offer.distance_miles === 'number' ? offer.distance_miles : 0.5;
-        speak(`There's a ${offer.discount_percent}% off offer at ${name}, about ${distance.toFixed(1)} miles ahead. Would you like me to add a stop?`, 'normal', drivingMode);
+        // Advisory rate source: held around native turn cues, otherwise spoken at driving-mode rate.
+        speak(
+          `There's a ${offer.discount_percent}% off offer at ${name}, about ${distance.toFixed(1)} miles ahead. Would you like me to add a stop?`,
+          'normal',
+          drivingMode,
+          { rateSource: 'advisory' },
+        );
       })
       .catch((e) => logMapDataIssue('GET /api/navigation/nearby-offers', e));
   }, [nav.isNavigating, location.lat, location.lng, drivingMode]);
@@ -2558,13 +2576,22 @@ export default function MapScreen() {
 
     const place = { name: sess.name, address: `Meet ${sess.name}`, lat: fl.lat, lng: fl.lng };
     navSetDestRef.current({ name: place.name, address: place.address, lat: place.lat, lng: place.lng });
-    void navFetchRef
-      .current(place, locationRef.current, {
-        maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined,
-      })
-      .finally(() => {
-        friendFollowRerouteBusyRef.current = false;
-      });
+
+    // SDK mode: `fetchDirections` is a no-op during the trip; push the new destination into
+    // `navigationData` so `navLogicCoords` rebuilds and the native SDK fires its own reroute.
+    // JS mode: call the JS Directions fetcher as before.
+    if (navLogicSdkEnabled()) {
+      nav.updateNavigationDestination(place);
+      friendFollowRerouteBusyRef.current = false;
+    } else {
+      void navFetchRef
+        .current(place, locationRef.current, {
+          maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined,
+        })
+        .finally(() => {
+          friendFollowRerouteBusyRef.current = false;
+        });
+    }
   }, [friendLocations, nav.isNavigating, avoidLowClearances, vehicleHeight]);
 
   /** Copy for live friend follow; trips do not earn gems (`dynamicDestination` on route). */
@@ -2862,8 +2889,11 @@ export default function MapScreen() {
         />
       )}
 
-      {navLogicSdkEnabled() && nav.isNavigating && navLogicCoords.length >= 2 ? (
-        // Headless native session: this module has no separate “createSession” API — the hidden view drives logic + voice.
+      {navLogicSdkEnabled() && nav.isNavigating && mapTabFocused && navLogicCoords.length >= 2 ? (
+        // Headless native session: this module has no separate "createSession" API — the hidden view
+        // drives logic + voice. IMPORTANT: `mapTabFocused` prevents a second nav session from spawning
+        // when the user opts into `NativeNavigationScreen` (full-screen), which would otherwise fight
+        // this hidden session for GPS / routing.
         <MapboxNavigationView
           ref={navLogicRef}
           style={{ position: 'absolute', width: 2, height: 2, opacity: 0, bottom: 0, right: 0, zIndex: -1 }}
@@ -3096,7 +3126,13 @@ export default function MapScreen() {
             return true;
           })} onIncidentTap={setActiveReportCard} zoomLevel={mapZoomLevel} />}
           {user?.isPremium && showCameras && (
-            <CameraMarkers cameras={cameraLocations} onCameraTap={(cam) => setSelectedTrafficCamera(cam)} zoomLevel={mapZoomLevel} />
+            <CameraMarkers
+              cameras={cameraLocations}
+              onCameraTap={(cam) => setSelectedTrafficCamera(cam)}
+              zoomLevel={mapZoomLevel}
+              isNavigating={nav.isNavigating}
+              referenceCoordinate={nav.isNavigating ? navDisplayCoord : null}
+            />
           )}
           <FriendMarkers
             zoomLevel={mapZoomLevel}
@@ -4083,12 +4119,24 @@ export default function MapScreen() {
       )}
 
       {speed > 1 && !selectedPlace && !selectedPlaceId && (() => {
-        const rawLimit =
+        // Prefer the native SDK speed limit when the logic SDK is authoritative — it
+        // reflects matched-location truth and updates continuously. Fall back to the
+        // Directions `maxspeeds[step]` array when the SDK value is unavailable (warmup,
+        // JS-only mode, or unsupported segment).
+        const sdkLimitMph =
+          typeof nav.sdkSpeedLimitMps === 'number' && Number.isFinite(nav.sdkSpeedLimitMps)
+            ? Math.round(nav.sdkSpeedLimitMps * 2.236936)
+            : null;
+        const stepLimit =
           nav.isNavigating && nav.navigationData?.maxspeeds
             ? nav.navigationData.maxspeeds[Math.min(nav.currentStepIndex, nav.navigationData.maxspeeds.length - 1)]
             : null;
         const currentSpeedLimit =
-          typeof rawLimit === 'number' && Number.isFinite(rawLimit) ? rawLimit : null;
+          sdkLimitMph != null
+            ? sdkLimitMph
+            : typeof stepLimit === 'number' && Number.isFinite(stepLimit)
+              ? stepLimit
+              : null;
         const hasLimit = nav.isNavigating && currentSpeedLimit != null;
         const isOverSpeed = hasLimit && speed > (currentSpeedLimit as number);
         return (

@@ -1,12 +1,30 @@
 import { haversineMeters } from '../../utils/distance';
 
-export type MarkerDensityKind = 'camera' | 'friend' | 'offer' | 'report';
+export type MarkerDensityKind = 'camera' | 'cameraNavigating' | 'friend' | 'offer' | 'report';
 export type MarkerCoordinate = { lat: number; lng: number };
 
+/**
+ * Per-zoom marker cap. Keep these permissive for cameras — OHGO returns hundreds
+ * of points across a state and users expect to see all of them at driving zoom.
+ * `cameraNavigating` removes the low-zoom culling so cameras stay visible while
+ * the user pans/zooms during an active trip on the JS map (hybrid mode).
+ */
 export function markerCapForZoom(kind: MarkerDensityKind, zoomLevel: number): number {
   switch (kind) {
     case 'camera':
-      return zoomLevel >= 16 ? 168 : zoomLevel >= 14.5 ? 128 : zoomLevel >= 13 ? 96 : zoomLevel >= 11.5 ? 72 : 52;
+      if (zoomLevel >= 16) return 360;
+      if (zoomLevel >= 14.5) return 280;
+      if (zoomLevel >= 13) return 220;
+      if (zoomLevel >= 11.5) return 180;
+      if (zoomLevel >= 10) return 140;
+      return 100;
+    case 'cameraNavigating':
+      if (zoomLevel >= 16) return 420;
+      if (zoomLevel >= 14.5) return 340;
+      if (zoomLevel >= 13) return 280;
+      if (zoomLevel >= 11.5) return 240;
+      if (zoomLevel >= 10) return 200;
+      return 180;
     case 'friend':
       return zoomLevel >= 15.5 ? 40 : zoomLevel >= 14 ? 26 : 16;
     case 'offer':
@@ -29,14 +47,17 @@ export function approxVisibleRadiusMeters(zoomLevel: number): number {
 }
 
 function visibleRadiusMetersForKind(kind: MarkerDensityKind, zoomLevel: number): number {
-  if (kind === 'camera') {
-    if (zoomLevel >= 16) return 3000;
-    if (zoomLevel >= 15) return 5000;
-    if (zoomLevel >= 14) return 9000;
-    if (zoomLevel >= 13) return 15000;
-    if (zoomLevel >= 12) return 32000;
-    if (zoomLevel >= 11) return 50000;
-    return 70000;
+  if (kind === 'camera' || kind === 'cameraNavigating') {
+    // Generous coverage: backend caps at ~80 km and OHGO returns hundreds of points.
+    // We want to surface them all the way down to state-level browse zoom so users
+    // never feel like “half the cameras are missing”.
+    if (zoomLevel >= 16) return 3500;
+    if (zoomLevel >= 15) return 6000;
+    if (zoomLevel >= 14) return 12000;
+    if (zoomLevel >= 13) return 22000;
+    if (zoomLevel >= 12) return 40000;
+    if (zoomLevel >= 11) return 65000;
+    return 95000;
   }
   if (kind === 'offer') {
     if (zoomLevel >= 16) return 2600;

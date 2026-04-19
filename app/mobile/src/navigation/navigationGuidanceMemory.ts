@@ -33,9 +33,14 @@ export function repeatLastTurnByTurn(drivingMode: DrivingMode, voiceMuted: boole
   if (voiceMuted) return;
   if (navLogicSdkEnabled() && shouldSuppressJsTurnGuidance()) {
     const t = getNavSdkState().lastVoiceInstructionText?.trim();
-    if (t) speak(t, 'high', drivingMode, { rateSource: 'navigation_fixed' });
+    // User-initiated: bypass the sdk-authoritative guard so the repeat actually plays
+    // (the native module doesn't expose a ref API to re-trigger its own TTS).
+    if (t) speak(t, 'high', drivingMode, { rateSource: 'navigation_fixed', forceAllowDuringSdk: true });
     return;
   }
   if (!lastTurnByTurnPhrase) return;
-  speak(lastTurnByTurnPhrase, 'high', drivingMode, { rateSource: 'navigation_fixed' });
+  speak(lastTurnByTurnPhrase, 'high', drivingMode, {
+    rateSource: 'navigation_fixed',
+    forceAllowDuringSdk: true,
+  });
 }

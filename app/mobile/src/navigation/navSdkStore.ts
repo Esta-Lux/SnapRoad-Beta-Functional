@@ -47,6 +47,9 @@ type NavSdkState = {
   routePolyline: Coordinate[];
   /** Last native voice instruction text (SDK TTS only — for HUD / subtitle). */
   lastVoiceInstructionText: string | null;
+  /** Wall-clock ms when the last native voice subtitle was ingested (0 if never). Used by
+   *  `advisory` speak path to avoid JS TTS stepping on a native turn cue that just played. */
+  lastVoiceInstructionAtMs: number;
   /** Which pipeline last produced a navigation voice line (HUD). */
   lastNavVoiceSource: 'sdk' | 'js' | 'none';
   lastProgressIngestAtMs: number;
@@ -59,6 +62,7 @@ const initial: NavSdkState = {
   location: null,
   routePolyline: [],
   lastVoiceInstructionText: null,
+  lastVoiceInstructionAtMs: 0,
   lastNavVoiceSource: 'none',
   lastProgressIngestAtMs: 0,
   sdkGuidancePhase: 'idle',
@@ -95,6 +99,7 @@ export function resetNavSdkState() {
     location: null,
     routePolyline: [],
     lastVoiceInstructionText: null,
+    lastVoiceInstructionAtMs: 0,
     lastNavVoiceSource: 'none',
     lastProgressIngestAtMs: 0,
     sdkGuidancePhase: 'idle',
@@ -152,10 +157,17 @@ export function ingestSdkVoiceSubtitle(text: string | undefined) {
   state = {
     ...state,
     lastVoiceInstructionText: t,
+    lastVoiceInstructionAtMs: Date.now(),
     lastNavVoiceSource: 'sdk',
     telemetry: tel,
   };
   emit();
+}
+
+/** Milliseconds since the native SDK last spoke a voice instruction, or `Infinity` if never. */
+export function msSinceLastSdkVoice(): number {
+  const t = state.lastVoiceInstructionAtMs;
+  return t > 0 ? Date.now() - t : Number.POSITIVE_INFINITY;
 }
 
 /** expo-speech navigation line (turn prompts, trip messages) — not SDK TTS. */

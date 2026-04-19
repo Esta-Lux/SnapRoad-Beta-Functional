@@ -1,9 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, StatusBar, useColorScheme, TouchableOpacity, Text } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  StatusBar,
+  TouchableOpacity,
+  Text,
+  Alert,
+} from 'react-native';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { useNavigation as useRNNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MapStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,8 +30,7 @@ import OrionQuickMic from '../components/orion/OrionQuickMic';
 import {
   extractCameraList,
   haversineMeters,
-  pickCameraAhead,
-  type CameraAhead,
+  camerasForNativeMapOverlay,
 } from '../lib/nativeNavHelpers';
 
 const DEFAULT_NAV_MAP_STYLE = 'mapbox://styles/mapbox/standard';
@@ -52,10 +58,10 @@ export default function NativeNavigationScreen() {
   const { user } = useAuth();
   const { colors, isLight } = useTheme();
   const insets = useSafeAreaInsets();
+  const screenFocused = useIsFocused();
   const didExitRef = useRef(false);
   const didHandleInvalidParamsRef = useRef(false);
   const navRef = useRef<MapboxNavigationViewRef | null>(null);
-  const colorScheme = useColorScheme();
   /** Gated so async fetches that resolve after unmount don't call setState. */
   const isMountedRef = useRef(true);
   const lastIncidentFetchAtRef = useRef(0);
@@ -67,7 +73,8 @@ export default function NativeNavigationScreen() {
   const lastCourseRef = useRef<number | null>(null);
   const lastCameraFetchAtRef = useRef(0);
   const lastCameraFetchCoordRef = useRef<{ lat: number; lng: number } | null>(null);
-  const [cameraAhead, setCameraAhead] = useState<CameraAhead | null>(null);
+  /** JSON payload for native map SymbolLayer (OHGO cameras — tappable on the map, not over turn UI). */
+  const [trafficCamerasJson, setTrafficCamerasJson] = useState('[]');
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -160,30 +167,27 @@ export default function NativeNavigationScreen() {
     [bridge],
   );
 
-  /** Fetch OHGO traffic cameras within ~30 km and surface the nearest one ahead on course. */
-  const fetchNearbyCameras = useCallback(
-    async (lat: number, lng: number) => {
-      try {
-        const res = await api.get<unknown>(
-          `/api/map/cameras?lat=${lat}&lng=${lng}&radius=30`,
-        );
-        if (!isMountedRef.current) return;
-        if (!res.success || res.data == null) return;
-        const items = extractCameraList(res.data);
-        lastCameraFetchCoordRef.current = { lat, lng };
-        if (items.length === 0) {
-          setCameraAhead(null);
-          return;
-        }
-        const best = pickCameraAhead(lat, lng, lastCourseRef.current, items);
-        if (!isMountedRef.current) return;
-        setCameraAhead(best);
-      } catch {
-        /* offline / tunnel / transient backend issue */
+  /** OHGO cameras: ~50 km radius (backend uses km) → drawn on embedded map via native GeoJSON layer. */
+  const fetchNearbyCameras = useCallback(async (lat: number, lng: number) => {
+    try {
+      const res = await api.get<unknown>(
+        `/api/map/cameras?lat=${lat}&lng=${lng}&radius=50`,
+      );
+      if (!isMountedRef.current) return;
+      if (!res.success || res.data == null) return;
+      const items = extractCameraList(res.data);
+      lastCameraFetchCoordRef.current = { lat, lng };
+      if (items.length === 0) {
+        setTrafficCamerasJson('[]');
+        return;
       }
-    },
-    [],
-  );
+      const payload = camerasForNativeMapOverlay(items);
+      if (!isMountedRef.current) return;
+      setTrafficCamerasJson(JSON.stringify(payload));
+    } catch {
+      /* offline / tunnel / transient backend issue */
+    }
+  }, []);
 
   const fetchNearbyIncidents = useCallback(
     async (lat: number, lng: number) => {
@@ -228,6 +232,10 @@ export default function NativeNavigationScreen() {
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
       const course = Number(event.nativeEvent?.course);
       if (Number.isFinite(course)) lastCourseRef.current = course;
+      // Focus gate: if the user exited to `MapMain` (swipe-back), MapScreen's own
+      // fetchers own OHGO + incident polling. Avoid double-fetching during the brief
+      // overlap between screens.
+      if (!screenFocused) return;
       const now = Date.now();
 
       const lastIncidentCoord = lastIncidentFetchCoordRef.current;
@@ -251,13 +259,21 @@ export default function NativeNavigationScreen() {
         void fetchNearbyCameras(lat, lng);
       }
     },
-    [fetchNearbyIncidents, fetchNearbyCameras],
+    [fetchNearbyIncidents, fetchNearbyCameras, screenFocused],
   );
 
   const handleDismissIncident = useCallback(() => {
     setDismissedIncidentId(activeIncident?.id ?? null);
     setActiveIncident(null);
   }, [activeIncident?.id]);
+
+  const handleTrafficCameraTap = useCallback(
+    (event: { nativeEvent: { id?: string; name?: string } }) => {
+      const name = event.nativeEvent?.name?.trim() || 'Traffic camera';
+      Alert.alert('Traffic camera', name, [{ text: 'OK' }]);
+    },
+    [],
+  );
 
   const handleConfirmIncident = useCallback(
     async (confirmed: boolean) => {
@@ -299,7 +315,6 @@ export default function NativeNavigationScreen() {
     return null;
   }
 
-  const isDark = colorScheme === 'dark';
   const reportSurface = isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.9)';
   const reportBorder = isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.18)';
   const chromeSurface = isLight ? modeConfig.etaBarBg : modeConfig.etaBarBgDark;
@@ -307,8 +322,8 @@ export default function NativeNavigationScreen() {
   const chromeSubtle = isLight ? colors.textSecondary : modeConfig.etaLabelColor;
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0a0a0f' : '#000' }]}>
-      <StatusBar barStyle="light-content" />
+    <View style={[styles.container, { backgroundColor: !isLight ? '#0a0a0f' : '#000' }]}>
+      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       <MapboxNavigationView
         key={nativeViewKey}
         ref={navRef}
@@ -319,11 +334,13 @@ export default function NativeNavigationScreen() {
         mapStyle={mapStyleUrl}
         followingZoom={followingZoom}
         followingPitch={followingPitch}
+        trafficCameras={trafficCamerasJson}
         drivingMode={drivingMode}
         appTheme={isLight ? 'light' : 'dark'}
         navigationLogicOnly={false}
         onRouteProgressChanged={handleProgressChanged}
         onNavigationLocationUpdate={handleLocationUpdate}
+        onTrafficCameraTap={handleTrafficCameraTap}
         onCancelNavigation={handleCancel}
         onFinalDestinationArrival={handleArrival}
         onRouteChanged={() => {}}
@@ -387,27 +404,6 @@ export default function NativeNavigationScreen() {
         >
           <Ionicons name="warning-outline" size={14} color="#FCD34D" />
           <Text style={[styles.reportHintText, { color: chromeText }]} numberOfLines={2}>{reportHint}</Text>
-        </View>
-      ) : null}
-      {cameraAhead ? (
-        <View
-          style={[
-            styles.cameraChip,
-            {
-              top: insets.top + (activeIncident || reportHint ? 78 : 12),
-              backgroundColor: reportSurface,
-              borderColor: reportBorder,
-            },
-          ]}
-        >
-          <View style={styles.cameraChipIcon}>
-            <Ionicons name="videocam" size={12} color="#FFFFFF" />
-          </View>
-          <Text style={[styles.cameraChipText, { color: chromeText }]} numberOfLines={1}>
-            {cameraAhead.distanceMiles < 0.1
-              ? `${cameraAhead.name} · right here`
-              : `${cameraAhead.name} · ${cameraAhead.distanceMiles.toFixed(cameraAhead.distanceMiles < 1 ? 2 : 1)} mi ahead`}
-          </Text>
         </View>
       ) : null}
       <View style={[styles.orionFabWrap, { right: 14, bottom: insets.bottom + 78 }]}>
@@ -541,33 +537,6 @@ const styles = StyleSheet.create({
   orionReplyStripText: {
     fontSize: 12,
     fontWeight: '600',
-    flexShrink: 1,
-  },
-  cameraChip: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: 'rgba(15,23,42,0.82)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.2)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  cameraChipIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 8,
-    backgroundColor: 'rgba(37,99,235,0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cameraChipText: {
-    fontSize: 12,
-    fontWeight: '700',
     flexShrink: 1,
   },
   recenterBtn: {

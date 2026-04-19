@@ -111,6 +111,43 @@ export function pickCameraAhead(
   return null;
 }
 
+/**
+ * Build a compact list for the native nav map overlay (GeoJSON features are driven from this JSON).
+ */
+export function camerasForNativeMapOverlay(
+  items: CameraCandidate[],
+): { lat: number; lng: number; id: string; name: string }[] {
+  const out: { lat: number; lng: number; id: string; name: string }[] = [];
+  for (const rpt of items) {
+    const cLat = Number(rpt.lat);
+    const cLng = Number(rpt.lng);
+    if (!Number.isFinite(cLat) || !Number.isFinite(cLng)) continue;
+    const id = String(rpt.id ?? `${cLat},${cLng}`);
+    const name =
+      (typeof rpt.title === 'string' && rpt.title.trim()) ||
+      (typeof rpt.name === 'string' && rpt.name.trim()) ||
+      'Traffic camera';
+    out.push({ lat: cLat, lng: cLng, id, name });
+  }
+  return out;
+}
+
+/**
+ * Heuristic aligned with native Mapbox Navigation banner filtering: duplicate camera / enforcement
+ * lines are suppressed there because SnapRoad draws camera POIs on the map (`trafficCameras`).
+ */
+export function shouldSuppressSdkCameraInstructionLine(text: string): boolean {
+  const s = text.trim().toLowerCase();
+  if (!s) return false;
+  if (/\bphoto\s+enforcement\b/.test(s)) return true;
+  if (/\btraffic\s+enforcement\b/.test(s)) return true;
+  if (/\bspeed\s+trap\b/.test(s)) return true;
+  if (/\bred[-\s]?light\s+camera\b/.test(s)) return true;
+  if (/\b(speed|traffic|red[-\s]?light)?\s*cams?\b/.test(s)) return true;
+  if (/\b(speed|traffic)\s+camera\b/.test(s)) return true;
+  return false;
+}
+
 /** Normalize the shape returned by `/api/map/cameras` (supports wrapped + bare arrays). */
 export function extractCameraList(body: unknown): CameraCandidate[] {
   if (Array.isArray(body)) return body as CameraCandidate[];

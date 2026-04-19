@@ -36,6 +36,8 @@ declare module '@badatgil/expo-mapbox-navigation' {
     disableAlternativeRoutes?: boolean;
     followingZoom?: number;
     followingPitch?: number;
+    /** JSON string: array of `{ lat, lng, id?, name? }` for OHGO cameras drawn on the embedded map */
+    trafficCameras?: string;
     drivingMode?: 'calm' | 'adaptive' | 'sport';
     appTheme?: 'light' | 'dark';
     navigationLogicOnly?: boolean;
@@ -72,6 +74,7 @@ declare module '@badatgil/expo-mapbox-navigation' {
     }) => void;
     onVoiceInstruction?: (event: { nativeEvent: { text: string; distanceAlongStep?: number } }) => void;
     onNavigatorError?: (event: { nativeEvent: { message: string } }) => void;
+    onTrafficCameraTap?: (event: { nativeEvent: { id?: string; name?: string } }) => void;
     style?: import('react-native').StyleProp<import('react-native').ViewStyle>;
     pointerEvents?: import('react-native').ViewProps['pointerEvents'];
   };

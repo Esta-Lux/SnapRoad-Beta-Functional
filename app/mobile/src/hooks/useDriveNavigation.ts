@@ -857,6 +857,44 @@ export function useDriveNavigation(params: {
     setRouteModelRefreshKey((k) => k + 1);
   }, [availableRoutes, navigationData]);
 
+  /**
+   * Update the navigation destination mid-trip without invoking the JS Directions pipeline.
+   *
+   * Used by friend-follow: when a friend's live location moves, we want the native Navigation
+   * SDK to re-route, not `fetchDirections` (which is a no-op while SDK owns routing). Bumping
+   * `navigationData.destination.{lat,lng}` triggers `navLogicCoords` in `MapScreen`, which
+   * re-evaluates the `coordinates` prop on the hidden `MapboxNavigationView` → native fires
+   * `onRouteChanged` → JS hydrates new polyline/ETA via `applySdkRouteGeometry`.
+   *
+   * Returns `true` if the destination was updated, `false` if not navigating or no change.
+   */
+  const updateNavigationDestination = useCallback(
+    (dest: { name: string; address: string; lat: number; lng: number }): boolean => {
+      if (!isNavigatingRef.current) return false;
+      let updated = false;
+      setNavigationData((prev) => {
+        if (!prev) return prev;
+        const same =
+          Math.abs(prev.destination.lat - dest.lat) < 1e-7 &&
+          Math.abs(prev.destination.lng - dest.lng) < 1e-7 &&
+          prev.destination.name === dest.name;
+        if (same) return prev;
+        updated = true;
+        return { ...prev, destination: { ...prev.destination, ...dest } };
+      });
+      if (updated) {
+        setSelectedDestination({
+          name: dest.name,
+          address: dest.address,
+          lat: dest.lat,
+          lng: dest.lng,
+        } as GeocodeResult);
+      }
+      return updated;
+    },
+    [],
+  );
+
   /** Apply geometry + length/time from native Navigation SDK after `onRoutesLoaded` / reroute. */
   const applySdkRouteGeometry = useCallback(
     (
@@ -1657,6 +1695,7 @@ export function useDriveNavigation(params: {
     fetchDirections,
     handleRouteSelect,
     applySdkRouteGeometry,
+    updateNavigationDestination,
     startNavigation,
     stopNavigation,
     dismissTripSummary,
@@ -1691,5 +1730,17 @@ export function useDriveNavigation(params: {
       : null,
     /** Native matched location for map puck (`CustomLocationProvider`) — null when not in logic SDK mode. */
     sdkNavLocation: navSdkHeadless ? navSdkSnapshot.location : null,
+    /**
+     * Native SDK speed limit in m/s (nullable). Prefer this over Directions
+     * `maxspeeds[stepIndex]` when available — the SDK updates continuously and
+     * accounts for matched location on the graph, so the badge stays in sync with
+     * the native engine even when the JS map owns presentation.
+     */
+    sdkSpeedLimitMps:
+      navSdkHeadless && sdkActive
+        ? navSdkSnapshot.location?.speedLimitMps ??
+          navSdkSnapshot.progress?.speedLimitMps ??
+          null
+        : null,
   };
 }

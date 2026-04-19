@@ -511,6 +511,50 @@ def reject_friend_request(body: dict, current_user: CurrentUser):
     return {"success": True, "message": "Request declined"}
 
 
+@router.delete(
+    "/friends/requests/{friendship_id}",
+    responses={
+        400: {"description": "Missing friendship_id"},
+        401: {"description": MSG_AUTH_REQUIRED},
+        404: {"description": "Request not found or already resolved"},
+    },
+)
+def cancel_outgoing_friend_request(friendship_id: str, current_user: CurrentUser):
+    """
+    Withdraw an outgoing friend request you previously sent.
+
+    Safety: restricted to rows where `user_id_1 = current_user` (you are the sender)
+    AND `status = 'pending'`, so this cannot be used to terminate an accepted
+    friendship (use `DELETE /friends/{friend_id}` for that) or to cancel somebody
+    else's request.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
+    require_premium_user(current_user)
+    uid = current_user["id"]
+    fid = (friendship_id or "").strip()
+    if not fid:
+        raise HTTPException(status_code=400, detail="friendship_id required")
+    supabase = get_supabase()
+    # Verify the row exists, belongs to us (as sender), and is still pending before deleting —
+    # returning 404 lets the client drop the row from its UI with confidence.
+    existing = (
+        supabase.table("friendships")
+        .select("id")
+        .eq("id", fid)
+        .eq("user_id_1", uid)
+        .eq("status", "pending")
+        .limit(1)
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Request not found or already resolved")
+    supabase.table("friendships").delete().eq("id", fid).eq("user_id_1", uid).eq(
+        "status", "pending"
+    ).execute()
+    return {"success": True, "message": "Request cancelled"}
+
+
 @router.post("/friends/accept", responses={400: {"description": "Missing friendship_id"}, 401: {"description": MSG_AUTH_REQUIRED}})
 def accept_friend_request(body: dict, current_user: CurrentUser):
     """Accept a friend request (body.friendship_id = row id)."""

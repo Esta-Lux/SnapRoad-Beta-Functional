@@ -90,8 +90,8 @@ const DARK: ThemeColors = {
   card: '#1a1a24',
   tabBar: '#0f0f18',
   searchBar: '#1a1a24',
-  rewardsGradientStart: '#3730a3',
-  rewardsGradientEnd: '#7c3aed',
+  rewardsGradientStart: '#0A2A5E',
+  rewardsGradientEnd: '#2563EB',
 };
 
 const LIGHT: ThemeColors = {
@@ -114,8 +114,8 @@ const LIGHT: ThemeColors = {
   card: '#ffffff',
   tabBar: '#ffffff',
   searchBar: '#f0f0f2',
-  rewardsGradientStart: '#4338ca',
-  rewardsGradientEnd: '#9333ea',
+  rewardsGradientStart: '#1D4ED8',
+  rewardsGradientEnd: '#3B82F6',
 };
 
 interface ThemeContextType {

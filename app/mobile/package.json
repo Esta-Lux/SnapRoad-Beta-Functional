@@ -91,5 +91,18 @@
       "@expo/config-plugins": "54.0.4"
     }
   },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "@badatgil/expo-mapbox-navigation",
+          "@react-native-vector-icons/ionicons",
+          "@react-native-voice/voice",
+          "react-native-vector-icons"
+        ],
+        "listUnknownPackages": false
+      }
+    }
+  },
   "private": true
 }
