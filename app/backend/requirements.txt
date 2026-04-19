@@ -1,0 +1,33 @@
+# Python 3.12+ (CI uses 3.12; 3.13+ supported)
+redis
+# Pin starlette <1 until stack is validated on Starlette 1.x (CVE fixes require >=0.47.2)
+fastapi==0.135.2
+starlette>=0.47.2,<1.0.0
+uvicorn[standard]==0.34.0
+# Align with supabase realtime (>=2.11.7) and fastapi (>=2.9)
+pydantic>=2.11.7,<3.0.0
+python-dotenv==1.2.1
+
+# Auth / security
+PyJWT==2.12.1
+python-jose==3.5.0
+passlib==1.7.4
+bcrypt==4.1.3
+email-validator==2.3.0
+cryptography==46.0.7
+
+# Uploads / requests
+python-multipart==0.0.26
+httpx==0.28.1
+requests==2.33.1
+
+# Supabase + Stripe
+supabase==2.28.0
+stripe==14.1.0
+
+# AI
+openai==1.99.9
+
+# Ops
+sentry-sdk[fastapi]==2.19.2
+slowapi==0.1.9

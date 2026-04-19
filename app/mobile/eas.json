@@ -1,0 +1,77 @@
+{
+  "cli": {
+    "version": ">= 14.0.0",
+    "appVersionSource": "remote"
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleTeamId": "F9JGAWBHPZ",
+        "appleId": "riyan@snaproad.co",
+        "ascAppId": "6761516426"
+      }
+    }
+  },
+  "build": {
+    "development": {
+      "environment": "development",
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "env": {
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
+        "API_URL": "https://api.snaproad.app",
+        "EXPO_PUBLIC_NAV_LOGIC_DEBUG": "1"
+      },
+      "ios": {
+        "simulator": false
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "development-simulator": {
+      "environment": "development",
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "env": {
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
+        "API_URL": "https://api.snaproad.app"
+      },
+      "ios": {
+        "simulator": true
+      }
+    },
+    "preview": {
+      "environment": "preview",
+      "distribution": "internal",
+      "channel": "preview",
+      "env": {
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
+        "API_URL": "https://api.snaproad.app",
+        "EXPO_PUBLIC_NAV_LOGIC_DEBUG": "1"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "environment": "production",
+      "autoIncrement": true,
+      "channel": "production",
+      "env": {
+        "APP_ENV": "production",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
+        "API_URL": "https://api.snaproad.app",
+        "EXPO_PUBLIC_NAV_NATIVE_SDK": "1",
+        "EXPO_PUBLIC_NAV_LOGIC_SDK": "1",
+        "EXPO_PUBLIC_NAV_LOGIC_DEBUG": "1"
+      }
+    }
+  }
+}

@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SnapRoad — Architecture Map</title>
+  <style>
+    :root {
+      --bg: #0a0f1e;
+      --panel: #111827;
+      --border: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --mobile: #22d3ee;
+      --web: #a78bfa;
+      --api: #34d399;
+      --db: #fbbf24;
+      --ext: #f472b6;
+      --auth: #60a5fa;
+      --read: #4ade80;
+      --write: #fb923c;
+      --ext-line: #c084fc;
+      --dim: rgba(10, 15, 30, 0.72);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: "Inter", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #0f172a 0%, var(--bg) 100%);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 0.8rem;
+      max-width: 52rem;
+      line-height: 1.45;
+    }
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.85rem;
+    }
+    .filters button {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.15s, background 0.15s;
+    }
+    .filters button:hover {
+      transform: translateY(-1px);
+      border-color: #374151;
+    }
+    .filters button.active {
+      background: #1e3a5f;
+      border-color: #3b82f6;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.25rem;
+      margin-top: 0.75rem;
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .swatch {
+      width: 1.25rem;
+      height: 3px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 1fr min(28rem, 92vw);
+      min-height: calc(100vh - 8rem);
+    }
+    @media (max-width: 1024px) {
+      main { grid-template-columns: 1fr; }
+    }
+    #diagram-wrap {
+      position: relative;
+      padding: 0.75rem;
+      overflow: auto;
+    }
+    #edge-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .columns {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(140px, 1fr));
+      gap: 0.5rem;
+      align-items: start;
+    }
+    @media (max-width: 1200px) {
+      .columns { grid-template-columns: 1fr; }
+    }
+    .layer-col {
+      background: rgba(17, 24, 39, 0.5);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.5rem;
+      min-height: 120px;
+      transition: opacity 0.25s ease, filter 0.25s ease;
+    }
+    .layer-col h2 {
+      margin: 0 0 0.5rem;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+    }
+    .layer-mobile h2 { color: var(--mobile); }
+    .layer-web h2 { color: var(--web); }
+    .layer-api h2 { color: var(--api); }
+    .layer-db h2 { color: var(--db); }
+    .layer-ext h2 { color: var(--ext); }
+    .node {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.45rem 0.5rem;
+      margin-bottom: 0.4rem;
+      cursor: pointer;
+      font-size: 0.72rem;
+      transition: transform 0.15s ease, box-shadow 0.15s, border-color 0.15s;
+    }
+    .node:hover {
+      transform: scale(1.02);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.35);
+    }
+    .node.selected {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 1px #3b82f6;
+    }
+    .node .title { font-weight: 600; color: var(--text); }
+    .node .subtitle { font-size: 0.62rem; color: var(--muted); margin-top: 0.15rem; line-height: 1.3; }
+    body.filter-active .layer-col.dim { opacity: 0.22; filter: grayscale(0.3); }
+    body.filter-active .node.dim { opacity: 0.2; }
+    #side-panel {
+      border-left: 1px solid var(--border);
+      background: #0c1224;
+      padding: 1rem;
+      overflow-y: auto;
+      max-height: calc(100vh - 4rem);
+    }
+    @media (max-width: 1024px) {
+    #side-panel {
+      border-left: none;
+      border-top: 1px solid var(--border);
+      max-height: none;
+    }
+    }
+    #side-panel h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+    #side-panel .meta { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.75rem; }
+    #side-panel section { margin-bottom: 1rem; }
+    #side-panel h4 {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 0 0 0.35rem;
+    }
+    #side-panel pre, #side-panel ul {
+      font-size: 0.72rem;
+      margin: 0;
+      padding-left: 1rem;
+      line-height: 1.5;
+      color: #d1d5db;
+    }
+    #side-panel pre {
+      padding: 0.5rem;
+      background: var(--panel);
+      border-radius: 8px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .audit-banner {
+      background: #1a1530;
+      border: 1px solid #312e81;
+      border-radius: 10px;
+      padding: 0.75rem;
+      font-size: 0.7rem;
+      line-height: 1.45;
+      color: #c7d2fe;
+      margin-bottom: 0.75rem;
+    }
+    .audit-banner strong { color: #a5b4fc; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SnapRoad architecture</h1>
+    <p class="sub">
+      Generated from the repository: mobile (<code>app/mobile</code>), web (<code>app/frontend</code>),
+      API (<code>app/backend</code>), SQL migrations (<code>app/backend/sql</code>).
+      Click a node for paths, endpoints, and audit notes. Dashed edges = inferred / client-only path.
+    </p>
+    <div class="filters" id="filters"></div>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--auth)"></i> Auth</span>
+      <span><i class="swatch" style="background:var(--read)"></i> Data read</span>
+      <span><i class="swatch" style="background:var(--write)"></i> Data write</span>
+      <span><i class="swatch" style="background:var(--ext-line)"></i> External API</span>
+    </div>
+  </header>
+  <main>
+    <div id="diagram-wrap">
+      <svg id="edge-layer"></svg>
+      <div class="columns" id="columns"></div>
+    </div>
+    <aside id="side-panel">
+      <div class="audit-banner">
+        <strong>Security snapshot (committed code)</strong><br />
+        • API: JWT auth on protected routes; security headers; optional HTTPS redirect in production;
+        CORS allowlist via <code>CORS_ORIGINS</code> in prod; rate limits on some routes; docs disabled in prod.<br />
+        • <strong>Risk:</strong> <code>app/mobile/App.tsx</code> embeds a Sentry DSN and enables <code>sendDefaultPii</code> — treat as public and rotate if repo is shared.<br />
+        • Partner/Admin tokens in <code>localStorage</code> — standard XSS surface; keep CSP tight on web.<br />
+        • Backend uses Supabase <strong>service role</strong> server-side only (correct); mobile/web use anon key for Auth.<br />
+        • <code>/api/env-check</code> is disabled in production (config flags only).<br />
+        • Dependencies: align all <code>expo-*</code> packages with SDK 54 (e.g. <code>expo-sharing ~14.0.8</code>) before EAS builds.
+      </div>
+      <h3>Details</h3>
+      <p class="meta" id="panel-placeholder">Select a node in the diagram.</p>
+      <div id="panel-body" hidden></div>
+    </aside>
+  </main>
+
+  <script>
+    /** @type {Array<{id:string,layer:string,title:string,subtitle:string,path:string,endpoints:string[],connects:string[],issues:string,dashed?:boolean}>} */
+    const NODES = [
+      { id: "m-app", layer: "mobile", title: "App.tsx", subtitle: "Navigation, push, Sentry", path: "app/mobile/App.tsx", endpoints: ["Tab + stack navigators", "Deep links, auth gating"], connects: ["m-api"], issues: "Sentry: set EXPO_PUBLIC_SENTRY_DSN via EAS env; sendDefaultPii off in production." },
+      { id: "m-map", layer: "mobile", title: "MapScreen", subtitle: "Map, nav, incidents, friends", path: "app/mobile/src/screens/MapScreen.tsx", endpoints: ["/api/locations", "/api/friends/*", "/api/incidents/*", "/api/driver/location-visit"], connects: ["b-nav", "b-soc", "b-inc"], issues: "Heavy screen; verify EXPO_PUBLIC_API_URL in production." },
+      { id: "m-dash", layer: "mobile", title: "DashboardScreen", subtitle: "Friends & social hub", path: "app/mobile/src/screens/DashboardScreen.tsx", endpoints: ["/api/friends/list", "/api/friends/add", "/api/friends/accept", "/api/friends/location/sharing"], connects: ["b-soc"], issues: "" },
+      { id: "m-rew", layer: "mobile", title: "RewardsScreen", subtitle: "Challenges, trips, gems", path: "app/mobile/src/screens/RewardsScreen.tsx", endpoints: ["/api/challenges", "/api/badges", "/api/trips/*", "/api/gems/history"], connects: ["b-trip", "b-game"], issues: "" },
+      { id: "m-prof", layer: "mobile", title: "ProfileScreen", subtitle: "Account, fuel, billing", path: "app/mobile/src/screens/ProfileScreen.tsx", endpoints: ["/api/user/*", "/api/fuel/*", "/api/payments/*", "/api/legal/*", "/api/commute-routes"], connects: ["b-users", "b-trip", "b-pay", "b-leg", "b-com"], issues: "" },
+      { id: "m-api", layer: "mobile", title: "api/client.ts", subtitle: "JWT, SecureStore, base URL", path: "app/mobile/src/api/client.ts", endpoints: ["/api/auth/*", "All authenticated /api/*"], connects: ["b-auth"], issues: "Production requires HTTPS API base URL." },
+      { id: "m-sup", layer: "mobile", title: "lib/supabase.ts", subtitle: "Auth session (anon key)", path: "app/mobile/src/lib/supabase.ts", endpoints: ["Supabase Auth"], connects: ["s-auth"], issues: "Anon key in client bundle (expected)." },
+
+      { id: "w-app", layer: "web", title: "App.tsx routes", subtitle: "Partner, admin, driver web", path: "app/frontend/src/App.tsx", endpoints: ["React Router"], connects: ["w-part", "w-adm", "w-drv"], issues: "" },
+      { id: "w-part", layer: "web", title: "PartnerDashboard", subtitle: "Partner portal UI", path: "app/frontend/src/pages/PartnerDashboard.tsx", endpoints: ["Uses partnerApi"], connects: ["w-papi"], issues: "" },
+      { id: "w-adm", layer: "web", title: "AdminDashboard", subtitle: "Admin console UI", path: "app/frontend/src/pages/AdminDashboard.tsx", endpoints: ["Uses adminApi"], connects: ["w-aapi"], issues: "Obscured path /portal/admin-sr2025secure" },
+      { id: "w-drv", layer: "web", title: "DriverApp", subtitle: "Web driver experience", path: "app/frontend/src/pages/DriverApp/index.tsx", endpoints: ["Mapbox, FastAPI"], connects: ["w-api", "x-map"], issues: "" },
+      { id: "w-papi", layer: "web", title: "partnerApi.ts", subtitle: "Partner REST client", path: "app/frontend/src/services/partnerApi.ts", endpoints: ["/api/partner/v2/*"], connects: ["b-part"], issues: "Token in localStorage." },
+      { id: "w-aapi", layer: "web", title: "adminApi.ts", subtitle: "Admin REST client", path: "app/frontend/src/services/adminApi.ts", endpoints: ["/api/admin/*", "/api/admin/supabase/status"], connects: ["b-ad"], issues: "Token in localStorage — CSP + future httpOnly cookie (see file comment)." },
+      { id: "w-sb", layer: "web", title: "supabaseClient", subtitle: "Realtime + auth (web)", path: "app/frontend/src/lib/supabaseClient.ts", endpoints: ["channels on tables"], connects: ["s-db"], issues: "Realtime usage in hooks (e.g. useSupabaseRealtimeRefresh)." },
+      { id: "w-api", layer: "web", title: "services/api.ts", subtitle: "Driver auth + API base", path: "app/frontend/src/services/api.ts", endpoints: ["/api/auth/oauth/supabase"], connects: ["b-auth"], issues: "" },
+
+      { id: "b-main", layer: "api", title: "main.py", subtitle: "App factory, CORS, health", path: "app/backend/main.py", endpoints: ["/health", "/api/env-check (dev)", "Registers all routers"], connects: ["s-db"], issues: "Sentry FastAPI integration; telemetry middleware." },
+      { id: "b-auth", layer: "api", title: "routes/auth.py", subtitle: "Login, signup, OAuth bridge", path: "app/backend/routes/auth.py", endpoints: ["/api/auth/signup", "/login", "/oauth/supabase", "/forgot-password", "/resend-verification"], connects: ["s-auth", "x-nope"], issues: "Verification email via Supabase Auth API (not Resend.com)." },
+      { id: "b-users", layer: "api", title: "routes/users.py", subtitle: "Profile, cars, settings", path: "app/backend/routes/users.py", endpoints: ["/api/user/*", "/api/settings/*", "/api/notifications", "/api/cars", "/api/skins"], connects: ["s-prof"], issues: "" },
+      { id: "b-trip", layer: "api", title: "routes/trips.py", subtitle: "Trips, fuel, insights", path: "app/backend/routes/trips.py", endpoints: ["/api/trips*", "/api/fuel/*"], connects: ["s-trip", "s-fuel", "x-oai"], issues: "GET /api/fuel/prices proxies GasBuddy server-side + mock fallback." },
+      { id: "b-soc", layer: "api", title: "routes/social.py", subtitle: "Friends, live location", path: "app/backend/routes/social.py", endpoints: ["/api/friends*", "/api/social/*"], connects: ["s-friend", "s-live", "s-race", "s-conv"], issues: "Friend search uses discrete ilike queries + length limit (no PostgREST or_ injection)." },
+      { id: "b-place", layer: "api", title: "routes/places.py", subtitle: "Places autocomplete proxy", path: "app/backend/routes/places.py", endpoints: ["/api/places/autocomplete", "/details", "/nearby"], connects: ["x-google"], issues: "TTL cache 60s; needs GOOGLE_PLACES_API_KEY." },
+      { id: "b-dir", layer: "api", title: "routes/directions.py", subtitle: "Directions polyline proxy", path: "app/backend/routes/directions.py", endpoints: ["/api/directions* (see file)"], connects: ["x-google"], issues: "Uses Google Directions with shared maps key env." },
+      { id: "b-nav", layer: "api", title: "routes/navigation.py", subtitle: "Saved places, map traffic", path: "app/backend/routes/navigation.py", endpoints: ["/api/locations", "/routes", "/map/*", "/navigation/*"], connects: ["s-saved", "s-road", "x-ohgo"], issues: "OHGO cameras when OHGO_API_KEY set." },
+      { id: "b-inc", layer: "api", title: "routes/incidents.py", subtitle: "Road reports & votes", path: "app/backend/routes/incidents.py", endpoints: ["/api/incidents/*"], connects: ["s-road", "s-vote"], issues: "" },
+      { id: "b-pay", layer: "api", title: "routes/payments.py", subtitle: "Stripe checkout & portal", path: "app/backend/routes/payments.py", endpoints: ["/api/payments/*"], connects: ["s-pay", "s-prof", "x-stripe"], issues: "Requires STRIPE_SECRET_KEY server-side." },
+      { id: "b-part", layer: "api", title: "routes/partners.py", subtitle: "Partner v2, scan, offers", path: "app/backend/routes/partners.py", endpoints: ["/api/partner/v2/*"], connects: ["s-part", "s-inv"], issues: "Mutations require owned_partner_id / resource owner check (see SECURITY block in file)." },
+      { id: "b-ad", layer: "api", title: "routes/admin.py", subtitle: "Admin CRUD & analytics", path: "app/backend/routes/admin.py", endpoints: ["/api/admin/*"], connects: ["s-many"], issues: "require_admin dependency on all routes." },
+      { id: "b-off", layer: "api", title: "routes/offers.py", subtitle: "Redeem, list offers", path: "app/backend/routes/offers.py", endpoints: ["/api/offers/*", "/api/redeem"], connects: ["s-off", "s-red", "s-prof"], issues: "" },
+      { id: "b-game", layer: "api", title: "routes/gamification.py", subtitle: "Badges, gems, challenges", path: "app/backend/routes/gamification.py", endpoints: ["/api/badges", "/api/challenges", "/api/gems", "/api/leaderboard"], connects: ["s-prof"], issues: "" },
+      { id: "b-ai", layer: "api", title: "routes/ai.py", subtitle: "Orion, image generation", path: "app/backend/routes/ai.py", endpoints: ["/api/orion/completions", "/api/ai/*"], connects: ["x-llm"], issues: "Rate limited; keys only on server." },
+      { id: "b-con", layer: "api", title: "routes/concerns.py", subtitle: "Support / feedback tickets", path: "app/backend/routes/concerns.py", endpoints: ["/api/concerns/submit"], connects: ["s-conc"], issues: "" },
+      { id: "b-leg", layer: "api", title: "routes/legal.py", subtitle: "Legal documents", path: "app/backend/routes/legal.py", endpoints: ["/api/legal/documents"], connects: ["s-legal"], issues: "" },
+      { id: "b-com", layer: "api", title: "routes/commute_routes.py", subtitle: "Commute CRUD & pushes", path: "app/backend/routes/commute_routes.py", endpoints: ["/api/commute-routes"], connects: ["s-com", "s-prof"], issues: "Uses expo push helper for notifications." },
+      { id: "b-cfg", layer: "api", title: "routes/config_public.py", subtitle: "Public app config flags", path: "app/backend/routes/config_public.py", endpoints: ["/api/config*"], connects: ["s-appcfg"], issues: "" },
+      { id: "b-webh", layer: "api", title: "routes/webhooks.py", subtitle: "Webhooks & websockets", path: "app/backend/routes/webhooks.py", endpoints: ["WS / hooks (see file)"], connects: ["s-db", "s-pay"], issues: "Stripe checkout.session.completed upserts payment_transactions (needs SQL 030 on Supabase)." },
+      { id: "b-mapk", layer: "api", title: "routes/mapkit.py", subtitle: "Apple MapKit token/JWT", path: "app/backend/routes/mapkit.py", endpoints: ["/api/mapkit*"], connects: ["x-apple"], issues: "Uses MAPKIT_* env and key file." },
+      { id: "b-osm", layer: "api", title: "routes/osm.py", subtitle: "OpenStreetMap helpers", path: "app/backend/routes/osm.py", endpoints: ["/api/osm*"], connects: ["x-osm"], issues: "" },
+      { id: "b-ts", layer: "api", title: "routes/traffic_safety.py", subtitle: "Traffic safety data API", path: "app/backend/routes/traffic_safety.py", endpoints: ["/api/traffic*"], connects: ["s-db"], issues: "" },
+      { id: "b-pr", layer: "api", title: "routes/photo_reports.py", subtitle: "Photo incident uploads", path: "app/backend/routes/photo_reports.py", endpoints: ["/api/photo-reports/*"], connects: ["s-photo"], issues: "" },
+      { id: "b-pa", layer: "api", title: "routes/place_alerts.py", subtitle: "User place alerts", path: "app/backend/routes/place_alerts.py", endpoints: ["/api/place-alerts"], connects: ["s-palert"], issues: "" },
+      { id: "b-fam", layer: "api", title: "routes/family.py", subtitle: "Family features (stubs)", path: "app/backend/routes/family.py", endpoints: ["/api/family/* → 503"], connects: ["s-fam"], issues: "AGENTS.md: family returns 503 until built out." },
+      { id: "b-photo", layer: "api", title: "services/supabase_service", subtitle: "Shared DB access layer", path: "app/backend/services/supabase_service.py", endpoints: ["Used by admin & routes"], connects: ["s-many"], issues: "Large surface; service role bypasses RLS." },
+
+      { id: "s-auth", layer: "db", title: "Supabase Auth", subtitle: "JWT, email verification", path: "Hosted Supabase / auth.users", endpoints: ["GoTrue"], connects: [], issues: "Mobile + web anon clients." },
+      { id: "s-db", layer: "db", title: "Postgres core", subtitle: "profiles, trips, offers…", path: "app/backend/sql/*.sql", endpoints: ["Tables from migrations"], connects: [], issues: "See table list in panel when selected." },
+      { id: "s-prof", layer: "db", title: "profiles", subtitle: "Users & plan fields", path: "app/backend/sql/017_profiles_boosts_badges.sql", endpoints: ["RW via API"], connects: [], issues: "" },
+      { id: "s-trip", layer: "db", title: "trips", subtitle: "Trip history & scores", path: "app/backend/sql/supabase_migration.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-fuel", layer: "db", title: "fuel_history", subtitle: "Fill-ups & odometer", path: "app/backend/sql/029_fuel_history_trip_odometer.sql", endpoints: ["RW"], connects: [], issues: "Apply migration in Supabase for new columns." },
+      { id: "s-friend", layer: "db", title: "friendships", subtitle: "Friend graph", path: "app/backend/sql/004_friend_locations.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-live", layer: "db", title: "live_locations", subtitle: "Realtime friend locations", path: "app/backend/sql/004_friend_locations.sql", endpoints: ["RW + Realtime"], connects: [], issues: "021_live_locations_battery.sql adds fields." },
+      { id: "s-road", layer: "db", title: "road_reports", subtitle: "Incidents & reports", path: "app/backend/sql/supabase_migration.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-vote", layer: "db", title: "road_report_votes", subtitle: "Confirm/upvote", path: "app/backend/sql/012_road_report_votes.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-off", layer: "db", title: "offers / redemptions", subtitle: "Partner offers", path: "app/backend/sql/*.sql", endpoints: ["RW"], connects: [], issues: "redemptions, offer_analytics, redemption_fees" },
+      { id: "s-part", layer: "db", title: "partners", subtitle: "Partner accounts", path: "app/backend/sql/supabase_migration.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-pay", layer: "db", title: "payment_transactions", subtitle: "Stripe sessions", path: "app/backend/sql/030_payment_transactions_extended.sql", endpoints: ["RW"], connects: [], issues: "DB Mismatch: apply 030 in prod before webhook writes new fields." },
+      { id: "s-saved", layer: "db", title: "user_saved_places", subtitle: "Saved map pins", path: "app/backend/sql/027_user_saved_places_and_commute_routes.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-com", layer: "db", title: "commute_routes", subtitle: "Commute paths", path: "app/backend/sql/027_user_saved_places_and_commute_routes.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-conc", layer: "db", title: "concerns / app_config", subtitle: "Tickets & flags", path: "app/backend/sql/005_concerns_app_config.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-legal", layer: "db", title: "legal_documents", subtitle: "Consent copy", path: "app/backend/sql/018_admin_runtime_tables.sql", endpoints: ["R mostly"], connects: [], issues: "" },
+      { id: "s-inv", layer: "db", title: "partner_invoices", subtitle: "Billing months", path: "app/backend/sql/024_partner_invoices.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-race", layer: "db", title: "snap_races / races", subtitle: "Snap Race mode", path: "app/backend/sql/020_snap_races.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-conv", layer: "db", title: "convoys", subtitle: "Convoy sessions", path: "app/backend/sql/009_family_convoys_privacy.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-photo", layer: "db", title: "incident_photos", subtitle: "Moderated photos", path: "app/backend/sql/007_photo_reports.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-palert", layer: "db", title: "place_alerts", subtitle: "Family place alerts", path: "app/backend/sql/006_family_mode.sql", endpoints: ["RW"], connects: [], issues: "" },
+      { id: "s-fam", layer: "db", title: "family_* tables", subtitle: "Groups, members, trips", path: "app/backend/sql/006_family_mode.sql", endpoints: ["RW when live"], connects: [], issues: "API family router still stubbed." },
+      { id: "s-many", layer: "db", title: "Admin domain tables", subtitle: "campaigns, audit, …", path: "app/backend/sql/admin_dashboard_migration.sql", endpoints: ["admin routes"], connects: [], issues: "incidents, rewards, notifications, platform_settings, audit_log" },
+
+      { id: "x-map", layer: "ext", title: "Mapbox", subtitle: "Maps SDK (client)", path: "Mobile: @rnmapbox/maps; Web: mapbox-gl", endpoints: ["Tiles, styles"], connects: [], issues: "No Mapbox HTTP proxy in FastAPI; tokens in client env." },
+      { id: "x-google", layer: "ext", title: "Google Maps Platform", subtitle: "Places + Directions", path: "backend: places.py, directions.py", endpoints: ["maps.googleapis.com"], connects: [], issues: "Server-side API key; quota & billing." },
+      { id: "x-stripe", layer: "ext", title: "Stripe", subtitle: "Payments & billing", path: "backend payments.py; mobile Stripe SDK", endpoints: ["api.stripe.com"], connects: [], issues: "Webhook signing secrets if used." },
+      { id: "x-ohgo", layer: "ext", title: "OHGO (Ohio DOT)", subtitle: "Traffic cameras API", path: "app/backend/routes/navigation.py", endpoints: ["publicapi.ohgo.com"], connects: [], issues: "Optional; radius-limited." },
+      { id: "x-llm", layer: "ext", title: "OpenAI / NVIDIA", subtitle: "Orion coach LLM", path: "app/backend/services/orion_coach.py", endpoints: ["OpenAI or NVIDIA infer"], connects: [], issues: "Keys in env only." },
+      { id: "x-oai", layer: "ext", title: "OpenAI (trips)", subtitle: "Optional trip insights", path: "app/backend/routes/trips.py", endpoints: ["chat completions"], connects: [], issues: "Graceful degrade if unset." },
+      { id: "x-sentry", layer: "ext", title: "Sentry", subtitle: "Errors & performance", path: "main.py + mobile App.tsx", endpoints: ["ingest.sentry.io"], connects: [], issues: "Mobile DSN in source." },
+      { id: "x-apple", layer: "ext", title: "Apple MapKit", subtitle: "JWT map tokens", path: "app/backend/routes/mapkit.py", endpoints: ["Apple MapKit API"], connects: [], issues: "Private key file path env." },
+      { id: "x-osm", layer: "ext", title: "OpenStreetMap / Overpass", subtitle: "OSM utilities", path: "app/backend/routes/osm.py", endpoints: ["Varies"], connects: [], issues: "Confirm rate policy in file." },
+      { id: "x-nope", layer: "ext", title: "Resend (email SaaS)", subtitle: "Not wired in repo", path: "—", endpoints: ["N/A"], connects: [], issues: "Verification uses Supabase Auth resend, not Resend.com." },
+    ];
+
+    /** kind: auth | read | write | ext */
+    const EDGES = [
+      { from: "m-api", to: "b-auth", kind: "auth" },
+      { from: "w-api", to: "b-auth", kind: "auth" },
+      { from: "w-papi", to: "b-part", kind: "auth" },
+      { from: "w-aapi", to: "b-ad", kind: "auth" },
+      { from: "m-map", to: "b-nav", kind: "read" },
+      { from: "m-map", to: "b-nav", kind: "write" },
+      { from: "m-map", to: "b-inc", kind: "write" },
+      { from: "m-map", to: "b-soc", kind: "write" },
+      { from: "m-dash", to: "b-soc", kind: "read" },
+      { from: "m-dash", to: "b-soc", kind: "write" },
+      { from: "m-rew", to: "b-trip", kind: "read" },
+      { from: "m-rew", to: "b-game", kind: "read" },
+      { from: "m-prof", to: "b-users", kind: "read" },
+      { from: "m-prof", to: "b-trip", kind: "read" },
+      { from: "m-prof", to: "b-pay", kind: "write" },
+      { from: "m-prof", to: "b-leg", kind: "read" },
+      { from: "m-prof", to: "b-com", kind: "read" },
+      { from: "b-auth", to: "s-auth", kind: "auth" },
+      { from: "m-sup", to: "s-auth", kind: "auth" },
+      { from: "w-sb", to: "s-db", kind: "read" },
+      { from: "b-main", to: "s-db", kind: "read" },
+      { from: "b-users", to: "s-prof", kind: "write" },
+      { from: "b-trip", to: "s-trip", kind: "write" },
+      { from: "b-trip", to: "s-fuel", kind: "write" },
+      { from: "b-trip", to: "s-prof", kind: "write" },
+      { from: "b-soc", to: "s-friend", kind: "write" },
+      { from: "b-soc", to: "s-live", kind: "write" },
+      { from: "b-soc", to: "s-race", kind: "write" },
+      { from: "b-soc", to: "s-conv", kind: "write" },
+      { from: "b-nav", to: "s-saved", kind: "write" },
+      { from: "b-nav", to: "s-road", kind: "read" },
+      { from: "b-inc", to: "s-road", kind: "write" },
+      { from: "b-inc", to: "s-vote", kind: "write" },
+      { from: "b-pay", to: "s-pay", kind: "write" },
+      { from: "b-pay", to: "s-prof", kind: "write" },
+      { from: "b-pay", to: "x-stripe", kind: "ext" },
+      { from: "b-part", to: "s-part", kind: "write" },
+      { from: "b-part", to: "s-inv", kind: "write" },
+      { from: "b-ad", to: "s-many", kind: "write" },
+      { from: "b-off", to: "s-off", kind: "write" },
+      { from: "b-game", to: "s-prof", kind: "write" },
+      { from: "b-ai", to: "x-llm", kind: "ext" },
+      { from: "b-trip", to: "x-oai", kind: "ext" },
+      { from: "b-place", to: "x-google", kind: "ext" },
+      { from: "b-dir", to: "x-google", kind: "ext" },
+      { from: "b-nav", to: "x-ohgo", kind: "ext" },
+      { from: "b-mapk", to: "x-apple", kind: "ext" },
+      { from: "b-main", to: "x-sentry", kind: "ext" },
+      { from: "b-con", to: "s-conc", kind: "write" },
+      { from: "b-leg", to: "s-legal", kind: "read" },
+      { from: "b-com", to: "s-com", kind: "write" },
+      { from: "b-cfg", to: "s-conc", kind: "read" },
+      { from: "b-pr", to: "s-photo", kind: "write" },
+      { from: "b-pa", to: "s-palert", kind: "read" },
+      { from: "b-fam", to: "s-fam", kind: "read", dashed: true },
+      { from: "w-drv", to: "x-map", kind: "ext", dashed: true },
+      { from: "m-map", to: "x-map", kind: "ext", dashed: true },
+    ];
+
+    const LAYER_CLASS = {
+      mobile: "layer-mobile",
+      web: "layer-web",
+      api: "layer-api",
+      db: "layer-db",
+      ext: "layer-ext",
+    };
+
+    const LAYER_LABEL = {
+      mobile: "Driver app (Expo RN)",
+      web: "Partner & admin (Vite)",
+      api: "FastAPI backend",
+      db: "Supabase (PG + Auth)",
+      ext: "External APIs",
+    };
+
+    const tablesAll = `profiles, trips, fuel_history, friendships, live_locations, location_tags, road_reports, road_report_votes, partners, partner_locations, partner_team_links, partner_invoices, offers, redemptions, redemption_fees, offer_analytics, payment_transactions, challenges, user_challenges, badges, boosts, notifications, concerns, app_config, legal_documents, campaigns, rewards, audit_log, platform_settings, referrals, partner_referrals, incidents, user_saved_places, commute_routes, snap_races, races, convoys, incident_photos, incident_photo_upvotes, place_alerts, family_groups, family_members, family_trips, family_events, family_member_notifications, events, offer_redemptions (legacy name in some migrations)`;
+
+    function renderColumns() {
+      const colRoot = document.getElementById("columns");
+      const order = ["mobile", "web", "api", "db", "ext"];
+      colRoot.innerHTML = order.map((layer) => {
+        const nodes = NODES.filter((n) => n.layer === layer);
+        const cards = nodes.map((n) => `<div class="node" data-id="${n.id}" data-layer="${n.layer}" id="node-${n.id}">
+          <div class="title">${escapeHtml(n.title)}</div>
+          <div class="subtitle">${escapeHtml(n.subtitle)}</div>
+        </div>`).join("");
+        return `<div class="layer-col ${LAYER_CLASS[layer]}" data-layer="${layer}">
+          <h2>${LAYER_LABEL[layer]}</h2>${cards}
+        </div>`;
+      }).join("");
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    const kindColor = { auth: "var(--auth)", read: "var(--read)", write: "var(--write)", ext: "var(--ext-line)" };
+
+    function drawEdges() {
+      const svg = document.getElementById("edge-layer");
+      const wrap = document.getElementById("diagram-wrap");
+      if (!svg || !wrap) return;
+      const rect = wrap.getBoundingClientRect();
+      svg.setAttribute("width", String(rect.width));
+      svg.setAttribute("height", String(rect.height));
+      svg.innerHTML = "";
+      const seen = new Set();
+      EDGES.forEach((e) => {
+        const key = `${e.from}-${e.to}-${e.kind}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const a = document.getElementById("node-" + e.from);
+        const b = document.getElementById("node-" + e.to);
+        if (!a || !b) return;
+        const ar = a.getBoundingClientRect();
+        const br = b.getBoundingClientRect();
+        const x1 = ar.left + ar.width / 2 - rect.left;
+        const y1 = ar.top + ar.height / 2 - rect.top;
+        const x2 = br.left + br.width / 2 - rect.left;
+        const y2 = br.top + br.height / 2 - rect.top;
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", x1);
+        line.setAttribute("y1", y1);
+        line.setAttribute("x2", x2);
+        line.setAttribute("y2", y2);
+        line.setAttribute("stroke", kindColor[e.kind] || "#888");
+        line.setAttribute("stroke-width", e.dashed ? "1.5" : "2");
+        line.setAttribute("opacity", "0.55");
+        if (e.dashed) line.setAttribute("stroke-dasharray", "6 4");
+        svg.appendChild(line);
+      });
+    }
+
+    function selectNode(node) {
+      document.querySelectorAll(".node").forEach((el) => el.classList.remove("selected"));
+      if (node) node.classList.add("selected");
+    }
+
+    function showPanel(data) {
+      const ph = document.getElementById("panel-placeholder");
+      const body = document.getElementById("panel-body");
+      if (!data) {
+        ph.hidden = false;
+        body.hidden = true;
+        return;
+      }
+      ph.hidden = true;
+      body.hidden = false;
+      const endpoints = data.endpoints.map((x) => `• ${x}`).join("\n");
+      const connects = data.connects.length
+        ? data.connects.map((id) => {
+            const t = NODES.find((n) => n.id === id);
+            return `• ${t ? t.title : id}`;
+          }).join("\n")
+        : "• (see edge lines / other layers)";
+      const issues = data.issues || "None noted in this audit.";
+      const tablesBlock = data.id === "s-db" ? tablesAll : "";
+      body.innerHTML = `
+        <h3>${escapeHtml(data.title)}</h3>
+        <p class="meta">${escapeHtml(data.subtitle)}</p>
+        <section><h4>File / path</h4><pre>${escapeHtml(data.path)}</pre></section>
+        <section><h4>Key endpoints or functions</h4><pre>${escapeHtml(endpoints)}</pre></section>
+        <section><h4>Connects to</h4><pre>${escapeHtml(connects)}</pre></section>
+        ${tablesBlock ? `<section><h4>Migration tables (rollup)</h4><pre>${escapeHtml(tablesBlock)}</pre></section>` : ""}
+        <section><h4>Audit notes</h4><pre>${escapeHtml(issues)}</pre></section>
+      `;
+    }
+
+    let activeFilter = "all";
+
+    function applyFilter(f) {
+      activeFilter = f;
+      document.querySelectorAll(".filters button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.filter === f);
+      });
+      const wrap = document.body;
+      if (f === "all") {
+        wrap.classList.remove("filter-active");
+        document.querySelectorAll(".layer-col, .node").forEach((el) => el.classList.remove("dim"));
+        return;
+      }
+      wrap.classList.add("filter-active");
+      const map = {
+        mobile: "mobile",
+        web: "web",
+        backend: "api",
+        data: "db",
+        external: "ext",
+      };
+      const layer = map[f];
+      const highlightIds = new Set();
+      NODES.filter((n) => n.layer === layer).forEach((n) => highlightIds.add(n.id));
+      EDGES.forEach((e) => {
+        const nf = NODES.find((x) => x.id === e.from);
+        const nt = NODES.find((x) => x.id === e.to);
+        if (nf && nf.layer === layer) highlightIds.add(e.to);
+        if (nt && nt.layer === layer) highlightIds.add(e.from);
+      });
+      document.querySelectorAll(".layer-col").forEach((col) => {
+        const ly = col.dataset.layer;
+        col.classList.toggle("dim", ly !== layer && ![...highlightIds].some((id) => {
+          const n = NODES.find((x) => x.id === id);
+          return n && n.layer === ly;
+        }));
+      });
+      document.querySelectorAll(".node").forEach((nodeEl) => {
+        const id = nodeEl.dataset.id;
+        nodeEl.classList.toggle("dim", !highlightIds.has(id));
+      });
+      drawEdges();
+    }
+
+    function initFilters() {
+      const fb = document.getElementById("filters");
+      const opts = [
+        ["all", "All layers"],
+        ["mobile", "Driver app only"],
+        ["backend", "Backend only"],
+        ["data", "Data only"],
+        ["external", "External APIs only"],
+      ];
+      fb.innerHTML = opts.map(([k, label]) => `<button type="button" data-filter="${k}">${label}</button>`).join("");
+      fb.addEventListener("click", (ev) => {
+        const t = ev.target;
+        if (t.tagName === "BUTTON" && t.dataset.filter) applyFilter(t.dataset.filter);
+      });
+    }
+
+    renderColumns();
+    initFilters();
+
+    document.getElementById("columns").addEventListener("click", (ev) => {
+      const card = ev.target.closest(".node");
+      if (!card) return;
+      const id = card.dataset.id;
+      const data = NODES.find((n) => n.id === id);
+      selectNode(card);
+      showPanel(data);
+    });
+
+    const wrapEl = document.getElementById("diagram-wrap");
+    window.addEventListener("resize", () => { drawEdges(); });
+    wrapEl.addEventListener("scroll", () => { drawEdges(); }, { passive: true });
+    window.addEventListener("load", () => { requestAnimationFrame(drawEdges); });
+    requestAnimationFrame(drawEdges);
+  </script>
+</body>
+</html>

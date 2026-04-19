@@ -1,0 +1,272 @@
+import { useRef, useState, useEffect } from 'react'
+import { X, MapPin, Plus, Check, Gem, Gift, Loader2, Upload, Image } from 'lucide-react'
+import type { PartnerProfile } from '@/types/partner'
+import { calculateAutoGems, calculateFreeDiscount } from '@/lib/offer-pricing'
+import { PARTNER_OFFER_CATEGORY_OPTIONS } from '@/lib/offer-categories'
+
+interface NewOfferData {
+  business_display_name: string
+  title: string
+  description: string
+  category: string
+  discount_percent: number
+  gem_cost: number
+  is_free_item: boolean
+  location_id: string
+  expires_days: number
+}
+
+interface Props {
+  partnerProfile: PartnerProfile | null
+  newOfferImage: string | null
+  uploadingImage?: boolean
+  importingPlacePhoto?: boolean
+  onSuggestPhotoFromLocation?: (locationId: string) => Promise<void>
+  onImportGooglePhotoRef?: (photoReference: string) => Promise<void>
+  onClose: () => void
+  onCreate: (data: NewOfferData, image: string | null) => Promise<void>
+  onUploadImage: (file: File) => Promise<void>
+  onClearImage: () => void
+  onSwitchToLocations: () => void
+}
+
+export default function CreateOfferModal({
+  partnerProfile, newOfferImage, onClose, onCreate,
+  uploadingImage = false,
+  importingPlacePhoto = false,
+  onSuggestPhotoFromLocation,
+  onImportGooglePhotoRef,
+  onUploadImage, onClearImage, onSwitchToLocations,
+}: Props) {
+  const [googlePhotoRef, setGooglePhotoRef] = useState('')
+  const [data, setData] = useState<NewOfferData>({
+    business_display_name: partnerProfile?.business_name?.trim() || '',
+    title: '',
+    description: '',
+    category: 'retail',
+    discount_percent: 15,
+    gem_cost: 0,
+    is_free_item: false,
+    location_id: partnerProfile?.locations[0]?.id || '',
+    expires_days: 7,
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const fileRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (!partnerProfile) return
+    setData((d) => {
+      const next = { ...d }
+      if (!d.business_display_name?.trim() && partnerProfile.business_name) {
+        next.business_display_name = partnerProfile.business_name
+      }
+      if (!d.location_id && partnerProfile.locations[0]?.id) {
+        next.location_id = String(partnerProfile.locations[0].id)
+      }
+      return next
+    })
+  }, [partnerProfile])
+
+  const autoGems = calculateAutoGems(data.discount_percent, data.is_free_item)
+  const freeDiscount = calculateFreeDiscount(data.discount_percent)
+
+  const handleCreate = async () => {
+    setSubmitting(true)
+    try {
+      await onCreate({ ...data, gem_cost: autoGems }, newOfferImage)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl border border-white/10 shadow-2xl">
+          <div className="relative p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-white font-bold text-xl">Create New Offer</h2>
+              <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
+              {newOfferImage && (
+                <div className="relative mb-4">
+                  <img src={newOfferImage} alt="Offer" className="w-full h-32 object-cover rounded-xl" />
+                  <button onClick={onClearImage} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full"><X size={14} /></button>
+                </div>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  await onUploadImage(file)
+                  e.currentTarget.value = ''
+                }}
+              />
+              <button type="button" onClick={() => fileRef.current?.click()} className="w-full border-2 border-dashed border-slate-500/40 rounded-xl p-4 text-slate-300 hover:border-emerald-500/40 hover:bg-emerald-500/5 flex items-center justify-center gap-2">
+                {uploadingImage ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+                {newOfferImage ? 'Replace storefront / hero image' : 'Upload storefront or offer image (optional)'}
+              </button>
+              <p className="text-xs text-slate-400 -mt-2">
+                Optional hero image on the driver offer card. Super admin can publish without one; when you upload, use your real storefront or promo creative.
+              </p>
+              {onSuggestPhotoFromLocation && data.location_id ? (
+                <button
+                  type="button"
+                  disabled={importingPlacePhoto || !data.location_id}
+                  onClick={() => void onSuggestPhotoFromLocation(data.location_id)}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 py-3 text-sm font-medium text-cyan-200 hover:bg-cyan-500/15 disabled:opacity-50"
+                >
+                  {importingPlacePhoto ? <Loader2 size={18} className="animate-spin" /> : <Image size={18} />}
+                  Use Google Places photo near this location
+                </button>
+              ) : null}
+              {onImportGooglePhotoRef ? (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="text"
+                    placeholder="Advanced: Google photo_reference"
+                    value={googlePhotoRef}
+                    onChange={(e) => setGooglePhotoRef(e.target.value)}
+                    className="flex-1 bg-slate-700/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={!googlePhotoRef.trim() || importingPlacePhoto}
+                    onClick={() => void onImportGooglePhotoRef(googlePhotoRef.trim())}
+                    className="rounded-xl border border-slate-500/40 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700/50 disabled:opacity-50"
+                  >
+                    Import ref
+                  </button>
+                </div>
+              ) : null}
+
+              <div>
+                <label className="text-slate-400 text-sm mb-1 block">Business name (drivers see this first) <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  placeholder={partnerProfile?.business_name || 'Your store name'}
+                  value={data.business_display_name}
+                  onChange={(e) => setData((prev) => ({ ...prev, business_display_name: e.target.value }))}
+                  className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500"
+                />
+                <p className="text-slate-500 text-xs mt-1">Matches the large business line on the map and redemption screen.</p>
+              </div>
+
+              <div>
+                <label className="text-slate-400 text-sm mb-1 block flex items-center gap-2">
+                  <MapPin size={14} /> Select Location <span className="text-red-400">*</span>
+                </label>
+                {partnerProfile && partnerProfile.locations.length > 0 ? (
+                  <select
+                    value={data.location_id}
+                    onChange={(e) => setData(prev => ({ ...prev, location_id: e.target.value }))}
+                    className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none cursor-pointer"
+                    data-testid="offer-location-select"
+                  >
+                    <option value="" disabled>-- Choose a store location --</option>
+                    {partnerProfile.locations.map(loc => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.name} {loc.is_primary ? '(Primary)' : ''} - {loc.address.substring(0, 40)}...
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-amber-400 text-sm">
+                    <p className="font-medium mb-2">No locations added yet</p>
+                    <p className="text-amber-400/70 mb-3">You need to add at least one store location before creating offers.</p>
+                    <button type="button" onClick={() => { onClose(); onSwitchToLocations() }}
+                      className="px-4 py-2 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-400 inline-flex items-center gap-2">
+                      <Plus size={16} /> Add Location
+                    </button>
+                  </div>
+                )}
+                {data.location_id && partnerProfile && (
+                  <div className="mt-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                    <p className="text-emerald-400 text-xs flex items-center gap-2">
+                      <Check size={12} /> Offer will appear on map at this location
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-slate-400 text-sm mb-1 block">Offer headline / promo title <span className="text-red-400">*</span></label>
+                <input type="text" placeholder="e.g., 20% Off Weekend Special"
+                  value={data.title} onChange={(e) => setData(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500" />
+                <p className="text-slate-500 text-xs mt-1">Shown as the discount / promo line next to the gem badge in the app.</p>
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm mb-1 block">Description</label>
+                <textarea placeholder="Describe your offer..." rows={3}
+                  value={data.description} onChange={(e) => setData(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 resize-none" />
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm mb-1 block">Category</label>
+                <select
+                  value={data.category}
+                  onChange={(e) => setData((prev) => ({ ...prev, category: e.target.value }))}
+                  className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none cursor-pointer"
+                >
+                  {PARTNER_OFFER_CATEGORY_OPTIONS.map((o) => (
+                    <option key={o.slug} value={o.slug}>{o.label}</option>
+                  ))}
+                </select>
+                <p className="text-slate-500 text-xs mt-1">Shown to drivers as Gas, Restaurant, and other filters in the app.</p>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={data.is_free_item}
+                      onChange={(e) => setData(prev => ({ ...prev, is_free_item: e.target.checked, discount_percent: e.target.checked ? 100 : prev.discount_percent }))}
+                      className="w-4 h-4 rounded border-white/20 bg-slate-700 text-emerald-500 focus:ring-emerald-500/30" />
+                    <span className="text-slate-300 text-sm flex items-center gap-1"><Gift size={14} className="text-emerald-400" /> Free Item</span>
+                  </label>
+                </div>
+                {!data.is_free_item && (
+                  <div>
+                    <label className="text-slate-400 text-sm mb-1 block">Discount % (Premium Users)</label>
+                    <input type="number" placeholder="15" min="1" max="100"
+                      value={data.discount_percent} onChange={(e) => setData(prev => ({ ...prev, discount_percent: parseInt(e.target.value) || 0 }))}
+                      className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white" />
+                    <p className="text-slate-500 text-xs mt-1">Free users will see {freeDiscount}% discount</p>
+                  </div>
+                )}
+                <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-3 flex items-center justify-between">
+                  <span className="text-slate-300 text-sm flex items-center gap-2">
+                    <Gem size={16} className="text-cyan-400" /> Redeem Cost
+                  </span>
+                  <span className="text-cyan-400 font-bold text-lg">{autoGems} gems</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm mb-1 block">Expires In (Days)</label>
+                <select value={data.expires_days} onChange={(e) => setData(prev => ({ ...prev, expires_days: parseInt(e.target.value) }))}
+                  className="w-full bg-slate-700/50 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none cursor-pointer">
+                  <option value={1}>1 Day</option>
+                  <option value={3}>3 Days</option>
+                  <option value={7}>7 Days (Recommended)</option>
+                  <option value={14}>14 Days</option>
+                  <option value={30}>30 Days</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={onClose} disabled={submitting} className="flex-1 bg-slate-700/50 text-white py-3 rounded-xl hover:bg-slate-700 disabled:opacity-50">Cancel</button>
+                <button type="button" onClick={handleCreate} disabled={!data.title || !data.location_id || !data.business_display_name?.trim() || submitting || uploadingImage || importingPlacePhoto}
+                  className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-xl hover:from-emerald-400 hover:to-teal-400 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                  {submitting ? <><Loader2 size={18} className="animate-spin" /> Creating...</> : 'Create Offer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,121 @@
+name: Security And Release Gates
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - ".github/workflows/**"
+  push:
+    branches: ["main", "develop", "RyanPM", "brian"]
+    paths:
+      - "app/**"
+      - ".github/workflows/**"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  frontend-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: app/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  backend-security:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: app/backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: pip install pip-audit bandit
+      # Fail on any PyPI advisory in locked deps (same as validate.yml backend job).
+      - run: pip-audit -r requirements.txt
+      - run: bandit -q -c bandit.yaml -r routes services main.py config.py
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            app/frontend/package-lock.json
+            app/mobile/package-lock.json
+      # Root is dev-tooling only (no production npm deps); include devDependencies so transitive issues (e.g. tunnelmole → multer) are visible.
+      - name: npm audit (repo root)
+        run: npm ci && npm audit --audit-level=moderate
+      - name: npm audit (frontend)
+        working-directory: app/frontend
+        run: npm ci && npm audit --omit=dev --audit-level=moderate
+      - name: npm audit (mobile)
+        working-directory: app/mobile
+        run: npm ci && npm audit --omit=dev --audit-level=moderate
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so gitleaks can resolve PR/base commit ranges (avoids "unknown revision").
+          fetch-depth: 0
+      # Ensure other branch tips exist locally so `event.before` and its parent resolve on push.
+      - name: Fetch remote branches for gitleaks
+        run: |
+          git fetch --no-tags --prune origin "+refs/heads/*:refs/remotes/origin/*" || true
+      # Push events compare `before^..after`; fetch `before` when it is not on the current branch tip (force-push / multi-branch).
+      - name: Fetch push base SHA for gitleaks
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: |
+          git fetch --no-tags --depth=500 origin "${{ github.event.before }}" || true
+          git cat-file -e "${{ github.event.before }}^{commit}" 2>/dev/null || git fetch --no-tags origin "${{ github.sha }}" "${{ github.event.before }}" || true
+      # Pinned to v2.3.9 commit (supply-chain policy: full SHA, not floating @v2).
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Required for gitleaks-action on GitHub org-owned repos (see gitleaks-action README)
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  predeploy-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python scripts/predeploy_smoke.py
+
+  mobile-typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npx tsc --noEmit

@@ -1,0 +1,126 @@
+# OTA on GitHub: only EXPO_TOKEN is required in repo secrets (renew if you see
+# "bearer token is invalid" — https://expo.dev/accounts/snaproad/settings/access-tokens ).
+# We run `eas env:pull production` to sync Expo → Environment variables (production)
+# into app/mobile/.env, then source it for the bundler.
+# Optional: repository secret EXPO_PUBLIC_MAPBOX_TOKEN overrides the pulled Mapbox token.
+# EXPO_PUBLIC_NAV_LOGIC_DEBUG is exported after sourcing .env so the OTA JS bundle inlines it
+# (no native rebuild). Toggle in this workflow or app/mobile/eas.json.
+# https://docs.expo.dev/eas/environment-variables/
+name: EAS Update
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "What changed (shown in Expo Updates)"
+        required: false
+        default: "Manual OTA publish"
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: eas-update-production
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+
+      - name: Verify EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::GitHub Actions secret EXPO_TOKEN is missing. Add it: Repo Settings → Secrets and variables → Actions → New repository secret. Create a token at https://expo.dev/accounts/snaproad/settings/access-tokens"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: cd app/mobile && npm ci
+
+      - name: Validate EXPO_TOKEN with Expo (fail fast if expired or revoked)
+        working-directory: app/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if ! npx eas-cli whoami >/tmp/eas-whoami.txt 2>&1; then
+            cat /tmp/eas-whoami.txt
+            echo "::error::EXPO_TOKEN is invalid or expired (bearer token invalid). Create a new token at https://expo.dev/accounts/snaproad/settings/access-tokens and update the EXPO_TOKEN repository secret."
+            exit 1
+          fi
+          echo "Expo auth OK: $(cat /tmp/eas-whoami.txt)"
+
+      - name: Pull Expo production env (Mapbox, Supabase, etc.)
+        working-directory: app/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli env:pull production --non-interactive --path .env
+          if [ ! -f .env ]; then
+            echo "::error::eas env:pull did not create .env. Check EXPO_TOKEN and EAS project access."
+            exit 1
+          fi
+          if ! grep -q '^EXPO_PUBLIC_MAPBOX_TOKEN=' .env; then
+            echo "::error::EXPO_PUBLIC_MAPBOX_TOKEN is missing from Expo → Environment variables → production. Add the Mapbox public (pk.) token there (Plain text or Sensitive), then re-run."
+            exit 1
+          fi
+
+      - name: EAS Update (production iOS)
+        working-directory: app/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_NO_VCS: "1"
+          EAS_PROJECT_ROOT: ${{ github.workspace }}/app/mobile
+          CI: "1"
+          APP_ENV: production
+          EXPO_PUBLIC_API_URL: https://api.snaproad.app
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+          UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
+        run: |
+          set -a
+          [ -f .env ] && . ./.env
+          set +a
+          if [ -n "${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}" ]; then
+            export EXPO_PUBLIC_MAPBOX_TOKEN="${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}"
+          fi
+          SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
+          if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
+          npx eas-cli update --channel production --environment production --platform ios --non-interactive --message "${SAFE_MSG}-ios"
+
+      - name: EAS Update (production Android)
+        working-directory: app/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_NO_VCS: "1"
+          EAS_PROJECT_ROOT: ${{ github.workspace }}/app/mobile
+          CI: "1"
+          APP_ENV: production
+          EXPO_PUBLIC_API_URL: https://api.snaproad.app
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+          UPDATE_MSG: ${{ github.event.head_commit.message || github.event.inputs.message || format('OTA {0}', github.sha) }}
+        run: |
+          set -a
+          [ -f .env ] && . ./.env
+          set +a
+          if [ -n "${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}" ]; then
+            export EXPO_PUBLIC_MAPBOX_TOKEN="${{ secrets.EXPO_PUBLIC_MAPBOX_TOKEN }}"
+          fi
+          export EXPO_PUBLIC_NAV_LOGIC_DEBUG=1
+          SAFE_MSG="$(printf '%s' "$UPDATE_MSG" | tr '\r\n' '  ' | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-120)"
+          if [ -z "$SAFE_MSG" ]; then SAFE_MSG="ota-${GITHUB_SHA}"; fi
+          npx eas-cli update --channel production --environment production --platform android --non-interactive --message "${SAFE_MSG}-android"

@@ -1,0 +1,36 @@
+# Manual / scheduled API smoke + light load. Requires a reachable BASE_URL (staging recommended).
+name: Load test (k6)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: API origin (no trailing slash), e.g. https://api.yourdomain.com
+        required: true
+        type: string
+      vus:
+        description: Concurrent VUs
+        required: false
+        default: "15"
+      duration:
+        description: Run duration (k6 syntax), e.g. 2m
+        required: false
+        default: "1m"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Run k6
+        run: |
+          k6 run loadtests/k6/api-smoke.js \
+            -e BASE_URL="${{ github.event.inputs.base_url }}" \
+            -e VUS="${{ github.event.inputs.vus }}" \
+            -e DURATION="${{ github.event.inputs.duration }}"

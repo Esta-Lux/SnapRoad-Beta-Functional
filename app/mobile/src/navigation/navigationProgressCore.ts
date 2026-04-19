@@ -1,0 +1,452 @@
+import {
+  cumulativeRouteMeters,
+  snapToRoute,
+  snapToRouteFullRoute,
+  splitRouteAtSnap,
+  sliceRouteWindow,
+  bearingDegrees,
+} from './navGeometry';
+import type { NavigationProgress, RawLocation, RoutePoint, NavStep, SnapPoint } from './navModel';
+import { buildNavBanner } from './navBanner';
+import { effectiveMaxSnapMeters, type OffRouteTuning } from './offRouteTuning';
+import { remainingDurationSecondsFromNavSteps } from './navigationEta';
+import { remainingDurationSecondsFromEdges } from './navigationEtaEdges';
+import { blendModelWithObservedEta } from './etaObservedBlend';
+import { DEFAULT_PROGRESS_TUNING, type ProgressTuning } from './navModeProfile';
+import { segmentAndTFromCumAlongPolyline } from '../utils/distance';
+
+/**
+ * Skip depart / plain continue-without-lanes so the banner matches the next real turn
+ * (same idea as {@link routeGeometry.isActionableGuidanceStep} on DirectionsStep).
+ */
+export function isNavStepActionableForBanner(s: NavStep): boolean {
+  if (s.kind === 'depart') return false;
+  if (s.kind === 'arrive') return true;
+  if (s.kind === 'notification') return false;
+  if (s.kind === 'continue' || s.kind === 'straight') {
+    return (s.lanes?.length ?? 0) > 0;
+  }
+  return true;
+}
+
+/**
+ * Next maneuver step: the step whose segment still contains the snap point, then skip
+ * non-actionable steps (depart). Matches polyline / map geometry.
+ *
+ * The previous logic (`distanceMetersFromStart > snap`) picked the *following* step while the
+ * user was still inside the current step — one step ahead, which flipped left/right vs the route.
+ */
+export function pickNextNavStepAlongRoute(steps: NavStep[], snapCumulativeMeters: number): NavStep | null {
+  if (!steps.length) return null;
+  const snap = Math.max(0, snapCumulativeMeters);
+  const idx = steps.findIndex((s) => {
+    const end = s.distanceMetersFromStart + (s.distanceMeters ?? 0);
+    return snap < end;
+  });
+  if (idx === -1) {
+    const arrive = steps.find((s) => s.kind === 'arrive');
+    return arrive ?? steps[steps.length - 1] ?? null;
+  }
+  let j = idx;
+  while (j < steps.length && !isNavStepActionableForBanner(steps[j]!)) j++;
+  return steps[j] ?? null;
+}
+
+export type ComputeNavigationProgressArgs = {
+  rawLocation: RawLocation;
+  route: RoutePoint[];
+  steps: NavStep[];
+  routeDurationSeconds: number;
+  /** Mapbox route `distance` (meters); aligns polyline snap with step boundaries for ETA. */
+  routeDistanceMeters: number;
+  offRouteTuning: OffRouteTuning;
+  /** Prior frame for smoothing / segment continuity; null on first tick. */
+  previous: NavigationProgress | null;
+  /** Per-edge duration (seconds), length = route points - 1, when edge ETA is enabled. */
+  edgeDurationSec?: number[] | null;
+  useEdgeEta?: boolean;
+  etaBlend?: {
+    enabled: boolean;
+    modelRefreshedAtMs: number;
+    speedStability01: number;
+  };
+  /**
+   * When true, also compute a whole-polyline snap; adopt it if it reduces perpendicular distance
+   * to the route by at least ~12m vs the local window snap.
+   */
+  tryGlobalReanchor?: boolean;
+  /** Driving-mode puck / snap tuning; defaults preserve legacy single-curve behavior. */
+  progressTuning?: ProgressTuning;
+};
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function headingBlend(current: number, target: number, alpha: number) {
+  let delta = ((target - current + 540) % 360) - 180;
+  return (current + delta * alpha + 360) % 360;
+}
+
+function confidenceFrom(raw: RawLocation, distanceToRoute: number) {
+  let c = 1;
+  const acc = raw.accuracy ?? 999;
+  if (acc > 12) c -= 0.08;
+  if (acc > 20) c -= 0.12;
+  if (acc > 35) c -= 0.18;
+  if (distanceToRoute > 10) c -= 0.08;
+  if (distanceToRoute > 20) c -= 0.15;
+  if (distanceToRoute > 35) c -= 0.2;
+  return clamp(c, 0, 1);
+}
+
+function bearingFallback(route: RoutePoint[], segmentIndex: number) {
+  const i = Math.max(0, Math.min(segmentIndex, route.length - 2));
+  return bearingDegrees(route[i]!, route[i + 1]!);
+}
+
+/** Point along the polyline at `targetCum` meters from the start (linear per segment). */
+function coordinateAtCumulative(
+  route: RoutePoint[],
+  cumulative: number[],
+  targetCum: number,
+): RoutePoint | null {
+  if (route.length < 2 || cumulative.length < 2) return null;
+  const lastCum = cumulative[cumulative.length - 1] ?? 0;
+  if (targetCum >= lastCum - 1e-6) {
+    const end = route[route.length - 1]!;
+    return { lat: end.lat, lng: end.lng };
+  }
+  for (let i = 0; i < cumulative.length - 1; i++) {
+    const segStart = cumulative[i]!;
+    const segEnd = cumulative[i + 1]!;
+    if (targetCum >= segStart - 1e-6 && targetCum <= segEnd + 1e-6) {
+      const segLen = segEnd - segStart;
+      const t = segLen > 0.01 ? (targetCum - segStart) / segLen : 0;
+      return {
+        lat: route[i]!.lat + t * (route[i + 1]!.lat - route[i]!.lat),
+        lng: route[i]!.lng + t * (route[i + 1]!.lng - route[i]!.lng),
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Pure navigation progress for one GPS tick (`useNavigationProgress` is a thin ref holder).
+ * Returns `null` if snap fails — caller should retain `previous`.
+ */
+export function computeNavigationProgressFrame({
+  rawLocation,
+  route,
+  steps,
+  routeDurationSeconds,
+  routeDistanceMeters,
+  offRouteTuning,
+  previous,
+  edgeDurationSec,
+  useEdgeEta,
+  etaBlend,
+  tryGlobalReanchor = false,
+  progressTuning = DEFAULT_PROGRESS_TUNING,
+}: ComputeNavigationProgressArgs): NavigationProgress | null {
+  const cumulative = cumulativeRouteMeters(route);
+  const prevSegment = previous?.snapped?.segmentIndex ?? 0;
+  /** Wider window reduces wrong-edge snaps on sharp corners before global re-anchor kicks in. */
+  let snap = snapToRoute(
+    rawLocation,
+    route,
+    cumulative,
+    prevSegment,
+    progressTuning.snapLookaheadSegments,
+  );
+  if (!snap) return null;
+
+  if (tryGlobalReanchor) {
+    const globalSnap = snapToRouteFullRoute(rawLocation, route, cumulative);
+    const REANCHOR_IMPROVE_M = 12;
+    if (
+      globalSnap &&
+      globalSnap.distanceMeters < snap.distanceMeters - REANCHOR_IMPROVE_M
+    ) {
+      snap = globalSnap;
+    }
+  }
+
+  const speed = rawLocation.speedMps ?? 0;
+  const confidence = confidenceFrom(rawLocation, snap.distanceMeters);
+  const maxSnapEffective = effectiveMaxSnapMeters(
+    offRouteTuning,
+    speed,
+    rawLocation.accuracy ?? null,
+  );
+  const corridorOff =
+    snap.distanceMeters > maxSnapEffective && confidence < offRouteTuning.minConfidence;
+  /** Beyond ~32% past the snap corridor, always off-route (avoids rare stuck “on route” when confidence stays high). */
+  const catastrophicOff = snap.distanceMeters > maxSnapEffective * 1.32;
+  const isOffRoute = corridorOff || catastrophicOff;
+
+  const snapTarget = isOffRoute
+    ? rawLocation
+    : {
+        ...rawLocation,
+        lat: snap.point.lat,
+        lng: snap.point.lng,
+      };
+
+  let biasedTarget: RawLocation = snapTarget;
+  if (!isOffRoute && speed > 3) {
+    const leadM = Math.min(
+      progressTuning.leadCapMeters,
+      speed * 0.3 * progressTuning.leadScale,
+    );
+    const advancedCum = snap.cumulativeMeters + leadM;
+    const totalRouteLen = cumulative[cumulative.length - 1] ?? 0;
+    if (advancedCum < totalRouteLen - 1e-3) {
+      const advanced = coordinateAtCumulative(route, cumulative, advancedCum);
+      if (advanced) {
+        biasedTarget = {
+          ...rawLocation,
+          lat: advanced.lat,
+          lng: advanced.lng,
+        };
+      }
+    }
+  }
+
+  const prevDisplay = previous?.displayCoord ?? rawLocation;
+
+  /**
+   * Display-coordinate EMA.
+   *
+   * `useLocation` already applies adaptive EMA + outlier rejection to the raw GPS.
+   * When the snap is close to the route (< 15 m) the incoming location is high-quality
+   * and only needs a light pass-through alpha (0.75–0.95 depending on speed) so the
+   * puck doesn't double-lag.  The heavier smoothing curve is retained only when the
+   * user is far from the polyline (poor snap / off-route approach) where raw location
+   * is less trustworthy.
+   */
+  let alpha: number;
+  if (!isOffRoute && snap.distanceMeters < 15) {
+    /* On-route, good snap → near pass-through (useLocation already smoothed). */
+    alpha = clamp(0.75 + speed / 100, 0.75, 0.95);
+  } else {
+    /* Far from route or off-route → heavier smoothing on display coord. */
+    if (speed < 1) {
+      alpha = 0.1;
+    } else if (speed < 4) {
+      alpha = 0.18;
+    } else if (speed < 8) {
+      alpha = 0.3;
+    } else if (speed < 14) {
+      alpha = 0.45;
+    } else if (speed < 22) {
+      alpha = 0.6;
+    } else if (speed < 30) {
+      alpha = 0.72;
+    } else {
+      alpha = 0.85;
+    }
+
+    if (snap.distanceMeters > 18) alpha = Math.min(0.88, alpha + 0.1);
+    if (snap.distanceMeters > 38) alpha = Math.min(0.92, alpha + 0.06);
+  }
+
+  alpha = alpha + progressTuning.alphaOffset;
+  alpha = Math.max(0.06, Math.min(0.95, alpha));
+
+  const displayCoord: RawLocation = {
+    lat: prevDisplay.lat + (biasedTarget.lat - prevDisplay.lat) * alpha,
+    lng: prevDisplay.lng + (biasedTarget.lng - prevDisplay.lng) * alpha,
+    speedMps: rawLocation.speedMps ?? prevDisplay.speedMps ?? 0,
+    accuracy: rawLocation.accuracy ?? prevDisplay.accuracy ?? null,
+    timestamp: rawLocation.timestamp ?? Date.now(),
+    heading: undefined,
+  };
+
+  const targetHeading =
+    typeof rawLocation.heading === 'number' && Number.isFinite(rawLocation.heading)
+      ? rawLocation.heading
+      : bearingFallback(route, snap.segmentIndex);
+  const prevHeading = previous?.displayCoord?.heading ?? targetHeading ?? 0;
+
+  /*
+   * Heading dead zone: suppress small bearing changes (< 3°) to prevent camera
+   * spin / wobble from GPS course noise at moderate-to-low speed.  At highway
+   * speed the threshold narrows to let the camera track gentle lane changes.
+   */
+  const headingDeadZone = speed < 8 ? 3 : speed < 20 ? 2 : 1;
+  const headingDelta = ((targetHeading - prevHeading + 540) % 360) - 180;
+  const headingAlpha =
+    speed < 2 ? 0.1 : speed < 6 ? 0.15 : speed < 14 ? 0.22 : speed < 22 ? 0.3 : 0.38;
+  displayCoord.heading =
+    Math.abs(headingDelta) < headingDeadZone
+      ? prevHeading
+      : headingBlend(prevHeading, targetHeading ?? prevHeading, headingAlpha);
+
+  /** Puck tracks the road immediately; heading matches the smoothed beam used for navigation UI. */
+  const puckCoord: RawLocation = {
+    lat: biasedTarget.lat,
+    lng: biasedTarget.lng,
+    speedMps: rawLocation.speedMps ?? displayCoord.speedMps ?? 0,
+    accuracy: rawLocation.accuracy ?? displayCoord.accuracy ?? null,
+    timestamp: rawLocation.timestamp ?? Date.now(),
+    heading: displayCoord.heading,
+  };
+
+  /**
+   * Route-line split: use the biased (lead-ahead) cumulative position so the
+   * "traveled" line matches where the puck is drawn, not the raw snap point.
+   * This fixes the visual bug where the green traveled line lags behind the puck.
+   */
+  const routeEndCum = cumulative[cumulative.length - 1] ?? snap.cumulativeMeters;
+  const leadAheadMeters = !isOffRoute && speed > 3
+    ? Math.min(progressTuning.leadCapMeters, speed * 0.3 * progressTuning.leadScale)
+    : 0;
+  const biasedCum = Math.min(snap.cumulativeMeters + leadAheadMeters, routeEndCum);
+  const splitPos = segmentAndTFromCumAlongPolyline(biasedCum, route);
+  const splitPoint = coordinateAtCumulative(route, cumulative, biasedCum);
+  const displaySnapForSplit: SnapPoint =
+    splitPos && splitPoint
+      ? {
+          point: splitPoint,
+          segmentIndex: splitPos.segmentIndex,
+          t: splitPos.tOnSegment,
+          distanceMeters: snap.distanceMeters,
+          cumulativeMeters: biasedCum,
+        }
+      : { ...snap, cumulativeMeters: biasedCum };
+  const { traveled, remaining } = splitRouteAtSnap(route, displaySnapForSplit);
+  const routeTotalMeters = cumulative[cumulative.length - 1] ?? 0;
+  const progressCumForUi = isOffRoute ? snap.cumulativeMeters : displaySnapForSplit.cumulativeMeters;
+  const distanceRemainingMeters = Math.max(0, routeTotalMeters - progressCumForUi);
+  let modelDurationRemainingSeconds = remainingDurationSecondsFromNavSteps({
+    snapCumulativeMetersAlongPolyline: progressCumForUi,
+    polylineTotalMeters: routeTotalMeters,
+    routeDistanceMetersApi: routeDistanceMeters > 1 ? routeDistanceMeters : routeTotalMeters,
+    steps,
+    routeDurationSecondsFallback: routeDurationSeconds,
+  });
+
+  const edgeDur = edgeDurationSec;
+  const edgeOk =
+    Boolean(useEdgeEta) &&
+    Array.isArray(edgeDur) &&
+    edgeDur.length === route.length - 1 &&
+    edgeDur.some((x) => x > 0);
+  if (edgeOk) {
+    modelDurationRemainingSeconds = remainingDurationSecondsFromEdges({
+      snapCumulativeMetersAlongPolyline: progressCumForUi,
+      cumulativeVertexMeters: cumulative,
+      edgeDurationSec: edgeDur!,
+    });
+  }
+
+  let durationRemainingSeconds = modelDurationRemainingSeconds;
+  let etaBlendWeight: number | undefined;
+  let etaNaiveSeconds: number | undefined;
+
+  if (etaBlend?.enabled && typeof etaBlend.modelRefreshedAtMs === 'number') {
+    const nowTs = typeof rawLocation.timestamp === 'number' ? rawLocation.timestamp : Date.now();
+    const prevTs = previous?.displayCoord?.timestamp;
+    const dtMs =
+      typeof prevTs === 'number' && Number.isFinite(prevTs)
+        ? Math.max(80, Math.min(6000, nowTs - prevTs))
+        : 1000;
+    const blended = blendModelWithObservedEta({
+      modelRemainingSec: modelDurationRemainingSeconds,
+      distanceRemainingM: distanceRemainingMeters,
+      smoothedSpeedMps: Math.max(0, rawLocation.speedMps ?? 0),
+      confidence,
+      msSinceModelRefresh: Math.max(0, nowTs - etaBlend.modelRefreshedAtMs),
+      speedStability01: Math.max(0, Math.min(1, etaBlend.speedStability01)),
+      prevBlendedSec: previous?.durationRemainingSeconds ?? null,
+      dtMs,
+    });
+    durationRemainingSeconds = blended.blendedSec;
+    etaBlendWeight = blended.weightModel;
+    etaNaiveSeconds = blended.naiveSec;
+  }
+
+  /* ── ETA smoothing + monotonicity ──────────────────────────────────────
+   * Smooth with light EMA (α 0.3) so step-boundary recalculations and
+   * small traffic updates don't cause the ETA to visibly jump.
+   *
+   * Monotonicity constraint: for non-reroute updates the ETA should not
+   * increase by more than the wall-clock time elapsed since the previous
+   * frame.  This prevents "ETA going up while driving" glitches.  Cap the
+   * maximum single-frame change at ±30 s.
+   */
+  const ETA_EMA_ALPHA = 0.3;
+  const ETA_MAX_CHANGE_SEC = 30;
+  if (previous != null && typeof previous.durationRemainingSeconds === 'number' && !isOffRoute) {
+    const prevEta = previous.durationRemainingSeconds;
+    const nowTs = typeof rawLocation.timestamp === 'number' ? rawLocation.timestamp : Date.now();
+    const prevTs = previous.displayCoord?.timestamp;
+    const elapsedSec =
+      typeof prevTs === 'number' && Number.isFinite(prevTs)
+        ? Math.max(0, (nowTs - prevTs) / 1000)
+        : 1;
+
+    // EMA
+    let smoothed = prevEta * (1 - ETA_EMA_ALPHA) + durationRemainingSeconds * ETA_EMA_ALPHA;
+
+    // Monotonicity: don't increase by more than elapsed time
+    const maxAllowedIncrease = elapsedSec;
+    if (smoothed > prevEta + maxAllowedIncrease) {
+      smoothed = prevEta + maxAllowedIncrease;
+    }
+
+    // Cap large jumps
+    const delta = smoothed - prevEta;
+    if (Math.abs(delta) > ETA_MAX_CHANGE_SEC) {
+      smoothed = prevEta + Math.sign(delta) * ETA_MAX_CHANGE_SEC;
+    }
+
+    durationRemainingSeconds = Math.max(0, smoothed);
+  }
+
+  const etaEpochMs = Date.now() + durationRemainingSeconds * 1000;
+
+  const nextStepRaw = pickNextNavStepAlongRoute(steps, progressCumForUi);
+  const nextStepDistanceMeters = nextStepRaw
+    ? Math.max(0, nextStepRaw.distanceMetersFromStart - progressCumForUi)
+    : 0;
+  const nextStep = nextStepRaw
+    ? { ...nextStepRaw, distanceMetersToNext: nextStepDistanceMeters }
+    : null;
+  const followingStepRaw =
+    nextStepRaw != null && nextStepRaw.index + 1 < steps.length
+      ? steps[nextStepRaw.index + 1] ?? null
+      : null;
+
+  const maneuverRoute = nextStep
+    ? sliceRouteWindow(route, Math.max(snap.segmentIndex, nextStep.segmentIndex - 1), 5)
+    : sliceRouteWindow(route, snap.segmentIndex, 5);
+
+  const banner = buildNavBanner(nextStep, followingStepRaw, nextStepDistanceMeters);
+
+  return {
+    displayCoord,
+    puckCoord,
+    snapped: snap,
+    routeSplitSnap: displaySnapForSplit,
+    traveledRoute: traveled,
+    remainingRoute: remaining,
+    maneuverRoute,
+    nextStep,
+    followingStep: followingStepRaw,
+    nextStepDistanceMeters,
+    banner,
+    distanceRemainingMeters,
+    modelDurationRemainingSeconds,
+    durationRemainingSeconds,
+    etaEpochMs,
+    etaBlendWeight,
+    etaNaiveSeconds,
+    isOffRoute,
+    confidence,
+    instructionSource: 'js',
+    displayCumulativeMeters: biasedCum,
+  };
+}

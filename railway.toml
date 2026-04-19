@@ -1,0 +1,17 @@
+# Railway: use Docker so the monorepo is not mis-detected as a pure Node app by Railpack.
+# Service root directory should stay the repo root (default) so paths in Dockerfile match.
+# Variables (production): CORS_ORIGINS, CHECKOUT_ALLOWED_ORIGINS, JWT_SECRET, SUPABASE_*, NVIDIA_*/OPENAI_*, etc.
+# Example: CORS_ORIGINS=https://app.snaproad.app
+# Example: CHECKOUT_ALLOWED_ORIGINS=https://app.snaproad.app/driver
+#
+# startCommand forces a real shell so PORT expands. If the dashboard has
+# `uvicorn ... --port $PORT`, Railway runs it WITHOUT sh and uvicorn gets the literal "$PORT".
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "/docker-entrypoint.sh"
+healthcheckPath = "/health"
+healthcheckTimeout = 30

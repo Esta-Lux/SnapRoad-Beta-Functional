@@ -1,0 +1,69 @@
+diff --git a/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXStyle.swift b/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXStyle.swift
+index 20e3620..3fdf143 100644
+--- a/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXStyle.swift
++++ b/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXStyle.swift
+@@ -1167,11 +1167,7 @@ func setFillPattern(_ layer: inout FillLayer, styleValue: RNMBXStyleValue)
+ 
+ func setFillPatternCrossFade(_ layer: inout FillLayer, styleValue: RNMBXStyleValue)
+ {
+-      
+-        
+-          layer.fillPatternCrossFade = styleValue.mglStyleValueNumber();
+-        
+-      
++  // MapboxMaps 11.11.0 (pinned for expo-mapbox-navigation xcframeworks): no fillPatternCrossFade on FillLayer.
+ }
+ 
+ func setFillEmissiveStrength(_ layer: inout FillLayer, styleValue: RNMBXStyleValue)
+@@ -1440,11 +1436,7 @@ func setLineCrossSlope(_ layer: inout LineLayer, styleValue: RNMBXStyleValue)
+ 
+ func setLinePatternCrossFade(_ layer: inout LineLayer, styleValue: RNMBXStyleValue)
+ {
+-      
+-        
+-          layer.linePatternCrossFade = styleValue.mglStyleValueNumber();
+-        
+-      
++  // MapboxMaps 11.11.0: no linePatternCrossFade on LineLayer.
+ }
+ 
+ func setLineTrimFadeRange(_ layer: inout LineLayer, styleValue: RNMBXStyleValue)
+@@ -2323,11 +2315,7 @@ func setCircleStrokeOpacityTransition(_ layer: inout CircleLayer, styleValue: RN
+ 
+ func setCircleElevationReference(_ layer: inout CircleLayer, styleValue: RNMBXStyleValue)
+ {
+-      
+-        
+-          layer.circleElevationReference = styleValue.mglStyleValueEnum();
+-        
+-      
++  // MapboxMaps 11.11.0: no circleElevationReference on CircleLayer.
+ }
+ 
+ func setCircleEmissiveStrength(_ layer: inout CircleLayer, styleValue: RNMBXStyleValue)
+@@ -2563,11 +2551,7 @@ func setFillExtrusionRoundedRoof(_ layer: inout FillExtrusionLayer, styleValue:
+ 
+ func setFillExtrusionPatternCrossFade(_ layer: inout FillExtrusionLayer, styleValue: RNMBXStyleValue)
+ {
+-      
+-        
+-          layer.fillExtrusionPatternCrossFade = styleValue.mglStyleValueNumber();
+-        
+-      
++  // MapboxMaps 11.11.0: no fillExtrusionPatternCrossFade on FillExtrusionLayer.
+ }
+ 
+ func setFillExtrusionHeightAlignment(_ layer: inout FillExtrusionLayer, styleValue: RNMBXStyleValue)
+@@ -3099,11 +3083,7 @@ func setHillshadeAccentColorTransition(_ layer: inout HillshadeLayer, styleValue
+ 
+ func setModelAllowDensityReduction(_ layer: inout ModelLayer, styleValue: RNMBXStyleValue)
+ {
+-      
+-        
+-          layer.modelAllowDensityReduction = styleValue.mglStyleValueBoolean();
+-        
+-      
++  // MapboxMaps 11.11.0: no modelAllowDensityReduction on ModelLayer.
+ }
+ 
+ func setModelStyleLayerVisibility(_ layer: inout ModelLayer, styleValue: RNMBXStyleValue)
