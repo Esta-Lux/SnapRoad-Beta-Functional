@@ -48,7 +48,7 @@ index 54702f8..cb5bb6c 100644
    }
  }
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt b/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
-index 4e667fa..e72c1fb 100644
+index 4e667fa..e4ec3a0 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
 +++ b/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
 @@ -3,7 +3,10 @@ package expo.modules.mapboxnavigation
@@ -416,7 +416,7 @@ index 4e667fa..e72c1fb 100644
      }
  
      @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
-@@ -955,14 +1020,405 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -955,14 +1020,415 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
      @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
      fun setFollowingZoom(followingZoom: Double?) {
          currentFollowingZoom = followingZoom
@@ -486,9 +486,19 @@ index 4e667fa..e72c1fb 100644
 +            val stepProg = leg.currentStepProgress
 +            m["distanceToNextManeuverMeters"] = stepProg.distanceRemaining
 +            val maneuvers = filterSnapRoadCameraNoiseManeuvers(maneuverApi.getManeuvers(routeProgress))
-+            val primary = maneuvers.firstOrNull()?.primary
++            val first = maneuvers.firstOrNull()
++            val primary = first?.primary
 +            primary?.text?.let { m["primaryInstruction"] = it }
 +            primary?.maneuverType?.let { m["maneuverType"] = it }
++            primary?.modifier?.let { m["maneuverDirection"] = it }
++            first?.secondary?.text?.let { m["secondaryInstruction"] = it }
++            // Upcoming maneuver primary = "then" row on the banner. Fall back to the
++            // sub-banner of the current maneuver if upcoming isn't ready yet.
++            maneuvers.getOrNull(1)?.primary?.text?.let { m["thenInstruction"] = it }
++            if (m["thenInstruction"] == null) {
++                first?.sub?.text?.let { m["thenInstruction"] = it }
++            }
++            stepProg.step?.instruction()?.let { m["currentStepInstruction"] = it }
 +        } catch (_: Throwable) {
 +            // optional enrichment — keep core progress fields
 +        }
@@ -824,7 +834,7 @@ index 4e667fa..e72c1fb 100644
      fun addCustomRasterLayer() {
          val style = mapboxMap.getStyle() ?: return
  
-@@ -1009,11 +1465,17 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -1009,11 +1475,17 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                  mapboxStyle = style
                  style.localizeLabels(currentLocale)
                  addCustomRasterLayer()

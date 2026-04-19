@@ -137,6 +137,12 @@ import {
 import { directionsStepFromSdkProgress } from '../navigation/navSdkUiAdapter';
 import type { SdkLocationPayload, SdkProgressPayload } from '../navigation/navSdkStore';
 import { polylineFromSdkRoutes, type SdkRoutesNative } from '../navigation/navSdkGeometry';
+import {
+  isSdkBannerAuthoritative,
+  isSdkPuckAuthoritative,
+  isSdkRouteAuthoritative,
+} from '../navigation/navSdkAuthority';
+import NavSdkPuck from '../components/map/NavSdkPuck';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import { routeProfileForPlatform } from '../hooks/useNativeNavBridge';
 import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
@@ -578,6 +584,19 @@ export default function MapScreen() {
   /** During nav: fused coord for puck/camera (`navigationProgressCoord` → snapped display when JS on-route). */
   const navDisplayCoord = nav.isNavigating ? nav.navigationProgressCoord : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
+
+  /**
+   * Single-authority predicates for the three UI surfaces the native Mapbox Navigation
+   * SDK owns during a hybrid trip: puck, route polyline, and turn banner. They flip on
+   * only after the corresponding native payload has landed (matched location, route
+   * geometry, banner text) so the UI never shows a half-native / half-JS frame during
+   * the first ~150 ms of a trip. Re-subscribing is free — `useDriveNavigation` already
+   * calls `useSyncExternalStore(subscribeNavSdk, …)`, so every store emit re-renders
+   * MapScreen with fresh values.
+   */
+  const sdkPuckOwns = nav.isNavigating && isSdkPuckAuthoritative();
+  const sdkRouteOwns = nav.isNavigating && isSdkRouteAuthoritative();
+  const sdkBannerOwns = nav.isNavigating && isSdkBannerAuthoritative();
 
   /** Passed / ahead route styling while navigating — same snap as turn/ETA (`navigationProgress`). */
   const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
@@ -2934,7 +2953,18 @@ export default function MapScreen() {
           onTouchStart={handleMapTouch}
           onPress={handleMapPress}
         >
-          {nav.isNavigating && navLogicSdkEnabled() && nav.sdkNavLocation ? (
+          {/*
+            Location provider strategy (AGENTS.md single-authority rule):
+              - SDK puck authority → we render `NavSdkPuck` (below, after other markers)
+                from `navSdkStore.location` directly; the default `LocationPuck` is
+                hidden (visible={false}) and we skip `CustomLocationProvider` so the
+                camera continues to follow our custom location feed via the same
+                coordinate source.
+              - JS-only navigation → feed the default puck via `CustomLocationProvider`
+                with the snap-blended coord/heading.
+              - Explore (not navigating) → default Mapbox GPS.
+          */}
+          {sdkPuckOwns && nav.sdkNavLocation ? (
             <MapboxGL.CustomLocationProvider
               coordinate={[nav.sdkNavLocation.longitude, nav.sdkNavLocation.latitude]}
               heading={nav.sdkNavLocation.course >= 0 ? nav.sdkNavLocation.course : heading}
@@ -3091,15 +3121,31 @@ export default function MapScreen() {
             });
           })()}
 
-          {nav.navigationData?.polyline && (
+          {/*
+            Route-line authority:
+              - SDK route authority (`sdkRouteOwns`) → only render when native
+                geometry has landed; never fall back to `navigationData.polyline`
+                because that's stale JS Directions geometry from route preview
+                (pre-trip) that will not reflect native reroutes.
+              - Otherwise → use the SDK-derived polyline from `navigationProgress`
+                when present (headless SDK in the waiting window), else the JS
+                Directions polyline (JS-only trips / preview).
+            See `docs/NATIVE_NAVIGATION.md#single-authority-matrix`.
+          */}
+          {nav.navigationData?.polyline && (() => {
+            const sdkPolyline =
+              nav.navigationProgress?.routePolyline?.length &&
+              nav.navigationProgress.routePolyline.length >= 2
+                ? nav.navigationProgress.routePolyline
+                : null;
+            if (sdkRouteOwns && !sdkPolyline) return null;
+            const polylineToRender = sdkRouteOwns
+              ? sdkPolyline!
+              : sdkPolyline ?? nav.navigationData.polyline;
+            return (
             <RouteOverlay
-              key={`route-${nav.routeModelRefreshKey}-${nav.navigationData.polyline.length}`}
-              polyline={
-                nav.navigationProgress?.routePolyline?.length &&
-                nav.navigationProgress.routePolyline.length >= 2
-                  ? nav.navigationProgress.routePolyline
-                  : nav.navigationData.polyline
-              }
+              key={`route-${nav.routeModelRefreshKey}-${polylineToRender.length}-${sdkRouteOwns ? 'sdk' : 'js'}`}
+              polyline={polylineToRender}
               isNavigating={nav.isNavigating}
               routeSplit={navigationRouteSplit}
               routeColor={navRouteColors.routeColor}
@@ -3115,7 +3161,8 @@ export default function MapScreen() {
               isRerouting={nav.isRerouting}
               belowLayerID={buildingsBelowLayerId}
             />
-          )}
+            );
+          })()}
 
           {!nav.isNavigating && (
             <OfferMarkers offers={recommendedNearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
@@ -3172,14 +3219,28 @@ export default function MapScreen() {
             </MapboxGL.MarkerView>
           )}
 
+          {/*
+            Two pucks must never be on screen at once. When the native SDK owns the
+            puck we hide the default `LocationPuck` (which reads raw device GPS and
+            would visibly fight the matched-location snap) and render `NavSdkPuck`
+            below, fed directly from `navSdkStore.location`.
+          */}
           <MapboxGL.LocationPuck
-            visible
+            visible={!sdkPuckOwns}
             androidRenderMode="normal"
             puckBearingEnabled
             puckBearing={locationPuckBearing}
             pulsing={{ isEnabled: !nav.isNavigating }}
             scale={1.55}
           />
+          {sdkPuckOwns && nav.sdkNavLocation ? (
+            <NavSdkPuck
+              lng={nav.sdkNavLocation.longitude}
+              lat={nav.sdkNavLocation.latitude}
+              course={nav.sdkNavLocation.course}
+              color={navRouteColors.routeColor}
+            />
+          ) : null}
         </MapboxGL.MapView>
       ) : (
         <View style={[s.map, s.placeholder]}>
@@ -3433,11 +3494,21 @@ export default function MapScreen() {
             ? null
             : currentStep;
         const poly = nav.navigationData?.polyline;
-        // When the progress step matches the current step, skip
-        // prog.nextStepDistanceMeters (≈ 0) and compute the polyline
-        // distance to the true upcoming maneuver instead.
-        const liveDistMeters =
-          prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep
+        // Distance-to-maneuver authority:
+        //   - When the native SDK owns the banner (`sdkBannerOwns`), trust the native
+        //     `distanceToNextManeuverMeters` verbatim — it's derived from
+        //     `stepProg.distanceRemaining` (Android) / `userDistanceToUpcomingIntersection`
+        //     (iOS) and accounts for matched-location projection. Polyline / haversine
+        //     fallbacks would silently diverge from native voice during a trip.
+        //   - JS-only trips still take the polyline path when the adapter pair
+        //     (`prog.nextStepDistanceMeters`, `nextManeuverCoord`) races with the
+        //     step index (the `nextStepIsCurrentStep` guard avoids ≈ 0 m lock-ups).
+        const liveDistMeters = sdkBannerOwns
+          ? Math.max(
+              0,
+              Number.isFinite(prog.nextStepDistanceMeters) ? prog.nextStepDistanceMeters : 0,
+            )
+          : prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep
             ? prog.nextStepDistanceMeters
             : poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
               ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
@@ -3472,22 +3543,38 @@ export default function MapScreen() {
         const distParts = formatTurnDistanceForCard(liveDistMeters);
         const destinationName = nav.navigationData?.destination?.name ?? null;
         const banner = prog?.banner ?? null;
+        // When the native SDK banner owns the copy, never fall through to the JS
+        // REST-builder path (`buildActivePrimary` / `buildPreviewPrimarySecondary`),
+        // which would resynthesise text from JS-Directions rows and contradict the
+        // native voice that just played.
         const useBannerCopy =
-          !!banner && (!!nextManeuverCoord || (instructionSrc === 'sdk' && !!prog.nextStep));
+          !!banner &&
+          (sdkBannerOwns ||
+            !!nextManeuverCoord ||
+            (instructionSrc === 'sdk' && !!prog.nextStep));
 
         let primary: string;
         let secondary: string | undefined;
         if (useBannerCopy) {
           switch (cardState) {
             case 'cruise':
-              primary =
-                nextManeuverCoord
+              // Under SDK banner authority, stay on the native primary text even on
+              // cruise frames — the adapter returns the full maneuver line, which is
+              // what the native voice just spoke. The JS `buildCruisePrimary` helper
+              // synthesises text from REST rows and can drift.
+              primary = sdkBannerOwns
+                ? banner!.primaryInstruction
+                : nextManeuverCoord
                   ? buildCruisePrimary(nextManeuverCoord, destinationName)
                   : banner!.primaryInstruction;
               secondary = undefined;
               break;
             case 'confirm':
-              primary = turnCurrentStep ? buildConfirmPrimary(turnCurrentStep) : banner!.primaryInstruction;
+              primary = sdkBannerOwns
+                ? banner!.primaryInstruction
+                : turnCurrentStep
+                  ? buildConfirmPrimary(turnCurrentStep)
+                  : banner!.primaryInstruction;
               secondary = banner!.secondaryInstruction ?? undefined;
               if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
               break;
