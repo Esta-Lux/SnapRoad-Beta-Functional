@@ -52,6 +52,13 @@ function NavSdkPuckImpl({ lng, lat, course, color = '#0A66FF' }: Props) {
       coordinate={[lng, lat]}
       anchor={{ x: 0.5, y: 0.5 }}
       allowOverlap
+      // Even though `LocationPuck` is hidden while this puck is authoritative,
+      // Mapbox's `ViewAnnotationManager` still reserves a puck collision
+      // region at the device GPS point. Without `allowOverlapWithPuck`, the
+      // SDK puck can flicker out at high pitch / near 3D landmarks while the
+      // reserved region and our matched-location point overlap. See POI
+      // markers for the same fix.
+      allowOverlapWithPuck
     >
       <View style={styles.wrap} pointerEvents="none">
         {/* Soft glow ring (outer halo, static) keeps the arrow readable on any basemap. */}

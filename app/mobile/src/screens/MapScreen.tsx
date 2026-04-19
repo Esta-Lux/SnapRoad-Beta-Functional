@@ -3219,6 +3219,12 @@ export default function MapScreen() {
                 (nav.selectedDestination?.lat ?? selectedPlace?.lat ?? 0),
               ]}
               anchor={{ x: 0.5, y: 1 }}
+              allowOverlap
+              // Keep the destination pin visible above Standard 3D buildings
+              // and landmarks at pitched nav camera angles (same workaround
+              // as POI markers — Mapbox view annotations otherwise cull near
+              // the puck's collision region on v11).
+              allowOverlapWithPuck
             >
               <View style={s.destPinWrap}>
                 <View style={s.destPin}><Ionicons name="location-sharp" size={20} color="#fff" /></View>

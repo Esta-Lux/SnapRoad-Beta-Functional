@@ -63,6 +63,12 @@ export default React.memo(function CameraMarkers({
           coordinate={[c.lng, c.lat]}
           anchor={{ x: 0.5, y: 0.5 }}
           allowOverlap
+          // Keep camera icons visible above Standard-style 3D buildings / landmarks
+          // even at high pitch. Mapbox's ViewAnnotationManager otherwise culls
+          // annotations whose projected footprint intersects the puck collision
+          // region — which happens constantly during navigation at 50°+ pitch.
+          // See mapbox-maps-ios#2149 / #2057.
+          allowOverlapWithPuck
         >
           <Pressable
             onPress={() => onCameraTap?.(c)}

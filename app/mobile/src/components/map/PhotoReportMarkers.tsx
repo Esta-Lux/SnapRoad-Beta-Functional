@@ -58,6 +58,9 @@ export default React.memo(function PhotoReportMarkers({ reports, onReportTap }: 
             coordinate={[r.lng, r.lat]}
             anchor={{ x: 0.5, y: 0.5 }}
             allowOverlap
+            // Keep photo-report thumbs visible above Standard 3D buildings at
+            // pitched navigation camera angles.
+            allowOverlapWithPuck
           >
             <Pressable
               onPress={() => onReportTap?.(r)}

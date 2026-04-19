@@ -60,6 +60,8 @@ const pan = Gesture.Pan()
 
 `MapboxGL.PointAnnotation` is still avoided for custom views — it rasterizes children and looks soft; use `MarkerView` instead.
 
+**POI MarkerViews must set `allowOverlapWithPuck`** (in addition to `allowOverlap`). Mapbox Maps SDK v11's `ViewAnnotationManager` reserves a collision region around the location puck and culls annotations whose projected footprint intersects it. At the 50°+ pitch used during navigation — especially near Standard's 3D buildings / landmarks — this culling makes cameras, offers, incidents, friends, speed cameras, photo reports, and the destination pin **disappear** and reappear as the user moves. Enabling `allowOverlapWithPuck` is the Mapbox-recommended workaround (tracked in `mapbox-maps-ios#2149` / `#2057`) and keeps POIs on top of Standard's 3D geometry in both navigation and browse modes. `ignoreCameraPadding` is already enabled by `@rnmapbox/maps` natively. Any new POI MarkerView (or the destination pin) must set **both** `allowOverlap` and `allowOverlapWithPuck`.
+
 ### Mapbox SymbolLayer -- VERY LIMITED on native
 
 On native Mapbox, SymbolLayer has severe limitations:

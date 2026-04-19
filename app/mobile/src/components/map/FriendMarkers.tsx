@@ -98,6 +98,10 @@ function InterpolatedFriendMarker({
       coordinate={[lng, lat]}
       anchor={{ x: 0.5, y: 0.5 }}
       allowOverlap
+      // Keep friend avatars visible above Standard 3D buildings at pitched
+      // nav camera angles; otherwise Mapbox's view annotation manager culls
+      // them near the puck's collision region.
+      allowOverlapWithPuck
     >
       <Pressable onPress={() => onFriendTap?.(friend)} style={styles.wrap} hitSlop={4}>
         {friend.sosActive && <View style={styles.sosRing} pointerEvents="none" />}

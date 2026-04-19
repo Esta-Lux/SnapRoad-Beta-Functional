@@ -51,6 +51,10 @@ export default React.memo(function OfferMarkers({ offers, onOfferTap, zoomLevel,
             coordinate={[offer.lng!, offer.lat!]}
             anchor={{ x: 0.5, y: 0.5 }}
             allowOverlap
+            // Keep offer diamonds visible above Standard 3D buildings / landmarks
+            // at high pitch; without this Mapbox culls the annotation whenever
+            // the projected footprint enters the puck collision region.
+            allowOverlapWithPuck
           >
             <Pressable
               onPress={() => onOfferTap?.(offer)}

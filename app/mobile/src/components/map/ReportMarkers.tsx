@@ -70,6 +70,9 @@ export default React.memo(function ReportMarkers({
             coordinate={[inc.lng, inc.lat]}
             anchor={{ x: 0.5, y: 0.5 }}
             allowOverlap
+            // Keep incident markers visible above Standard 3D buildings at
+            // pitched navigation camera angles.
+            allowOverlapWithPuck
           >
             <Pressable
               onPress={() => onIncidentTap?.(inc)}

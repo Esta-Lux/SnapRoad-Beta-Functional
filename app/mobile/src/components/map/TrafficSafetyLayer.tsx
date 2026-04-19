@@ -33,6 +33,10 @@ export default React.memo(function TrafficSafetyLayer({ zones, onZoneTap }: Prop
           coordinate={[z.lng, z.lat]}
           anchor={{ x: 0.5, y: 0.5 }}
           allowOverlap
+          // Keep speed-camera / zone markers visible above Standard 3D
+          // buildings at pitched camera angles (see other POI markers for
+          // the same workaround rationale).
+          allowOverlapWithPuck
         >
           <Pressable
             onPress={() => onZoneTap?.(z)}
