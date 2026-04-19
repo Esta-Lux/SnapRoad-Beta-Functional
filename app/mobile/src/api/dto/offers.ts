@@ -15,9 +15,24 @@ export function unwrapApiData(payload: unknown): unknown {
   return data ?? payload;
 }
 
+/**
+ * Parse `GET /api/offers/nearby` into an `Offer[]`. Tolerates three real server
+ * shapes observed in the wild so a minor backend refactor doesn't silently blank
+ * the Wallet offers grid:
+ *   - `{ success, data: Offer[] }`              (current shape)
+ *   - `{ success, data: { offers: Offer[] } }`  (nested wrapper)
+ *   - `{ success, data: { data: Offer[] } }`    (double-wrapped envelope)
+ */
 export function parseNearbyOffers(payload: unknown): Offer[] {
   const v = unwrapApiData(payload);
-  return Array.isArray(v) ? (v as Offer[]) : [];
+  if (Array.isArray(v)) return v as Offer[];
+  const nested = asRecord(v);
+  if (nested) {
+    if (Array.isArray(nested.offers)) return nested.offers as Offer[];
+    if (Array.isArray(nested.data)) return nested.data as Offer[];
+    if (Array.isArray(nested.items)) return nested.items as Offer[];
+  }
+  return [];
 }
 
 export type RedeemOfferPayload = {

@@ -6,6 +6,7 @@ import {
   navNativeFullScreenEnabled,
   navNativeSdkEnabled,
 } from '../../navigation/navFeatureFlags';
+import { getVoiceDevCounters } from '../../utils/voice';
 
 type SdkDiag = {
   lastProgressIngestAtMs: number;
@@ -45,23 +46,19 @@ export default React.memo(function NavigationDebugHud({
     return Date.now() - sdkDiag.lastProgressIngestAtMs;
   }, [sdkDiag?.lastProgressIngestAtMs]);
 
-  const envLine = useMemo(() => {
-    const logic = navLogicSdkEnabled();
-    const native = navNativeSdkEnabled();
-    const fullNative = navNativeFullScreenEnabled();
-    const mode = logic
-      ? 'HEADLESS_LOGIC'
-      : fullNative
-        ? 'FULL_NATIVE_UI'
-        : 'JS_GUIDANCE';
-    const precedence =
-      logic && native
-        ? 'LOGIC wins: no full-screen native from MapScreen'
-        : native && !logic
-          ? 'NATIVE+!LOGIC: full-screen available'
-          : 'JS map nav';
-    return { logic, native, fullNative, mode, precedence };
-  }, []);
+  // Recompute on every render. Flags read from `process.env` can flip across hot reload / a
+  // re-mount of the HUD in dev; caching with `[]` produced a stale line that misled debugging.
+  const logic = navLogicSdkEnabled();
+  const native = navNativeSdkEnabled();
+  const fullNative = navNativeFullScreenEnabled();
+  const envMode = logic ? 'HEADLESS_LOGIC' : fullNative ? 'FULL_NATIVE_UI' : 'JS_GUIDANCE';
+  const precedence =
+    logic && native
+      ? 'LOGIC wins: no full-screen native from MapScreen'
+      : native && !logic
+        ? 'NATIVE+!LOGIC: full-screen available'
+        : 'JS map nav';
+  const envLine = { logic, native, fullNative, mode: envMode, precedence };
 
   if (logicSdk) {
     const instr = progress?.instructionSource;
@@ -100,6 +97,15 @@ export default React.memo(function NavigationDebugHud({
           rates: progress≈{progPerSec}/s · location≈{locPerSec}/s · voice≈{voicePerMin}/min · lastVoice=
           {lastVoicePipe} · stepIdx={progress?.nextStep?.index ?? '—'} · cardIdx={currentStepIndex}
         </Text>
+        {extendedDiag ? (() => {
+          const c = getVoiceDevCounters();
+          return (
+            <Text style={styles.line}>
+              voice-guards: nav-blocked={c.navigationFixedBlocked} · advisory-held={c.advisorySuppressed}
+              {' '}· advisory-spoken={c.advisorySpoken}
+            </Text>
+          );
+        })() : null}
         {sdkDiag?.lastVoiceInstructionText ? (
           <Text style={styles.line} numberOfLines={2}>
             voice: {sdkDiag.lastVoiceInstructionText}

@@ -16,9 +16,15 @@ The **default** experience is a hybrid: the visible map stays on SnapRoad's `@rn
 
 **Single authority**: when `navLogicSdkEnabled()` is on, `useDriveNavigation` sets `sdkActive = true` and gates the JS-only pipeline (`useNavigationProgress` gets `route: []`, `fetchDirections` is blocked mid-trip) so the two engines never fight.
 
-**Fight prevention**:
-- The hidden `MapboxNavigationView` on `MapScreen` is gated on `mapTabFocused` — if the user opts into the full-screen `NativeNavigationScreen`, MapScreen blurs and the hidden session shuts down, leaving exactly one native nav instance.
-- The OHGO camera fetcher on `MapScreen` is also gated on `mapTabFocused` so it doesn't race the one inside `NativeNavigationScreen`.
+**Fight prevention** (audited; see `navSingleAuthority.unit.test.ts` and `utils/voice.ts`):
+
+- *Voice / TTS:* `speakGuidance` and `speak({ rateSource: 'navigation_fixed' })` are hard no-ops during an authoritative SDK trip (`isSdkTripAuthoritative()`). Nav-time non-turn voice — offer nearby, incident ahead — uses `rateSource: 'advisory'`, which is held off for ~3 s after a native voice cue (`msSinceLastSdkVoice()`) so JS never talks over a native turn instruction. User-initiated repeat (`repeatLastTurnByTurn`) passes `forceAllowDuringSdk: true` to bypass the guard.
+- *Reroute:* JS `fetchDirections`, prefetch / drift / traffic-refresh timers, and driving-mode reroute all short-circuit when `navSdkHeadless && isNavigating`. Friend-follow mid-trip destination updates are routed through `updateNavigationDestination`, which mutates `navigationData.destination` so `navLogicCoords` rebuilds and the native SDK emits its own `onRouteChanged`.
+- *Cameras / progress:* `useNavigationProgress` is called with `route: []` under SDK; the JS 1 Hz progress tick is skipped; step index follows native `progress.stepIndex`. Only one `MapboxGL.Camera` drives the RN map; the hidden native view is `navigationLogicOnly` and does not render another RN camera.
+- *Screen focus:* The hidden `MapboxNavigationView` on `MapScreen` is gated on `mapTabFocused` — if the user opts into the full-screen `NativeNavigationScreen`, MapScreen blurs and the hidden session shuts down, leaving exactly one native nav instance.
+- *Data:* The OHGO camera and incident fetchers on both `MapScreen` and `NativeNavigationScreen` are focus-gated (`mapTabFocused` / `useIsFocused()`) so neither screen double-fetches during brief overlap.
+
+**Dev-only observability**: `NavigationDebugHud` (extended mode) shows `voice-guards: nav-blocked / advisory-held / advisory-spoken` from `getVoiceDevCounters()` — regressions that cause JS to speak during a native trip appear as non-zero `nav-blocked` without an advisory hold-off.
 
 ## Feature flags
 

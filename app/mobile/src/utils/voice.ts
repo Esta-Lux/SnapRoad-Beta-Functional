@@ -4,7 +4,7 @@ import type { DrivingMode } from '../types';
 import { DRIVING_MODES } from '../constants/modes';
 import { shouldSuppressJsTurnGuidance } from '../navigation/navVoiceGate';
 import { isSdkTripAuthoritative } from '../navigation/navSdkAuthority';
-import { markNavVoiceFromJs } from '../navigation/navSdkStore';
+import { markNavVoiceFromJs, msSinceLastSdkVoice } from '../navigation/navSdkStore';
 import type { LaneInfo, ManeuverKind, RoadSignal } from '../navigation/navModel';
 import { getVoiceNavTuning } from '../navigation/navModeProfile';
 import { navLaneGuidanceUiEnabled } from '../navigation/navFeatureFlags';
@@ -102,15 +102,49 @@ const ORION_SPEECH_PITCH = 1.0;
 const NAVIGATION_SPEECH_RATE = 0.96;
 const NAVIGATION_SPEECH_PITCH = 1.0;
 
-export type SpeakRateSource = 'driving' | 'navigation_fixed';
+export type SpeakRateSource = 'driving' | 'navigation_fixed' | 'advisory';
 
 export type SpeakOptions = {
   /**
    * `driving` — calm/sport/adaptive from {@link DRIVING_MODES} (Orion, ambient offers).
-   * `navigation_fixed` — normal nav rate (not tied to driving mode).
+   * `navigation_fixed` — normal nav rate (not tied to driving mode). Blocked during an
+   *    SDK-authoritative trip (native TTS owns turn cues).
+   * `advisory` — navigation-time extras (offer nearby, incident ahead). During an
+   *    SDK-authoritative trip, these are suppressed for ~3s after a native voice line
+   *    to avoid stepping on a turn cue, but otherwise play at the driving-mode rate so
+   *    the user still hears useful non-turn prompts.
    */
   rateSource?: SpeakRateSource;
+  /**
+   * User-initiated speech that must bypass the `isSdkTripAuthoritative` guard
+   * (e.g. long-press "repeat last instruction"). Does NOT bypass mute / debounce.
+   */
+  forceAllowDuringSdk?: boolean;
 };
+
+/** After a native voice line, suppress `advisory` JS speech for this many ms. */
+const ADVISORY_SDK_HOLDOFF_MS = 3000;
+
+// Dev-only counters so regressions surface in the HUD / logs.
+let advisorySuppressedCount = 0;
+let advisorySpokenCount = 0;
+let navigationFixedBlockedCount = 0;
+export function getVoiceDevCounters(): {
+  advisorySuppressed: number;
+  advisorySpoken: number;
+  navigationFixedBlocked: number;
+} {
+  return {
+    advisorySuppressed: advisorySuppressedCount,
+    advisorySpoken: advisorySpokenCount,
+    navigationFixedBlocked: navigationFixedBlockedCount,
+  };
+}
+export function resetVoiceDevCounters(): void {
+  advisorySuppressedCount = 0;
+  advisorySpokenCount = 0;
+  navigationFixedBlockedCount = 0;
+}
 
 function speechRateForMode(mode: DrivingMode): number {
   return DRIVING_MODES[mode]?.speechRate ?? ORION_SPEECH_RATE;
@@ -132,13 +166,36 @@ export function speak(
 ) {
   if (!phrase.trim()) return;
   const rateSource = opts?.rateSource ?? 'driving';
-  if (rateSource === 'navigation_fixed' && isSdkTripAuthoritative()) {
+  const forceAllow = opts?.forceAllowDuringSdk === true;
+  const sdkOwns = isSdkTripAuthoritative();
+
+  if (rateSource === 'navigation_fixed' && sdkOwns && !forceAllow) {
+    navigationFixedBlockedCount++;
     if (typeof __DEV__ !== 'undefined' && __DEV__) {
       // eslint-disable-next-line no-console
       console.warn('[Nav] blocked JS Speech.speak(navigation) during SDK-authoritative trip', phrase.slice(0, 72));
     }
     return;
   }
+  // Advisory line (offer, incident) during an active native trip — hold off briefly after a
+  // native voice cue, otherwise the user hears two overlapping prompts on the car speakers.
+  if (rateSource === 'advisory' && sdkOwns && !forceAllow) {
+    if (msSinceLastSdkVoice() < ADVISORY_SDK_HOLDOFF_MS) {
+      advisorySuppressedCount++;
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[Nav] deferred JS advisory speech — native SDK spoke',
+          Math.round(msSinceLastSdkVoice()),
+          'ms ago:',
+          phrase.slice(0, 64),
+        );
+      }
+      return;
+    }
+    advisorySpokenCount++;
+  }
+
   const normalized = phrase.trim().toLowerCase();
   const now = Date.now();
   if (normalized === lastSpokenPhrase && now - lastSpokenAt < MIN_GAP_MS) return;

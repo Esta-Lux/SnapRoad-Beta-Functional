@@ -560,7 +560,7 @@ export function AllBadgesModal({
       <View style={rewardsStyles.modalOverlay}>
         <View style={[rewardsStyles.fullSheet, { backgroundColor: bg }]}>
           <LinearGradient
-            colors={['#873CEB', '#5D35C4']}
+            colors={['#1D4ED8', '#2563EB']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={rewardsStyles.modalHero}

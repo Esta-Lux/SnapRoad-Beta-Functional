@@ -159,6 +159,23 @@ export default function RewardsScreen() {
         safeGet('/api/offers/my-redemptions'),
         safeGet('/api/rewards/summary'),
       ]);
+      // Each sub-endpoint can fail independently; on `initial` / `refresh` surface a
+      // single summary banner so users aren't staring at empty sections wondering what
+      // happened. `silent` reloads (focus / statsVersion) stay quiet to avoid noise.
+      if (mode !== 'silent') {
+        const failed: string[] = [];
+        if (!profileRes?.success) failed.push('profile');
+        if (!bRes?.success) failed.push('badges');
+        if (!oRes?.success) failed.push('offers');
+        if (!gRes?.success) failed.push('gem history');
+        if (!mineRes?.success) failed.push('redemptions');
+        if (!sumRes?.success) failed.push('summary');
+        if (failed.length > 0 && failed.length < 6) {
+          setErrorMsg(`Some wallet data didn't load (${failed.join(', ')}). Pull to retry.`);
+        } else if (failed.length === 6) {
+          setErrorMsg('Could not refresh wallet data. Pull to retry.');
+        }
+      }
       const unwrap = (r: { data?: unknown } | undefined) => unwrapProfileApiData(r?.data);
       if (profileRes?.success) {
         const patch = parseProfilePatch(profileRes?.data);
@@ -201,6 +218,15 @@ export default function RewardsScreen() {
             badgesTotal: Math.max(0, Number(raw.badges_total ?? 0)),
             gemMultiplierLabel: String(raw.gem_multiplier_label ?? '1x'),
           });
+          // Defense-in-depth: rewards/summary is profile-backed and carries the
+          // server-authoritative `is_premium` and `gems`. Mirror them into the
+          // auth user so the upsell card + header multiplier stay in sync with
+          // the backend even when `parseProfilePatch` wasn't called or missed fields.
+          const patch: Parameters<typeof updateUser>[0] = {};
+          if (raw.is_premium != null) patch.isPremium = Boolean(raw.is_premium);
+          const gemsSum = Number(raw.gems);
+          if (Number.isFinite(gemsSum)) patch.gems = gemsSum;
+          if (Object.keys(patch).length > 0) updateUser(patch);
         } else {
           setRewardsSummary(null);
         }
@@ -484,10 +510,10 @@ export default function RewardsScreen() {
               style={{ marginHorizontal: 16, marginBottom: 14, borderRadius: 18, overflow: 'hidden', ...shadow(8) }}
             >
               <LinearGradient
-                colors={isLight ? ['#eef2ff', '#ede9fe'] : ['rgba(99,102,241,0.45)', 'rgba(139,92,246,0.28)']}
+                colors={isLight ? ['#EFF6FF', '#DBEAFE'] : ['rgba(29,78,216,0.42)', 'rgba(59,130,246,0.26)']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderWidth: 1, borderColor: isLight ? 'rgba(79,70,229,0.22)' : 'rgba(167,139,250,0.35)' }}
+                style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderWidth: 1, borderColor: isLight ? 'rgba(37,99,235,0.28)' : 'rgba(96,165,250,0.4)' }}
               >
                 <LinearGradient colors={[colors.ctaGradientStart, colors.ctaGradientEnd]} style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
                   <Ionicons name="sparkles" size={22} color="#fff" />

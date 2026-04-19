@@ -31,11 +31,11 @@ const SLUG_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
 
 const CATEGORY_ACCENT: Record<string, string> = {
   distance: '#3B82F6',
-  trips: '#8B5CF6',
+  trips: '#0EA5E9',
   gems: '#F59E0B',
   safety: '#10B981',
   streak: '#EF4444',
-  level: '#6366F1',
+  level: '#2563EB',
   community: '#EC4899',
   other: '#64748B',
 };

@@ -72,14 +72,14 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
       <View style={styles.previewOverlayBadge}>
-        <LinearGradient colors={['#7C3AED', '#5B21B6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.comingSoonPill}>
+        <LinearGradient colors={['#2563EB', '#1D4ED8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.comingSoonPill}>
           <Ionicons name="time-outline" size={12} color="#fff" />
           <Text style={styles.comingSoonPillText}>COMING SOON</Text>
         </LinearGradient>
       </View>
 
-      <View style={{ backgroundColor: 'rgba(124,58,237,0.08)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, marginHorizontal: 16, marginBottom: 8 }}>
-        <Text style={{ color: '#7C3AED', fontSize: 11, fontWeight: '600', textAlign: 'center' }}>Preview data shown below -- real family tracking coming soon</Text>
+      <View style={{ backgroundColor: isLight ? 'rgba(37,99,235,0.08)' : 'rgba(59,130,246,0.14)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, marginHorizontal: 16, marginBottom: 8 }}>
+        <Text style={{ color: isLight ? '#1D4ED8' : '#93C5FD', fontSize: 11, fontWeight: '600', textAlign: 'center' }}>Preview data shown below — real family tracking coming soon</Text>
       </View>
       <Text style={[styles.previewSection, { color: colors.text }]}>Family Members</Text>
       {MOCK_FAMILY.map((m) => (
@@ -145,7 +145,7 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
           { icon: 'bar-chart-outline', label: 'Trip Reports', desc: 'Teen driving insights' },
         ].map((f) => (
           <View key={f.label} style={[styles.featureCard, { backgroundColor: isLight ? '#fff' : 'rgba(255,255,255,0.04)', borderColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }]}>
-            <Ionicons name={f.icon as any} size={22} color="#7C3AED" />
+            <Ionicons name={f.icon as any} size={22} color={isLight ? '#1D4ED8' : '#3B82F6'} />
             <Text style={[styles.featureLabel, { color: colors.text }]}>{f.label}</Text>
             <Text style={{ color: colors.textSecondary, fontSize: 10, textAlign: 'center' }}>{f.desc}</Text>
           </View>
@@ -168,13 +168,50 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const [section, setSection] = useState<Section>('friends');
-  const friendsTabActive = section === 'friends' && isFocused;
+  // Social is Premium-only. Gating the activity flag here means every downstream effect
+  // — list/pending/category polling, location publish, Supabase `live_locations` channel,
+  // timestamp re-tick — short-circuits for free users who still briefly mount this screen
+  // (the premium paywall renders via the early-return below).
+  const friendsTabActive = section === 'friends' && isFocused && !!user?.isPremium;
   const { location, heading, speed } = useLocation(false, { paused: !friendsTabActive });
   const dashboardLivePublishRef = useRef(0);
   /** User enabled sharing before GPS was ready — push coords + full update once `myCoord` exists. */
   const shareLocationNeedsCoordsSyncRef = useRef(false);
   const dashboardLiveCoordsRef = useRef({ lat: location.lat, lng: location.lng, heading, speed });
   dashboardLiveCoordsRef.current = { lat: location.lat, lng: location.lng, heading, speed };
+  /**
+   * Live-location publish outcome surfaced as a quiet inline banner on the sharing card.
+   *  - `ok` (or `null`): no banner.
+   *  - `paused_by_admin`: backend kill-switch (runtime_config) or config 503 returned — we stop trying and tell the user.
+   *  - `transient`: ≥3 consecutive non-503 failures (offline, 500, network) — softer message with retry affordance.
+   * Reset to `ok` on any successful publish.
+   */
+  type PublishStatus = 'ok' | 'paused_by_admin' | 'transient';
+  const [publishStatus, setPublishStatus] = useState<PublishStatus>('ok');
+  const publishFailStreakRef = useRef(0);
+  const publishStatusRef = useRef<PublishStatus>('ok');
+  publishStatusRef.current = publishStatus;
+  const reportPublishResult = useCallback((res: { success: boolean; statusCode?: number } | null | undefined) => {
+    if (res?.success) {
+      publishFailStreakRef.current = 0;
+      if (publishStatusRef.current !== 'ok') setPublishStatus('ok');
+      return;
+    }
+    // 503 is the runtime-config kill-switch or "Location sharing backend is not configured" — both are
+    // operator-visible states, not transient network hiccups. Stop the streak entirely and latch the banner.
+    if (res?.statusCode === 503) {
+      publishFailStreakRef.current = 0;
+      if (publishStatusRef.current !== 'paused_by_admin') setPublishStatus('paused_by_admin');
+      return;
+    }
+    publishFailStreakRef.current += 1;
+    // 3 consecutive misses ≈ ~75–90 s of failed publishes at our 25–28 s cadence.
+    // Anything shorter would flash the banner on a single flaky tick; longer would leave
+    // a broken sharing state invisible for too long.
+    if (publishFailStreakRef.current >= 3 && publishStatusRef.current === 'ok') {
+      setPublishStatus('transient');
+    }
+  }, []);
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(true);
@@ -220,7 +257,7 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => {
-    if (section !== 'friends') return;
+    if (section !== 'friends' || !user?.isPremium) return;
     let cancelled = false;
 
     const run = async () => {
@@ -281,7 +318,7 @@ export default function DashboardScreen() {
     return () => {
       cancelled = true;
     };
-  }, [section, loadFriends, loadPending, loadCategories]);
+  }, [section, user?.isPremium, loadFriends, loadPending, loadCategories]);
 
   /** Re-render friend timestamps every 15 s so "just now" → "1m ago" updates live. */
   const [, setTickClock] = useState(0);
@@ -387,7 +424,7 @@ export default function DashboardScreen() {
       }
       if (cancelled) return;
       try {
-        await api.post('/api/friends/location/update', {
+        const res = await api.post('/api/friends/location/update', {
           lat: location.lat,
           lng: location.lng,
           heading,
@@ -396,14 +433,15 @@ export default function DashboardScreen() {
           is_sharing: true,
           battery_pct,
         });
+        if (!cancelled) reportPublishResult(res);
       } catch {
-        /* offline */
+        if (!cancelled) reportPublishResult({ success: false });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.isPremium, friendsTabActive, isSharingLocation, location.lat, location.lng, heading, speed]);
+  }, [user?.isPremium, friendsTabActive, isSharingLocation, location.lat, location.lng, heading, speed, reportPublishResult]);
 
   /** Heartbeat while parked: GPS effect may not re-run when coordinates are static. */
   useEffect(() => {
@@ -428,7 +466,7 @@ export default function DashboardScreen() {
         }
         if (cancelled) return;
         try {
-          await api.post('/api/friends/location/update', {
+          const res = await api.post('/api/friends/location/update', {
             lat,
             lng,
             heading: h,
@@ -437,8 +475,9 @@ export default function DashboardScreen() {
             is_sharing: true,
             battery_pct,
           });
+          if (!cancelled) reportPublishResult(res);
         } catch {
-          /* offline */
+          if (!cancelled) reportPublishResult({ success: false });
         }
       })();
     };
@@ -447,7 +486,7 @@ export default function DashboardScreen() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [user?.isPremium, friendsTabActive, isSharingLocation]);
+  }, [user?.isPremium, friendsTabActive, isSharingLocation, reportPublishResult]);
 
   const myCoord = useMemo(() => {
     if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return null;
@@ -490,15 +529,36 @@ export default function DashboardScreen() {
           is_sharing: true,
           battery_pct,
         });
+        if (!cancelled) reportPublishResult(updateRes);
         if (!updateRes.success) shareLocationNeedsCoordsSyncRef.current = true;
       } catch {
         shareLocationNeedsCoordsSyncRef.current = true;
+        if (!cancelled) reportPublishResult({ success: false });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.isPremium, isSharingLocation, myCoord, heading, speed]);
+  }, [user?.isPremium, isSharingLocation, myCoord, heading, speed, reportPublishResult]);
+
+  // If the backend kill-switch is on (503), take the user out of the "sharing" UI state
+  // so they aren't looking at a green pill while publishes are being rejected. We leave
+  // `paused_by_admin` banner up as the reason.
+  useEffect(() => {
+    if (publishStatus === 'paused_by_admin' && isSharingLocation) {
+      setIsSharingLocation(false);
+      storage.set(SHARE_LOC_STORAGE_KEY, '0');
+    }
+  }, [publishStatus, isSharingLocation]);
+
+  // Clear any publish banner when the user turns sharing off; no point keeping a
+  // stale "updates failing" chip once we're not publishing.
+  useEffect(() => {
+    if (!isSharingLocation && publishStatus !== 'ok') {
+      publishFailStreakRef.current = 0;
+      setPublishStatus('ok');
+    }
+  }, [isSharingLocation, publishStatus]);
 
   const friendListData = useMemo(
     () =>
@@ -607,7 +667,11 @@ export default function DashboardScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
-            await api.delete(`/api/friends/${id}`);
+            const res = await api.delete(`/api/friends/${id}`);
+            if (!res?.success) {
+              Alert.alert('Error', res?.error || 'Could not remove friend. Try again.');
+              return;
+            }
             setSelectedFriend(null);
             loadFriends();
             loadCategories();
@@ -662,6 +726,12 @@ export default function DashboardScreen() {
   const listKeyExtractor = useCallback((item: (typeof friendListData)[0]) => item.friend.id, []);
 
   if (!user?.isPremium) {
+    const premiumFeatures: { icon: keyof typeof Ionicons.glyphMap; label: string; desc: string }[] = [
+      { icon: 'people', label: 'Friend network', desc: 'Search by name, email, or friend code.' },
+      { icon: 'navigate', label: 'Live location', desc: 'Share with people you trust, on your terms.' },
+      { icon: 'flag', label: 'Convoy meetups', desc: 'Rally on the map with ETA sync.' },
+      { icon: 'trophy', label: 'Friend duels', desc: 'Challenge drivers and bank bonus gems.' },
+    ];
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
         <ScrollView
@@ -673,13 +743,78 @@ export default function DashboardScreen() {
             Friends, live location, convoy meetups, and friend search are included with SnapRoad Premium. Your trips, miles,
             and gems stay on the Rewards and Profile tabs on the free plan.
           </Text>
+
+          <LinearGradient
+            colors={isLight ? ['#EFF6FF', '#DBEAFE'] : ['rgba(29,78,216,0.38)', 'rgba(59,130,246,0.22)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              marginTop: 22,
+              borderRadius: 20,
+              padding: 18,
+              borderWidth: 1,
+              borderColor: isLight ? 'rgba(37,99,235,0.22)' : 'rgba(96,165,250,0.35)',
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <LinearGradient
+                colors={[colors.ctaGradientStart, colors.ctaGradientEnd]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Ionicons name="sparkles" size={20} color="#fff" />
+              </LinearGradient>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 }}>
+                  What Social unlocks
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2, fontWeight: '600' }}>
+                  Included with SnapRoad Premium.
+                </Text>
+              </View>
+            </View>
+
+            <View style={{ gap: 10 }}>
+              {premiumFeatures.map((f) => (
+                <View key={f.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 11,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: isLight ? 'rgba(37,99,235,0.12)' : 'rgba(96,165,250,0.18)',
+                      borderWidth: 1,
+                      borderColor: isLight ? 'rgba(37,99,235,0.22)' : 'rgba(96,165,250,0.28)',
+                    }}
+                  >
+                    <Ionicons name={f.icon} size={18} color={isLight ? '#1D4ED8' : '#93C5FD'} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>{f.label}</Text>
+                    <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '500', marginTop: 1 }}>
+                      {f.desc}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </LinearGradient>
+
           <TouchableOpacity
             activeOpacity={0.9}
-            onPress={() => navigation.navigate('Profile', { screen: 'ProfileMain' })}
-            style={{ marginTop: 22 }}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              navigation.navigate('Profile', { screen: 'ProfileMain' });
+            }}
+            style={{ marginTop: 16 }}
+            accessibilityRole="button"
+            accessibilityLabel="Upgrade to SnapRoad Premium"
           >
             <LinearGradient
-              colors={['#2563EB', '#4F46E5']}
+              colors={[colors.ctaGradientStart, colors.ctaGradientEnd]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={{ borderRadius: 16, paddingVertical: 16, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}
@@ -729,7 +864,7 @@ export default function DashboardScreen() {
             style={[
               styles.togglePill,
               section === s && {
-                backgroundColor: s === 'family' ? '#7C3AED' : colors.primary,
+                backgroundColor: s === 'family' ? '#1D4ED8' : colors.primary,
                 shadowColor: '#000',
                 shadowOffset: { width: 0, height: 1 },
                 shadowOpacity: 0.12,
@@ -881,7 +1016,11 @@ export default function DashboardScreen() {
                           <TouchableOpacity
                             style={[styles.reqBtnCompact, { backgroundColor: colors.danger }]}
                             onPress={async () => {
-                              await api.post('/api/friends/reject', { friendship_id: r.id });
+                              const res = await api.post('/api/friends/reject', { friendship_id: r.id });
+                              if (!res?.success) {
+                                Alert.alert('Error', res?.error ?? 'Could not decline this request.');
+                                return;
+                              }
                               loadPending();
                             }}
                           >
@@ -910,6 +1049,52 @@ export default function DashboardScreen() {
                             Waiting for them to accept
                           </Text>
                         </View>
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={`Cancel friend request to ${r.to_name ?? 'this driver'}`}
+                          style={[
+                            styles.reqBtnCompact,
+                            {
+                              backgroundColor: isLight ? 'rgba(60,60,67,0.08)' : 'rgba(255,255,255,0.08)',
+                              borderWidth: 1,
+                              borderColor: isLight ? 'rgba(60,60,67,0.14)' : 'rgba(255,255,255,0.12)',
+                            },
+                          ]}
+                          onPress={() => {
+                            Alert.alert(
+                              'Cancel request?',
+                              `Withdraw your pending friend request to ${r.to_name ?? 'this driver'}?`,
+                              [
+                                { text: 'Keep', style: 'cancel' },
+                                {
+                                  text: 'Withdraw',
+                                  style: 'destructive',
+                                  onPress: async () => {
+                                    // Optimistic: pull the row so the UI feels instant; restore on failure.
+                                    const prev = outgoingReq;
+                                    setOutgoingReq((cur) => cur.filter((x) => x.id !== r.id));
+                                    const res = await api.delete(`/api/friends/requests/${r.id}`);
+                                    if (!res?.success) {
+                                      // 404 means the row was already resolved (accepted/declined/gone) —
+                                      // treat it as success since the UI has already dropped it.
+                                      if (res?.statusCode === 404) {
+                                        loadPending();
+                                        return;
+                                      }
+                                      setOutgoingReq(prev);
+                                      Alert.alert('Error', res?.error || 'Could not cancel this request.');
+                                      return;
+                                    }
+                                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                                    loadPending();
+                                  },
+                                },
+                              ],
+                            );
+                          }}
+                        >
+                          <Text style={[styles.reqBtnCompactT, { color: colors.text }]}>Cancel</Text>
+                        </TouchableOpacity>
                       </View>
                     ))}
                   </View>
@@ -1040,6 +1225,66 @@ export default function DashboardScreen() {
                 thumbColor="#fff"
               />
             </View>
+            {publishStatus !== 'ok' ? (
+              <View
+                accessibilityRole="alert"
+                accessibilityLabel={
+                  publishStatus === 'paused_by_admin'
+                    ? 'Live location paused by admin'
+                    : 'Live location updates are not reaching our servers'
+                }
+                style={{
+                  marginTop: 10,
+                  paddingVertical: 8,
+                  paddingHorizontal: 10,
+                  borderRadius: 10,
+                  flexDirection: 'row',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  backgroundColor:
+                    publishStatus === 'paused_by_admin'
+                      ? (isLight ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.14)')
+                      : (isLight ? 'rgba(234,179,8,0.1)' : 'rgba(234,179,8,0.16)'),
+                  borderWidth: 1,
+                  borderColor:
+                    publishStatus === 'paused_by_admin'
+                      ? (isLight ? 'rgba(239,68,68,0.22)' : 'rgba(239,68,68,0.34)')
+                      : (isLight ? 'rgba(234,179,8,0.26)' : 'rgba(234,179,8,0.36)'),
+                }}
+              >
+                <Ionicons
+                  name={publishStatus === 'paused_by_admin' ? 'pause-circle' : 'cloud-offline-outline'}
+                  size={16}
+                  color={publishStatus === 'paused_by_admin' ? '#EF4444' : '#CA8A04'}
+                  style={{ marginTop: 1 }}
+                />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.shareLocCaption, { color: colors.text, fontWeight: '600' }]}>
+                    {publishStatus === 'paused_by_admin'
+                      ? 'Live location paused'
+                      : 'Live location updates aren\u2019t reaching us'}
+                  </Text>
+                  <Text style={[styles.shareLocCaption, { color: colors.textSecondary, marginTop: 2 }]}>
+                    {publishStatus === 'paused_by_admin'
+                      ? 'An admin has temporarily disabled sharing. Try again later.'
+                      : 'Check your connection — we\u2019ll retry automatically.'}
+                  </Text>
+                </View>
+                {publishStatus === 'transient' ? (
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Dismiss live location warning"
+                    onPress={() => {
+                      publishFailStreakRef.current = 0;
+                      setPublishStatus('ok');
+                    }}
+                    style={{ paddingHorizontal: 6, paddingVertical: 2 }}
+                  >
+                    <Ionicons name="close" size={16} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
           </View>
 
           <View style={[styles.friendsSectionHeader, { borderBottomColor: isLight ? 'rgba(60,60,67,0.08)' : 'rgba(255,255,255,0.07)' }]}>
@@ -1388,8 +1633,8 @@ const styles = StyleSheet.create({
   },
   togglePill: { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center' },
   toggleText: { fontSize: 13, fontWeight: '600' },
-  comingSoonDot: { backgroundColor: 'rgba(124,58,237,0.25)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
-  comingSoonDotText: { color: '#C084FC', fontSize: 8, fontWeight: '800' },
+  comingSoonDot: { backgroundColor: 'rgba(29,78,216,0.22)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
+  comingSoonDotText: { color: '#93C5FD', fontSize: 8, fontWeight: '800' },
 
   requestEmpty: {
     flexDirection: 'row',

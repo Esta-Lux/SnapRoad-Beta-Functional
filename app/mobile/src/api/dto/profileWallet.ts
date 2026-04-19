@@ -19,8 +19,20 @@ export type ProfilePatch = Partial<{
   totalMiles: number;
   totalTrips: number;
   safetyScore: number;
+  xp: number;
+  streak: number;
+  plan: string;
+  isPremium: boolean;
+  isFamilyPlan: boolean;
+  gem_multiplier: number;
 }>;
 
+/**
+ * Build a partial user update from `GET /api/user/profile` (or equivalent)
+ * suitable for `updateUser(patch)` — only includes fields that are present
+ * and parseable. Mirrors premium-derivation rules from `mapApiUserToContext`
+ * so Wallet pull-to-refresh can surface plan changes without a full re-login.
+ */
 export function parseProfilePatch(payload: unknown): ProfilePatch {
   const root = asRecord(unwrapApiData(payload));
   if (!root) return {};
@@ -35,5 +47,22 @@ export function parseProfilePatch(payload: unknown): ProfilePatch {
   if (Number.isFinite(trips)) out.totalTrips = trips;
   const safety = Number(root.safety_score);
   if (Number.isFinite(safety)) out.safetyScore = safety;
+  const xp = root.xp != null ? Number(root.xp) : NaN;
+  if (Number.isFinite(xp)) out.xp = xp;
+  const streak = root.streak != null ? Number(root.streak) : (root.safe_drive_streak != null ? Number(root.safe_drive_streak) : NaN);
+  if (Number.isFinite(streak)) out.streak = streak;
+  const mult = root.gem_multiplier != null ? Number(root.gem_multiplier) : NaN;
+  if (Number.isFinite(mult)) out.gem_multiplier = mult;
+  const planRaw = typeof root.plan === 'string' ? root.plan.trim().toLowerCase() : '';
+  // Premium derivation: explicit `plan` wins (matches AuthContext.mapApiUserToContext).
+  // Only emit isPremium / isFamilyPlan when the server actually carries a signal,
+  // to avoid silently demoting a premium user if a partial payload omits them.
+  if (planRaw) {
+    out.plan = planRaw;
+    out.isFamilyPlan = planRaw === 'family';
+    out.isPremium = planRaw === 'premium' || planRaw === 'family';
+  } else if (root.is_premium != null) {
+    out.isPremium = Boolean(root.is_premium);
+  }
   return out;
 }
