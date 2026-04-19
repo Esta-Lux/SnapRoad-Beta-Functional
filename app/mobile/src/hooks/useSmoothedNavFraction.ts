@@ -42,6 +42,24 @@ type Options = {
   timeConstantMs?: number;
   /** When false (e.g. not navigating), always pass target straight through. */
   enabled?: boolean;
+  /**
+   * Optional dead-reckoning: while the authoritative `targetFraction` is not
+   * updating (SDK silent — tunnel, stall, matcher hiccup), continue advancing
+   * the displayed fraction at the last-known ground speed. This is what Apple
+   * Maps does in tunnels / under overpasses and what Mapbox's own
+   * NavigationCamera approximates via puck velocity. See
+   * `docs/NATIVE_NAVIGATION.md` → Apple Maps comparison.
+   */
+  deadReckoning?: {
+    /** Full route polyline length in meters. Required to convert m/s → fraction/ms. */
+    polylineLengthMeters: number;
+    /** Last-known ground speed in m/s. Pass 0 when stationary to freeze the puck. */
+    speedMps: number;
+    /** After this many ms of no target change, start extrapolating. Default 350 ms. */
+    staleThresholdMs?: number;
+    /** Cap total extrapolation at this many ms of silence. Default 4000 ms. */
+    maxStaleMs?: number;
+  };
 };
 
 /**
@@ -60,6 +78,7 @@ export function useSmoothedNavFraction(
     snapDeltaFraction = 0.02,
     timeConstantMs = 180,
     enabled = true,
+    deadReckoning,
   } = opts;
 
   const targetRef = useRef<number>(clamp01(targetFraction));
@@ -67,6 +86,21 @@ export function useSmoothedNavFraction(
   const lastFrameMsRef = useRef<number>(0);
   const rafIdRef = useRef<number | null>(null);
   const [displayed, setDisplayed] = useState<number>(clamp01(targetFraction));
+
+  /**
+   * Dead-reckoning bookkeeping — refs so the RAF callback always sees the
+   * latest values without re-subscribing the effect.
+   */
+  const lastTargetChangeMsRef = useRef<number>(0);
+  const drPolylineLenRef = useRef<number>(0);
+  const drSpeedMpsRef = useRef<number>(0);
+  const drStaleThresholdMsRef = useRef<number>(350);
+  const drMaxStaleMsRef = useRef<number>(4000);
+
+  drPolylineLenRef.current = deadReckoning?.polylineLengthMeters ?? 0;
+  drSpeedMpsRef.current = deadReckoning?.speedMps ?? 0;
+  drStaleThresholdMsRef.current = deadReckoning?.staleThresholdMs ?? 350;
+  drMaxStaleMsRef.current = deadReckoning?.maxStaleMs ?? 4000;
 
   useEffect(() => {
     const next = clamp01(targetFraction);
@@ -77,7 +111,25 @@ export function useSmoothedNavFraction(
       return;
     }
     const delta = next - displayedRef.current;
-    if (Math.abs(delta) >= snapDeltaFraction) {
+    /** External target changed — reset the dead-reckoning staleness clock. */
+    lastTargetChangeMsRef.current =
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+    /**
+     * Snap on large jumps (reroute / teleport). Don't snap *backward* on a
+     * negative delta if we're within one frame of the dead-reckoning band —
+     * in that case the user just exited a tunnel and the displayed value is
+     * legitimately ahead of the stale target that's about to catch up.
+     */
+    if (delta >= snapDeltaFraction) {
+      targetRef.current = next;
+      displayedRef.current = next;
+      setDisplayed(next);
+      return;
+    }
+    if (delta <= -snapDeltaFraction) {
+      /** Backward jump — genuine reroute (not DR artifact). Snap. */
       targetRef.current = next;
       displayedRef.current = next;
       setDisplayed(next);
@@ -106,14 +158,47 @@ export function useSmoothedNavFraction(
       const target = targetRef.current;
       const current = displayedRef.current;
       const diff = target - current;
-      if (Math.abs(diff) < 1e-6) {
+
+      /**
+       * Compute "can we dead-reckon right now?" — used both to decide whether
+       * to actually extrapolate AND to gate the ease branch (so we never pull
+       * backward toward a target that is frozen-behind us during SDK silence).
+       */
+      const speed = drSpeedMpsRef.current;
+      const polyLen = drPolylineLenRef.current;
+      const now =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now();
+      const staleMs =
+        lastTargetChangeMsRef.current > 0
+          ? now - lastTargetChangeMsRef.current
+          : 0;
+      const canDeadReckon =
+        staleMs >= drStaleThresholdMsRef.current &&
+        staleMs <= drMaxStaleMsRef.current &&
+        speed > 0.1 &&
+        polyLen > 1;
+
+      /** Phase 1: ease toward latest external target (unless target is stale and behind). */
+      if (Math.abs(diff) >= 1e-6 && !(canDeadReckon && diff < 0)) {
+        const alpha = 1 - Math.exp(-dt / Math.max(16, timeConstantMs));
+        const nextDisp = current + diff * alpha;
+        displayedRef.current = nextDisp;
+        setDisplayed(nextDisp);
         rafIdRef.current = requestAnimationFrame(tick);
         return;
       }
-      const alpha = 1 - Math.exp(-dt / Math.max(16, timeConstantMs));
-      const nextDisp = current + diff * alpha;
-      displayedRef.current = nextDisp;
-      setDisplayed(nextDisp);
+
+      /** Phase 2: dead-reckoning during SDK silence. */
+      if (canDeadReckon) {
+        const dFrac = (speed * dt) / 1000 / polyLen;
+        const nextDisp = Math.min(1, current + dFrac);
+        if (nextDisp !== current) {
+          displayedRef.current = nextDisp;
+          setDisplayed(nextDisp);
+        }
+      }
       rafIdRef.current = requestAnimationFrame(tick);
     };
     rafIdRef.current = requestAnimationFrame(tick);
@@ -153,4 +238,84 @@ export function stepSmoothedFraction(
   if (Math.abs(diff) < 1e-6) return cur;
   const alpha = 1 - Math.exp(-Math.max(0, dtMs) / Math.max(16, timeConstantMs));
   return cur + diff * alpha;
+}
+
+/**
+ * Pure ease+dead-reckoning step. Mirrors the hook's per-frame logic:
+ *
+ *  1. If `target !== current`, exponentially ease toward target.
+ *  2. Else if external target has been stale for `[staleThresholdMs,
+ *     maxStaleMs]` AND `speedMps > 0.1`, advance `current` forward at the
+ *     given ground speed (converted to fraction via `polylineLengthMeters`).
+ *  3. Otherwise return `current` unchanged.
+ *
+ * Exported so tests can simulate multi-second SDK silences without RAFs.
+ */
+export function stepSmoothedFractionWithDeadReckoning(params: {
+  current: number;
+  target: number;
+  dtMs: number;
+  staleMs: number;
+  speedMps: number;
+  polylineLengthMeters: number;
+  timeConstantMs?: number;
+  snapDeltaFraction?: number;
+  staleThresholdMs?: number;
+  maxStaleMs?: number;
+}): number {
+  const {
+    current,
+    target,
+    dtMs,
+    staleMs,
+    speedMps,
+    polylineLengthMeters,
+    timeConstantMs = 180,
+    snapDeltaFraction = 0.02,
+    staleThresholdMs = 350,
+    maxStaleMs = 4000,
+  } = params;
+  const cur = clamp01(current);
+  const tgt = clamp01(target);
+  const diff = tgt - cur;
+
+  const isStale = staleMs >= staleThresholdMs;
+  const canDeadReckon =
+    isStale &&
+    staleMs <= maxStaleMs &&
+    speedMps > 0.1 &&
+    polylineLengthMeters > 1;
+
+  /**
+   * Large jumps (reroute / teleport) snap — except when we've been dead-
+   * reckoning forward past a frozen-behind target. In that case the large
+   * negative delta is a *consequence* of DR, not a genuine reroute, and
+   * snapping would undo the tunnel-crossing advance.
+   */
+  if (Math.abs(diff) >= snapDeltaFraction && !(canDeadReckon && diff < 0)) {
+    return tgt;
+  }
+
+  /**
+   * Ease toward the live target only when (a) there's a delta worth easing and
+   * (b) we're not currently in dead-reckoning territory with a *stale target
+   * behind us*. Pulling the puck backward toward a frozen-behind target would
+   * undo the dead-reckoning advance and produce visible oscillation in
+   * tunnels — so while DR is fueling forward progress, we never ease into a
+   * backward target. A fresh forward-jumping target (within snap delta) still
+   * eases normally.
+   */
+  if (Math.abs(diff) >= 1e-6 && !(canDeadReckon && diff < 0)) {
+    const alpha =
+      1 - Math.exp(-Math.max(0, dtMs) / Math.max(16, timeConstantMs));
+    return cur + diff * alpha;
+  }
+
+  /** Dead-reckoning: advance at last-known speed while target is silent. */
+  if (canDeadReckon) {
+    const dFrac =
+      (speedMps * Math.max(0, dtMs)) / 1000 / polylineLengthMeters;
+    return Math.min(1, cur + dFrac);
+  }
+  return cur;
 }

@@ -119,13 +119,16 @@ test('wrap-around near 0°/360° uses shortest angle', () => {
 });
 
 test('resetHeadingSmoothing() forces the next tick to pass through', () => {
+  // Pick courses inside the ±45° bearing-cap cone (route tangent ~38° NE) so
+  // we test reset behaviour in isolation rather than the tangent clamp.
   resetHeadingSmoothing();
-  runTick(90, 20); // seed east
+  runTick(20, 20); // seed near tangent
   resetHeadingSmoothing();
-  const out = runTick(180, 5);
-  // After reset, 180° with no previous sample should seed → pass through
+  const out = runTick(60, 5);
+  // After reset, 60° with no previous sample should seed → pass through
+  // (|60 - 38| = 22° < 45° cap, so cap does not fire).
   const h = out.heading as number;
-  assert.ok(Math.abs(h - 180) < 0.001, `reset did not clear state: ${h}`);
+  assert.ok(Math.abs(h - 60) < 0.001, `reset did not clear state: ${h}`);
 });
 
 test('stale previous sample (> 2 s) bypasses damping', async () => {

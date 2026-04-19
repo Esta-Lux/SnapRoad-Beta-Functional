@@ -623,9 +623,23 @@ export default function MapScreen() {
     navPolylineLenMetersRaw > 1
       ? Math.max(0, Math.min(1, navSnapshotCumMeters / navPolylineLenMetersRaw))
       : 0;
+  /**
+   * Dead-reckoning feed — keeps the smoothed fraction advancing during SDK
+   * silence (tunnels, matcher hiccups, stalls > ~350 ms). Uses the last-known
+   * ground speed from `NavigationProgress.displayCoord.speedMps` (SDK path) or
+   * zero (safe no-op) so a stopped car at a red light doesn't drift.
+   */
+  const lastKnownNavSpeedMps =
+    nav.navigationProgress?.displayCoord?.speedMps ?? 0;
   const smoothedFraction = useSmoothedNavFraction(targetFraction, nav.isNavigating, {
     timeConstantMs: 180,
     snapDeltaFraction: 0.02,
+    deadReckoning: navPolylineLenMetersRaw > 1
+      ? {
+          polylineLengthMeters: navPolylineLenMetersRaw,
+          speedMps: Number.isFinite(lastKnownNavSpeedMps) ? lastKnownNavSpeedMps : 0,
+        }
+      : undefined,
   });
   const smoothedNavPuckCoord = useMemo(() => {
     if (!nav.isNavigating) return null;

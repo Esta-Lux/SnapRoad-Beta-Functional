@@ -137,6 +137,42 @@ function wrap360(deg: number): number {
 }
 
 /**
+ * Clamp the camera/puck bearing so it never deviates more than
+ * `maxDeviationDeg` from the forward-looking route tangent.
+ *
+ * Why: `location.course` is just a direction-of-motion estimate from the
+ * Navigation SDK matcher. In urban canyons, at low speed, or on ramp
+ * pickups, the course can swing ±60° off the actual road. Feeding that to
+ * `FollowWithCourse` makes the camera bearing point partly off-road, which
+ * reads visually as "the camera is tracking me sideways."
+ *
+ * Apple Maps and Mapbox's own `NavigationCamera` both solve this with a
+ * deviation cap against the forward route direction — see Mapbox
+ * `BearingSmoothing.maximumBearingSmoothingAngle` (default 45°). With the
+ * cap in place, the camera can lag or lead the course a little to feel
+ * alive, but it is guaranteed to keep the road centered under the puck.
+ *
+ * Exported for unit tests; idempotent when `tangentDeg` is null/NaN so the
+ * caller is free to skip the tangent lookup for routes without polylines.
+ */
+export function clampBearingToTangentDeg(
+  bearingDeg: number,
+  tangentDeg: number | null,
+  maxDeviationDeg = 45,
+): number {
+  if (tangentDeg == null || !Number.isFinite(tangentDeg)) {
+    return wrap360(bearingDeg);
+  }
+  if (!Number.isFinite(bearingDeg)) {
+    return wrap360(tangentDeg);
+  }
+  const delta = shortestAngleDeltaDeg(bearingDeg, tangentDeg);
+  if (Math.abs(delta) <= maxDeviationDeg) return wrap360(bearingDeg);
+  const sign = delta >= 0 ? 1 : -1;
+  return wrap360(tangentDeg + sign * maxDeviationDeg);
+}
+
+/**
  * Smooth `course` toward the previous emitted heading.
  *
  * - `alpha` = EWMA factor toward the new raw course.
@@ -367,9 +403,20 @@ export function buildNavigationProgressFromSdk(args: {
       : tangentDeg != null
         ? tangentDeg
         : rawCourseDeg;
-  const headingDeg =
+  /**
+   * After smoothing, cap the result so it never deviates more than 45° from
+   * the forward route tangent — Mapbox's `BearingSmoothing.maximumBearingSmoothingAngle`
+   * pattern. This guarantees the camera keeps the road centered even when
+   * the matcher briefly disagrees with the polyline (urban canyon,
+   * ramp pickup). See `clampBearingToTangentDeg` docstring.
+   */
+  const smoothedBearing =
     bearingSeed != null
       ? smoothCourseDeg(bearingSeed, speedMpsForSmoothing, Date.now())
+      : undefined;
+  const headingDeg =
+    smoothedBearing != null
+      ? clampBearingToTangentDeg(smoothedBearing, tangentDeg)
       : undefined;
   const displayCoord = {
     lat: routeSplitSnap.point.lat,
