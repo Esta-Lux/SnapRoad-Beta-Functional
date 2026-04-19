@@ -16,6 +16,21 @@ The **default** experience is a hybrid: the visible map stays on SnapRoad's `@rn
 
 **Single authority**: when `navLogicSdkEnabled()` is on, `useDriveNavigation` sets `sdkActive = true` and gates the JS-only pipeline (`useNavigationProgress` gets `route: []`, `fetchDirections` is blocked mid-trip) so the two engines never fight.
 
+### Single-authority matrix (per-surface)
+
+Trip authority alone isn't enough — each visible nav surface has its own native dependency that must be satisfied before the JS layer can cede control, otherwise the first ~150 ms of a trip briefly renders a half-native / half-JS frame. `src/navigation/navSdkAuthority.ts` exposes four predicates and `MapScreen.tsx` uses them as render gates (`sdkPuckOwns`, `sdkRouteOwns`, `sdkBannerOwns`).
+
+| Surface | Predicate | Native data required | JS fallback while false |
+|---|---|---|---|
+| Trip voice / TTS rate source | `isSdkTripAuthoritative()` | `sdkGuidancePhase === 'active'` (first `onRouteProgressChanged`) | JS voice + JS turn card |
+| Location puck | `isSdkPuckAuthoritative()` | `onNavigationLocationUpdate` matched payload | `MapboxGL.LocationPuck` (raw GPS) |
+| Route polyline | `isSdkRouteAuthoritative()` | `onRoutesLoaded` / `onRouteChanged` (≥ 2 points) | `navigationData.polyline` (JS Directions preview geometry) |
+| Turn banner copy | `isSdkBannerAuthoritative()` | Progress carries `primaryInstruction` or `currentStepInstruction` | REST `NavStep.displayInstruction` via `navSdkProgressAdapter` |
+
+Covered by `navSdkAuthority.unit.test.ts`. The adapter's native-first primary/secondary/then-instruction precedence is covered by `navSdkProgressAdapter.unit.test.ts` (scenarios: native-wins-over-disagreeing-REST, fallback-when-native-silent, thenInstruction-fills-secondary, native `distanceToNextManeuverMeters` wins over REST step distance).
+
+When `sdkRouteOwns` flips true but the SDK polyline hasn't landed yet, `MapScreen` intentionally renders **nothing** for the route instead of falling back to stale JS geometry — the next native tick will paint the correct route (typically within one RAF). When `sdkPuckOwns` flips true, `MapboxGL.LocationPuck.visible` is set to `false` and the `NavSdkPuck` `MarkerView` (blue chevron rotated to `course`) takes over, fed by `navSdkStore.location` via `MapboxGL.CustomLocationProvider`. When `sdkBannerOwns` flips true, `TurnInstructionCard` is forced through the `useBannerCopy` path and reads `banner.primaryInstruction` / `banner.secondaryInstruction` verbatim — JS cruise / confirm copy helpers are bypassed.
+
 **Fight prevention** (audited; see `navSingleAuthority.unit.test.ts` and `utils/voice.ts`):
 
 - *Voice / TTS:* `speakGuidance` and `speak({ rateSource: 'navigation_fixed' })` are hard no-ops during an authoritative SDK trip (`isSdkTripAuthoritative()`). Nav-time non-turn voice — offer nearby, incident ahead — uses `rateSource: 'advisory'`, which is held off for ~3 s after a native voice cue (`msSinceLastSdkVoice()`) so JS never talks over a native turn instruction. User-initiated repeat (`repeatLastTurnByTurn`) passes `forceAllowDuringSdk: true` to bypass the guard.

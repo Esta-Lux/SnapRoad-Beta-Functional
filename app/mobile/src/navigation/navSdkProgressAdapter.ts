@@ -122,21 +122,30 @@ export function buildNavigationProgressFromSdk(args: {
     nextBaseStep != null && nextBaseStep.index + 1 < navSteps.length
       ? navSteps[nextBaseStep.index + 1] ?? null
       : null;
-  const sdkInstruction =
-    progress.primaryInstruction?.trim() ||
-    progress.currentStepInstruction?.trim() ||
-    '';
-  const sdkMatchesDisplayedStep =
-    nextBaseStep != null ? routeNavStepMatchesSdk(nextBaseStep, kind, sdkInstruction) : false;
-  const preferRouteStepFields =
-    nextBaseStep != null &&
-    (!sdkInstruction || nextBaseStep.kind !== kind || !sdkMatchesDisplayedStep);
+  const sdkPrimary = progress.primaryInstruction?.trim() || '';
+  const sdkCurrent = progress.currentStepInstruction?.trim() || '';
+  const sdkInstruction = sdkPrimary || sdkCurrent || '';
+  // REST rows are only for structural enrichment (signal / lanes / shields / street
+  // name) when they describe the SAME maneuver the SDK is pointing at. Native is the
+  // single authority for the primary display text, icon kind, and raw type/modifier
+  // during an active SDK trip — the previous `preferRouteStepFields` path let REST
+  // primary text + kind win whenever shapes differed (e.g. SDK promoted an upcoming
+  // "turn left" while REST was still on the depart step), which made the turn card
+  // contradict native voice. Now we only fall back to REST when the SDK is completely
+  // silent about this step (no primary text and no current-step instruction).
+  const preferRouteStepFields = nextBaseStep != null && !sdkInstruction;
   const primaryText =
-    (preferRouteStepFields ? nextBaseStep?.displayInstruction : sdkInstruction) ||
+    sdkPrimary ||
+    sdkCurrent ||
     nextBaseStep?.displayInstruction ||
-    sdkInstruction ||
     'Continue';
-  const secondaryText = progress.secondaryInstruction?.trim() || progress.thenInstruction?.trim() || undefined;
+  const sdkSecondary = progress.secondaryInstruction?.trim() || '';
+  const sdkThen = progress.thenInstruction?.trim() || '';
+  const restThenBody = followingStep
+    ? followingStep.displayInstruction?.trim() || followingStep.instruction?.trim() || ''
+    : '';
+  const restThen = restThenBody ? `Then ${restThenBody}` : '';
+  const secondaryText = sdkSecondary || sdkThen || restThen || undefined;
   const ds = steps.length > 0 ? steps[nextBaseStep?.index ?? idx] ?? null : null;
   const matchingRouteNavStep =
     nextBaseStep != null && routeNavStepMatchesSdk(nextBaseStep, kind, primaryText) ? nextBaseStep : null;

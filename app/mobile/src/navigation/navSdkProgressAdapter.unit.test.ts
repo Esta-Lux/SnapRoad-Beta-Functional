@@ -29,6 +29,11 @@ const poly: Array<{ lat: number; lng: number }> = [
 ];
 
 test('buildNavigationProgressFromSdk promotes the upcoming SDK maneuver to nextStep', () => {
+  // Real Mapbox Navigation SDK behavior: once you've cleared the depart phase, the
+  // `primaryInstruction` becomes the upcoming actionable maneuver ("Turn left onto
+  // Valencia St"), even when `stepIndex` still points at the depart step. The adapter
+  // must surface that native text and anchor the turn card icon/index on the upcoming
+  // step picked by geometry so the REST enrichment (lanes / shields) lines up.
   const steps: DirectionsStep[] = [
     baseStep({
       instruction: 'Head north on Mission St',
@@ -52,9 +57,9 @@ test('buildNavigationProgressFromSdk promotes the upcoming SDK maneuver to nextS
       durationRemaining: 600,
       fractionTraveled: 0.01,
       stepIndex: 0,
-      primaryInstruction: 'Continue on Mission St',
-      maneuverType: 'continue',
-      maneuverDirection: 'straight',
+      primaryInstruction: 'Turn left onto Valencia St',
+      maneuverType: 'turn',
+      maneuverDirection: 'left',
       distanceToNextManeuverMeters: 150,
     },
     location: null,
@@ -203,7 +208,205 @@ test('buildNavigationProgressFromSdk reuses rich turn metadata only for matching
   assert.equal(prog.nextStep.roundaboutExitNumber, 2);
 });
 
+test('buildNavigationProgressFromSdk forces native primary text to win over REST when they disagree', () => {
+  // Regression: previously `preferRouteStepFields` let REST `nextBaseStep.displayInstruction`
+  // win whenever the REST step kind didn't match the native kind (e.g. REST promoted an
+  // upcoming turn while native still reported depart). That made the turn card say
+  // something different from the native voice that just played. Single-authority rule:
+  // whenever native emits primary text, native wins. REST is only consulted as a fallback
+  // when native is silent.
+  const steps: DirectionsStep[] = [
+    baseStep({
+      instruction: 'Turn left onto Valencia St',
+      name: 'Valencia St',
+      lat: 37.771,
+      lng: -122.419,
+      mapboxManeuver: { type: 'turn', modifier: 'left' },
+      distanceMeters: 80,
+    }),
+  ];
+  const prog = buildNavigationProgressFromSdk({
+    progress: {
+      distanceRemaining: 5000,
+      distanceTraveled: 10,
+      durationRemaining: 600,
+      fractionTraveled: 0.01,
+      stepIndex: 0,
+      primaryInstruction: 'Merge onto I-280 North',
+      maneuverType: 'merge',
+      maneuverDirection: 'slight right',
+      distanceToNextManeuverMeters: 150,
+    },
+    location: null,
+    polyline: poly,
+    steps,
+  });
+  assert.ok(prog);
+  assert.equal(
+    prog.nextStep?.displayInstruction,
+    'Merge onto I-280 North',
+    'native primary text must win — the voice just said "Merge…", not "Turn left…"',
+  );
+  assert.equal(prog.banner!.primaryInstruction, 'Merge onto I-280 North');
+  assert.equal(
+    prog.nextStep?.rawType,
+    'merge',
+    'rawType follows native so the maneuver icon matches the voice',
+  );
+});
+
+test('buildNavigationProgressFromSdk falls back to REST primary text only when native is silent', () => {
+  const steps: DirectionsStep[] = [
+    baseStep({
+      instruction: 'Turn right onto Market St',
+      name: 'Market St',
+      mapboxManeuver: { type: 'turn', modifier: 'right' },
+      distanceMeters: 60,
+    }),
+  ];
+  const prog = buildNavigationProgressFromSdk({
+    progress: {
+      distanceRemaining: 1200,
+      distanceTraveled: 50,
+      durationRemaining: 120,
+      fractionTraveled: 0.1,
+      stepIndex: 0,
+      // No primaryInstruction, no currentStepInstruction — native silent.
+      maneuverType: 'turn',
+      maneuverDirection: 'right',
+      distanceToNextManeuverMeters: 60,
+    },
+    location: null,
+    polyline: poly,
+    steps,
+  });
+  assert.equal(prog?.nextStep?.displayInstruction, 'Turn right onto Market St');
+});
+
+test('buildNavigationProgressFromSdk prefers native secondaryInstruction over REST following-step', () => {
+  const steps: DirectionsStep[] = [
+    baseStep({
+      instruction: 'Head north on Mission St',
+      name: 'Mission St',
+      mapboxManeuver: { type: 'depart', modifier: '' },
+      distanceMeters: 200,
+    }),
+    baseStep({
+      instruction: 'Turn left onto Valencia St',
+      name: 'Valencia St',
+      lat: 37.771,
+      lng: -122.419,
+      mapboxManeuver: { type: 'turn', modifier: 'left' },
+      distanceMeters: 80,
+    }),
+    baseStep({
+      instruction: 'Turn right onto Market St',
+      name: 'Market St',
+      lat: 37.772,
+      lng: -122.418,
+      mapboxManeuver: { type: 'turn', modifier: 'right' },
+      distanceMeters: 60,
+    }),
+  ];
+  const prog = buildNavigationProgressFromSdk({
+    progress: {
+      distanceRemaining: 5000,
+      distanceTraveled: 10,
+      durationRemaining: 600,
+      fractionTraveled: 0.01,
+      stepIndex: 0,
+      primaryInstruction: 'Turn left onto Valencia St',
+      secondaryInstruction: 'Continue on Valencia for 1 mi',
+      maneuverType: 'turn',
+      maneuverDirection: 'left',
+      distanceToNextManeuverMeters: 150,
+    },
+    location: null,
+    polyline: [...poly, { lat: 37.773, lng: -122.417 }],
+    steps,
+  });
+  assert.equal(
+    prog?.banner!.secondaryInstruction,
+    'Continue on Valencia for 1 mi',
+    'native secondary wins over REST "Then Turn right onto Market St"',
+  );
+});
+
+test('buildNavigationProgressFromSdk uses thenInstruction as secondary when native secondary is absent', () => {
+  // Android path: `secondaryInstruction` may be unset (the Mapbox Maneuver API secondary
+  // row is often null on highway merges), but `thenInstruction` — the upcoming maneuver's
+  // primary text — is always present. The adapter must surface it so the turn card still
+  // shows a "then" row that matches the native engine.
+  const steps: DirectionsStep[] = [
+    baseStep({
+      instruction: 'Head north on Mission St',
+      name: 'Mission St',
+      mapboxManeuver: { type: 'depart', modifier: '' },
+      distanceMeters: 200,
+    }),
+  ];
+  const prog = buildNavigationProgressFromSdk({
+    progress: {
+      distanceRemaining: 5000,
+      distanceTraveled: 10,
+      durationRemaining: 600,
+      fractionTraveled: 0.01,
+      stepIndex: 0,
+      primaryInstruction: 'In 500 ft, turn right',
+      thenInstruction: 'Merge onto US-101 South',
+      maneuverType: 'turn',
+      maneuverDirection: 'right',
+      distanceToNextManeuverMeters: 150,
+    },
+    location: null,
+    polyline: poly,
+    steps,
+  });
+  assert.equal(prog?.banner!.secondaryInstruction, 'Merge onto US-101 South');
+});
+
+test('buildNavigationProgressFromSdk prefers native distanceToNextManeuverMeters over REST step distance', () => {
+  const steps: DirectionsStep[] = [
+    baseStep({
+      instruction: 'Turn left onto Valencia St',
+      name: 'Valencia St',
+      lat: 37.771,
+      lng: -122.419,
+      mapboxManeuver: { type: 'turn', modifier: 'left' },
+      distanceMeters: 400, // REST says step is 400 m
+    }),
+  ];
+  const prog = buildNavigationProgressFromSdk({
+    progress: {
+      distanceRemaining: 1000,
+      distanceTraveled: 10,
+      durationRemaining: 90,
+      fractionTraveled: 0.01,
+      stepIndex: 0,
+      primaryInstruction: 'Turn left onto Valencia St',
+      maneuverType: 'turn',
+      maneuverDirection: 'left',
+      distanceToNextManeuverMeters: 75, // native says 75 m remaining on this step
+    },
+    location: null,
+    polyline: poly,
+    steps,
+  });
+  assert.equal(
+    prog?.nextStep?.distanceMetersToNext,
+    75,
+    'turn card countdown must match native engine, not REST step metadata',
+  );
+  assert.equal(prog?.banner!.primaryDistanceMeters, 75);
+});
+
 test('buildNavigationProgressFromSdk prefers upcoming actionable maneuver over current depart step', () => {
+  // Scenario: we're 5 m into a 120 m depart step, but the native engine has already
+  // promoted the upcoming turn to `primaryInstruction` (which is what the banner/voice
+  // is pointing at). The adapter should:
+  //   - use the native text verbatim (`Turn right onto Oak Ave`)
+  //   - skip the non-actionable depart step so REST enrichment hits step index 1
+  //   - carry the native distance countdown through, not a geometric guess
   const steps: DirectionsStep[] = [
     baseStep({
       instruction: 'Head north on Mission St',
@@ -227,10 +430,10 @@ test('buildNavigationProgressFromSdk prefers upcoming actionable maneuver over c
       durationRemaining: 60,
       fractionTraveled: 0.01,
       stepIndex: 0,
-      primaryInstruction: 'Head north on Mission St',
+      primaryInstruction: 'Turn right onto Oak Ave',
       currentStepInstruction: 'Head north on Mission St',
-      maneuverType: 'depart',
-      maneuverDirection: '',
+      maneuverType: 'turn',
+      maneuverDirection: 'right',
       distanceToNextManeuverMeters: 65,
     },
     location: null,
