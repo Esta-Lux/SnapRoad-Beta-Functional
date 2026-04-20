@@ -30,10 +30,13 @@ import OrionQuickMic from '../components/orion/OrionQuickMic';
 import {
   extractCameraList,
   haversineMeters,
-  camerasForNativeMapOverlay,
+  mergeNativeNavMapPois,
 } from '../lib/nativeNavHelpers';
+import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config/restrictedRegions';
 
-const DEFAULT_NAV_MAP_STYLE = 'mapbox://styles/mapbox/standard';
+/** Classic Mapbox Navigation styles — sport uses night, calm/adaptive use day (see embedded nav theme below). */
+const NAV_MAP_STYLE_DAY = 'mapbox://styles/mapbox/navigation-day-v1';
+const NAV_MAP_STYLE_NIGHT = 'mapbox://styles/mapbox/navigation-night-v1';
 
 type NativeNavLocationEvent = {
   latitude: number;
@@ -56,7 +59,7 @@ export default function NativeNavigationScreen() {
   const route = useRoute<RouteProp<MapStackParamList, 'NativeNavigation'>>();
   const { setIsNavigating } = useNavigationMode();
   const { user } = useAuth();
-  const { colors, isLight } = useTheme();
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const screenFocused = useIsFocused();
   const didExitRef = useRef(false);
@@ -64,7 +67,6 @@ export default function NativeNavigationScreen() {
   const navRef = useRef<MapboxNavigationViewRef | null>(null);
   /** Gated so async fetches that resolve after unmount don't call setState. */
   const isMountedRef = useRef(true);
-  const lastIncidentFetchAtRef = useRef(0);
   const lastIncidentFetchCoordRef = useRef<{ lat: number; lng: number } | null>(null);
   const [activeIncident, setActiveIncident] = useState<Incident | null>(null);
   const [dismissedIncidentId, setDismissedIncidentId] = useState<string | number | null>(null);
@@ -88,7 +90,16 @@ export default function NativeNavigationScreen() {
   const destination = normalizedParams?.destination;
   const voiceMuted = normalizedParams?.voiceMuted ?? false;
   const drivingMode: DrivingMode = normalizedParams?.drivingMode ?? 'adaptive';
-  const mapStyleUrl = normalizedParams?.mapStyleUrl ?? DEFAULT_NAV_MAP_STYLE;
+  /**
+   * Sport → Navigation **night** style + dark app theme (matches SnapRoad sport / dusk intent).
+   * Calm + Adaptive → Navigation **day** style + light app theme (matches JS hybrid “day” browse).
+   * Callers can still override with `mapStyleUrl` in route params (e.g. Standard satellite experiments).
+   */
+  const resolvedMapStyleUrl = useMemo(() => {
+    if (normalizedParams?.mapStyleUrl) return normalizedParams.mapStyleUrl;
+    return drivingMode === 'sport' ? NAV_MAP_STYLE_NIGHT : NAV_MAP_STYLE_DAY;
+  }, [normalizedParams?.mapStyleUrl, drivingMode]);
+  const embeddedAppTheme: 'light' | 'dark' = drivingMode === 'sport' ? 'dark' : 'light';
   const modeConfig = DRIVING_MODES[drivingMode];
   const reportHint = useMemo(() => {
     const raw = route.params?.reportHint;
@@ -123,9 +134,9 @@ export default function NativeNavigationScreen() {
         destination?.lat ?? 'na',
         destination?.lng ?? 'na',
         drivingMode,
-        mapStyleUrl,
+        resolvedMapStyleUrl,
       ].join(':'),
-    [origin?.lat, origin?.lng, destination?.lat, destination?.lng, drivingMode, mapStyleUrl],
+    [origin?.lat, origin?.lng, destination?.lat, destination?.lng, drivingMode, resolvedMapStyleUrl],
   );
 
   const followingZoom = modeConfig.navZoom;
@@ -167,47 +178,91 @@ export default function NativeNavigationScreen() {
     [bridge],
   );
 
-  /** OHGO cameras: ~50 km radius (backend uses km) → drawn on embedded map via native GeoJSON layer. */
-  const fetchNearbyCameras = useCallback(async (lat: number, lng: number) => {
-    try {
-      const res = await api.get<unknown>(
-        `/api/map/cameras?lat=${lat}&lng=${lng}&radius=50`,
-      );
-      if (!isMountedRef.current) return;
-      if (!res.success || res.data == null) return;
-      const items = extractCameraList(res.data);
-      lastCameraFetchCoordRef.current = { lat, lng };
-      if (items.length === 0) {
-        setTrafficCamerasJson('[]');
-        return;
-      }
-      const payload = camerasForNativeMapOverlay(items);
-      if (!isMountedRef.current) return;
-      setTrafficCamerasJson(JSON.stringify(payload));
-    } catch {
-      /* offline / tunnel / transient backend issue */
-    }
-  }, []);
-
-  const fetchNearbyIncidents = useCallback(
+  /**
+   * One refresh for OHGO cameras + photo reports + traffic-safety POIs + incidents — parity with
+   * what MapScreen layers load during hybrid navigation (same endpoints / radii as MapScreen).
+   */
+  const refreshNativeMapPois = useCallback(
     async (lat: number, lng: number) => {
       try {
-        const res = await api.get<{ success?: boolean; data?: Incident[] }>(
-          `/api/incidents/nearby?lat=${lat}&lng=${lng}&radius_miles=2`,
-        );
+        const zoneReq =
+          isTrafficSafetyLayerEnabled(lat, lng)
+            ? api.get<Record<string, unknown>>(
+                `/api/traffic-safety/zones?lat=${lat}&lng=${lng}&radius_km=12&region=${encodeURIComponent(
+                  trafficSafetyRegionQuery(lat, lng),
+                )}`,
+              )
+            : Promise.resolve({ success: false as const, data: null });
+
+        const [camRes, photoRes, zoneRes, incRes] = await Promise.all([
+          api.get<unknown>(`/api/map/cameras?lat=${lat}&lng=${lng}&radius=80`),
+          api.get<{ photos?: unknown[] }>(`/api/photo-reports/nearby?lat=${lat}&lng=${lng}&radius=5`),
+          zoneReq,
+          api.get<{ success?: boolean; data?: unknown }>(
+            `/api/incidents/nearby?lat=${lat}&lng=${lng}&radius_miles=2`,
+          ),
+        ]);
         if (!isMountedRef.current) return;
-        if (!res.success || res.data == null) return;
-        const data = (res.data as { data?: Incident[] }).data;
-        if (!Array.isArray(data) || data.length === 0) {
-          lastIncidentFetchCoordRef.current = { lat, lng };
-          setActiveIncident(null);
-          return;
+
+        const cameras =
+          camRes.success && camRes.data != null ? extractCameraList(camRes.data) : [];
+
+        let photoReports: Array<{ id: string; lat: number; lng: number; description?: string }> = [];
+        if (photoRes.success && photoRes.data != null) {
+          const raw = photoRes.data as { photos?: unknown[] };
+          const d = raw?.photos;
+          if (Array.isArray(d)) {
+            photoReports = d
+              .map((p: unknown) => {
+                const o = p as { id?: unknown; lat?: unknown; lng?: unknown; description?: unknown };
+                return {
+                  id: String(o.id ?? ''),
+                  lat: Number(o.lat),
+                  lng: Number(o.lng),
+                  description: typeof o.description === 'string' ? o.description : undefined,
+                };
+              })
+              .filter((p) => p.id && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+          }
         }
-        const nearest = data.reduce<Incident | null>((best, inc) => {
-          if (
-            dismissedIncidentId != null &&
-            String(inc.id) === String(dismissedIncidentId)
-          ) {
+
+        let trafficZones: Array<{
+          id: string;
+          lat: number;
+          lng: number;
+          kind?: string;
+          maxspeed?: unknown;
+        }> = [];
+        if (zoneRes.success && zoneRes.data != null) {
+          const raw = zoneRes.data as Record<string, unknown>;
+          const payload =
+            raw && typeof raw === 'object' && 'zones' in raw
+              ? raw
+              : (raw.data as Record<string, unknown> | undefined) ?? raw;
+          if (!payload?.disabled) {
+            const zl = payload?.zones;
+            if (Array.isArray(zl)) {
+              trafficZones = zl
+                .map((z: Record<string, unknown>) => ({
+                  id: String(z?.id ?? ''),
+                  lat: Number(z?.lat),
+                  lng: Number(z?.lng),
+                  kind: typeof z?.kind === 'string' ? z.kind : 'speed_camera',
+                  maxspeed: z?.maxspeed ?? null,
+                }))
+                .filter((z) => z.id && Number.isFinite(z.lat) && Number.isFinite(z.lng));
+            }
+          }
+        }
+
+        let incidents: Incident[] = [];
+        if (incRes.success && incRes.data != null) {
+          const data = (incRes.data as { data?: Incident[] }).data;
+          if (Array.isArray(data)) incidents = data;
+        }
+
+        const nearest = incidents.reduce<Incident | null>((best, inc) => {
+          if (dismissedIncidentId != null && String(inc.id) === String(dismissedIncidentId)) {
             return best;
           }
           if (!best) return inc;
@@ -216,10 +271,18 @@ export default function NativeNavigationScreen() {
           return incDist < bestDist ? inc : best;
         }, null);
         lastIncidentFetchCoordRef.current = { lat, lng };
-        if (!isMountedRef.current) return;
         setActiveIncident(nearest);
+
+        const merged = mergeNativeNavMapPois({
+          cameras,
+          photoReports,
+          trafficZones,
+          incidents,
+        });
+        setTrafficCamerasJson(JSON.stringify(merged));
+        lastCameraFetchCoordRef.current = { lat, lng };
       } catch {
-        /* offline / tunnel / transient backend issue */
+        /* offline / tunnel */
       }
     },
     [dismissedIncidentId],
@@ -232,34 +295,19 @@ export default function NativeNavigationScreen() {
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
       const course = Number(event.nativeEvent?.course);
       if (Number.isFinite(course)) lastCourseRef.current = course;
-      // Focus gate: if the user exited to `MapMain` (swipe-back), MapScreen's own
-      // fetchers own OHGO + incident polling. Avoid double-fetching during the brief
-      // overlap between screens.
       if (!screenFocused) return;
       const now = Date.now();
 
-      const lastIncidentCoord = lastIncidentFetchCoordRef.current;
-      const incMoved =
-        lastIncidentCoord != null
-          ? haversineMeters(lastIncidentCoord.lat, lastIncidentCoord.lng, lat, lng)
-          : Number.POSITIVE_INFINITY;
-      if (now - lastIncidentFetchAtRef.current >= 3000 || incMoved >= 180) {
-        lastIncidentFetchAtRef.current = now;
-        void fetchNearbyIncidents(lat, lng);
-      }
-
-      const lastCamCoord = lastCameraFetchCoordRef.current;
-      const camMoved =
-        lastCamCoord != null
-          ? haversineMeters(lastCamCoord.lat, lastCamCoord.lng, lat, lng)
-          : Number.POSITIVE_INFINITY;
-      // Cameras update slower than incidents to keep request volume reasonable during a trip.
-      if (now - lastCameraFetchAtRef.current >= 15000 || camMoved >= 1200) {
+      const lastPivot = lastCameraFetchCoordRef.current;
+      const moved =
+        lastPivot != null ? haversineMeters(lastPivot.lat, lastPivot.lng, lat, lng) : Number.POSITIVE_INFINITY;
+      // Slightly faster cadence than the old camera-only path so incidents + OHGO stay fresh.
+      if (now - lastCameraFetchAtRef.current >= 10000 || moved >= 900) {
         lastCameraFetchAtRef.current = now;
-        void fetchNearbyCameras(lat, lng);
+        void refreshNativeMapPois(lat, lng);
       }
     },
-    [fetchNearbyIncidents, fetchNearbyCameras, screenFocused],
+    [refreshNativeMapPois, screenFocused],
   );
 
   const handleDismissIncident = useCallback(() => {
@@ -269,8 +317,16 @@ export default function NativeNavigationScreen() {
 
   const handleTrafficCameraTap = useCallback(
     (event: { nativeEvent: { id?: string; name?: string } }) => {
-      const name = event.nativeEvent?.name?.trim() || 'Traffic camera';
-      Alert.alert('Traffic camera', name, [{ text: 'OK' }]);
+      const name = event.nativeEvent?.name?.trim() || 'Map point';
+      const title =
+        /^Incident ·/i.test(name)
+          ? 'Incident'
+          : /^Photo report ·/i.test(name)
+            ? 'Photo report'
+            : /^Speed camera/i.test(name)
+              ? 'Traffic safety'
+              : 'Traffic camera';
+      Alert.alert(title, name, [{ text: 'OK' }]);
     },
     [],
   );
@@ -295,9 +351,8 @@ export default function NativeNavigationScreen() {
 
   useEffect(() => {
     if (!origin) return;
-    void fetchNearbyIncidents(origin.lat, origin.lng);
-    void fetchNearbyCameras(origin.lat, origin.lng);
-  }, [fetchNearbyIncidents, fetchNearbyCameras, origin]);
+    void refreshNativeMapPois(origin.lat, origin.lng);
+  }, [refreshNativeMapPois, origin]);
 
   useEffect(() => {
     if (!orionQuickReply) return;
@@ -315,15 +370,27 @@ export default function NativeNavigationScreen() {
     return null;
   }
 
-  const reportSurface = isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.9)';
-  const reportBorder = isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.18)';
-  const chromeSurface = isLight ? modeConfig.etaBarBg : modeConfig.etaBarBgDark;
-  const chromeText = isLight ? colors.text : modeConfig.etaValueColor;
-  const chromeSubtle = isLight ? colors.textSecondary : modeConfig.etaLabelColor;
+  const reportSurface =
+    embeddedAppTheme === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.9)';
+  const reportBorder =
+    embeddedAppTheme === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.18)';
+  const chromeSurface =
+    embeddedAppTheme === 'light' ? modeConfig.etaBarBg : modeConfig.etaBarBgDark;
+  const chromeText =
+    embeddedAppTheme === 'light' ? colors.text : modeConfig.etaValueColor;
+  const chromeSubtle =
+    embeddedAppTheme === 'light' ? colors.textSecondary : modeConfig.etaLabelColor;
 
   return (
-    <View style={[styles.container, { backgroundColor: !isLight ? '#0a0a0f' : '#000' }]}>
-      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: embeddedAppTheme === 'dark' ? '#0a0a0f' : '#000' },
+      ]}
+    >
+      <StatusBar
+        barStyle={embeddedAppTheme === 'light' ? 'dark-content' : 'light-content'}
+      />
       <MapboxNavigationView
         key={nativeViewKey}
         ref={navRef}
@@ -331,12 +398,12 @@ export default function NativeNavigationScreen() {
         coordinates={coordinates}
         mute={voiceMuted}
         routeProfile={bridge.routeProfile}
-        mapStyle={mapStyleUrl}
+        mapStyle={resolvedMapStyleUrl}
         followingZoom={followingZoom}
         followingPitch={followingPitch}
         trafficCameras={trafficCamerasJson}
         drivingMode={drivingMode}
-        appTheme={isLight ? 'light' : 'dark'}
+        appTheme={embeddedAppTheme}
         navigationLogicOnly={false}
         onRouteProgressChanged={handleProgressChanged}
         onNavigationLocationUpdate={handleLocationUpdate}

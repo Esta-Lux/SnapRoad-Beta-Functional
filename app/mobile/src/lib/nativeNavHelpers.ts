@@ -114,10 +114,12 @@ export function pickCameraAhead(
 /**
  * Build a compact list for the native nav map overlay (GeoJSON features are driven from this JSON).
  */
+export type NativeNavMapPoi = { lat: number; lng: number; id: string; name: string };
+
 export function camerasForNativeMapOverlay(
   items: CameraCandidate[],
-): { lat: number; lng: number; id: string; name: string }[] {
-  const out: { lat: number; lng: number; id: string; name: string }[] = [];
+): NativeNavMapPoi[] {
+  const out: NativeNavMapPoi[] = [];
   for (const rpt of items) {
     const cLat = Number(rpt.lat);
     const cLng = Number(rpt.lng);
@@ -130,6 +132,71 @@ export function camerasForNativeMapOverlay(
     out.push({ lat: cLat, lng: cLng, id, name });
   }
   return out;
+}
+
+/**
+ * Single GeoJSON payload for the native nav `trafficCameras` prop: OHGO cameras plus the same
+ * categories MapScreen shows during hybrid navigation (photo reports, traffic-safety POIs,
+ * community incidents). The native layer uses one tap target + label; names are prefixed by
+ * category so the alert reads clearly.
+ */
+export function mergeNativeNavMapPois(opts: {
+  cameras: CameraCandidate[];
+  photoReports?: Array<{ id: string; lat: number; lng: number; description?: string }>;
+  trafficZones?: Array<{ id: string; lat: number; lng: number; kind?: string; maxspeed?: unknown }>;
+  incidents?: Array<{ id: string | number; lat: number; lng: number; title?: string; type?: string }>;
+  maxFeatures?: number;
+}): NativeNavMapPoi[] {
+  const max = opts.maxFeatures ?? 140;
+  const seen = new Set<string>();
+  const out: NativeNavMapPoi[] = [];
+
+  const push = (lat: number, lng: number, id: string, name: string) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const k = `${Math.round(lat * 10000)}:${Math.round(lng * 10000)}:${id}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ lat, lng, id, name });
+  };
+
+  for (const c of opts.cameras) {
+    const cLat = Number(c.lat);
+    const cLng = Number(c.lng);
+    if (!Number.isFinite(cLat) || !Number.isFinite(cLng)) continue;
+    const id = `cam-${String(c.id ?? `${cLat},${cLng}`)}`;
+    const name =
+      (typeof c.title === 'string' && c.title.trim()) ||
+      (typeof c.name === 'string' && c.name.trim()) ||
+      'Traffic camera';
+    push(cLat, cLng, id, name);
+  }
+
+  for (const p of opts.photoReports ?? []) {
+    const id = `photo-${p.id}`;
+    const label =
+      p.description && p.description.trim().length > 0
+        ? `Photo report · ${p.description.trim().slice(0, 96)}`
+        : 'Photo report';
+    push(Number(p.lat), Number(p.lng), id, label);
+  }
+
+  for (const z of opts.trafficZones ?? []) {
+    if (!z?.id) continue;
+    const id = `zone-${z.id}`;
+    const kind = typeof z.kind === 'string' ? z.kind : 'speed_camera';
+    const ms = z.maxspeed != null ? String(z.maxspeed) : '';
+    const label = ms ? `Speed camera · ${kind} (${ms})` : `Speed camera · ${kind}`;
+    push(Number(z.lat), Number(z.lng), id, label);
+  }
+
+  for (const inc of opts.incidents ?? []) {
+    const id = `inc-${String(inc.id)}`;
+    const title =
+      (typeof inc.title === 'string' && inc.title.trim()) || String(inc.type ?? 'Community report');
+    push(Number(inc.lat), Number(inc.lng), id, `Incident · ${title}`);
+  }
+
+  return out.slice(0, max);
 }
 
 /**

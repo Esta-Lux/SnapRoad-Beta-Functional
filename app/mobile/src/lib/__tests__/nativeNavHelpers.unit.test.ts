@@ -7,6 +7,7 @@ import {
   haversineMeters,
   pickCameraAhead,
   camerasForNativeMapOverlay,
+  mergeNativeNavMapPois,
   shouldSuppressSdkCameraInstructionLine,
 } from '../nativeNavHelpers';
 
@@ -52,6 +53,22 @@ test('camerasForNativeMapOverlay builds id/name/lat/lng', () => {
   assert.equal(out[0]!.name, 'Cam A');
   assert.equal(out[0]!.lat, 40.1);
   assert.equal(out[0]!.lng, -82.2);
+});
+
+test('mergeNativeNavMapPois prefixes ids and merges categories', () => {
+  const merged = mergeNativeNavMapPois({
+    cameras: [{ lat: 40, lng: -83, id: '1', title: 'OHGO' }],
+    photoReports: [{ id: 'p1', lat: 40.001, lng: -83, description: 'Pothole' }],
+    trafficZones: [{ id: 'z1', lat: 40.002, lng: -83, kind: 'speed_camera', maxspeed: '55' }],
+    incidents: [{ id: 9, lat: 40.003, lng: -83, title: 'Crash', type: 'crash' }],
+  });
+  const names = merged.map((m) => m.name).join('|');
+  assert.ok(names.includes('OHGO'));
+  assert.ok(names.includes('Photo report'));
+  assert.ok(names.includes('Speed camera'));
+  assert.ok(names.includes('Incident'));
+  assert.ok(merged.some((m) => m.id.startsWith('cam-')));
+  assert.ok(merged.some((m) => m.id.startsWith('photo-')));
 });
 
 test('extractCameraList handles wrapped {data:[...]}', () => {
