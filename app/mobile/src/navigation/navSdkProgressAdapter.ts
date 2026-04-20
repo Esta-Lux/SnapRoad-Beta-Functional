@@ -592,7 +592,12 @@ export function buildNavigationProgressFromSdk(args: {
   const speedMpsForSmoothing =
     location != null && location.speed >= 0 ? location.speed : null;
   const tangentDeg = tangentBearingAlongPolyline(polyline, cumulativeMeters);
-  const nowMs = Date.now();
+  const nowMs =
+    location != null &&
+    Number.isFinite(location.timestamp) &&
+    location.timestamp > 0
+      ? location.timestamp
+      : Date.now();
   const MOVING_THRESHOLD_MPS = 2.0;
   const CREEP_THRESHOLD_MPS = 0.5;
   const speedForBand = Number.isFinite(speedMpsForSmoothing as number)

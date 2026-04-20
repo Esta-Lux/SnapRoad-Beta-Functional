@@ -48,7 +48,7 @@ const poly = [
   { lat: 37.771, lng: -122.419 },
 ];
 
-function runTick(courseDeg: number, speedMps: number) {
+function runTick(courseDeg: number, speedMps: number, timestampMs: number) {
   const prog = buildNavigationProgressFromSdk({
     progress: {
       distanceRemaining: 1000,
@@ -65,7 +65,7 @@ function runTick(courseDeg: number, speedMps: number) {
       course: courseDeg,
       speed: speedMps,
       horizontalAccuracy: 5,
-      timestamp: Date.now(),
+      timestamp: timestampMs,
     },
     polyline: poly,
     steps: [step('Head north')],
@@ -75,43 +75,45 @@ function runTick(courseDeg: number, speedMps: number) {
   return prog.displayCoord;
 }
 
+const T0 = 1_000_000;
+
 test('first heading tick passes through (seeds the smoother)', () => {
   resetHeadingSmoothing();
-  const out = runTick(42, 18);
+  const out = runTick(42, 18, T0);
   assert.ok(out.heading != null);
   assert.ok(Math.abs((out.heading as number) - 42) < 0.001);
 });
 
 test('cruise-speed small delta (~5°) is mostly passed through', () => {
   resetHeadingSmoothing();
-  runTick(40, 20); // seed
-  const out = runTick(45, 20);
-  // At 20 m/s alpha ≈ 0.85, so heading moves ~4.25° toward 45
+  runTick(40, 20, T0); // seed
+  const out = runTick(45, 20, T0 + 16);
+  // Time-based EWMA at cruise speed (tau≈120ms, dt=16ms) should move noticeably.
   const h = out.heading as number;
-  assert.ok(h > 43.5 && h < 45, `cruise delta not pass-through: ${h}`);
+  assert.ok(h > 40.4 && h < 40.9, `cruise delta not pass-through: ${h}`);
 });
 
 test('slow-speed small delta (~5°) is heavily damped', () => {
   resetHeadingSmoothing();
-  runTick(40, 2); // seed at walking pace
-  const out = runTick(45, 2);
-  // At ≤ 4 m/s alpha = 0.35 — heading should barely move
+  runTick(40, 2, T0); // seed at walking pace
+  const out = runTick(45, 2, T0 + 16);
+  // Time-based EWMA at low speed (tau≈350ms, dt=16ms) should move only a little.
   const h = out.heading as number;
-  assert.ok(h > 41 && h < 42.5, `slow delta not damped: ${h}`);
+  assert.ok(h > 40.1 && h < 40.4, `slow delta not damped: ${h}`);
 });
 
 test('sharp turn (|Δ| ≥ 25°) bypasses damping at any speed', () => {
   resetHeadingSmoothing();
-  runTick(0, 2);
-  const sharp = runTick(30, 2); // 30° > 25° threshold
+  runTick(0, 2, T0);
+  const sharp = runTick(30, 2, T0 + 16); // 30° > 25° threshold
   const h = sharp.heading as number;
   assert.ok(Math.abs(h - 30) < 0.001, `sharp turn not instant: ${h}`);
 });
 
 test('wrap-around near 0°/360° uses shortest angle', () => {
   resetHeadingSmoothing();
-  runTick(359, 20); // seed near north, going clockwise
-  const out = runTick(1, 20); // raw delta looks -358°, shortest is +2°
+  runTick(359, 20, T0); // seed near north, going clockwise
+  const out = runTick(1, 20, T0 + 16); // raw delta looks -358°, shortest is +2°
   const h = out.heading as number;
   // Expected: wrap through 0°, land close to 1°, NOT ~180° or ~359°
   // With alpha ≈ 0.85 and shortest delta +2°, new heading ≈ 359 + 1.7 = 360.7 → 0.7°
@@ -122,21 +124,19 @@ test('resetHeadingSmoothing() forces the next tick to pass through', () => {
   // Pick courses inside the ±45° bearing-cap cone (route tangent ~38° NE) so
   // we test reset behaviour in isolation rather than the tangent clamp.
   resetHeadingSmoothing();
-  runTick(20, 20); // seed near tangent
+  runTick(20, 20, T0); // seed near tangent
   resetHeadingSmoothing();
-  const out = runTick(60, 5);
+  const out = runTick(60, 5, T0 + 16);
   // After reset, 60° with no previous sample should seed → pass through
   // (|60 - 38| = 22° < 45° cap, so cap does not fire).
   const h = out.heading as number;
   assert.ok(Math.abs(h - 60) < 0.001, `reset did not clear state: ${h}`);
 });
 
-test('stale previous sample (> 2 s) bypasses damping', async () => {
+test('stale previous sample (> 2 s) bypasses damping', () => {
   resetHeadingSmoothing();
-  runTick(0, 2); // slow pace so small delta would normally damp
-  // Spoof time by letting 2.1 s pass (node:test supports real timers cleanly here)
-  await new Promise((r) => setTimeout(r, 2100));
-  const out = runTick(10, 2);
+  runTick(0, 2, T0); // slow pace so small delta would normally damp
+  const out = runTick(10, 2, T0 + 2101);
   const h = out.heading as number;
   // Stale path seeds fresh → pass-through
   assert.ok(Math.abs(h - 10) < 0.001, `stale sample not flushed: ${h}`);
@@ -149,7 +149,7 @@ test('negative course (unknown) falls through to route-tangent bearing', () => {
   // reported bug. Instead we seed from the route tangent at the current
   // snap point, which is always a valid forward direction along the polyline.
   resetHeadingSmoothing();
-  const out = runTick(-1, 0); // stationary, course unknown
+  const out = runTick(-1, 0, T0); // stationary, course unknown
   const h = out.heading as number;
   assert.ok(
     Number.isFinite(h),
@@ -167,11 +167,11 @@ test('below-threshold speed prefers route tangent over noisy course', () => {
   // camera toward the (possibly misaligned) device-compass reading. The
   // adapter must prefer the route tangent in this regime.
   resetHeadingSmoothing();
-  const tangent = runTick(-1, 0).heading as number;
+  const tangent = runTick(-1, 0, T0).heading as number;
   resetHeadingSmoothing();
   // Low speed + a wildly misleading raw course (pointing 180° from travel)
   // — tangent should still win.
-  const low = runTick(220, 0.3).heading as number;
+  const low = runTick(220, 0.3, T0 + 16).heading as number;
   assert.ok(
     Math.abs(((low - tangent + 540) % 360) - 180) < 20,
     `low-speed heading ignored tangent (tangent=${tangent}, low=${low})`,

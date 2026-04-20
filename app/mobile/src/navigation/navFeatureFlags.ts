@@ -1,5 +1,3 @@
-import Constants from 'expo-constants';
-
 /**
  * EXPO_PUBLIC_* vars are inlined at bundle time. Most flags default off; logic SDK defaults on
  * (see {@link navLogicSdkEnabled}).
@@ -11,12 +9,28 @@ function envBool(key: string, defaultVal: boolean): boolean {
   return defaultVal;
 }
 
+type ExpoConstantsLike = {
+  expoGoConfig?: { debuggerHost?: string };
+  executionEnvironment?: string;
+};
+
+function getExpoConstants(): ExpoConstantsLike | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('expo-constants') as
+      | ({ default?: ExpoConstantsLike } & ExpoConstantsLike)
+      | undefined;
+    return mod?.default ?? mod ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function nativeNavigationSupportedBuild(): boolean {
-  const expoGoConfig =
-    (Constants as unknown as { expoGoConfig?: { debuggerHost?: string } }).expoGoConfig;
-  const executionEnvironment = String(
-    (Constants as unknown as { executionEnvironment?: string }).executionEnvironment ?? '',
-  ).toLowerCase();
+  const constants = getExpoConstants();
+  if (!constants) return true;
+  const expoGoConfig = constants.expoGoConfig;
+  const executionEnvironment = String(constants.executionEnvironment ?? '').toLowerCase();
   return !expoGoConfig && executionEnvironment !== 'storeclient';
 }
 
