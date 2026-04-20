@@ -18,3 +18,9 @@
 - `src/navigation/navRouteArcPosition.unit.test.ts` — arc-length puck / trim invariants (pure `distance` helpers; avoids pulling `navSdkProgressAdapter` into Node so `tsx` tests stay green).
 
 **Stable smoke matrix (native nav + share plumbing, no full `npm test` RN graph):** from `app/mobile`, run `npm run test:smoke` — navigation `*.smoke.test.ts`, arc position, and `locationSharing.unit.test.ts`. Device QA still covers headless SDK pass-through and `expo-location` background share (permissions, OS throttling).
+
+**Friends (viewer):** `useFocusEffect` refreshes `/api/friends/list` when the Map tab gains focus; polling is ~12s while Map is focused and ~45s otherwise; Supabase updates merge with `String(id)` equality and trigger a full list refresh if the row’s user id was not yet in the list (INSERT / id mismatch).
+
+**Nav chevron:** `navPuckHeading` blends SDK course with `tangentBearingAlongPolyline` at the current arc length so the arrow follows the drawn route, not device compass when panning the map. `NavSdkPuck` predictive lead-ahead is disabled (`PREDICTIVE_MS = 0`) to reduce “floating” ahead of the snapped point.
+
+**POIs:** Offers, traffic-safety zones, cameras, incidents, and photo reports use `poiSearchCoord` (snapped nav position while navigating, else GPS) so markers stay populated along the corridor during trips.

@@ -116,6 +116,7 @@ import {
   formatDistance,
   haversineMeters,
   polylineLengthMeters,
+  tangentBearingAlongPolyline,
   type RouteSplitForOverlay,
 } from '../utils/distance';
 import { useSmoothedNavFraction } from '../hooks/useSmoothedNavFraction';
@@ -160,7 +161,7 @@ import { routeProfileForPlatform } from '../hooks/useNativeNavBridge';
 import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
 import type { TripSummary } from '../hooks/useDriveNavigation';
 import type { RouteProp } from '@react-navigation/native';
-import { useNavigation as useRNNavigation, useRoute, useIsFocused } from '@react-navigation/native';
+import { useNavigation as useRNNavigation, useRoute, useIsFocused, useFocusEffect } from '@react-navigation/native';
 import type { MapStackParamList, MapStackScreenNavigationProp } from '../navigation/types';
 import { extractLocationSharingValue, getApiErrorMessage } from '../features/social/locationSharing';
 import { storage } from '../utils/storage';
@@ -453,6 +454,14 @@ export default function MapScreen() {
       })
       .catch((e) => logMapDataIssue('GET /api/friends/list', e));
   }, [user?.isPremium]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.isPremium && friendTrackingEnabled) {
+        refreshFriendLocations();
+      }
+    }, [user?.isPremium, friendTrackingEnabled, refreshFriendLocations]),
+  );
 
   const friendLocationsVisible = friendTrackingEnabled ? friendLocations : [];
 
@@ -798,6 +807,55 @@ export default function MapScreen() {
    */
   const navDisplayCoord = smoothedNavPuckCoord ?? navDisplayCoordRaw;
 
+  /** POI / offers / incidents fetches use route-snapped position while navigating so pins stay near the corridor. */
+  const poiSearchCoord = useMemo(() => {
+    if (
+      nav.isNavigating &&
+      Number.isFinite(navDisplayCoord.lat) &&
+      Number.isFinite(navDisplayCoord.lng) &&
+      !(Math.abs(navDisplayCoord.lat) < 1e-6 && Math.abs(navDisplayCoord.lng) < 1e-6)
+    ) {
+      return { lat: navDisplayCoord.lat, lng: navDisplayCoord.lng };
+    }
+    return { lat: location.lat, lng: location.lng };
+  }, [nav.isNavigating, navDisplayCoord.lat, navDisplayCoord.lng, location.lat, location.lng]);
+
+  /**
+   * Chevron / camera bearing during navigation: bias toward **route tangent** at the current
+   * arc-length so the arrow tracks the drawn polyline instead of coupling to device compass
+   * or noisy GPS course when the user pans the map. Blends with SDK course when nearly stopped.
+   */
+  const navPuckHeading = useMemo(() => {
+    if (!nav.isNavigating) return navDisplayHeading;
+    const poly = navPolylineForSmoothing;
+    const cum = navSnapshotCumMeters;
+    if (!poly || poly.length < 2) return navDisplayHeading;
+    const tangent = tangentBearingAlongPolyline(poly, cum, 22);
+    if (tangent == null || !Number.isFinite(tangent)) return navDisplayHeading;
+    const spd =
+      nav.fusedNavState?.displayCoord?.speedMps ??
+      nav.navigationProgress?.displayCoord?.speedMps ??
+      (typeof nav.sdkNavLocation?.speed === 'number' ? nav.sdkNavLocation.speed : -1);
+    const sdkH = navDisplayHeading;
+    if (spd >= 0 && spd < 0.65) {
+      return clampStepTowardDeg(sdkH, tangent, 22);
+    }
+    return clampStepTowardDeg(sdkH, tangent, 52);
+  }, [
+    nav.isNavigating,
+    navPolylineForSmoothing,
+    navSnapshotCumMeters,
+    navDisplayHeading,
+    nav.fusedNavState?.displayCoord?.speedMps,
+    nav.navigationProgress?.displayCoord?.speedMps,
+    nav.sdkNavLocation?.speed,
+  ]);
+
+  const poiSearchCoordRef = useRef(poiSearchCoord);
+  useEffect(() => {
+    poiSearchCoordRef.current = poiSearchCoord;
+  }, [poiSearchCoord.lat, poiSearchCoord.lng]);
+
   /**
    * Single-authority predicates for the three UI surfaces the native Mapbox Navigation
    * SDK owns during a hybrid trip: puck, route polyline, and turn banner. They flip on
@@ -987,7 +1045,7 @@ export default function MapScreen() {
     const sp = fusedSpeedMpsNav ?? 0;
     const ahead = getLookAheadMeters(drivingMode, sp, nextManeuverDistanceMeters);
     if (ahead < 4) return null;
-    const h = Number.isFinite(navDisplayHeading) ? navDisplayHeading : heading;
+    const h = Number.isFinite(navPuckHeading) ? navPuckHeading : heading;
     if (!Number.isFinite(h)) return null;
     const p = projectAhead(navDisplayCoord.lat, navDisplayCoord.lng, h, ahead);
     return { lat: p.latitude, lng: p.longitude };
@@ -998,7 +1056,7 @@ export default function MapScreen() {
     nextManeuverDistanceMeters,
     navDisplayCoord.lat,
     navDisplayCoord.lng,
-    navDisplayHeading,
+    navPuckHeading,
     heading,
     isNativeSdkPassThrough,
   ]);
@@ -1024,18 +1082,18 @@ export default function MapScreen() {
       lastCameraUpdate.current = {
         lat: navDisplayCoord.lat,
         lng: navDisplayCoord.lng,
-        heading: navDisplayHeading,
+        heading: navPuckHeading,
       };
     }
     wasNavigatingForOdomRef.current = nav.isNavigating;
-  }, [nav.isNavigating, navDisplayCoord.lat, navDisplayCoord.lng, navDisplayHeading]);
+  }, [nav.isNavigating, navDisplayCoord.lat, navDisplayCoord.lng, navPuckHeading]);
 
   const navDisplayCoordRef = useRef(navDisplayCoord);
   const navDisplayHeadingRef = useRef(navDisplayHeading);
   useEffect(() => {
     navDisplayCoordRef.current = navDisplayCoord;
-    navDisplayHeadingRef.current = navDisplayHeading;
-  }, [navDisplayCoord.lat, navDisplayCoord.lng, navDisplayHeading]);
+    navDisplayHeadingRef.current = navPuckHeading;
+  }, [navDisplayCoord.lat, navDisplayCoord.lng, navPuckHeading]);
 
   const camCtrlRef = useRef(camCtrlForNav);
   camCtrlRef.current = camCtrlForNav;
@@ -1058,8 +1116,8 @@ export default function MapScreen() {
     const h =
       useNative && camCtrlForNav.headingDeg != null && Number.isFinite(camCtrlForNav.headingDeg)
         ? camCtrlForNav.headingDeg
-        : Number.isFinite(navDisplayHeading)
-          ? navDisplayHeading
+        : Number.isFinite(navPuckHeading)
+          ? navPuckHeading
           : heading;
     const pad = camCtrlForNav.followPadding;
     cam.setCamera({
@@ -1092,7 +1150,7 @@ export default function MapScreen() {
     camCtrlForNav?.headingDeg,
     navDisplayCoord.lat,
     navDisplayCoord.lng,
-    navDisplayHeading,
+    navPuckHeading,
     heading,
     cameraLeadCoord?.lat,
     cameraLeadCoord?.lng,
@@ -1458,12 +1516,13 @@ export default function MapScreen() {
     refreshFriendLocations();
   }, [refreshSavedPlaces, user?.isPremium, refreshFriendLocations]);
 
-  /** Premium friends list: refresh on any tab while the app is foregrounded (not only Map). */
+  /** Premium friends list: faster poll while Map is focused so shared locations stay current. */
   useEffect(() => {
     if (!user?.isPremium || !friendTrackingEnabled) return;
-    const id = setInterval(refreshFriendLocations, 60_000);
+    const ms = mapTabFocused ? 12_000 : 45_000;
+    const id = setInterval(refreshFriendLocations, ms);
     return () => clearInterval(id);
-  }, [user?.isPremium, friendTrackingEnabled, refreshFriendLocations]);
+  }, [user?.isPremium, friendTrackingEnabled, mapTabFocused, refreshFriendLocations]);
 
   /** After backgrounding, REST + markers catch up even if realtime lagged. */
   useEffect(() => {
@@ -1497,13 +1556,13 @@ export default function MapScreen() {
     };
   }, [mapTabFocused, user?.isPremium]);
 
-  // Fix 8: Offers refresh on significant location change (~1km)
+  // Fix 8: Offers refresh on significant location change (~1km); during nav use snapped corridor position.
   useEffect(() => {
-    const rLat = Math.round(location.lat * 100);
-    const rLng = Math.round(location.lng * 100);
+    const rLat = Math.round(poiSearchCoord.lat * 100);
+    const rLng = Math.round(poiSearchCoord.lng * 100);
     if (rLat === 0 && rLng === 0) return;
     api
-      .get(`/api/offers/nearby?lat=${location.lat}&lng=${location.lng}&radius=${OFFERS_NEARBY_RADIUS_KM}`)
+      .get(`/api/offers/nearby?lat=${poiSearchCoord.lat}&lng=${poiSearchCoord.lng}&radius=${OFFERS_NEARBY_RADIUS_KM}`)
       .then((r) => {
         if (!r.success) {
           logMapDataIssue('GET /api/offers/nearby', r.error);
@@ -1512,7 +1571,7 @@ export default function MapScreen() {
         setNearbyOffers(parseNearbyOffers(r.data));
       })
       .catch((e) => logMapDataIssue('GET /api/offers/nearby', e));
-  }, [Math.round(location.lat * 100), Math.round(location.lng * 100)]);
+  }, [Math.round(poiSearchCoord.lat * 100), Math.round(poiSearchCoord.lng * 100)]);
 
   useEffect(() => {
     if (!recommendedNearbyOffers.length) return;
@@ -1625,11 +1684,11 @@ export default function MapScreen() {
     // it runs its own OHGO fetcher at a different cadence. Pausing this effect on
     // blur prevents double /api/map/cameras requests fighting for the same data.
     if (!mapTabFocused) return;
-    const rLat = Math.round(location.lat * 100);
-    const rLng = Math.round(location.lng * 100);
+    const rLat = Math.round(poiSearchCoord.lat * 100);
+    const rLng = Math.round(poiSearchCoord.lng * 100);
     if (rLat === 0 && rLng === 0) return;
     api
-      .get<any>(`/api/map/cameras?lat=${location.lat}&lng=${location.lng}&radius=80`)
+      .get<any>(`/api/map/cameras?lat=${poiSearchCoord.lat}&lng=${poiSearchCoord.lng}&radius=80`)
       .then((r) => {
         if (!r.success || r.data == null) {
           if (!r.success) logMapDataIssue('GET /api/map/cameras', r.error);
@@ -1652,12 +1711,13 @@ export default function MapScreen() {
         }
       })
       .catch((e) => logMapDataIssue('GET /api/map/cameras', e));
-  }, [showCameras, user?.isPremium, setShowCameras, mapTabFocused, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
+  }, [showCameras, user?.isPremium, setShowCameras, mapTabFocused, Math.round(poiSearchCoord.lat * 100), Math.round(poiSearchCoord.lng * 100)]);
 
   const refreshPhotoReportsNearby = useCallback(() => {
     if (!showPhotoReports) return;
+    const pc = poiSearchCoordRef.current;
     api
-      .get<{ photos?: unknown[] }>(`/api/photo-reports/nearby?lat=${location.lat}&lng=${location.lng}&radius=5`)
+      .get<{ photos?: unknown[] }>(`/api/photo-reports/nearby?lat=${pc.lat}&lng=${pc.lng}&radius=5`)
       .then((r) => {
         if (!r.success) {
           logMapDataIssue('GET /api/photo-reports/nearby', r.error);
@@ -1696,22 +1756,22 @@ export default function MapScreen() {
 
   // Traffic safety POIs (Overpass via API; hidden in restricted regions)
   useEffect(() => {
-    const rLat = Math.round(location.lat * 100);
-    const rLng = Math.round(location.lng * 100);
+    const rLat = Math.round(poiSearchCoord.lat * 100);
+    const rLng = Math.round(poiSearchCoord.lng * 100);
     if (rLat === 0 && rLng === 0) {
       setTrafficSafetyZones([]);
       setTrafficSafetyHint(null);
       return;
     }
-    if (!showTrafficSafety || !isTrafficSafetyLayerEnabled(location.lat, location.lng)) {
+    if (!showTrafficSafety || !isTrafficSafetyLayerEnabled(poiSearchCoord.lat, poiSearchCoord.lng)) {
       setTrafficSafetyZones([]);
       setTrafficSafetyHint(null);
       return;
     }
-    const region = trafficSafetyRegionQuery(location.lat, location.lng);
+    const region = trafficSafetyRegionQuery(poiSearchCoord.lat, poiSearchCoord.lng);
     api
       .get<Record<string, unknown>>(
-        `/api/traffic-safety/zones?lat=${location.lat}&lng=${location.lng}&radius_km=12&region=${encodeURIComponent(region)}`,
+        `/api/traffic-safety/zones?lat=${poiSearchCoord.lat}&lng=${poiSearchCoord.lng}&radius_km=12&region=${encodeURIComponent(region)}`,
       )
       .then((r) => {
         if (!r.success || r.data == null) {
@@ -1766,7 +1826,7 @@ export default function MapScreen() {
         setTrafficSafetyZones([]);
         setTrafficSafetyHint('Network error loading speed cameras.');
       });
-  }, [showTrafficSafety, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
+  }, [showTrafficSafety, Math.round(poiSearchCoord.lat * 100), Math.round(poiSearchCoord.lng * 100)]);
 
   // Crash detection removed — SOS endpoints (/api/family/sos, /api/concerns/submit) do not exist.
   // Will be re-implemented when family/emergency features are built with real backend support.
@@ -1777,18 +1837,26 @@ export default function MapScreen() {
     const applyRealtimeRow = (payload: { new?: unknown }) => {
       const upd = parseLiveLocationUpdate(payload?.new);
       if (!upd) return;
-      setFriendLocations((prev) => mergeLiveLocationUpdate(prev, {
-        friend_id: upd.friendId,
-        lat: upd.lat,
-        lng: upd.lng,
-        speed_mph: upd.speedMph,
-        heading: upd.heading,
-        is_sharing: upd.isSharing,
-        is_navigating: upd.isNavigating,
-        destination_name: upd.destinationName,
-        battery_pct: upd.batteryPct,
-        last_updated: upd.lastUpdated,
-      }));
+      setFriendLocations((prev) => {
+        const matched = prev.some((f) => String(f.id) === String(upd.friendId));
+        const merged = mergeLiveLocationUpdate(prev, {
+          friend_id: upd.friendId,
+          lat: upd.lat,
+          lng: upd.lng,
+          speed_mph: upd.speedMph,
+          heading: upd.heading,
+          is_sharing: upd.isSharing,
+          is_navigating: upd.isNavigating,
+          destination_name: upd.destinationName,
+          battery_pct: upd.batteryPct,
+          last_updated: upd.lastUpdated,
+        });
+        if (!matched) {
+          queueMicrotask(() => refreshFriendLocations());
+          return prev;
+        }
+        return merged;
+      });
     };
     const channel = supabase.channel('friend-locations')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, applyRealtimeRow)
@@ -1803,18 +1871,18 @@ export default function MapScreen() {
       mapAppRef.prev = next;
     });
     return () => { appSub.remove(); supabase.removeChannel(channel); };
-  }, [friendTrackingEnabled, supabaseConfigured]);
+  }, [friendTrackingEnabled, supabaseConfigured, refreshFriendLocations]);
 
   // Fix 14: Camera tick + odometry. `navDisplayCoord` is SDK-matched when `navLogicSdkEnabled` (single engine); else JS snap.
   useEffect(() => {
     const moveThresholdM = nav.isNavigating ? 0.45 : 1.5;
     const moved = haversineMeters(lastCameraUpdate.current.lat, lastCameraUpdate.current.lng, navDisplayCoord.lat, navDisplayCoord.lng) > moveThresholdM;
-    const turned = Math.abs(navDisplayHeading - lastCameraUpdate.current.heading) > 1;
+    const turned = Math.abs(navPuckHeading - lastCameraUpdate.current.heading) > 1;
     if (moved || turned) {
-      lastCameraUpdate.current = { lat: navDisplayCoord.lat, lng: navDisplayCoord.lng, heading: navDisplayHeading };
+      lastCameraUpdate.current = { lat: navDisplayCoord.lat, lng: navDisplayCoord.lng, heading: navPuckHeading };
       if (moved) nav.updatePosition(navDisplayCoord.lat, navDisplayCoord.lng);
     }
-  }, [navDisplayCoord.lat, navDisplayCoord.lng, navDisplayHeading, nav.isNavigating, nav.updatePosition]);
+  }, [navDisplayCoord.lat, navDisplayCoord.lng, navPuckHeading, nav.isNavigating, nav.updatePosition]);
 
   mapLivePublishCoordsRef.current = { lat: location.lat, lng: location.lng, heading, speed };
   mapLiveNavRef.current = {
@@ -2038,7 +2106,7 @@ export default function MapScreen() {
   }, [activeReportCard?.id]);
 
   const fetchNearbyIncidents = useCallback(async () => {
-    const loc = locationRef.current;
+    const loc = poiSearchCoordRef.current;
     if (!loc || (Math.abs(loc.lat) < 1e-5 && Math.abs(loc.lng) < 1e-5)) return;
     try {
       const res = await api.get<{ success?: boolean; data?: Incident[] }>(
@@ -3369,15 +3437,15 @@ export default function MapScreen() {
                   (cameraLeadCoord ?? navDisplayCoord).lng,
                   (cameraLeadCoord ?? navDisplayCoord).lat,
                 ]}
-                heading={Number.isFinite(navDisplayHeading) ? navDisplayHeading : heading}
+                heading={Number.isFinite(navPuckHeading) ? navPuckHeading : heading}
               />
               {navLogicDebugEnabled()
                 ? (() => {
                     logNavVerify('provider.mount', {
                       mounted: true,
                       sdkPuckOwns,
-                      navDisplayHeadingValid: Number.isFinite(navDisplayHeading),
-                      fallbackHeading: !Number.isFinite(navDisplayHeading),
+                      navDisplayHeadingValid: Number.isFinite(navPuckHeading),
+                      fallbackHeading: !Number.isFinite(navPuckHeading),
                       lat: navDisplayCoord.lat,
                       lng: navDisplayCoord.lng,
                     });
@@ -3502,7 +3570,7 @@ export default function MapScreen() {
           {showPhotoReports && (
             <PhotoReportMarkers reports={photoReports} onReportTap={(r) => setSelectedPhotoReport(r)} />
           )}
-          {showTrafficSafety && isTrafficSafetyLayerEnabled(location.lat, location.lng) && !nav.isNavigating && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
+          {showTrafficSafety && isTrafficSafetyLayerEnabled(poiSearchCoord.lat, poiSearchCoord.lng) && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
             <TrafficSafetyLayer
               zones={trafficSafetyZones}
               onZoneTap={(z) =>
@@ -3613,9 +3681,7 @@ export default function MapScreen() {
                 return null;
               })()}
 
-          {!nav.isNavigating && (
-            <OfferMarkers offers={recommendedNearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
-          )}
+          <OfferMarkers offers={recommendedNearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
           {showIncidents && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
             if ((inc.upvotes ?? 0) < 0) return false;
             if (inc.type === 'construction') return showConstruction;
@@ -3679,7 +3745,7 @@ export default function MapScreen() {
               - Explore (not navigating): show the default `LocationPuck`
                 (raw device GPS + compass, with pulsing).
               - Navigating: hide `LocationPuck` entirely and show
-                `NavSdkPuck` fed from `navDisplayCoord` / `navDisplayHeading`.
+                `NavSdkPuck` fed from `navDisplayCoord` / `navPuckHeading` (route tangent–aligned).
                 This is the on-polyline snapped coord with the same smoothed
                 bearing that `CustomLocationProvider` feeds to the camera, so
                 puck + camera + route split all sit on a single point from
@@ -3707,7 +3773,7 @@ export default function MapScreen() {
             <NavSdkPuck
               lng={navDisplayCoord.lng}
               lat={navDisplayCoord.lat}
-              course={Number.isFinite(navDisplayHeading) ? navDisplayHeading : -1}
+              course={Number.isFinite(navPuckHeading) ? navPuckHeading : -1}
               color={navRouteColors.routeColor}
               accuracy={nav.sdkNavLocation?.horizontalAccuracy ?? null}
               speedMps={

@@ -36,7 +36,8 @@ type Props = {
   mirrorNativePosition?: boolean;
 };
 
-const PREDICTIVE_MS = 80;
+/** No forward lead — keeps the chevron pinned to the snapped fix (matches headless SDK, less “float”). */
+const PREDICTIVE_MS = 0;
 const STOPPED_THRESHOLD_MPS = 0.5;
 const ACCURACY_RING_THRESHOLD_M = 15;
 const ROTATION_EASE_MS = 220;

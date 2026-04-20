@@ -14,8 +14,8 @@ interface Props {
   referenceCoordinate?: MarkerCoordinate | null;
 }
 
-const LERP_MIN_METERS = 4;
-const LERP_DURATION_MS = 750;
+const LERP_MIN_METERS = 2;
+const LERP_DURATION_MS = 580;
 
 function profileInitials(name: string): string {
   const parts = (name || '').trim().split(/\s+/).filter(Boolean);
