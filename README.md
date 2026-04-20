@@ -1,5 +1,7 @@
-# Beta Pulse
+# SnapRoad
 
-This app was built using [Newly.app](https://newly.app) - a platform for creating mobile apps.
+SnapRoad is a navigation and driving companion project with:
 
-Made with 💙 for creativity.
+- `app/mobile` (Expo / React Native)
+- `app/frontend` (React + Vite)
+- `app/backend` (FastAPI)
