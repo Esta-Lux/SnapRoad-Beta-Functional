@@ -177,7 +177,17 @@ export default React.memo(function RouteOverlay({
       routeSplit.tOnSegment,
     );
     if (!rings) {
-      return { type: 'FeatureCollection' as const, features: [] };
+      return {
+        type: 'FeatureCollection' as const,
+        features: [
+          baseLine,
+          {
+            type: 'Feature' as const,
+            properties: { segment: 'ahead', congestion: 'unknown' },
+            geometry: { type: 'LineString' as const, coordinates: fullCoords },
+          },
+        ],
+      };
     }
 
     const features: GeoJSON.Feature[] = [baseLine];

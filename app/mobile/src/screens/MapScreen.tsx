@@ -51,6 +51,10 @@ import {
 } from '../lib/mapboxDrivingStyle';
 import { clampStepTowardDeg } from '../navigation/bearingSmoothing';
 import RouteOverlay from '../components/map/RouteOverlay';
+import {
+  startFriendLiveShareBackgroundUpdates,
+  stopFriendLiveShareBackgroundUpdates,
+} from '../location/friendLiveShareBackgroundTask';
 import OfferMarkers from '../components/map/OfferMarkers';
 import ReportMarkers from '../components/map/ReportMarkers';
 import FriendMarkers from '../components/map/FriendMarkers';
@@ -721,6 +725,25 @@ export default function MapScreen() {
           }
         : undefined,
   });
+  /**
+   * Native SDK: trim the route with the **same** arc-length ratio as `routeSplitSnap`
+   * (`cumulativeMeters / polylineLength`). Using only `nativeFractionTraveled` can diverge by
+   * epsilon from the split geometry; the line then fights the passed/ahead seam. JS path keeps
+   * `smoothedFraction` (eased) so puck + trim stay matched.
+   */
+  const routeOverlayFraction = useMemo(() => {
+    if (!nav.isNavigating) return null;
+    if (isNativeSdkPassThrough && navPolylineLenMetersRaw > 1) {
+      return Math.max(0, Math.min(1, navSnapshotCumMeters / navPolylineLenMetersRaw));
+    }
+    return smoothedFraction;
+  }, [
+    nav.isNavigating,
+    isNativeSdkPassThrough,
+    navPolylineLenMetersRaw,
+    navSnapshotCumMeters,
+    smoothedFraction,
+  ]);
   /**
    * Has the nav pipeline actually produced real progress yet? Used to gate
    * `smoothedNavPuckCoord` below — without this check the smoothed fraction
@@ -1435,16 +1458,21 @@ export default function MapScreen() {
     refreshFriendLocations();
   }, [refreshSavedPlaces, user?.isPremium, refreshFriendLocations]);
 
+  /** Premium friends list: refresh on any tab while the app is foregrounded (not only Map). */
   useEffect(() => {
-    if (!mapTabFocused || !user?.isPremium) return;
-    refreshFriendLocations();
-  }, [mapTabFocused, user?.isPremium, refreshFriendLocations]);
-
-  useEffect(() => {
-    if (!mapTabFocused || !user?.isPremium) return;
+    if (!user?.isPremium || !friendTrackingEnabled) return;
     const id = setInterval(refreshFriendLocations, 60_000);
     return () => clearInterval(id);
-  }, [mapTabFocused, user?.isPremium, refreshFriendLocations]);
+  }, [user?.isPremium, friendTrackingEnabled, refreshFriendLocations]);
+
+  /** After backgrounding, REST + markers catch up even if realtime lagged. */
+  useEffect(() => {
+    if (!user?.isPremium || !friendTrackingEnabled) return;
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') refreshFriendLocations();
+    });
+    return () => sub.remove();
+  }, [user?.isPremium, friendTrackingEnabled, refreshFriendLocations]);
 
   /** If local share preference was never set, align with server so Map publishing matches Dashboard / API. */
   useEffect(() => {
@@ -1883,6 +1911,19 @@ export default function MapScreen() {
       cancelled = true;
       clearInterval(id);
     };
+  }, [user?.isPremium, canPublishFriendLocation, shareLocEpoch]);
+
+  useEffect(() => {
+    if (!user?.isPremium || !canPublishFriendLocation) {
+      void stopFriendLiveShareBackgroundUpdates();
+      return;
+    }
+    const sharingOn = storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
+    if (!sharingOn) {
+      void stopFriendLiveShareBackgroundUpdates();
+      return;
+    }
+    void startFriendLiveShareBackgroundUpdates();
   }, [user?.isPremium, canPublishFriendLocation, shareLocEpoch]);
 
   // Fix 1: On nav start (false→true), force follow + remount Camera (preview fitBounds leaves native
@@ -3545,7 +3586,7 @@ export default function MapScreen() {
                     polyline={polylineToRender}
                     isNavigating={nav.isNavigating}
                     routeSplit={navigationRouteSplit}
-                    fractionTraveled={nav.isNavigating ? smoothedFraction : null}
+                    fractionTraveled={nav.isNavigating ? routeOverlayFraction : null}
                     routeColor={navRouteColors.routeColor}
                     casingColor={navRouteColors.routeCasing}
                     passedColor={navRouteColors.passedColor}
