@@ -615,6 +615,24 @@ export default function MapScreen() {
    *     matching the same physical point the route split uses.
    */
   const navPolylineForSmoothing = nav.navigationData?.polyline ?? null;
+  /**
+   * Last-known-good route polyline for the **render layer only**. Whenever we
+   * successfully render a route (SDK or REST), we stash its reference here so
+   * a transient empty frame — e.g. the single tick between
+   * `applySdkRouteGeometry` clearing `steps/congestion` and the next
+   * progress / SDK event populating `navigationProgress.routePolyline` — can
+   * still draw the previous polyline instead of blanking. This is a
+   * presentation-layer belt-and-suspenders on top of the SDK/REST fallback
+   * chain below; it is NOT used to make any navigation decisions (authority
+   * still flows through `navigationData.polyline` / `navigationProgress`).
+   * The ref is cleared when `isNavigating` flips to false.
+   */
+  const lastRenderedPolylineRef = useRef<NonNullable<typeof nav.navigationData>['polyline'] | null>(null);
+  useEffect(() => {
+    if (!nav.isNavigating) {
+      lastRenderedPolylineRef.current = null;
+    }
+  }, [nav.isNavigating]);
   const navPolylineLenMetersRaw = useMemo(
     () => (navPolylineForSmoothing && navPolylineForSmoothing.length >= 2 ? polylineLengthMeters(navPolylineForSmoothing) : 0),
     [navPolylineForSmoothing],
@@ -3268,46 +3286,75 @@ export default function MapScreen() {
                 Directions polyline (JS-only trips / preview).
             See `docs/NATIVE_NAVIGATION.md#single-authority-matrix`.
           */}
-          {nav.navigationData?.polyline && (() => {
+          {(() => {
+            /**
+             * Render priority:
+             *   1. SDK-derived polyline from `navigationProgress.routePolyline`
+             *      (when active / waiting; always ≥ 2 points in both states).
+             *   2. REST Directions polyline on `navigationData.polyline`
+             *      (preview + first frames of nav before SDK emits).
+             *   3. `lastRenderedPolylineRef` — the previous successfully
+             *      rendered polyline, carried over a transient empty frame so
+             *      the route never blanks during reroute / first-progress
+             *      handoff.
+             *
+             * The outer gate used to be `nav.navigationData?.polyline &&`,
+             * which meant if REST polyline was briefly null the entire SDK
+             * fallback block was skipped and the route disappeared — exactly
+             * the "polyline doesn't render when you tap Navigate" symptom.
+             * We now evaluate priorities independently and only bail when
+             * *all three* are empty.
+             */
             const sdkPolyline =
               nav.navigationProgress?.routePolyline?.length &&
               nav.navigationProgress.routePolyline.length >= 2
                 ? nav.navigationProgress.routePolyline
                 : null;
-            /**
-             * Reroute / first-progress fallback: when `sdkRouteOwns` is true
-             * (native guidance phase flipped to `active`) but the React state
-             * lags the store for a tick, `sdkPolyline` can be null for a few
-             * frames — during which the entire route would disappear. Rather
-             * than bailing, fall through to `nav.navigationData.polyline`
-             * (the last-known route geometry, hydrated from REST Directions
-             * or a prior SDK snapshot). Authority still flips back to the
-             * SDK polyline on the next frame once it hydrates.
-             */
-            const polylineToRender =
-              sdkPolyline ??
-              (nav.navigationData.polyline.length >= 2
+            const restPolyline =
+              nav.navigationData?.polyline && nav.navigationData.polyline.length >= 2
                 ? nav.navigationData.polyline
-                : null);
+                : null;
+            const lastGoodPolyline =
+              nav.isNavigating &&
+              lastRenderedPolylineRef.current &&
+              lastRenderedPolylineRef.current.length >= 2
+                ? lastRenderedPolylineRef.current
+                : null;
+            const polylineToRender = sdkPolyline ?? restPolyline ?? lastGoodPolyline;
             if (!polylineToRender) {
               logNavVerify('render.polyline', {
                 sdkRouteOwns,
                 sdkPolylineLen: sdkPolyline?.length ?? 0,
-                navDataPolylineLen: nav.navigationData.polyline?.length ?? 0,
+                navDataPolylineLen: nav.navigationData?.polyline?.length ?? 0,
+                lastGoodLen: lastRenderedPolylineRef.current?.length ?? 0,
                 source: 'none',
               });
               return null;
             }
+            /**
+             * Stash whatever we just rendered so the next frame can fall back
+             * to it if both SDK + REST polylines go empty simultaneously.
+             * Ref writes during render are safe here — we only ever write a
+             * polyline we just confirmed has ≥ 2 points and we don't read
+             * the ref again in this same render pass.
+             */
+            lastRenderedPolylineRef.current = polylineToRender;
+            const source = sdkPolyline
+              ? 'sdk'
+              : restPolyline
+                ? 'rest'
+                : 'last-good';
             logNavVerify('render.polyline', {
               sdkRouteOwns,
               sdkPolylineLen: sdkPolyline?.length ?? 0,
-              navDataPolylineLen: nav.navigationData.polyline?.length ?? 0,
-              source: sdkPolyline ? 'sdk' : 'rest',
+              navDataPolylineLen: nav.navigationData?.polyline?.length ?? 0,
+              lastGoodLen: lastRenderedPolylineRef.current?.length ?? 0,
+              source,
               renderedLen: polylineToRender.length,
             });
             return (
             <RouteOverlay
-              key={`route-${nav.routeModelRefreshKey}-${polylineToRender.length}-${sdkPolyline ? 'sdk' : 'js'}`}
+              key={`route-${nav.routeModelRefreshKey}-${polylineToRender.length}-${source}`}
               polyline={polylineToRender}
               isNavigating={nav.isNavigating}
               routeSplit={navigationRouteSplit}
@@ -3318,7 +3365,7 @@ export default function MapScreen() {
               routeWidth={modeConfig.routeWidth}
               glowColor={navRouteColors.routeGlowColor}
               glowOpacity={navRouteColors.routeGlowOpacity}
-              congestion={nav.navigationData.congestion}
+              congestion={nav.navigationData?.congestion}
               showCongestion={
                 modeConfig.showCongestion && (nav.showRoutePreview || nav.isNavigating)
               }
@@ -3390,20 +3437,33 @@ export default function MapScreen() {
           )}
 
           {/*
-            Two pucks must never be on screen at once. When the native SDK owns the
-            puck we hide the default `LocationPuck` (which reads raw device GPS and
-            would visibly fight the matched-location snap) and render `NavSdkPuck`
-            below, fed directly from `navSdkStore.location`.
+            Two pucks must never be on screen at once. Rule:
+              - Explore (not navigating): show the default `LocationPuck`
+                (raw device GPS + compass, with pulsing).
+              - Navigating: hide `LocationPuck` entirely and show
+                `NavSdkPuck` fed from `navDisplayCoord` / `navDisplayHeading`.
+                This is the on-polyline snapped coord with the same smoothed
+                bearing that `CustomLocationProvider` feeds to the camera, so
+                puck + camera + route split all sit on a single point from
+                the very first frame of the trip — no "raw-GPS chevron visible
+                for 500 ms while the SDK warms up" seam.
+            Previously the gate was `sdkPuckOwns` (requires matched location +
+            `sdkGuidancePhase==='active'`), which meant the first ~150–500 ms
+            of every trip displayed the raw-GPS `LocationPuck` before flipping
+            to the matched `NavSdkPuck`. That visible handoff is exactly the
+            "puck is weak / moves around on its own" symptom at trip start.
+            The Reanimated-smoothed rotation inside `NavSdkPuck` keeps the
+            chevron pointing stably during the JS-only / waiting window too.
           */}
           <MapboxGL.LocationPuck
-            visible={!sdkPuckOwns}
+            visible={!nav.isNavigating}
             androidRenderMode="normal"
             puckBearingEnabled
             puckBearing={locationPuckBearing}
             pulsing={{ isEnabled: !nav.isNavigating }}
             scale={1.55}
           />
-          {sdkPuckOwns &&
+          {nav.isNavigating &&
           Number.isFinite(navDisplayCoord.lat) &&
           Number.isFinite(navDisplayCoord.lng) ? (
             <NavSdkPuck
