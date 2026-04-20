@@ -531,13 +531,46 @@ export default function MapScreen() {
     }
   }, [drivingMode]);
 
+  /**
+   * `navLogicCoords` is the `coordinates` prop on the hidden
+   * `MapboxNavigationView`. Previously this effect depended on
+   * `location.lat/lng`, which meant every GPS tick (once per second under
+   * normal conditions, faster during navigation) rebuilt the array and
+   * re-pushed it into the native SDK. The SDK interprets a new
+   * `coordinates` prop as a fresh waypoint set and cancels/recomputes the
+   * route — which produced the "route line is missing when I tap Navigate"
+   * symptom, because the polyline is in a constant loading-empty-loading
+   * churn. It also explains the puck "moving around on its own": each
+   * reroute resets `navigationProgress` to a waiting state, and the
+   * smoothed puck falls back to `polyline[0]` of whatever fresh route the
+   * SDK is mid-request (see `smoothedNavPuckCoord` — origin of the route,
+   * not the user's live location).
+   *
+   * Fix: the origin/destination pair is an *initial seed* for the native
+   * Navigation SDK. Once the SDK has been handed the pair, it tracks the
+   * user internally via `onNavigationLocationUpdate` / `onRouteProgress`
+   * and fires `onRouteChanged` for organic reroutes — we do NOT need to
+   * keep pushing `location` back in. The effect now runs only when
+   * `isNavigating` transitions or the destination changes (friend-follow
+   * dynamic destination); the origin is captured from a ref snapshot so
+   * jittery GPS samples don't trigger the effect.
+   */
+  // Stable ref for latest location — read inside effects that MUST NOT
+  // rebuild on every GPS tick (see `navLogicCoords` effect below and
+  // various search / place helpers later in the file).
+  const locationRef = useRef(location);
   useEffect(() => {
-    if (!navLogicSdkEnabled() || !nav.isNavigating || !nav.navigationData || !location) {
+    locationRef.current = location;
+  }, [location?.lat, location?.lng]);
+  useEffect(() => {
+    if (!navLogicSdkEnabled() || !nav.isNavigating || !nav.navigationData) {
       setNavLogicCoords([]);
       return;
     }
+    const loc = locationRef.current;
+    if (!loc || !Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) return;
     setNavLogicCoords([
-      { latitude: location.lat, longitude: location.lng },
+      { latitude: loc.lat, longitude: loc.lng },
       {
         latitude: nav.navigationData.destination.lat,
         longitude: nav.navigationData.destination.lng,
@@ -547,8 +580,6 @@ export default function MapScreen() {
     nav.isNavigating,
     nav.navigationData?.destination?.lat,
     nav.navigationData?.destination?.lng,
-    location?.lat,
-    location?.lng,
   ]);
 
   useEffect(() => {
@@ -678,15 +709,49 @@ export default function MapScreen() {
         }
       : undefined,
   });
+  /**
+   * Has the nav pipeline actually produced real progress yet? Used to gate
+   * `smoothedNavPuckCoord` below — without this check the smoothed fraction
+   * is pinned to 0 during the pre-progress waiting window (SDK 'idle' /
+   * first JS tick) and the puck teleports to `polyline[0]` (= the origin
+   * coord that was sampled when the user tapped Navigate). If the user has
+   * shifted even a few meters between preview and tapping Start, the puck
+   * visibly moves to the stale origin instead of their live position.
+   *
+   * We consider progress "real" once *either* (a) we have a
+   * `routeSplitSnap.cumulativeMeters` from the SDK / JS progress that's
+   * non-trivial relative to GPS noise (> 1 m), or (b) we've already seen
+   * at least one displayCoord update (the progress object itself is not
+   * null and has a valid displayCoord). Before that, we pass through the
+   * raw navigation progress coord (which already falls back to the
+   * smoothed GPS from `useLocation`).
+   */
+  const hasRealNavProgress = useMemo(() => {
+    if (!nav.isNavigating) return false;
+    const p = nav.navigationProgress;
+    if (!p) return false;
+    // SDK-waiting is a pre-location stub: displayCoord = polyline[0], cum = 0.
+    // Don't let the smoothed puck fall into the origin vertex until a real
+    // match arrives from either the SDK ('sdk') or the JS pipeline ('js').
+    if (p.instructionSource === 'sdk_waiting') return false;
+    return true;
+  }, [nav.isNavigating, nav.navigationProgress?.instructionSource]);
   const smoothedNavPuckCoord = useMemo(() => {
     if (!nav.isNavigating) return null;
+    if (!hasRealNavProgress) return null;
     if (!navPolylineForSmoothing || navPolylineForSmoothing.length < 2) return null;
     if (navPolylineLenMetersRaw <= 0) return null;
     return coordinateAtCumulativeMeters(
       navPolylineForSmoothing,
       smoothedFraction * navPolylineLenMetersRaw,
     );
-  }, [nav.isNavigating, navPolylineForSmoothing, navPolylineLenMetersRaw, smoothedFraction]);
+  }, [
+    nav.isNavigating,
+    hasRealNavProgress,
+    navPolylineForSmoothing,
+    navPolylineLenMetersRaw,
+    smoothedFraction,
+  ]);
 
   /**
    * Puck/camera/route-split all read this value; see
@@ -786,10 +851,6 @@ export default function MapScreen() {
       MapboxGL.setAccessToken(t);
     }
   }, []);
-
-  // Stable ref for latest location (avoids re-running interval effects on every GPS tick)
-  const locationRef = useRef(location);
-  useEffect(() => { locationRef.current = location; }, [location.lat, location.lng]);
 
   // ── Search ──
   const [searchQuery, setSearchQuery] = useState('');
@@ -3128,6 +3189,31 @@ export default function MapScreen() {
                   })()
                 : null}
             </>
+          ) : Number.isFinite(location.lat) && Number.isFinite(location.lng) ? (
+            /**
+             * Browse-mode `CustomLocationProvider`. The default Mapbox
+             * `LocationPuck` subscribes to the OS location manager directly
+             * and draws whatever raw GPS fix it gets every tick — that's
+             * the "puck ticks / moves around when browsing" symptom: raw
+             * GPS wanders 2–5 m at standstill and the puck jitters with
+             * every sample. `useLocation` already produces a heavily-
+             * smoothed fix (dead-zone + EWMA + outlier gate, see
+             * `smoothPosition`) that the rest of the app uses; by feeding
+             * that same smoothed coord into `CustomLocationProvider` the
+             * default `LocationPuck` now reads a stable, low-pass-filtered
+             * point instead of raw GPS, so it sits still when the user is
+             * still and slides smoothly when they move.
+             *
+             * Heading uses the smoothed `heading` from `useLocation`
+             * (compass + course-over-ground blend). When the fix is
+             * invalid we simply don't mount and Mapbox falls back to its
+             * built-in provider — existing behaviour for the "no GPS yet"
+             * edge.
+             */
+            <MapboxGL.CustomLocationProvider
+              coordinate={[location.lng, location.lat]}
+              heading={Number.isFinite(heading) ? heading : 0}
+            />
           ) : null}
           {standardStyleImportsEnabled && MapboxGL.StyleImport ? (
             <MapboxGL.StyleImport
