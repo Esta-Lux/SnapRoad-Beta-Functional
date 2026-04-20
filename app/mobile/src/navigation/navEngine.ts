@@ -18,6 +18,7 @@ export {
   ingestSdkVoiceSubtitle,
   markNavVoiceFromJs,
   getSdkNavigationProgress,
+  getMinimalSdkNavigationProgress,
   getSdkMatchedCoordinate,
 } from './navSdkStore';
 

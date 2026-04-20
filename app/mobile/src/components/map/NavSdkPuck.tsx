@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Path, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import MapboxGL from '../../utils/mapbox';
+import { haversineMeters } from '../../utils/distance';
 
 /**
  * Headless-nav puck: coordinates + course come from the native SDK via `useDriveNavigation`.
@@ -57,42 +58,58 @@ function projectAhead(lat: number, lng: number, headingDeg: number, meters: numb
   return { lat: (lat2 * 180) / Math.PI, lng: (lng2 * 180) / Math.PI };
 }
 
+const SNAP_JUMP_METERS = 85;
+
 /**
- * RAF ease between native ticks so `MarkerView` coordinate updates ~60fps instead of jumping.
+ * Continuous RAF ease toward the latest native coordinate so `MarkerView` glides at ~60fps
+ * even when the SDK emits faster than one cubic ease can finish (moving target).
  */
 function useSmoothCoordinate(lat: number, lng: number, durationMs: number): { lat: number; lng: number } {
-  const currentRef = React.useRef({ lat, lng });
+  const targetRef = React.useRef({ lat, lng });
+  const displayRef = React.useRef({ lat, lng });
   const [smooth, setSmooth] = React.useState(() => ({ lat, lng }));
   const rafRef = React.useRef<number | null>(null);
+  const lastNowRef = React.useRef<number | null>(null);
+
+  React.useLayoutEffect(() => {
+    targetRef.current = { lat, lng };
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const d = haversineMeters(displayRef.current.lat, displayRef.current.lng, lat, lng);
+    if (d > SNAP_JUMP_METERS) {
+      displayRef.current = { lat, lng };
+      setSmooth({ lat, lng });
+    }
+  }, [lat, lng]);
 
   React.useEffect(() => {
-    const startLat = currentRef.current.lat;
-    const startLng = currentRef.current.lng;
-    const startTime =
+    let cancelled = false;
+    lastNowRef.current =
       typeof performance !== 'undefined' && typeof performance.now === 'function'
         ? performance.now()
         : Date.now();
-    let cancelled = false;
 
     const tick = (now: number) => {
       if (cancelled) return;
-      const elapsed = now - startTime;
-      const t = Math.min(1, elapsed / durationMs);
-      const eased = 1 - (1 - t) ** 3;
-      const newLat = startLat + (lat - startLat) * eased;
-      const newLng = startLng + (lng - startLng) * eased;
-      currentRef.current = { lat: newLat, lng: newLng };
-      setSmooth({ lat: newLat, lng: newLng });
-      if (t < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      }
+      const last = lastNowRef.current ?? now;
+      lastNowRef.current = now;
+      const dt = Math.min(0.05, (now - last) / 1000);
+      const target = targetRef.current;
+      const cur = displayRef.current;
+      const tau = Math.max(0.04, durationMs / 1000);
+      const alpha = 1 - Math.exp(-dt / tau);
+      const nx = cur.lat + (target.lat - cur.lat) * alpha;
+      const ny = cur.lng + (target.lng - cur.lng) * alpha;
+      displayRef.current = { lat: nx, lng: ny };
+      setSmooth({ lat: nx, lng: ny });
+      rafRef.current = requestAnimationFrame(tick);
     };
+
     rafRef.current = requestAnimationFrame(tick);
     return () => {
       cancelled = true;
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
-  }, [lat, lng, durationMs]);
+  }, [durationMs]);
 
   return smooth;
 }

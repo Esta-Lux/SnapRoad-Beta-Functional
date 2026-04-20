@@ -23,6 +23,13 @@ interface Props {
 }
 
 const VB = 14;
+const VB_CENTER = VB / 2;
+
+/**
+ * If lane glyphs render upside-down on a device, set to `180` (rotate around viewBox center).
+ * Default `0`: straight path tip is at the top of the viewBox (“ahead” = up on the card).
+ */
+const LANE_GLYPH_ROTATION_FIX_DEG = 0;
 
 /** Filled arrow paths (Mapbox-style lane indications), 0–14 space. */
 const ARROW_PATHS: Record<LaneIndication, string> = {
@@ -61,12 +68,14 @@ function LaneArrow({
       ]}
     >
       <Svg width={18} height={18} viewBox={`0 0 ${VB} ${VB}`} style={{ opacity }}>
-        <Path d={path} fill={color} />
-        {secondaryIndication ? (
-          <G transform="translate(3.5, 3.5) scale(0.55)">
-            <Path d={ARROW_PATHS[secondaryIndication] ?? ''} fill={color} opacity={0.45} />
-          </G>
-        ) : null}
+        <G transform={`rotate(${LANE_GLYPH_ROTATION_FIX_DEG}, ${VB_CENTER}, ${VB_CENTER})`}>
+          <Path d={path} fill={color} />
+          {secondaryIndication ? (
+            <G transform="translate(3.5, 3.5) scale(0.55)">
+              <Path d={ARROW_PATHS[secondaryIndication] ?? ''} fill={color} opacity={0.45} />
+            </G>
+          ) : null}
+        </G>
       </Svg>
     </View>
   );

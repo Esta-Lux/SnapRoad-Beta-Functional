@@ -28,7 +28,7 @@ import {
 import { logNavVerify } from './navLogicDebug';
 import { parseLaneIndication } from './laneIndication';
 
-function roadSignalFromSdkPayload(progress: SdkProgressPayload, fallback: RoadSignal | undefined): RoadSignal {
+export function roadSignalFromSdkPayload(progress: SdkProgressPayload, fallback: RoadSignal | undefined): RoadSignal {
   const n = progress.upcomingIntersectionName?.trim();
   const r = progress.currentRoadName?.trim();
   if (n) return { kind: 'named_intersection', label: n };
@@ -36,7 +36,7 @@ function roadSignalFromSdkPayload(progress: SdkProgressPayload, fallback: RoadSi
   return fallback ?? { kind: 'none', label: '' };
 }
 
-function mapSdkLanesToLaneInfo(raw: NonNullable<SdkProgressPayload['lanes']>): LaneInfo[] {
+export function mapSdkLanesToLaneInfo(raw: NonNullable<SdkProgressPayload['lanes']>): LaneInfo[] {
   return raw.map((l) => {
     const indications = l.indications.map((x) => parseLaneIndication(String(x)));
     return {
@@ -49,7 +49,7 @@ function mapSdkLanesToLaneInfo(raw: NonNullable<SdkProgressPayload['lanes']>): L
   });
 }
 
-function mapSdkShieldPayload(sh: NonNullable<NonNullable<SdkProgressPayload['shield']>>): RoadShield {
+export function mapSdkShieldPayload(sh: NonNullable<NonNullable<SdkProgressPayload['shield']>>): RoadShield {
   const t = sh.text.trim();
   return { network: 'sdk', ref: t, displayRef: t };
 }
@@ -108,7 +108,7 @@ export function normalizeSdkManeuverDirection(raw?: string | null): string {
   return lower.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
 }
 
-function mapSdkToRichKind(maneuverType?: string, maneuverDirection?: string) {
+export function mapSdkToRichKind(maneuverType?: string, maneuverDirection?: string) {
   const t = normalizeSdkManeuverType(maneuverType);
   const d = normalizeSdkManeuverDirection(maneuverDirection);
   const blob = `${t} ${d}`;

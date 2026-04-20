@@ -673,15 +673,24 @@ export default function MapScreen() {
     () => (navPolylineForSmoothing && navPolylineForSmoothing.length >= 2 ? polylineLengthMeters(navPolylineForSmoothing) : 0),
     [navPolylineForSmoothing],
   );
+  /** Headless SDK minimal path: native `fractionTraveled` only — no RAF ease / dead-reckoning. */
+  const nativeFractionTraveled = nav.navigationProgress?.nativeFractionTraveled;
+  const isNativeSdkPassThrough =
+    nav.isNavigating &&
+    nav.navigationProgress?.instructionSource === 'sdk' &&
+    typeof nativeFractionTraveled === 'number';
   const navSnapshotCumMeters = nav.isNavigating
     ? nav.navigationProgress?.routeSplitSnap?.cumulativeMeters ??
       nav.navigationProgress?.displayCumulativeMeters ??
       0
     : 0;
-  const targetFraction =
+  const targetFractionDerived =
     navPolylineLenMetersRaw > 1
       ? Math.max(0, Math.min(1, navSnapshotCumMeters / navPolylineLenMetersRaw))
       : 0;
+  const targetFraction = isNativeSdkPassThrough
+    ? Math.max(0, Math.min(1, nativeFractionTraveled))
+    : targetFractionDerived;
   /**
    * Dead-reckoning feed — keeps the smoothed fraction advancing during SDK
    * silence (tunnels, matcher hiccups, stalls > ~350 ms). Uses the last-known
@@ -704,15 +713,17 @@ export default function MapScreen() {
     navPolylineLenMetersRaw > 1
       ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
       : 0.02;
-  const smoothedFraction = useSmoothedNavFraction(targetFraction, nav.isNavigating, {
+  const smoothedFraction = useSmoothedNavFraction(targetFraction, nav.isNavigating && !isNativeSdkPassThrough, {
     timeConstantMs: 180,
     snapDeltaFraction,
-    deadReckoning: navPolylineLenMetersRaw > 1
-      ? {
-          polylineLengthMeters: navPolylineLenMetersRaw,
-          speedMps: Number.isFinite(lastKnownNavSpeedMps) ? lastKnownNavSpeedMps : 0,
-        }
-      : undefined,
+    enabled: !isNativeSdkPassThrough,
+    deadReckoning:
+      !isNativeSdkPassThrough && navPolylineLenMetersRaw > 1
+        ? {
+            polylineLengthMeters: navPolylineLenMetersRaw,
+            speedMps: Number.isFinite(lastKnownNavSpeedMps) ? lastKnownNavSpeedMps : 0,
+          }
+        : undefined,
   });
   /**
    * Has the nav pipeline actually produced real progress yet? Used to gate
@@ -743,6 +754,7 @@ export default function MapScreen() {
   }, [nav.isNavigating, nav.navigationProgress?.instructionSource]);
   const smoothedNavPuckCoord = useMemo(() => {
     if (!nav.isNavigating) return null;
+    if (isNativeSdkPassThrough) return null;
     if (!hasRealNavProgress) return null;
     if (!navPolylineForSmoothing || navPolylineForSmoothing.length < 2) return null;
     if (navPolylineLenMetersRaw <= 0) return null;
@@ -752,6 +764,7 @@ export default function MapScreen() {
     );
   }, [
     nav.isNavigating,
+    isNativeSdkPassThrough,
     hasRealNavProgress,
     navPolylineForSmoothing,
     navPolylineLenMetersRaw,
@@ -1346,6 +1359,9 @@ export default function MapScreen() {
     !nav.showRoutePreview &&
     !isExploring &&
     (followMode === 'follow' || followMode === 'heading');
+
+  /** Mapbox must not use built-in GPS follow while navigating — `setCamera` + matched coords own the frame. */
+  const cameraFollowsDeviceGps = !nav.isNavigating && (compassMode || exploreTracksUser);
 
   const mapWeather = useMapWeather(location.lat, location.lng, {
     enabled: mapTabFocused && mapOk,
@@ -3347,13 +3363,15 @@ export default function MapScreen() {
               (camCtrl ? camCtrl.animationDuration : animDuration) +
               (nav.isNavigating && cameraLocked ? 90 : 0)
             }
-            followUserLocation={!nav.isNavigating && (compassMode || exploreTracksUser)}
+            followUserLocation={cameraFollowsDeviceGps}
             followUserMode={
-              compassMode || followMode === 'heading'
-                ? MapboxGL.UserTrackingMode.FollowWithHeading
-                : exploreTracksUser && followMode === 'follow'
-                  ? MapboxGL.UserTrackingMode.Follow
-                  : undefined
+              cameraFollowsDeviceGps
+                ? compassMode || followMode === 'heading'
+                  ? MapboxGL.UserTrackingMode.FollowWithHeading
+                  : exploreTracksUser && followMode === 'follow'
+                    ? MapboxGL.UserTrackingMode.Follow
+                    : undefined
+                : undefined
             }
             followPitch={
               camCtrl
@@ -3842,6 +3860,8 @@ export default function MapScreen() {
 
         /** Native SDK is the only authority for maneuver text, distance, lanes, and signals. */
         const isSdkActive = instructionSrc === 'sdk';
+        const isSdkNativePassThrough =
+          isSdkActive && typeof prog.nativeFractionTraveled === 'number';
         const banner = prog.banner ?? null;
         const sdkNavStep = isSdkActive ? prog.nextStep : null;
 
@@ -3864,7 +3884,9 @@ export default function MapScreen() {
             ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
             : upcomingGuidanceStep;
 
-        const turnCurrentStep = isSdkActive ? sdkSyntheticStep ?? currentStep : currentStep;
+        const turnCurrentStep = isSdkActive
+          ? sdkSyntheticStep ?? (isSdkNativePassThrough ? undefined : currentStep)
+          : currentStep;
 
         const poly = nav.navigationData?.polyline;
 

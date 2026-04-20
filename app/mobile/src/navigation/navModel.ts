@@ -201,4 +201,9 @@ export type NavigationProgress = {
    * split so the "traveled" / "remaining" break aligns with the visible puck.
    */
   displayCumulativeMeters?: number;
+  /**
+   * Native SDK `fractionTraveled` (minimal pass-through path). When set, UI should
+   * not re-smooth or re-derive fraction from projected cumulative meters.
+   */
+  nativeFractionTraveled?: number;
 };

@@ -7,6 +7,7 @@ import {
   buildSdkWaitingNavigationProgress,
   resetHeadingSmoothing,
 } from './navSdkProgressAdapter';
+import { buildMinimalNavigationProgressFromSdk } from './navSdkMinimalAdapter';
 
 export type SdkGuidancePhase = 'idle' | 'waiting' | 'active';
 
@@ -183,6 +184,21 @@ export function ingestSdkRoutePolyline(poly: Coordinate[]) {
   emit();
 }
 
+/**
+ * Native SDK is authoritative: matched location, banner text, `fractionTraveled`, step index.
+ * No REST Directions merge, polyline projection, or heading smoothing.
+ */
+export function getMinimalSdkNavigationProgress(routePolyline: Coordinate[]): NavigationProgress | null {
+  const st = state;
+  if (!st.progress || routePolyline.length < 2) return null;
+  return buildMinimalNavigationProgressFromSdk({
+    progress: st.progress,
+    location: st.location,
+    routePolyline,
+  });
+}
+
+/** Legacy full adapter (projection + REST merge). Kept for callers/tests that need the old path. */
 export function getSdkNavigationProgress(
   navigationData: { polyline: Coordinate[]; steps: DirectionsStep[]; distance: number; duration: number } | null,
 ): NavigationProgress | null {

@@ -52,7 +52,7 @@ import {
   enterSdkGuidanceWaiting,
   getNavSdkState,
   getSdkMatchedCoordinate,
-  getSdkNavigationProgress,
+  getMinimalSdkNavigationProgress,
   getSdkWaitingNavigationProgress,
   resetNavSdkState,
   subscribeNavSdk,
@@ -335,12 +335,18 @@ export function useDriveNavigation(params: {
   });
 
   const sdkBuiltNavigationProgress = useMemo((): NavigationProgress | null => {
-    if (!sdkActive || !navigationData) return null;
-    const fromSdk = getSdkNavigationProgress(navigationData);
-    if (fromSdk) return fromSdk;
+    if (!sdkActive) return null;
+    const polyFromSdk = navSdkSnapshot.routePolyline;
+    const polyFromRest = navigationData?.polyline ?? [];
+    const poly =
+      polyFromSdk.length >= 2 ? polyFromSdk : polyFromRest.length >= 2 ? polyFromRest : [];
+    if (poly.length >= 2) {
+      const fromSdk = getMinimalSdkNavigationProgress(poly);
+      if (fromSdk) return fromSdk;
+    }
     /** Do not fall back to JS Directions progress while native session is starting or between ticks. */
     if (navSdkSnapshot.sdkGuidancePhase === 'idle') return null;
-    return getSdkWaitingNavigationProgress(navigationData);
+    return navigationData ? getSdkWaitingNavigationProgress(navigationData) : null;
   }, [sdkActive, navigationData, navSdkSnapshot]);
 
   const navigationProgress: NavigationProgress | null = sdkActive
@@ -349,12 +355,16 @@ export function useDriveNavigation(params: {
 
   const navigationProgressCoord: Coordinate = useMemo(() => {
     if (sdkActive) {
+      const pc = navigationProgress?.puckCoord ?? navigationProgress?.displayCoord;
+      if (pc && Number.isFinite(pc.lat) && Number.isFinite(pc.lng)) {
+        return { lat: pc.lat, lng: pc.lng };
+      }
+      const c = getSdkMatchedCoordinate();
+      if (c) return c;
       const split = navigationProgress?.routeSplitSnap?.point;
       if (split && Number.isFinite(split.lat) && Number.isFinite(split.lng)) {
         return { lat: split.lat, lng: split.lng };
       }
-      const c = getSdkMatchedCoordinate();
-      if (c) return c;
     }
 
     /* On-route: always use snapped puck (polyline + lead-ahead). The old <45 m gate let the
@@ -377,6 +387,10 @@ export function useDriveNavigation(params: {
     userLocation.lat,
     userLocation.lng,
     navSdkSnapshot.location,
+    navigationProgress?.puckCoord?.lat,
+    navigationProgress?.puckCoord?.lng,
+    navigationProgress?.displayCoord?.lat,
+    navigationProgress?.displayCoord?.lng,
     navigationProgress?.routeSplitSnap?.point?.lat,
     navigationProgress?.routeSplitSnap?.point?.lng,
     navigationProgress?.snapped?.point?.lat,
@@ -390,14 +404,11 @@ export function useDriveNavigation(params: {
   /**
    * Puck / camera bearing — single source for the whole presentation layer.
    *
-   * On the SDK path we prefer `navigationProgress.displayCoord.heading` (smoothed
-   * course from `navSdkProgressAdapter.smoothCourseDeg` — EWMA blended toward the
-   * previous emitted heading along the shortest angle, with fast-pass on sharp
-   * turns and stale samples). Raw `navSdkSnapshot.location.course` is the fallback
-   * for the single tick between `ingestSdkLocation` landing and the first
-   * `ingestSdkProgress` that would have built a new progress object. Finally, JS
-   * trips fall back to the in-progress blended heading; explore falls through to
-   * the device compass.
+   * On the SDK path we prefer `navigationProgress.displayCoord.heading` (native
+   * matched `course` from `buildMinimalNavigationProgressFromSdk`, no JS smoothing).
+   * Raw `navSdkSnapshot.location.course` is the fallback for the single tick between
+   * `ingestSdkLocation` and the first `ingestSdkProgress`. JS trips use the
+   * in-progress blended heading; explore falls through to the device compass.
    */
   const navigationDisplayHeading = useMemo(() => {
     const smoothed = navigationProgress?.displayCoord?.heading;
