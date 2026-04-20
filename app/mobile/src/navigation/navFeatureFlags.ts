@@ -14,12 +14,12 @@ type ExpoConstantsLike = {
   executionEnvironment?: string;
 };
 
+type ExpoConstantsModule = ({ default?: ExpoConstantsLike } & ExpoConstantsLike) | undefined;
+
 function getExpoConstants(): ExpoConstantsLike | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require('expo-constants') as
-      | ({ default?: ExpoConstantsLike } & ExpoConstantsLike)
-      | undefined;
+    const mod = require('expo-constants') as ExpoConstantsModule;
     return mod?.default ?? mod ?? null;
   } catch {
     return null;

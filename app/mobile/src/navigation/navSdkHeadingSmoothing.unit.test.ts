@@ -89,6 +89,7 @@ test('cruise-speed small delta (~5°) is mostly passed through', () => {
   runTick(40, 20, T0); // seed
   const out = runTick(45, 20, T0 + 16);
   // Time-based EWMA at cruise speed (tau≈120ms, dt=16ms) should move noticeably.
+  // We use 16ms to emulate one render frame at ~60 FPS.
   const h = out.heading as number;
   assert.ok(h > 40.4 && h < 40.9, `cruise delta not pass-through: ${h}`);
 });
@@ -133,7 +134,7 @@ test('resetHeadingSmoothing() forces the next tick to pass through', () => {
   assert.ok(Math.abs(h - 60) < 0.001, `reset did not clear state: ${h}`);
 });
 
-test('stale previous sample (> 2 s) bypasses damping', () => {
+test('stale previous sample (> 2.1 s) bypasses damping', () => {
   resetHeadingSmoothing();
   runTick(0, 2, T0); // slow pace so small delta would normally damp
   const out = runTick(10, 2, T0 + 2101);
